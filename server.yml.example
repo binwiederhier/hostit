@@ -1,0 +1,33 @@
+# hostit server config -- copy to /etc/hostit/server.yml and edit.
+# Only base-domain and admin-token are required; everything else has sane defaults.
+
+# Apps are served at <app>.<base-domain>. Requires a wildcard DNS record:
+#   *.apps.example.com. A <ip-of-this-host>
+#   apps.example.com.   A <ip-of-this-host>   (for SSH and the bare domain)
+base-domain: apps.example.com
+
+# Bearer token for the admin REST API. Generate with: openssl rand -hex 24
+admin-token: CHANGE-ME
+
+# TLS: "letsencrypt" (default, on-demand per-subdomain certs) or "off" (plain
+# HTTP on listen-http; for development or behind another TLS-terminating proxy).
+# tls: letsencrypt
+# letsencrypt-email: you@example.com
+
+# Listeners (defaults shown)
+# listen-http: ":80"
+# listen-https: ":443"
+# listen-api: "127.0.0.1:2900"   # optional extra plain-HTTP admin API listener
+# socket-file: /run/hostit/hostit.sock
+
+# Directories (defaults shown)
+# data-dir: /var/lib/hostit      # registry DB + certs
+# apps-dir: /srv/hostit/apps     # app user home directories
+
+# Hostnames (defaults shown)
+# api-host: hostit.apps.example.com   # admin API hostname (default: hostit.<base-domain>)
+# ssh-host: apps.example.com          # SSH hostname reported to clients (default: <base-domain>)
+
+# Per-app loopback port range (defaults shown)
+# port-min: 10000
+# port-max: 19999

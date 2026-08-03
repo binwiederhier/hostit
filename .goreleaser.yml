@@ -1,0 +1,61 @@
+version: 2
+before:
+  hooks:
+    - go mod download
+    - go mod tidy
+builds:
+  - id: hostit_linux_amd64
+    binary: hostit
+    ldflags:
+      - "-s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}}"
+    goos: [ linux ]
+    goarch: [ amd64 ]
+  - id: hostit_linux_arm64
+    binary: hostit
+    ldflags:
+      - "-s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}}"
+    goos: [ linux ]
+    goarch: [ arm64 ]
+nfpms:
+  - package_name: hostit
+    homepage: https://github.com/binwiederhier/hostit
+    maintainer: Philipp C. Heckel <phil@heckel.io>
+    description: Self-hosted mini-app platform with SSH access, subdomains and TLS
+    license: Apache 2.0
+    formats:
+      - deb
+      - rpm
+    bindir: /usr/bin
+    dependencies:
+      - openssh-server
+    recommends:
+      - podman
+      - uidmap
+      - slirp4netns
+    contents:
+      - src: server.yml.example
+        dst: /etc/hostit/server.yml.example
+      - src: hostit.service
+        dst: /lib/systemd/system/hostit.service
+    scripts:
+      postinstall: "scripts/postinst.sh"
+      postremove: "scripts/postrm.sh"
+archives:
+  - id: hostit_linux
+    ids:
+      - hostit_linux_amd64
+      - hostit_linux_arm64
+    wrap_in_directory: true
+    files:
+      - README.md
+      - server.yml.example
+checksum:
+  name_template: 'checksums.txt'
+snapshot:
+  version_template: "{{ .Tag }}-next"
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'

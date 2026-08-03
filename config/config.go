@@ -1,0 +1,108 @@
+// Package config defines the hostit server configuration and its YAML loading logic.
+package config
+
+import (
+	"errors"
+	"fmt"
+	"os"
+
+	"gopkg.in/yaml.v3"
+)
+
+// TLSMode determines how the reverse proxy terminates TLS
+type TLSMode string
+
+const (
+	// TLSLetsEncrypt enables on-demand per-subdomain certificates via ACME (the default)
+	TLSLetsEncrypt = TLSMode("letsencrypt")
+	// TLSOff disables TLS entirely; the proxy serves plain HTTP (dev, or behind another proxy)
+	TLSOff = TLSMode("off")
+)
+
+const (
+	// DefaultServerConfigFile is where "hostit serve" looks for its config by default
+	DefaultServerConfigFile = "/etc/hostit/server.yml"
+)
+
+var (
+	errBaseDomainRequired = errors.New("base-domain is required, e.g. apps.example.com")
+	errAdminTokenRequired = errors.New("admin-token is required; generate one with e.g. openssl rand -hex 24")
+)
+
+// Config is the hostit server configuration, loaded from a YAML file (see LoadConfig)
+type Config struct {
+	BaseDomain       string  `yaml:"base-domain"`       // Apps live at <app>.<base-domain>; requires wildcard DNS
+	AdminToken       string  `yaml:"admin-token"`       // Bearer token for the admin REST API
+	ListenHTTP       string  `yaml:"listen-http"`       // HTTP listener (ACME challenges + redirect, or plain proxy if TLS off)
+	ListenHTTPS      string  `yaml:"listen-https"`      // HTTPS listener (ignored if TLS off)
+	ListenAPI        string  `yaml:"listen-api"`        // Optional extra plain-HTTP admin API listener, e.g. 127.0.0.1:2900
+	SocketFile       string  `yaml:"socket-file"`       // Unix socket for the app-side CLI (peercred-authenticated)
+	DataDir          string  `yaml:"data-dir"`          // SQLite registry + ACME certs
+	AppsDir          string  `yaml:"apps-dir"`          // Home directories of app users
+	APIHost          string  `yaml:"api-host"`          // Hostname routed to the admin API; defaults to hostit.<base-domain>
+	SSHHost          string  `yaml:"ssh-host"`          // Hostname reported for SSH access; defaults to base-domain
+	TLS              TLSMode `yaml:"tls"`               // "letsencrypt" or "off"
+	LetsEncryptEmail string  `yaml:"letsencrypt-email"` // Optional contact email for ACME
+	PortMin          int     `yaml:"port-min"`          // Lower bound of the per-app loopback port range
+	PortMax          int     `yaml:"port-max"`          // Upper bound of the per-app loopback port range
+}
+
+// NewConfig returns a Config with all defaults set; BaseDomain and AdminToken must be filled in
+func NewConfig() *Config {
+	return &Config{
+		ListenHTTP:  ":80",
+		ListenHTTPS: ":443",
+		SocketFile:  "/run/hostit/hostit.sock",
+		DataDir:     "/var/lib/hostit",
+		AppsDir:     "/srv/hostit/apps",
+		TLS:         TLSLetsEncrypt,
+		PortMin:     10000,
+		PortMax:     19999,
+	}
+}
+
+// LoadConfig reads a YAML config file on top of the defaults from NewConfig
+func LoadConfig(filename string) (*Config, error) {
+	b, err := os.ReadFile(filename)
+	if err != nil {
+		return nil, err
+	}
+	c := NewConfig()
+	if err := yaml.Unmarshal(b, c); err != nil {
+		return nil, fmt.Errorf("cannot parse config %s: %w", filename, err)
+	}
+	return c, nil
+}
+
+// Validate checks that the config is complete enough to run the server
+func (c *Config) Validate() error {
+	if c.BaseDomain == "" {
+		return errBaseDomainRequired
+	}
+	if c.AdminToken == "" {
+		return errAdminTokenRequired
+	}
+	if c.PortMin <= 0 || c.PortMax < c.PortMin {
+		return fmt.Errorf("invalid port range %d-%d", c.PortMin, c.PortMax)
+	}
+	if c.TLS != TLSLetsEncrypt && c.TLS != TLSOff {
+		return fmt.Errorf("invalid tls mode %q, must be %q or %q", c.TLS, TLSLetsEncrypt, TLSOff)
+	}
+	return nil
+}
+
+// APIHostname returns the hostname the proxy routes to the admin API
+func (c *Config) APIHostname() string {
+	if c.APIHost != "" {
+		return c.APIHost
+	}
+	return "hostit." + c.BaseDomain
+}
+
+// SSHHostname returns the hostname reported to clients for SSH access
+func (c *Config) SSHHostname() string {
+	if c.SSHHost != "" {
+		return c.SSHHost
+	}
+	return c.BaseDomain
+}
