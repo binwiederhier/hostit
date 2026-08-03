@@ -32,7 +32,12 @@ func execServe(c *cli.Context) error {
 	if err := conf.Validate(); err != nil {
 		return err
 	}
-	if err := os.MkdirAll(conf.DataDir, 0o700); err != nil {
+	// 0755: app users must traverse into it for the staged workspace
+	// Containerfile; secrets (certs) live in subdirs with their own 0700 perms
+	if err := os.MkdirAll(conf.DataDir, 0o755); err != nil {
+		return err
+	}
+	if err := os.Chmod(conf.DataDir, 0o755); err != nil {
 		return err
 	}
 	s, err := store.NewStore(filepath.Join(conf.DataDir, "hostit.db"))
