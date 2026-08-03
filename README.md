@@ -44,8 +44,8 @@ Requirements: Linux with systemd, sshd. For container mode: `podman` (rootless).
 Via the .deb (recommended; ships binary, systemd unit and example config):
 
 ```sh
-make deb                                      # or: make deb-arm64
-sudo apt install ./dist/hostit_*_linux_amd64.deb podman
+make release-snapshot                         # goreleaser; or: make deb (plain dpkg-deb)
+sudo apt install ./dist/hostit_*linux_amd64.deb podman
 sudo cp /etc/hostit/server.yml.example /etc/hostit/server.yml
 sudo $EDITOR /etc/hostit/server.yml           # set base-domain + admin-token
 sudo systemctl enable --now hostit
@@ -63,8 +63,9 @@ sudo systemctl daemon-reload && sudo systemctl enable --now hostit
 ```
 
 There is also an Ansible role that does all of this (deb, podman, config,
-firewall) in `~/Code/ansible`; `.goreleaser.yml` holds the proper release
-pipeline for when the repo lives on GitHub.
+firewall) in `~/Code/ansible`. Releases are built with goreleaser
+(`.goreleaser.yml`); `make release` publishes to GitHub once the repo is
+pushed there, `scripts/mkdeb.sh` remains as a git-free fallback.
 
 DNS: point a wildcard at the host:
 
