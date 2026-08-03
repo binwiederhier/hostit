@@ -3,11 +3,14 @@
 **hostit** is a tiny self-hosted mini-app platform, built to be driven by AI agents
 (or humans) over SSH and a REST API. One binary. Each app gets:
 
-- an **isolated Unix user** with its own home directory (kernel-enforced isolation)
-- **SSH access** (normal ssh/scp/sftp/rsync via the host's sshd)
+- its own **container**: SSH sessions land INSIDE it (root in there, `apt install`
+  away), the app runs in it, and other apps are invisible -- processes, files and
+  loopback ports included (rootless podman + per-Unix-user isolation + nftables)
+- **SSH access** (normal ssh/scp/sftp/rsync via the host's sshd; keys via the API)
 - a **subdomain** (`myapp.apps.example.com`) with **automatic Let's Encrypt TLS**
-- a systemd-supervised service: either a plain **process** or a **rootless podman
-  container**, deployed with a single `hostit up`
+- supervised execution: a `run:` command supervised by the hostit agent in the
+  default workspace image, or your own `image:`/`build:` container, deployed with
+  a single `hostit up`
 
 The intended workflow: tell Claude "create an app on my host and deploy this" --
 it calls the REST API to get an SSH login, pushes the code, writes `hostit.yml`,
@@ -106,14 +109,15 @@ one-time private key. Endpoints: `POST/GET /v1/apps`, `GET/DELETE /v1/apps/{name
 SSH in as the app user, upload files, describe the app in `hostit.yml`:
 
 ```yaml
-# Process mode: run a command; it MUST listen on 127.0.0.1:$PORT
+# Workspace mode: run a command in your workspace container;
+# it MUST listen on 0.0.0.0:$PORT
 run: ./server --debug
 env:
   FOO: bar
 ```
 
 ```yaml
-# Container mode: rootless podman; hostit maps your port automatically
+# Image mode: run your own image; hostit maps the port automatically
 image: docker.io/library/nginx:alpine   # or "build: ." with a Dockerfile
 container-port: 80
 volumes:
