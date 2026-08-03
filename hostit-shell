@@ -1,0 +1,4 @@
+#!/bin/sh
+# Login shell for hostit app users: hands the SSH session to "hostit shell",
+# which execs it into the user's app container. Installed as /usr/bin/hostit-shell.
+exec /usr/bin/hostit shell "$@"

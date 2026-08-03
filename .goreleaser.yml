@@ -37,6 +37,10 @@ nfpms:
         dst: /etc/hostit/server.yml.example
       - src: hostit.service
         dst: /lib/systemd/system/hostit.service
+      - src: hostit-shell
+        dst: /usr/bin/hostit-shell
+        file_info:
+          mode: 0755
     scripts:
       postinstall: "scripts/postinst.sh"
       postremove: "scripts/postrm.sh"

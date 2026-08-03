@@ -151,6 +151,39 @@ func TestSocketSelfUnknownUser(t *testing.T) {
 	require.Equal(t, http.StatusNotFound, w.Code)
 }
 
+func TestSocketSelfLifecycle(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	rr := request(t, s.API(), "POST", "/v1/apps", `{"name":"blog"}`, testToken)
+	require.Equal(t, http.StatusCreated, rr.Code)
+	s.usernameForUID = func(uid int) (string, error) {
+		return "blog", nil
+	}
+	// ensure: with nop ops this provisions and starts the workspace
+	w := socketRequest(t, s, "POST", "/v1/self/ensure")
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Body.String(), "workspace")
+	// up: no hostit.yml in the (empty) app home -> 400
+	w = socketRequest(t, s, "POST", "/v1/self/up")
+	require.Equal(t, http.StatusBadRequest, w.Code)
+	// down and restart succeed with nop runner
+	require.Equal(t, http.StatusOK, socketRequest(t, s, "POST", "/v1/self/down").Code)
+	require.Equal(t, http.StatusOK, socketRequest(t, s, "POST", "/v1/self/restart").Code)
+	// status returns output (empty from nop runner, but 200)
+	require.Equal(t, http.StatusOK, socketRequest(t, s, "GET", "/v1/self/status").Code)
+	// logs: nothing yet -> error status
+	require.NotEqual(t, http.StatusOK, socketRequest(t, s, "GET", "/v1/self/logs").Code)
+}
+
+func socketRequest(t *testing.T, s *Server, method, path string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(method, path, nil)
+	req = req.WithContext(withPeerUID(req.Context(), 1234))
+	w := httptest.NewRecorder()
+	s.socketHandler().ServeHTTP(w, req)
+	return w
+}
+
 func TestProxyRoutesToApp(t *testing.T) {
 	t.Parallel()
 	s := newTestServer(t)
@@ -225,7 +258,7 @@ func newTestServer(t *testing.T) *Server {
 	t.Cleanup(func() {
 		_ = s.Close()
 	})
-	manager := app.NewManager(conf, s, newFakeSystemOps())
+	manager := app.NewManager(conf, s, app.NewNopSystemOps(), app.NewNopUserRunner())
 	return New(conf, manager)
 }
 
@@ -256,37 +289,4 @@ func proxyRequest(t *testing.T, s *Server, rawURL string) *httptest.ResponseReco
 	rr := httptest.NewRecorder()
 	s.proxyHandler().ServeHTTP(rr, req)
 	return rr
-}
-
-// fakeSystemOps is a no-op SystemOps for server tests
-type fakeSystemOps struct{}
-
-var _ app.SystemOps = (*fakeSystemOps)(nil)
-
-func newFakeSystemOps() *fakeSystemOps {
-	return &fakeSystemOps{}
-}
-
-func (f *fakeSystemOps) UserExists(username string) bool {
-	return false
-}
-
-func (f *fakeSystemOps) CreateUser(username, home string) error {
-	return nil
-}
-
-func (f *fakeSystemOps) DeleteUser(username string) error {
-	return nil
-}
-
-func (f *fakeSystemOps) EnableLinger(username string) error {
-	return nil
-}
-
-func (f *fakeSystemOps) WriteAuthorizedKeys(username, home string, keys []string) error {
-	return nil
-}
-
-func (f *fakeSystemOps) WriteScaffold(username, home string, files map[string]string) error {
-	return nil
 }

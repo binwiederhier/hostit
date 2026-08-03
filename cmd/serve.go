@@ -40,7 +40,8 @@ func execServe(c *cli.Context) error {
 		return err
 	}
 	defer s.Close()
-	manager := app.NewManager(conf, s, app.NewSystemOps())
+	ops := app.NewSystemOps()
+	manager := app.NewManager(conf, s, ops, app.NewUserRunner(ops))
 	srv := server.New(conf, manager)
 
 	// Shut down gracefully on SIGINT/SIGTERM

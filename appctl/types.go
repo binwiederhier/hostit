@@ -44,17 +44,42 @@ type SelfInfo struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+// messageResponse mirrors the daemon's lifecycle action responses
+type messageResponse struct {
+	Message string `json:"message"`
+}
+
+// outputResponse mirrors the daemon's status/log responses
+type outputResponse struct {
+	Output string `json:"output"`
+}
+
+// errorResponse mirrors the daemon's error responses
+type errorResponse struct {
+	Error string `json:"error"`
+}
+
 // LoadAppConfig reads and validates an app's hostit.yml
 func LoadAppConfig(filename string) (*AppConfig, error) {
 	b, err := os.ReadFile(filename)
 	if err != nil {
 		return nil, err
 	}
-	c := &AppConfig{}
-	if err := yaml.Unmarshal(b, c); err != nil {
+	c, err := ParseAppConfig(b)
+	if err != nil {
 		return nil, fmt.Errorf("cannot parse %s: %w", filename, err)
 	}
 	if err := c.Validate(); err != nil {
+		return nil, err
+	}
+	return c, nil
+}
+
+// ParseAppConfig parses hostit.yml content without validating it; used by the
+// agent, which tolerates half-written configs and simply idles on them
+func ParseAppConfig(b []byte) (*AppConfig, error) {
+	c := &AppConfig{}
+	if err := yaml.Unmarshal(b, c); err != nil {
 		return nil, err
 	}
 	return c, nil

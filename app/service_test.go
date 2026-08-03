@@ -1,6 +1,7 @@
 package app
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -156,13 +157,14 @@ func newTestManager(t *testing.T) (*Manager, *fakeSystemOps) {
 	conf.BaseDomain = "apps.example.com"
 	conf.AdminToken = "secr3t"
 	conf.AppsDir = t.TempDir()
+	conf.DataDir = t.TempDir()
 	s, err := store.NewStore(filepath.Join(t.TempDir(), "hostit.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		_ = s.Close()
 	})
 	ops := newFakeSystemOps()
-	return NewManager(conf, s, ops), ops
+	return NewManager(conf, s, ops, newFakeUserRunner()), ops
 }
 
 // fakeSystemOps records system calls instead of executing them
@@ -173,6 +175,9 @@ type fakeSystemOps struct {
 	lingerEnabled  []string
 	authorizedKeys map[string][]string
 	scaffolds      map[string][]string
+	userFiles      map[string]string
+	uids           map[string]int
+	portRules      [][]PortRule
 	createUserErr  error
 }
 
@@ -182,6 +187,8 @@ func newFakeSystemOps() *fakeSystemOps {
 	return &fakeSystemOps{
 		authorizedKeys: make(map[string][]string),
 		scaffolds:      make(map[string][]string),
+		userFiles:      make(map[string]string),
+		uids:           make(map[string]int),
 	}
 }
 
@@ -194,11 +201,19 @@ func (f *fakeSystemOps) UserExists(username string) bool {
 	return false
 }
 
+func (f *fakeSystemOps) LookupUID(username string) (int, error) {
+	if uid, ok := f.uids[username]; ok {
+		return uid, nil
+	}
+	return 1001, nil
+}
+
 func (f *fakeSystemOps) CreateUser(username, home string) error {
 	if f.createUserErr != nil {
 		return f.createUserErr
 	}
 	f.createdUsers = append(f.createdUsers, username)
+	f.uids[username] = 1000 + len(f.createdUsers)
 	return nil
 }
 
@@ -221,5 +236,15 @@ func (f *fakeSystemOps) WriteScaffold(username, home string, files map[string]st
 	for name := range files {
 		f.scaffolds[username] = append(f.scaffolds[username], name)
 	}
+	return nil
+}
+
+func (f *fakeSystemOps) WriteUserFile(username, home, relPath, content string, mode os.FileMode) error {
+	f.userFiles[username+":"+relPath] = content
+	return nil
+}
+
+func (f *fakeSystemOps) ApplyPortRules(rules []PortRule) error {
+	f.portRules = append(f.portRules, rules)
 	return nil
 }

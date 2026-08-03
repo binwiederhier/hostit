@@ -1,0 +1,273 @@
+// Package agent implements the PID 1 process supervisor that runs inside every
+// workspace container: it starts the hostit.yml "run" command, restarts it on
+// exit, reloads it on SIGHUP (or Reload), mirrors its output to a log file, and
+// reaps orphaned zombie processes as any init must.
+package agent
+
+import (
+	"fmt"
+	"io"
+	"log/slog"
+	"os"
+	"os/exec"
+	"os/signal"
+	"path/filepath"
+	"sync"
+	"syscall"
+	"time"
+
+	"heckel.io/hostit/appctl"
+)
+
+const (
+	// defaultRestartDelay is the pause before restarting an exited command
+	defaultRestartDelay = 2 * time.Second
+	// killTimeout is how long a child gets after SIGTERM before SIGKILL
+	killTimeout = 10 * time.Second
+	// logMaxSize caps the app log; beyond it the log is rotated to .old
+	logMaxSize = 10 * 1024 * 1024
+)
+
+// childExit reports the termination of a reaped or waited-for child
+type childExit struct {
+	pid    int
+	status string
+}
+
+// Agent supervises the app command inside a workspace container
+type Agent struct {
+	home         string
+	restartDelay time.Duration
+	reap         bool // Reap orphan zombies; enabled when running as PID 1
+	exits        chan childExit
+	reloads      chan struct{}
+	stop         chan struct{}
+	logFile      *os.File
+	stopOnce     sync.Once
+}
+
+// New creates an Agent for the app living in home (usually $HOME)
+func New(home string) *Agent {
+	return &Agent{
+		home:         home,
+		restartDelay: defaultRestartDelay,
+		reap:         os.Getpid() == 1,
+		exits:        make(chan childExit, 16),
+		reloads:      make(chan struct{}, 1),
+		stop:         make(chan struct{}),
+	}
+}
+
+// Run supervises the configured command until Stop (or SIGTERM/SIGINT); it only
+// returns on shutdown. Without a usable hostit.yml it idles, waiting for Reload.
+func (a *Agent) Run() error {
+	a.wireSignals()
+	defer a.closeLog()
+	for {
+		conf := a.loadConfig()
+		if conf == nil {
+			slog.Info("No run command configured; idling until reload")
+			select {
+			case <-a.reloads:
+				continue
+			case <-a.stop:
+				return nil
+			}
+		}
+		cmd, err := a.startChild(conf)
+		if err != nil {
+			slog.Error("Cannot start command", "error", err)
+			if !a.sleepInterruptible() {
+				return nil
+			}
+			continue
+		}
+		slog.Info("Started app command", "pid", cmd.Process.Pid, "command", conf.Run)
+		exited := a.waitFor(cmd) // Exactly one waiter per child (Wait must not be called twice)
+
+		// Wait for the child to exit, a reload request, or shutdown
+		select {
+		case exit := <-exited:
+			slog.Warn("App command exited, restarting", "status", exit.status, "delay", a.restartDelay)
+			if !a.sleepInterruptible() {
+				return nil
+			}
+		case <-a.reloads:
+			slog.Info("Reloading: stopping app command")
+			a.killAndWait(cmd, exited)
+		case <-a.stop:
+			a.killAndWait(cmd, exited)
+			return nil
+		}
+	}
+}
+
+// Reload asks the agent to re-read hostit.yml and restart the command
+func (a *Agent) Reload() {
+	select {
+	case a.reloads <- struct{}{}:
+	default:
+	}
+}
+
+// Stop shuts the agent down, terminating the supervised command
+func (a *Agent) Stop() {
+	a.stopOnce.Do(func() {
+		close(a.stop)
+	})
+}
+
+// wireSignals maps SIGHUP to Reload, SIGTERM/SIGINT to Stop, and (as PID 1)
+// starts the zombie reaper on SIGCHLD
+func (a *Agent) wireSignals() {
+	sigs := make(chan os.Signal, 4)
+	signal.Notify(sigs, syscall.SIGHUP, syscall.SIGTERM, syscall.SIGINT)
+	go func() {
+		for sig := range sigs {
+			switch sig {
+			case syscall.SIGHUP:
+				a.Reload()
+			default:
+				a.Stop()
+			}
+		}
+	}()
+	if a.reap {
+		chld := make(chan os.Signal, 16)
+		signal.Notify(chld, syscall.SIGCHLD)
+		go a.reapLoop(chld)
+	}
+}
+
+// reapLoop waits for any terminated child (including orphans reparented to us
+// as PID 1) and reports their exits; this doubles as the zombie reaper
+func (a *Agent) reapLoop(chld chan os.Signal) {
+	for range chld {
+		for {
+			var status syscall.WaitStatus
+			pid, err := syscall.Wait4(-1, &status, syscall.WNOHANG, nil)
+			if pid <= 0 || err != nil {
+				break
+			}
+			a.exits <- childExit{pid: pid, status: fmt.Sprintf("exit status %d", status.ExitStatus())}
+		}
+	}
+}
+
+// loadConfig reads hostit.yml leniently; nil means "nothing to run"
+func (a *Agent) loadConfig() *appctl.AppConfig {
+	b, err := os.ReadFile(filepath.Join(a.home, "hostit.yml"))
+	if err != nil {
+		return nil
+	}
+	conf, err := appctl.ParseAppConfig(b)
+	if err != nil {
+		slog.Error("Cannot parse hostit.yml", "error", err)
+		return nil
+	}
+	if conf.Run == "" {
+		return nil
+	}
+	return conf
+}
+
+// startChild launches the run command in its own process group with output
+// mirrored to stdout (podman logs) and the app log file
+func (a *Agent) startChild(conf *appctl.AppConfig) (*exec.Cmd, error) {
+	out, err := a.openLog()
+	if err != nil {
+		return nil, err
+	}
+	cmd := exec.Command("/bin/sh", "-lc", conf.Run)
+	cmd.Dir = a.home
+	cmd.Env = os.Environ()
+	cmd.Stdout = io.MultiWriter(os.Stdout, out)
+	cmd.Stderr = io.MultiWriter(os.Stderr, out)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if err := cmd.Start(); err != nil {
+		return nil, err
+	}
+	return cmd, nil
+}
+
+// waitFor returns a channel that yields the exit of the given child. As PID 1
+// the reap loop owns wait(); otherwise we wait directly.
+func (a *Agent) waitFor(cmd *exec.Cmd) <-chan childExit {
+	pid := cmd.Process.Pid
+	out := make(chan childExit, 1)
+	if a.reap {
+		go func() {
+			for exit := range a.exits {
+				if exit.pid == pid {
+					out <- exit
+					return
+				}
+			}
+		}()
+	} else {
+		go func() {
+			err := cmd.Wait()
+			status := "exit status 0"
+			if err != nil {
+				status = err.Error()
+			}
+			out <- childExit{pid: pid, status: status}
+		}()
+	}
+	return out
+}
+
+// killAndWait terminates the child's process group, escalating to SIGKILL
+func (a *Agent) killAndWait(cmd *exec.Cmd, exited <-chan childExit) {
+	pid := cmd.Process.Pid
+	_ = syscall.Kill(-pid, syscall.SIGTERM)
+	select {
+	case <-exited:
+		return
+	case <-time.After(killTimeout):
+		_ = syscall.Kill(-pid, syscall.SIGKILL)
+	}
+	select {
+	case <-exited:
+	case <-time.After(killTimeout):
+		slog.Error("Child did not die even after SIGKILL", "pid", pid)
+	}
+}
+
+// sleepInterruptible pauses before a restart; returns false on shutdown
+func (a *Agent) sleepInterruptible() bool {
+	select {
+	case <-time.After(a.restartDelay):
+		return true
+	case <-a.reloads:
+		return true
+	case <-a.stop:
+		return false
+	}
+}
+
+// openLog (re)opens the app log, rotating it once it grows too large
+func (a *Agent) openLog() (*os.File, error) {
+	a.closeLog()
+	dir := filepath.Join(a.home, ".hostit")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return nil, err
+	}
+	filename := filepath.Join(dir, "app.log")
+	if stat, err := os.Stat(filename); err == nil && stat.Size() > logMaxSize {
+		_ = os.Rename(filename, filename+".old")
+	}
+	f, err := os.OpenFile(filename, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		return nil, err
+	}
+	a.logFile = f
+	return f, nil
+}
+
+func (a *Agent) closeLog() {
+	if a.logFile != nil {
+		_ = a.logFile.Close()
+		a.logFile = nil
+	}
+}

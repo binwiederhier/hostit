@@ -15,6 +15,9 @@ const (
 	// userdelRetries is how often userdel is retried while user processes are still dying
 	userdelRetries = 5
 	userdelDelay   = 500 * time.Millisecond
+	// userShellFile is the login shell for app users; it execs the SSH session
+	// into the app container (see cmd/shell.go)
+	userShellFile = "/usr/bin/hostit-shell"
 )
 
 // systemOps is the real SystemOps implementation; it shells out to the usual
@@ -33,12 +36,18 @@ func (o *systemOps) UserExists(username string) bool {
 	return err == nil
 }
 
-// CreateUser creates the app user with its home dir; 0750 so other apps cannot peek
+func (o *systemOps) LookupUID(username string) (int, error) {
+	uid, _, err := lookupIDs(username)
+	return uid, err
+}
+
+// CreateUser creates the app user with its home dir; 0750 so other apps cannot
+// peek, and the hostit-shell login shell so SSH sessions land in the container
 func (o *systemOps) CreateUser(username, home string) error {
 	if err := os.MkdirAll(filepath.Dir(home), 0o755); err != nil {
 		return err
 	}
-	err := run("useradd", "--create-home", "--home-dir", home, "--shell", "/bin/bash", "--comment", "hostit app", username)
+	err := run("useradd", "--create-home", "--home-dir", home, "--shell", userShellFile, "--comment", "hostit app", username)
 	if err != nil {
 		return err
 	}
@@ -104,6 +113,62 @@ func (o *systemOps) WriteScaffold(username, home string, files map[string]string
 		}
 	}
 	return nil
+}
+
+// WriteUserFile writes a file (creating parent dirs) below the user's home,
+// owned by the user; used for systemd user units
+func (o *systemOps) WriteUserFile(username, home, relPath, content string, mode os.FileMode) error {
+	uid, gid, err := lookupIDs(username)
+	if err != nil {
+		return err
+	}
+	filename := filepath.Join(home, relPath)
+
+	// Create parent dirs one by one so each new one can be chowned to the user
+	dir := filepath.Dir(filename)
+	var missing []string
+	for d := dir; strings.HasPrefix(d, home) && d != home; d = filepath.Dir(d) {
+		if _, err := os.Stat(d); err != nil {
+			missing = append([]string{d}, missing...)
+		}
+	}
+	for _, d := range missing {
+		if err := os.Mkdir(d, 0o755); err != nil {
+			return err
+		}
+		if err := os.Chown(d, uid, gid); err != nil {
+			return err
+		}
+	}
+	if err := os.WriteFile(filename, []byte(content), mode); err != nil {
+		return err
+	}
+	return os.Chown(filename, uid, gid)
+}
+
+// ApplyPortRules atomically replaces the hostit nftables table: for each app
+// port, loopback connects are only allowed for root (the proxy) and the owner
+func (o *systemOps) ApplyPortRules(rules []PortRule) error {
+	var b strings.Builder
+	b.WriteString("add table inet hostit\n")
+	b.WriteString("flush table inet hostit\n")
+	b.WriteString("add chain inet hostit output { type filter hook output priority filter ; policy accept ; }\n")
+	for _, rule := range rules {
+		fmt.Fprintf(&b, "add rule inet hostit output ip daddr 127.0.0.0/8 tcp dport %d meta skuid != { 0, %d } counter drop\n", rule.Port, rule.UID)
+		fmt.Fprintf(&b, "add rule inet hostit output ip6 daddr ::1 tcp dport %d meta skuid != { 0, %d } counter drop\n", rule.Port, rule.UID)
+	}
+	f, err := os.CreateTemp("", "hostit-nft-*.conf")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(f.Name())
+	if _, err := f.WriteString(b.String()); err != nil {
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	return run("nft", "-f", f.Name())
 }
 
 func lookupIDs(username string) (uid int, gid int, err error) {

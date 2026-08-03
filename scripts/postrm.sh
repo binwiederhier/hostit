@@ -11,6 +11,9 @@ if [ "$1" = "purge" ] || [ "$1" = "0" ] 2>/dev/null; then
   rm -rf /var/lib/hostit
   rm -f /etc/hostit/server.yml.example
   rmdir /etc/hostit 2>/dev/null || true
+  if [ -f /etc/shells ]; then
+    sed -i '\|^/usr/bin/hostit-shell$|d' /etc/shells || true
+  fi
 fi
 
 if command -v systemctl >/dev/null 2>&1; then

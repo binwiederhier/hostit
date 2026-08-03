@@ -43,3 +43,13 @@ type apiHealthResponse struct {
 type apiErrorResponse struct {
 	Error string `json:"error"`
 }
+
+// apiMessageResponse carries a human-readable result of a lifecycle action
+type apiMessageResponse struct {
+	Message string `json:"message"`
+}
+
+// apiOutputResponse carries command/log output for the CLI to print
+type apiOutputResponse struct {
+	Output string `json:"output"`
+}

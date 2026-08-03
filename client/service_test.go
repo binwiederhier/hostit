@@ -76,37 +76,8 @@ func newTestClient(t *testing.T, token string) *Client {
 	t.Cleanup(func() {
 		_ = s.Close()
 	})
-	srv := server.New(conf, app.NewManager(conf, s, &fakeSystemOps{}))
+	srv := server.New(conf, app.NewManager(conf, s, app.NewNopSystemOps(), app.NewNopUserRunner()))
 	httpServer := httptest.NewServer(srv.API())
 	t.Cleanup(httpServer.Close)
 	return New(httpServer.URL, token)
-}
-
-// fakeSystemOps is a no-op SystemOps implementation
-type fakeSystemOps struct{}
-
-var _ app.SystemOps = (*fakeSystemOps)(nil)
-
-func (f *fakeSystemOps) UserExists(username string) bool {
-	return false
-}
-
-func (f *fakeSystemOps) CreateUser(username, home string) error {
-	return nil
-}
-
-func (f *fakeSystemOps) DeleteUser(username string) error {
-	return nil
-}
-
-func (f *fakeSystemOps) EnableLinger(username string) error {
-	return nil
-}
-
-func (f *fakeSystemOps) WriteAuthorizedKeys(username, home string, keys []string) error {
-	return nil
-}
-
-func (f *fakeSystemOps) WriteScaffold(username, home string, files map[string]string) error {
-	return nil
 }

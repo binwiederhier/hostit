@@ -7,6 +7,10 @@ set -e
 # a configured /etc/hostit/server.yml anyway.
 
 if [ "$1" = "configure" ] || [ "$1" -ge 1 ] 2>/dev/null; then
+  # Register the app-user login shell so chsh/sshd accept it
+  if [ -f /etc/shells ] && ! grep -qxF /usr/bin/hostit-shell /etc/shells; then
+    echo /usr/bin/hostit-shell >> /etc/shells
+  fi
   if command -v systemctl >/dev/null 2>&1; then
     systemctl daemon-reload || true
     if systemctl is-active --quiet hostit 2>/dev/null; then

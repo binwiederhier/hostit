@@ -12,13 +12,14 @@ const (
 #
 # Pick ONE of the two modes below.
 #
-# --- Process mode: run a command directly (must listen on $PORT) ---
+# --- Workspace mode: run a command in your workspace container ---
+# The command MUST listen on 0.0.0.0:$PORT ($PORT is set for you).
 #
-# run: ./server
+# run: python3 -m http.server $PORT
 # env:
 #   DEBUG: "true"
 #
-# --- Container mode: run a container image (rootless podman) ---
+# --- Image mode: run a container image of your own ---
 #
 # image: docker.io/library/nginx:alpine   # or use "build: ." with a Dockerfile
 # container-port: 80                      # port the app listens on INSIDE the container
@@ -27,8 +28,8 @@ const (
 # volumes:
 #   - ./data:/data
 `
-	// scaffoldReadme is the README.txt template placed in new app homes; the three
-	// placeholders are app URL, app name and assigned loopback port
+	// scaffoldReadme is the README.txt template placed in new app homes; the
+	// placeholders are app URL, port, port again, and app name
 	scaffoldReadme = `Welcome to your hostit app!
 
 Your app will be served at:  %s
@@ -36,11 +37,13 @@ Your assigned port:          %d
 
 How it works
 ------------
-- Upload your app files to this directory (scp/rsync/sftp/git).
-- Edit hostit.yml: either a "run:" command (process mode) or an "image:"/"build:"
-  (container mode, rootless podman).
-- Process mode: your app MUST listen on 127.0.0.1:$PORT ($PORT is set for you).
-- Container mode: hostit maps your assigned port to "container-port" for you.
+- SSH puts you INSIDE your app's container (like a docker container of your
+  own): you are root in here, you can apt-get install things, and you cannot
+  see other apps. Your files live in this home directory, which is the same
+  directory scp/rsync/sftp write to.
+- Edit hostit.yml: either a "run:" command (executed in your workspace
+  container; must listen on 0.0.0.0:$PORT, PORT=%d) or an "image:"/"build:"
+  (your own container image; hostit maps the port for you).
 - Then run:
 
     hostit up        # (re)deploy and start
@@ -50,8 +53,14 @@ How it works
     hostit down      # stop
     hostit info      # show app name, URL, port
 
-Your app runs as an isolated Unix user (%s) via systemd user services; it survives
-reboots and is restarted on failure.
+Notes
+-----
+- Your app (%s) survives reboots and restarts on failure.
+- Changing image:/build:/env:/volumes: recreates the container on "hostit up",
+  which also kicks active SSH sessions (like docker). A changed "run:" command
+  restarts only the app process.
+- Need tools not in the workspace? "apt-get update && apt-get install -y ..."
+  (installed packages persist until the container is recreated).
 `
 )
 
@@ -61,6 +70,6 @@ func (m *Manager) scaffoldFiles(name string, port int) map[string]string {
 	url := m.URL(&store.App{Name: name, Port: port})
 	return map[string]string{
 		"hostit.yml": scaffoldHostitYml,
-		"README.txt": fmt.Sprintf(scaffoldReadme, url, port, name),
+		"README.txt": fmt.Sprintf(scaffoldReadme, url, port, port, name),
 	}
 }

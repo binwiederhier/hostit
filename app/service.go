@@ -6,6 +6,8 @@ package app
 import (
 	"errors"
 	"fmt"
+	"log/slog"
+	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -34,15 +36,31 @@ var (
 	}
 )
 
-// SystemOps abstracts the system-level operations the Manager needs; the real
-// implementation (NewSystemOps) shells out to useradd, loginctl and friends.
+// SystemOps abstracts the root-privileged system operations the Manager needs;
+// the real implementation (NewSystemOps) shells out to useradd, loginctl, nft
+// and friends.
 type SystemOps interface {
 	UserExists(username string) bool
+	LookupUID(username string) (int, error)
 	CreateUser(username, home string) error
 	DeleteUser(username string) error
 	EnableLinger(username string) error
 	WriteAuthorizedKeys(username, home string, keys []string) error
 	WriteScaffold(username, home string, files map[string]string) error
+	WriteUserFile(username, home, relPath, content string, mode os.FileMode) error
+	ApplyPortRules(rules []PortRule) error
+}
+
+// UserRunner executes a command as the given (unprivileged) app user, with the
+// environment needed for rootless podman and systemctl --user
+type UserRunner interface {
+	RunAsUser(username string, args ...string) (string, error)
+}
+
+// PortRule restricts loopback connects to an app port to root and the owning UID
+type PortRule struct {
+	Port int
+	UID  int
 }
 
 // Credentials holds a generated SSH key pair; the private key is returned to the
@@ -52,19 +70,23 @@ type Credentials struct {
 	PublicKey  string `json:"public_key"`
 }
 
-// Manager creates and deletes apps and everything that belongs to them
+// Manager creates and deletes apps and everything that belongs to them, and
+// deploys their containers (as the app user) via the UserRunner
 type Manager struct {
 	config *config.Config
 	store  *store.Store
 	ops    SystemOps
+	runner UserRunner
+	podman string // Resolved podman path for unit files, cached
 }
 
 // NewManager creates a Manager
-func NewManager(conf *config.Config, s *store.Store, ops SystemOps) *Manager {
+func NewManager(conf *config.Config, s *store.Store, ops SystemOps, runner UserRunner) *Manager {
 	return &Manager{
 		config: conf,
 		store:  s,
 		ops:    ops,
+		runner: runner,
 	}
 }
 
@@ -120,6 +142,7 @@ func (m *Manager) CreateApp(name string, sshKeys []string) (*store.App, *Credent
 		cleanup()
 		return nil, nil, err
 	}
+	m.ReconcilePortRules()
 	return app, creds, nil
 }
 
@@ -132,7 +155,33 @@ func (m *Manager) DeleteApp(name string) error {
 	if err := m.ops.DeleteUser(name); err != nil {
 		return fmt.Errorf("cannot delete user %s: %w", name, err)
 	}
-	return m.store.RemoveApp(name)
+	if err := m.store.RemoveApp(name); err != nil {
+		return err
+	}
+	m.ReconcilePortRules()
+	return nil
+}
+
+// ReconcilePortRules rebuilds the per-app loopback firewall rules from the
+// registry; failures are logged, not fatal (nft may be absent in dev setups)
+func (m *Manager) ReconcilePortRules() {
+	apps, err := m.store.Apps()
+	if err != nil {
+		slog.Warn("Cannot list apps for port rules", "error", err)
+		return
+	}
+	rules := make([]PortRule, 0, len(apps))
+	for _, a := range apps {
+		uid, err := m.ops.LookupUID(a.Name)
+		if err != nil {
+			slog.Warn("Cannot look up uid for port rule", "app", a.Name, "error", err)
+			continue
+		}
+		rules = append(rules, PortRule{Port: a.Port, UID: uid})
+	}
+	if err := m.ops.ApplyPortRules(rules); err != nil {
+		slog.Warn("Cannot apply port rules", "error", err)
+	}
 }
 
 // SetKeys replaces the app's authorized SSH keys
