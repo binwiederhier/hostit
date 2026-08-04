@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { api } from "../api";
-import { CopyButton, ErrorBanner, Loading, Snippet } from "../components";
+import { ErrorBanner, Loading, Snippet } from "../components";
 
 const nameRe = /^[a-z][a-z0-9-]{0,30}[a-z0-9]$/;
 
@@ -10,41 +10,6 @@ const nameRe = /^[a-z][a-z0-9-]{0,30}[a-z0-9]$/;
 // leading "hostit." label (hostit.apps.example.com -> apps.example.com).
 const apiHost = window.location.origin;
 const sshHost = window.location.hostname.replace(/^hostit\./, "");
-
-// Shown once after app creation; includes the SSH command and, if hostit
-// generated a keypair, the private key with a save-it-now warning.
-const CreatedBox = ({ created, onDismiss }) => (
-  <div className="card created-card">
-    <div className="card-header">
-      <h3>
-        App <span className="mono">{created.name}</span> created
-      </h3>
-      <button type="button" className="btn btn-small" onClick={onDismiss}>
-        Dismiss
-      </button>
-    </div>
-    <p>
-      It will be served at{" "}
-      <a href={created.url} target="_blank" rel="noreferrer">
-        {created.url}
-      </a>{" "}
-      (port {created.port}). Log in via SSH to upload your files:
-    </p>
-    {created.ssh && <Snippet text={created.ssh.command} />}
-    {created.private_key && (
-      <div className="warn-box">
-        <p>
-          <strong>This private key is shown only once. Save it now.</strong> hostit generated it for you because no SSH key was
-          provided; it grants SSH access to your apps.
-        </p>
-        <pre className="key-block">{created.private_key}</pre>
-        <CopyButton text={created.private_key} small={false}>
-          Copy private key
-        </CopyButton>
-      </div>
-    )}
-  </div>
-);
 
 const ClaudePanel = () => (
   <div className="card claude-panel">
@@ -73,8 +38,11 @@ const AppRow = ({ app, account, isAdmin, onDelete }) => {
   return (
     <tr>
       <td>
-        <a className="mono app-link" href={app.url} target="_blank" rel="noreferrer">
+        <Link className="mono app-link" to={`/app/${app.name}`}>
           {app.name}
+        </Link>
+        <a className="open-link" href={app.url} target="_blank" rel="noreferrer">
+          open -&gt;
         </a>
       </td>
       {isAdmin && <td className="cell-muted">{app.owner_email}</td>}
@@ -97,7 +65,7 @@ const Dashboard = ({ account, refreshAccount }) => {
   const [error, setError] = useState("");
   const [name, setName] = useState("");
   const [creating, setCreating] = useState(false);
-  const [created, setCreated] = useState(null);
+  const navigate = useNavigate();
 
   const isAdmin = account.role === "admin";
   const atLimit = account.usage.apps >= account.limits.app_limit;
@@ -124,10 +92,11 @@ const Dashboard = ({ account, refreshAccount }) => {
     setError("");
     try {
       const res = await api.post("/v1/apps", { name });
-      setCreated(res);
       setName("");
-      await load();
       refreshAccount();
+      // Hand off to the app's page; the one-time private key (if hostit
+      // generated one) rides along in router state and is never stored.
+      navigate(`/app/${res.name}`, { state: res.private_key ? { private_key: res.private_key } : null });
     } catch (err) {
       setError(err.message);
     } finally {
@@ -158,7 +127,6 @@ const Dashboard = ({ account, refreshAccount }) => {
         </span>
       </div>
       <ErrorBanner message={error} onDismiss={() => setError("")} />
-      {created && <CreatedBox created={created} onDismiss={() => setCreated(null)} />}
       <div className="card">
         {apps === null && !error && <Loading label="Loading apps..." />}
         {apps !== null && apps.length === 0 && (

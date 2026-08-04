@@ -19,9 +19,15 @@ const (
 	readmeFile = "README.md"
 	// maxUploadSize caps a single uploaded file
 	maxUploadSize = 64 * 1024 * 1024
-	// hiddenPrefixes are never listed or uploadable: hostit's own state and the
-	// account's SSH keys
-	hiddenDirs = ".hostit/,.ssh/,.config/,.local/,.cache/"
+)
+
+var (
+	// protectedDirs hold hostit's own state and the account's SSH keys: callers
+	// may neither read them through the API nor overwrite them. Other dotfiles
+	// are merely hidden from listings (useradd copies shell dotfiles from
+	// /etc/skel, which are noise for an agent) but stay writable, so an app can
+	// still have its own .env or .dockerignore.
+	protectedDirs = []string{".hostit/", ".ssh/", ".config/", ".local/", ".cache/"}
 )
 
 // FileInfo describes one file in an app's home directory
@@ -81,12 +87,12 @@ func (m *Manager) ListFiles(name string) ([]*FileInfo, error) {
 			return nil
 		}
 		if d.IsDir() {
-			if isHidden(rel + "/") {
+			if isHiddenFromListing(rel + "/") {
 				return filepath.SkipDir
 			}
 			return nil
 		}
-		if isHidden(rel) {
+		if isHiddenFromListing(rel) {
 			return nil
 		}
 		info, infoErr := d.Info()
@@ -184,7 +190,7 @@ func (m *Manager) safePath(name, relPath string) (string, error) {
 	if cleaned == "" || cleaned == "." {
 		return "", fmt.Errorf("%w: invalid path %q", ErrInvalid, relPath)
 	}
-	if isHidden(cleaned) {
+	if isProtected(cleaned) {
 		return "", fmt.Errorf("%w: %q is managed by hostit", ErrInvalid, relPath)
 	}
 	home := m.appHome(name)
@@ -201,9 +207,23 @@ func (m *Manager) chownToApp(name, full string) error {
 	return m.ops.ChownToUser(name, full)
 }
 
-func isHidden(rel string) bool {
-	for _, prefix := range strings.Split(hiddenDirs, ",") {
+// isProtected reports paths hostit manages on the app's behalf
+func isProtected(rel string) bool {
+	for _, prefix := range protectedDirs {
 		if strings.HasPrefix(rel, prefix) || rel == strings.TrimSuffix(prefix, "/") {
+			return true
+		}
+	}
+	return false
+}
+
+// isHiddenFromListing additionally drops dotfiles from what an agent is shown
+func isHiddenFromListing(rel string) bool {
+	if isProtected(rel) {
+		return true
+	}
+	for _, segment := range strings.Split(rel, "/") {
+		if strings.HasPrefix(segment, ".") {
 			return true
 		}
 	}

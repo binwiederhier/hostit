@@ -257,8 +257,50 @@ p {
   margin: 14px 0 22px;
 }
 
-.created-card {
-  border-color: var(--accent);
+/* App detail page */
+.crumb {
+  margin: 0 0 10px;
+  font-size: 13px;
+}
+
+.app-status {
+  margin: -8px 0 16px;
+}
+
+.open-link {
+  margin-left: 10px;
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.open-link:hover {
+  color: var(--accent);
+}
+
+/* The prompt block is the centerpiece of the app page: big, dark, copyable */
+.prompt-card {
+  border-left: 3px solid var(--accent);
+}
+
+.prompt-block {
+  margin: 14px 0 0;
+  padding: 16px;
+}
+
+.prompt-block pre {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--term-text);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  padding-right: 120px;
+}
+
+.danger-card {
+  border-color: var(--danger);
 }
 
 /* Buttons */
@@ -679,5 +721,19 @@ th:last-child {
   .term pre {
     padding-right: 0;
     padding-top: 22px;
+  }
+
+  .prompt-block {
+    padding: 12px;
+  }
+
+  .prompt-block pre {
+    padding-right: 0;
+    padding-top: 34px;
+  }
+
+  .open-link {
+    display: block;
+    margin-left: 0;
   }
 }

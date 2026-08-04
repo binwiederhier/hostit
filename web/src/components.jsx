@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from "react";
 
 // Copies text to the clipboard with a "Copied!" confirmation; falls back to
 // a hidden textarea + execCommand for non-secure contexts.
-export const CopyButton = ({ text, small = true, children }) => {
+export const CopyButton = ({ text, small = true, disabled = false, children }) => {
   const [copied, setCopied] = useState(false);
   const timer = useRef(null);
   useEffect(() => () => clearTimeout(timer.current), []);
@@ -27,7 +27,7 @@ export const CopyButton = ({ text, small = true, children }) => {
     timer.current = setTimeout(() => setCopied(false), 1500);
   };
   return (
-    <button type="button" className={`btn${small ? " btn-small" : ""}`} onClick={copy}>
+    <button type="button" className={`btn${small ? " btn-small" : ""}`} onClick={copy} disabled={disabled}>
       {copied ? "Copied!" : children || "Copy"}
     </button>
   );

@@ -63,10 +63,20 @@ func TestListFiles(t *testing.T) {
 	}
 	assert.Contains(t, names, "index.html")
 	assert.Contains(t, names, "static/site.css")
-	// Internal state is not part of the app's file listing
+	// Neither hostit's state nor the shell dotfiles useradd copies from
+	// /etc/skel belong in what an agent sees
+	require.NoError(t, os.WriteFile(filepath.Join(m.appHome("blog"), ".bashrc"), []byte("x"), 0644))
+	require.NoError(t, os.MkdirAll(filepath.Join(m.appHome("blog"), ".ssh"), 0700))
+	require.NoError(t, os.WriteFile(filepath.Join(m.appHome("blog"), ".ssh", "authorized_keys"), []byte("k"), 0600))
+	files, err = m.ListFiles("blog")
+	require.NoError(t, err)
+	names = names[:0]
+	for _, f := range files {
+		names = append(names, f.Path)
+	}
+	assert.Contains(t, names, "index.html")
 	for _, n := range names {
-		assert.False(t, strings.HasPrefix(n, ".hostit/"), "internal files must be hidden: %s", n)
-		assert.False(t, strings.HasPrefix(n, ".ssh/"), "keys must be hidden: %s", n)
+		assert.False(t, strings.HasPrefix(n, "."), "hidden entries must not be listed: %s", n)
 	}
 }
 
