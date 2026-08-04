@@ -61,20 +61,22 @@ const AppRow = ({ app }) => (
         {app.name}
       </Link>
     </td>
+    {/* What the app says it is, from its hostit.yml */}
+    <td className="cell-description">{app.description || <span className="cell-muted">no description yet</span>}</td>
     <td>{formatUsage(app.memory_mb, app.memory_limit_mb)}</td>
     <td>
       {formatUsage(app.disk_mb, app.disk_limit_mb)}
       {app.over_quota && <span className="badge badge-danger">over quota</span>}
     </td>
     <td className="cell-actions">
-      <div className="btn-row">
-        {/* Seeing the app is the common case, so it gets the accent */}
-        <a className="btn btn-small btn-primary" href={app.url} target="_blank" rel="noreferrer">
-          Open
-        </a>
+      <div className="btn-row btn-row-end">
         <Link className="btn btn-small" to={`/app/${app.name}`}>
           Manage
         </Link>
+        {/* Seeing the app is the common case, so it gets the accent and comes last */}
+        <a className="btn btn-small btn-primary" href={app.url} target="_blank" rel="noreferrer">
+          Open app
+        </a>
       </div>
     </td>
   </tr>
@@ -165,10 +167,11 @@ const Dashboard = ({ account, refreshAccount }) => {
           {apps !== null && apps.length > 0 && (
             <>
               <div className="table-wrap">
-                <table>
+                <table className="table-rows">
                   <thead>
                     <tr>
                       <th>Name</th>
+                      <th>Description</th>
                       <th>RAM</th>
                       <th>Disk</th>
                       <th aria-label="Actions" />

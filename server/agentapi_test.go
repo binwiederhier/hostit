@@ -12,6 +12,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"heckel.io/hostit/appctl"
 )
 
 func TestAgentInfoIsSelfExplanatory(t *testing.T) {
@@ -359,4 +360,24 @@ func TestLogLinesAreBounded(t *testing.T) {
 	assert.Equal(t, agentLogLines, logLines("0"))
 	assert.Equal(t, agentLogLines, logLines("nonsense"))
 	assert.Equal(t, 50, logLines("50"))
+}
+
+func TestGuideExplainsTheLayoutAndTheBuildChoice(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	rr := request(t, s.API(), "GET", "/api/info", "", testToken)
+	require.Equal(t, http.StatusOK, rr.Code)
+	var guide apiAgentInfoResponse
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &guide))
+
+	// An agent must not have to guess where anything goes
+	for _, dir := range []string{appctl.PublicDir, appctl.BinDir, appctl.LogDir, appctl.SrcDir} {
+		assert.Contains(t, guide.Layout, dir+"/", "the layout must name %s/", dir)
+	}
+	assert.Contains(t, guide.HostitYml, "static: "+appctl.PublicDir)
+
+	// Not everyone can produce a linux/amd64 binary, so say both options exist
+	assert.Contains(t, guide.SuggestedStack, "upload")
+	assert.Contains(t, guide.SuggestedStack, "compile it here")
+	assert.Contains(t, guide.Runtimes, "go")
 }

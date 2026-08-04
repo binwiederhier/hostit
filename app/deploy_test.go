@@ -155,8 +155,7 @@ func TestLogsWorkspaceModeReadsFile(t *testing.T) {
 	m, _, _ := newTestDeployManager(t)
 	createTestApp(t, m, "blog")
 	writeAppFile(t, m, "blog", "hostit.yml", "run: ./server")
-	require.NoError(t, os.MkdirAll(filepath.Join(m.appHome("blog"), ".hostit"), 0755))
-	writeAppFile(t, m, "blog", ".hostit/app.log", "line1\nline2\nline3\n")
+	writeAppFile(t, m, "blog", appctl.LogDir+"/app.log", "line1\nline2\nline3\n")
 	out, err := m.Logs("blog", 2)
 	require.NoError(t, err)
 	assert.Equal(t, "line2\nline3\n", out)
@@ -246,7 +245,9 @@ func createTestApp(t *testing.T, m *Manager, name string) *store.App {
 
 func writeAppFile(t *testing.T, m *Manager, name, filename, content string) {
 	t.Helper()
-	require.NoError(t, os.WriteFile(filepath.Join(m.appHome(name), filename), []byte(content), 0600))
+	full := filepath.Join(m.appHome(name), filename)
+	require.NoError(t, os.MkdirAll(filepath.Dir(full), 0o755))
+	require.NoError(t, os.WriteFile(full, []byte(content), 0600))
 }
 
 func mustLoadConfig(t *testing.T, m *Manager, name string) *appctl.AppConfig {
@@ -304,10 +305,10 @@ func TestLogsCannotBeSymlinkedToAnythingElse(t *testing.T) {
 
 	secret := filepath.Join(t.TempDir(), "server.yml")
 	require.NoError(t, os.WriteFile(secret, []byte("admin-token: hunter2\n"), 0o600))
-	// The app user owns .hostit/ inside their container, so they can point the
-	// log at anything the daemon (root) can read
-	require.NoError(t, os.MkdirAll(filepath.Join(home, ".hostit"), 0o755))
-	require.NoError(t, os.Symlink(secret, filepath.Join(home, ".hostit", "app.log")))
+	// The app user owns log/ inside their container, so they can point the log
+	// at anything the daemon (root) can read
+	require.NoError(t, os.MkdirAll(filepath.Join(home, appctl.LogDir), 0o755))
+	require.NoError(t, os.Symlink(secret, filepath.Join(home, appctl.LogDir, "app.log")))
 
 	out, err := m.Logs("blog", 100)
 	assert.NotContains(t, out, "hunter2", "logs must never read through a symlink")

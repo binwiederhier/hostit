@@ -8,6 +8,14 @@ import (
 type Mode string
 
 const (
+	// An app's home has a place for each kind of thing, so an agent (or a person)
+	// never has to guess where something belongs, and so hostit knows where to
+	// look without being told
+	PublicDir = "public" // Files served on the web (static mode serves exactly this)
+	BinDir    = "bin"    // Compiled binaries and scripts the app runs
+	LogDir    = "log"    // The app's output, written by the hostit agent
+	SrcDir    = "src"    // Source, if the app keeps its source on the host
+
 	// ModeProcess runs the app's "run" command directly (must listen on $PORT)
 	ModeProcess = Mode("process")
 	// ModeContainer runs the app as a podman container of the app's own image

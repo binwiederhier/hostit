@@ -197,6 +197,7 @@ type apiAgentInfoResponse struct {
 	WhatIsThis     string             `json:"what_is_this"`
 	Auth           string             `json:"auth"`
 	Workflow       []string           `json:"workflow"`
+	Layout         string             `json:"layout"`
 	HostitYml      string             `json:"hostit_yml"`
 	Runtimes       string             `json:"runtimes"`
 	SuggestedStack string             `json:"suggested_stack"`

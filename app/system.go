@@ -195,6 +195,16 @@ func (o *systemOps) WriteScaffold(username, home string, files map[string]string
 		if _, err := root.Lstat(name); err == nil {
 			continue
 		}
+		// Scaffold paths may be nested (public/index.html), and each directory
+		// created on the way has to belong to the app user too
+		if dir := path.Dir(name); dir != "." {
+			if err := root.MkdirAll(dir, 0o755); err != nil {
+				return err
+			}
+			if err := root.Lchown(dir, uid, gid); err != nil {
+				return err
+			}
+		}
 		if err := root.WriteFile(name, []byte(content), 0o644); err != nil {
 			return err
 		}

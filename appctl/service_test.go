@@ -203,3 +203,15 @@ func TestValidateRefusesABuildContextOutsideTheApp(t *testing.T) {
 		assert.NoError(t, c.Validate(), "build %q must be allowed", build)
 	}
 }
+
+func TestStaticModeAlwaysServesPublic(t *testing.T) {
+	t.Parallel()
+	// One place for the files an app puts on the web, whatever the config says:
+	// an agent that writes to public/ is always right
+	for _, static := range []string{"public", ".", "site", "true"} {
+		c := &AppConfig{Static: static}
+		require.NoError(t, c.Validate())
+		assert.Equal(t, ModeStatic, c.Mode())
+		assert.Contains(t, c.Command("/usr/bin/hostit"), `--dir "public"`, "static: %q", static)
+	}
+}

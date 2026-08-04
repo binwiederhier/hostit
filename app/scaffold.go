@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"heckel.io/hostit/appctl"
 
 	"heckel.io/hostit/store"
 )
@@ -13,7 +14,7 @@ const (
 #
 # This is the stub app: it serves this directory as static files. Replace it.
 
-static: "."
+static: public
 
 # --- Description: one line saying what this app is ---
 # Uncomment and keep it current. The owner's web page shows it, and it is what
@@ -21,15 +22,14 @@ static: "."
 #
 # description: A tiny app that does X
 #
-# --- Static mode (above): hostit serves a directory of files ---
+# --- Static mode (above): hostit serves public/ ---
 # Nothing else needed; good for plain HTML, or the built output of any frontend.
-#
-# static: public
+# The directory served is always public/, whatever this value says.
 #
 # --- Run mode: hostit runs your command in the workspace container ---
 # The command MUST listen on 0.0.0.0:$PORT ($PORT is set for you).
 #
-# run: ./server
+# run: ./bin/server
 # env:
 #   DEBUG: "true"
 #
@@ -48,8 +48,18 @@ static: "."
 Your app is served at:  %s
 Your assigned port:     %d
 
-RIGHT NOW THIS IS A STUB: the placeholder page in index.html is being served as
-static files (see "static:" in hostit.yml). Replace it with your own app.
+RIGHT NOW THIS IS A STUB: the placeholder page in public/index.html is being
+served as static files (see "static:" in hostit.yml). Replace it with your app.
+
+Where things go
+---------------
+  public/   files served on the web -- static mode serves exactly this directory
+  bin/      binaries and scripts your app runs (run: ./bin/myapp)
+  log/      your app's output, written by hostit ("hostit logs" reads it)
+  src/      your source, if you keep it here
+  hostit.yml, README.md at the top
+
+Directories are created as you write into them.
 
 What is installed
 -----------------
@@ -60,12 +70,20 @@ here; installed packages last until the container is recreated).
 Suggested stack
 ---------------
 A single Go binary that embeds its frontend is the easiest thing to run here:
-one file to upload, no runtime to install, starts instantly.
+one file, no runtime to install, starts instantly.
 
     //go:embed all:web/dist
     var site embed.FS      // serve this with http.FileServer
 
-    hostit.yml:  run: ./myapp     # listening on 0.0.0.0:$PORT
+    hostit.yml:  run: ./bin/myapp     # listening on 0.0.0.0:$PORT
+
+You can build it either way: compile it wherever you work and upload the binary
+to bin/, or put the source in src/ and compile it here (the Go toolchain is
+installed). Compiling here is the safer default if your machine cannot produce a
+linux/amd64 binary; uploading a prebuilt one is faster.
+
+    cd src && go build -o ../bin/myapp .        # ...or, from elsewhere:
+    CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o myapp .
 
 Python, Node and PHP work just as well if you prefer them, and plain HTML needs
 nothing at all (keep "static:").
@@ -75,6 +93,7 @@ How it works
 - SSH puts you INSIDE your app's container: you are root in here, and you cannot
   see other apps. Your files live in this home directory, which is the same
   directory scp/rsync/sftp write to.
+- Static mode always serves public/, whatever "static:" says.
 - Edit hostit.yml to pick a mode: "static:" (serve files), "run:" (your command,
   must listen on 0.0.0.0:$PORT, PORT=%d) or "image:"/"build:" (your own image).
 - Then run:
@@ -174,10 +193,10 @@ hostit up</pre>
 func (m *Manager) scaffoldFiles(name string, port int) map[string]string {
 	url := m.URL(&store.App{Name: name, Port: port})
 	return map[string]string{
-		"hostit.yml": scaffoldHostitYml,
-		"HOSTIT.txt": fmt.Sprintf(scaffoldHostitTxt, url, port, WorkspaceRuntimes, port, name),
-		"README.md":  fmt.Sprintf(scaffoldAppReadme, name, url, WorkspaceRuntimes),
-		"index.html": demoPage(name, m.config.SSHHostname()),
+		"hostit.yml":                     scaffoldHostitYml,
+		"HOSTIT.txt":                     fmt.Sprintf(scaffoldHostitTxt, url, port, WorkspaceRuntimes, port, name),
+		"README.md":                      fmt.Sprintf(scaffoldAppReadme, name, url, WorkspaceRuntimes),
+		appctl.PublicDir + "/index.html": demoPage(name, m.config.SSHHostname()),
 	}
 }
 

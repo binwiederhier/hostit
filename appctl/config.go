@@ -30,7 +30,7 @@ var (
 // AppConfig is the per-app hostit.yml, written by the app owner (or Claude)
 type AppConfig struct {
 	Description   string            `yaml:"description"`    // One or two lines on what this app is, kept current by whoever builds it
-	Static        string            `yaml:"static"`         // Static mode: directory to serve ("." for the app dir)
+	Static        string            `yaml:"static"`         // Static mode: any value selects it; the directory served is always PublicDir
 	Run           string            `yaml:"run"`            // Process mode: shell command, must listen on $PORT
 	Image         string            `yaml:"image"`          // Container mode: image to run
 	Build         string            `yaml:"build"`          // Container mode: build context dir with a Dockerfile
@@ -149,10 +149,12 @@ func (c *AppConfig) Mode() Mode {
 }
 
 // Command returns what the agent runs inside the workspace container. Static
-// apps get hostit's own file server, so they need no runtime of their own.
+// apps get hostit's own file server, so they need no runtime of their own, and
+// it always serves PublicDir: one place for the files an app puts on the web,
+// whatever the config says.
 func (c *AppConfig) Command(hostitBin string) string {
 	if c.Mode() == ModeStatic {
-		return fmt.Sprintf("%s static --dir %q", hostitBin, c.Static)
+		return fmt.Sprintf("%s static --dir %q", hostitBin, PublicDir)
 	}
 	return c.Run
 }

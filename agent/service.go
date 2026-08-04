@@ -265,7 +265,7 @@ func (a *Agent) sleepInterruptible() bool {
 // checking the size only on start would let the log grow without bound.
 func (a *Agent) openLog() (*appLog, error) {
 	a.closeLog()
-	dir := filepath.Join(a.home, ".hostit")
+	dir := filepath.Join(a.home, appctl.LogDir)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, err
 	}

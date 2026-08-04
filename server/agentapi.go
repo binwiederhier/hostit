@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"heckel.io/hostit/app"
+	"heckel.io/hostit/appctl"
 	"heckel.io/hostit/config"
 	"heckel.io/hostit/store"
 )
@@ -95,29 +96,40 @@ func (s *Server) agentGuide(appName, description string) *apiAgentInfoResponse {
 			"app unless it is an account token.",
 		Workflow: []string{
 			whereYouAre,
-			"Upload files: PUT /api/" + name + "/files/{path} with the file body, or POST /api/" + name + "/files with a tar archive for many files at once.",
+			"Upload files: PUT /api/" + name + "/files/{path} with the file body, or POST /api/" + name + "/files with a tar archive for many files at once. Put them where they belong (see layout below).",
 			"Write hostit.yml (upload it like any other file) to say how the app runs. See hostit_yml below.",
 			"POST /api/" + name + "/deploy to apply hostit.yml and (re)start the app.",
 			"GET /api/" + name + "/logs if it does not come up; the app must listen on 0.0.0.0:$PORT.",
 			"PUT /api/" + name + "/readme to record what this app is and what you changed, for whoever comes next.",
 			"Keep a one-line \"description:\" in hostit.yml saying what this app is. The owner's web page shows it, and the next session (or a different agent) starts from it instead of from a blank page.",
 		},
+		Layout: "The app's home directory has a place for each kind of thing:\n\n" +
+			"  " + appctl.PublicDir + "/   files served on the web -- static mode serves exactly this directory\n" +
+			"  " + appctl.BinDir + "/      binaries and scripts the app runs (run: ./" + appctl.BinDir + "/myapp)\n" +
+			"  " + appctl.LogDir + "/      the app's output, written by hostit; read it with GET /logs\n" +
+			"  " + appctl.SrcDir + "/      source, if you keep the app's source here\n\n" +
+			"hostit.yml and README.md live at the top. Directories are created as you write into them.",
 		HostitYml: "Three modes, pick one.\n\n" +
 			"1. Static files (simplest, nothing to run):\n" +
-			"     static: .          # or a subdirectory such as: static: public\n\n" +
+			"     static: " + appctl.PublicDir + "   # always serves " + appctl.PublicDir + "/, whatever this says\n\n" +
 			"2. Your own command, run in the workspace container:\n" +
-			"     run: ./myapp       # MUST listen on 0.0.0.0:$PORT; $PORT is provided\n" +
+			"     run: ./" + appctl.BinDir + "/myapp   # MUST listen on 0.0.0.0:$PORT; $PORT is provided\n" +
 			"     (upload binaries with ?mode=755 so they are executable)\n\n" +
 			"3. Your own container image:\n" +
 			"     image: docker.io/library/nginx:alpine   # or: build: .\n" +
 			"     container-port: 80\n\n" +
 			"Optional everywhere: env: {KEY: value}, and description: a one-liner about the app. " +
-			"Image mode also takes volumes: [./data:/data].",
+			"Image mode also takes volumes: [./data:/data] (sources must stay inside the app).",
 		Runtimes: app.WorkspaceRuntimes + ". Install anything else inside the container with apt-get; " +
 			"a new app starts as a stub serving a placeholder page.",
 		SuggestedStack: "A single Go binary that embeds its frontend (go:embed) is the easiest thing to run here: " +
-			"one file to upload, no runtime to install, instant start. Use run: ./myapp listening on 0.0.0.0:$PORT. " +
-			"Python, Node and PHP work equally well, and a plain HTML site needs only static:.",
+			"one file, no runtime to install, instant start. Use run: ./" + appctl.BinDir + "/myapp listening on 0.0.0.0:$PORT. " +
+			"Python, Node and PHP work equally well, and a plain HTML site needs only static:.\n\n" +
+			"You can either build the binary wherever you are and upload it, or upload the source to " + appctl.SrcDir + "/ " +
+			"and compile it here -- the container has the Go toolchain (and python3, node and php). Compiling here " +
+			"is the better default when you are not sure your machine can produce a linux/amd64 binary, or has no " +
+			"toolchain at all; uploading a prebuilt binary is faster and keeps the app's disk small. " +
+			"Cross-compiling elsewhere works too: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o " + appctl.BinDir + "/myapp .",
 		Auth: "Send the token as: Authorization: Bearer <token>",
 		Endpoints: []apiAgentEndpoint{
 			{Method: "GET", Path: "/api/" + name + "/info", What: "This document plus the app's URL, state, README, file list and hostit.yml"},

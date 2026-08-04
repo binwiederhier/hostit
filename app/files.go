@@ -32,7 +32,7 @@ const (
 	// homeMode is the app home's permissions: the app user and hostit only
 	homeMode = 0o750
 	// appLogFile is where the agent records an app's output, below the app's home
-	appLogFile = ".hostit/app.log"
+	appLogFile = appctl.LogDir + "/app.log"
 	// maxLogRead caps how much of that log a request reads; the agent rotates it
 	// at 10 MB, and a reader only ever wants the tail
 	maxLogRead = 16 * 1024 * 1024

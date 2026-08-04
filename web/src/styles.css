@@ -715,8 +715,42 @@ th:last-child {
   text-align: right;
 }
 
+/* Actions belong on the right edge, whatever the column width */
+.btn-row-end {
+  justify-content: flex-end;
+}
+
 .app-link {
   font-weight: 600;
+}
+
+/* The app list is the point of the dashboard, so give it more room than a
+   dense table and a banded background to follow a row across. */
+.table-rows td {
+  padding-top: 12px;
+  padding-bottom: 12px;
+}
+
+.table-rows tbody tr:nth-child(odd) {
+  background: var(--surface-2);
+}
+
+.table-rows td:first-child {
+  padding-left: 10px;
+}
+
+.table-rows td:last-child {
+  padding-right: 10px;
+}
+
+.table-rows .app-link {
+  font-size: 15px;
+}
+
+.cell-description {
+  color: var(--text);
+  font-size: 13px;
+  max-width: 34ch;
 }
 
 /* Badges */

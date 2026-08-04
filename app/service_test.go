@@ -270,7 +270,11 @@ func (f *fakeSystemOps) WriteScaffold(username, home string, files map[string]st
 	}
 	for name, content := range files {
 		f.scaffolds[username] = append(f.scaffolds[username], name)
-		if err := os.WriteFile(filepath.Join(home, name), []byte(content), 0o644); err != nil {
+		full := filepath.Join(home, name)
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			return err
+		}
+		if err := os.WriteFile(full, []byte(content), 0o644); err != nil {
 			return err
 		}
 	}

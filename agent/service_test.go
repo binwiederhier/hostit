@@ -10,6 +10,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"heckel.io/hostit/appctl"
 )
 
 func TestAgentRunsAndRestartsCommand(t *testing.T) {
@@ -36,7 +37,7 @@ func TestAgentWritesLogFile(t *testing.T) {
 	}()
 	defer a.Stop()
 	require.Eventually(t, func() bool {
-		b, err := os.ReadFile(filepath.Join(home, ".hostit", "app.log"))
+		b, err := os.ReadFile(filepath.Join(home, appctl.LogDir, "app.log"))
 		return err == nil && strings.Contains(string(b), "hello-from-app")
 	}, 5*time.Second, 20*time.Millisecond)
 }
@@ -159,9 +160,9 @@ func TestAppLogRotatesWhileRunning(t *testing.T) {
 		_, err := w.Write(chunk)
 		require.NoError(t, err)
 	}
-	stat, err := os.Stat(filepath.Join(home, ".hostit", "app.log"))
+	stat, err := os.Stat(filepath.Join(home, appctl.LogDir, "app.log"))
 	require.NoError(t, err)
 	assert.LessOrEqual(t, stat.Size(), int64(logMaxSize), "the live log must stay under the cap")
-	_, err = os.Stat(filepath.Join(home, ".hostit", "app.log.old"))
+	_, err = os.Stat(filepath.Join(home, appctl.LogDir, "app.log.old"))
 	assert.NoError(t, err, "the previous log must be kept as .old")
 }

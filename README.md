@@ -271,6 +271,31 @@ echo | openssl s_client -connect anything.apps.example.com:443 \
 Blanking the DNS settings returns hostit to per-app certificates; certificates
 already in `<data-dir>/certs` keep working either way.
 
+## Where things go in an app
+
+Every app's home has a place for each kind of thing, so neither a person nor an
+agent has to guess:
+
+```
+public/      files served on the web -- static mode serves exactly this
+bin/         binaries and scripts the app runs (run: ./bin/myapp)
+log/         the app's output, written by hostit ("hostit logs" reads it)
+src/         source, if the app keeps its source on the host
+hostit.yml   how the app runs
+README.md    what the app is, and its worklog
+```
+
+Directories appear as you write into them. `static:` always serves `public/`,
+whatever value it carries.
+
+A compiled app can go either way: build the binary wherever you work and upload
+it to `bin/`, or put the source in `src/` and compile it in the container -- the
+workspace ships the Go toolchain (plus python3, node and php). Compiling in the
+container is the better default when the machine driving the API has no
+toolchain, or cannot produce a `linux/amd64` binary; uploading a prebuilt binary
+is faster and keeps the app smaller. The agent guide at `/api/{app}/info` says
+all of this too, so an assistant can choose for itself.
+
 ## Create an app
 
 Via the REST API (`https://hostit.<base-domain>`, Bearer token: the global admin

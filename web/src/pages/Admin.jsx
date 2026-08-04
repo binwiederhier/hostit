@@ -137,13 +137,13 @@ const AppRow = ({ app }) => (
     </td>
     <td className="cell-muted">{formatDate(app.created_at)}</td>
     <td className="cell-actions">
-      <div className="btn-row">
-        <a className="btn btn-small btn-primary" href={app.url} target="_blank" rel="noreferrer">
-          Open
-        </a>
+      <div className="btn-row btn-row-end">
         <Link className="btn btn-small" to={`/app/${app.name}`}>
           Manage
         </Link>
+        <a className="btn btn-small btn-primary" href={app.url} target="_blank" rel="noreferrer">
+          Open app
+        </a>
       </div>
     </td>
   </tr>

@@ -41,7 +41,7 @@ CMD ["/bin/bash"]
 
 	// WorkspaceRuntimes is what the workspace image ships, quoted verbatim to
 	// users and agents so nobody has to guess what is available
-	WorkspaceRuntimes = "python3 (with venv and pip), node and npm, php-cli, go, plus git, curl and rsync"
+	WorkspaceRuntimes = "python3 (with venv and pip), node and npm, php-cli, the go toolchain (go build works in here), plus git, curl and rsync"
 )
 
 // IDs are the identity ranges a container is mapped into: the app's own uid/gid
