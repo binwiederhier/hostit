@@ -37,12 +37,14 @@ hostit.apps.x.com -> |   (root daemon)    |     web app + REST API
                        v            |
    app user "blog" (own uid) -------+
      home: /srv/hostit/apps/blog    <- 0750; scp/rsync/sftp write here
-     systemd --user hostit-app      -> podman start --attach
-       +----------------- container "hostit-app" (rootless) ---------------+
-       |  PID 1: hostit agent -> runs the `run:` command on 0.0.0.0:$PORT  |
-       |  /home/blog  <- the home above, bind-mounted                      |
-       |  /usr/bin/hostit + /run/hostit/hostit.sock <- so the CLI works    |
-       +-------------------------------------------------------------------+
+     systemd hostit-app@blog        -> podman start --attach hostit-app-blog
+       +--------------- container "hostit-app-blog" ----------------------+
+       |  uidmap 0:<blog's uid>:1  <- container root IS the app's user    |
+       |  PID 1: hostit agent -> runs the `run:` command on 0.0.0.0:$PORT |
+       |  /home/blog  <- the home above, bind-mounted                     |
+       |  /usr/bin/hostit + /run/hostit/hostit.sock <- so the CLI works   |
+       |  own network stack (slirp4netns): no peers, no host loopback     |
+       +------------------------------------------------------------------+
 ```
 
 SSH logins are handed to `/usr/bin/hostit-shell`, which execs the session into
