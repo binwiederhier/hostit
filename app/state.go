@@ -4,6 +4,14 @@ import (
 	"encoding/json"
 	"strconv"
 	"strings"
+	"time"
+)
+
+const (
+	// stateTimeout bounds the commands behind an app listing. podman serializes
+	// on its own lock, so a create or pull in flight can take minutes; the
+	// dashboard shows stale-but-instant numbers instead of waiting.
+	stateTimeout = 2 * time.Second
 )
 
 // State is what an app is doing right now: whether its service is up and how
@@ -39,7 +47,7 @@ func (m *Manager) runningStates(names []string) map[string]bool {
 	for _, name := range names {
 		args = append(args, unitName(name))
 	}
-	out, _ := m.runner.Run(args...) // Non-zero exit just means "something is inactive"
+	out, _ := m.runner.RunTimeout(stateTimeout, args...) // Non-zero exit just means "something is inactive"
 	lines := strings.Split(strings.TrimSpace(out), "\n")
 	running := make(map[string]bool, len(names))
 	for i, name := range names {
@@ -51,7 +59,7 @@ func (m *Manager) runningStates(names []string) map[string]bool {
 // memoryUsage reads current container memory from one podman stats call
 func (m *Manager) memoryUsage() map[string]int {
 	usage := make(map[string]int)
-	out, err := m.runner.Run("podman", "stats", "--no-stream", "--format", "json")
+	out, err := m.runner.RunTimeout(stateTimeout, "podman", "stats", "--no-stream", "--format", "json")
 	if err != nil {
 		return usage
 	}

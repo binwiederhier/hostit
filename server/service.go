@@ -45,7 +45,7 @@ type Server struct {
 	// usernameForUID maps a peer-credential UID to a username; overridden in tests
 	usernameForUID func(uid int) (string, error)
 	// exchangeGoogleCode trades an OAuth code for an identity; overridden in tests
-	exchangeGoogleCode func(code string) (*googleIdentity, error)
+	exchangeGoogleCode func(code, host string) (*googleIdentity, error)
 
 	servers []*http.Server // Running HTTP servers, for Stop
 }
@@ -187,7 +187,7 @@ func (s *Server) runTLSServers(g *errgroup.Group) error {
 // allowTLSHost decides whether certmagic may request a certificate for a hostname;
 // only the admin API host and registered apps are allowed
 func (s *Server) allowTLSHost(name string) error {
-	if name == s.config.APIHostname() {
+	if s.config.IsWebHostname(name) {
 		return nil
 	}
 	appName, ok := s.appNameFromHost(name)

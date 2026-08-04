@@ -274,6 +274,10 @@ func newFakeRunner() *fakeRunner {
 	}
 }
 
+func (f *fakeRunner) RunTimeout(timeout time.Duration, args ...string) (string, error) {
+	return f.Run(args...)
+}
+
 func (f *fakeRunner) Run(args ...string) (string, error) {
 	cmd := strings.Join(args, " ")
 	f.mu.Lock()

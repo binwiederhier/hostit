@@ -75,7 +75,7 @@ func (s *Server) handleGoogleLogin(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, s.cookie(stateCookieName, state, int(oauthTimeout.Seconds()*40)))
 	params := url.Values{
 		"client_id":     {s.config.GoogleClientID},
-		"redirect_uri":  {s.config.RedirectURL()},
+		"redirect_uri":  {s.config.RedirectURL(hostOnly(r.Host))},
 		"response_type": {"code"},
 		"scope":         {googleScopes},
 		"state":         {state},
@@ -101,7 +101,7 @@ func (s *Server) handleGoogleCallback(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, errors.New("missing authorization code"))
 		return
 	}
-	identity, err := s.exchangeGoogleCode(code)
+	identity, err := s.exchangeGoogleCode(code, hostOnly(r.Host))
 	if err != nil {
 		writeError(w, http.StatusBadGateway, fmt.Errorf("cannot verify Google login: %w", err))
 		return
@@ -133,14 +133,14 @@ func (s *Server) handleLogout(w http.ResponseWriter, _ *http.Request) {
 
 // exchangeGoogleCodeLive trades an authorization code for the user's identity;
 // tests replace this via the Server.exchangeGoogleCode field
-func (s *Server) exchangeGoogleCodeLive(code string) (*googleIdentity, error) {
+func (s *Server) exchangeGoogleCodeLive(code, host string) (*googleIdentity, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), oauthTimeout)
 	defer cancel()
 	form := url.Values{
 		"code":          {code},
 		"client_id":     {s.config.GoogleClientID},
 		"client_secret": {s.config.GoogleClientSecret},
-		"redirect_uri":  {s.config.RedirectURL()},
+		"redirect_uri":  {s.config.RedirectURL(host)},
 		"grant_type":    {"authorization_code"},
 	}
 	req, err := http.NewRequestWithContext(ctx, "POST", googleTokenURL, strings.NewReader(form.Encode()))

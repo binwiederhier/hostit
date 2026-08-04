@@ -43,6 +43,20 @@ func TestStatesReadsRunningAndMemory(t *testing.T) {
 	assert.Equal(t, 0, states["two"].MemoryMB, "no stats line means no usage")
 }
 
+func TestStatesDegradeRatherThanBlock(t *testing.T) {
+	t.Parallel()
+	m, _, runner := newTestDeployManager(t)
+	createTestApp(t, m, "one")
+	// podman is busy (a create or pull holds its lock), so the bounded call
+	// fails; the listing must still answer, just without memory numbers
+	runner.failOn("podman stats", assert.AnError)
+	runner.returns("systemctl is-active", "active\n")
+	states := m.States([]string{"one"})
+	require.Len(t, states, 1)
+	assert.True(t, states["one"].Running, "systemd still answers")
+	assert.Equal(t, 0, states["one"].MemoryMB)
+}
+
 func TestStatesWithNoApps(t *testing.T) {
 	t.Parallel()
 	m, _, _ := newTestDeployManager(t)

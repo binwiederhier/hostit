@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"slices"
 	"sync"
+	"time"
 
 	"heckel.io/hostit/config"
 	"heckel.io/hostit/store"
@@ -61,6 +62,10 @@ type SystemOps interface {
 // container and service work itself, on behalf of app users
 type Runner interface {
 	Run(args ...string) (string, error)
+	// RunTimeout is for calls whose answer is nice to have but must not block a
+	// request: podman serializes on its own lock, so a slow create or pull would
+	// otherwise stall everything that asks for state
+	RunTimeout(timeout time.Duration, args ...string) (string, error)
 }
 
 // PortRule restricts loopback connects to an app port to root and the owning UID

@@ -2,6 +2,7 @@ package app
 
 import (
 	"os"
+	"time"
 )
 
 // NopSystemOps is a SystemOps that does nothing; useful for tests and dry runs
@@ -74,5 +75,9 @@ func (o *NopSystemOps) BuildImage(contextDir, tag string) error {
 }
 
 func (r *NopRunner) Run(args ...string) (string, error) {
+	return "", nil
+}
+
+func (r *NopRunner) RunTimeout(timeout time.Duration, args ...string) (string, error) {
 	return "", nil
 }

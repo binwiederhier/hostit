@@ -280,7 +280,9 @@ func TestProxyAppDownPage(t *testing.T) {
 func TestProxyUnknownHost(t *testing.T) {
 	t.Parallel()
 	s := newTestServer(t)
-	for _, u := range []string{"http://example.org/", "http://apps.example.com/", "http://a.b.apps.example.com/"} {
+	// The base domain now serves the web app, so only genuinely foreign or
+	// multi-level hosts are nothing
+	for _, u := range []string{"http://example.org/", "http://a.b.apps.example.com/"} {
 		rr := proxyRequest(t, s, u)
 		require.Equal(t, http.StatusNotFound, rr.Code, "url %s", u)
 	}
@@ -299,7 +301,7 @@ func TestProxyAppDown(t *testing.T) {
 func TestProxyRoutesAPIHost(t *testing.T) {
 	t.Parallel()
 	s := newTestServer(t)
-	rr := proxyRequest(t, s, "http://hostit.apps.example.com/v1/health")
+	rr := proxyRequest(t, s, "http://apps.example.com/v1/health")
 	require.Equal(t, http.StatusOK, rr.Code)
 	assert.Contains(t, rr.Body.String(), `"healthy":true`)
 }

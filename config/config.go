@@ -89,13 +89,18 @@ func (c *Config) WebEnabled() bool {
 	return c.GoogleClientID != "" && c.GoogleClientSecret != ""
 }
 
-// RedirectURL is the OAuth callback URL registered with Google
-func (c *Config) RedirectURL() string {
+// RedirectURL is the OAuth callback URL for a login started on the given host.
+// Google matches it exactly, so the callback must come back to the hostname the
+// user actually visited; every hostname in WebHostnames should be registered.
+func (c *Config) RedirectURL(host string) string {
 	scheme := "https"
 	if c.TLS == TLSOff {
 		scheme = "http"
 	}
-	return fmt.Sprintf("%s://%s/auth/callback", scheme, c.APIHostname())
+	if !c.IsWebHostname(host) {
+		host = c.APIHostname()
+	}
+	return fmt.Sprintf("%s://%s/auth/callback", scheme, host)
 }
 
 // LoadConfig reads a YAML config file on top of the defaults from NewConfig
@@ -143,12 +148,36 @@ func (c *Config) CertNames() []string {
 	return []string{"*." + c.BaseDomain, c.BaseDomain}
 }
 
-// APIHostname returns the hostname the proxy routes to the admin API
+// APIHostname is the canonical hostname of the web app and API: the base domain
+// itself, unless the operator pins another one
 func (c *Config) APIHostname() string {
 	if c.APIHost != "" {
 		return c.APIHost
 	}
-	return "hostit." + c.BaseDomain
+	return c.BaseDomain
+}
+
+// WebHostnames are all hostnames that serve the web app and API. The base
+// domain is the front door; "hostit.<base>" stays valid so links, prompts and
+// OAuth redirects handed out earlier keep working.
+func (c *Config) WebHostnames() []string {
+	hosts := []string{c.APIHostname()}
+	for _, host := range []string{c.BaseDomain, "hostit." + c.BaseDomain} {
+		if host != c.APIHostname() {
+			hosts = append(hosts, host)
+		}
+	}
+	return hosts
+}
+
+// IsWebHostname reports whether a hostname serves the web app and API
+func (c *Config) IsWebHostname(host string) bool {
+	for _, candidate := range c.WebHostnames() {
+		if host == candidate {
+			return true
+		}
+	}
+	return false
 }
 
 // SSHHostname returns the hostname reported to clients for SSH access

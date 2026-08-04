@@ -125,6 +125,29 @@ func TestAdminOnlyEndpoints(t *testing.T) {
 	}
 }
 
+func TestWebIsServedOnTheBaseDomain(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	// The base domain is the front door; the old hostit.<base> keeps working so
+	// links and prompts handed out earlier do not break
+	for _, host := range []string{"apps.example.com", "hostit.apps.example.com"} {
+		rr := proxyRequest(t, s, "http://"+host+"/v1/health")
+		assert.Equal(t, http.StatusOK, rr.Code, "host %s must serve the API", host)
+	}
+	// An app subdomain still goes to the app, not the web UI
+	rr := proxyRequest(t, s, "http://nosuchapp.apps.example.com/v1/health")
+	assert.Equal(t, http.StatusNotFound, rr.Code)
+}
+
+func TestOAuthRedirectFollowsTheHostInUse(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	assert.Equal(t, "https://apps.example.com/auth/callback", s.config.RedirectURL("apps.example.com"))
+	assert.Equal(t, "https://hostit.apps.example.com/auth/callback", s.config.RedirectURL("hostit.apps.example.com"))
+	// Anything else falls back to the canonical hostname
+	assert.Equal(t, "https://apps.example.com/auth/callback", s.config.RedirectURL("evil.example.org"))
+}
+
 func TestGoogleLoginRedirect(t *testing.T) {
 	t.Parallel()
 	s := newTestServer(t)
@@ -171,7 +194,7 @@ func TestGoogleCallbackCreatesSession(t *testing.T) {
 	s.config.GoogleClientID = "client-id"
 	s.config.GoogleClientSecret = "secret"
 	// Stub the token exchange; the real one talks to Google
-	s.exchangeGoogleCode = func(code string) (*googleIdentity, error) {
+	s.exchangeGoogleCode = func(code, host string) (*googleIdentity, error) {
 		assert.Equal(t, "the-code", code)
 		return &googleIdentity{Email: "new@example.com", Name: "New Person", EmailVerified: true}, nil
 	}
@@ -200,7 +223,7 @@ func TestGoogleCallbackRejectsUnverifiedEmail(t *testing.T) {
 	s := newTestServer(t)
 	s.config.GoogleClientID = "client-id"
 	s.config.GoogleClientSecret = "secret"
-	s.exchangeGoogleCode = func(code string) (*googleIdentity, error) {
+	s.exchangeGoogleCode = func(code, host string) (*googleIdentity, error) {
 		return &googleIdentity{Email: "spoof@example.com", EmailVerified: false}, nil
 	}
 	req := httptest.NewRequest("GET", "/auth/callback?code=c&state=st", nil)

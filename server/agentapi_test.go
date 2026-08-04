@@ -33,7 +33,7 @@ func TestAgentInfoIsSelfExplanatory(t *testing.T) {
 	assert.Contains(t, resp.Runtimes, "php")
 	assert.Contains(t, resp.SuggestedStack, "Go binary")
 	assert.Contains(t, resp.HostitYml, "static:")
-	assert.Equal(t, "https://hostit.apps.example.com/api", resp.BaseURL)
+	assert.Equal(t, "https://apps.example.com/api", resp.BaseURL) // The base domain is the front door
 	paths := make([]string, 0, len(resp.Endpoints))
 	for _, e := range resp.Endpoints {
 		paths = append(paths, e.Method+" "+e.Path)

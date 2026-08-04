@@ -115,9 +115,25 @@ func TestAPIHostname(t *testing.T) {
 	t.Parallel()
 	c := NewConfig()
 	c.BaseDomain = "apps.example.com"
-	assert.Equal(t, "hostit.apps.example.com", c.APIHostname())
+	// The base domain is the web app's home unless the operator pins another
+	assert.Equal(t, "apps.example.com", c.APIHostname())
 	c.APIHost = "admin.example.com"
 	assert.Equal(t, "admin.example.com", c.APIHostname())
+}
+
+func TestWebHostnames(t *testing.T) {
+	t.Parallel()
+	c := NewConfig()
+	c.BaseDomain = "apps.example.com"
+	// The base domain, plus the historical hostit.<base> so old links survive
+	assert.Equal(t, []string{"apps.example.com", "hostit.apps.example.com"}, c.WebHostnames())
+	assert.True(t, c.IsWebHostname("apps.example.com"))
+	assert.True(t, c.IsWebHostname("hostit.apps.example.com"))
+	assert.False(t, c.IsWebHostname("blog.apps.example.com"), "an app subdomain is not the web app")
+	assert.False(t, c.IsWebHostname("example.org"))
+	// A pinned hostname is included alongside the defaults
+	c.APIHost = "admin.example.com"
+	assert.Equal(t, []string{"admin.example.com", "apps.example.com", "hostit.apps.example.com"}, c.WebHostnames())
 }
 
 func TestSSHHostname(t *testing.T) {

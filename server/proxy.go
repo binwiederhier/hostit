@@ -19,7 +19,7 @@ func (s *Server) proxyHandler() http.Handler {
 func (s *Server) newProxyHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		host := hostOnly(r.Host)
-		if host == s.config.APIHostname() {
+		if s.config.IsWebHostname(host) {
 			s.api.ServeHTTP(w, r)
 			return
 		}

@@ -109,7 +109,7 @@ const AgentToken = ({ name, token, onRotated }) => {
 
 // Delete behind a type-the-name confirmation, since it takes the container,
 // the files and the user with it.
-const DangerZone = ({ name, cardRef, inputRef, onDeleted }) => {
+const DangerZone = ({ name, onDeleted }) => {
   const [confirm, setConfirm] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -131,7 +131,7 @@ const DangerZone = ({ name, cardRef, inputRef, onDeleted }) => {
   };
 
   return (
-    <div className="card danger-card" ref={cardRef}>
+    <div className="card danger-card">
       <h2>Danger zone</h2>
       <p className="hint">
         Deleting <span className="mono">{name}</span> permanently removes its container, files and user. Type the app name to
@@ -141,7 +141,6 @@ const DangerZone = ({ name, cardRef, inputRef, onDeleted }) => {
       <form className="inline-form" onSubmit={remove}>
         <input
           type="text"
-          ref={inputRef}
           value={confirm}
           onChange={(e) => setConfirm(e.target.value)}
           placeholder={name}
@@ -165,8 +164,6 @@ const AppDetail = ({ account, refreshAccount }) => {
   const [privateKey, setPrivateKey] = useState(location.state ? location.state.private_key || "" : "");
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState("");
-  const dangerRef = useRef(null);
-  const confirmRef = useRef(null);
   const noteTimer = useRef(null);
 
   useEffect(() => () => clearTimeout(noteTimer.current), []);
@@ -218,17 +215,6 @@ const AppDetail = ({ account, refreshAccount }) => {
     }
   };
 
-  // Delete stays behind the type-the-name confirmation; the header button only
-  // takes you down to it.
-  const revealDanger = () => {
-    if (dangerRef.current) {
-      dangerRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
-    }
-    if (confirmRef.current) {
-      confirmRef.current.focus({ preventScroll: true });
-    }
-  };
-
   const deleted = () => {
     refreshAccount();
     navigate("/", { replace: true });
@@ -273,19 +259,24 @@ const AppDetail = ({ account, refreshAccount }) => {
             {app.url}
           </a>
         </div>
+        {/* Only the actions that make sense for the current state: a stopped
+            app can be started, a running one stopped or restarted. Deleting
+            lives in the danger zone at the bottom. */}
         <div className="header-actions">
-          <button type="button" className="btn btn-small" onClick={() => lifecycle("start")} disabled={busy}>
-            Start
-          </button>
-          <button type="button" className="btn btn-small" onClick={() => lifecycle("stop")} disabled={busy}>
-            Stop
-          </button>
-          <button type="button" className="btn btn-small" onClick={() => lifecycle("restart")} disabled={busy}>
-            Restart
-          </button>
-          <button type="button" className="btn btn-small btn-danger" onClick={revealDanger} disabled={busy}>
-            Delete
-          </button>
+          {app.running ? (
+            <>
+              <button type="button" className="btn btn-small btn-primary" onClick={() => lifecycle("restart")} disabled={busy}>
+                {busy ? "Working..." : "Restart"}
+              </button>
+              <button type="button" className="btn btn-small" onClick={() => lifecycle("stop")} disabled={busy}>
+                Stop
+              </button>
+            </>
+          ) : (
+            <button type="button" className="btn btn-small btn-primary" onClick={() => lifecycle("start")} disabled={busy}>
+              {busy ? "Starting..." : "Start"}
+            </button>
+          )}
         </div>
       </div>
       <p className="usage app-status">
@@ -327,7 +318,7 @@ const AppDetail = ({ account, refreshAccount }) => {
 
       <AgentToken name={app.name} token={token} onRotated={setApp} />
 
-      <DangerZone name={app.name} cardRef={dangerRef} inputRef={confirmRef} onDeleted={deleted} />
+      <DangerZone name={app.name} onDeleted={deleted} />
     </>
   );
 };
