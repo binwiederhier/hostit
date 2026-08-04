@@ -52,6 +52,9 @@ const (
 
 	// The no-op UPDATE keeps the original created_at while still letting
 	// RETURNING report it, so re-adding a domain is idempotent and truthful
+	updateAppOwnerQuery        = `UPDATE app SET owner_id = ? WHERE owner_id = ?`
+	updateTokenOwnerByAppQuery = `UPDATE token SET user_id = ? WHERE app_name = ?`
+
 	insertAllowedDomainQuery = `
 		INSERT INTO allowed_domain (domain, created_at) VALUES (?, ?)
 		ON CONFLICT (domain) DO UPDATE SET created_at = created_at
@@ -290,6 +293,30 @@ func (s *Store) AppKeys(appName string) ([]string, error) {
 		keys = append(keys, key)
 	}
 	return keys, rows.Err()
+}
+
+// TransferApps hands every app of one user to another, together with the
+// app-scoped tokens that go with them, and returns the names it moved.
+//
+// The tokens have to move too: they belong to the app, not the person, and
+// deleting the old user afterwards would otherwise take the credentials of apps
+// that are no longer theirs. Account-wide tokens stay behind and die with them.
+func (s *Store) TransferApps(fromUserID, toUserID string) ([]string, error) {
+	apps, err := s.AppsByOwner(fromUserID)
+	if err != nil {
+		return nil, err
+	}
+	moved := make([]string, 0, len(apps))
+	for _, a := range apps {
+		if _, err := s.db.Exec(updateTokenOwnerByAppQuery, toUserID, a.Name); err != nil {
+			return nil, err
+		}
+		moved = append(moved, a.Name)
+	}
+	if _, err := s.db.Exec(updateAppOwnerQuery, toUserID, fromUserID); err != nil {
+		return nil, err
+	}
+	return moved, nil
 }
 
 // AddAllowedDomain allows an email domain, filling in CreatedAt; adding one

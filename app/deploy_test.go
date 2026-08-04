@@ -54,33 +54,16 @@ func TestUpWorkspaceModeUnchangedOnlyReloadsAgent(t *testing.T) {
 	assert.Contains(t, joined, "podman kill --signal HUP hostit-app-blog")
 }
 
-func TestUpImageModeRecreatesOnChange(t *testing.T) {
+func TestUpRejectsTheRemovedContainerMode(t *testing.T) {
 	t.Parallel()
-	m, _, runner := newTestDeployManager(t)
+	m, _, _ := newTestDeployManager(t)
 	createTestApp(t, m, "blog")
+	// An app written against the old "image:" mode must be told, not silently
+	// served as something else
 	writeAppFile(t, m, "blog", "hostit.yml", "image: docker.io/library/nginx:alpine\ncontainer-port: 80")
-	runner.returns("container inspect", "oldhash")
-	runner.reset()
-	msg, err := m.Up("blog")
-	require.NoError(t, err)
-	assert.Contains(t, msg, "deployed")
-	joined := runner.ran()
-	assert.Contains(t, joined, "podman rm --force hostit-app-blog")
-	assert.Contains(t, joined, "podman create")
-	assert.Contains(t, joined, "docker.io/library/nginx:alpine")
-	assert.NotContains(t, joined, "podman build") // No build:, no workspace image needed
-}
-
-func TestUpBuildModeBuildsImage(t *testing.T) {
-	t.Parallel()
-	m, _, runner := newTestDeployManager(t)
-	createTestApp(t, m, "blog")
-	writeAppFile(t, m, "blog", "hostit.yml", "build: .\ncontainer-port: 8080")
-	runner.failOn("container inspect", assert.AnError)
 	_, err := m.Up("blog")
-	require.NoError(t, err)
-	joined := runner.ran()
-	assert.Contains(t, joined, "podman build --tag "+buildImageTag("blog")+" "+m.appHome("blog"))
+	require.ErrorIs(t, err, ErrInvalid)
+	assert.Contains(t, err.Error(), "image")
 }
 
 func TestUpInvalidConfig(t *testing.T) {
@@ -159,17 +142,6 @@ func TestLogsWorkspaceModeReadsFile(t *testing.T) {
 	out, err := m.Logs("blog", 2)
 	require.NoError(t, err)
 	assert.Equal(t, "line2\nline3\n", out)
-}
-
-func TestLogsImageModeUsesPodman(t *testing.T) {
-	t.Parallel()
-	m, _, runner := newTestDeployManager(t)
-	createTestApp(t, m, "blog")
-	writeAppFile(t, m, "blog", "hostit.yml", "image: nginx\ncontainer-port: 80")
-	runner.returns("podman logs", "container logs here")
-	out, err := m.Logs("blog", 50)
-	require.NoError(t, err)
-	assert.Contains(t, out, "container logs here")
 }
 
 func TestPortRulesReconciledOnCreateAndDelete(t *testing.T) {
@@ -313,27 +285,6 @@ func TestLogsCannotBeSymlinkedToAnythingElse(t *testing.T) {
 	out, err := m.Logs("blog", 100)
 	assert.NotContains(t, out, "hunter2", "logs must never read through a symlink")
 	assert.Error(t, err)
-}
-
-func TestMountSourcesMustResolveInsideTheApp(t *testing.T) {
-	t.Parallel()
-	m, _, _ := newTestDeployManager(t)
-	createTestApp(t, m, "blog")
-	home := m.appHome("blog")
-	require.NoError(t, os.MkdirAll(filepath.Join(home, "data"), 0o755))
-	// A relative source passes validation, so the link is the way out
-	require.NoError(t, os.Symlink("/etc", filepath.Join(home, "escape")))
-
-	conf := &appctl.AppConfig{Image: "nginx", ContainerPort: 80, Volumes: []string{"data:/data"}}
-	require.NoError(t, m.checkMountSources("blog", conf), "a real directory in the app is fine")
-
-	conf.Volumes = []string{"escape:/hostetc"}
-	require.ErrorIs(t, m.checkMountSources("blog", conf), ErrInvalid, "a link out of the app must be refused")
-
-	conf.Volumes = nil
-	conf.Image = ""
-	conf.Build = "escape"
-	require.ErrorIs(t, m.checkMountSources("blog", conf), ErrInvalid, "so must a build context")
 }
 
 func TestRestartStaleAgents(t *testing.T) {

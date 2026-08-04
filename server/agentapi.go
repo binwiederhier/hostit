@@ -103,6 +103,7 @@ func (s *Server) agentGuide(appName, description string) *apiAgentInfoResponse {
 			"POST /api/" + name + "/deploy to apply hostit.yml and (re)start the app.",
 			"GET /api/" + name + "/logs if it does not come up; the app must listen on 0.0.0.0:$PORT.",
 			"PUT /api/" + name + "/readme to record what this app is and what you changed, for whoever comes next.",
+			"Keep the app's own documentation in " + appctl.DocsDir + "/ -- how it works, why it is built the way it is, anything the next session would otherwise have to re-derive. Read it before you change anything, and update it after every change that matters. README.md is the summary and worklog; " + appctl.DocsDir + "/ is the detail.",
 			"Compiling or installing dependencies: POST /api/" + name + "/run with a shell command. It runs in the app's container, where the toolchains are, and returns the output and exit code -- so you can iterate on a build error without SSH. It is bounded (a minute by default, five at most): make the build a \"prepare:\" step in hostit.yml once it works, so it also runs on every deploy.",
 			"Keep a one-line \"description:\" in hostit.yml saying what this app is. The owner's web page shows it, and the next session (or a different agent) starts from it instead of from a blank page.",
 		},
@@ -110,23 +111,21 @@ func (s *Server) agentGuide(appName, description string) *apiAgentInfoResponse {
 			"  " + appctl.PublicDir + "/   files served on the web -- static mode serves exactly this directory\n" +
 			"  " + appctl.BinDir + "/      binaries and scripts the app runs (run: ./" + appctl.BinDir + "/myapp)\n" +
 			"  " + appctl.LogDir + "/      the app's output, written by hostit; read it with GET /logs\n" +
-			"  " + appctl.SrcDir + "/      source, if you keep the app's source here\n\n" +
+			"  " + appctl.SrcDir + "/      source, if you keep the app's source here\n" +
+			"  " + appctl.DocsDir + "/     the app's own documentation -- how it works, why it is built that way\n\n" +
 			"hostit.yml and README.md live at the top. Directories are created as you write into them.\n\n" +
 			"If your app serves files itself, point it at " + appctl.PublicDir + "/ and never at the home directory: " +
 			"the home also holds hostit.yml (which may carry env values) and .ssh/, and serving it puts them on the " +
 			"open internet. For example: python3 -m http.server $PORT --bind 0.0.0.0 --directory " + appctl.PublicDir + "",
-		HostitYml: "Three modes, pick one.\n\n" +
+		HostitYml: "Two modes, pick one.\n\n" +
 			"1. Static files (simplest, nothing to run):\n" +
 			"     static: " + appctl.PublicDir + "   # always serves " + appctl.PublicDir + "/, whatever this says\n\n" +
 			"2. Your own command, run in the workspace container:\n" +
 			"     prepare: cd " + appctl.SrcDir + " && go build -o ../" + appctl.BinDir + "/myapp .   # optional build step\n" +
 			"     run: ./" + appctl.BinDir + "/myapp   # MUST listen on 0.0.0.0:$PORT; $PORT is provided\n" +
 			"     (upload binaries with ?mode=755 so they are executable)\n\n" +
-			"3. Your own container image:\n" +
-			"     image: docker.io/library/nginx:alpine   # or: build: .\n" +
-			"     container-port: 80\n\n" +
-			"Optional everywhere: env: {KEY: value}, and description: a one-liner about the app. " +
-			"Image mode also takes volumes: [./data:/data] (sources must stay inside the app).",
+			"Optional in both: env: {KEY: value}, and description: a one-liner about the app. " +
+			"Unknown keys are an error, so a typo is reported rather than ignored.",
 		Runtimes: app.WorkspaceRuntimes + ". Install anything else inside the container with apt-get; " +
 			"a new app starts as a stub serving a placeholder page.",
 		SuggestedStack: "A single Go binary that embeds its frontend (go:embed) is the easiest thing to run here: " +

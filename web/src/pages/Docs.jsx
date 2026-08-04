@@ -107,6 +107,13 @@ const Docs = () => (
             <td>Source, if you keep the app's source on the host.</td>
           </tr>
           <tr>
+            <td className="mono">docs/</td>
+            <td>
+              The app's own documentation: how it works and why. Read it before changing the app, update it after. An
+              assistant is told to do both.
+            </td>
+          </tr>
+          <tr>
             <td className="mono">hostit.yml</td>
             <td>How the app runs.</td>
           </tr>
@@ -147,8 +154,9 @@ run: ./bin/myapp`}
     <section id="config">
       <h2>hostit.yml</h2>
       <p>
-        One file decides how the app runs. Pick one of three modes, then apply it with <span className="mono">hostit up</span>{" "}
-        over SSH or <span className="mono">POST /api/&lt;app&gt;/deploy</span>.
+        One file decides how the app runs. Pick one of two modes, then apply it with <span className="mono">hostit up</span>{" "}
+        over SSH or <span className="mono">POST /api/&lt;app&gt;/deploy</span>. Keys hostit does not know are an error, so a
+        typo is reported rather than ignored.
       </p>
       <h3>Static files</h3>
       <Snippet
@@ -187,18 +195,6 @@ env:
       <p>
         The command must listen on <span className="mono">0.0.0.0:$PORT</span>. <span className="mono">$PORT</span> is provided;
         nothing else is reachable from outside. hostit restarts the command if it exits.
-      </p>
-      <h3>Your own container image</h3>
-      <Snippet
-        text={`description: What this app is, in one line
-image: docker.io/library/nginx:alpine
-container-port: 80
-volumes:
-  - ./data:/data`}
-      />
-      <p>
-        Use <span className="mono">build: .</span> instead of <span className="mono">image:</span> to build from a Containerfile
-        in the app. Volume sources must stay inside the app directory.
       </p>
       <p className="hint">
         Keep <span className="mono">description:</span> current. The dashboard shows it, and it is what the next assistant

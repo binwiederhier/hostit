@@ -24,17 +24,13 @@ env:
 	assert.Equal(t, "bar", c.Env["FOO"])
 }
 
-func TestLoadAppConfigContainerMode(t *testing.T) {
+func TestConfigRefusesTheRemovedContainerMode(t *testing.T) {
 	t.Parallel()
-	c := writeAndLoadConfig(t, `
-image: docker.io/library/nginx:alpine
-container-port: 80
-volumes:
-  - ./data:/data
-`)
-	assert.Equal(t, ModeContainer, c.Mode())
-	assert.Equal(t, "docker.io/library/nginx:alpine", c.Image)
-	assert.Equal(t, 80, c.ContainerPort)
+	// "image:" let an app bring its own runtime, which meant a second execution
+	// model with none of the agent's guarantees. Old configs must fail loudly
+	// rather than quietly serving nothing.
+	_, err := ParseAppConfigStrict([]byte("image: docker.io/library/nginx:alpine\ncontainer-port: 80\n"))
+	require.Error(t, err)
 }
 
 func TestLoadAppConfigStaticMode(t *testing.T) {
@@ -56,12 +52,12 @@ func TestAppConfigValidate(t *testing.T) {
 	}{
 		{"empty", ``, "hostit.yml"},
 		{"only comments", `# nothing here`, "hostit.yml"},
-		{"run and image", "run: ./x\nimage: nginx\ncontainer-port: 80", "either"},
-		{"image without port", `image: nginx`, "container-port"},
-		{"build without port", `build: .`, "container-port"},
-		{"build and image", "build: .\nimage: nginx\ncontainer-port: 80", "either"},
 		{"static and run", "static: public\nrun: ./server", "either"},
-		{"static and image", "static: public\nimage: nginx\ncontainer-port: 80", "either"},
+		// The removed container mode, and anything else hostit does not know
+		{"image", "image: nginx\ncontainer-port: 80", "image"},
+		{"build", "build: .", "build"},
+		{"volumes", "run: ./x\nvolumes:\n  - ./data:/data", "volumes"},
+		{"typo", "statik: public", "statik"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -165,43 +161,6 @@ func newTestController(t *testing.T, routes map[string]any) *Controller {
 		_ = server.Close()
 	})
 	return NewController(socketFile)
-}
-
-func TestValidateRefusesVolumesThatLeaveTheApp(t *testing.T) {
-	t.Parallel()
-	// hostit.yml is written by the app's own owner (or their agent), and these
-	// strings become arguments to root podman. An absolute source would mount
-	// any host directory into the container -- with ":U" it would also hand its
-	// ownership to the tenant.
-	for _, volume := range []string{
-		"/:/hostfs",
-		"/etc:/hostetc",
-		"/etc:/hostetc:U",
-		"../../etc:/hostetc",
-		"./data:/data:U",
-		"data:/data:rshared",
-		"data:/data:nonsense",
-	} {
-		c := &AppConfig{Image: "nginx", ContainerPort: 80, Volumes: []string{volume}}
-		assert.Error(t, c.Validate(), "volume %q must be refused", volume)
-	}
-	// The useful shapes still work
-	for _, volume := range []string{"data:/data", "./data:/data", "data:/data:ro", "data:/data:rw", "data:/data:z"} {
-		c := &AppConfig{Image: "nginx", ContainerPort: 80, Volumes: []string{volume}}
-		assert.NoError(t, c.Validate(), "volume %q must be allowed", volume)
-	}
-}
-
-func TestValidateRefusesABuildContextOutsideTheApp(t *testing.T) {
-	t.Parallel()
-	for _, build := range []string{"/etc/hostit", "/", "../..", "../sibling"} {
-		c := &AppConfig{Build: build, ContainerPort: 80}
-		assert.Error(t, c.Validate(), "build %q must be refused", build)
-	}
-	for _, build := range []string{".", "./docker", "docker"} {
-		c := &AppConfig{Build: build, ContainerPort: 80}
-		assert.NoError(t, c.Validate(), "build %q must be allowed", build)
-	}
 }
 
 func TestStaticModeAlwaysServesPublic(t *testing.T) {

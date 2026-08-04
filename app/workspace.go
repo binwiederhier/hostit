@@ -27,15 +27,13 @@ const (
 	// after it is a hash of the Containerfile, so editing that file is enough to
 	// get the new image built and the containers recreated onto it.
 	workspaceImagePrefix = "localhost/hostit-workspace"
-	// buildImagePrefix names the image built for a build: mode app, one per app
-	buildImagePrefix = "localhost/hostit-app-"
 
 	// workspaceContainerfile builds the default workspace image: small, but with
 	// everything needed for ssh/scp/sftp/rsync sessions and quick demo apps.
 	// The hostit binary itself is bind-mounted, not baked in.
 	workspaceContainerfile = `FROM docker.io/library/debian:stable-slim
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-      bash ca-certificates curl git less nano openssh-sftp-server procps rsync vim \
+      bash ca-certificates curl git htop less nano openssh-sftp-server procps rsync vim \
       python3 python3-venv python3-pip \
       nodejs npm \
       php-cli \
@@ -46,7 +44,7 @@ CMD ["/bin/bash"]
 
 	// WorkspaceRuntimes is what the workspace image ships, quoted verbatim to
 	// users and agents so nobody has to guess what is available
-	WorkspaceRuntimes = "python3 (with venv and pip), node and npm, php-cli, the go toolchain (go build works in here), plus git, curl, rsync, vim and nano"
+	WorkspaceRuntimes = "python3 (with venv and pip), node and npm, php-cli, the go toolchain (go build works in here), plus git, curl, rsync, htop, vim and nano"
 )
 
 // IDs are the identity ranges a container is mapped into: the app's own uid/gid
@@ -80,11 +78,6 @@ func unitName(appName string) string {
 	return unitTemplate + appName
 }
 
-// buildImageTag returns the image tag for a build:-mode app
-func buildImageTag(appName string) string {
-	return buildImagePrefix + appName + ":latest"
-}
-
 // containerCreateArgs returns the "podman create ..." arguments (without the
 // leading podman) for an app's container.
 //
@@ -111,29 +104,18 @@ func containerCreateArgs(conf *appctl.AppConfig, a *store.App, home, socketFile,
 	// A fork bomb in one app must not take the host with it. podman has a
 	// default for this, but a default is the distribution's opinion.
 	args = append(args, "--pids-limit", strconv.Itoa(maxProcesses))
-	if conf == nil || conf.Mode() == appctl.ModeProcess || conf.Mode() == appctl.ModeStatic {
-		containerHome := containerHomeDir(a.Name)
-		args = append(args,
-			"--env", fmt.Sprintf("PORT=%d", a.Port),
-			"--env", "HOME="+containerHome,
-			"--workdir", containerHome,
-			"--publish", fmt.Sprintf("127.0.0.1:%d:%d", a.Port, a.Port),
-			"--volume", home+":"+containerHome)
-		args = appendCommonMounts(args, socketFile, hostitBin)
-		args = append(args, workspaceImageTag(), hostitBin, "agent")
-		return args
-	}
+	containerHome := containerHomeDir(a.Name)
 	args = append(args,
-		"--env", fmt.Sprintf("PORT=%d", conf.ContainerPort),
-		"--publish", fmt.Sprintf("127.0.0.1:%d:%d", a.Port, conf.ContainerPort))
+		"--env", fmt.Sprintf("PORT=%d", a.Port),
+		"--env", "HOME="+containerHome,
+		"--workdir", containerHome,
+		"--publish", fmt.Sprintf("127.0.0.1:%d:%d", a.Port, a.Port),
+		"--volume", home+":"+containerHome)
 	for _, k := range sortedKeys(conf.Env) {
 		args = append(args, "--env", k+"="+conf.Env[k])
 	}
-	for _, volume := range conf.Volumes {
-		args = append(args, "--volume", absVolume(volume, home))
-	}
 	args = appendCommonMounts(args, socketFile, hostitBin)
-	args = append(args, imageRef(conf, a.Name))
+	args = append(args, workspaceImageTag(), hostitBin, "agent")
 	return args
 }
 
@@ -142,14 +124,6 @@ func containerCreateArgs(conf *appctl.AppConfig, a *store.App, home, socketFile,
 func containerConfigHash(args []string) string {
 	sum := sha256.Sum256([]byte(strings.Join(args, "\x00")))
 	return hex.EncodeToString(sum[:8])
-}
-
-// imageRef returns the image an image/build mode app runs
-func imageRef(conf *appctl.AppConfig, appName string) string {
-	if conf.Build != "" {
-		return buildImageTag(appName)
-	}
-	return conf.Image
 }
 
 // appendCommonMounts adds what every app container needs to talk to hostit: the

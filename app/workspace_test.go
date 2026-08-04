@@ -34,40 +34,13 @@ func TestContainerCreateArgsWorkspaceMode(t *testing.T) {
 	assert.True(t, strings.HasSuffix(cmd, workspaceImageTag()+" /usr/bin/hostit agent"), cmd)
 }
 
-func TestContainerCreateArgsImageMode(t *testing.T) {
-	t.Parallel()
-	conf := &appctl.AppConfig{Image: "docker.io/library/nginx:alpine", ContainerPort: 80, Env: map[string]string{"FOO": "bar"}, Volumes: []string{"./data:/data"}}
-	require.NoError(t, conf.Validate())
-	a := &store.App{Name: "blog", Port: 10000}
-	args := containerCreateArgs(conf, a, "/srv/hostit/apps/blog", "/run/hostit/hostit.sock", "/usr/bin/hostit", 0, testIDs)
-	cmd := strings.Join(args, " ")
-	assert.Contains(t, cmd, "--publish 127.0.0.1:10000:80")
-	assert.Contains(t, cmd, "--env PORT=80")
-	assert.Contains(t, cmd, "--env FOO=bar")
-	assert.Contains(t, cmd, "--volume /srv/hostit/apps/blog/data:/data")
-	// No command override: the image's own entrypoint runs
-	assert.True(t, strings.HasSuffix(cmd, "docker.io/library/nginx:alpine"), cmd)
-	// The home dir is NOT mounted in image mode, but CLI plumbing is
-	assert.NotContains(t, cmd, ":/home/blog")
-	assert.Contains(t, cmd, "--volume /usr/bin/hostit:/usr/bin/hostit:ro")
-}
-
-func TestContainerCreateArgsBuildMode(t *testing.T) {
-	t.Parallel()
-	conf := &appctl.AppConfig{Build: ".", ContainerPort: 8080}
-	require.NoError(t, conf.Validate())
-	a := &store.App{Name: "blog", Port: 10000}
-	args := containerCreateArgs(conf, a, "/srv/hostit/apps/blog", "/run/hostit/hostit.sock", "/usr/bin/hostit", 0, testIDs)
-	assert.Equal(t, buildImageTag("blog"), args[len(args)-1])
-}
-
 func TestContainerConfigHashChanges(t *testing.T) {
 	t.Parallel()
 	a := &store.App{Name: "blog", Port: 10000}
 	conf1 := &appctl.AppConfig{Run: "./server"}
 	conf2 := &appctl.AppConfig{Run: "./server"}
 	conf3 := &appctl.AppConfig{Run: "./other"}
-	conf4 := &appctl.AppConfig{Image: "nginx", ContainerPort: 80}
+	conf4 := &appctl.AppConfig{Run: "./server", Env: map[string]string{"K": "v"}}
 	hash1 := containerConfigHash(containerCreateArgs(conf1, a, "/h", "/s", "/b", 0, testIDs))
 	hash2 := containerConfigHash(containerCreateArgs(conf2, a, "/h", "/s", "/b", 0, testIDs))
 	hash3 := containerConfigHash(containerCreateArgs(conf3, a, "/h", "/s", "/b", 0, testIDs))
@@ -135,11 +108,6 @@ func TestContainerHasProcessAndMemoryLimits(t *testing.T) {
 	assert.Contains(t, joined, "--pids-limit "+strconv.Itoa(maxProcesses))
 	assert.Contains(t, joined, "--memory 512m")
 
-	// Container-mode apps run someone else's image and need the same bounds
-	image := &appctl.AppConfig{Image: "nginx", ContainerPort: 80}
-	joined = strings.Join(containerCreateArgs(image, a, "/srv/hostit/apps/blog", "/run/hostit/hostit.sock", "/usr/bin/hostit", 512, testIDs), " ")
-	assert.Contains(t, joined, "--pids-limit "+strconv.Itoa(maxProcesses))
-	assert.Contains(t, joined, "--memory 512m")
 }
 
 func TestWorkspaceImageTagFollowsItsContent(t *testing.T) {

@@ -34,12 +34,6 @@ static: public
 # env:
 #   DEBUG: "true"
 #
-# --- Image mode: your own container image ---
-#
-# image: docker.io/library/nginx:alpine   # or use "build: ." with a Dockerfile
-# container-port: 80                      # port the app listens on INSIDE the container
-# volumes:
-#   - ./data:/data
 `
 
 	// scaffoldAppReadme is the app's OWN readme: agents read it to learn what the

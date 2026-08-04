@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log/slog"
 	"path/filepath"
-	"strconv"
 	"strings"
 
 	"heckel.io/hostit/appctl"
@@ -30,19 +29,6 @@ func (m *Manager) Up(name string) (string, error) {
 	conf, err := appctl.LoadAppConfig(filepath.Join(m.appHome(name), "hostit.yml"))
 	if err != nil {
 		return "", fmt.Errorf("%w: %s", ErrInvalid, err.Error())
-	}
-	if err := m.checkMountSources(name, conf); err != nil {
-		return "", err
-	}
-	if conf.Build != "" {
-		// One build at a time: podman serializes on its own lock anyway, but the
-		// memory does not, and two Debian-sized builds OOM a 1 GB host
-		m.buildMu.Lock()
-		_, err := m.runner.Run("podman", "build", "--tag", buildImageTag(name), filepath.Join(m.appHome(name), conf.Build))
-		m.buildMu.Unlock()
-		if err != nil {
-			return "", fmt.Errorf("image build failed: %w", err)
-		}
 	}
 	return m.apply(a, conf, true)
 }
@@ -110,13 +96,7 @@ func (m *Manager) Logs(name string, lines int) (string, error) {
 	if _, err := m.store.App(name); err != nil {
 		return "", err
 	}
-	conf, err := appctl.LoadAppConfig(filepath.Join(m.appHome(name), "hostit.yml"))
-	if err == nil && conf.Mode() == appctl.ModeContainer {
-		// podman serializes on its own lock, and a build elsewhere can hold it for
-		// minutes; a log fetch is a read path and must not wait that long
-		return m.runner.RunTimeout(logsTimeout, "podman", "logs", "--tail", strconv.Itoa(lines), containerName(name))
-	}
-	// Through the app's root: .hostit/ lives in a directory the app user owns,
+	// Through the app's root: log/ lives in a directory the app user owns,
 	// so the log file can be a symlink to anything the daemon can read
 	root, err := m.appRoot(name)
 	if err != nil {
@@ -166,38 +146,6 @@ func (m *Manager) RestartStaleAgents(version string) ([]string, error) {
 	return restarted, m.store.SetSetting(settingAgentVersion, version)
 }
 
-// checkMountSources resolves every path hostit is about to hand to root podman
-// through the app's own root. Validation already refused absolute and climbing
-// paths, but the app user can still plant a symlink: podman would follow it and
-// mount whatever it points at.
-func (m *Manager) checkMountSources(name string, conf *appctl.AppConfig) error {
-	sources := make([]string, 0, len(conf.Volumes)+1)
-	if conf.Build != "" {
-		sources = append(sources, conf.Build)
-	}
-	for _, volume := range conf.Volumes {
-		src, _, found := strings.Cut(volume, ":")
-		if !found {
-			return fmt.Errorf("%w: volume %q must be src:dst", ErrInvalid, volume)
-		}
-		sources = append(sources, src)
-	}
-	if len(sources) == 0 {
-		return nil
-	}
-	root, err := m.appRoot(name)
-	if err != nil {
-		return err
-	}
-	defer root.Close()
-	for _, src := range sources {
-		if _, err := root.Stat(src); err != nil {
-			return fmt.Errorf("%w: %q does not resolve inside the app directory: %s", ErrInvalid, src, err.Error())
-		}
-	}
-	return nil
-}
-
 // apply converges the app container to the desired config: recreate it when the
 // configuration changed, start it, or (allowReload) signal the agent to restart
 // just the run command
@@ -209,10 +157,8 @@ func (m *Manager) apply(a *store.App, conf *appctl.AppConfig, allowReload bool) 
 	}
 	// The daemon builds this at startup, but an app created while that is still
 	// running must not fail; EnsureWorkspaceImage is a no-op once it exists
-	if conf == nil || conf.Mode() != appctl.ModeContainer {
-		if err := m.EnsureWorkspaceImage(); err != nil {
-			return "", err
-		}
+	if err := m.EnsureWorkspaceImage(); err != nil {
+		return "", err
 	}
 
 	// Recreate the container if the desired config differs from the running one
@@ -242,7 +188,7 @@ func (m *Manager) apply(a *store.App, conf *appctl.AppConfig, allowReload bool) 
 		}
 		return "deployed (container created and started)", nil
 	}
-	if allowReload && conf != nil && conf.Mode() != appctl.ModeContainer {
+	if allowReload && conf != nil {
 		if _, err := m.runner.Run("podman", "kill", "--signal", "HUP", containerName(name)); err != nil {
 			return "", err
 		}

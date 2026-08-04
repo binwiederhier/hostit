@@ -294,3 +294,39 @@ func TestMigrationRecordsVersion(t *testing.T) {
 func intPtr(i int) *int {
 	return &i
 }
+
+func TestTransferApps(t *testing.T) {
+	t.Parallel()
+	s := newTestStore(t)
+	from := &User{Email: "leaving@b.c", Role: RoleUser, Status: StatusActive}
+	to := &User{Email: "staying@b.c", Role: RoleUser, Status: StatusActive}
+	require.NoError(t, s.AddUser(from))
+	require.NoError(t, s.AddUser(to))
+	require.NoError(t, s.AddApp(&App{Name: "blog", Port: 10000, Host: HostLocal, OwnerID: from.ID}))
+	require.NoError(t, s.AddApp(&App{Name: "wiki", Port: 10001, Host: HostLocal, OwnerID: from.ID}))
+	require.NoError(t, s.AddApp(&App{Name: "other", Port: 10002, Host: HostLocal, OwnerID: to.ID}))
+	require.NoError(t, s.AddToken(&Token{UserID: from.ID, Hash: "h1", Prefix: "p", Label: "agent", AppName: "blog"}))
+	require.NoError(t, s.AddToken(&Token{UserID: from.ID, Hash: "h2", Prefix: "p", Label: "account"}))
+
+	moved, err := s.TransferApps(from.ID, to.ID)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"blog", "wiki"}, moved)
+
+	// The apps belong to the new owner...
+	apps, err := s.AppsByOwner(to.ID)
+	require.NoError(t, err)
+	require.Len(t, apps, 3)
+	own, err := s.AppsByOwner(from.ID)
+	require.NoError(t, err)
+	assert.Empty(t, own)
+
+	// ...and so do their agent tokens, or deleting the old owner would take the
+	// tokens of apps that are no longer theirs
+	tk, err := s.TokenByHash("h1")
+	require.NoError(t, err)
+	assert.Equal(t, to.ID, tk.UserID)
+	// An account-wide token is personal and stays behind, to die with the user
+	tk, err = s.TokenByHash("h2")
+	require.NoError(t, err)
+	assert.Equal(t, from.ID, tk.UserID)
+}

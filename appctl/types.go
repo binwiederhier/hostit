@@ -4,7 +4,7 @@ import (
 	"time"
 )
 
-// Mode is how an app is run: as a plain process or as a container
+// Mode is how an app is run: hostit serves its files, or it runs a command
 type Mode string
 
 const (
@@ -15,11 +15,10 @@ const (
 	BinDir    = "bin"    // Compiled binaries and scripts the app runs
 	LogDir    = "log"    // The app's output, written by the hostit agent
 	SrcDir    = "src"    // Source, if the app keeps its source on the host
+	DocsDir   = "docs"   // The app's own documentation, for whoever works on it next
 
 	// ModeProcess runs the app's "run" command directly (must listen on $PORT)
 	ModeProcess = Mode("process")
-	// ModeContainer runs the app as a podman container of the app's own image
-	ModeContainer = Mode("container")
 	// ModeStatic serves a directory of files; hostit provides the web server
 	ModeStatic = Mode("static")
 )

@@ -9,9 +9,8 @@
   container root is the app's own unprivileged user, plus nftables)
 - **SSH access** (normal ssh/scp/sftp/rsync via the host's sshd; keys via the API)
 - a **subdomain** (`myapp.apps.example.com`) with **automatic Let's Encrypt TLS**
-- three ways to run: `static:` (hostit serves a directory), `run:` (your command,
-  supervised by the hostit agent), or your own `image:`/`build:` container --
-  deployed with a single `hostit up`
+- two ways to run: `static:` (hostit serves `public/`) or `run:` (your command,
+  supervised by the hostit agent) -- deployed with a single `hostit up`
 - a workspace with **python3, node/npm, php-cli and go** preinstalled (and root,
   so `apt-get install` anything else)
 
@@ -258,6 +257,7 @@ public/      files served on the web -- static mode serves exactly this
 bin/         binaries and scripts the app runs (run: ./bin/myapp)
 log/         the app's output, written by hostit ("hostit logs" reads it)
 src/         source, if the app keeps its source on the host
+docs/        the app's own documentation, kept current by whoever changes it
 hostit.yml   how the app runs
 README.md    what the app is, and its worklog
 ```
@@ -386,14 +386,6 @@ env:
   FOO: bar
 ```
 
-```yaml
-# Image mode: run your own image; hostit maps the port automatically
-image: docker.io/library/nginx:alpine   # or "build: ." with a Dockerfile
-container-port: 80
-volumes:
-  - ./data:/data
-```
-
 Then:
 
 ```sh
@@ -405,9 +397,10 @@ hostit down        # stop + disable
 hostit info        # name, URL, port
 ```
 
-Changing `image:`, `build:`, `env:` or `volumes:` recreates the container (which
-kicks active SSH sessions, like docker); changing `run:` only restarts the app
-process inside it.
+Changing `env:` recreates the container (which kicks active SSH sessions, like
+docker); changing `static:`, `prepare:` or `run:` only restarts the app inside
+it. Keys hostit does not know are an error, so a typo is reported rather than
+quietly ignored.
 
 ## Notes
 

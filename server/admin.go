@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 
 	"heckel.io/hostit/store"
@@ -161,17 +162,45 @@ func (s *Server) handleUsersDelete(w http.ResponseWriter, r *http.Request, c *ca
 		writeAppError(w, err)
 		return
 	}
-	for _, a := range apps {
-		if err := s.apps.DeleteApp(a.Name); err != nil {
+	// Deleting a person must not quietly decide the fate of their apps, so the
+	// caller says which they meant. An app with no owner would keep serving with
+	// nobody able to manage it, which is the one outcome nobody wants.
+	message := "user deleted"
+	switch r.URL.Query().Get("apps") {
+	case "transfer":
+		target, err := s.transferTarget(r.URL.Query().Get("transfer_to"), u.ID)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		moved, err := s.apps.Store().TransferApps(u.ID, target.ID)
+		if err != nil {
 			writeAppError(w, err)
 			return
 		}
+		// The new owner's SSH keys are what should open these apps now
+		if err := s.syncUserAppKeys(target.ID); err != nil {
+			slog.Warn("Cannot update ssh keys after transfer", "to", target.Email, "error", err)
+		}
+		message = fmt.Sprintf("user deleted, %d app(s) transferred to %s", len(moved), target.Email)
+	case "delete":
+		for _, a := range apps {
+			if err := s.apps.DeleteApp(a.Name); err != nil {
+				writeAppError(w, err)
+				return
+			}
+		}
+		message = fmt.Sprintf("user and %d app(s) deleted", len(apps))
+	default:
+		writeError(w, http.StatusBadRequest, errors.New(`say what to do with this user's apps: apps=delete, or apps=transfer&transfer_to=<user id>`))
+		return
 	}
 	if err := s.users.Delete(u.ID); err != nil {
 		writeAppError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, &apiMessageResponse{Message: "user deleted"})
+	slog.Info("User deleted", "email", u.Email, "apps", len(apps), "by", c.userID())
+	writeJSON(w, http.StatusOK, &apiMessageResponse{Message: message})
 }
 
 func (s *Server) handleSettingsGet(w http.ResponseWriter, _ *http.Request, _ *caller) {
@@ -216,6 +245,25 @@ func (s *Server) handleSettingsUpdate(w http.ResponseWriter, r *http.Request, _ 
 		DefaultMemoryMB: defaults.MemoryMB,
 		DefaultDiskMB:   defaults.DiskMB,
 	})
+}
+
+// transferTarget resolves who is to receive the apps, refusing anyone who
+// cannot actually own them
+func (s *Server) transferTarget(id, leavingID string) (*store.User, error) {
+	if id == "" {
+		return nil, errors.New("transfer_to is required when apps=transfer")
+	}
+	if id == leavingID {
+		return nil, errors.New("cannot transfer a user's apps to themselves")
+	}
+	target, err := s.users.User(id)
+	if err != nil {
+		return nil, fmt.Errorf("no such user to transfer to: %s", id)
+	}
+	if target.Status != store.StatusActive {
+		return nil, fmt.Errorf("%s is not an active account", target.Email)
+	}
+	return target, nil
 }
 
 func newUserResponse(u *store.User, appCount int) *apiUserResponse {

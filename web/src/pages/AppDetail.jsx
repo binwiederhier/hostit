@@ -25,6 +25,8 @@ The app currently serves a placeholder page. Replace it.
 
 ${api}
 
+Keep the app's own documentation in docs/, and update it after every change that matters.
+
 Don't build anything just yet. Check with me first: explore the API, then tell me what you found and ask me what I want the app to do.
 `;
   }
@@ -41,7 +43,9 @@ The app is already built and live. Do not rebuild it from scratch.
 
 ${api}
 
-Don't change anything just yet. Check with me first: explore the API, read the app's README.md and its current files, then tell me what it does today and wait for my instructions.
+The app's own documentation is in docs/. Read it before changing anything, and update it after every change that matters.
+
+Don't change anything just yet. Check with me first: explore the API, read the app's README.md and docs/, then tell me what it does today and wait for my instructions.
 `;
 };
 

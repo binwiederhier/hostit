@@ -181,6 +181,85 @@ const AllApps = ({ apps, error }) => (
   </div>
 );
 
+// Deleting a person raises a question about their apps that only an admin can
+// answer, so it is asked rather than assumed. An ownerless app would keep
+// serving with nobody able to manage it, which is why that is not an option.
+const DeleteUserDialog = ({ user, users, onCancel, onDone, setError }) => {
+  const others = users.filter((u) => u.id !== user.id && u.status === "active");
+  const [choice, setChoice] = useState(user.app_count > 0 ? "transfer" : "delete");
+  const [target, setTarget] = useState(others.length > 0 ? others[0].id : "");
+  const [busy, setBusy] = useState(false);
+  const canTransfer = others.length > 0;
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setBusy(true);
+    setError("");
+    try {
+      const query = choice === "transfer" ? `?apps=transfer&transfer_to=${target}` : "?apps=delete";
+      await api.del(`/v1/users/${user.id}${query}`);
+      onDone();
+    } catch (err) {
+      setError(err.message);
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true">
+      <form className="card modal" onSubmit={submit}>
+        <h2>Delete {user.email}</h2>
+        {user.app_count === 0 && <p>This account has no apps. Deleting it removes the account, its keys and its tokens.</p>}
+        {user.app_count > 0 && (
+          <>
+            <p>
+              This account owns {user.app_count} {user.app_count === 1 ? "app" : "apps"}. What should happen to them?
+            </p>
+            <label className="choice">
+              <input
+                type="radio"
+                name="apps"
+                value="transfer"
+                checked={choice === "transfer"}
+                disabled={!canTransfer}
+                onChange={() => setChoice("transfer")}
+              />
+              <span>
+                Give them to another user
+                {canTransfer ? (
+                  <select value={target} onChange={(e) => setTarget(e.target.value)} disabled={choice !== "transfer"}>
+                    {others.map((u) => (
+                      <option key={u.id} value={u.id}>
+                        {u.email}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <span className="cell-muted"> -- no other active account to give them to</span>
+                )}
+              </span>
+            </label>
+            <label className="choice">
+              <input type="radio" name="apps" value="delete" checked={choice === "delete"} onChange={() => setChoice("delete")} />
+              <span>
+                Delete the apps too -- their containers, files and URLs go with them. <strong>This cannot be undone.</strong>
+              </span>
+            </label>
+          </>
+        )}
+        <div className="btn-row">
+          <button type="button" className="btn" onClick={onCancel} disabled={busy}>
+            Cancel
+          </button>
+          <button type="submit" className="btn btn-danger" disabled={busy || (choice === "transfer" && !target)}>
+            {busy ? "Deleting..." : "Delete user"}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+};
+
 // Adding a user here creates an approved account before they have ever signed
 // in: their first Google login lands straight on the dashboard.
 const InviteUser = ({ onAdded, setError }) => {
@@ -401,22 +480,7 @@ const AdminInner = () => {
     }
   };
 
-  const deleteUser = async (user) => {
-    if (
-      !window.confirm(
-        `Delete user ${user.email}? This permanently deletes the user and all of their apps (${user.app_count}).`,
-      )
-    ) {
-      return;
-    }
-    setError("");
-    try {
-      await api.del(`/v1/users/${user.id}`);
-      await load();
-    } catch (err) {
-      setError(err.message);
-    }
-  };
+  const [deleting, setDeleting] = useState(null);
 
   return (
     <>
@@ -424,6 +488,18 @@ const AdminInner = () => {
         <h1>Admin</h1>
       </div>
       <ErrorBanner message={error} onDismiss={() => setError("")} />
+      {deleting && (
+        <DeleteUserDialog
+          user={deleting}
+          users={users || []}
+          setError={setError}
+          onCancel={() => setDeleting(null)}
+          onDone={() => {
+            setDeleting(null);
+            load();
+          }}
+        />
+      )}
       <div className="card">
         <h2>Users</h2>
         {(users === null || settings === null) && !error && <Loading label="Loading users..." />}
@@ -442,7 +518,7 @@ const AdminInner = () => {
               </thead>
               <tbody>
                 {users.map((user) => (
-                  <UserRow key={user.id} user={user} defaults={settings} onPatch={patchUser} onDelete={deleteUser} />
+                  <UserRow key={user.id} user={user} defaults={settings} onPatch={patchUser} onDelete={setDeleting} />
                 ))}
               </tbody>
             </table>

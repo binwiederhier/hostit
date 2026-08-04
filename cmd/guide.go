@@ -43,6 +43,7 @@ func guideText(self *appctl.SelfInfo) string {
 		"  " + appctl.BinDir + "/          binaries and scripts you run (run: ./" + appctl.BinDir + "/myapp)\n" +
 		"  " + appctl.LogDir + "/          your app's output (\"hostit logs\" reads it)\n" +
 		"  " + appctl.SrcDir + "/          your source, if you keep it here\n" +
+		"  " + appctl.DocsDir + "/         this app's own documentation; update it as you change things\n" +
 		"  hostit.yml     how the app runs\n" +
 		"  README.md      what the app is, and its worklog -- yours to write\n" +
 		"\n" +
@@ -53,10 +54,8 @@ func guideText(self *appctl.SelfInfo) string {
 		"HOW TO RUN SOMETHING\n" +
 		"  Pick one mode in hostit.yml, then run \"hostit up\":\n" +
 		"\n" +
-		"    static: " + appctl.PublicDir + "                    hostit serves your files, nothing to run\n" +
-		"    run: ./" + appctl.BinDir + "/myapp                  your command, on 0.0.0.0:$PORT\n" +
-		"    image: docker.io/library/nginx:alpine   your own container image\n" +
-		"      container-port: 80\n" +
+		"    static: " + appctl.PublicDir + "     hostit serves your files, nothing to run\n" +
+		"    run: ./" + appctl.BinDir + "/myapp   your command, listening on 0.0.0.0:$PORT\n" +
 		"\n" +
 		"  Keep a one-line \"description:\" in hostit.yml. Your app's page shows it,\n" +
 		"  and it is what the next AI session starts from.\n" +
