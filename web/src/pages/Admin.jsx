@@ -128,9 +128,6 @@ const AppRow = ({ app }) => (
       <Link className="mono app-link" to={`/app/${app.name}`}>
         {app.name}
       </Link>
-      <a className="open-link" href={app.url} target="_blank" rel="noreferrer">
-        open -&gt;
-      </a>
     </td>
     <td className="cell-muted">{app.owner_email || "--"}</td>
     <td>{formatUsage(app.memory_mb, app.memory_limit_mb)}</td>
@@ -140,9 +137,14 @@ const AppRow = ({ app }) => (
     </td>
     <td className="cell-muted">{formatDate(app.created_at)}</td>
     <td className="cell-actions">
-      <Link className="btn btn-small btn-primary" to={`/app/${app.name}`}>
-        Manage
-      </Link>
+      <div className="btn-row">
+        <a className="btn btn-small btn-primary" href={app.url} target="_blank" rel="noreferrer">
+          Open
+        </a>
+        <Link className="btn btn-small" to={`/app/${app.name}`}>
+          Manage
+        </Link>
+      </div>
     </td>
   </tr>
 );
@@ -178,6 +180,142 @@ const AllApps = ({ apps, error }) => (
     )}
   </div>
 );
+
+// Adding a user here creates an approved account before they have ever signed
+// in: their first Google login lands straight on the dashboard.
+const InviteUser = ({ onAdded, setError }) => {
+  const [email, setEmail] = useState("");
+  const [role, setRole] = useState("user");
+  const [busy, setBusy] = useState(false);
+
+  const add = async (e) => {
+    e.preventDefault();
+    if (busy || email.trim() === "") {
+      return;
+    }
+    setBusy(true);
+    setError("");
+    try {
+      await api.post("/v1/users", { email: email.trim(), role });
+      setEmail("");
+      setRole("user");
+      onAdded();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <form className="inline-form" onSubmit={add}>
+      <input
+        type="email"
+        value={email}
+        onChange={(e) => setEmail(e.target.value)}
+        placeholder="person@company.com"
+        aria-label="Email address to add"
+      />
+      <select value={role} onChange={(e) => setRole(e.target.value)} aria-label="Role">
+        <option value="user">User</option>
+        <option value="admin">Admin</option>
+      </select>
+      <button type="submit" className="btn btn-primary" disabled={busy || email.trim() === ""}>
+        {busy ? "Adding..." : "Add user"}
+      </button>
+    </form>
+  );
+};
+
+// Anyone whose Google address ends in one of these domains is approved on sign
+// in, so a whole company can onboard itself.
+const AllowedDomains = ({ setError }) => {
+  const [domains, setDomains] = useState(null);
+  const [domain, setDomain] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      setDomains(await api.get("/v1/domains"));
+    } catch (err) {
+      setError(err.message);
+    }
+  }, [setError]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const add = async (e) => {
+    e.preventDefault();
+    if (busy || domain.trim() === "") {
+      return;
+    }
+    setBusy(true);
+    setError("");
+    try {
+      await api.post("/v1/domains", { domain: domain.trim() });
+      setDomain("");
+      await load();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const remove = async (d) => {
+    if (!window.confirm(`Stop auto-approving @${d.domain}? Users already approved keep their accounts.`)) {
+      return;
+    }
+    setError("");
+    try {
+      await api.del(`/v1/domains/${encodeURIComponent(d.domain)}`);
+      await load();
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  return (
+    <div className="card">
+      <h2>Sign-up without approval</h2>
+      <p className="hint">
+        Anyone signing in with a Google address in one of these domains is approved automatically. Everyone else waits in the
+        list above. Write it as <span className="mono">company.com</span> or <span className="mono">*@company.com</span>.
+      </p>
+      {domains === null && <Loading label="Loading domains..." />}
+      {domains !== null && domains.length === 0 && <p className="empty">No domains yet: every sign-up needs approval.</p>}
+      {domains !== null && domains.length > 0 && (
+        <ul className="item-list">
+          {domains.map((d) => (
+            <li key={d.domain}>
+              <div>
+                <div className="item-label mono">*@{d.domain}</div>
+                <div className="cell-muted">added {formatDate(d.created_at)}</div>
+              </div>
+              <button type="button" className="btn btn-small btn-danger" onClick={() => remove(d)}>
+                Remove
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <form className="inline-form" onSubmit={add}>
+        <input
+          type="text"
+          value={domain}
+          onChange={(e) => setDomain(e.target.value)}
+          placeholder="company.com"
+          aria-label="Email domain to allow"
+        />
+        <button type="submit" className="btn btn-primary" disabled={busy || domain.trim() === ""}>
+          {busy ? "Adding..." : "Allow domain"}
+        </button>
+      </form>
+    </div>
+  );
+};
 
 const Defaults = ({ settings, onSaved, setError }) => {
   const [appLimit, setAppLimit] = useState(numOrEmpty(settings.default_app_limit));
@@ -309,7 +447,10 @@ const AdminInner = () => {
             </table>
           </div>
         )}
+        <InviteUser onAdded={load} setError={setError} />
+        <p className="hint">Adding someone here approves them up front; they still sign in with Google.</p>
       </div>
+      <AllowedDomains setError={setError} />
       <AllApps apps={apps} error={error} />
       {settings !== null && <Defaults settings={settings} onSaved={load} setError={setError} />}
     </>

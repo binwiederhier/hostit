@@ -117,7 +117,7 @@ func TestAdminOnlyEndpoints(t *testing.T) {
 	u := newActiveTestUser(t, s, "user@example.com")
 	token, _, err := s.users.CreateToken(u.ID, "t")
 	require.NoError(t, err)
-	for _, path := range []string{"/v1/users", "/v1/settings"} {
+	for _, path := range []string{"/v1/users", "/v1/settings", "/v1/domains"} {
 		rr := request(t, s.API(), "GET", path, "", token)
 		require.Equal(t, http.StatusForbidden, rr.Code, "path %s", path)
 		rr = request(t, s.API(), "GET", path, "", testToken)

@@ -48,6 +48,94 @@ func TestLoginAdminEmailCaseInsensitive(t *testing.T) {
 	assert.Equal(t, "phil@heckel.io", u.Email) // Normalized
 }
 
+func TestLoginFromAnAllowedDomainSkipsApproval(t *testing.T) {
+	t.Parallel()
+	m := newTestManager(t)
+	_, err := m.AllowDomain("allowed.example")
+	require.NoError(t, err)
+	u, err := m.Login("newhire@allowed.example", "New Hire")
+	require.NoError(t, err)
+	assert.Equal(t, store.StatusActive, u.Status)
+	assert.Equal(t, store.RoleUser, u.Role, "an allowed domain approves, it does not promote")
+	// Everyone else still waits
+	other, err := m.Login("stranger@example.com", "Stranger")
+	require.NoError(t, err)
+	assert.Equal(t, store.StatusPending, other.Status)
+}
+
+func TestAllowingADomainApprovesWhoeverWasWaiting(t *testing.T) {
+	t.Parallel()
+	m := newTestManager(t)
+	u, err := m.Login("early@allowed.example", "Early Bird")
+	require.NoError(t, err)
+	require.Equal(t, store.StatusPending, u.Status)
+	// Someone the admin explicitly turned away must stay turned away
+	denied, err := m.Login("nope@allowed.example", "Nope")
+	require.NoError(t, err)
+	denied.Status = store.StatusDenied
+	require.NoError(t, m.Update(denied))
+
+	_, err = m.AllowDomain("allowed.example")
+	require.NoError(t, err)
+	u, err = m.Login("early@allowed.example", "Early Bird")
+	require.NoError(t, err)
+	assert.Equal(t, store.StatusActive, u.Status)
+	denied, err = m.Login("nope@allowed.example", "Nope")
+	require.NoError(t, err)
+	assert.Equal(t, store.StatusDenied, denied.Status)
+}
+
+func TestAllowDomainNormalizesWhatAnAdminTypes(t *testing.T) {
+	t.Parallel()
+	m := newTestManager(t)
+	for _, input := range []string{"*@allowed.example", "@allowed.example", "  ALLOWED.EXAMPLE ", "allowed.example"} {
+		d, err := m.AllowDomain(input)
+		require.NoError(t, err, "input %q", input)
+		assert.Equal(t, "allowed.example", d.Domain, "input %q", input)
+	}
+	domains, err := m.AllowedDomains()
+	require.NoError(t, err)
+	assert.Len(t, domains, 1, "the same domain typed four ways is one domain")
+
+	for _, bad := range []string{"", "*@", "slide", "not a domain.com", "someone@allowed.example", "*@*"} {
+		_, err := m.AllowDomain(bad)
+		assert.ErrorIs(t, err, ErrInvalid, "input %q must be rejected", bad)
+	}
+	require.NoError(t, m.DisallowDomain("*@allowed.example"), "removal takes the same shapes")
+	require.ErrorIs(t, m.DisallowDomain("allowed.example"), store.ErrDomainNotFound)
+}
+
+func TestInviteCreatesAnApprovedUser(t *testing.T) {
+	t.Parallel()
+	m := newTestManager(t)
+	u, err := m.Invite("newhire@allowed.example", store.RoleUser)
+	require.NoError(t, err)
+	assert.Equal(t, store.StatusActive, u.Status)
+	assert.Equal(t, store.RoleUser, u.Role)
+
+	// Their first Google sign-in finds the invite and fills in the real name
+	loggedIn, err := m.Login("NewHire@allowed.example", "New Hire")
+	require.NoError(t, err)
+	assert.Equal(t, u.ID, loggedIn.ID)
+	assert.Equal(t, store.StatusActive, loggedIn.Status)
+	assert.Equal(t, "New Hire", loggedIn.Name)
+
+	// Admins can be invited too
+	admin, err := m.Invite("boss@allowed.example", store.RoleAdmin)
+	require.NoError(t, err)
+	assert.Equal(t, store.RoleAdmin, admin.Role)
+
+	// Garbage in, and inviting the same person twice, are both refused
+	for _, bad := range []string{"", "nope", "  ", "@allowed.example"} {
+		_, err := m.Invite(bad, store.RoleUser)
+		assert.ErrorIs(t, err, ErrInvalid, "input %q must be rejected", bad)
+	}
+	_, err = m.Invite("newhire@allowed.example", store.RoleUser)
+	assert.ErrorIs(t, err, ErrInvalid)
+	_, err = m.Invite("someone@allowed.example", store.Role("wizard"))
+	assert.ErrorIs(t, err, ErrInvalid)
+}
+
 func TestLoginPromotesExistingUserToAdmin(t *testing.T) {
 	t.Parallel()
 	m := newTestManager(t)

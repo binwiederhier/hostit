@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -40,6 +41,11 @@ var (
 	ErrNotActive = errors.New("account is not active: an administrator must approve it")
 	// ErrInvalid marks validation errors (bad SSH keys, bad limit values)
 	ErrInvalid = errors.New("invalid request")
+
+	// domainRe and emailRe are deliberately loose: Google has already verified
+	// the address, so these only need to catch typos in the admin UI
+	domainRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$`)
+	emailRe  = regexp.MustCompile(`^[^@\s]+@[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$`)
 )
 
 // Limits are the effective per-user resource limits
@@ -65,16 +71,24 @@ func NewManager(conf *config.Config, s *store.Store) *Manager {
 
 // Login finds or creates the user behind a verified Google identity. New users
 // start pending; emails listed in the config's admin-emails are auto-approved
-// as admins (and existing accounts are promoted).
+// as admins (and existing accounts are promoted), and addresses in an allowed
+// domain are approved as ordinary users.
 func (m *Manager) Login(email, name string) (*store.User, error) {
 	email = strings.ToLower(strings.TrimSpace(email))
 	if email == "" {
 		return nil, fmt.Errorf("%w: empty email", ErrInvalid)
 	}
 	isAdminEmail := slices.Contains(m.adminEmails(), email)
+	allowed, err := m.emailDomainAllowed(email)
+	if err != nil {
+		return nil, err
+	}
 	u, err := m.store.UserByEmail(email)
 	if errors.Is(err, store.ErrUserNotFound) {
 		u = &store.User{Email: email, Name: name, Role: store.RoleUser, Status: store.StatusPending}
+		if allowed {
+			u.Status = store.StatusActive
+		}
 		if isAdminEmail {
 			u.Role, u.Status = store.RoleAdmin, store.StatusActive
 		}
@@ -88,6 +102,11 @@ func (m *Manager) Login(email, name string) (*store.User, error) {
 	if name != "" {
 		u.Name = name
 	}
+	// Only pending accounts are swept up by a newly allowed domain: someone the
+	// admin turned away stays denied until the admin says otherwise
+	if allowed && u.Status == store.StatusPending {
+		u.Status = store.StatusActive
+	}
 	if isAdminEmail {
 		u.Role, u.Status = store.RoleAdmin, store.StatusActive
 	}
@@ -95,6 +114,79 @@ func (m *Manager) Login(email, name string) (*store.User, error) {
 		return nil, err
 	}
 	return u, nil
+}
+
+// Invite creates an approved account before its owner has ever signed in, so an
+// admin can hand out access directly. The name stays empty until the first
+// Google sign-in fills it in.
+func (m *Manager) Invite(email string, role store.Role) (*store.User, error) {
+	email = strings.ToLower(strings.TrimSpace(email))
+	if !emailRe.MatchString(email) {
+		return nil, fmt.Errorf("%w: %q is not an email address", ErrInvalid, email)
+	}
+	if role != store.RoleAdmin && role != store.RoleUser {
+		return nil, fmt.Errorf("%w: unknown role %q", ErrInvalid, role)
+	}
+	if _, err := m.store.UserByEmail(email); err == nil {
+		return nil, fmt.Errorf("%w: %s already has an account", ErrInvalid, email)
+	} else if !errors.Is(err, store.ErrUserNotFound) {
+		return nil, err
+	}
+	u := &store.User{Email: email, Role: role, Status: store.StatusActive}
+	if err := m.store.AddUser(u); err != nil {
+		return nil, err
+	}
+	return u, nil
+}
+
+// AllowDomain approves everyone signing in with an address in this domain.
+// Admins think in terms of "*@company.com", so accept that shape (and
+// "@company.com") alongside the bare domain.
+func (m *Manager) AllowDomain(domain string) (*store.AllowedDomain, error) {
+	domain, err := normalizeDomain(domain)
+	if err != nil {
+		return nil, err
+	}
+	d := &store.AllowedDomain{Domain: domain}
+	if err := m.store.AddAllowedDomain(d); err != nil {
+		return nil, err
+	}
+	return d, nil
+}
+
+// AllowedDomains lists the domains that skip the approval queue
+func (m *Manager) AllowedDomains() ([]*store.AllowedDomain, error) {
+	return m.store.AllowedDomains()
+}
+
+// DisallowDomain stops auto-approving a domain; accounts already approved under
+// it keep working, since revoking access is a per-user decision
+func (m *Manager) DisallowDomain(domain string) error {
+	domain, err := normalizeDomain(domain)
+	if err != nil {
+		return err
+	}
+	return m.store.RemoveAllowedDomain(domain)
+}
+
+// emailDomainAllowed reports whether an address belongs to an allowed domain
+func (m *Manager) emailDomainAllowed(email string) (bool, error) {
+	at := strings.LastIndex(email, "@")
+	if at < 0 {
+		return false, nil
+	}
+	return m.store.DomainAllowed(email[at+1:])
+}
+
+// normalizeDomain turns what an admin types into a bare lowercase domain
+func normalizeDomain(domain string) (string, error) {
+	domain = strings.ToLower(strings.TrimSpace(domain))
+	domain = strings.TrimPrefix(domain, "*")
+	domain = strings.TrimPrefix(domain, "@")
+	if !domainRe.MatchString(domain) {
+		return "", fmt.Errorf("%w: %q is not a domain (try company.com or *@company.com)", ErrInvalid, domain)
+	}
+	return domain, nil
 }
 
 // User returns a user by ID

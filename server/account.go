@@ -140,6 +140,65 @@ func (s *Server) handleUsersList(w http.ResponseWriter, _ *http.Request, _ *call
 	writeJSON(w, http.StatusOK, resp)
 }
 
+// handleUsersInvite creates an approved account for someone who has not signed
+// in yet, so an admin can hand out access directly instead of waiting for a
+// request to approve
+func (s *Server) handleUsersInvite(w http.ResponseWriter, r *http.Request, _ *caller) {
+	var req apiInviteUserRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if req.Role == "" {
+		req.Role = store.RoleUser
+	}
+	u, err := s.users.Invite(req.Email, req.Role)
+	if err != nil {
+		writeUserError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, newUserResponse(u, 0))
+}
+
+// handleDomainsList returns the email domains that skip the approval queue
+func (s *Server) handleDomainsList(w http.ResponseWriter, _ *http.Request, _ *caller) {
+	domains, err := s.users.AllowedDomains()
+	if err != nil {
+		writeAppError(w, err)
+		return
+	}
+	resp := make([]*apiDomainResponse, 0, len(domains))
+	for _, d := range domains {
+		resp = append(resp, &apiDomainResponse{Domain: d.Domain, CreatedAt: d.CreatedAt})
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// handleDomainsAdd allows a whole email domain to sign up without approval
+func (s *Server) handleDomainsAdd(w http.ResponseWriter, r *http.Request, _ *caller) {
+	var req apiAddDomainRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	d, err := s.users.AllowDomain(req.Domain)
+	if err != nil {
+		writeUserError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, &apiDomainResponse{Domain: d.Domain, CreatedAt: d.CreatedAt})
+}
+
+// handleDomainsDelete stops auto-approving a domain; accounts already approved
+// under it are untouched
+func (s *Server) handleDomainsDelete(w http.ResponseWriter, r *http.Request, _ *caller) {
+	if err := s.users.DisallowDomain(r.PathValue("domain")); err != nil {
+		writeUserError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, &apiMessageResponse{Message: "domain removed"})
+}
+
 // handleUsersUpdate changes role, status and per-user limit overrides; a null
 // limit means "fall back to the global default"
 func (s *Server) handleUsersUpdate(w http.ResponseWriter, r *http.Request, c *caller) {
@@ -341,7 +400,8 @@ func newUserResponse(u *store.User, appCount int) *apiUserResponse {
 // writeUserError maps user-package errors to HTTP status codes
 func writeUserError(w http.ResponseWriter, err error) {
 	switch {
-	case errors.Is(err, store.ErrUserNotFound), errors.Is(err, store.ErrTokenNotFound), errors.Is(err, store.ErrKeyNotFound):
+	case errors.Is(err, store.ErrUserNotFound), errors.Is(err, store.ErrTokenNotFound),
+		errors.Is(err, store.ErrKeyNotFound), errors.Is(err, store.ErrDomainNotFound):
 		writeError(w, http.StatusNotFound, err)
 	case errors.Is(err, user.ErrInvalid):
 		writeError(w, http.StatusBadRequest, err)

@@ -84,6 +84,13 @@ var migrations = []string{
 	`
 		ALTER TABLE token ADD COLUMN secret TEXT NOT NULL DEFAULT '';
 	`,
+	// 5: email domains whose users are approved on sign-in, no admin in the loop
+	`
+		CREATE TABLE allowed_domain (
+			domain TEXT PRIMARY KEY,
+			created_at INTEGER NOT NULL
+		);
+	`,
 }
 
 // migrate brings the database up to the current schema version, creating it if

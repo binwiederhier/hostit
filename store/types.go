@@ -72,6 +72,13 @@ type Token struct {
 	LastUsed *time.Time `json:"last_used"`
 }
 
+// AllowedDomain is an email domain whose users skip the approval queue: anyone
+// signing in with an address in it is active immediately
+type AllowedDomain struct {
+	Domain    string    `json:"domain"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
 // UserKey is an SSH public key from a user's profile; it grants access to all
 // apps that user owns
 type UserKey struct {

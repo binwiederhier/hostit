@@ -182,6 +182,39 @@ func TestAppKeys(t *testing.T) {
 	assert.Equal(t, "ssh-ed25519 AAAA three", keys[0])
 }
 
+func TestAllowedDomains(t *testing.T) {
+	t.Parallel()
+	s := newTestStore(t)
+	domains, err := s.AllowedDomains()
+	require.NoError(t, err)
+	assert.Empty(t, domains)
+	first := &AllowedDomain{Domain: "slide.tech"}
+	require.NoError(t, s.AddAllowedDomain(first))
+	assert.False(t, first.CreatedAt.IsZero(), "the caller gets the stored time back")
+	require.NoError(t, s.AddAllowedDomain(&AllowedDomain{Domain: "example.com"}))
+	domains, err = s.AllowedDomains()
+	require.NoError(t, err)
+	require.Len(t, domains, 2)
+	assert.Equal(t, "example.com", domains[0].Domain) // Sorted
+	assert.False(t, domains[0].CreatedAt.IsZero())
+	allowed, err := s.DomainAllowed("slide.tech")
+	require.NoError(t, err)
+	assert.True(t, allowed)
+	allowed, err = s.DomainAllowed("nope.com")
+	require.NoError(t, err)
+	assert.False(t, allowed)
+	// Adding the same domain twice is not an error; the admin just repeated it
+	require.NoError(t, s.AddAllowedDomain(&AllowedDomain{Domain: "slide.tech"}))
+	domains, err = s.AllowedDomains()
+	require.NoError(t, err)
+	assert.Len(t, domains, 2)
+	require.NoError(t, s.RemoveAllowedDomain("slide.tech"))
+	allowed, err = s.DomainAllowed("slide.tech")
+	require.NoError(t, err)
+	assert.False(t, allowed)
+	require.ErrorIs(t, s.RemoveAllowedDomain("slide.tech"), ErrDomainNotFound)
+}
+
 func TestSettings(t *testing.T) {
 	t.Parallel()
 	s := newTestStore(t)
