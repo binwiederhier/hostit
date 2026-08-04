@@ -190,6 +190,16 @@ func TestAppGetsItsTokenOnCreation(t *testing.T) {
 	rr = request(t, s.API(), "GET", "/api/blog/info", "", created.AgentToken)
 	assert.Equal(t, http.StatusOK, rr.Code)
 
+	// The app token is managed on the app page, not in the profile token list,
+	// so nobody revokes it there by accident
+	rr = request(t, s.API(), "GET", "/v1/account/tokens", "", userToken)
+	require.Equal(t, http.StatusOK, rr.Code)
+	var listed []*apiTokenResponse
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &listed))
+	for _, tk := range listed {
+		assert.Empty(t, tk.AppName, "app-scoped tokens must not appear in the account list")
+	}
+
 	// Rotating replaces it and kills the old one
 	rr = request(t, s.API(), "POST", "/v1/apps/blog/token", "", userToken)
 	require.Equal(t, http.StatusOK, rr.Code)

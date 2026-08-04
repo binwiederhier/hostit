@@ -6,7 +6,7 @@ import { CopyButton, ErrorBanner, Loading, Snippet } from "../components";
 // The SPA is served by the hostit daemon itself, so the agent API lives on our
 // own origin under /api.
 const origin = window.location.origin;
-const tokenPlaceholder = "<create a token first>";
+const tokenPlaceholder = "<this app has no agent token>";
 
 const formatDate = (s) => {
   if (!s) {
@@ -29,6 +29,8 @@ Start with: GET ${origin}/api/info
 That returns instructions for everything else: reading the app's README,
 uploading files, writing hostit.yml, deploying, and reading logs.
 Then GET ${origin}/api/${name}/info to see what this app currently is.
+
+The app currently serves a placeholder page; replace it.
 
 What I want you to build: <describe what you want here>
 
@@ -68,20 +70,20 @@ const NotFound = ({ name }) => (
   </div>
 );
 
-// Mints an app-scoped token and shows it exactly once; it lives in component
-// state only, never in storage.
-const AgentToken = ({ name, token, onCreated }) => {
+// The app-scoped token is created with the app and returned by the API on
+// every fetch, so it is always on display here; rotating it mints a new one.
+const AgentToken = ({ name, token, onRotated }) => {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
-  const create = async () => {
-    if (busy) {
+  const rotate = async () => {
+    if (busy || !window.confirm("This breaks any assistant session still using the old token. Continue?")) {
       return;
     }
     setBusy(true);
     setError("");
     try {
-      onCreated(await api.post("/v1/account/tokens", { label: `agent: ${name}`, app_name: name }));
+      onRotated(await api.post(`/v1/apps/${encodeURIComponent(name)}/token`));
     } catch (err) {
       setError(err.message);
     } finally {
@@ -93,29 +95,23 @@ const AgentToken = ({ name, token, onCreated }) => {
     <div className="card">
       <h2>Agent token</h2>
       <ErrorBanner message={error} onDismiss={() => setError("")} />
-      {token === null && (
+      {!token && <p className="empty">This app has no owner, so it has no agent token.</p>}
+      {token && (
         <>
           <p className="hint">
-            A token lets an AI assistant manage this app (and only this app) through the API. It is shown once, right here.
+            This token lets an AI assistant manage this app, and only this app. Anyone with it can change or delete this app's
+            contents, so treat it like a password.
           </p>
+          <pre className="key-block">{token}</pre>
           <div className="btn-row">
-            <button type="button" className="btn btn-primary" onClick={create} disabled={busy}>
-              {busy ? "Creating..." : "Create agent token"}
+            <CopyButton text={token} small={false}>
+              Copy token
+            </CopyButton>
+            <button type="button" className="btn" onClick={rotate} disabled={busy}>
+              {busy ? "Regenerating..." : "Regenerate"}
             </button>
           </div>
         </>
-      )}
-      {token !== null && (
-        <div className="warn-box">
-          <p>
-            <strong>This token is shown only once.</strong> It is already filled into the prompt below, so copy that. To revoke
-            it later, go to <Link to="/profile">your profile</Link>.
-          </p>
-          <pre className="key-block">{token.token}</pre>
-          <CopyButton text={token.token} small={false}>
-            Copy token
-          </CopyButton>
-        </div>
       )}
     </div>
   );
@@ -175,7 +171,6 @@ const AppDetail = ({ account, refreshAccount }) => {
   const [app, setApp] = useState(null);
   const [error, setError] = useState("");
   const [missing, setMissing] = useState(false);
-  const [token, setToken] = useState(null);
   const [privateKey, setPrivateKey] = useState(location.state ? location.state.private_key || "" : "");
 
   const load = useCallback(async () => {
@@ -227,7 +222,8 @@ const AppDetail = ({ account, refreshAccount }) => {
 
   const own = !account.limits || app.owner_email === undefined || app.owner_email === account.email;
   const diskLimit = own && account.limits ? ` of ${account.limits.disk_mb} MB` : "";
-  const prompt = promptText(app.name, token ? token.token : tokenPlaceholder);
+  const token = app.agent_token || "";
+  const prompt = promptText(app.name, token || tokenPlaceholder);
 
   return (
     <>
@@ -248,14 +244,14 @@ const AppDetail = ({ account, refreshAccount }) => {
       <ErrorBanner message={error} onDismiss={() => setError("")} />
       {privateKey && <PrivateKeyBox privateKey={privateKey} onDismiss={() => setPrivateKey("")} />}
 
-      <AgentToken name={app.name} token={token} onCreated={setToken} />
+      <AgentToken name={app.name} token={token} onRotated={setApp} />
 
       <div className="card prompt-card">
         <h2>Prompt for your AI assistant</h2>
         <div className="term prompt-block">
           <pre>{prompt}</pre>
           <div className="term-copy">
-            <CopyButton text={prompt} small={false} disabled={token === null}>
+            <CopyButton text={prompt} small={false} disabled={token === ""}>
               Copy prompt
             </CopyButton>
           </div>

@@ -64,13 +64,22 @@ func (s *Server) handleKeysDelete(w http.ResponseWriter, r *http.Request, c *cal
 	writeJSON(w, http.StatusOK, &apiMessageResponse{Message: "key deleted"})
 }
 
+// handleTokensList returns the account-wide tokens. App-scoped tokens are
+// deliberately left out: they belong to their app's page, and revoking one from
+// here would quietly break whatever agent is using it.
 func (s *Server) handleTokensList(w http.ResponseWriter, _ *http.Request, c *caller) {
 	tokens, err := s.users.Tokens(c.userID())
 	if err != nil {
 		writeAppError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, tokens)
+	accountTokens := make([]*store.Token, 0, len(tokens))
+	for _, tk := range tokens {
+		if tk.AppName == "" {
+			accountTokens = append(accountTokens, tk)
+		}
+	}
+	writeJSON(w, http.StatusOK, accountTokens)
 }
 
 func (s *Server) handleTokensAdd(w http.ResponseWriter, r *http.Request, c *caller) {
