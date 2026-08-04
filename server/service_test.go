@@ -152,6 +152,33 @@ func TestSocketSelfUnknownUser(t *testing.T) {
 	require.Equal(t, http.StatusNotFound, w.Code)
 }
 
+func TestAppResponseIncludesUsageAndOwner(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	u := newActiveTestUser(t, s, "owner@example.com")
+	token, _, err := s.users.CreateToken(u.ID, "t")
+	require.NoError(t, err)
+	rr := request(t, s.API(), "POST", "/v1/apps", `{"name":"blog"}`, token)
+	require.Equal(t, http.StatusCreated, rr.Code)
+	require.NoError(t, s.apps.Store().UpdateAppUsage("blog", 42, true))
+
+	// The owner sees usage and quota state on their own app
+	rr = request(t, s.API(), "GET", "/v1/apps", "", token)
+	require.Equal(t, http.StatusOK, rr.Code)
+	var apps []*apiAppResponse
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &apps))
+	require.Len(t, apps, 1)
+	assert.Equal(t, 42, apps[0].DiskMB)
+	assert.True(t, apps[0].OverQuota)
+
+	// Admins additionally see who owns each app
+	rr = request(t, s.API(), "GET", "/v1/apps", "", testToken)
+	require.Equal(t, http.StatusOK, rr.Code)
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &apps))
+	require.Len(t, apps, 1)
+	assert.Equal(t, "owner@example.com", apps[0].OwnerEmail)
+}
+
 func TestSocketSelfLifecycle(t *testing.T) {
 	t.Parallel()
 	s := newTestServer(t)

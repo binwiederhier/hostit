@@ -32,6 +32,9 @@ type apiAppResponse struct {
 	Name       string     `json:"name"`
 	URL        string     `json:"url"`
 	Port       int        `json:"port"`
+	DiskMB     int        `json:"disk_mb"`
+	OverQuota  bool       `json:"over_quota"`
+	OwnerEmail string     `json:"owner_email,omitempty"`
 	CreatedAt  time.Time  `json:"created_at"`
 	SSH        apiSSHInfo `json:"ssh"`
 	PrivateKey string     `json:"private_key,omitempty"`

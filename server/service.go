@@ -200,10 +200,13 @@ func (s *Server) listenSocket() (net.Listener, error) {
 // appResponse converts an app (plus optional generated credentials) to its API form
 func (s *Server) appResponse(a *store.App, creds *app.Credentials) *apiAppResponse {
 	resp := &apiAppResponse{
-		Name:      a.Name,
-		URL:       s.apps.URL(a),
-		Port:      a.Port,
-		CreatedAt: a.CreatedAt,
+		Name:       a.Name,
+		URL:        s.apps.URL(a),
+		Port:       a.Port,
+		DiskMB:     a.DiskMB,
+		OverQuota:  a.OverQuota,
+		OwnerEmail: s.ownerEmail(a.OwnerID),
+		CreatedAt:  a.CreatedAt,
 		SSH: apiSSHInfo{
 			User:    a.Name,
 			Host:    s.config.SSHHostname(),
@@ -215,6 +218,19 @@ func (s *Server) appResponse(a *store.App, creds *app.Credentials) *apiAppRespon
 		resp.PublicKey = creds.PublicKey
 	}
 	return resp
+}
+
+// ownerEmail resolves an owner ID to an email for display; unowned apps (created
+// before user accounts existed, or via the global admin token) return empty
+func (s *Server) ownerEmail(ownerID string) string {
+	if ownerID == "" {
+		return ""
+	}
+	u, err := s.users.User(ownerID)
+	if err != nil {
+		return ""
+	}
+	return u.Email
 }
 
 // usernameForUID is the production UID-to-username mapping via the user database
