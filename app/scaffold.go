@@ -7,15 +7,18 @@ import (
 )
 
 const (
-	// scaffoldHostitYml is the commented hostit.yml template placed in new app homes
-	scaffoldHostitYml = `# hostit app config -- deploy with "hostit up", see README.txt
+	// scaffoldHostitYml is the hostit.yml new apps start with: a working demo,
+	// with the alternatives documented right below it
+	scaffoldHostitYml = `# hostit app config -- apply changes with "hostit up", see README.txt.
 #
-# Pick ONE of the two modes below.
-#
-# --- Workspace mode: run a command in your workspace container ---
+# This is the demo app. Replace it with your own.
+
+run: python3 -m http.server $PORT
+
+# --- Workspace mode (above): run a command in your workspace container ---
 # The command MUST listen on 0.0.0.0:$PORT ($PORT is set for you).
 #
-# run: python3 -m http.server $PORT
+# run: ./server --debug
 # env:
 #   DEBUG: "true"
 #
@@ -28,12 +31,16 @@ const (
 # volumes:
 #   - ./data:/data
 `
-	// scaffoldReadme is the README.txt template placed in new app homes; the
-	// placeholders are app URL, port, port again, and app name
+
+	// scaffoldReadme is the README.txt template; placeholders are app URL, port,
+	// port again, and app name
 	scaffoldReadme = `Welcome to your hostit app!
 
-Your app will be served at:  %s
-Your assigned port:          %d
+Your app is served at:  %s
+Your assigned port:     %d
+
+It is already running: the demo page in index.html is being served by the
+"run:" command in hostit.yml. Replace both with your own app.
 
 How it works
 ------------
@@ -46,7 +53,7 @@ How it works
   (your own container image; hostit maps the port for you).
 - Then run:
 
-    hostit up        # (re)deploy and start
+    hostit up        # apply changes and (re)start
     hostit status    # show service status
     hostit logs -f   # follow logs
     hostit restart   # restart
@@ -62,6 +69,43 @@ Notes
 - Need tools not in the workspace? "apt-get update && apt-get install -y ..."
   (installed packages persist until the container is recreated).
 `
+
+	// demoPageTemplate is the placeholder page a new app serves right away; the
+	// placeholder is the app name (twice)
+	demoPageTemplate = `<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>%s is running</title>
+<style>
+  :root { color-scheme: light dark; --fg: #14181d; --muted: #5b6672; --bg: #f6f7f9; --card: #fff; --line: #e3e7ec; --accent: #10b981; }
+  @media (prefers-color-scheme: dark) {
+    :root { --fg: #e8ecf1; --muted: #97a3b0; --bg: #14181d; --card: #1b2027; --line: #2a313a; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 24px;
+         background: var(--bg); color: var(--fg);
+         font: 16px/1.6 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  .card { width: 100%%; max-width: 560px; background: var(--card); border: 1px solid var(--line);
+          border-radius: 14px; padding: 32px; }
+  h1 { margin: 0 0 4px; font-size: 22px; letter-spacing: -0.01em; }
+  h1 .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%%;
+            background: var(--accent); margin-right: 9px; vertical-align: middle; }
+  p { margin: 12px 0 0; color: var(--muted); }
+  code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13.5px; }
+  pre { margin: 16px 0 0; padding: 14px 16px; background: var(--bg); border: 1px solid var(--line);
+        border-radius: 10px; overflow-x: auto; }
+  .foot { margin-top: 22px; padding-top: 16px; border-top: 1px solid var(--line); font-size: 13px; color: var(--muted); }
+</style>
+<div class="card">
+  <h1><span class="dot"></span>%s is running</h1>
+  <p>This is the demo page hostit created for your app. Replace it with your own:</p>
+  <pre>ssh %s@%s
+# put your files here, edit hostit.yml, then:
+hostit up</pre>
+  <p>Everything you need is in <code>README.txt</code> in your app's home directory.</p>
+  <div class="foot">Served by hostit</div>
+</div>
+`
 )
 
 // scaffoldFiles returns the initial files for a new app's home directory; existing
@@ -71,5 +115,12 @@ func (m *Manager) scaffoldFiles(name string, port int) map[string]string {
 	return map[string]string{
 		"hostit.yml": scaffoldHostitYml,
 		"README.txt": fmt.Sprintf(scaffoldReadme, url, port, port, name),
+		"index.html": demoPage(name, m.config.SSHHostname()),
 	}
+}
+
+// demoPage renders the placeholder page a fresh app serves; the CSS percentages
+// in the template are escaped as %% and unescaped by Sprintf
+func demoPage(name, sshHost string) string {
+	return fmt.Sprintf(demoPageTemplate, name, name, name, sshHost)
 }

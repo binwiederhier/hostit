@@ -51,6 +51,8 @@ type SystemOps interface {
 	WriteScaffold(username, home string, files map[string]string) error
 	WriteUserFile(username, home, relPath, content string, mode os.FileMode) error
 	ApplyPortRules(rules []PortRule) error
+	SharedImageExists(storeDir, tag string) bool
+	BuildSharedImage(storeDir, contextDir, tag string) error
 }
 
 // UserRunner executes a command as the given (unprivileged) app user, with the
@@ -159,6 +161,12 @@ func (m *Manager) CreateApp(name string, opts *CreateOptions) (*store.App, *Cred
 		cleanup()
 		return nil, nil, fmt.Errorf("cannot write scaffold for %s: %w", name, err)
 	}
+	// Point the user's podman at the shared image store, so the workspace image
+	// is neither rebuilt nor duplicated per app
+	if err := m.ops.WriteUserFile(name, home, storageConfRelPath, storageConf(m.imageStoreDir()), 0o644); err != nil {
+		cleanup()
+		return nil, nil, fmt.Errorf("cannot write storage config for %s: %w", name, err)
+	}
 
 	// Register the app; roll back the user if this fails
 	app := &store.App{Name: name, Port: port, Host: store.HostLocal, OwnerID: opts.OwnerID}
@@ -173,6 +181,12 @@ func (m *Manager) CreateApp(name string, opts *CreateOptions) (*store.App, *Cred
 	}
 	m.memoryMB[name] = opts.MemoryMB
 	m.ReconcilePortRules()
+
+	// Start the scaffolded demo app, so the URL serves something immediately
+	// instead of a bad gateway page
+	if _, err := m.Up(name); err != nil {
+		slog.Warn("Cannot start demo app; the app exists but serves nothing yet", "app", name, "error", err)
+	}
 	return app, creds, nil
 }
 

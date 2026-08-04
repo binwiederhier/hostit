@@ -61,6 +61,14 @@ func (o *NopSystemOps) ApplyPortRules(rules []PortRule) error {
 	return nil
 }
 
+func (o *NopSystemOps) SharedImageExists(storeDir, tag string) bool {
+	return true
+}
+
+func (o *NopSystemOps) BuildSharedImage(storeDir, contextDir, tag string) error {
+	return nil
+}
+
 func (r *NopUserRunner) RunAsUser(username string, args ...string) (string, error) {
 	return "", nil
 }

@@ -245,6 +245,36 @@ func TestProxyUnknownApp(t *testing.T) {
 	s := newTestServer(t)
 	rr := proxyRequest(t, s, "http://nope.apps.example.com/")
 	require.Equal(t, http.StatusNotFound, rr.Code)
+	assert.Contains(t, rr.Header().Get("Content-Type"), "text/html")
+	body := rr.Body.String()
+	assert.Contains(t, body, "nothing here")
+	// A casual visitor must not learn whether the name is taken, nor how the
+	// platform is wired up
+	assert.NotContains(t, body, "hostit up")
+	assert.NotContains(t, body, "ssh ")
+	assert.NotContains(t, body, "127.0.0.1")
+}
+
+func TestProxyAppDownPage(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	registerAppWithBackend(t, s, "blog", backend.URL)
+	backend.Close()
+	rr := proxyRequest(t, s, "http://blog.apps.example.com/")
+	require.Equal(t, http.StatusBadGateway, rr.Code)
+	assert.Contains(t, rr.Header().Get("Content-Type"), "text/html")
+	body := rr.Body.String()
+	// The visitor learns only that it is not running right now
+	assert.Contains(t, body, "not running")
+	// The owner gets actionable instructions, addressed to them
+	assert.Contains(t, body, "ssh blog@apps.example.com")
+	assert.Contains(t, body, "hostit up")
+	assert.Contains(t, body, "hostit logs")
+	// ... but no internals
+	assert.NotContains(t, body, "127.0.0.1")
+	assert.NotContains(t, body, "/srv/hostit")
+	assert.NotContains(t, strings.ToLower(body), "port 1")
 }
 
 func TestProxyUnknownHost(t *testing.T) {

@@ -25,21 +25,21 @@ func (s *Server) newProxyHandler() http.Handler {
 		}
 		name, ok := s.appNameFromHost(host)
 		if !ok {
-			http.NotFound(w, r)
+			s.writeUnknownAppPage(w)
 			return
 		}
 		a, err := s.apps.App(name)
 		if err != nil {
-			http.NotFound(w, r)
+			s.writeUnknownAppPage(w)
 			return
 		}
-		s.proxyTo(w, r, a.Port)
+		s.proxyTo(w, r, a.Name, a.Port)
 	})
 }
 
 // proxyTo forwards the request to the app's loopback port, preserving the original
 // Host header and streaming immediately (SSE/websocket friendly)
-func (s *Server) proxyTo(w http.ResponseWriter, r *http.Request, port int) {
+func (s *Server) proxyTo(w http.ResponseWriter, r *http.Request, appName string, port int) {
 	target := &url.URL{Scheme: "http", Host: net.JoinHostPort("127.0.0.1", strconv.Itoa(port))}
 	proxy := &httputil.ReverseProxy{
 		Rewrite: func(pr *httputil.ProxyRequest) {
@@ -50,7 +50,7 @@ func (s *Server) proxyTo(w http.ResponseWriter, r *http.Request, port int) {
 		FlushInterval: -1,
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
 			slog.Warn("Proxy error", "host", r.Host, "port", port, "error", err)
-			http.Error(w, "502 bad gateway: app not reachable, is it running?", http.StatusBadGateway)
+			s.writeAppDownPage(w, appName)
 		},
 	}
 	proxy.ServeHTTP(w, r)

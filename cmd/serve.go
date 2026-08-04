@@ -3,6 +3,7 @@ package cmd
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"log/slog"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -62,6 +63,11 @@ func execServe(c *cli.Context) error {
 	}
 	if err := applyStoredLimits(conf, s, manager, users); err != nil {
 		return err
+	}
+	// Build the shared workspace image once, so app creation and first logins
+	// don't pay a per-user image build
+	if err := manager.EnsureSharedImage(); err != nil {
+		slog.Warn("Cannot prepare shared workspace image; apps will build their own", "error", err)
 	}
 	srv := server.New(conf, manager, users)
 

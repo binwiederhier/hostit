@@ -178,7 +178,16 @@ type fakeSystemOps struct {
 	userFiles      map[string]string
 	uids           map[string]int
 	portRules      [][]PortRule
+	sharedImages   map[string]bool
+	sharedBuilds   []sharedBuild
 	createUserErr  error
+}
+
+// sharedBuild records a BuildSharedImage call
+type sharedBuild struct {
+	storeDir   string
+	contextDir string
+	tag        string
 }
 
 var _ SystemOps = (*fakeSystemOps)(nil)
@@ -189,7 +198,18 @@ func newFakeSystemOps() *fakeSystemOps {
 		scaffolds:      make(map[string][]string),
 		userFiles:      make(map[string]string),
 		uids:           make(map[string]int),
+		sharedImages:   make(map[string]bool),
 	}
+}
+
+func (f *fakeSystemOps) SharedImageExists(storeDir, tag string) bool {
+	return f.sharedImages[tag]
+}
+
+func (f *fakeSystemOps) BuildSharedImage(storeDir, contextDir, tag string) error {
+	f.sharedBuilds = append(f.sharedBuilds, sharedBuild{storeDir: storeDir, contextDir: contextDir, tag: tag})
+	f.sharedImages[tag] = true
+	return nil
 }
 
 func (f *fakeSystemOps) UserExists(username string) bool {

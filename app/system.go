@@ -146,6 +146,45 @@ func (o *systemOps) WriteUserFile(username, home, relPath, content string, mode 
 	return os.Chown(filename, uid, gid)
 }
 
+// SharedImageExists reports whether the shared read-only store already holds the
+// given image
+func (o *systemOps) SharedImageExists(storeDir, tag string) bool {
+	return run("podman", "--root", storeDir, "image", "exists", tag) == nil
+}
+
+// BuildSharedImage builds an image into the shared store as root and makes it
+// world-readable, so unprivileged app users can use it as an additional image
+// store without copying or rebuilding it
+func (o *systemOps) BuildSharedImage(storeDir, contextDir, tag string) error {
+	if err := os.MkdirAll(storeDir, 0o755); err != nil {
+		return err
+	}
+	err := run("podman", "--root", storeDir, "build", "--tag", tag, contextDir)
+	if err != nil {
+		return err
+	}
+	return makeWorldReadable(storeDir)
+}
+
+// makeWorldReadable grants read (and traverse) access to everyone below dir;
+// rootless users can only use the shared layers if they can read the files
+func makeWorldReadable(dir string) error {
+	return filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil // Skip unreadable entries rather than failing the build
+		}
+		mode := info.Mode().Perm()
+		newMode := mode | 0o004 // Others may read
+		if info.IsDir() || mode&0o100 != 0 {
+			newMode |= 0o001 // ... and traverse/execute where the owner can
+		}
+		if newMode == mode {
+			return nil
+		}
+		return os.Chmod(path, newMode)
+	})
+}
+
 // ApplyPortRules atomically replaces the hostit nftables table: for each app
 // port, loopback connects are only allowed for root (the proxy) and the owner
 func (o *systemOps) ApplyPortRules(rules []PortRule) error {
