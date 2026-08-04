@@ -567,10 +567,6 @@ a:focus-visible {
   background: #ffffff1a;
 }
 
-.claude-panel {
-  border-left: 3px solid var(--accent);
-}
-
 /* Tables */
 .table-wrap {
   overflow-x: auto;

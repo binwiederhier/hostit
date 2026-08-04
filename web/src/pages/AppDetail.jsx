@@ -17,25 +17,15 @@ const formatDate = (s) => {
 };
 
 // The whole point of this page: a ready-to-paste prompt that teaches any agent
-// how to drive this one app through the API. Keep it plain prose, no shell.
-const promptText = (name, token) => `I have a web app called ${name} hosted on hostit.
-Manage it entirely through its HTTP API:
+// how to drive this one app. It only points at the app's own info endpoint,
+// which returns everything else the agent needs.
+const promptText = (name, token) => `I want to build a web app called ${name} hosted on hostit.
 
-  API base: ${origin}/api
-  Token:    ${token}
-
-Start with: GET ${origin}/api/info
-(send header "Authorization: Bearer ${token}" on every request)
-That returns instructions for everything else: reading the app's README,
-uploading files, writing hostit.yml, deploying, and reading logs.
-Then GET ${origin}/api/${name}/info to see what this app currently is.
+The app can be managed entirely through the hostit REST API. You can learn more about how to use the API by calling ${origin}/api/${name}/info, using the Bearer token ${token}. Follow the instructions returned by the API.
 
 The app currently serves a placeholder page; replace it.
 
-What I want you to build: <describe what you want here>
-
-Before you finish, update the app's README via PUT ${origin}/api/${name}/readme
-so the next session knows what this app is.
+After exploring the hostit API, ask me questions on what app I want to build.
 `;
 
 // Shown once, right after creation, when hostit generated an SSH key pair
@@ -244,8 +234,6 @@ const AppDetail = ({ account, refreshAccount }) => {
       <ErrorBanner message={error} onDismiss={() => setError("")} />
       {privateKey && <PrivateKeyBox privateKey={privateKey} onDismiss={() => setPrivateKey("")} />}
 
-      <AgentToken name={app.name} token={token} onRotated={setApp} />
-
       <div className="card prompt-card">
         <h2>Prompt for your AI assistant</h2>
         <div className="term prompt-block">
@@ -256,20 +244,25 @@ const AppDetail = ({ account, refreshAccount }) => {
             </CopyButton>
           </div>
         </div>
-        <p className="hint">Paste this into Claude Code (or any AI agent) and replace the last line with what you want.</p>
+        <p className="hint">Paste this into Claude Code (or any AI agent).</p>
       </div>
 
       <div className="card">
-        <h2>Details</h2>
+        <h2>SSH access</h2>
         <p>
           Your app is served at{" "}
           <a href={app.url} target="_blank" rel="noreferrer">
             {app.url}
-          </a>{" "}
-          on port <span className="mono">{app.port}</span>. If you would rather use ssh and scp than an agent, log in with:
+          </a>
+          . If you would rather use ssh and scp than an agent, log in with:
         </p>
         {app.ssh && <Snippet text={app.ssh.command} />}
+        <p className="hint">
+          Your SSH keys from your <Link to="/profile">profile</Link> work here.
+        </p>
       </div>
+
+      <AgentToken name={app.name} token={token} onRotated={setApp} />
 
       <DangerZone name={app.name} onDeleted={deleted} />
     </>

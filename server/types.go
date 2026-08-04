@@ -30,17 +30,21 @@ type apiSSHInfo struct {
 // apiAppResponse is returned for all app-related endpoints; PrivateKey/PublicKey
 // are only set on creation when hostit generated a key pair for the caller
 type apiAppResponse struct {
-	Name       string     `json:"name"`
-	URL        string     `json:"url"`
-	Port       int        `json:"port"`
-	DiskMB     int        `json:"disk_mb"`
-	OverQuota  bool       `json:"over_quota"`
-	OwnerEmail string     `json:"owner_email,omitempty"`
-	CreatedAt  time.Time  `json:"created_at"`
-	SSH        apiSSHInfo `json:"ssh"`
-	AgentToken string     `json:"agent_token,omitempty"` // App-scoped; shown to the owner so the page can always render the prompt
-	PrivateKey string     `json:"private_key,omitempty"`
-	PublicKey  string     `json:"public_key,omitempty"`
+	Name        string     `json:"name"`
+	URL         string     `json:"url"`
+	Port        int        `json:"port"`
+	DiskMB      int        `json:"disk_mb"`
+	DiskLimit   int        `json:"disk_limit_mb"`
+	MemoryMB    int        `json:"memory_mb"`
+	MemoryLimit int        `json:"memory_limit_mb"`
+	Running     bool       `json:"running"`
+	OverQuota   bool       `json:"over_quota"`
+	OwnerEmail  string     `json:"owner_email,omitempty"`
+	CreatedAt   time.Time  `json:"created_at"`
+	SSH         apiSSHInfo `json:"ssh"`
+	AgentToken  string     `json:"agent_token,omitempty"` // App-scoped; shown to the owner so the page can always render the prompt
+	PrivateKey  string     `json:"private_key,omitempty"`
+	PublicKey   string     `json:"public_key,omitempty"`
 }
 
 // apiHealthResponse is returned by GET /v1/health
@@ -194,6 +198,9 @@ type apiAgentAppResponse struct {
 	Files     []*app.FileInfo `json:"files"`
 	SSH       apiSSHInfo      `json:"ssh"`
 	Hint      string          `json:"hint"`
+	// Guide is the full instruction set, inlined so an agent pointed at this one
+	// URL needs nothing else
+	Guide *apiAgentInfoResponse `json:"guide"`
 }
 
 // apiReadmeRequest is the body of PUT /api/{app}/readme

@@ -55,11 +55,23 @@ func methodNotAllowed(action string) http.HandlerFunc {
 
 // handleAgentInfo explains the platform to an agent that has never seen it
 func (s *Server) handleAgentInfo(w http.ResponseWriter, _ *http.Request, c *caller) {
+	writeJSON(w, http.StatusOK, s.agentGuide(""))
+}
+
+// agentGuide is the instruction set handed to agents. It is returned both by
+// /api/info and inline by /api/{app}/info, because the prompt a user pastes
+// points only at their app: whatever an agent needs must be reachable from
+// that single URL.
+func (s *Server) agentGuide(appName string) *apiAgentInfoResponse {
 	base := "https://" + s.config.APIHostname()
 	if s.config.TLS == "off" {
 		base = "http://" + s.config.APIHostname()
 	}
-	writeJSON(w, http.StatusOK, &apiAgentInfoResponse{
+	name := appName
+	if name == "" {
+		name = "{app}"
+	}
+	return &apiAgentInfoResponse{
 		Platform: "hostit",
 		BaseURL:  base + "/api",
 		WhatIsThis: "hostit hosts small web apps. Each app is an isolated container with its own " +
@@ -67,12 +79,12 @@ func (s *Server) handleAgentInfo(w http.ResponseWriter, _ *http.Request, c *call
 			"files, describe how to run it in hostit.yml, then deploy. Your token is limited to one " +
 			"app unless it is an account token.",
 		Workflow: []string{
-			"GET /api/{app}/info to see what the app currently is; its README.md is the app's description and worklog. A new app is a stub serving a placeholder page.",
-			"Upload files: PUT /api/{app}/files/{path} with the file body, or POST /api/{app}/files with a tar archive for many files at once.",
+			"You are looking at /api/" + name + "/info: it tells you what the app currently is. Its README.md is the app's description and worklog. A new app is a stub serving a placeholder page.",
+			"Upload files: PUT /api/" + name + "/files/{path} with the file body, or POST /api/" + name + "/files with a tar archive for many files at once.",
 			"Write hostit.yml (upload it like any other file) to say how the app runs. See hostit_yml below.",
-			"POST /api/{app}/deploy to apply hostit.yml and (re)start the app.",
-			"GET /api/{app}/logs if it does not come up; the app must listen on 0.0.0.0:$PORT.",
-			"PUT /api/{app}/readme to record what this app is and what you changed, for whoever comes next.",
+			"POST /api/" + name + "/deploy to apply hostit.yml and (re)start the app.",
+			"GET /api/" + name + "/logs if it does not come up; the app must listen on 0.0.0.0:$PORT.",
+			"PUT /api/" + name + "/readme to record what this app is and what you changed, for whoever comes next.",
 		},
 		HostitYml: "Three modes, pick one.\n\n" +
 			"1. Static files (simplest, nothing to run):\n" +
@@ -90,26 +102,25 @@ func (s *Server) handleAgentInfo(w http.ResponseWriter, _ *http.Request, c *call
 			"Python, Node and PHP work equally well, and a plain HTML site needs only static:.",
 		Auth: "Send the token as: Authorization: Bearer <token>",
 		Endpoints: []apiAgentEndpoint{
-			{Method: "GET", Path: "/api/info", What: "This document"},
-			{Method: "GET", Path: "/api/{app}/info", What: "App URL, state, README, file list, hostit.yml"},
-			{Method: "GET", Path: "/api/{app}/logs", What: "Recent output; ?lines=N"},
-			{Method: "GET", Path: "/api/{app}/files", What: "List the app's files"},
-			{Method: "GET", Path: "/api/{app}/files/{path}", What: "Read one file"},
-			{Method: "PUT", Path: "/api/{app}/files/{path}", What: "Write one file (raw body)"},
-			{Method: "DELETE", Path: "/api/{app}/files/{path}", What: "Delete one file"},
-			{Method: "POST", Path: "/api/{app}/files", What: "Upload a tar archive (Content-Type: application/x-tar)"},
-			{Method: "PUT", Path: "/api/{app}/readme", What: `Replace README.md: {"readme": "..."}`},
-			{Method: "POST", Path: "/api/{app}/deploy", What: "Apply hostit.yml and (re)start"},
-			{Method: "POST", Path: "/api/{app}/start", What: "Start the app"},
-			{Method: "POST", Path: "/api/{app}/stop", What: "Stop the app"},
-			{Method: "POST", Path: "/api/{app}/restart", What: "Restart the app"},
+			{Method: "GET", Path: "/api/" + name + "/info", What: "This document plus the app's URL, state, README, file list and hostit.yml"},
+			{Method: "GET", Path: "/api/" + name + "/logs", What: "Recent output; ?lines=N"},
+			{Method: "GET", Path: "/api/" + name + "/files", What: "List the app's files"},
+			{Method: "GET", Path: "/api/" + name + "/files/{path}", What: "Read one file"},
+			{Method: "PUT", Path: "/api/" + name + "/files/{path}", What: "Write one file (raw body)"},
+			{Method: "DELETE", Path: "/api/" + name + "/files/{path}", What: "Delete one file"},
+			{Method: "POST", Path: "/api/" + name + "/files", What: "Upload a tar archive (Content-Type: application/x-tar)"},
+			{Method: "PUT", Path: "/api/" + name + "/readme", What: `Replace README.md: {"readme": "..."}`},
+			{Method: "POST", Path: "/api/" + name + "/deploy", What: "Apply hostit.yml and (re)start"},
+			{Method: "POST", Path: "/api/" + name + "/start", What: "Start the app"},
+			{Method: "POST", Path: "/api/" + name + "/stop", What: "Stop the app"},
+			{Method: "POST", Path: "/api/" + name + "/restart", What: "Restart the app"},
 		},
 		Notes: []string{
 			"Apps also accept SSH: the owner's SSH keys work, and you can scp/rsync into the app's home directory.",
-			"Changing image/build/env/volumes recreates the container; changing only run: restarts the process.",
+			"Changing image/build/env/volumes recreates the container; changing only static:/run: restarts the process.",
 			"Deleting or renaming apps is done by the owner in the web app, not through this API.",
 		},
-	})
+	}
 }
 
 func (s *Server) handleAgentAppInfo(w http.ResponseWriter, _ *http.Request, c *caller, a *store.App) {
@@ -139,7 +150,8 @@ func (s *Server) handleAgentAppInfo(w http.ResponseWriter, _ *http.Request, c *c
 			Host:    s.config.SSHHostname(),
 			Command: "ssh " + a.Name + "@" + s.config.SSHHostname(),
 		},
-		Hint: "Upload files, write hostit.yml, then POST /api/" + a.Name + "/deploy. See GET /api/info.",
+		Hint:  "Upload files, write hostit.yml, then POST /api/" + a.Name + "/deploy. Everything you need is in this response.",
+		Guide: s.agentGuide(a.Name),
 	})
 }
 

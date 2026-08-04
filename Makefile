@@ -2,7 +2,7 @@ VERSION ?= 0.1.0
 GO      ?= go
 NPM     ?= npm
 
-.PHONY: help build web web-deps web-build deb deb-arm64 release release-snapshot check test vet fmt fmt-check clean deps install install-deb purge-package
+.PHONY: help build web web-deps web-build deb deb-arm64 release release-snapshot check test e2e vet fmt fmt-check clean deps install install-deb purge-package
 
 help:
 	@echo "Build:"
@@ -14,6 +14,7 @@ help:
 	@echo "Test/check:"
 	@echo "  make check              - Run tests, formatting checks and vetting"
 	@echo "  make test               - Run tests"
+	@echo "  make e2e                - Run end-to-end tests against a running server"
 	@echo "  make vet                - Run 'go vet'"
 	@echo "  make fmt                - Run 'gofmt -s -w'"
 	@echo "  make fmt-check          - Run 'gofmt', but don't change anything"
@@ -59,6 +60,13 @@ check: test fmt-check vet
 
 test:
 	$(GO) test ./...
+
+# End-to-end tests against a RUNNING server; they create and delete e2e-* apps,
+# so point them at a test instance:
+#   HOSTIT_HOST=https://hostit.apps.example.com HOSTIT_TOKEN=... make e2e
+e2e:
+	@test -n "$(HOSTIT_HOST)" || { echo "set HOSTIT_HOST and HOSTIT_TOKEN"; exit 1; }
+	$(GO) test -tags e2e -count 1 -timeout 30m -v ./e2e/
 
 vet:
 	$(GO) vet ./...

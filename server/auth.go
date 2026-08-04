@@ -40,9 +40,14 @@ func (c *caller) isAdmin() bool {
 	return c.globalAdmin || (c.user != nil && c.user.Role == store.RoleAdmin)
 }
 
-// isActive reports whether the caller may use the platform (approved account)
+// isActive reports whether the caller may use the platform (approved account).
+// An app token for an ownerless app has no user record behind it, but is still
+// a legitimate caller for its own app.
 func (c *caller) isActive() bool {
-	return c.globalAdmin || (c.user != nil && c.user.Status == store.StatusActive)
+	if c.globalAdmin || (c.user != nil && c.user.Status == store.StatusActive) {
+		return true
+	}
+	return c.user == nil && c.appScope != ""
 }
 
 // userID returns the caller's user ID, empty for the global admin token

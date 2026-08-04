@@ -219,6 +219,42 @@ func (s *Server) listenSocket() (net.Listener, error) {
 	return listener, nil
 }
 
+// withState fills in live state (running, memory) and the owner's limits for a
+// set of apps; one systemd and one podman call cover them all
+func (s *Server) withState(resp []*apiAppResponse) []*apiAppResponse {
+	names := make([]string, 0, len(resp))
+	for _, r := range resp {
+		names = append(names, r.Name)
+	}
+	states := s.apps.States(names)
+	for _, r := range resp {
+		state := states[r.Name]
+		r.Running, r.MemoryMB = state.Running, state.MemoryMB
+		r.MemoryLimit, r.DiskLimit = s.appLimits(r.Name)
+	}
+	return resp
+}
+
+// appLimits returns the memory and disk caps that apply to an app
+func (s *Server) appLimits(name string) (memoryMB int, diskMB int) {
+	a, err := s.apps.App(name)
+	if err != nil {
+		return 0, 0
+	}
+	limits, err := s.users.Defaults()
+	if err != nil {
+		return 0, 0
+	}
+	if a.OwnerID != "" {
+		if owner, err := s.users.User(a.OwnerID); err == nil {
+			if ownerLimits, err := s.users.Limits(owner); err == nil {
+				limits = ownerLimits
+			}
+		}
+	}
+	return limits.MemoryMB, limits.DiskMB
+}
+
 // appResponse converts an app (plus optional generated credentials) to its API form
 func (s *Server) appResponse(a *store.App, creds *app.Credentials) *apiAppResponse {
 	resp := &apiAppResponse{

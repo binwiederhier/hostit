@@ -210,6 +210,11 @@ func (m *Manager) UserAndScopeByToken(token string) (*store.User, string, error)
 	if err != nil {
 		return nil, "", err
 	}
+	// An app created with the global admin token has no owner, but its agent
+	// token must still work: it is scoped to that app and nothing else
+	if tk.UserID == "" {
+		return nil, tk.AppName, nil
+	}
 	u, err := m.store.User(tk.UserID)
 	if err != nil {
 		return nil, "", err

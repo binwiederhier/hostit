@@ -26,6 +26,10 @@ const (
 	// subUIDFile and subGIDFile hold the subordinate ranges containers map into
 	subUIDFile = "/etc/subuid"
 	subGIDFile = "/etc/subgid"
+	// managedBeginMarker and managedEndMarker delimit the block of authorized_keys
+	// that hostit owns. Anything outside it was put there by hand and is kept.
+	managedBeginMarker = "# BEGIN hostit-managed keys -- edits inside this block are overwritten"
+	managedEndMarker   = "# END hostit-managed keys"
 )
 
 // systemOps is the real SystemOps implementation; it shells out to the usual
@@ -132,6 +136,8 @@ func lookupSubID(filename, username string) (start int, count int, err error) {
 	return 0, 0, fmt.Errorf("no subordinate id range for %s in %s", username, filename)
 }
 
+// WriteAuthorizedKeys updates the hostit-managed block of the app's
+// authorized_keys, leaving any key the user added by hand in place
 func (o *systemOps) WriteAuthorizedKeys(username, home string, keys []string) error {
 	uid, gid, err := lookupIDs(username)
 	if err != nil {
@@ -142,7 +148,11 @@ func (o *systemOps) WriteAuthorizedKeys(username, home string, keys []string) er
 		return err
 	}
 	filename := filepath.Join(sshDir, "authorized_keys")
-	if err := os.WriteFile(filename, []byte(strings.Join(keys, "\n")+"\n"), 0o600); err != nil {
+	existing, err := os.ReadFile(filename)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	if err := os.WriteFile(filename, []byte(mergeAuthorizedKeys(string(existing), keys)), 0o600); err != nil {
 		return err
 	}
 	if err := os.Chown(sshDir, uid, gid); err != nil {
@@ -201,6 +211,41 @@ func (o *systemOps) WriteUserFile(username, home, relPath, content string, mode 
 		return err
 	}
 	return os.Chown(filename, uid, gid)
+}
+
+// mergeAuthorizedKeys replaces the hostit-managed block in an authorized_keys
+// file while preserving everything around it, so a key someone scp'd in by hand
+// survives every profile change hostit makes
+func mergeAuthorizedKeys(existing string, managed []string) string {
+	var kept []string
+	inManaged := false
+	for _, line := range strings.Split(existing, "\n") {
+		switch {
+		case strings.HasPrefix(line, managedBeginMarker):
+			inManaged = true
+		case strings.HasPrefix(line, managedEndMarker):
+			inManaged = false
+		case !inManaged && strings.TrimSpace(line) != "":
+			kept = append(kept, line)
+		}
+	}
+	var b strings.Builder
+	for _, line := range kept {
+		b.WriteString(line)
+		b.WriteString("\n")
+	}
+	b.WriteString(managedBeginMarker)
+	b.WriteString("\n")
+	for _, key := range managed {
+		if strings.TrimSpace(key) == "" {
+			continue
+		}
+		b.WriteString(strings.TrimSpace(key))
+		b.WriteString("\n")
+	}
+	b.WriteString(managedEndMarker)
+	b.WriteString("\n")
+	return b.String()
 }
 
 // ChownToUser gives a path to the app user

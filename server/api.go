@@ -112,7 +112,7 @@ func (s *Server) handleAppsList(w http.ResponseWriter, _ *http.Request, c *calle
 	for _, a := range apps {
 		resp = append(resp, s.appResponse(a, nil))
 	}
-	writeJSON(w, http.StatusOK, resp)
+	writeJSON(w, http.StatusOK, s.withState(resp))
 }
 
 func (s *Server) handleAppsGet(w http.ResponseWriter, r *http.Request, c *caller) {
@@ -123,7 +123,7 @@ func (s *Server) handleAppsGet(w http.ResponseWriter, r *http.Request, c *caller
 	}
 	resp := s.appResponse(a, nil)
 	resp.AgentToken = s.agentToken(a)
-	writeJSON(w, http.StatusOK, resp)
+	writeJSON(w, http.StatusOK, s.withState([]*apiAppResponse{resp})[0])
 }
 
 // handleAppsRotateToken issues a fresh agent token, invalidating the old one
@@ -146,9 +146,6 @@ func (s *Server) handleAppsRotateToken(w http.ResponseWriter, r *http.Request, c
 // agentToken returns the app's agent token, creating it if the app predates
 // automatic creation; failures are not fatal, the page just shows no token
 func (s *Server) agentToken(a *store.App) string {
-	if a.OwnerID == "" {
-		return "" // Unowned apps (admin-token created) have no owner to bill it to
-	}
 	token, err := s.users.AppToken(a.OwnerID, a.Name)
 	if err != nil {
 		slog.Warn("Cannot read agent token", "app", a.Name, "error", err)

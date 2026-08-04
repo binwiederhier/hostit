@@ -199,6 +199,7 @@ const Tokens = () => {
               <tr>
                 <th>Token</th>
                 <th>Label</th>
+                <th>Scope</th>
                 <th>Created</th>
                 <th>Last used</th>
                 <th aria-label="Actions" />
@@ -209,6 +210,7 @@ const Tokens = () => {
                 <tr key={t.id}>
                   <td className="mono">{t.prefix}...</td>
                   <td>{t.label || "-"}</td>
+                  <td className="cell-muted">{t.app_name ? `App: ${t.app_name}` : "All apps"}</td>
                   <td className="cell-muted">{formatDate(t.created_at)}</td>
                   <td className="cell-muted">{formatDate(t.last_used)}</td>
                   <td className="cell-actions">
@@ -221,6 +223,11 @@ const Tokens = () => {
             </tbody>
           </table>
         </div>
+      )}
+      {tokens !== null && tokens.length > 0 && (
+        <p className="hint">
+          Account tokens can manage all your apps. App tokens work only for one app and are created automatically with it.
+        </p>
       )}
       <form className="inline-form" onSubmit={create}>
         <input

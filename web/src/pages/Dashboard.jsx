@@ -1,37 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api } from "../api";
-import { ErrorBanner, Loading, Snippet } from "../components";
+import { ErrorBanner, Loading } from "../components";
 
 const nameRe = /^[a-z][a-z0-9-]{0,30}[a-z0-9]$/;
-
-// The SPA is served from the hostit daemon itself, so the API host is our own
-// origin; the SSH host is the apps domain, i.e. the hostname without the
-// leading "hostit." label (hostit.apps.example.com -> apps.example.com).
-const apiHost = window.location.origin;
-const sshHost = window.location.hostname.replace(/^hostit\./, "");
-
-const ClaudePanel = () => (
-  <div className="card claude-panel">
-    <h2>Use with Claude</h2>
-    <p>
-      The fastest way to use hostit is to let an agent drive it. Create an{" "}
-      <Link to="/profile">API token in your profile</Link>, then point the <span className="mono">hostit</span> CLI at this
-      server:
-    </p>
-    <Snippet
-      text={`export HOSTIT_HOST=${apiHost}\nexport HOSTIT_TOKEN=<your token>\nhostit admin add myapp -k ~/.ssh/id_ed25519.pub`}
-    />
-    <p>
-      After creating an app, SSH into it, put your files there, write a <span className="mono">hostit.yml</span>, and bring it
-      up:
-    </p>
-    <Snippet text={`ssh myapp@${sshHost}\n# upload files, write hostit.yml, then:\nhostit up`} />
-    <p className="hint">
-      Tip: paste this page's instructions into Claude and tell it what to deploy; it can do the rest on its own.
-    </p>
-  </div>
-);
 
 const AppRow = ({ app, account, isAdmin, onDelete }) => {
   const own = !isAdmin || app.owner_email === account.email;
@@ -152,6 +124,9 @@ const Dashboard = ({ account, refreshAccount }) => {
             </table>
           </div>
         )}
+        {apps !== null && apps.length > 0 && (
+          <p className="hint">Open an app to get a prompt you can paste into an AI assistant.</p>
+        )}
         <form className="inline-form" onSubmit={create}>
           <input
             type="text"
@@ -170,7 +145,6 @@ const Dashboard = ({ account, refreshAccount }) => {
           <p className="hint">Names are 2-32 characters: lowercase letters, digits and dashes, starting with a letter.</p>
         )}
       </div>
-      <ClaudePanel />
     </>
   );
 };

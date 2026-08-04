@@ -190,15 +190,18 @@ func TestAppGetsItsTokenOnCreation(t *testing.T) {
 	rr = request(t, s.API(), "GET", "/api/blog/info", "", created.AgentToken)
 	assert.Equal(t, http.StatusOK, rr.Code)
 
-	// The app token is managed on the app page, not in the profile token list,
-	// so nobody revokes it there by accident
+	// The profile lists every token, each saying what it reaches, so the user
+	// can tell an account token from an app token at a glance
 	rr = request(t, s.API(), "GET", "/v1/account/tokens", "", userToken)
 	require.Equal(t, http.StatusOK, rr.Code)
 	var listed []*apiTokenResponse
 	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &listed))
+	scopes := make(map[string]bool)
 	for _, tk := range listed {
-		assert.Empty(t, tk.AppName, "app-scoped tokens must not appear in the account list")
+		scopes[tk.AppName] = true
 	}
+	assert.True(t, scopes[""], "the account-wide token must be listed")
+	assert.True(t, scopes["blog"], "the app-scoped token must be listed too")
 
 	// Rotating replaces it and kills the old one
 	rr = request(t, s.API(), "POST", "/v1/apps/blog/token", "", userToken)
@@ -210,6 +213,51 @@ func TestAppGetsItsTokenOnCreation(t *testing.T) {
 	assert.Equal(t, http.StatusUnauthorized, rr.Code)
 	rr = request(t, s.API(), "GET", "/api/blog/info", "", rotated.AgentToken)
 	assert.Equal(t, http.StatusOK, rr.Code)
+}
+
+func TestAdminCreatedAppStillGetsAWorkingToken(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	// The global admin token creates apps that belong to nobody; their agent
+	// token must still work, so an admin can hand an app to someone
+	rr := request(t, s.API(), "POST", "/v1/apps", `{"name":"orphan"}`, testToken)
+	require.Equal(t, http.StatusCreated, rr.Code)
+	var created apiAppResponse
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &created))
+	require.NotEmpty(t, created.AgentToken)
+
+	rr = request(t, s.API(), "GET", "/api/orphan/info", "", created.AgentToken)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	// ... and it is still confined to that app
+	rr = request(t, s.API(), "GET", "/v1/apps", "", created.AgentToken)
+	assert.Equal(t, http.StatusForbidden, rr.Code)
+}
+
+func TestAccountTokenReachesEveryAppOfTheUser(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	u := newActiveTestUser(t, s, "owner@example.com")
+	userToken, _, err := s.users.CreateToken(u.ID, "laptop")
+	require.NoError(t, err)
+	for _, name := range []string{"one", "two"} {
+		rr := request(t, s.API(), "POST", "/v1/apps", fmt.Sprintf(`{"name":%q}`, name), userToken)
+		require.Equal(t, http.StatusCreated, rr.Code)
+	}
+	// An account token drives every app the user owns, through the agent API too
+	for _, name := range []string{"one", "two"} {
+		rr := request(t, s.API(), "GET", "/api/"+name+"/info", "", userToken)
+		assert.Equal(t, http.StatusOK, rr.Code, "account token must reach %s", name)
+		rr = request(t, s.API(), "POST", "/api/"+name+"/restart", "", userToken)
+		assert.Equal(t, http.StatusOK, rr.Code)
+	}
+	// ... but not somebody else's app
+	other := newActiveTestUser(t, s, "other@example.com")
+	otherToken, _, err := s.users.CreateToken(other.ID, "laptop")
+	require.NoError(t, err)
+	rr := request(t, s.API(), "POST", "/v1/apps", `{"name":"theirs"}`, otherToken)
+	require.Equal(t, http.StatusCreated, rr.Code)
+	rr = request(t, s.API(), "GET", "/api/theirs/info", "", userToken)
+	assert.Equal(t, http.StatusNotFound, rr.Code, "one user's token must not reach another's app")
 }
 
 func TestAgentUnauthenticated(t *testing.T) {
