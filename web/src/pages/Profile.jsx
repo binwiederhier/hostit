@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
-import { CopyButton, ErrorBanner, Loading } from "../components";
+import { CopyButton, ErrorBanner, formatDate, Loading } from "../components";
 
 // Shortens an authorized_keys line to "ssh-ed25519 ...<tail> comment".
 const keyPreview = (key) => {
@@ -9,14 +9,6 @@ const keyPreview = (key) => {
   const b64 = parts[1] || "";
   const comment = parts.slice(2).join(" ");
   return `${type} ...${b64.slice(-16)}${comment ? ` ${comment}` : ""}`;
-};
-
-const formatDate = (s) => {
-  if (!s) {
-    return "never";
-  }
-  const d = new Date(s);
-  return Number.isNaN(d.getTime()) ? s : d.toLocaleDateString();
 };
 
 const SshKeys = () => {
@@ -199,7 +191,6 @@ const Tokens = () => {
               <tr>
                 <th>Token</th>
                 <th>Label</th>
-                <th>Scope</th>
                 <th>Created</th>
                 <th>Last used</th>
                 <th aria-label="Actions" />
@@ -210,9 +201,8 @@ const Tokens = () => {
                 <tr key={t.id}>
                   <td className="mono">{t.prefix}...</td>
                   <td>{t.label || "-"}</td>
-                  <td className="cell-muted">{t.app_name ? `App: ${t.app_name}` : "All apps"}</td>
-                  <td className="cell-muted">{formatDate(t.created_at)}</td>
-                  <td className="cell-muted">{formatDate(t.last_used)}</td>
+                  <td className="cell-muted">{formatDate(t.created_at, "never")}</td>
+                  <td className="cell-muted">{formatDate(t.last_used, "never")}</td>
                   <td className="cell-actions">
                     <button type="button" className="btn btn-small btn-danger" onClick={() => revoke(t)}>
                       Revoke
@@ -225,9 +215,7 @@ const Tokens = () => {
         </div>
       )}
       {tokens !== null && tokens.length > 0 && (
-        <p className="hint">
-          Account tokens can manage all your apps. App tokens work only for one app and are created automatically with it.
-        </p>
+        <p className="hint">These tokens can manage all your apps. Each app also has its own token, shown on the app's page.</p>
       )}
       <form className="inline-form" onSubmit={create}>
         <input

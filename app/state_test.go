@@ -2,6 +2,7 @@ package app
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -55,6 +56,39 @@ func TestStatesDegradeRatherThanBlock(t *testing.T) {
 	require.Len(t, states, 1)
 	assert.True(t, states["one"].Running, "systemd still answers")
 	assert.Equal(t, 0, states["one"].MemoryMB)
+}
+
+func TestCachedStatesAnswerFromMemory(t *testing.T) {
+	t.Parallel()
+	m, _, runner := newTestDeployManager(t)
+	createTestApp(t, m, "one")
+	runner.returns("systemctl is-active", "active\n")
+	runner.returns("podman stats", `[{"name":"hostit-app-one","mem_usage":"7MB / 536.9MB"}]`)
+	m.RefreshStates()
+	runner.reset()
+
+	// A read is served from the cache: no podman, no systemd, no waiting
+	states := m.CachedStates([]string{"one"})
+	assert.True(t, states["one"].Running)
+	assert.Equal(t, 7, states["one"].MemoryMB)
+	assert.NotContains(t, runner.ran(), "podman", "the request path must not shell out")
+	assert.NotContains(t, runner.ran(), "systemctl")
+}
+
+func TestCachedStatesRefreshInBackgroundWhenStale(t *testing.T) {
+	t.Parallel()
+	m, _, runner := newTestDeployManager(t)
+	createTestApp(t, m, "one")
+	runner.returns("systemctl is-active", "active\n")
+	runner.returns("podman stats", `[{"name":"hostit-app-one","mem_usage":"9MB / 536.9MB"}]`)
+
+	// Nothing measured yet: the first read returns zeroes rather than blocking,
+	// and triggers a refresh that lands shortly after
+	states := m.CachedStates([]string{"one"})
+	assert.False(t, states["one"].Running)
+	require.Eventually(t, func() bool {
+		return m.CachedStates([]string{"one"})["one"].MemoryMB == 9
+	}, 5*time.Second, 10*time.Millisecond, "the background refresh must fill the cache")
 }
 
 func TestStatesWithNoApps(t *testing.T) {

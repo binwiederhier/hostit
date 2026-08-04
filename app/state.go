@@ -2,16 +2,21 @@ package app
 
 import (
 	"encoding/json"
+	"log/slog"
 	"strconv"
 	"strings"
 	"time"
 )
 
 const (
-	// stateTimeout bounds the commands behind an app listing. podman serializes
-	// on its own lock, so a create or pull in flight can take minutes; the
-	// dashboard shows stale-but-instant numbers instead of waiting.
+	// stateTimeout bounds the commands behind a state refresh. podman serializes
+	// on its own lock, so a create or pull in flight can take minutes.
 	stateTimeout = 2 * time.Second
+	// stateTTL is how old the cache may get before a read kicks off a refresh
+	stateTTL = 10 * time.Second
+	// stateRefreshInterval keeps the cache warm while nobody is looking, so the
+	// first page load after a quiet period is not the one that pays
+	stateRefreshInterval = 30 * time.Second
 )
 
 // State is what an app is doing right now: whether its service is up and how
@@ -21,9 +26,72 @@ type State struct {
 	MemoryMB int  `json:"memory_mb"`
 }
 
-// States returns the live state of the given apps. Both podman and systemd are
-// asked once for all of them rather than once per app, so listing a dashboard
-// costs two commands regardless of how many apps exist.
+// CachedStates returns the last known state of the given apps immediately and,
+// when the cache has aged out, kicks off a refresh in the background. Listing
+// apps therefore never waits on podman or systemd: the page renders at once and
+// picks up exact numbers on the next poll.
+func (m *Manager) CachedStates(names []string) map[string]State {
+	m.stateMu.Lock()
+	cached := make(map[string]State, len(names))
+	for _, name := range names {
+		cached[name] = m.stateCache[name]
+	}
+	shouldRefresh := time.Since(m.stateFresh) > stateTTL && !m.stateRefreshing
+	if shouldRefresh {
+		m.stateRefreshing = true
+	}
+	m.stateMu.Unlock()
+
+	if shouldRefresh {
+		go func() {
+			defer func() {
+				m.stateMu.Lock()
+				m.stateRefreshing = false
+				m.stateMu.Unlock()
+			}()
+			m.RefreshStates()
+		}()
+	}
+	return cached
+}
+
+// RefreshStates measures every app and replaces the cache; it blocks on podman,
+// so only background work should call it
+func (m *Manager) RefreshStates() {
+	apps, err := m.store.Apps()
+	if err != nil {
+		slog.Warn("Cannot list apps for state refresh", "error", err)
+		return
+	}
+	names := make([]string, 0, len(apps))
+	for _, a := range apps {
+		names = append(names, a.Name)
+	}
+	states := m.States(names)
+	m.stateMu.Lock()
+	m.stateCache = states
+	m.stateFresh = time.Now()
+	m.stateMu.Unlock()
+}
+
+// StateLoop keeps the cache warm until done closes
+func (m *Manager) StateLoop(done <-chan struct{}) {
+	slog.Info("Starting app state loop", "interval", stateRefreshInterval)
+	defer slog.Info("Stopping app state loop")
+	m.RefreshStates() // Prime it, so the first page load already has numbers
+	for {
+		select {
+		case <-time.After(stateRefreshInterval):
+		case <-done:
+			return
+		}
+		m.RefreshStates()
+	}
+}
+
+// States measures the given apps. Both podman and systemd are asked once for
+// all of them rather than once per app, so the cost does not grow with the
+// number of apps.
 func (m *Manager) States(names []string) map[string]State {
 	states := make(map[string]State, len(names))
 	if len(names) == 0 {

@@ -64,17 +64,22 @@ func (s *Server) handleKeysDelete(w http.ResponseWriter, r *http.Request, c *cal
 	writeJSON(w, http.StatusOK, &apiMessageResponse{Message: "key deleted"})
 }
 
-// handleTokensList returns all of the user's tokens, account-wide and
-// app-scoped alike, each carrying its app_name so the profile can show what it
-// reaches. Revoking an app token here is harmless: its app page mints a new one
-// the next time it is opened.
+// handleTokensList returns the account-wide tokens only. Every app has its own
+// token, created with it and shown on its page; listing those here too would add
+// a row per app and give each credential two homes.
 func (s *Server) handleTokensList(w http.ResponseWriter, _ *http.Request, c *caller) {
 	tokens, err := s.users.Tokens(c.userID())
 	if err != nil {
 		writeAppError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, tokens)
+	accountTokens := make([]*store.Token, 0, len(tokens))
+	for _, tk := range tokens {
+		if tk.AppName == "" {
+			accountTokens = append(accountTokens, tk)
+		}
+	}
+	writeJSON(w, http.StatusOK, accountTokens)
 }
 
 func (s *Server) handleTokensAdd(w http.ResponseWriter, r *http.Request, c *caller) {

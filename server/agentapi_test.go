@@ -190,18 +190,16 @@ func TestAppGetsItsTokenOnCreation(t *testing.T) {
 	rr = request(t, s.API(), "GET", "/api/blog/info", "", created.AgentToken)
 	assert.Equal(t, http.StatusOK, rr.Code)
 
-	// The profile lists every token, each saying what it reaches, so the user
-	// can tell an account token from an app token at a glance
+	// The profile lists account tokens only; an app's token lives on its page,
+	// so it does not add a row here for every app the user owns
 	rr = request(t, s.API(), "GET", "/v1/account/tokens", "", userToken)
 	require.Equal(t, http.StatusOK, rr.Code)
 	var listed []*apiTokenResponse
 	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &listed))
-	scopes := make(map[string]bool)
+	require.NotEmpty(t, listed, "the account-wide token is listed")
 	for _, tk := range listed {
-		scopes[tk.AppName] = true
+		assert.Empty(t, tk.AppName, "app-scoped tokens stay on their app page")
 	}
-	assert.True(t, scopes[""], "the account-wide token must be listed")
-	assert.True(t, scopes["blog"], "the app-scoped token must be listed too")
 
 	// Rotating replaces it and kills the old one
 	rr = request(t, s.API(), "POST", "/v1/apps/blog/token", "", userToken)

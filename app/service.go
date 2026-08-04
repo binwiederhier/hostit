@@ -104,18 +104,26 @@ type Manager struct {
 	memoryMB map[string]int
 	diskMB   map[string]int
 
-	mu sync.Mutex // Protects memoryMB, diskMB
+	// stateCache holds the last measured state of every app, so listing apps
+	// answers from memory instead of waiting on podman
+	stateCache      map[string]State
+	stateFresh      time.Time
+	stateRefreshing bool
+
+	mu      sync.Mutex // Protects memoryMB, diskMB
+	stateMu sync.Mutex // Protects stateCache, stateFresh, stateRefreshing
 }
 
 // NewManager creates a Manager
 func NewManager(conf *config.Config, s *store.Store, ops SystemOps, runner Runner) *Manager {
 	return &Manager{
-		config:   conf,
-		store:    s,
-		ops:      ops,
-		runner:   runner,
-		memoryMB: make(map[string]int),
-		diskMB:   make(map[string]int),
+		config:     conf,
+		store:      s,
+		ops:        ops,
+		runner:     runner,
+		memoryMB:   make(map[string]int),
+		diskMB:     make(map[string]int),
+		stateCache: make(map[string]State),
 	}
 }
 

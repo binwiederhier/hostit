@@ -77,6 +77,7 @@ func execServe(c *cli.Context) error {
 	done := make(chan struct{})
 	defer close(done)
 	go manager.QuotaLoop(conf.DiskCheckInterval.Duration(), done)
+	go manager.StateLoop(done)
 
 	// Shut down gracefully on SIGINT/SIGTERM
 	sigs := make(chan os.Signal, 1)

@@ -1,20 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { api, ApiError } from "../api";
-import { CopyButton, ErrorBanner, formatUsage, Loading, Snippet, StatusDot } from "../components";
+import { CopyButton, ErrorBanner, formatDate, formatUsage, Loading, Snippet, StatusDot } from "../components";
 
 // The SPA is served by the hostit daemon itself, so the agent API lives on our
 // own origin under /api.
 const origin = window.location.origin;
 const tokenPlaceholder = "<this app has no agent token>";
-
-const formatDate = (s) => {
-  if (!s) {
-    return "unknown";
-  }
-  const d = new Date(s);
-  return Number.isNaN(d.getTime()) ? s : d.toLocaleDateString();
-};
 
 // The whole point of this page: a ready-to-paste prompt that teaches any agent
 // how to drive this one app. It only points at the app's own info endpoint,

@@ -226,7 +226,7 @@ func (s *Server) withState(resp []*apiAppResponse) []*apiAppResponse {
 	for _, r := range resp {
 		names = append(names, r.Name)
 	}
-	states := s.apps.States(names)
+	states := s.apps.CachedStates(names)
 	for _, r := range resp {
 		state := states[r.Name]
 		r.Running, r.MemoryMB = state.Running, state.MemoryMB

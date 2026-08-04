@@ -42,6 +42,15 @@ export const StatusDot = ({ running }) => (
 // "12 of 512 MB", or just "12 MB" when the app has no limit for that resource.
 export const formatUsage = (used, limit) => (limit ? `${used} of ${limit} MB` : `${used} MB`);
 
+// A timestamp as a short local date; `empty` is what a missing value reads as.
+export const formatDate = (s, empty = "unknown") => {
+  if (!s) {
+    return empty;
+  }
+  const d = new Date(s);
+  return Number.isNaN(d.getTime()) ? s : d.toLocaleDateString();
+};
+
 export const ErrorBanner = ({ message, onDismiss }) => {
   if (!message) {
     return null;

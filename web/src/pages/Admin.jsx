@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { api } from "../api";
-import { ErrorBanner, Loading } from "../components";
+import { ErrorBanner, formatDate, formatUsage, Loading, StatusDot } from "../components";
 
 // Empty input means "use the global default"; the API expects null for that.
 const numOrNull = (v) => (v === "" ? null : Number(v));
@@ -118,6 +119,66 @@ const UserRow = ({ user, defaults, onPatch, onDelete }) => {
   );
 };
 
+// Same shape as the dashboard row, plus the owner: for an admin /v1/apps
+// returns every user's apps, in server order (already sorted by name).
+const AppRow = ({ app }) => (
+  <tr>
+    <td>
+      <StatusDot running={app.running} />
+      <Link className="mono app-link" to={`/app/${app.name}`}>
+        {app.name}
+      </Link>
+      <a className="open-link" href={app.url} target="_blank" rel="noreferrer">
+        open -&gt;
+      </a>
+    </td>
+    <td className="cell-muted">{app.owner_email || "--"}</td>
+    <td>{formatUsage(app.memory_mb, app.memory_limit_mb)}</td>
+    <td>
+      {formatUsage(app.disk_mb, app.disk_limit_mb)}
+      {app.over_quota && <span className="badge badge-danger">over quota</span>}
+    </td>
+    <td className="cell-muted">{formatDate(app.created_at)}</td>
+    <td className="cell-actions">
+      <Link className="btn btn-small btn-primary" to={`/app/${app.name}`}>
+        Manage
+      </Link>
+    </td>
+  </tr>
+);
+
+const AllApps = ({ apps, error }) => (
+  <div className="card">
+    <div className="card-header">
+      <h2>All apps</h2>
+      {apps !== null && <span className="usage">{apps.length === 1 ? "1 app" : `${apps.length} apps`}</span>}
+    </div>
+    {apps === null && !error && <Loading label="Loading apps..." />}
+    {apps !== null && apps.length === 0 && <p className="empty">No apps yet.</p>}
+    {apps !== null && apps.length > 0 && (
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Owner</th>
+              <th>RAM</th>
+              <th>Disk</th>
+              <th>Created</th>
+              <th aria-label="Actions" />
+            </tr>
+          </thead>
+          <tbody>
+            {apps.map((app) => (
+              <AppRow key={app.name} app={app} />
+            ))}
+          </tbody>
+        </table>
+      </div>
+    )}
+  </div>
+);
+
 const Defaults = ({ settings, onSaved, setError }) => {
   const [appLimit, setAppLimit] = useState(numOrEmpty(settings.default_app_limit));
   const [memoryMb, setMemoryMb] = useState(numOrEmpty(settings.default_memory_mb));
@@ -172,13 +233,15 @@ const Defaults = ({ settings, onSaved, setError }) => {
 
 const AdminInner = () => {
   const [users, setUsers] = useState(null);
+  const [apps, setApps] = useState(null);
   const [settings, setSettings] = useState(null);
   const [error, setError] = useState("");
 
   const load = useCallback(async () => {
     try {
-      const [u, s] = await Promise.all([api.get("/v1/users"), api.get("/v1/settings")]);
+      const [u, a, s] = await Promise.all([api.get("/v1/users"), api.get("/v1/apps"), api.get("/v1/settings")]);
       setUsers(u);
+      setApps(a);
       setSettings(s);
     } catch (err) {
       setError(err.message);
@@ -247,6 +310,7 @@ const AdminInner = () => {
           </div>
         )}
       </div>
+      <AllApps apps={apps} error={error} />
       {settings !== null && <Defaults settings={settings} onSaved={load} setError={setError} />}
     </>
   );
