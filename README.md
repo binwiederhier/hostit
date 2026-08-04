@@ -240,9 +240,11 @@ prompt from its page, and pastes it into their own Claude Code (or any agent).
 The token in that prompt is **scoped to that one app**, so it cannot touch the
 user's other apps, their account, or anything admin.
 
-The agent needs no prior knowledge of hostit. `GET /api/info` is
-self-describing: it explains the platform, the `hostit.yml` format and every
-endpoint. Then:
+The agent needs no prior knowledge of hostit, and the prompt is three lines:
+`GET /api/<app>/info` returns the app's state *and* the full instruction set
+(every endpoint, the `hostit.yml` format, what is installed), so one URL plus
+one token is the whole briefing. `GET /api/info` returns the same guide without
+an app, for account-wide tokens. In shell terms:
 
 ```sh
 export H=https://hostit.apps.example.com/api
@@ -270,7 +272,14 @@ knows what the app is. hostit's own instructions live in `HOSTIT.txt`, so the
 two never compete.
 
 Actions are POST-only (`start`, `stop`, `restart`, `deploy`); a GET answers 405
-rather than doing anything. SSH still works for anyone who prefers scp/rsync.
+rather than doing anything. SSH still works for anyone who prefers scp/rsync:
+profile keys are written into a `# BEGIN hostit-managed keys` block in each
+app's `authorized_keys`, so keys added there by hand are never clobbered.
+
+Tokens come in two shapes. An **account token** (Profile -> API tokens) manages
+everything you own, including creating apps. An **app token** is created with
+each app, shown on its page, and can only touch that one app -- that is the one
+that goes into a chat window.
 
 ## Deploy an app
 
@@ -334,6 +343,9 @@ process inside it.
 ```sh
 make test vet fmt
 make web            # build the React app into server/site (embedded at compile time)
+
+# End-to-end tests against a running server (creates and deletes e2e-* apps):
+HOSTIT_HOST=https://hostit.apps.example.com HOSTIT_TOKEN=... make e2e
 ```
 
 Layout follows the ntfy conventions: thin `main.go`, CLI wiring in `cmd/`, service
