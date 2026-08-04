@@ -44,21 +44,21 @@ var (
 type SystemOps interface {
 	UserExists(username string) bool
 	LookupUID(username string) (int, error)
+	LookupIDs(username string) (IDs, error)
 	CreateUser(username, home string) error
 	DeleteUser(username string) error
-	EnableLinger(username string) error
 	WriteAuthorizedKeys(username, home string, keys []string) error
 	WriteScaffold(username, home string, files map[string]string) error
 	WriteUserFile(username, home, relPath, content string, mode os.FileMode) error
 	ApplyPortRules(rules []PortRule) error
-	SharedImageExists(storeDir, tag string) bool
-	BuildSharedImage(storeDir, contextDir, tag string) error
+	ImageExists(tag string) bool
+	BuildImage(contextDir, tag string) error
 }
 
-// UserRunner executes a command as the given (unprivileged) app user, with the
-// environment needed for rootless podman and systemctl --user
-type UserRunner interface {
-	RunAsUser(username string, args ...string) (string, error)
+// Runner executes a command on the host as root; the daemon performs all
+// container and service work itself, on behalf of app users
+type Runner interface {
+	Run(args ...string) (string, error)
 }
 
 // PortRule restricts loopback connects to an app port to root and the owning UID
@@ -84,12 +84,12 @@ type CreateOptions struct {
 }
 
 // Manager creates and deletes apps and everything that belongs to them, and
-// deploys their containers (as the app user) via the UserRunner
+// runs their containers as root with per-app uid mappings
 type Manager struct {
 	config *config.Config
 	store  *store.Store
 	ops    SystemOps
-	runner UserRunner
+	runner Runner
 	podman string // Resolved podman path for unit files, cached
 
 	// memoryMB and diskMB cache per-app limits, so redeploys and quota checks
@@ -99,7 +99,7 @@ type Manager struct {
 }
 
 // NewManager creates a Manager
-func NewManager(conf *config.Config, s *store.Store, ops SystemOps, runner UserRunner) *Manager {
+func NewManager(conf *config.Config, s *store.Store, ops SystemOps, runner Runner) *Manager {
 	return &Manager{
 		config:   conf,
 		store:    s,
@@ -141,17 +141,13 @@ func (m *Manager) CreateApp(name string, opts *CreateOptions) (*store.App, *Cred
 	}
 	sshKeys := append(append([]string{}, appKeys...), opts.ProfileKeys...)
 
-	// Create the user, enable lingering (so user units run at boot), install keys and scaffold
+	// Create the user, install keys and scaffold the home directory
 	home := filepath.Join(m.config.AppsDir, name)
 	if err := m.ops.CreateUser(name, home); err != nil {
 		return nil, nil, fmt.Errorf("cannot create user %s: %w", name, err)
 	}
 	cleanup := func() {
 		_ = m.ops.DeleteUser(name)
-	}
-	if err := m.ops.EnableLinger(name); err != nil {
-		cleanup()
-		return nil, nil, fmt.Errorf("cannot enable linger for %s: %w", name, err)
 	}
 	if err := m.ops.WriteAuthorizedKeys(name, home, sshKeys); err != nil {
 		cleanup()
@@ -160,12 +156,6 @@ func (m *Manager) CreateApp(name string, opts *CreateOptions) (*store.App, *Cred
 	if err := m.ops.WriteScaffold(name, home, m.scaffoldFiles(name, port)); err != nil {
 		cleanup()
 		return nil, nil, fmt.Errorf("cannot write scaffold for %s: %w", name, err)
-	}
-	// Point the user's podman at the shared image store, so the workspace image
-	// is neither rebuilt nor duplicated per app
-	if err := m.ops.WriteUserFile(name, home, storageConfRelPath, storageConf(m.imageStoreDir()), 0o644); err != nil {
-		cleanup()
-		return nil, nil, fmt.Errorf("cannot write storage config for %s: %w", name, err)
 	}
 
 	// Register the app; roll back the user if this fails
@@ -203,8 +193,8 @@ func (m *Manager) DeleteApp(name string) error {
 	}
 	// Stop the app first: a running container keeps processes alive, and
 	// userdel refuses to remove a user that still has any
-	_, _ = m.runner.RunAsUser(name, "systemctl", "--user", "disable", "--now", unitName)
-	_, _ = m.runner.RunAsUser(name, "podman", "rm", "--force", containerName)
+	_, _ = m.runner.Run("systemctl", "disable", "--now", unitName(name))
+	_, _ = m.runner.Run("podman", "rm", "--force", containerName(name))
 	if err := m.ops.DeleteUser(name); err != nil {
 		return fmt.Errorf("cannot delete user %s: %w", name, err)
 	}

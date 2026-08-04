@@ -20,6 +20,12 @@ const (
 	// userShellFile is the login shell for app users; it execs the SSH session
 	// into the app container (see cmd/shell.go)
 	userShellFile = "/usr/bin/hostit-shell"
+	// AppsGroup owns the sudoers grant that lets app users enter their own
+	// container (and nothing else); see /etc/sudoers.d/hostit
+	AppsGroup = "hostit-apps"
+	// subUIDFile and subGIDFile hold the subordinate ranges containers map into
+	subUIDFile = "/etc/subuid"
+	subGIDFile = "/etc/subgid"
 )
 
 // systemOps is the real SystemOps implementation; it shells out to the usual
@@ -49,7 +55,8 @@ func (o *systemOps) CreateUser(username, home string) error {
 	if err := os.MkdirAll(filepath.Dir(home), 0o755); err != nil {
 		return err
 	}
-	err := run("useradd", "--create-home", "--home-dir", home, "--shell", userShellFile, "--comment", "hostit app", username)
+	err := run("useradd", "--create-home", "--home-dir", home, "--shell", userShellFile,
+		"--groups", AppsGroup, "--comment", "hostit app", username)
 	if err != nil {
 		return err
 	}
@@ -61,8 +68,7 @@ func (o *systemOps) CreateUser(username, home string) error {
 // asynchronously), so escalate: ask systemd first, then kill what remains, and
 // retry userdel while the stragglers die.
 func (o *systemOps) DeleteUser(username string) error {
-	_ = run("loginctl", "disable-linger", username)
-	_ = run("loginctl", "terminate-user", username)
+	_ = run("pkill", "--signal", "TERM", "--uid", username)
 	var err error
 	for i := 0; i < userdelRetries; i++ {
 		if err = run("userdel", "--remove", username); err == nil {
@@ -76,9 +82,54 @@ func (o *systemOps) DeleteUser(username string) error {
 	return err
 }
 
-// EnableLinger makes the user's systemd user units run at boot and survive logout
-func (o *systemOps) EnableLinger(username string) error {
-	return run("loginctl", "enable-linger", username)
+// LookupIDs returns the identity ranges a container is mapped into: the user's
+// own uid/gid (which become container root) plus their subordinate ranges
+func (o *systemOps) LookupIDs(username string) (IDs, error) {
+	uid, gid, err := lookupIDs(username)
+	if err != nil {
+		return IDs{}, err
+	}
+	subUID, count, err := lookupSubID(subUIDFile, username)
+	if err != nil {
+		return IDs{}, err
+	}
+	subGID, _, err := lookupSubID(subGIDFile, username)
+	if err != nil {
+		return IDs{}, err
+	}
+	return IDs{UID: uid, GID: gid, SubUID: subUID, SubGID: subGID, SubCount: count}, nil
+}
+
+// ImageExists reports whether the daemon's image store holds the given image
+func (o *systemOps) ImageExists(tag string) bool {
+	return run("podman", "image", "exists", tag) == nil
+}
+
+// BuildImage builds an image into the daemon's image store, shared by all apps
+func (o *systemOps) BuildImage(contextDir, tag string) error {
+	return run("podman", "build", "--tag", tag, contextDir)
+}
+
+// lookupSubID reads a user's subordinate id range from /etc/subuid or /etc/subgid
+func lookupSubID(filename, username string) (start int, count int, err error) {
+	b, err := os.ReadFile(filename)
+	if err != nil {
+		return 0, 0, err
+	}
+	for _, line := range strings.Split(string(b), "\n") {
+		fields := strings.Split(strings.TrimSpace(line), ":")
+		if len(fields) != 3 || fields[0] != username {
+			continue
+		}
+		if start, err = strconv.Atoi(fields[1]); err != nil {
+			return 0, 0, err
+		}
+		if count, err = strconv.Atoi(fields[2]); err != nil {
+			return 0, 0, err
+		}
+		return start, count, nil
+	}
+	return 0, 0, fmt.Errorf("no subordinate id range for %s in %s", username, filename)
 }
 
 func (o *systemOps) WriteAuthorizedKeys(username, home string, keys []string) error {
@@ -152,47 +203,9 @@ func (o *systemOps) WriteUserFile(username, home, relPath, content string, mode 
 	return os.Chown(filename, uid, gid)
 }
 
-// SharedImageExists reports whether the shared read-only store already holds the
-// given image
-func (o *systemOps) SharedImageExists(storeDir, tag string) bool {
-	return run("podman", "--root", storeDir, "image", "exists", tag) == nil
-}
-
-// BuildSharedImage builds an image into the shared store as root and makes it
-// world-readable, so unprivileged app users can use it as an additional image
-// store without copying or rebuilding it
-func (o *systemOps) BuildSharedImage(storeDir, contextDir, tag string) error {
-	if err := os.MkdirAll(storeDir, 0o755); err != nil {
-		return err
-	}
-	err := run("podman", "--root", storeDir, "build", "--tag", tag, contextDir)
-	if err != nil {
-		return err
-	}
-	return makeWorldReadable(storeDir)
-}
-
-// makeWorldReadable grants read (and traverse) access to everyone below dir;
-// rootless users can only use the shared layers if they can read the files
-func makeWorldReadable(dir string) error {
-	return filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return nil // Skip unreadable entries rather than failing the build
-		}
-		mode := info.Mode().Perm()
-		newMode := mode | 0o004 // Others may read
-		if info.IsDir() || mode&0o100 != 0 {
-			newMode |= 0o001 // ... and traverse/execute where the owner can
-		}
-		if newMode == mode {
-			return nil
-		}
-		return os.Chmod(path, newMode)
-	})
-}
-
 // ApplyPortRules atomically replaces the hostit nftables table: for each app
-// port, loopback connects are only allowed for root (the proxy) and the owner
+// port, loopback connects are only allowed for root (the proxy, which also owns
+// the published container ports) and the app's own uid
 func (o *systemOps) ApplyPortRules(rules []PortRule) error {
 	var b strings.Builder
 	b.WriteString("add table inet hostit\n")

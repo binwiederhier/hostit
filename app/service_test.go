@@ -26,7 +26,6 @@ func TestCreateApp(t *testing.T) {
 	assert.Equal(t, 10000, app.Port)
 	assert.Nil(t, creds) // Key was provided, none generated
 	assert.Equal(t, []string{"blog"}, ops.createdUsers)
-	assert.Equal(t, []string{"blog"}, ops.lingerEnabled)
 	assert.Equal(t, []string{testPublicKey}, ops.authorizedKeys["blog"])
 	assert.Contains(t, ops.scaffolds["blog"], "hostit.yml")
 	assert.Contains(t, ops.scaffolds["blog"], "README.txt")
@@ -164,7 +163,7 @@ func newTestManager(t *testing.T) (*Manager, *fakeSystemOps) {
 		_ = s.Close()
 	})
 	ops := newFakeSystemOps()
-	return NewManager(conf, s, ops, newFakeUserRunner()), ops
+	return NewManager(conf, s, ops, newFakeRunner()), ops
 }
 
 // fakeSystemOps records system calls instead of executing them
@@ -172,20 +171,18 @@ type fakeSystemOps struct {
 	existingUsers  []string
 	createdUsers   []string
 	deletedUsers   []string
-	lingerEnabled  []string
 	authorizedKeys map[string][]string
 	scaffolds      map[string][]string
 	userFiles      map[string]string
 	uids           map[string]int
 	portRules      [][]PortRule
-	sharedImages   map[string]bool
-	sharedBuilds   []sharedBuild
+	images         map[string]bool
+	builds         []imageBuild
 	createUserErr  error
 }
 
-// sharedBuild records a BuildSharedImage call
-type sharedBuild struct {
-	storeDir   string
+// imageBuild records a BuildImage call
+type imageBuild struct {
 	contextDir string
 	tag        string
 }
@@ -198,18 +195,23 @@ func newFakeSystemOps() *fakeSystemOps {
 		scaffolds:      make(map[string][]string),
 		userFiles:      make(map[string]string),
 		uids:           make(map[string]int),
-		sharedImages:   make(map[string]bool),
+		images:         make(map[string]bool),
 	}
 }
 
-func (f *fakeSystemOps) SharedImageExists(storeDir, tag string) bool {
-	return f.sharedImages[tag]
+func (f *fakeSystemOps) ImageExists(tag string) bool {
+	return f.images[tag]
 }
 
-func (f *fakeSystemOps) BuildSharedImage(storeDir, contextDir, tag string) error {
-	f.sharedBuilds = append(f.sharedBuilds, sharedBuild{storeDir: storeDir, contextDir: contextDir, tag: tag})
-	f.sharedImages[tag] = true
+func (f *fakeSystemOps) BuildImage(contextDir, tag string) error {
+	f.builds = append(f.builds, imageBuild{contextDir: contextDir, tag: tag})
+	f.images[tag] = true
 	return nil
+}
+
+func (f *fakeSystemOps) LookupIDs(username string) (IDs, error) {
+	uid, _ := f.LookupUID(username)
+	return IDs{UID: uid, GID: uid, SubUID: 100000 + uid*65536, SubGID: 100000 + uid*65536, SubCount: 65536}, nil
 }
 
 func (f *fakeSystemOps) UserExists(username string) bool {
@@ -239,11 +241,6 @@ func (f *fakeSystemOps) CreateUser(username, home string) error {
 
 func (f *fakeSystemOps) DeleteUser(username string) error {
 	f.deletedUsers = append(f.deletedUsers, username)
-	return nil
-}
-
-func (f *fakeSystemOps) EnableLinger(username string) error {
-	f.lingerEnabled = append(f.lingerEnabled, username)
 	return nil
 }
 

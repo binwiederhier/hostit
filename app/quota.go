@@ -41,7 +41,7 @@ func (m *Manager) CheckQuotas() error {
 		}
 		if overQuota && !a.OverQuota {
 			slog.Warn("App over disk quota, stopping it", "app", a.Name, "usage_mb", usage, "limit_mb", limit)
-			if _, err := m.runner.RunAsUser(a.Name, "systemctl", "--user", "stop", unitName); err != nil {
+			if _, err := m.runner.Run("systemctl", "stop", unitName(a.Name)); err != nil {
 				slog.Warn("Cannot stop over-quota app", "app", a.Name, "error", err)
 			}
 		} else if !overQuota && a.OverQuota {

@@ -56,7 +56,7 @@ func execServe(c *cli.Context) error {
 	}
 	defer s.Close()
 	ops := app.NewSystemOps()
-	manager := app.NewManager(conf, s, ops, app.NewUserRunner(ops))
+	manager := app.NewManager(conf, s, ops, app.NewRunner())
 	users := user.NewManager(conf, s)
 	if err := ensureSessionKey(conf, s); err != nil {
 		return err
@@ -64,12 +64,10 @@ func execServe(c *cli.Context) error {
 	if err := applyStoredLimits(conf, s, manager, users); err != nil {
 		return err
 	}
-	// Build the shared workspace image once, so app creation and first logins
-	// don't pay a per-user image build. This runs in the background: it takes
-	// about a minute on a small host, and the proxy must not wait for it (apps
-	// created meanwhile fall back to building their own image).
+	// Build the workspace image once. This runs in the background: it takes
+	// about a minute on a small host, and the proxy must not wait for it.
 	go func() {
-		if err := manager.EnsureSharedImage(); err != nil {
+		if err := manager.EnsureWorkspaceImage(); err != nil {
 			slog.Warn("Cannot prepare shared workspace image; apps will build their own", "error", err)
 		}
 	}()

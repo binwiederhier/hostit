@@ -12,10 +12,16 @@ import (
 	"heckel.io/hostit/appctl"
 )
 
+const (
+	// enterFile is the sudo-able wrapper that enters the caller's container
+	enterFile = "/usr/bin/hostit-enter"
+)
+
 var (
 	// cmdShell is the login-shell entrypoint (via /usr/bin/hostit-shell): it
-	// ensures the app container runs and execs the SSH session into it. Never
-	// falls back to a host shell; the container IS the user's environment.
+	// ensures the app container runs and hands the SSH session to the privileged
+	// "hostit enter" helper. It never falls back to a host shell; the container
+	// IS the user's environment.
 	cmdShell = &cli.Command{
 		Name:            "shell",
 		Hidden:          true,
@@ -34,42 +40,30 @@ var (
 
 func execShell(c *cli.Context) error {
 	ctl := appctl.NewController(appctl.DefaultSocketFile())
-	interactive := term.IsTerminal(int(os.Stdin.Fd()))
 
-	// Identify the app and make sure its container is up; the first login builds
-	// the workspace image, which takes a minute
+	// Identify the app and make sure its container is up
 	self, err := ctl.Self()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "hostit: cannot identify app: %s\n", err.Error())
 		return cli.Exit("", 1)
 	}
-	if interactive {
-		fmt.Fprintf(os.Stderr, "hostit: preparing workspace for %s (first login may take a minute) ...\n", self.Name)
-	}
 	if _, err := ctl.Ensure(); err != nil {
-		fmt.Fprintf(os.Stderr, "hostit: cannot start workspace: %s\n", err.Error())
+		fmt.Fprintf(os.Stderr, "hostit: cannot start workspace for %s: %s\n", self.Name, err.Error())
 		return cli.Exit("", 1)
 	}
 
-	// Exec the session into the container; bash if the image has it, else sh
-	args := []string{"podman", "exec", "--interactive"}
-	if interactive {
-		args = append(args, "--tty")
+	// Hand over to the privileged helper, which execs us into our container
+	termName := os.Getenv("TERM")
+	if termName == "" {
+		termName = "-"
 	}
-	if os.Getenv("TERM") != "" {
-		args = append(args, "--env", "TERM="+os.Getenv("TERM"))
-	}
-	args = append(args, "hostit-app")
-	if c.NArg() >= 2 && c.Args().Get(0) == "-c" {
-		args = append(args, "/bin/sh", "-lc", c.Args().Get(1))
-	} else {
-		args = append(args, "/bin/sh", "-lc", "command -v bash >/dev/null && exec bash -l; exec sh -l")
-	}
-	podman, err := exec.LookPath("podman")
+	args := []string{"sudo", "-n", enterFile, termName}
+	args = append(args, c.Args().Slice()...)
+	sudo, err := exec.LookPath("sudo")
 	if err != nil {
-		return fmt.Errorf("podman not found: %w", err)
+		return fmt.Errorf("sudo not found: %w", err)
 	}
-	return syscall.Exec(podman, args, sessionEnv())
+	return syscall.Exec(sudo, args, os.Environ())
 }
 
 func execAgent(_ *cli.Context) error {
@@ -80,12 +74,8 @@ func execAgent(_ *cli.Context) error {
 	return agent.New(home).Run()
 }
 
-// sessionEnv ensures XDG_RUNTIME_DIR is set; sshd sessions have it via
-// pam_systemd, but be defensive since podman needs it for rootless mode
-func sessionEnv() []string {
-	env := os.Environ()
-	if os.Getenv("XDG_RUNTIME_DIR") == "" {
-		env = append(env, fmt.Sprintf("XDG_RUNTIME_DIR=/run/user/%d", os.Getuid()))
-	}
-	return env
+// isTerminal reports whether the given file is a terminal, which decides whether
+// podman gets a TTY (interactive login) or not (scp, sftp, remote commands)
+func isTerminal(f *os.File) bool {
+	return term.IsTerminal(int(f.Fd()))
 }

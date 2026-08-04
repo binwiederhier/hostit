@@ -10,6 +10,7 @@ set -e
 if [ "$1" = "purge" ] || [ "$1" = "0" ] 2>/dev/null; then
   rm -rf /var/lib/hostit
   rm -f /etc/hostit/server.yml.example
+  rm -f /etc/sudoers.d/hostit
   rmdir /etc/hostit 2>/dev/null || true
   if [ -f /etc/shells ]; then
     sed -i '\|^/usr/bin/hostit-shell$|d' /etc/shells || true

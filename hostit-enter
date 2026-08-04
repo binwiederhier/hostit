@@ -1,0 +1,5 @@
+#!/bin/sh
+# Privileged helper: entered through the sudoers grant in /etc/sudoers.d/hostit,
+# it execs the calling app user into their OWN container. The container is
+# derived from SUDO_UID inside "hostit enter", never from these arguments.
+exec /usr/bin/hostit enter "$@"

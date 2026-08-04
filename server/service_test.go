@@ -316,7 +316,7 @@ func newTestServer(t *testing.T) *Server {
 	t.Cleanup(func() {
 		_ = s.Close()
 	})
-	manager := app.NewManager(conf, s, app.NewNopSystemOps(), app.NewNopUserRunner())
+	manager := app.NewManager(conf, s, app.NewNopSystemOps(), app.NewNopRunner())
 	return New(conf, manager, user.NewManager(conf, s))
 }
 

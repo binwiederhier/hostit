@@ -77,7 +77,7 @@ func newTestClient(t *testing.T, token string) *Client {
 	t.Cleanup(func() {
 		_ = s.Close()
 	})
-	srv := server.New(conf, app.NewManager(conf, s, app.NewNopSystemOps(), app.NewNopUserRunner()), user.NewManager(conf, s))
+	srv := server.New(conf, app.NewManager(conf, s, app.NewNopSystemOps(), app.NewNopRunner()), user.NewManager(conf, s))
 	httpServer := httptest.NewServer(srv.API())
 	t.Cleanup(httpServer.Close)
 	return New(httpServer.URL, token)

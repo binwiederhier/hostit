@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"heckel.io/hostit/appctl"
@@ -13,16 +14,16 @@ import (
 )
 
 const (
-	// containerName is the per-app container; unique per app because rootless
-	// podman namespaces containers per user
-	containerName = "hostit-app"
-	// workspaceImage is the default image for run: mode apps, built per user
-	// from workspaceContainerfile on first use
+	// containerPrefix names an app's container; the daemon runs containers as
+	// root, so names share one namespace and must carry the app name
+	containerPrefix = "hostit-app-"
+	// unitPrefix is the systemd template unit instantiated per app
+	unitTemplate = "hostit-app@"
+	// workspaceImage is the default image for run: mode apps, built once into
+	// the daemon's (root) image store and shared by every app
 	workspaceImage = "localhost/hostit-workspace:1"
-	// buildImageTag is the per-user image tag used for build: mode
-	buildImageTag = "localhost/hostit-app:latest"
-	// unitName is the systemd user unit that keeps the app container running
-	unitName = "hostit-app"
+	// buildImageTag is the image tag used for build: mode, one per app
+	buildImagePrefix = "localhost/hostit-app-"
 
 	// workspaceContainerfile builds the default workspace image: small, but with
 	// everything needed for ssh/scp/sftp/rsync sessions and quick demo apps.
@@ -35,15 +36,49 @@ CMD ["/bin/bash"]
 `
 )
 
+// IDs are the identity ranges a container is mapped into: the app's own uid/gid
+// become container root, and the subordinate ranges cover everything above it
+type IDs struct {
+	UID      int
+	GID      int
+	SubUID   int
+	SubGID   int
+	SubCount int
+}
+
+// containerName returns the container name of an app
+func containerName(appName string) string {
+	return containerPrefix + appName
+}
+
+// unitName returns the systemd unit instance of an app
+func unitName(appName string) string {
+	return unitTemplate + appName
+}
+
+// buildImageTag returns the image tag for a build:-mode app
+func buildImageTag(appName string) string {
+	return buildImagePrefix + appName + ":latest"
+}
+
 // containerCreateArgs returns the "podman create ..." arguments (without the
-// leading podman) for an app's container. Workspace mode runs the agent as PID 1
-// in the default image with the home mounted; image/build mode runs the app's
-// own image and entrypoint. The hostit binary and daemon socket are mounted in
-// both, so the CLI works inside every container.
-func containerCreateArgs(conf *appctl.AppConfig, a *store.App, home, socketFile, hostitBin string, memoryMB int) []string {
-	args := []string{"create", "--name", containerName, "--hostname", a.Name}
+// leading podman) for an app's container.
+//
+// Containers are created by the root daemon but mapped so that container root is
+// the app's unprivileged host uid: files in the bind-mounted home belong to the
+// app both inside and outside, and a workload escape lands on that uid rather
+// than on root. Each app gets its own network stack (slirp4netns), so containers
+// cannot reach each other, and ports are published on loopback only.
+func containerCreateArgs(conf *appctl.AppConfig, a *store.App, home, socketFile, hostitBin string, memoryMB int, ids IDs) []string {
+	args := []string{"create", "--name", containerName(a.Name), "--hostname", a.Name}
+	args = append(args,
+		"--uidmap", fmt.Sprintf("0:%d:1", ids.UID),
+		"--uidmap", fmt.Sprintf("1:%d:%d", ids.SubUID, ids.SubCount),
+		"--gidmap", fmt.Sprintf("0:%d:1", ids.GID),
+		"--gidmap", fmt.Sprintf("1:%d:%d", ids.SubGID, ids.SubCount),
+		"--network", "slirp4netns")
 	if memoryMB > 0 {
-		args = append(args, "--memory", fmt.Sprintf("%dm", memoryMB))
+		args = append(args, "--memory", strconv.Itoa(memoryMB)+"m")
 	}
 	if conf == nil || conf.Mode() == appctl.ModeProcess {
 		containerHome := "/home/" + a.Name
@@ -67,7 +102,7 @@ func containerCreateArgs(conf *appctl.AppConfig, a *store.App, home, socketFile,
 		args = append(args, "--volume", absVolume(volume, home))
 	}
 	args = appendCommonMounts(args, socketFile, hostitBin)
-	args = append(args, imageRef(conf))
+	args = append(args, imageRef(conf, a.Name))
 	return args
 }
 
@@ -78,27 +113,10 @@ func containerConfigHash(args []string) string {
 	return hex.EncodeToString(sum[:8])
 }
 
-// workspaceUnitFile renders the systemd user unit that keeps the app container
-// running (restart on failure, start at boot via lingering)
-func workspaceUnitFile(appName, podman string) string {
-	var b strings.Builder
-	b.WriteString("[Unit]\n")
-	fmt.Fprintf(&b, "Description=hostit app %s\n", appName)
-	b.WriteString("After=network.target\n\n")
-	b.WriteString("[Service]\n")
-	fmt.Fprintf(&b, "ExecStart=%s start --attach %s\n", podman, containerName)
-	fmt.Fprintf(&b, "ExecStop=%s stop --time 5 %s\n", podman, containerName)
-	b.WriteString("Restart=always\n")
-	b.WriteString("RestartSec=2\n\n")
-	b.WriteString("[Install]\n")
-	b.WriteString("WantedBy=default.target\n")
-	return b.String()
-}
-
 // imageRef returns the image an image/build mode app runs
-func imageRef(conf *appctl.AppConfig) string {
+func imageRef(conf *appctl.AppConfig, appName string) string {
 	if conf.Build != "" {
-		return buildImageTag
+		return buildImageTag(appName)
 	}
 	return conf.Image
 }

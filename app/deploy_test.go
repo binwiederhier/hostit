@@ -17,31 +17,29 @@ func TestUpWorkspaceModeCreatesContainer(t *testing.T) {
 	m, ops, runner := newTestDeployManager(t)
 	createTestApp(t, m, "blog")
 	writeAppFile(t, m, "blog", "hostit.yml", "run: python3 -m http.server $PORT")
-	runner.errs["image exists"] = assert.AnError      // Workspace image missing -> build
 	runner.errs["container inspect"] = assert.AnError // No container yet -> create
 	msg, err := m.Up("blog")
 	require.NoError(t, err)
 	assert.Contains(t, msg, "deployed")
+	// The workspace image is built once, host-wide, not per app
+	require.Len(t, ops.builds, 1)
+	assert.Equal(t, workspaceImage, ops.builds[0].tag)
 	joined := strings.Join(runner.commands, "\n")
-	assert.Contains(t, joined, "blog: podman build --tag "+workspaceImage)
-	assert.Contains(t, joined, "blog: podman create --name hostit-app")
-	assert.Contains(t, joined, "blog: systemctl --user daemon-reload")
-	assert.Contains(t, joined, "blog: systemctl --user enable hostit-app")
-	assert.Contains(t, joined, "blog: systemctl --user restart hostit-app")
-	// Unit file written into the user's systemd dir
-	unit, ok := ops.userFiles["blog:.config/systemd/user/hostit-app.service"]
-	require.True(t, ok)
-	assert.Contains(t, unit, "start --attach hostit-app")
+	assert.Contains(t, joined, "podman create --name hostit-app-blog")
+	assert.Contains(t, joined, "systemctl enable --now hostit-app@blog")
+	assert.Contains(t, joined, "systemctl restart hostit-app@blog")
 }
 
 func TestUpWorkspaceModeUnchangedOnlyReloadsAgent(t *testing.T) {
 	t.Parallel()
-	m, _, runner := newTestDeployManager(t)
+	m, ops, runner := newTestDeployManager(t)
 	a := createTestApp(t, m, "blog")
 	writeAppFile(t, m, "blog", "hostit.yml", "run: ./server")
 	// Existing container reports the exact hash of the desired config
 	conf := mustLoadConfig(t, m, "blog")
-	hash := containerConfigHash(containerCreateArgs(conf, a, m.appHome("blog"), m.config.SocketFile, hostitBinFile, 0))
+	ids, err := ops.LookupIDs("blog")
+	require.NoError(t, err)
+	hash := containerConfigHash(containerCreateArgs(conf, a, m.appHome("blog"), m.config.SocketFile, hostitBinFile, 0, ids))
 	runner.outputs["container inspect"] = hash
 	runner.outputs["is-active"] = "active"
 	msg, err := m.Up("blog")
@@ -50,7 +48,7 @@ func TestUpWorkspaceModeUnchangedOnlyReloadsAgent(t *testing.T) {
 	joined := strings.Join(runner.commands, "\n")
 	assert.NotContains(t, joined, "podman create")
 	assert.NotContains(t, joined, "podman rm")
-	assert.Contains(t, joined, "podman kill --signal HUP hostit-app")
+	assert.Contains(t, joined, "podman kill --signal HUP hostit-app-blog")
 }
 
 func TestUpImageModeRecreatesOnChange(t *testing.T) {
@@ -63,7 +61,7 @@ func TestUpImageModeRecreatesOnChange(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, msg, "deployed")
 	joined := strings.Join(runner.commands, "\n")
-	assert.Contains(t, joined, "podman rm --force hostit-app")
+	assert.Contains(t, joined, "podman rm --force hostit-app-blog")
 	assert.Contains(t, joined, "podman create")
 	assert.Contains(t, joined, "docker.io/library/nginx:alpine")
 	assert.NotContains(t, joined, "podman build") // No build:, no workspace image needed
@@ -78,7 +76,7 @@ func TestUpBuildModeBuildsImage(t *testing.T) {
 	_, err := m.Up("blog")
 	require.NoError(t, err)
 	joined := strings.Join(runner.commands, "\n")
-	assert.Contains(t, joined, "podman build --tag "+buildImageTag+" "+m.appHome("blog"))
+	assert.Contains(t, joined, "podman build --tag "+buildImageTag("blog")+" "+m.appHome("blog"))
 }
 
 func TestUpInvalidConfig(t *testing.T) {
@@ -95,15 +93,13 @@ func TestEnsureWithoutConfigCreatesIdleWorkspace(t *testing.T) {
 	t.Parallel()
 	m, _, runner := newTestDeployManager(t)
 	createTestApp(t, m, "blog")
-	runner.errs["image exists"] = assert.AnError
 	runner.errs["container inspect"] = assert.AnError
 	_, err := m.Ensure("blog")
 	require.NoError(t, err)
 	joined := strings.Join(runner.commands, "\n")
-	assert.Contains(t, joined, "podman build --tag "+workspaceImage)
-	assert.Contains(t, joined, "podman create --name hostit-app")
+	assert.Contains(t, joined, "podman create --name hostit-app-blog")
 	assert.Contains(t, joined, workspaceImage)
-	assert.Contains(t, joined, "systemctl --user restart hostit-app")
+	assert.Contains(t, joined, "systemctl restart hostit-app@blog")
 }
 
 func TestEnsureRunningContainerIsNoOp(t *testing.T) {
@@ -127,8 +123,8 @@ func TestDeleteAppStopsAppBeforeRemovingUser(t *testing.T) {
 	require.NoError(t, m.DeleteApp("blog"))
 	joined := strings.Join(runner.commands, "\n")
 	// A running container keeps processes alive, which makes userdel fail
-	assert.Contains(t, joined, "systemctl --user disable --now hostit-app")
-	assert.Contains(t, joined, "podman rm --force hostit-app")
+	assert.Contains(t, joined, "systemctl disable --now hostit-app@blog")
+	assert.Contains(t, joined, "podman rm --force hostit-app-blog")
 	assert.Equal(t, []string{"blog"}, ops.deletedUsers)
 }
 
@@ -143,8 +139,8 @@ func TestDownRestartStatus(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, out, "some status output")
 	joined := strings.Join(runner.commands, "\n")
-	assert.Contains(t, joined, "systemctl --user disable --now hostit-app")
-	assert.Contains(t, joined, "systemctl --user restart hostit-app")
+	assert.Contains(t, joined, "systemctl disable --now hostit-app@blog")
+	assert.Contains(t, joined, "systemctl restart hostit-app@blog")
 }
 
 func TestLogsWorkspaceModeReadsFile(t *testing.T) {
@@ -188,10 +184,10 @@ func TestPortRulesReconciledOnCreateAndDelete(t *testing.T) {
 	assert.Equal(t, 10000, last[0].Port)
 }
 
-func newTestDeployManager(t *testing.T) (*Manager, *fakeSystemOps, *fakeUserRunner) {
+func newTestDeployManager(t *testing.T) (*Manager, *fakeSystemOps, *fakeRunner) {
 	t.Helper()
 	m, ops := newTestManager(t)
-	runner := newFakeUserRunner()
+	runner := newFakeRunner()
 	m.runner = runner
 	return m, ops, runner
 }
@@ -216,25 +212,25 @@ func mustLoadConfig(t *testing.T, m *Manager, name string) *appctl.AppConfig {
 	return conf
 }
 
-// fakeUserRunner records as-user commands and returns canned outputs/errors
-// matched by substring
-type fakeUserRunner struct {
+// fakeRunner records root commands and returns canned outputs/errors matched by
+// substring
+type fakeRunner struct {
 	commands []string
 	outputs  map[string]string
 	errs     map[string]error
 }
 
-var _ UserRunner = (*fakeUserRunner)(nil)
+var _ Runner = (*fakeRunner)(nil)
 
-func newFakeUserRunner() *fakeUserRunner {
-	return &fakeUserRunner{
+func newFakeRunner() *fakeRunner {
+	return &fakeRunner{
 		outputs: make(map[string]string),
 		errs:    make(map[string]error),
 	}
 }
 
-func (f *fakeUserRunner) RunAsUser(username string, args ...string) (string, error) {
-	cmd := username + ": " + strings.Join(args, " ")
+func (f *fakeRunner) Run(args ...string) (string, error) {
+	cmd := strings.Join(args, " ")
 	f.commands = append(f.commands, cmd)
 	for substr, err := range f.errs {
 		if strings.Contains(cmd, substr) {

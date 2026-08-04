@@ -21,6 +21,7 @@ func New() *cli.App {
 			cmdInfo,
 			cmdAdmin,
 			cmdShell,
+			cmdEnter,
 			cmdAgent,
 		},
 	}

@@ -28,6 +28,9 @@ nfpms:
     bindir: /usr/bin
     dependencies:
       - openssh-server
+      - podman
+      - uidmap
+      - slirp4netns
     recommends:
       - podman
       - uidmap
@@ -41,6 +44,17 @@ nfpms:
         dst: /usr/bin/hostit-shell
         file_info:
           mode: 0755
+      - src: hostit-enter
+        dst: /usr/bin/hostit-enter
+        file_info:
+          mode: 0755
+      - src: hostit-app@.service
+        dst: /lib/systemd/system/hostit-app@.service
+      - src: hostit.sudoers
+        dst: /etc/sudoers.d/hostit
+        type: "config|noreplace"
+        file_info:
+          mode: 0440
     scripts:
       postinstall: "scripts/postinst.sh"
       postremove: "scripts/postrm.sh"

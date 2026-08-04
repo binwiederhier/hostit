@@ -1,0 +1,18 @@
+# systemd template unit for hostit app containers, instantiated per app as
+# hostit-app@<name>.service. The daemon enables and starts these; the container
+# itself is created by the daemon with a uid mapping that makes container root
+# the app's unprivileged user.
+[Unit]
+Description=hostit app %i
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+ExecStart=/usr/bin/podman start --attach hostit-app-%i
+ExecStop=/usr/bin/podman stop --time 5 hostit-app-%i
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
