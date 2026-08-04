@@ -74,13 +74,6 @@ type PortRule struct {
 	UID  int
 }
 
-// Credentials holds a generated SSH key pair; the private key is returned to the
-// API caller exactly once and never stored
-type Credentials struct {
-	PrivateKey string `json:"private_key"`
-	PublicKey  string `json:"public_key"`
-}
-
 // CreateOptions carries everything CreateApp needs beyond the name: who owns the
 // app, which keys may log in, and the container's memory cap
 type CreateOptions struct {
@@ -128,63 +121,54 @@ func NewManager(conf *config.Config, s *store.Store, ops SystemOps, runner Runne
 }
 
 // CreateApp registers a new app: it allocates a port, creates the Unix user with
-// SSH access and scaffolds the home directory. If neither request keys nor owner
-// profile keys exist, a key pair is generated and returned; otherwise Credentials
-// is nil. The app's authorized_keys are the union of both key sets.
-func (m *Manager) CreateApp(name string, opts *CreateOptions) (*store.App, *Credentials, error) {
+// SSH access and scaffolds the home directory. Its authorized_keys are the union
+// of the request keys and the owner's profile keys; an app with neither is fine,
+// since apps are driven through the API and SSH is opt-in.
+func (m *Manager) CreateApp(name string, opts *CreateOptions) (*store.App, error) {
 	if opts == nil {
 		opts = &CreateOptions{}
 	}
 	if err := m.validateName(name); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	if err := validateKeys(opts.RequestKeys); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	port, err := m.allocatePort()
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
-	// Generate a key pair only if nobody could log in otherwise
-	var creds *Credentials
 	appKeys := opts.RequestKeys
-	if len(appKeys) == 0 && len(opts.ProfileKeys) == 0 {
-		creds, err = generateKeyPair(name)
-		if err != nil {
-			return nil, nil, err
-		}
-		appKeys = []string{creds.PublicKey}
-	}
 	sshKeys := append(append([]string{}, appKeys...), opts.ProfileKeys...)
 
 	// Create the user, install keys and scaffold the home directory
 	home := filepath.Join(m.config.AppsDir, name)
 	if err := m.ops.CreateUser(name, home); err != nil {
-		return nil, nil, fmt.Errorf("cannot create user %s: %w", name, err)
+		return nil, fmt.Errorf("cannot create user %s: %w", name, err)
 	}
 	cleanup := func() {
 		_ = m.ops.DeleteUser(name)
 	}
 	if err := m.ops.WriteAuthorizedKeys(name, home, sshKeys); err != nil {
 		cleanup()
-		return nil, nil, fmt.Errorf("cannot write authorized keys for %s: %w", name, err)
+		return nil, fmt.Errorf("cannot write authorized keys for %s: %w", name, err)
 	}
 	if err := m.ops.WriteScaffold(name, home, m.scaffoldFiles(name, port)); err != nil {
 		cleanup()
-		return nil, nil, fmt.Errorf("cannot write scaffold for %s: %w", name, err)
+		return nil, fmt.Errorf("cannot write scaffold for %s: %w", name, err)
 	}
 
 	// Register the app; roll back the user if this fails
 	app := &store.App{Name: name, Port: port, Host: store.HostLocal, OwnerID: opts.OwnerID}
 	if err := m.store.AddApp(app); err != nil {
 		cleanup()
-		return nil, nil, err
+		return nil, err
 	}
 	if err := m.store.SetAppKeys(name, appKeys); err != nil {
 		cleanup()
 		_ = m.store.RemoveApp(name)
-		return nil, nil, err
+		return nil, err
 	}
 	m.SetMemoryLimit(name, opts.MemoryMB)
 	m.ReconcilePortRules()
@@ -199,7 +183,7 @@ func (m *Manager) CreateApp(name string, opts *CreateOptions) (*store.App, *Cred
 		}
 		slog.Info("Demo app started", "app", name)
 	}()
-	return app, creds, nil
+	return app, nil
 }
 
 // DeleteApp stops the app's user session, deletes the Unix user including the home

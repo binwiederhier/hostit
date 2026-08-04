@@ -84,11 +84,6 @@ func execAdminAdd(c *cli.Context) error {
 	fmt.Printf("  URL:  %s\n", app.URL)
 	fmt.Printf("  SSH:  %s\n", app.SSH.Command)
 	fmt.Printf("  Port: %d (the app must listen on 127.0.0.1:%d)\n", app.Port, app.Port)
-	if app.PrivateKey != "" {
-		fmt.Printf("\nA new SSH key pair was generated. This private key is shown ONCE and not stored:\n\n%s\n", app.PrivateKey)
-		fmt.Printf("Save it (e.g. to ~/.ssh/hostit-%s, chmod 600) and connect with:\n", app.Name)
-		fmt.Printf("  ssh -i ~/.ssh/hostit-%s %s@%s\n", app.Name, app.SSH.User, app.SSH.Host)
-	}
 	fmt.Printf("\nThen: upload your app, edit hostit.yml, and run \"hostit up\" (see README.txt there).\n")
 	return nil
 }

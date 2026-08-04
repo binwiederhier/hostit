@@ -39,7 +39,7 @@ func (s *Server) newSocketHandler() http.Handler {
 // handleSelf tells the calling app who it is; this is how the CLI learns its
 // name, port and URL without any token
 func (s *Server) handleSelf(w http.ResponseWriter, r *http.Request, a *store.App) {
-	writeJSON(w, http.StatusOK, s.appResponse(a, nil))
+	writeJSON(w, http.StatusOK, s.appResponse(a))
 }
 
 func (s *Server) handleSelfEnsure(w http.ResponseWriter, r *http.Request, a *store.App) {

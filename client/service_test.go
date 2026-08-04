@@ -26,13 +26,11 @@ func TestCreateAndListApps(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "blog", created.Name)
 	assert.Equal(t, "https://blog.apps.example.com", created.URL)
-	assert.Contains(t, created.PrivateKey, "OPENSSH PRIVATE KEY")
 	assert.Equal(t, "blog", created.SSH.User)
 	apps, err := c.Apps()
 	require.NoError(t, err)
 	require.Len(t, apps, 1)
 	assert.Equal(t, "blog", apps[0].Name)
-	assert.Empty(t, apps[0].PrivateKey) // Private key only returned on creation
 }
 
 func TestGetAndDeleteApp(t *testing.T) {

@@ -32,8 +32,8 @@ func New(host, token string) *Client {
 	}
 }
 
-// CreateApp creates a new app; if sshKeys is empty, the server generates a key
-// pair and returns the private key in App.PrivateKey (shown exactly once)
+// CreateApp creates a new app; sshKeys (if any) go into its authorized_keys,
+// and an app without keys is managed through the API alone
 func (c *Client) CreateApp(name string, sshKeys []string) (*App, error) {
 	var app App
 	err := c.request("POST", "/v1/apps", &createAppRequest{Name: name, SSHKeys: sshKeys}, &app)

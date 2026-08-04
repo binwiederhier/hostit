@@ -231,7 +231,7 @@ func newTestDeployManager(t *testing.T) (*Manager, *fakeSystemOps, *fakeRunner) 
 // finish, so tests assert on their own actions rather than racing that goroutine
 func createTestApp(t *testing.T, m *Manager, name string) *store.App {
 	t.Helper()
-	a, _, err := m.CreateApp(name, &CreateOptions{RequestKeys: []string{testPublicKey}})
+	a, err := m.CreateApp(name, &CreateOptions{RequestKeys: []string{testPublicKey}})
 	require.NoError(t, err)
 	require.NoError(t, os.MkdirAll(m.appHome(name), 0755))
 	runner, ok := m.runner.(*fakeRunner)

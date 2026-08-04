@@ -8,7 +8,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"golang.org/x/crypto/ssh"
 	"heckel.io/hostit/config"
 	"heckel.io/hostit/store"
 )
@@ -20,11 +19,10 @@ const (
 func TestCreateApp(t *testing.T) {
 	t.Parallel()
 	m, ops := newTestManager(t)
-	app, creds, err := m.CreateApp("blog", &CreateOptions{RequestKeys: []string{testPublicKey}})
+	app, err := m.CreateApp("blog", &CreateOptions{RequestKeys: []string{testPublicKey}})
 	require.NoError(t, err)
 	assert.Equal(t, "blog", app.Name)
 	assert.Equal(t, 10000, app.Port)
-	assert.Nil(t, creds) // Key was provided, none generated
 	assert.Equal(t, []string{"blog"}, ops.createdUsers)
 	assert.Equal(t, []string{testPublicKey}, ops.authorizedKeys["blog"])
 	assert.Contains(t, ops.scaffolds["blog"], "hostit.yml")
@@ -35,27 +33,24 @@ func TestCreateApp(t *testing.T) {
 	assert.Equal(t, 10000, stored.Port)
 }
 
-func TestCreateAppGeneratesKeyPair(t *testing.T) {
+func TestCreateAppWithoutAnyKeys(t *testing.T) {
 	t.Parallel()
 	m, ops := newTestManager(t)
-	_, creds, err := m.CreateApp("blog", nil)
+	// An app with no keys is normal: it is driven through the API, and SSH is
+	// there for whoever adds a key to their profile later
+	_, err := m.CreateApp("blog", nil)
 	require.NoError(t, err)
-	require.NotNil(t, creds)
-	assert.Contains(t, creds.PrivateKey, "OPENSSH PRIVATE KEY")
-	require.Len(t, ops.authorizedKeys["blog"], 1)
-	// The written public key must match the returned private key
-	signer, err := ssh.ParsePrivateKey([]byte(creds.PrivateKey))
+	assert.Empty(t, ops.authorizedKeys["blog"], "hostit must not invent a key pair")
+	stored, err := m.Store().AppKeys("blog")
 	require.NoError(t, err)
-	pub, _, _, _, err := ssh.ParseAuthorizedKey([]byte(ops.authorizedKeys["blog"][0]))
-	require.NoError(t, err)
-	assert.Equal(t, string(pub.Marshal()), string(signer.PublicKey().Marshal()))
+	assert.Empty(t, stored)
 }
 
 func TestCreateAppInvalidName(t *testing.T) {
 	t.Parallel()
 	m, _ := newTestManager(t)
 	for _, name := range []string{"", "Foo", "-x", "x-", "a_b", "a.b", "root", "hostit", "api", strings.Repeat("x", 33)} {
-		_, _, err := m.CreateApp(name, &CreateOptions{RequestKeys: []string{testPublicKey}})
+		_, err := m.CreateApp(name, &CreateOptions{RequestKeys: []string{testPublicKey}})
 		require.Error(t, err, "name %q should be rejected", name)
 	}
 }
@@ -63,9 +58,9 @@ func TestCreateAppInvalidName(t *testing.T) {
 func TestCreateAppDuplicate(t *testing.T) {
 	t.Parallel()
 	m, _ := newTestManager(t)
-	_, _, err := m.CreateApp("blog", &CreateOptions{RequestKeys: []string{testPublicKey}})
+	_, err := m.CreateApp("blog", &CreateOptions{RequestKeys: []string{testPublicKey}})
 	require.NoError(t, err)
-	_, _, err = m.CreateApp("blog", &CreateOptions{RequestKeys: []string{testPublicKey}})
+	_, err = m.CreateApp("blog", &CreateOptions{RequestKeys: []string{testPublicKey}})
 	require.ErrorIs(t, err, ErrAppExists)
 }
 
@@ -73,14 +68,14 @@ func TestCreateAppExistingUnixUser(t *testing.T) {
 	t.Parallel()
 	m, ops := newTestManager(t)
 	ops.existingUsers = []string{"phil"}
-	_, _, err := m.CreateApp("phil", &CreateOptions{RequestKeys: []string{testPublicKey}})
+	_, err := m.CreateApp("phil", &CreateOptions{RequestKeys: []string{testPublicKey}})
 	require.ErrorIs(t, err, ErrAppExists)
 }
 
 func TestCreateAppInvalidSSHKey(t *testing.T) {
 	t.Parallel()
 	m, _ := newTestManager(t)
-	_, _, err := m.CreateApp("blog", &CreateOptions{RequestKeys: []string{"not a key"}})
+	_, err := m.CreateApp("blog", &CreateOptions{RequestKeys: []string{"not a key"}})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "ssh key")
 }
@@ -88,9 +83,9 @@ func TestCreateAppInvalidSSHKey(t *testing.T) {
 func TestCreateAppPortAllocation(t *testing.T) {
 	t.Parallel()
 	m, _ := newTestManager(t)
-	app1, _, err := m.CreateApp("one", &CreateOptions{RequestKeys: []string{testPublicKey}})
+	app1, err := m.CreateApp("one", &CreateOptions{RequestKeys: []string{testPublicKey}})
 	require.NoError(t, err)
-	app2, _, err := m.CreateApp("two", &CreateOptions{RequestKeys: []string{testPublicKey}})
+	app2, err := m.CreateApp("two", &CreateOptions{RequestKeys: []string{testPublicKey}})
 	require.NoError(t, err)
 	assert.Equal(t, 10000, app1.Port)
 	assert.Equal(t, 10001, app2.Port)
@@ -100,9 +95,9 @@ func TestCreateAppPortRangeExhausted(t *testing.T) {
 	t.Parallel()
 	m, _ := newTestManager(t)
 	m.config.PortMax = 10000 // Only one port available
-	_, _, err := m.CreateApp("one", &CreateOptions{RequestKeys: []string{testPublicKey}})
+	_, err := m.CreateApp("one", &CreateOptions{RequestKeys: []string{testPublicKey}})
 	require.NoError(t, err)
-	_, _, err = m.CreateApp("two", &CreateOptions{RequestKeys: []string{testPublicKey}})
+	_, err = m.CreateApp("two", &CreateOptions{RequestKeys: []string{testPublicKey}})
 	require.ErrorIs(t, err, ErrNoPortsAvailable)
 }
 
@@ -110,7 +105,7 @@ func TestCreateAppUserCreationFails(t *testing.T) {
 	t.Parallel()
 	m, ops := newTestManager(t)
 	ops.createUserErr = assert.AnError
-	_, _, err := m.CreateApp("blog", &CreateOptions{RequestKeys: []string{testPublicKey}})
+	_, err := m.CreateApp("blog", &CreateOptions{RequestKeys: []string{testPublicKey}})
 	require.Error(t, err)
 	_, err = m.App("blog") // Nothing must be registered
 	require.ErrorIs(t, err, store.ErrAppNotFound)
@@ -119,7 +114,7 @@ func TestCreateAppUserCreationFails(t *testing.T) {
 func TestDeleteApp(t *testing.T) {
 	t.Parallel()
 	m, ops := newTestManager(t)
-	_, _, err := m.CreateApp("blog", &CreateOptions{RequestKeys: []string{testPublicKey}})
+	_, err := m.CreateApp("blog", &CreateOptions{RequestKeys: []string{testPublicKey}})
 	require.NoError(t, err)
 	require.NoError(t, m.DeleteApp("blog"))
 	assert.Equal(t, []string{"blog"}, ops.deletedUsers)
@@ -131,7 +126,7 @@ func TestDeleteApp(t *testing.T) {
 func TestSetKeys(t *testing.T) {
 	t.Parallel()
 	m, ops := newTestManager(t)
-	_, _, err := m.CreateApp("blog", &CreateOptions{RequestKeys: []string{testPublicKey}})
+	_, err := m.CreateApp("blog", &CreateOptions{RequestKeys: []string{testPublicKey}})
 	require.NoError(t, err)
 	otherKey := "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIC24brF98CyUY18aeOGGQY3+wILYYnUUBQqICmMTvTGL other@host"
 	require.NoError(t, m.SetKeys("blog", []string{otherKey}, nil))
@@ -143,7 +138,7 @@ func TestSetKeys(t *testing.T) {
 func TestApps(t *testing.T) {
 	t.Parallel()
 	m, _ := newTestManager(t)
-	_, _, err := m.CreateApp("blog", &CreateOptions{RequestKeys: []string{testPublicKey}})
+	_, err := m.CreateApp("blog", &CreateOptions{RequestKeys: []string{testPublicKey}})
 	require.NoError(t, err)
 	apps, err := m.Apps()
 	require.NoError(t, err)

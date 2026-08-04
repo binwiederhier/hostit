@@ -11,16 +11,13 @@ type SSHInfo struct {
 	Command string `json:"command"`
 }
 
-// App mirrors the server's app response; PrivateKey/PublicKey are only set on
-// creation when the server generated a key pair
+// App mirrors the server's app response
 type App struct {
-	Name       string    `json:"name"`
-	URL        string    `json:"url"`
-	Port       int       `json:"port"`
-	CreatedAt  time.Time `json:"created_at"`
-	SSH        SSHInfo   `json:"ssh"`
-	PrivateKey string    `json:"private_key,omitempty"`
-	PublicKey  string    `json:"public_key,omitempty"`
+	Name      string    `json:"name"`
+	URL       string    `json:"url"`
+	Port      int       `json:"port"`
+	CreatedAt time.Time `json:"created_at"`
+	SSH       SSHInfo   `json:"ssh"`
 }
 
 // errorResponse mirrors the server's error body
