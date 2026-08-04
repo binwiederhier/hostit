@@ -384,3 +384,26 @@ func TestGuideExplainsTheLayoutAndTheBuildChoice(t *testing.T) {
 	assert.Contains(t, guide.SuggestedStack, "prebuilt binary")
 	assert.Contains(t, guide.Runtimes, "go")
 }
+
+func TestAgentRunEndpoint(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	token := newAppToken(t, s, "blog")
+
+	rr := request(t, s.API(), "POST", "/api/blog/run", `{"command":"go build ./..."}`, token)
+	require.Equal(t, http.StatusOK, rr.Code)
+	var res apiRunResponse
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &res))
+	assert.Equal(t, 0, res.ExitCode)
+
+	// An empty command is a mistake; a GET is not a way to run anything
+	rr = request(t, s.API(), "POST", "/api/blog/run", `{"command":""}`, token)
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+	rr = request(t, s.API(), "GET", "/api/blog/run", "", token)
+	assert.Equal(t, http.StatusMethodNotAllowed, rr.Code)
+
+	// And it is scoped like everything else on the agent API
+	other := newAppToken(t, s, "other")
+	rr = request(t, s.API(), "POST", "/api/blog/run", `{"command":"whoami"}`, other)
+	assert.Equal(t, http.StatusForbidden, rr.Code)
+}

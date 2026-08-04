@@ -1,6 +1,7 @@
 package app
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 
@@ -121,4 +122,22 @@ func TestContainerArgsChangeWithTheVersion(t *testing.T) {
 	// part of the container's identity is what triggers that recreate.
 	assert.NotEqual(t, before, after, "an upgrade must make the container stale")
 	assert.Contains(t, strings.Join(args(), " "), "hostit.version=v1.1.0")
+}
+
+func TestContainerHasProcessAndMemoryLimits(t *testing.T) {
+	t.Parallel()
+	conf := &appctl.AppConfig{Static: appctl.PublicDir}
+	a := &store.App{Name: "blog", Port: 10000}
+	joined := strings.Join(containerCreateArgs(conf, a, "/srv/hostit/apps/blog", "/run/hostit/hostit.sock", "/usr/bin/hostit", 512, testIDs), " ")
+
+	// A fork bomb in one app must not take the host down with it. podman has a
+	// default, but a default is the distribution's opinion, not hostit's.
+	assert.Contains(t, joined, "--pids-limit "+strconv.Itoa(maxProcesses))
+	assert.Contains(t, joined, "--memory 512m")
+
+	// Container-mode apps run someone else's image and need the same bounds
+	image := &appctl.AppConfig{Image: "nginx", ContainerPort: 80}
+	joined = strings.Join(containerCreateArgs(image, a, "/srv/hostit/apps/blog", "/run/hostit/hostit.sock", "/usr/bin/hostit", 512, testIDs), " ")
+	assert.Contains(t, joined, "--pids-limit "+strconv.Itoa(maxProcesses))
+	assert.Contains(t, joined, "--memory 512m")
 }

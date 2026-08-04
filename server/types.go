@@ -222,6 +222,20 @@ type apiAgentAppResponse struct {
 	Guide *apiAgentInfoResponse `json:"guide"`
 }
 
+// apiRunRequest is the body of POST /api/{app}/run
+type apiRunRequest struct {
+	Command        string `json:"command"`
+	TimeoutSeconds int    `json:"timeout_seconds"` // 0 = the default; capped by the daemon
+}
+
+// apiRunResponse is what the command left behind
+type apiRunResponse struct {
+	Output    string `json:"output"`
+	ExitCode  int    `json:"exit_code"`
+	Truncated bool   `json:"truncated"`
+	TimedOut  bool   `json:"timed_out"`
+}
+
 // apiReadmeRequest is the body of PUT /api/{app}/readme
 type apiReadmeRequest struct {
 	Readme string `json:"readme"`

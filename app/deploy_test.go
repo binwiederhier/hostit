@@ -363,3 +363,52 @@ func TestRestartStaleAgents(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, []string{"blog"}, restarted)
 }
+
+func TestExecInApp(t *testing.T) {
+	t.Parallel()
+	m, _, runner := newTestDeployManager(t)
+	createTestApp(t, m, "blog")
+	writeAppFile(t, m, "blog", "hostit.yml", "static: public")
+
+	// The command runs inside the app's own container, through a shell so that
+	// "cd src && go build" works, and never on the host
+	res, err := m.Exec("blog", "go version", 0)
+	require.NoError(t, err)
+	assert.Contains(t, runner.ran(), "podman exec")
+	assert.Contains(t, runner.ran(), containerName("blog"))
+	assert.Contains(t, runner.ran(), "go version")
+	assert.Equal(t, 0, res.ExitCode)
+
+	// The limit is enforced inside the container, not just on the podman client:
+	// killing "podman exec" on the host leaves the command running in the
+	// container, burning the app's memory and CPU with nobody watching
+	assert.Contains(t, runner.ran(), "timeout")
+	assert.Contains(t, runner.ran(), "--kill-after")
+
+	// An empty command is a mistake, not a shell prompt
+	_, err = m.Exec("blog", "   ", 0)
+	require.ErrorIs(t, err, ErrInvalid)
+
+	// The timeout is bounded whatever the caller asks for: this runs on the
+	// daemon's request path, on a box with one core
+	assert.Equal(t, execDefaultTimeout, execTimeout(0))
+	assert.Equal(t, 30*time.Second, execTimeout(30*time.Second))
+	assert.Equal(t, execMaxTimeout, execTimeout(time.Hour))
+}
+
+func TestExecCapsItsOutput(t *testing.T) {
+	t.Parallel()
+	// A build that prints megabytes must not become megabytes of JSON in a
+	// response, or megabytes held in the daemon
+	long := strings.Repeat("x", execMaxOutput+5000)
+	capped, truncated := capOutput(long)
+	assert.True(t, truncated)
+	assert.LessOrEqual(t, len(capped), execMaxOutput+200)
+	assert.Contains(t, capped, "truncated")
+	// The tail is what a build error lives in, so that is the end kept
+	assert.True(t, strings.HasSuffix(capped, strings.Repeat("x", 100)))
+
+	short, truncated := capOutput("all good")
+	assert.False(t, truncated)
+	assert.Equal(t, "all good", short)
+}

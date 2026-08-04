@@ -19,6 +19,9 @@ const (
 	containerPrefix = "hostit-app-"
 	// unitTemplate is the systemd template unit instantiated per app
 	unitTemplate = "hostit-app@"
+	// maxProcesses caps how many processes an app may have. Generous for a build
+	// (compilers fan out) and far below what it takes to exhaust the host.
+	maxProcesses = 512
 	// workspaceImage is the default image for static/run mode apps, built once into
 	// the daemon's (root) image store and shared by every app
 	workspaceImage = "localhost/hostit-workspace:1"
@@ -92,8 +95,11 @@ func containerCreateArgs(conf *appctl.AppConfig, a *store.App, home, socketFile,
 	if memoryMB > 0 {
 		args = append(args, "--memory", strconv.Itoa(memoryMB)+"m")
 	}
+	// A fork bomb in one app must not take the host with it. podman has a
+	// default for this, but a default is the distribution's opinion.
+	args = append(args, "--pids-limit", strconv.Itoa(maxProcesses))
 	if conf == nil || conf.Mode() == appctl.ModeProcess || conf.Mode() == appctl.ModeStatic {
-		containerHome := "/home/" + a.Name
+		containerHome := containerHomeDir(a.Name)
 		args = append(args,
 			"--env", fmt.Sprintf("PORT=%d", a.Port),
 			"--env", "HOME="+containerHome,

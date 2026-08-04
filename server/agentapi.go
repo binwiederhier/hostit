@@ -10,6 +10,7 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"time"
 
 	"heckel.io/hostit/app"
 	"heckel.io/hostit/appctl"
@@ -43,10 +44,11 @@ func (s *Server) newAgentRoutes(mux *http.ServeMux) {
 	mux.Handle("POST /api/{app}/start", s.requireApp(s.handleAgentStart))
 	mux.Handle("POST /api/{app}/stop", s.requireApp(s.handleAgentStop))
 	mux.Handle("POST /api/{app}/restart", s.requireApp(s.handleAgentRestart))
+	mux.Handle("POST /api/{app}/run", s.requireApp(s.handleAgentRun))
 
 	// Actions are POST-only. Without these, a GET would fall through to the web
 	// app's catch-all and answer with HTML, which is confusing for an agent.
-	for _, action := range []string{"deploy", "start", "stop", "restart"} {
+	for _, action := range []string{"deploy", "start", "stop", "restart", "run"} {
 		mux.HandleFunc("GET /api/{app}/"+action, methodNotAllowed(action))
 	}
 }
@@ -101,6 +103,7 @@ func (s *Server) agentGuide(appName, description string) *apiAgentInfoResponse {
 			"POST /api/" + name + "/deploy to apply hostit.yml and (re)start the app.",
 			"GET /api/" + name + "/logs if it does not come up; the app must listen on 0.0.0.0:$PORT.",
 			"PUT /api/" + name + "/readme to record what this app is and what you changed, for whoever comes next.",
+			"Compiling or installing dependencies: POST /api/" + name + "/run with a shell command. It runs in the app's container, where the toolchains are, and returns the output and exit code -- so you can iterate on a build error without SSH. It is bounded (a minute by default, five at most): make the build a \"prepare:\" step in hostit.yml once it works, so it also runs on every deploy.",
 			"Keep a one-line \"description:\" in hostit.yml saying what this app is. The owner's web page shows it, and the next session (or a different agent) starts from it instead of from a blank page.",
 		},
 		Layout: "The app's home directory has a place for each kind of thing:\n\n" +
@@ -146,6 +149,7 @@ func (s *Server) agentGuide(appName, description string) *apiAgentInfoResponse {
 			{Method: "DELETE", Path: "/api/" + name + "/files/{path}", What: "Delete one file"},
 			{Method: "POST", Path: "/api/" + name + "/files", What: "Upload a tar archive (Content-Type: application/x-tar)"},
 			{Method: "PUT", Path: "/api/" + name + "/readme", What: `Replace README.md: {"readme": "..."}`},
+			{Method: "POST", Path: "/api/" + name + "/run", What: `Run one shell command in the app's container: {"command": "cd src && go build ./..."} -- returns its output and exit code`},
 			{Method: "POST", Path: "/api/" + name + "/deploy", What: "Apply hostit.yml and (re)start"},
 			{Method: "POST", Path: "/api/" + name + "/start", What: "Start the app"},
 			{Method: "POST", Path: "/api/" + name + "/stop", What: "Stop the app"},
@@ -154,6 +158,8 @@ func (s *Server) agentGuide(appName, description string) *apiAgentInfoResponse {
 		Notes: []string{
 			"Apps also accept SSH: the owner's SSH keys work, and you can scp/rsync into the app's home directory.",
 			"Changing image/build/env/volumes recreates the container; changing only static:/run: restarts the process.",
+			"/run is bounded: a minute by default, five at most, and its output is capped. Anything longer belongs in \"prepare:\". A command you background (with & and its output redirected) keeps running after /run returns -- useful, but nothing will stop it except POST /restart, which replaces the container.",
+			"Your app has 512 processes and its memory limit to work with, and the disk quota is shared with everything else in the app. A build that fans out past that fails rather than taking the host with it.",
 			"Deleting or renaming apps is done by the owner in the web app, not through this API.",
 		},
 	}
@@ -188,6 +194,28 @@ func (s *Server) handleAgentAppInfo(w http.ResponseWriter, _ *http.Request, c *c
 		},
 		Hint:  "Upload files, write hostit.yml, then POST /api/" + a.Name + "/deploy. Everything you need is in this response.",
 		Guide: s.agentGuide(a.Name, s.apps.Description(a.Name)),
+	})
+}
+
+// handleAgentRun runs one command inside the app's container and returns what
+// it printed. It is how an agent compiles without SSH; see app.Exec for why it
+// grants nothing an app token did not already have.
+func (s *Server) handleAgentRun(w http.ResponseWriter, r *http.Request, c *caller, a *store.App) {
+	var req apiRunRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	res, err := s.apps.Exec(a.Name, req.Command, time.Duration(req.TimeoutSeconds)*time.Second)
+	if err != nil {
+		writeAppError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, &apiRunResponse{
+		Output:    res.Output,
+		ExitCode:  res.ExitCode,
+		Truncated: res.Truncated,
+		TimedOut:  res.TimedOut,
 	})
 }
 

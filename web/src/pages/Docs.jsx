@@ -173,6 +173,18 @@ env:
         starting a broken app.
       </p>
       <p>
+        While you are still getting the build to work, <span className="mono">POST /api/&lt;app&gt;/run</span> runs a single
+        command in the container and returns its output, so an assistant can iterate on a compile error without SSH. It is
+        bounded (one minute by default, five at most); once the command works, move it into{" "}
+        <span className="mono">prepare:</span>.
+      </p>
+      <p className="hint">
+        A command you background (<span className="mono">&amp;</span>, with its output redirected) keeps running after the
+        request returns. Nothing supervises it, so if it misbehaves, <span className="mono">restart</span> the app -- that
+        replaces the container and takes every stray process with it. Each app has 512 processes and its memory limit to work
+        with: a runaway is contained to its own container, though it will slow the box while it lasts.
+      </p>
+      <p>
         The command must listen on <span className="mono">0.0.0.0:$PORT</span>. <span className="mono">$PORT</span> is provided;
         nothing else is reachable from outside. hostit restarts the command if it exits.
       </p>
@@ -244,6 +256,11 @@ hostit logs -f     # watch the output`}
             <Endpoint method="DELETE" path="/api/{app}/files/{path}" what="Delete one file" />
             <Endpoint method="POST" path="/api/{app}/files" what="Upload a tar archive (Content-Type: application/x-tar)" />
             <Endpoint method="PUT" path="/api/{app}/readme" what={`Replace README.md: {"readme": "..."}`} />
+            <Endpoint
+              method="POST"
+              path="/api/{app}/run"
+              what={`Run one command in the container: {"command": "cd src && go build ./..."}`}
+            />
             <Endpoint method="POST" path="/api/{app}/deploy" what="Apply hostit.yml and (re)start" />
             <Endpoint method="POST" path="/api/{app}/start|stop|restart" what="Lifecycle; POST only" />
           </tbody>

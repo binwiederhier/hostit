@@ -12,6 +12,13 @@ ExecStart=/usr/bin/hostit serve
 Restart=on-failure
 RestartSec=2
 
+# An app can saturate the box -- a build, a busy loop, a fork bomb inside its own
+# process cap. Containers compete fairly with each other by default, but the
+# control plane must not be one of the competitors: without this, the dashboard
+# and the API get slow exactly when someone needs them to stop an app.
+CPUWeight=10000
+IOWeight=1000
+
 # Deliberately NOT RuntimeDirectory=hostit: systemd would delete and recreate
 # /run/hostit on every restart, and app containers bind-mount that directory to
 # reach the daemon's socket. A new directory inode leaves every running app

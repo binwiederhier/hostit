@@ -122,6 +122,7 @@ type Manager struct {
 	mu      sync.Mutex // Protects memoryMB, diskMB
 	stateMu sync.Mutex // Protects stateCache, stateFresh, stateRefreshing
 	buildMu sync.Mutex // Serializes image builds; two at once OOM a small host
+	execMu  sync.Mutex // Serializes /run commands; they are builds, and the box has one core
 }
 
 // NewManager creates a Manager

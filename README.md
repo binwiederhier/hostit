@@ -341,6 +341,8 @@ curl -X PUT -H "Authorization: Bearer $T" --data-binary @myapp \
 tar cf - . | curl -X POST -H "Authorization: Bearer $T" \
      -H "Content-Type: application/x-tar" --data-binary @- $H/myapp/files
 
+curl -X POST -H "Authorization: Bearer $T" -H "Content-Type: application/json" \
+     -d '{"command":"cd src && go build -o ../bin/myapp ."}' $H/myapp/run
 curl -X POST -H "Authorization: Bearer $T" $H/myapp/deploy    # apply hostit.yml, (re)start
 curl -H "Authorization: Bearer $T" "$H/myapp/logs?lines=50"   # why is it not up?
 curl -X PUT -H "Authorization: Bearer $T" -H "Content-Type: application/json" \
