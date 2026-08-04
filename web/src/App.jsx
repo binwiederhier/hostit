@@ -1,18 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { BrowserRouter, Link, Navigate, NavLink, Route, Routes } from "react-router-dom";
 import { api, ApiError } from "./api";
-import { Loading } from "./components";
+import { Loading, Wordmark } from "./components";
 import Dashboard from "./pages/Dashboard";
 import AppDetail from "./pages/AppDetail";
 import Profile from "./pages/Profile";
 import Admin from "./pages/Admin";
-
-const Wordmark = ({ big = false }) => (
-  <span className={`wordmark${big ? " wordmark-big" : ""}`}>
-    hostit
-    <span className="cursor" aria-hidden="true" />
-  </span>
-);
 
 const logout = async () => {
   try {

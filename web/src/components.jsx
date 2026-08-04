@@ -67,6 +67,14 @@ export const ErrorBanner = ({ message, onDismiss }) => {
   );
 };
 
+// The brand mark: monospace wordmark with a blinking block cursor
+export const Wordmark = ({ big = false }) => (
+  <span className={`wordmark${big ? " wordmark-big" : ""}`}>
+    hostit
+    <span className="cursor" aria-hidden="true" />
+  </span>
+);
+
 export const Loading = ({ label = "Loading..." }) => (
   <p className="loading" aria-live="polite">
     {label}
