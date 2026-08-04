@@ -33,8 +33,12 @@ func (m *Manager) Up(name string) (string, error) {
 		return "", err
 	}
 	if conf.Build != "" {
-		buildDir := filepath.Join(m.appHome(name), conf.Build)
-		if _, err := m.runner.Run("podman", "build", "--tag", buildImageTag(name), buildDir); err != nil {
+		// One build at a time: podman serializes on its own lock anyway, but the
+		// memory does not, and two Debian-sized builds OOM a 1 GB host
+		m.buildMu.Lock()
+		_, err := m.runner.Run("podman", "build", "--tag", buildImageTag(name), filepath.Join(m.appHome(name), conf.Build))
+		m.buildMu.Unlock()
+		if err != nil {
 			return "", fmt.Errorf("image build failed: %w", err)
 		}
 	}

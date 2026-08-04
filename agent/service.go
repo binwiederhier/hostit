@@ -45,7 +45,7 @@ type Agent struct {
 	exits        chan childExit
 	reloads      chan struct{}
 	stop         chan struct{}
-	logFile      *os.File
+	logFile      *appLog
 	stopOnce     sync.Once
 }
 
@@ -152,8 +152,19 @@ func (a *Agent) reapLoop(chld chan os.Signal) {
 			if pid <= 0 || err != nil {
 				break
 			}
-			a.exits <- childExit{pid: pid, status: fmt.Sprintf("exit status %d", status.ExitStatus())}
+			a.reportExit(childExit{pid: pid, status: fmt.Sprintf("exit status %d", status.ExitStatus())})
 		}
+	}
+}
+
+// reportExit hands a reaped child to whoever is waiting for it, and drops it if
+// nobody is. As PID 1 we reap orphans too, and while the app is idle (a stub, or
+// a config that names no command) there is no waiter at all: blocking here would
+// stop the reaper for good and leave the container collecting zombies.
+func (a *Agent) reportExit(exit childExit) {
+	select {
+	case a.exits <- exit:
+	default:
 	}
 }
 
@@ -249,23 +260,81 @@ func (a *Agent) sleepInterruptible() bool {
 	}
 }
 
-// openLog (re)opens the app log, rotating it once it grows too large
-func (a *Agent) openLog() (*os.File, error) {
+// openLog (re)opens the app log. The returned writer rotates as it writes: an
+// app that starts once and runs for months never comes back through here, so
+// checking the size only on start would let the log grow without bound.
+func (a *Agent) openLog() (*appLog, error) {
 	a.closeLog()
 	dir := filepath.Join(a.home, ".hostit")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, err
 	}
-	filename := filepath.Join(dir, "app.log")
-	if stat, err := os.Stat(filename); err == nil && stat.Size() > logMaxSize {
-		_ = os.Rename(filename, filename+".old")
-	}
-	f, err := os.OpenFile(filename, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
-	if err != nil {
+	log := &appLog{filename: filepath.Join(dir, "app.log")}
+	if err := log.open(); err != nil {
 		return nil, err
 	}
-	a.logFile = f
-	return f, nil
+	a.logFile = log
+	return log, nil
+}
+
+// appLog is the app's log file, rotated to .old once it passes logMaxSize
+type appLog struct {
+	filename string
+	file     *os.File
+	size     int64
+
+	mu sync.Mutex // Protects file and size; stdout and stderr both write here
+}
+
+// open attaches to the log file, rotating first if it is already too big
+func (l *appLog) open() error {
+	if stat, err := os.Stat(l.filename); err == nil && stat.Size() > logMaxSize {
+		_ = os.Rename(l.filename, l.filename+".old")
+	}
+	f, err := os.OpenFile(l.filename, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		return err
+	}
+	stat, err := f.Stat()
+	if err != nil {
+		f.Close()
+		return err
+	}
+	l.file, l.size = f, stat.Size()
+	return nil
+}
+
+// Write appends to the log, rotating when it has grown past the cap
+func (l *appLog) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.file == nil {
+		return len(p), nil // Closed; the app's output is not worth an error
+	}
+	if l.size+int64(len(p)) > logMaxSize {
+		_ = l.file.Close()
+		if err := os.Rename(l.filename, l.filename+".old"); err != nil {
+			return 0, err
+		}
+		if err := l.open(); err != nil {
+			return 0, err
+		}
+	}
+	n, err := l.file.Write(p)
+	l.size += int64(n)
+	return n, err
+}
+
+// Close releases the file; further writes are discarded
+func (l *appLog) Close() error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.file == nil {
+		return nil
+	}
+	err := l.file.Close()
+	l.file = nil
+	return err
 }
 
 func (a *Agent) closeLog() {

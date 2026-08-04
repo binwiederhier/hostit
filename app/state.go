@@ -39,23 +39,41 @@ func (m *Manager) CachedStates(names []string) map[string]State {
 	for _, name := range names {
 		cached[name] = m.stateCache[name]
 	}
-	shouldRefresh := time.Since(m.stateFresh) > stateTTL && !m.stateRefreshing
-	if shouldRefresh {
-		m.stateRefreshing = true
-	}
+	stale := time.Since(m.stateFresh) > stateTTL
 	m.stateMu.Unlock()
 
-	if shouldRefresh {
-		go func() {
-			defer func() {
-				m.stateMu.Lock()
-				m.stateRefreshing = false
-				m.stateMu.Unlock()
-			}()
-			m.RefreshStates()
-		}()
+	if stale {
+		go m.refreshOnce()
 	}
 	return cached
+}
+
+// beginRefresh claims the right to refresh, so only one runs at a time. Two
+// concurrent refreshes would ask podman twice and, worse, the slower one would
+// write last -- stamping older numbers with a newer freshness time.
+func (m *Manager) beginRefresh() bool {
+	m.stateMu.Lock()
+	defer m.stateMu.Unlock()
+	if m.stateRefreshing {
+		return false
+	}
+	m.stateRefreshing = true
+	return true
+}
+
+func (m *Manager) doneRefreshing() {
+	m.stateMu.Lock()
+	m.stateRefreshing = false
+	m.stateMu.Unlock()
+}
+
+// refreshOnce refreshes unless a refresh is already in flight
+func (m *Manager) refreshOnce() {
+	if !m.beginRefresh() {
+		return
+	}
+	defer m.doneRefreshing()
+	m.RefreshStates()
 }
 
 // RefreshStates measures every app and replaces the cache; it blocks on podman,
@@ -81,14 +99,14 @@ func (m *Manager) RefreshStates() {
 func (m *Manager) StateLoop(done <-chan struct{}) {
 	slog.Info("Starting app state loop", "interval", stateRefreshInterval)
 	defer slog.Info("Stopping app state loop")
-	m.RefreshStates() // Prime it, so the first page load already has numbers
+	m.refreshOnce() // Prime it, so the first page load already has numbers
 	for {
 		select {
 		case <-time.After(stateRefreshInterval):
 		case <-done:
 			return
 		}
-		m.RefreshStates()
+		m.refreshOnce()
 	}
 }
 

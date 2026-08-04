@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
@@ -123,4 +124,44 @@ func processAlive(t *testing.T, pid string) bool {
 	t.Helper()
 	_, err := os.Stat(filepath.Join("/proc", pid))
 	return err == nil
+}
+
+func TestReportExitNeverBlocks(t *testing.T) {
+	t.Parallel()
+	// As PID 1 the agent reaps orphans, but nothing drains a.exits while the app
+	// is idle (a stub, or a hostit.yml that names no command). A blocking send
+	// would stop the reaper for the life of the container and pile up zombies.
+	a := New(t.TempDir())
+	for i := 0; i < cap(a.exits)+10; i++ {
+		done := make(chan struct{})
+		go func() {
+			a.reportExit(childExit{pid: i, status: "exit status 0"})
+			close(done)
+		}()
+		select {
+		case <-done:
+		case <-time.After(2 * time.Second):
+			t.Fatalf("reportExit blocked after %d exits", i)
+		}
+	}
+}
+
+func TestAppLogRotatesWhileRunning(t *testing.T) {
+	t.Parallel()
+	home := t.TempDir()
+	a := New(home)
+	w, err := a.openLog()
+	require.NoError(t, err)
+	// A stable app never restarts, so rotation has to happen as it writes;
+	// otherwise the log grows forever on a 25 GB disk
+	chunk := bytes.Repeat([]byte("x"), 64*1024)
+	for written := 0; written < logMaxSize*2; written += len(chunk) {
+		_, err := w.Write(chunk)
+		require.NoError(t, err)
+	}
+	stat, err := os.Stat(filepath.Join(home, ".hostit", "app.log"))
+	require.NoError(t, err)
+	assert.LessOrEqual(t, stat.Size(), int64(logMaxSize), "the live log must stay under the cap")
+	_, err = os.Stat(filepath.Join(home, ".hostit", "app.log.old"))
+	assert.NoError(t, err, "the previous log must be kept as .old")
 }

@@ -22,6 +22,12 @@ func (m *Manager) EnsureWorkspaceImage() error {
 	if m.ops.ImageExists(workspaceImage) {
 		return nil
 	}
+	// Two apps created at once must not both build this ~230 MB image
+	m.buildMu.Lock()
+	defer m.buildMu.Unlock()
+	if m.ops.ImageExists(workspaceImage) {
+		return nil // Someone built it while we waited
+	}
 	contextDir := filepath.Join(m.config.DataDir, workspaceSubDir)
 	if err := os.MkdirAll(contextDir, 0o755); err != nil {
 		return err

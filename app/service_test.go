@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -175,6 +176,8 @@ type fakeSystemOps struct {
 	images         map[string]bool
 	builds         []imageBuild
 	createUserErr  error
+
+	mu sync.Mutex // Protects everything above: CreateApp starts the app in the background
 }
 
 // imageBuild records a BuildImage call
@@ -196,10 +199,14 @@ func newFakeSystemOps() *fakeSystemOps {
 }
 
 func (f *fakeSystemOps) ImageExists(tag string) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	return f.images[tag]
 }
 
 func (f *fakeSystemOps) BuildImage(contextDir, tag string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.builds = append(f.builds, imageBuild{contextDir: contextDir, tag: tag})
 	f.images[tag] = true
 	return nil
@@ -211,6 +218,8 @@ func (f *fakeSystemOps) LookupIDs(username string) (IDs, error) {
 }
 
 func (f *fakeSystemOps) UserExists(username string) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	for _, u := range append(f.existingUsers, f.createdUsers...) {
 		if u == username {
 			return true
@@ -220,6 +229,8 @@ func (f *fakeSystemOps) UserExists(username string) bool {
 }
 
 func (f *fakeSystemOps) LookupUID(username string) (int, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	if uid, ok := f.uids[username]; ok {
 		return uid, nil
 	}
@@ -227,6 +238,8 @@ func (f *fakeSystemOps) LookupUID(username string) (int, error) {
 }
 
 func (f *fakeSystemOps) CreateUser(username, home string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	if f.createUserErr != nil {
 		return f.createUserErr
 	}
@@ -236,11 +249,15 @@ func (f *fakeSystemOps) CreateUser(username, home string) error {
 }
 
 func (f *fakeSystemOps) DeleteUser(username string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.deletedUsers = append(f.deletedUsers, username)
 	return nil
 }
 
 func (f *fakeSystemOps) WriteAuthorizedKeys(username, home string, keys []string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.authorizedKeys[username] = keys
 	return nil
 }
