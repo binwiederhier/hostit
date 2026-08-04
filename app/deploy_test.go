@@ -295,3 +295,21 @@ func (f *fakeRunner) Run(args ...string) (string, error) {
 	}
 	return "", nil
 }
+
+func TestLogsCannotBeSymlinkedToAnythingElse(t *testing.T) {
+	t.Parallel()
+	m, _, _ := newTestDeployManager(t)
+	createTestApp(t, m, "blog")
+	home := m.appHome("blog")
+
+	secret := filepath.Join(t.TempDir(), "server.yml")
+	require.NoError(t, os.WriteFile(secret, []byte("admin-token: hunter2\n"), 0o600))
+	// The app user owns .hostit/ inside their container, so they can point the
+	// log at anything the daemon (root) can read
+	require.NoError(t, os.MkdirAll(filepath.Join(home, ".hostit"), 0o755))
+	require.NoError(t, os.Symlink(secret, filepath.Join(home, ".hostit", "app.log")))
+
+	out, err := m.Logs("blog", 100)
+	assert.NotContains(t, out, "hunter2", "logs must never read through a symlink")
+	assert.Error(t, err)
+}

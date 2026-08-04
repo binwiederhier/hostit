@@ -3,6 +3,7 @@ package app
 import (
 	"archive/tar"
 	"bytes"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -195,4 +196,117 @@ func TestDescriptionFromHostitYml(t *testing.T) {
 	assert.Empty(t, m.Description("blog"))
 	require.NoError(t, m.WriteFile("blog", "hostit.yml", []byte("description: Expense tracker for the finance team\nstatic: .\n"), 0))
 	assert.Equal(t, "Expense tracker for the finance team", m.Description("blog"))
+}
+
+func TestDescriptionSurvivesAnUnfinishedConfig(t *testing.T) {
+	t.Parallel()
+	m, _, _ := newTestDeployManager(t)
+	createTestApp(t, m, "blog")
+	// Mid-edit, hostit.yml often names no runnable mode yet. The description is
+	// still what the app says it is, and the owner's prompt depends on it.
+	require.NoError(t, m.WriteFile("blog", "hostit.yml", []byte("description: A half-written app\n"), 0))
+	assert.Equal(t, "A half-written app", m.Description("blog"))
+	// Two modes at once is invalid too, and still not a reason to forget
+	require.NoError(t, m.WriteFile("blog", "hostit.yml", []byte("description: Two modes\nstatic: .\nrun: ./x\n"), 0))
+	assert.Equal(t, "Two modes", m.Description("blog"))
+	// Unparseable YAML has no description to offer
+	require.NoError(t, m.WriteFile("blog", "hostit.yml", []byte("description: [unclosed\n"), 0))
+	assert.Empty(t, m.Description("blog"))
+}
+
+func TestDescriptionIgnoresAnAbsurdConfig(t *testing.T) {
+	t.Parallel()
+	m, _, _ := newTestDeployManager(t)
+	createTestApp(t, m, "blog")
+	// hostit.yml is caller-writable, and this read happens once per app on a
+	// polled endpoint: a huge file must not be parsed at all
+	huge := append([]byte("description: A tiny blog\n# "), bytes.Repeat([]byte("x"), maxConfigSize)...)
+	require.NoError(t, m.WriteFile("blog", "hostit.yml", huge, 0))
+	assert.Empty(t, m.Description("blog"))
+}
+
+func TestWriteFileFromStreamsAndRejectsOversize(t *testing.T) {
+	t.Parallel()
+	m, _, _ := newTestDeployManager(t)
+	createTestApp(t, m, "blog")
+	require.NoError(t, m.WriteFileFrom("blog", "server", strings.NewReader("#!/bin/sh\n"), 0o755))
+	stat, err := os.Stat(filepath.Join(m.appHome("blog"), "server"))
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o755), stat.Mode().Perm())
+
+	// A body over the cap is refused, and nothing of it is kept: the whole point
+	// is that the daemon never holds it, so it must not land on disk either
+	big := io.LimitReader(neverEndingReader{}, maxUploadSize+1024)
+	err = m.WriteFileFrom("blog", "huge.bin", big, 0)
+	require.ErrorIs(t, err, ErrInvalid)
+	_, err = os.Stat(filepath.Join(m.appHome("blog"), "huge.bin"))
+	assert.True(t, os.IsNotExist(err), "a rejected upload must leave no file behind")
+
+	// A failed overwrite leaves the previous content alone
+	require.NoError(t, m.WriteFileFrom("blog", "keep.txt", strings.NewReader("original"), 0))
+	err = m.WriteFileFrom("blog", "keep.txt", io.LimitReader(neverEndingReader{}, maxUploadSize+1), 0)
+	require.ErrorIs(t, err, ErrInvalid)
+	b, err := os.ReadFile(filepath.Join(m.appHome("blog"), "keep.txt"))
+	require.NoError(t, err)
+	assert.Equal(t, "original", string(b))
+}
+
+// neverEndingReader produces zeros forever, so a size cap can be tested without
+// allocating the test's way to the limit
+type neverEndingReader struct{}
+
+func (neverEndingReader) Read(p []byte) (int, error) {
+	return len(p), nil
+}
+
+// TestSymlinksCannotEscapeTheAppHome covers the whole class: the app user owns
+// their home (it is bind-mounted into their container and writable over scp),
+// so any file operation the daemon performs as root must refuse to follow a
+// link out of it. Lexical path checks alone do not see these.
+func TestSymlinksCannotEscapeTheAppHome(t *testing.T) {
+	t.Parallel()
+	m, _, _ := newTestDeployManager(t)
+	createTestApp(t, m, "blog")
+	home := m.appHome("blog")
+
+	outside := filepath.Join(t.TempDir(), "secret.txt")
+	require.NoError(t, os.WriteFile(outside, []byte("root-only secret"), 0o600))
+	require.NoError(t, os.Symlink(outside, filepath.Join(home, "notes.txt")))
+
+	// Reading through the link must not hand back the target
+	b, err := m.ReadFile("blog", "notes.txt")
+	require.Error(t, err, "reading through a symlink must fail")
+	assert.NotContains(t, string(b), "root-only secret")
+
+	// Writing may replace the link (that is safe and useful), but must never
+	// write through it
+	require.NoError(t, m.WriteFile("blog", "notes.txt", []byte("overwritten"), 0))
+	kept, readErr := os.ReadFile(outside)
+	require.NoError(t, readErr)
+	assert.Equal(t, "root-only secret", string(kept), "the target must be untouched")
+	stat, err := os.Lstat(filepath.Join(home, "notes.txt"))
+	require.NoError(t, err)
+	assert.Zero(t, stat.Mode()&os.ModeSymlink, "the link must have been replaced by a real file")
+
+	// A tar entry needs no symlink of its own: a planted directory link is enough
+	outDir := t.TempDir()
+	require.NoError(t, os.Symlink(outDir, filepath.Join(home, "link")))
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+	content := "escaped"
+	require.NoError(t, tw.WriteHeader(&tar.Header{Name: "link/escaped.txt", Mode: 0o644, Size: int64(len(content)), Typeflag: tar.TypeReg}))
+	_, err = tw.Write([]byte(content))
+	require.NoError(t, err)
+	require.NoError(t, tw.Close())
+	_, err = m.ExtractTar("blog", &buf)
+	require.Error(t, err, "a tar entry must not land through a planted directory symlink")
+	_, err = os.Stat(filepath.Join(outDir, "escaped.txt"))
+	assert.True(t, os.IsNotExist(err), "nothing may be written outside the home")
+
+	// Deleting through a link must not delete the target
+	err = m.DeleteFile("blog", "notes.txt")
+	if err == nil {
+		_, statErr := os.Stat(outside)
+		assert.NoError(t, statErr, "deleting a link must not delete its target")
+	}
 }

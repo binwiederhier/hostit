@@ -2,7 +2,6 @@ package app
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -104,9 +103,18 @@ func (m *Manager) Logs(name string, lines int) (string, error) {
 	}
 	conf, err := appctl.LoadAppConfig(filepath.Join(m.appHome(name), "hostit.yml"))
 	if err == nil && conf.Mode() == appctl.ModeContainer {
-		return m.runner.Run("podman", "logs", "--tail", strconv.Itoa(lines), containerName(name))
+		// podman serializes on its own lock, and a build elsewhere can hold it for
+		// minutes; a log fetch is a read path and must not wait that long
+		return m.runner.RunTimeout(logsTimeout, "podman", "logs", "--tail", strconv.Itoa(lines), containerName(name))
 	}
-	b, err := os.ReadFile(filepath.Join(m.appHome(name), ".hostit", "app.log"))
+	// Through the app's root: .hostit/ lives in a directory the app user owns,
+	// so the log file can be a symlink to anything the daemon can read
+	root, err := m.appRoot(name)
+	if err != nil {
+		return "", err
+	}
+	defer root.Close()
+	b, err := readCapped(root, appLogFile, maxLogRead)
 	if err != nil {
 		return "", fmt.Errorf("no logs yet: %w", err)
 	}

@@ -83,8 +83,8 @@ func execAdminAdd(c *cli.Context) error {
 	fmt.Printf("App created!\n\n")
 	fmt.Printf("  URL:  %s\n", app.URL)
 	fmt.Printf("  SSH:  %s\n", app.SSH.Command)
-	fmt.Printf("  Port: %d (the app must listen on 127.0.0.1:%d)\n", app.Port, app.Port)
-	fmt.Printf("\nThen: upload your app, edit hostit.yml, and run \"hostit up\" (see README.txt there).\n")
+	fmt.Printf("  Port: %d (the app must listen on 0.0.0.0:$PORT inside its container)\n", app.Port)
+	fmt.Printf("\nThen: upload your app, edit hostit.yml, and run \"hostit up\" (see HOSTIT.txt there).\n")
 	return nil
 }
 

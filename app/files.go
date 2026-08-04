@@ -2,6 +2,9 @@ package app
 
 import (
 	"archive/tar"
+	"bytes"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"io/fs"
@@ -23,6 +26,22 @@ const (
 	maxUploadSize = 64 * 1024 * 1024
 	// defaultFileMode is what an upload gets when it does not ask for a mode
 	defaultFileMode = 0o644
+	// configFile is the app's own configuration, written by whoever builds it
+	configFile = "hostit.yml"
+	// homeMode is the app home's permissions: the app user and hostit only
+	homeMode = 0o750
+	// appLogFile is where the agent records an app's output, below the app's home
+	appLogFile = ".hostit/app.log"
+	// maxLogRead caps how much of that log a request reads; the agent rotates it
+	// at 10 MB, and a reader only ever wants the tail
+	maxLogRead = 16 * 1024 * 1024
+	// tempPrefix marks the scratch file an upload streams into before it is
+	// renamed into place; callers may not write names that start with it
+	tempPrefix = ".hostit-upload-"
+	// maxConfigSize caps hostit.yml when it is read on a request path. Apps write
+	// their own, and the app list reads one per app on every poll, so a caller
+	// must not be able to turn that into megabytes of YAML parsing.
+	maxConfigSize = 64 * 1024
 )
 
 var (
@@ -45,25 +64,62 @@ type FileInfo struct {
 // directories, and gives it to the app user. A zero mode means the default;
 // anything else is used as-is, so a binary or script can arrive executable.
 func (m *Manager) WriteFile(name, relPath string, content []byte, mode os.FileMode) error {
-	full, err := m.safePath(name, relPath)
+	return m.WriteFileFrom(name, relPath, bytes.NewReader(content), mode)
+}
+
+// WriteFileFrom is WriteFile for a stream, so an upload never has to exist in
+// memory. It writes to a temporary file and renames on success: a body that
+// turns out to be too big leaves neither a partial file nor a damaged old one.
+func (m *Manager) WriteFileFrom(name, relPath string, r io.Reader, mode os.FileMode) error {
+	rel, err := m.safeRel(name, relPath)
 	if err != nil {
 		return err
 	}
-	if len(content) > maxUploadSize {
+	root, err := m.appRoot(name)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	if err := root.MkdirAll(path.Dir(rel), 0o755); err != nil {
+		return err
+	}
+	tmpRel := path.Join(path.Dir(rel), tempPrefix+randomSuffix())
+	tmp, err := root.OpenFile(tmpRel, os.O_CREATE|os.O_EXCL|os.O_WRONLY, fileMode(mode))
+	if err != nil {
+		return err
+	}
+	defer root.Remove(tmpRel) // No-op once renamed
+	// One byte past the cap, so a file exactly at the limit still fits and
+	// anything beyond it is detected without reading the rest
+	written, err := io.Copy(tmp, io.LimitReader(r, maxUploadSize+1))
+	if err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if written > maxUploadSize {
 		return fmt.Errorf("%w: file exceeds %d bytes", ErrInvalid, maxUploadSize)
 	}
-	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+	// O_CREATE honours the mode only on creation, and umask may have trimmed it
+	if err := root.Chmod(tmpRel, fileMode(mode)); err != nil {
 		return err
 	}
-	if err := os.WriteFile(full, content, fileMode(mode)); err != nil {
+	if err := m.chownToApp(name, tmpRel); err != nil {
 		return err
 	}
-	// WriteFile only applies the mode when it creates the file, so an overwrite
-	// that changes the mode needs saying twice
-	if err := os.Chmod(full, fileMode(mode)); err != nil {
-		return err
+	return root.Rename(tmpRel, rel)
+}
+
+// randomSuffix names an upload's scratch file; concurrent uploads of the same
+// path must not land on each other
+func randomSuffix() string {
+	b := make([]byte, 8)
+	if _, err := rand.Read(b); err != nil {
+		panic(err) // Only fails if the system entropy source is broken
 	}
-	return m.chownToApp(name, full)
+	return hex.EncodeToString(b)
 }
 
 // fileMode keeps uploaded permissions sane: the owner can always read and
@@ -78,20 +134,30 @@ func fileMode(mode os.FileMode) os.FileMode {
 
 // ReadFile reads a file from the app's home directory
 func (m *Manager) ReadFile(name, relPath string) ([]byte, error) {
-	full, err := m.safePath(name, relPath)
+	rel, err := m.safeRel(name, relPath)
 	if err != nil {
 		return nil, err
 	}
-	return os.ReadFile(full)
+	root, err := m.appRoot(name)
+	if err != nil {
+		return nil, err
+	}
+	defer root.Close()
+	return root.ReadFile(rel)
 }
 
 // DeleteFile removes a file from the app's home directory
 func (m *Manager) DeleteFile(name, relPath string) error {
-	full, err := m.safePath(name, relPath)
+	rel, err := m.safeRel(name, relPath)
 	if err != nil {
 		return err
 	}
-	return os.Remove(full)
+	root, err := m.appRoot(name)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	return root.Remove(rel)
 }
 
 // ListFiles returns the app's own files, skipping hostit's internal state
@@ -128,6 +194,11 @@ func (m *Manager) ListFiles(name string) ([]*FileInfo, error) {
 // ExtractTar unpacks an uploaded tar archive into the app's home directory and
 // returns the paths it wrote. Entries that would escape the home are refused.
 func (m *Manager) ExtractTar(name string, r io.Reader) ([]string, error) {
+	root, err := m.appRoot(name)
+	if err != nil {
+		return nil, err
+	}
+	defer root.Close()
 	written := make([]string, 0)
 	tr := tar.NewReader(r)
 	for {
@@ -139,20 +210,25 @@ func (m *Manager) ExtractTar(name string, r io.Reader) ([]string, error) {
 		}
 		switch header.Typeflag {
 		case tar.TypeDir:
-			if _, err := m.safePath(name, header.Name); err != nil {
+			if _, err := m.safeRel(name, header.Name); err != nil {
 				return nil, err
 			}
 			continue
 		case tar.TypeReg:
-			full, err := m.safePath(name, header.Name)
+			rel, err := m.safeRel(name, header.Name)
 			if err != nil {
 				return nil, err
 			}
-			if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			// Refuse an oversized entry rather than truncating it: a silently
+			// half-written file reported as written is worse than an error
+			if header.Size > maxUploadSize {
+				return nil, fmt.Errorf("%w: %q exceeds %d bytes", ErrInvalid, header.Name, maxUploadSize)
+			}
+			if err := root.MkdirAll(path.Dir(rel), 0o755); err != nil {
 				return nil, err
 			}
 			mode := fileMode(os.FileMode(header.Mode))
-			f, err := os.OpenFile(full, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, mode)
+			f, err := root.OpenFile(rel, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, mode)
 			if err != nil {
 				return nil, err
 			}
@@ -164,13 +240,13 @@ func (m *Manager) ExtractTar(name string, r io.Reader) ([]string, error) {
 			if closeErr != nil {
 				return nil, closeErr
 			}
-			if err := os.Chmod(full, mode); err != nil {
+			if err := root.Chmod(rel, mode); err != nil {
 				return nil, err
 			}
-			if err := m.chownToApp(name, full); err != nil {
+			if err := m.chownToApp(name, rel); err != nil {
 				return nil, err
 			}
-			written = append(written, path.Clean(header.Name))
+			written = append(written, rel)
 		default:
 			// Symlinks and devices could point anywhere; refuse them outright
 			return nil, fmt.Errorf("%w: archive entry %q has an unsupported type", ErrInvalid, header.Name)
@@ -196,18 +272,62 @@ func (m *Manager) WriteReadme(name, content string) error {
 }
 
 // Description returns the app's own one-liner from hostit.yml, which whoever
-// builds the app is asked to keep current
+// builds the app is asked to keep current. It parses without validating: a
+// config that names no runnable mode yet still describes the app, and the
+// owner's prompt depends on this being right while they are mid-edit.
 func (m *Manager) Description(name string) string {
-	conf, err := appctl.LoadAppConfig(filepath.Join(m.appHome(name), "hostit.yml"))
+	root, err := m.appRoot(name)
+	if err != nil {
+		return ""
+	}
+	defer root.Close()
+	b, err := readCapped(root, configFile, maxConfigSize)
+	if err != nil {
+		return ""
+	}
+	conf, err := appctl.ParseAppConfig(b)
 	if err != nil {
 		return ""
 	}
 	return strings.TrimSpace(conf.Description)
 }
 
-// safePath resolves a client-supplied relative path inside the app's home and
-// refuses anything that would escape it
-func (m *Manager) safePath(name, relPath string) (string, error) {
+// readCapped reads a file that a caller controls, refusing it beyond max rather
+// than reading a prefix: half a YAML document is worse than none
+func readCapped(root *os.Root, rel string, max int64) ([]byte, error) {
+	f, err := root.Open(rel)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	stat, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if stat.Size() > max {
+		return nil, fmt.Errorf("%w: %s is larger than %d bytes", ErrInvalid, rel, max)
+	}
+	return io.ReadAll(io.LimitReader(f, max))
+}
+
+// appRoot opens the app's home as a rooted filesystem. The app user owns that
+// directory -- it is bind-mounted into their container and writable over scp --
+// so every path the daemon touches as root must be resolved by the kernel with
+// symlinks refused, not merely checked as a string.
+func (m *Manager) appRoot(name string) (*os.Root, error) {
+	home := m.appHome(name)
+	// CreateUser makes this directory; create it anyway so file operations still
+	// work for an app whose Unix user was set up elsewhere (and in tests)
+	if err := os.MkdirAll(home, homeMode); err != nil {
+		return nil, err
+	}
+	return os.OpenRoot(home)
+}
+
+// safeRel validates a client-supplied path and returns it cleaned and relative,
+// ready to hand to an appRoot. It rejects the obvious escapes early and with a
+// useful message; containment itself is the root's job.
+func (m *Manager) safeRel(name, relPath string) (string, error) {
 	raw := strings.TrimSpace(strings.ReplaceAll(relPath, `\`, "/"))
 	// Refuse absolute paths and any ".." segment outright rather than quietly
 	// normalizing them away: a caller asking for "../../etc/passwd" is confused
@@ -227,18 +347,18 @@ func (m *Manager) safePath(name, relPath string) (string, error) {
 	if isProtected(cleaned) {
 		return "", fmt.Errorf("%w: %q is managed by hostit", ErrInvalid, relPath)
 	}
-	home := m.appHome(name)
-	full := filepath.Join(home, filepath.FromSlash(cleaned))
-	if !strings.HasPrefix(full, home+string(os.PathSeparator)) {
-		return "", fmt.Errorf("%w: invalid path %q", ErrInvalid, relPath)
+	if strings.HasPrefix(path.Base(cleaned), tempPrefix) {
+		return "", fmt.Errorf("%w: %q is reserved", ErrInvalid, relPath)
 	}
-	return full, nil
+	return cleaned, nil
 }
 
 // chownToApp gives a written file to the app user, so it is theirs inside the
-// container (where their uid is root) and over SSH
-func (m *Manager) chownToApp(name, full string) error {
-	return m.ops.ChownToUser(name, full)
+// container (where their uid is root) and over SSH. The path was just created
+// through the app's root, and ChownToUser does not follow symlinks, so losing a
+// race here means chowning a link the app user planted, not its target.
+func (m *Manager) chownToApp(name, rel string) error {
+	return m.ops.ChownToUser(name, filepath.Join(m.appHome(name), filepath.FromSlash(rel)))
 }
 
 // isProtected reports paths hostit manages on the app's behalf

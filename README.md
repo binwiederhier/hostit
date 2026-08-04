@@ -111,7 +111,25 @@ is a natural fit.
 - **Dashboard**: create/delete your apps, see usage vs limits, and copy the
   "use with your AI agent" snippet.
 - **Profile**: SSH keys (they grant access to *all* your apps) and API tokens.
-- **Admin**: approve/deny users, change roles, per-user limits, global defaults.
+- **Admin**: approve/deny users, change roles, per-user limits, global defaults,
+  and the two ways to skip the approval queue below.
+
+### Letting people in without approving each one
+
+Approving every sign-up by hand does not scale past a handful of people, so
+admins have two shortcuts:
+
+- **Add a user** (Admin -> Users): creates an approved account for an email
+  address before its owner has ever signed in. Their first Google login finds it
+  and fills in the name.
+- **Allow a domain** (Admin -> Sign-up without approval): anyone signing in with
+  a Google address in that domain is approved on the spot, so a whole company can
+  onboard itself. Write it as `company.com` or `*@company.com`.
+
+An allowed domain approves, it never promotes: those accounts are ordinary users
+with the usual limits. Someone an admin has explicitly denied stays denied even
+if their domain is allowed later, and removing a domain does not touch the
+accounts already approved under it -- revoking access stays a per-user decision.
 
 Limits are `app_limit` (enforced at create), `memory_mb` (podman `--memory`,
 cgroup-enforced) and `disk_mb`. Disk is a **soft** quota: the daemon measures
@@ -211,8 +229,8 @@ token or a user's own token) or the bundled client:
 export HOSTIT_HOST=https://hostit.apps.example.com
 export HOSTIT_TOKEN=...
 
-hostit admin add blog                            # generates an SSH key pair for you
-hostit admin add blog -k ~/.ssh/id_ed25519.pub   # or bring your own key
+hostit admin add blog                            # reachable through the API only
+hostit admin add blog -k ~/.ssh/id_ed25519.pub   # ...plus SSH with your key
 hostit admin list
 hostit admin remove blog                         # deletes user + ALL app data
 ```
@@ -225,13 +243,16 @@ curl -s -H "Authorization: Bearer $HOSTIT_TOKEN" \
   "$HOSTIT_HOST/v1/apps"
 ```
 
-The response contains the URL, the SSH login and (if no key was supplied) a
-one-time private key. New apps are scaffolded with a demo page and started right
-away, so the URL serves something immediately.
+The response contains the URL and the SSH login. hostit never generates a key
+pair: an app with no keys is managed through the API, and SSH starts working as
+soon as a key is added to the owner's profile. New apps are scaffolded with a
+demo page and started right away, so the URL serves something immediately.
 
 API endpoints: `POST/GET /v1/apps`, `GET/DELETE /v1/apps/{name}`,
-`PUT /v1/apps/{name}/keys`, `GET /v1/account` (+ `/keys`, `/tokens`),
-`GET/PATCH /v1/users/{id}` and `/v1/settings` for admins, `GET /v1/health`.
+`PUT /v1/apps/{name}/keys`, `POST /v1/apps/{name}/token`, `GET /v1/account`
+(+ `/keys`, `/tokens`), `GET /v1/health`. Admin-only: `GET/POST /v1/users`,
+`PATCH/DELETE /v1/users/{id}`, `GET/POST /v1/domains`,
+`DELETE /v1/domains/{domain}`, `GET/PATCH /v1/settings`.
 
 ## Let an AI agent run an app
 

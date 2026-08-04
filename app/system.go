@@ -1,10 +1,13 @@
 package app
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"os/user"
+	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -20,6 +23,8 @@ const (
 	// userShellFile is the login shell for app users; it execs the SSH session
 	// into the app container (see cmd/shell.go)
 	userShellFile = "/usr/bin/hostit-shell"
+	// sshDir holds the app's authorized_keys, below the app's home
+	sshDir = ".ssh"
 	// AppsGroup owns the sudoers grant that lets app users enter their own
 	// container (and nothing else); see /etc/sudoers.d/hostit
 	AppsGroup = "hostit-apps"
@@ -64,7 +69,7 @@ func (o *systemOps) CreateUser(username, home string) error {
 	if err != nil {
 		return err
 	}
-	return os.Chmod(home, 0o750)
+	return os.Chmod(home, homeMode)
 }
 
 // DeleteUser stops everything the user runs and removes the account including
@@ -143,22 +148,40 @@ func (o *systemOps) WriteAuthorizedKeys(username, home string, keys []string) er
 	if err != nil {
 		return err
 	}
-	sshDir := filepath.Join(home, ".ssh")
-	if err := os.MkdirAll(sshDir, 0o700); err != nil {
+	root, err := os.OpenRoot(home)
+	if err != nil {
 		return err
 	}
-	filename := filepath.Join(sshDir, "authorized_keys")
-	existing, err := os.ReadFile(filename)
-	if err != nil && !os.IsNotExist(err) {
+	defer root.Close()
+	return writeAuthorizedKeysIn(root, keys, uid, gid)
+}
+
+// writeAuthorizedKeysIn merges the managed keys into the app's authorized_keys.
+// Everything goes through the root, and .ssh must be a real directory: the app
+// user owns this home, and a link here would have root writing SSH keys (and
+// handing out ownership) wherever they pointed it.
+func writeAuthorizedKeysIn(root *os.Root, keys []string, uid, gid int) error {
+	if stat, err := root.Lstat(sshDir); err == nil && !stat.IsDir() {
+		return fmt.Errorf("%w: %s must be a directory", ErrInvalid, sshDir)
+	}
+	if err := root.MkdirAll(sshDir, 0o700); err != nil {
 		return err
 	}
-	if err := os.WriteFile(filename, []byte(mergeAuthorizedKeys(string(existing), keys)), 0o600); err != nil {
+	filename := sshDir + "/authorized_keys"
+	existing, err := root.ReadFile(filename)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
-	if err := os.Chown(sshDir, uid, gid); err != nil {
+	if err := root.WriteFile(filename, []byte(mergeAuthorizedKeys(string(existing), keys)), 0o600); err != nil {
 		return err
 	}
-	return os.Chown(filename, uid, gid)
+	if err := root.Chmod(sshDir, 0o700); err != nil {
+		return err
+	}
+	if err := root.Lchown(sshDir, uid, gid); err != nil {
+		return err
+	}
+	return root.Lchown(filename, uid, gid)
 }
 
 // WriteScaffold writes initial files into the app home, never overwriting existing ones
@@ -167,15 +190,19 @@ func (o *systemOps) WriteScaffold(username, home string, files map[string]string
 	if err != nil {
 		return err
 	}
+	root, err := os.OpenRoot(home)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
 	for name, content := range files {
-		filename := filepath.Join(home, name)
-		if _, err := os.Stat(filename); err == nil {
+		if _, err := root.Lstat(name); err == nil {
 			continue
 		}
-		if err := os.WriteFile(filename, []byte(content), 0o644); err != nil {
+		if err := root.WriteFile(name, []byte(content), 0o644); err != nil {
 			return err
 		}
-		if err := os.Chown(filename, uid, gid); err != nil {
+		if err := root.Lchown(name, uid, gid); err != nil {
 			return err
 		}
 	}
@@ -189,28 +216,32 @@ func (o *systemOps) WriteUserFile(username, home, relPath, content string, mode 
 	if err != nil {
 		return err
 	}
-	filename := filepath.Join(home, relPath)
+	root, err := os.OpenRoot(home)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
 
 	// Create parent dirs one by one so each new one can be chowned to the user
-	dir := filepath.Dir(filename)
+	dir := path.Dir(filepath.ToSlash(relPath))
 	var missing []string
-	for d := dir; strings.HasPrefix(d, home) && d != home; d = filepath.Dir(d) {
-		if _, err := os.Stat(d); err != nil {
+	for d := dir; d != "." && d != "/"; d = path.Dir(d) {
+		if _, err := root.Lstat(d); err != nil {
 			missing = append([]string{d}, missing...)
 		}
 	}
 	for _, d := range missing {
-		if err := os.Mkdir(d, 0o755); err != nil {
+		if err := root.Mkdir(d, 0o755); err != nil {
 			return err
 		}
-		if err := os.Chown(d, uid, gid); err != nil {
+		if err := root.Lchown(d, uid, gid); err != nil {
 			return err
 		}
 	}
-	if err := os.WriteFile(filename, []byte(content), mode); err != nil {
+	if err := root.WriteFile(relPath, []byte(content), mode); err != nil {
 		return err
 	}
-	return os.Chown(filename, uid, gid)
+	return root.Lchown(relPath, uid, gid)
 }
 
 // mergeAuthorizedKeys replaces the hostit-managed block in an authorized_keys
@@ -267,13 +298,15 @@ func keyMaterial(line string) string {
 	return fields[0] + " " + fields[1]
 }
 
-// ChownToUser gives a path to the app user
+// ChownToUser gives a path to the app user. Lchown, not Chown: the app user
+// owns the directory this runs in, and chown(2) would follow a symlink they
+// planted and hand its target away.
 func (o *systemOps) ChownToUser(username, path string) error {
 	uid, gid, err := lookupIDs(username)
 	if err != nil {
 		return err
 	}
-	return os.Chown(path, uid, gid)
+	return os.Lchown(path, uid, gid)
 }
 
 // ApplyPortRules atomically replaces the hostit nftables table: for each app

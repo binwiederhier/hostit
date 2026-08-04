@@ -1,6 +1,8 @@
 package app
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -88,4 +90,41 @@ func TestSyncKeysRewritesEveryAppOfTheOwner(t *testing.T) {
 		require.Contains(t, ops.authorizedKeys[name], keyB, "app %s must get the profile key", name)
 		assert.Contains(t, ops.authorizedKeys[name], testPublicKey, "its own app key stays")
 	}
+}
+
+func TestWriteAuthorizedKeysRefusesASymlinkedSSHDir(t *testing.T) {
+	t.Parallel()
+	home := t.TempDir()
+	outside := t.TempDir()
+	// The app user owns their home, so they can replace .ssh with a link to
+	// somewhere that matters. Root must neither write into it nor give it away.
+	require.NoError(t, os.Symlink(outside, filepath.Join(home, ".ssh")))
+
+	root, err := os.OpenRoot(home)
+	require.NoError(t, err)
+	defer root.Close()
+	err = writeAuthorizedKeysIn(root, []string{testPublicKey}, os.Getuid(), os.Getgid())
+	require.Error(t, err, "a symlinked .ssh must be refused")
+
+	_, err = os.Stat(filepath.Join(outside, "authorized_keys"))
+	assert.True(t, os.IsNotExist(err), "nothing may be written outside the home")
+	stat, err := os.Stat(outside)
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o700).Perm()&stat.Mode().Perm(), stat.Mode().Perm()&0o700,
+		"the target directory must be untouched")
+}
+
+func TestWriteAuthorizedKeysWritesARealSSHDir(t *testing.T) {
+	t.Parallel()
+	home := t.TempDir()
+	root, err := os.OpenRoot(home)
+	require.NoError(t, err)
+	defer root.Close()
+	require.NoError(t, writeAuthorizedKeysIn(root, []string{testPublicKey}, os.Getuid(), os.Getgid()))
+	b, err := os.ReadFile(filepath.Join(home, ".ssh", "authorized_keys"))
+	require.NoError(t, err)
+	assert.Contains(t, string(b), testPublicKey)
+	stat, err := os.Stat(filepath.Join(home, ".ssh"))
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o700), stat.Mode().Perm())
 }

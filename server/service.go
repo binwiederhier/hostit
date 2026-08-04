@@ -255,7 +255,7 @@ func (s *Server) appLimits(name string) (memoryMB int, diskMB int) {
 	return limits.MemoryMB, limits.DiskMB
 }
 
-// appResponse converts an app (plus optional generated credentials) to its API form
+// appResponse converts an app to its API form
 func (s *Server) appResponse(a *store.App) *apiAppResponse {
 	resp := &apiAppResponse{
 		Name:       a.Name,

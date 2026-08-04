@@ -123,8 +123,8 @@ func execAgent(_ *cli.Context) error {
 	return agent.New(home).Run()
 }
 
-// isTerminal reports whether the given file is a terminal, which decides whether
-// podman gets a TTY (interactive login) or not (scp, sftp, remote commands)
+// isTerminal reports whether the given file is a terminal: it decides both
+// whether podman gets a TTY and whether a session is human enough for a banner
 func isTerminal(f *os.File) bool {
 	return term.IsTerminal(int(f.Fd()))
 }

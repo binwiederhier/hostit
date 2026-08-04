@@ -205,18 +205,15 @@ func (s *Server) handleAgentFileGet(w http.ResponseWriter, r *http.Request, c *c
 }
 
 func (s *Server) handleAgentFilePut(w http.ResponseWriter, r *http.Request, c *caller, a *store.App) {
-	body, err := io.ReadAll(io.LimitReader(r.Body, maxTarUpload))
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err)
-		return
-	}
 	mode, err := uploadMode(r.URL.Query().Get("mode"))
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
+	// Straight from the socket to disk: a body big enough to matter must never
+	// be held in the daemon, which shares a small box with every app container
 	path := r.PathValue("path")
-	if err := s.apps.WriteFile(a.Name, path, body, mode); err != nil {
+	if err := s.apps.WriteFileFrom(a.Name, path, r.Body, mode); err != nil {
 		writeAppError(w, err)
 		return
 	}

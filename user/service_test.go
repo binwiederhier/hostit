@@ -292,7 +292,7 @@ func TestProfileKeys(t *testing.T) {
 	assert.Empty(t, keys)
 }
 
-func TestApprove(t *testing.T) {
+func TestUpdateActivatesAPendingUser(t *testing.T) {
 	t.Parallel()
 	m := newTestManager(t)
 	u, err := m.Login("someone@example.com", "Someone")
