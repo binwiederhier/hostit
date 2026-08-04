@@ -118,20 +118,42 @@ func (s *Server) Stop() {
 	}
 }
 
-// runTLSServers starts the HTTPS proxy with on-demand Let's Encrypt certificates,
-// plus the HTTP listener that answers ACME challenges and redirects to HTTPS
+// runTLSServers starts the HTTPS proxy with Let's Encrypt certificates, plus the
+// HTTP listener that answers ACME challenges and redirects to HTTPS. With a DNS
+// provider configured, one wildcard certificate covers every app; otherwise each
+// app's certificate is issued on demand on its first request.
 func (s *Server) runTLSServers(g *errgroup.Group) error {
 	certmagic.Default.Storage = &certmagic.FileStorage{Path: filepath.Join(s.config.DataDir, "certs")}
-	certmagic.Default.OnDemand = &certmagic.OnDemandConfig{
-		DecisionFunc: func(ctx context.Context, name string) error {
-			return s.allowTLSHost(name)
-		},
-	}
 	certmagic.DefaultACME.Agreed = true
 	certmagic.DefaultACME.Email = s.config.LetsEncryptEmail
+	if s.config.WildcardTLS() {
+		solver, err := dnsSolver(s.config)
+		if err != nil {
+			return err
+		}
+		certmagic.DefaultACME.DNS01Solver = solver
+		certmagic.DefaultACME.DisableHTTPChallenge = true
+		certmagic.DefaultACME.DisableTLSALPNChallenge = true
+	} else {
+		certmagic.Default.OnDemand = &certmagic.OnDemandConfig{
+			DecisionFunc: func(ctx context.Context, name string) error {
+				return s.allowTLSHost(name)
+			},
+		}
+	}
 	magic := certmagic.NewDefault()
 	issuer := certmagic.NewACMEIssuer(magic, certmagic.DefaultACME)
 	magic.Issuers = []certmagic.Issuer{issuer}
+
+	// The wildcard certificate is managed up front (and renewed in the
+	// background); on-demand certificates need no such call
+	if s.config.WildcardTLS() {
+		names := s.config.CertNames()
+		slog.Info("Managing wildcard certificate", "names", names, "dns_provider", s.config.DNSProvider)
+		if err := magic.ManageAsync(context.Background(), names); err != nil {
+			return fmt.Errorf("cannot manage wildcard certificate: %w", err)
+		}
+	}
 	tlsConfig := magic.TLSConfig()
 	tlsConfig.NextProtos = append([]string{"h2", "http/1.1"}, tlsConfig.NextProtos...)
 

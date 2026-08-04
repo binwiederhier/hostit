@@ -23,6 +23,10 @@ const (
 const (
 	// DefaultServerConfigFile is where "hostit serve" looks for its config by default
 	DefaultServerConfigFile = "/etc/hostit/server.yml"
+	// DNSProviderRoute53 enables DNS-01 challenges via AWS Route 53, which is
+	// what a wildcard certificate requires (Let's Encrypt does not issue
+	// wildcards over HTTP-01)
+	DNSProviderRoute53 = "route53"
 )
 
 var (
@@ -44,8 +48,18 @@ type Config struct {
 	SSHHost          string  `yaml:"ssh-host"`          // Hostname reported for SSH access; defaults to base-domain
 	TLS              TLSMode `yaml:"tls"`               // "letsencrypt" or "off"
 	LetsEncryptEmail string  `yaml:"letsencrypt-email"` // Optional contact email for ACME
-	PortMin          int     `yaml:"port-min"`          // Lower bound of the per-app loopback port range
-	PortMax          int     `yaml:"port-max"`          // Upper bound of the per-app loopback port range
+
+	// Wildcard TLS: with a DNS provider configured, hostit obtains ONE wildcard
+	// certificate for *.<base-domain> instead of a certificate per app. New apps
+	// then serve TLS immediately, and unknown hostnames reach the proxy (and its
+	// 404 page) instead of failing the TLS handshake.
+	DNSProvider     string `yaml:"dns-provider"`      // "route53" or empty (per-app on-demand certs)
+	AWSRegion       string `yaml:"aws-region"`        // Optional; falls back to AWS_REGION
+	AWSAccessKeyID  string `yaml:"aws-access-key-id"` // Optional; falls back to the usual AWS env/instance credentials
+	AWSSecretKey    string `yaml:"aws-secret-key"`    // Optional; see above
+	AWSHostedZoneID string `yaml:"aws-hosted-zone-id"`
+	PortMin         int    `yaml:"port-min"` // Lower bound of the per-app loopback port range
+	PortMax         int    `yaml:"port-max"` // Upper bound of the per-app loopback port range
 
 	// Web app and user accounts
 	GoogleClientID     string   `yaml:"google-client-id"`     // Google OAuth client ID; empty disables the web login
@@ -111,7 +125,22 @@ func (c *Config) Validate() error {
 	if c.TLS != TLSLetsEncrypt && c.TLS != TLSOff {
 		return fmt.Errorf("invalid tls mode %q, must be %q or %q", c.TLS, TLSLetsEncrypt, TLSOff)
 	}
+	if c.DNSProvider != "" && c.DNSProvider != DNSProviderRoute53 {
+		return fmt.Errorf("invalid dns-provider %q, only %q is supported", c.DNSProvider, DNSProviderRoute53)
+	}
 	return nil
+}
+
+// WildcardTLS reports whether one wildcard certificate covers all apps, rather
+// than issuing a certificate per app on first request
+func (c *Config) WildcardTLS() bool {
+	return c.TLS == TLSLetsEncrypt && c.DNSProvider != ""
+}
+
+// CertNames returns the names the wildcard certificate must cover: every app
+// subdomain plus the base domain itself
+func (c *Config) CertNames() []string {
+	return []string{"*." + c.BaseDomain, c.BaseDomain}
 }
 
 // APIHostname returns the hostname the proxy routes to the admin API

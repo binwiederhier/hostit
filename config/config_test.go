@@ -83,6 +83,34 @@ func TestValidate(t *testing.T) {
 	}
 }
 
+func TestWildcardTLS(t *testing.T) {
+	t.Parallel()
+	c := NewConfig()
+	c.BaseDomain = "apps.example.com"
+	c.AdminToken = "secr3t"
+	// Without a DNS provider, certificates are issued per app on demand
+	assert.False(t, c.WildcardTLS())
+	c.DNSProvider = DNSProviderRoute53
+	assert.True(t, c.WildcardTLS())
+	assert.Equal(t, []string{"*.apps.example.com", "apps.example.com"}, c.CertNames())
+	// TLS off disables everything, DNS provider or not
+	c.TLS = TLSOff
+	assert.False(t, c.WildcardTLS())
+}
+
+func TestValidateDNSProvider(t *testing.T) {
+	t.Parallel()
+	c := NewConfig()
+	c.BaseDomain = "apps.example.com"
+	c.AdminToken = "secr3t"
+	c.DNSProvider = "cloudflare"
+	err := c.Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "dns-provider")
+	c.DNSProvider = DNSProviderRoute53
+	require.NoError(t, c.Validate())
+}
+
 func TestAPIHostname(t *testing.T) {
 	t.Parallel()
 	c := NewConfig()
