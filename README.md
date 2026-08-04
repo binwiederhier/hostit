@@ -104,6 +104,57 @@ git-free fallback. Configuration management is left to you -- everything the
 daemon needs is one config file plus the package, so an Ansible role or similar
 is a natural fit.
 
+### One thing the package cannot do for you
+
+Add this to `sshd_config` (a drop-in in `/etc/ssh/sshd_config.d/` works) and
+restart sshd:
+
+```
+Match Group hostit-apps
+    AllowTcpForwarding no
+    AllowStreamLocalForwarding no
+    AllowAgentForwarding no
+    X11Forwarding no
+    PermitTunnel no
+    GatewayPorts no
+    PermitUserRC no
+
+# Included at the TOP of sshd_config, so reset the context for what follows
+Match all
+```
+
+App users log in for one reason: to reach their own container. Forwarding is the
+one thing sshd offers that reaches past it -- a tenant can otherwise tunnel to
+the cloud metadata service (on DigitalOcean that includes `user-data`, which
+often carries secrets) or probe host-local services. scp, sftp and rsync are
+unaffected.
+
+## Security model
+
+What each boundary is, so it is clear what hostit does and does not promise:
+
+- **Between apps.** Separate Unix users, separate containers, separate network
+  stacks. Ports are published on loopback and nftables restricts each to root and
+  the owning uid, so one app cannot reach another's port even over an SSH tunnel.
+- **Between an app and the host.** SSH sessions exec straight into the container;
+  there is no host shell. The workload runs as the app's own unprivileged uid
+  (container root is mapped to it), so an escape lands on that uid, not on root.
+  `/var/lib/hostit` is root-only: it holds every app's agent token in the clear
+  (deliberately, so the app's page can show it again) and the session signing key.
+- **Between an app's files and the daemon.** The app owns its home directory, so
+  every file operation hostit performs there as root goes through `os.OpenRoot`:
+  a symlink out of the home is refused by the kernel rather than followed. The
+  same applies to anything in `hostit.yml` that becomes a podman argument --
+  mount sources must resolve inside the app.
+- **Between tenants and the web app.** Apps are subdomains of the web app, which
+  `SameSite=Lax` does not separate, so cookie-authenticated writes require a
+  same-origin signal and the session cookie carries the `__Host-` prefix. Files
+  read back through the API are always downloads, never rendered.
+
+An **app-scoped token** can only reach `/api/<its app>/`. An **account token**
+can do anything its owner can. The **admin token** in `server.yml` is unlimited
+and belongs to the operator.
+
 ## Users, roles and limits
 
 - First Google login creates a **pending** account; an admin approves it (or the
