@@ -4,8 +4,9 @@
 (or humans) over SSH and a REST API. One binary. Each app gets:
 
 - its own **container**: SSH sessions land INSIDE it (root in there, `apt install`
-  away), the app runs in it, and other apps are invisible -- processes, files and
-  loopback ports included (rootless podman + per-Unix-user isolation + nftables)
+  away), the app runs in it, and other apps are invisible -- processes, files,
+  networks and loopback ports included (podman with a per-app uid mapping, so
+  container root is the app's own unprivileged user, plus nftables)
 - **SSH access** (normal ssh/scp/sftp/rsync via the host's sshd; keys via the API)
 - a **subdomain** (`myapp.apps.example.com`) with **automatic Let's Encrypt TLS**
 - supervised execution: a `run:` command supervised by the hostit agent in the
@@ -45,10 +46,20 @@ hostit.apps.x.com -> |   (root daemon)    |     web app + REST API
 ```
 
 SSH logins are handed to `/usr/bin/hostit-shell`, which execs the session into
-the app's container, so users never get a host shell. The daemon performs all
-container and service work on the app user's behalf (it is the only thing that
-runs as root), and apps listen on loopback only, so the proxy is the sole
-ingress. nftables additionally blocks apps from reaching each other's ports.
+the app's container, so users never get a host shell. The daemon creates and
+runs the containers (it is the only thing that runs as root), mapping container
+root to the app's own unprivileged uid: files in the bind-mounted home belong to
+the app on both sides, and a workload escape lands on that uid, not on root.
+Entering a container needs root podman, so app users reach it through
+`/usr/bin/hostit-enter`, a root helper behind a sudoers grant scoped to the
+`hostit-apps` group; it derives the target container from `SUDO_UID` and ignores
+its arguments when choosing one, so you can only ever enter your own app.
+
+Each app has its own network stack (slirp4netns), ports are published on
+loopback only, and nftables restricts those ports to root and the owning uid, so
+apps cannot reach each other. Because containers are created centrally, there is
+one image store for the host: the workspace image is built once (~40s) instead of
+per app, and an app's home holds only its own files.
 
 ## Install (server)
 
@@ -261,10 +272,11 @@ process inside it.
   behind an existing TLS-terminating proxy.
 - The app CLI talks to the daemon via `/run/hostit/hostit.sock`, authenticated by
   the kernel (SO_PEERCRED); app users can only ever act on their own app.
-- Each app builds and stores its own copy of the workspace image (~40s, ~230 MB),
-  warmed in the background at creation. Sharing one image across rootless users
-  is not possible without changing the runtime model; the analysis and options
-  are in `plans/260804-hostit-image-sharing.md`.
+- The workspace image is built once for the whole host. The earlier rootless
+  model forced a per-app copy (~40s and ~230 MB each); the analysis behind the
+  change is in `plans/260804-hostit-image-sharing.md`.
+- On small hosts, give the machine swap: an `apt`-based image build inside a
+  container gets OOM-killed on a 512 MB box.
 - Scale-out to multiple runner hosts behind one proxy is sketched in
   `plans/260803-hostit.md` (the registry has a `host` column for it), but only
   single-host is implemented.
