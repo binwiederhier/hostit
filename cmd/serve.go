@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -11,6 +13,13 @@ import (
 	"heckel.io/hostit/config"
 	"heckel.io/hostit/server"
 	"heckel.io/hostit/store"
+	"heckel.io/hostit/user"
+)
+
+const (
+	// settingSessionKey stores the generated cookie-signing key, so web sessions
+	// survive restarts when the operator did not configure one
+	settingSessionKey = "session_key"
 )
 
 var (
@@ -47,7 +56,19 @@ func execServe(c *cli.Context) error {
 	defer s.Close()
 	ops := app.NewSystemOps()
 	manager := app.NewManager(conf, s, ops, app.NewUserRunner(ops))
-	srv := server.New(conf, manager)
+	users := user.NewManager(conf, s)
+	if err := ensureSessionKey(conf, s); err != nil {
+		return err
+	}
+	if err := applyStoredLimits(conf, s, manager, users); err != nil {
+		return err
+	}
+	srv := server.New(conf, manager, users)
+
+	// Periodically measure disk usage and enforce the soft quota
+	done := make(chan struct{})
+	defer close(done)
+	go manager.QuotaLoop(conf.DiskCheckInterval.Duration(), done)
 
 	// Shut down gracefully on SIGINT/SIGTERM
 	sigs := make(chan os.Signal, 1)
@@ -57,4 +78,53 @@ func execServe(c *cli.Context) error {
 		srv.Stop()
 	}()
 	return srv.Run()
+}
+
+// ensureSessionKey persists a generated session key, so web logins survive
+// restarts even when the operator did not configure one
+func ensureSessionKey(conf *config.Config, s *store.Store) error {
+	if conf.SessionKey != "" {
+		return nil
+	}
+	settings, err := s.Settings()
+	if err != nil {
+		return err
+	}
+	if key, ok := settings[settingSessionKey]; ok && key != "" {
+		conf.SessionKey = key
+		return nil
+	}
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return err
+	}
+	conf.SessionKey = hex.EncodeToString(b)
+	return s.SetSetting(settingSessionKey, conf.SessionKey)
+}
+
+// applyStoredLimits primes the app manager with each app owner's memory and disk
+// limits, which live in the user records rather than in the app registry
+func applyStoredLimits(conf *config.Config, s *store.Store, apps *app.Manager, users *user.Manager) error {
+	registered, err := s.Apps()
+	if err != nil {
+		return err
+	}
+	defaults, err := users.Defaults()
+	if err != nil {
+		return err
+	}
+	for _, a := range registered {
+		limits := defaults
+		if a.OwnerID != "" {
+			owner, err := users.User(a.OwnerID)
+			if err == nil {
+				if limits, err = users.Limits(owner); err != nil {
+					return err
+				}
+			}
+		}
+		apps.SetMemoryLimit(a.Name, limits.MemoryMB)
+		apps.SetDiskLimit(a.Name, limits.DiskMB)
+	}
+	return nil
 }

@@ -41,7 +41,7 @@ func TestUpWorkspaceModeUnchangedOnlyReloadsAgent(t *testing.T) {
 	writeAppFile(t, m, "blog", "hostit.yml", "run: ./server")
 	// Existing container reports the exact hash of the desired config
 	conf := mustLoadConfig(t, m, "blog")
-	hash := containerConfigHash(containerCreateArgs(conf, a, m.appHome("blog"), m.config.SocketFile, hostitBinFile))
+	hash := containerConfigHash(containerCreateArgs(conf, a, m.appHome("blog"), m.config.SocketFile, hostitBinFile, 0))
 	runner.outputs["container inspect"] = hash
 	runner.outputs["is-active"] = "active"
 	msg, err := m.Up("blog")
@@ -186,7 +186,7 @@ func newTestDeployManager(t *testing.T) (*Manager, *fakeSystemOps, *fakeUserRunn
 
 func createTestApp(t *testing.T, m *Manager, name string) *store.App {
 	t.Helper()
-	a, _, err := m.CreateApp(name, []string{testPublicKey})
+	a, _, err := m.CreateApp(name, &CreateOptions{RequestKeys: []string{testPublicKey}})
 	require.NoError(t, err)
 	require.NoError(t, os.MkdirAll(m.appHome(name), 0755))
 	return a

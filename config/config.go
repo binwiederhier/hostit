@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -45,20 +46,42 @@ type Config struct {
 	LetsEncryptEmail string  `yaml:"letsencrypt-email"` // Optional contact email for ACME
 	PortMin          int     `yaml:"port-min"`          // Lower bound of the per-app loopback port range
 	PortMax          int     `yaml:"port-max"`          // Upper bound of the per-app loopback port range
+
+	// Web app and user accounts
+	GoogleClientID     string   `yaml:"google-client-id"`     // Google OAuth client ID; empty disables the web login
+	GoogleClientSecret string   `yaml:"google-client-secret"` // Google OAuth client secret
+	SessionKey         string   `yaml:"session-key"`          // Secret for signing session cookies; generated if empty
+	AdminEmails        []string `yaml:"admin-emails"`         // These emails become active admins on first login
+	DiskCheckInterval  Duration `yaml:"disk-check-interval"`  // How often app disk usage is measured
 }
 
 // NewConfig returns a Config with all defaults set; BaseDomain and AdminToken must be filled in
 func NewConfig() *Config {
 	return &Config{
-		ListenHTTP:  ":80",
-		ListenHTTPS: ":443",
-		SocketFile:  "/run/hostit/hostit.sock",
-		DataDir:     "/var/lib/hostit",
-		AppsDir:     "/srv/hostit/apps",
-		TLS:         TLSLetsEncrypt,
-		PortMin:     10000,
-		PortMax:     19999,
+		ListenHTTP:        ":80",
+		ListenHTTPS:       ":443",
+		SocketFile:        "/run/hostit/hostit.sock",
+		DataDir:           "/var/lib/hostit",
+		AppsDir:           "/srv/hostit/apps",
+		TLS:               TLSLetsEncrypt,
+		PortMin:           10000,
+		PortMax:           19999,
+		DiskCheckInterval: Duration(15 * time.Minute),
 	}
+}
+
+// WebEnabled reports whether Google login (and thus the web app) is configured
+func (c *Config) WebEnabled() bool {
+	return c.GoogleClientID != "" && c.GoogleClientSecret != ""
+}
+
+// RedirectURL is the OAuth callback URL registered with Google
+func (c *Config) RedirectURL() string {
+	scheme := "https"
+	if c.TLS == TLSOff {
+		scheme = "http"
+	}
+	return fmt.Sprintf("%s://%s/auth/callback", scheme, c.APIHostname())
 }
 
 // LoadConfig reads a YAML config file on top of the defaults from NewConfig

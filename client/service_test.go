@@ -11,6 +11,7 @@ import (
 	"heckel.io/hostit/config"
 	"heckel.io/hostit/server"
 	"heckel.io/hostit/store"
+	"heckel.io/hostit/user"
 )
 
 const (
@@ -62,7 +63,7 @@ func TestBadToken(t *testing.T) {
 	c := newTestClient(t, "wrong")
 	_, err := c.Apps()
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "bearer token")
+	assert.Contains(t, err.Error(), "sign in")
 }
 
 func newTestClient(t *testing.T, token string) *Client {
@@ -76,7 +77,7 @@ func newTestClient(t *testing.T, token string) *Client {
 	t.Cleanup(func() {
 		_ = s.Close()
 	})
-	srv := server.New(conf, app.NewManager(conf, s, app.NewNopSystemOps(), app.NewNopUserRunner()))
+	srv := server.New(conf, app.NewManager(conf, s, app.NewNopSystemOps(), app.NewNopUserRunner()), user.NewManager(conf, s))
 	httpServer := httptest.NewServer(srv.API())
 	t.Cleanup(httpServer.Close)
 	return New(httpServer.URL, token)

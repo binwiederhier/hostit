@@ -23,6 +23,8 @@ var (
 	ErrNoPortsAvailable = errors.New("no free ports in configured range")
 	// ErrInvalid wraps all request validation errors (bad names, bad keys)
 	ErrInvalid = errors.New("invalid request")
+	// ErrLimitReached is returned when a user hit one of their resource limits
+	ErrLimitReached = errors.New("limit reached")
 
 	// appNameRegex limits names to things that are safe as Unix usernames and DNS labels
 	appNameRegex = regexp.MustCompile(`^[a-z]([a-z0-9-]{0,30}[a-z0-9])?$`)
@@ -70,6 +72,15 @@ type Credentials struct {
 	PublicKey  string `json:"public_key"`
 }
 
+// CreateOptions carries everything CreateApp needs beyond the name: who owns the
+// app, which keys may log in, and the container's memory cap
+type CreateOptions struct {
+	OwnerID     string   // Empty for apps created with the global admin token
+	RequestKeys []string // App-specific keys from the request
+	ProfileKeys []string // The owner's profile keys (apply to all their apps)
+	MemoryMB    int      // Container memory limit; 0 means unlimited
+}
+
 // Manager creates and deletes apps and everything that belongs to them, and
 // deploys their containers (as the app user) via the UserRunner
 type Manager struct {
@@ -78,26 +89,37 @@ type Manager struct {
 	ops    SystemOps
 	runner UserRunner
 	podman string // Resolved podman path for unit files, cached
+
+	// memoryMB and diskMB cache per-app limits, so redeploys and quota checks
+	// keep them; the authoritative values come from the owner's limits
+	memoryMB map[string]int
+	diskMB   map[string]int
 }
 
 // NewManager creates a Manager
 func NewManager(conf *config.Config, s *store.Store, ops SystemOps, runner UserRunner) *Manager {
 	return &Manager{
-		config: conf,
-		store:  s,
-		ops:    ops,
-		runner: runner,
+		config:   conf,
+		store:    s,
+		ops:      ops,
+		runner:   runner,
+		memoryMB: make(map[string]int),
+		diskMB:   make(map[string]int),
 	}
 }
 
 // CreateApp registers a new app: it allocates a port, creates the Unix user with
-// SSH access and scaffolds the home directory. If no SSH keys are given, a key
-// pair is generated and returned; otherwise Credentials is nil.
-func (m *Manager) CreateApp(name string, sshKeys []string) (*store.App, *Credentials, error) {
+// SSH access and scaffolds the home directory. If neither request keys nor owner
+// profile keys exist, a key pair is generated and returned; otherwise Credentials
+// is nil. The app's authorized_keys are the union of both key sets.
+func (m *Manager) CreateApp(name string, opts *CreateOptions) (*store.App, *Credentials, error) {
+	if opts == nil {
+		opts = &CreateOptions{}
+	}
 	if err := m.validateName(name); err != nil {
 		return nil, nil, err
 	}
-	if err := validateKeys(sshKeys); err != nil {
+	if err := validateKeys(opts.RequestKeys); err != nil {
 		return nil, nil, err
 	}
 	port, err := m.allocatePort()
@@ -105,15 +127,17 @@ func (m *Manager) CreateApp(name string, sshKeys []string) (*store.App, *Credent
 		return nil, nil, err
 	}
 
-	// Generate a key pair if the caller did not bring their own
+	// Generate a key pair only if nobody could log in otherwise
 	var creds *Credentials
-	if len(sshKeys) == 0 {
+	appKeys := opts.RequestKeys
+	if len(appKeys) == 0 && len(opts.ProfileKeys) == 0 {
 		creds, err = generateKeyPair(name)
 		if err != nil {
 			return nil, nil, err
 		}
-		sshKeys = []string{creds.PublicKey}
+		appKeys = []string{creds.PublicKey}
 	}
+	sshKeys := append(append([]string{}, appKeys...), opts.ProfileKeys...)
 
 	// Create the user, enable lingering (so user units run at boot), install keys and scaffold
 	home := filepath.Join(m.config.AppsDir, name)
@@ -137,11 +161,17 @@ func (m *Manager) CreateApp(name string, sshKeys []string) (*store.App, *Credent
 	}
 
 	// Register the app; roll back the user if this fails
-	app := &store.App{Name: name, Port: port, Host: store.HostLocal}
+	app := &store.App{Name: name, Port: port, Host: store.HostLocal, OwnerID: opts.OwnerID}
 	if err := m.store.AddApp(app); err != nil {
 		cleanup()
 		return nil, nil, err
 	}
+	if err := m.store.SetAppKeys(name, appKeys); err != nil {
+		cleanup()
+		_ = m.store.RemoveApp(name)
+		return nil, nil, err
+	}
+	m.memoryMB[name] = opts.MemoryMB
 	m.ReconcilePortRules()
 	return app, creds, nil
 }
@@ -184,16 +214,35 @@ func (m *Manager) ReconcilePortRules() {
 	}
 }
 
-// SetKeys replaces the app's authorized SSH keys
-func (m *Manager) SetKeys(name string, sshKeys []string) error {
+// SetKeys replaces the app-specific SSH keys; the app's authorized_keys become
+// those plus the owner's profile keys
+func (m *Manager) SetKeys(name string, appKeys, profileKeys []string) error {
 	app, err := m.store.App(name)
 	if err != nil {
 		return err
 	}
-	if err := validateKeys(sshKeys); err != nil {
+	if err := validateKeys(appKeys); err != nil {
 		return err
 	}
-	return m.ops.WriteAuthorizedKeys(app.Name, filepath.Join(m.config.AppsDir, app.Name), sshKeys)
+	if err := m.store.SetAppKeys(app.Name, appKeys); err != nil {
+		return err
+	}
+	return m.writeKeys(app.Name, appKeys, profileKeys)
+}
+
+// SyncKeys rewrites an app's authorized_keys from its stored app keys plus the
+// given profile keys; used when a user adds or removes a profile key
+func (m *Manager) SyncKeys(name string, profileKeys []string) error {
+	appKeys, err := m.store.AppKeys(name)
+	if err != nil {
+		return err
+	}
+	return m.writeKeys(name, appKeys, profileKeys)
+}
+
+func (m *Manager) writeKeys(name string, appKeys, profileKeys []string) error {
+	keys := append(append([]string{}, appKeys...), profileKeys...)
+	return m.ops.WriteAuthorizedKeys(name, filepath.Join(m.config.AppsDir, name), keys)
 }
 
 // App returns a registered app by name

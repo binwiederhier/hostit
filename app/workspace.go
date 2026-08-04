@@ -40,8 +40,11 @@ CMD ["/bin/bash"]
 // in the default image with the home mounted; image/build mode runs the app's
 // own image and entrypoint. The hostit binary and daemon socket are mounted in
 // both, so the CLI works inside every container.
-func containerCreateArgs(conf *appctl.AppConfig, a *store.App, home, socketFile, hostitBin string) []string {
+func containerCreateArgs(conf *appctl.AppConfig, a *store.App, home, socketFile, hostitBin string, memoryMB int) []string {
 	args := []string{"create", "--name", containerName, "--hostname", a.Name}
+	if memoryMB > 0 {
+		args = append(args, "--memory", fmt.Sprintf("%dm", memoryMB))
+	}
 	if conf == nil || conf.Mode() == appctl.ModeProcess {
 		containerHome := "/home/" + a.Name
 		args = append(args,

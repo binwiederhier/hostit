@@ -16,6 +16,7 @@ import (
 	"heckel.io/hostit/app"
 	"heckel.io/hostit/config"
 	"heckel.io/hostit/store"
+	"heckel.io/hostit/user"
 )
 
 const (
@@ -259,7 +260,17 @@ func newTestServer(t *testing.T) *Server {
 		_ = s.Close()
 	})
 	manager := app.NewManager(conf, s, app.NewNopSystemOps(), app.NewNopUserRunner())
-	return New(conf, manager)
+	return New(conf, manager, user.NewManager(conf, s))
+}
+
+// newActiveTestUser creates an approved user, as an admin would after approval
+func newActiveTestUser(t *testing.T, s *Server, email string) *store.User {
+	t.Helper()
+	u, err := s.users.Login(email, "Test User")
+	require.NoError(t, err)
+	u.Status = store.StatusActive
+	require.NoError(t, s.users.Update(u))
+	return u
 }
 
 // registerAppWithBackend registers an app whose port points at the given test backend URL

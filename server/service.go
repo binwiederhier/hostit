@@ -11,7 +11,7 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"os/user"
+	osuser "os/user"
 	"path/filepath"
 	"strconv"
 	"time"
@@ -21,6 +21,7 @@ import (
 	"heckel.io/hostit/app"
 	"heckel.io/hostit/config"
 	"heckel.io/hostit/store"
+	"heckel.io/hostit/user"
 )
 
 const (
@@ -33,25 +34,32 @@ const (
 
 // Server is the hostit daemon; create with New, run with Run
 type Server struct {
-	config *config.Config
-	apps   *app.Manager
-	api    http.Handler
-	socket http.Handler
-	proxy  http.Handler
+	config   *config.Config
+	apps     *app.Manager
+	users    *user.Manager
+	sessions *sessionManager
+	api      http.Handler
+	socket   http.Handler
+	proxy    http.Handler
 
 	// usernameForUID maps a peer-credential UID to a username; overridden in tests
 	usernameForUID func(uid int) (string, error)
+	// exchangeGoogleCode trades an OAuth code for an identity; overridden in tests
+	exchangeGoogleCode func(code string) (*googleIdentity, error)
 
 	servers []*http.Server // Running HTTP servers, for Stop
 }
 
 // New creates a Server; it does not start any listeners
-func New(conf *config.Config, apps *app.Manager) *Server {
+func New(conf *config.Config, apps *app.Manager, users *user.Manager) *Server {
 	s := &Server{
 		config:         conf,
 		apps:           apps,
+		users:          users,
+		sessions:       newSessionManager(conf.SessionKey),
 		usernameForUID: usernameForUID,
 	}
+	s.exchangeGoogleCode = s.exchangeGoogleCodeLive
 	s.api = s.newAPIHandler()
 	s.socket = s.newSocketHandler()
 	s.proxy = s.newProxyHandler()
@@ -211,7 +219,7 @@ func (s *Server) appResponse(a *store.App, creds *app.Credentials) *apiAppRespon
 
 // usernameForUID is the production UID-to-username mapping via the user database
 func usernameForUID(uid int) (string, error) {
-	u, err := user.LookupId(strconv.Itoa(uid))
+	u, err := osuser.LookupId(strconv.Itoa(uid))
 	if err != nil {
 		return "", err
 	}

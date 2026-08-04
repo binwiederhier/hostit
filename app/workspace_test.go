@@ -15,7 +15,7 @@ func TestContainerCreateArgsWorkspaceMode(t *testing.T) {
 	conf := &appctl.AppConfig{Run: "python3 -m http.server $PORT"}
 	require.NoError(t, conf.Validate())
 	a := &store.App{Name: "blog", Port: 10000}
-	args := containerCreateArgs(conf, a, "/srv/hostit/apps/blog", "/run/hostit/hostit.sock", "/usr/bin/hostit")
+	args := containerCreateArgs(conf, a, "/srv/hostit/apps/blog", "/run/hostit/hostit.sock", "/usr/bin/hostit", 0)
 	cmd := strings.Join(args, " ")
 	assert.Contains(t, cmd, "create --name hostit-app")
 	assert.Contains(t, cmd, "--hostname blog")
@@ -36,7 +36,7 @@ func TestContainerCreateArgsImageMode(t *testing.T) {
 	conf := &appctl.AppConfig{Image: "docker.io/library/nginx:alpine", ContainerPort: 80, Env: map[string]string{"FOO": "bar"}, Volumes: []string{"./data:/data"}}
 	require.NoError(t, conf.Validate())
 	a := &store.App{Name: "blog", Port: 10000}
-	args := containerCreateArgs(conf, a, "/srv/hostit/apps/blog", "/run/hostit/hostit.sock", "/usr/bin/hostit")
+	args := containerCreateArgs(conf, a, "/srv/hostit/apps/blog", "/run/hostit/hostit.sock", "/usr/bin/hostit", 0)
 	cmd := strings.Join(args, " ")
 	assert.Contains(t, cmd, "--publish 127.0.0.1:10000:80")
 	assert.Contains(t, cmd, "--env PORT=80")
@@ -54,7 +54,7 @@ func TestContainerCreateArgsBuildMode(t *testing.T) {
 	conf := &appctl.AppConfig{Build: ".", ContainerPort: 8080}
 	require.NoError(t, conf.Validate())
 	a := &store.App{Name: "blog", Port: 10000}
-	args := containerCreateArgs(conf, a, "/srv/hostit/apps/blog", "/run/hostit/hostit.sock", "/usr/bin/hostit")
+	args := containerCreateArgs(conf, a, "/srv/hostit/apps/blog", "/run/hostit/hostit.sock", "/usr/bin/hostit", 0)
 	assert.Equal(t, buildImageTag, args[len(args)-1])
 }
 
@@ -65,10 +65,10 @@ func TestContainerConfigHashChanges(t *testing.T) {
 	conf2 := &appctl.AppConfig{Run: "./server"}
 	conf3 := &appctl.AppConfig{Run: "./other"}
 	conf4 := &appctl.AppConfig{Image: "nginx", ContainerPort: 80}
-	hash1 := containerConfigHash(containerCreateArgs(conf1, a, "/h", "/s", "/b"))
-	hash2 := containerConfigHash(containerCreateArgs(conf2, a, "/h", "/s", "/b"))
-	hash3 := containerConfigHash(containerCreateArgs(conf3, a, "/h", "/s", "/b"))
-	hash4 := containerConfigHash(containerCreateArgs(conf4, a, "/h", "/s", "/b"))
+	hash1 := containerConfigHash(containerCreateArgs(conf1, a, "/h", "/s", "/b", 0))
+	hash2 := containerConfigHash(containerCreateArgs(conf2, a, "/h", "/s", "/b", 0))
+	hash3 := containerConfigHash(containerCreateArgs(conf3, a, "/h", "/s", "/b", 0))
+	hash4 := containerConfigHash(containerCreateArgs(conf4, a, "/h", "/s", "/b", 0))
 	assert.Equal(t, hash1, hash2)
 	// run: changes are handled by the agent (SIGHUP), not by recreating the container,
 	// so the hash must NOT depend on the run command ...

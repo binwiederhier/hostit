@@ -137,7 +137,7 @@ func (m *Manager) apply(a *store.App, conf *appctl.AppConfig, allowReload bool) 
 	}
 
 	// Recreate the container if the desired config differs from the running one
-	desired := containerCreateArgs(conf, a, m.appHome(name), m.config.SocketFile, hostitBinFile)
+	desired := containerCreateArgs(conf, a, m.appHome(name), m.config.SocketFile, hostitBinFile, m.memoryMB[name])
 	hash := containerConfigHash(desired)
 	current, err := m.runner.RunAsUser(name, "podman", "container", "inspect", containerName, "--format", inspectHashFormat)
 	recreated := false
@@ -223,14 +223,21 @@ func (m *Manager) podmanPath() string {
 	return m.podman
 }
 
-// withConfigLabel inserts the config-hash label into create args (options must
-// precede the image, and args always start with create --name X --hostname Y)
+// withConfigLabel inserts the config-hash label into create args; options must
+// precede the image, and args always start with "create --name X --hostname Y"
 func withConfigLabel(args []string, hash string) []string {
+	const optionsStart = 5 // len("create --name <name> --hostname <host>")
 	out := make([]string, 0, len(args)+2)
-	out = append(out, args[:5]...)
+	out = append(out, args[:optionsStart]...)
 	out = append(out, "--label", "hostit.config="+hash)
-	out = append(out, args[5:]...)
+	out = append(out, args[optionsStart:]...)
 	return out
+}
+
+// SetMemoryLimit records the container memory cap for an app; applied on the
+// next container (re)creation
+func (m *Manager) SetMemoryLimit(name string, memoryMB int) {
+	m.memoryMB[name] = memoryMB
 }
 
 func tailLines(s string, n int) string {

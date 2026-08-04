@@ -1,8 +1,11 @@
-// Package store persists the app registry (name, port, runner host) in a SQLite database.
+// Package store persists the registry (apps, users, tokens, keys, settings) in
+// a SQLite database, migrated in place on open (see migrate.go).
 package store
 
 import (
+	"crypto/rand"
 	"database/sql"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"time"
@@ -11,19 +14,23 @@ import (
 )
 
 const (
-	createTablesQuery = `
-		CREATE TABLE IF NOT EXISTS app (
-			name TEXT PRIMARY KEY,
-			port INTEGER NOT NULL UNIQUE,
-			host TEXT NOT NULL,
-			created_at INTEGER NOT NULL
-		);
+	insertAppQuery = `INSERT INTO app (name, port, host, owner_id, created_at) VALUES (?, ?, ?, ?, ?)`
+	selectAppQuery = `
+		SELECT name, port, host, owner_id, disk_mb, over_quota, created_at
+		FROM app WHERE name = ?
 	`
-	insertAppQuery   = `INSERT INTO app (name, port, host, created_at) VALUES (?, ?, ?, ?)`
-	selectAppQuery   = `SELECT name, port, host, created_at FROM app WHERE name = ?`
-	selectAppsQuery  = `SELECT name, port, host, created_at FROM app ORDER BY name`
-	selectPortsQuery = `SELECT port FROM app ORDER BY port`
-	deleteAppQuery   = `DELETE FROM app WHERE name = ?`
+	selectAppsQuery = `
+		SELECT name, port, host, owner_id, disk_mb, over_quota, created_at
+		FROM app ORDER BY name
+	`
+	selectAppsByOwnerQuery = `
+		SELECT name, port, host, owner_id, disk_mb, over_quota, created_at
+		FROM app WHERE owner_id = ? ORDER BY name
+	`
+	selectAppCountByOwnerQuery = `SELECT COUNT(*) FROM app WHERE owner_id = ?`
+	selectPortsQuery           = `SELECT port FROM app ORDER BY port`
+	updateAppUsageQuery        = `UPDATE app SET disk_mb = ?, over_quota = ? WHERE name = ?`
+	deleteAppQuery             = `DELETE FROM app WHERE name = ?`
 )
 
 var (
@@ -31,21 +38,27 @@ var (
 	ErrAppNotFound = errors.New("app not found")
 )
 
-// Store is the SQLite-backed app registry
+// Store is the SQLite-backed registry
 type Store struct {
 	db *sql.DB
 }
 
-// NewStore opens (and if necessary creates) the registry database at filename
+// NewStore opens (and if necessary creates or migrates) the database at filename
 func NewStore(filename string) (*Store, error) {
-	db, err := sql.Open("sqlite", filename)
+	db, err := newRawDB(filename)
 	if err != nil {
 		return nil, err
 	}
-	if _, err := db.Exec(createTablesQuery); err != nil {
-		return nil, fmt.Errorf("cannot create tables: %w", err)
+	if err := migrate(db); err != nil {
+		return nil, fmt.Errorf("cannot migrate database: %w", err)
 	}
 	return &Store{db: db}, nil
+}
+
+// newRawDB opens the database without migrating it; tests use it to fabricate
+// old schema versions
+func newRawDB(filename string) (*sql.DB, error) {
+	return sql.Open("sqlite", filename)
 }
 
 // AddApp inserts a new app; name and port must be unique
@@ -53,34 +66,39 @@ func (s *Store) AddApp(app *App) error {
 	if app.CreatedAt.IsZero() {
 		app.CreatedAt = time.Now()
 	}
-	_, err := s.db.Exec(insertAppQuery, app.Name, app.Port, app.Host, app.CreatedAt.Unix())
+	_, err := s.db.Exec(insertAppQuery, app.Name, app.Port, app.Host, app.OwnerID, app.CreatedAt.Unix())
 	return err
 }
 
 // App returns the app with the given name, or ErrAppNotFound
 func (s *Store) App(name string) (*App, error) {
-	row := s.db.QueryRow(selectAppQuery, name)
-	return scanApp(row)
+	var app App
+	var createdAt int64
+	err := s.db.QueryRow(selectAppQuery, name).Scan(&app.Name, &app.Port, &app.Host, &app.OwnerID, &app.DiskMB, &app.OverQuota, &createdAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrAppNotFound
+	} else if err != nil {
+		return nil, err
+	}
+	app.CreatedAt = time.Unix(createdAt, 0)
+	return &app, nil
 }
 
 // Apps returns all registered apps, sorted by name
 func (s *Store) Apps() ([]*App, error) {
-	rows, err := s.db.Query(selectAppsQuery)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	apps := make([]*App, 0)
-	for rows.Next() {
-		var app App
-		var createdAt int64
-		if err := rows.Scan(&app.Name, &app.Port, &app.Host, &createdAt); err != nil {
-			return nil, err
-		}
-		app.CreatedAt = time.Unix(createdAt, 0)
-		apps = append(apps, &app)
-	}
-	return apps, rows.Err()
+	return s.queryApps(selectAppsQuery)
+}
+
+// AppsByOwner returns the apps owned by a user, sorted by name
+func (s *Store) AppsByOwner(ownerID string) ([]*App, error) {
+	return s.queryApps(selectAppsByOwnerQuery, ownerID)
+}
+
+// AppCountByOwner counts a user's apps, for limit enforcement
+func (s *Store) AppCountByOwner(ownerID string) (int, error) {
+	var count int
+	err := s.db.QueryRow(selectAppCountByOwnerQuery, ownerID).Scan(&count)
+	return count, err
 }
 
 // UsedPorts returns all allocated ports, sorted ascending
@@ -101,20 +119,26 @@ func (s *Store) UsedPorts() ([]int, error) {
 	return ports, rows.Err()
 }
 
+// UpdateAppUsage records measured disk usage and whether the app is over quota
+func (s *Store) UpdateAppUsage(name string, diskMB int, overQuota bool) error {
+	result, err := s.db.Exec(updateAppUsageQuery, diskMB, overQuota, name)
+	if err != nil {
+		return err
+	}
+	return checkAffected(result, ErrAppNotFound)
+}
+
 // RemoveApp deletes the app with the given name, or returns ErrAppNotFound
 func (s *Store) RemoveApp(name string) error {
 	result, err := s.db.Exec(deleteAppQuery, name)
 	if err != nil {
 		return err
 	}
-	rows, err := result.RowsAffected()
-	if err != nil {
+	if err := checkAffected(result, ErrAppNotFound); err != nil {
 		return err
 	}
-	if rows == 0 {
-		return ErrAppNotFound
-	}
-	return nil
+	_, err = s.db.Exec(deleteAppKeysQuery, name)
+	return err
 }
 
 // Close closes the underlying database
@@ -122,15 +146,42 @@ func (s *Store) Close() error {
 	return s.db.Close()
 }
 
-func scanApp(row *sql.Row) (*App, error) {
-	var app App
-	var createdAt int64
-	err := row.Scan(&app.Name, &app.Port, &app.Host, &createdAt)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, ErrAppNotFound
-	} else if err != nil {
+func (s *Store) queryApps(query string, args ...any) ([]*App, error) {
+	rows, err := s.db.Query(query, args...)
+	if err != nil {
 		return nil, err
 	}
-	app.CreatedAt = time.Unix(createdAt, 0)
-	return &app, nil
+	defer rows.Close()
+	apps := make([]*App, 0)
+	for rows.Next() {
+		var app App
+		var createdAt int64
+		if err := rows.Scan(&app.Name, &app.Port, &app.Host, &app.OwnerID, &app.DiskMB, &app.OverQuota, &createdAt); err != nil {
+			return nil, err
+		}
+		app.CreatedAt = time.Unix(createdAt, 0)
+		apps = append(apps, &app)
+	}
+	return apps, rows.Err()
+}
+
+// checkAffected turns a zero-row result into the given not-found error
+func checkAffected(result sql.Result, notFound error) error {
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return notFound
+	}
+	return nil
+}
+
+// randomID returns a random hex ID for users, tokens and keys
+func randomID() string {
+	b := make([]byte, idLength/2)
+	if _, err := rand.Read(b); err != nil {
+		panic(err) // Only fails if the system entropy source is broken
+	}
+	return hex.EncodeToString(b)
 }

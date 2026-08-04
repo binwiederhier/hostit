@@ -1,10 +1,12 @@
 VERSION ?= 0.1.0
 GO      ?= go
+NPM     ?= npm
 
-.PHONY: help build deb deb-arm64 release release-snapshot check test vet fmt fmt-check clean deps install install-deb purge-package
+.PHONY: help build web web-deps web-build deb deb-arm64 release release-snapshot check test vet fmt fmt-check clean deps install install-deb purge-package
 
 help:
 	@echo "Build:"
+	@echo "  make web                - Build the React web app into server/site (needed before build)"
 	@echo "  make build              - Build a local dev binary to dist/hostit"
 	@echo "  make deb                - Build dist/hostit_$(VERSION)_linux_amd64.deb (dpkg-deb, no git needed)"
 	@echo "  make deb-arm64          - Build dist/hostit_$(VERSION)_linux_arm64.deb"
@@ -28,16 +30,29 @@ help:
 build:
 	$(GO) build -o dist/hostit .
 
+web: web-deps web-build
+
+web-deps:
+	cd web && $(NPM) install
+
+# The built app is embedded via server/site (see server/web.go); .gitignore keeps
+# the generated assets out of git, but index.html stays as a placeholder
+web-build:
+	cd web && $(NPM) run build
+	rm -rf server/site
+	mkdir -p server/site
+	cp -r web/build/. server/site/
+
 deb:
 	scripts/mkdeb.sh $(VERSION) amd64
 
 deb-arm64:
 	scripts/mkdeb.sh $(VERSION) arm64
 
-release: clean deps check
+release: clean deps web check
 	goreleaser release --clean
 
-release-snapshot: clean deps check
+release-snapshot: clean deps web check
 	goreleaser release --snapshot --clean
 
 check: test fmt-check vet

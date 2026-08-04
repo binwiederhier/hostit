@@ -20,7 +20,7 @@ const (
 func TestCreateApp(t *testing.T) {
 	t.Parallel()
 	m, ops := newTestManager(t)
-	app, creds, err := m.CreateApp("blog", []string{testPublicKey})
+	app, creds, err := m.CreateApp("blog", &CreateOptions{RequestKeys: []string{testPublicKey}})
 	require.NoError(t, err)
 	assert.Equal(t, "blog", app.Name)
 	assert.Equal(t, 10000, app.Port)
@@ -55,7 +55,7 @@ func TestCreateAppInvalidName(t *testing.T) {
 	t.Parallel()
 	m, _ := newTestManager(t)
 	for _, name := range []string{"", "Foo", "-x", "x-", "a_b", "a.b", "root", "hostit", "api", strings.Repeat("x", 33)} {
-		_, _, err := m.CreateApp(name, []string{testPublicKey})
+		_, _, err := m.CreateApp(name, &CreateOptions{RequestKeys: []string{testPublicKey}})
 		require.Error(t, err, "name %q should be rejected", name)
 	}
 }
@@ -63,9 +63,9 @@ func TestCreateAppInvalidName(t *testing.T) {
 func TestCreateAppDuplicate(t *testing.T) {
 	t.Parallel()
 	m, _ := newTestManager(t)
-	_, _, err := m.CreateApp("blog", []string{testPublicKey})
+	_, _, err := m.CreateApp("blog", &CreateOptions{RequestKeys: []string{testPublicKey}})
 	require.NoError(t, err)
-	_, _, err = m.CreateApp("blog", []string{testPublicKey})
+	_, _, err = m.CreateApp("blog", &CreateOptions{RequestKeys: []string{testPublicKey}})
 	require.ErrorIs(t, err, ErrAppExists)
 }
 
@@ -73,14 +73,14 @@ func TestCreateAppExistingUnixUser(t *testing.T) {
 	t.Parallel()
 	m, ops := newTestManager(t)
 	ops.existingUsers = []string{"phil"}
-	_, _, err := m.CreateApp("phil", []string{testPublicKey})
+	_, _, err := m.CreateApp("phil", &CreateOptions{RequestKeys: []string{testPublicKey}})
 	require.ErrorIs(t, err, ErrAppExists)
 }
 
 func TestCreateAppInvalidSSHKey(t *testing.T) {
 	t.Parallel()
 	m, _ := newTestManager(t)
-	_, _, err := m.CreateApp("blog", []string{"not a key"})
+	_, _, err := m.CreateApp("blog", &CreateOptions{RequestKeys: []string{"not a key"}})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "ssh key")
 }
@@ -88,9 +88,9 @@ func TestCreateAppInvalidSSHKey(t *testing.T) {
 func TestCreateAppPortAllocation(t *testing.T) {
 	t.Parallel()
 	m, _ := newTestManager(t)
-	app1, _, err := m.CreateApp("one", []string{testPublicKey})
+	app1, _, err := m.CreateApp("one", &CreateOptions{RequestKeys: []string{testPublicKey}})
 	require.NoError(t, err)
-	app2, _, err := m.CreateApp("two", []string{testPublicKey})
+	app2, _, err := m.CreateApp("two", &CreateOptions{RequestKeys: []string{testPublicKey}})
 	require.NoError(t, err)
 	assert.Equal(t, 10000, app1.Port)
 	assert.Equal(t, 10001, app2.Port)
@@ -100,9 +100,9 @@ func TestCreateAppPortRangeExhausted(t *testing.T) {
 	t.Parallel()
 	m, _ := newTestManager(t)
 	m.config.PortMax = 10000 // Only one port available
-	_, _, err := m.CreateApp("one", []string{testPublicKey})
+	_, _, err := m.CreateApp("one", &CreateOptions{RequestKeys: []string{testPublicKey}})
 	require.NoError(t, err)
-	_, _, err = m.CreateApp("two", []string{testPublicKey})
+	_, _, err = m.CreateApp("two", &CreateOptions{RequestKeys: []string{testPublicKey}})
 	require.ErrorIs(t, err, ErrNoPortsAvailable)
 }
 
@@ -110,7 +110,7 @@ func TestCreateAppUserCreationFails(t *testing.T) {
 	t.Parallel()
 	m, ops := newTestManager(t)
 	ops.createUserErr = assert.AnError
-	_, _, err := m.CreateApp("blog", []string{testPublicKey})
+	_, _, err := m.CreateApp("blog", &CreateOptions{RequestKeys: []string{testPublicKey}})
 	require.Error(t, err)
 	_, err = m.App("blog") // Nothing must be registered
 	require.ErrorIs(t, err, store.ErrAppNotFound)
@@ -119,7 +119,7 @@ func TestCreateAppUserCreationFails(t *testing.T) {
 func TestDeleteApp(t *testing.T) {
 	t.Parallel()
 	m, ops := newTestManager(t)
-	_, _, err := m.CreateApp("blog", []string{testPublicKey})
+	_, _, err := m.CreateApp("blog", &CreateOptions{RequestKeys: []string{testPublicKey}})
 	require.NoError(t, err)
 	require.NoError(t, m.DeleteApp("blog"))
 	assert.Equal(t, []string{"blog"}, ops.deletedUsers)
@@ -131,19 +131,19 @@ func TestDeleteApp(t *testing.T) {
 func TestSetKeys(t *testing.T) {
 	t.Parallel()
 	m, ops := newTestManager(t)
-	_, _, err := m.CreateApp("blog", []string{testPublicKey})
+	_, _, err := m.CreateApp("blog", &CreateOptions{RequestKeys: []string{testPublicKey}})
 	require.NoError(t, err)
 	otherKey := "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIC24brF98CyUY18aeOGGQY3+wILYYnUUBQqICmMTvTGL other@host"
-	require.NoError(t, m.SetKeys("blog", []string{otherKey}))
+	require.NoError(t, m.SetKeys("blog", []string{otherKey}, nil))
 	assert.Equal(t, []string{otherKey}, ops.authorizedKeys["blog"])
-	require.Error(t, m.SetKeys("blog", []string{"garbage"}))
-	require.ErrorIs(t, m.SetKeys("nope", []string{otherKey}), store.ErrAppNotFound)
+	require.Error(t, m.SetKeys("blog", []string{"garbage"}, nil))
+	require.ErrorIs(t, m.SetKeys("nope", []string{otherKey}, nil), store.ErrAppNotFound)
 }
 
 func TestApps(t *testing.T) {
 	t.Parallel()
 	m, _ := newTestManager(t)
-	_, _, err := m.CreateApp("blog", []string{testPublicKey})
+	_, _, err := m.CreateApp("blog", &CreateOptions{RequestKeys: []string{testPublicKey}})
 	require.NoError(t, err)
 	apps, err := m.Apps()
 	require.NoError(t, err)
