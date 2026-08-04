@@ -329,3 +329,24 @@ func newActiveUser(t *testing.T, m *Manager, email string) *store.User {
 	require.NoError(t, m.Update(u))
 	return u
 }
+
+func TestAllowDomainRefusesPublicMailProviders(t *testing.T) {
+	t.Parallel()
+	m := newTestManager(t)
+	// Allowing gmail.com means allowing everyone with an email address. It is
+	// almost always a slip, and the cost of the slip is the whole instance.
+	for _, domain := range []string{
+		"gmail.com", "GMAIL.COM", "*@gmail.com", "googlemail.com",
+		"hotmail.com", "outlook.com", "yahoo.com", "icloud.com", "proton.me",
+		"gmx.de", "web.de", "qq.com", "mail.ru", "yandex.ru",
+	} {
+		_, err := m.AllowDomain(domain)
+		require.ErrorIs(t, err, ErrInvalid, "%q must be refused", domain)
+		assert.Contains(t, err.Error(), "public email provider", "%q needs a reason the admin understands", domain)
+	}
+	// A company domain is the point of the feature
+	for _, domain := range []string{"allowed.example", "heckel.io", "mycompany.co.uk"} {
+		_, err := m.AllowDomain(domain)
+		assert.NoError(t, err, "%q must be allowed", domain)
+	}
+}

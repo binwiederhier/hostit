@@ -30,6 +30,12 @@ const (
 )
 
 var (
+	// Version is the hostit build this daemon is, set once at startup. It is part
+	// of each container's identity: the binary is bind-mounted into containers as
+	// a file, so replacing it on the host leaves running containers on the old
+	// inode until they are recreated.
+	Version = "dev"
+
 	// ErrAppExists is returned when the app name or a Unix user with that name already exists
 	ErrAppExists = errors.New("app or user already exists")
 	// ErrNoPortsAvailable is returned when the configured port range is exhausted

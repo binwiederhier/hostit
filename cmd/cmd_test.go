@@ -11,13 +11,12 @@ import (
 )
 
 func TestNewCommands(t *testing.T) {
-	t.Parallel()
 	app := New()
 	names := make([]string, 0)
 	for _, c := range app.Commands {
 		names = append(names, c.Name)
 	}
-	for _, expected := range []string{"serve", "up", "down", "restart", "status", "logs", "info", "admin"} {
+	for _, expected := range []string{"serve", "up", "down", "restart", "status", "logs", "info", "guide", "admin"} {
 		assert.Contains(t, names, expected)
 	}
 	admin := app.Command("admin")
@@ -55,4 +54,50 @@ func TestAppUserRegexMatchesTheServerRule(t *testing.T) {
 	// so the only thing that can keep the two honest is a test
 	assert.Equal(t, app.AppNamePattern, appUserRegex.String(),
 		"the enter helper's user check must match the rule the server creates apps by")
+}
+
+func TestGuideText(t *testing.T) {
+	t.Parallel()
+	guide := guideText(&appctl.SelfInfo{Name: "blog", URL: "https://blog.apps.example.com", Port: 10001})
+	// Everything someone needs after their first ssh, and nothing that points at
+	// a file we no longer write
+	for _, want := range []string{
+		"blog", "https://blog.apps.example.com", "10001",
+		appctl.PublicDir + "/", appctl.BinDir + "/", appctl.LogDir + "/", appctl.SrcDir + "/",
+		"hostit up", "hostit logs", "apt-get install", "NEVER at this home directory",
+		"https://apps.example.com/docs",
+	} {
+		assert.Contains(t, guide, want)
+	}
+	assert.NotContains(t, guide, "HOSTIT.txt")
+	// No line runs past a narrow terminal
+	for _, line := range strings.Split(guide, "\n") {
+		assert.LessOrEqual(t, len(line), 80, "line too long: %q", line)
+	}
+}
+
+func TestDocsURL(t *testing.T) {
+	t.Parallel()
+	assert.Equal(t, "https://apps.example.com/docs", docsURL("https://blog.apps.example.com"))
+	assert.Equal(t, "the hostit web app", docsURL("http://localhost:2586"))
+}
+
+func TestCommandsInsideAContainerAreTheAppsOwn(t *testing.T) {
+	// An SSH session arrives through "podman exec", which does not inherit the
+	// container's environment, so this must not be the only signal
+	t.Setenv("container", "podman")
+	names := make([]string, 0)
+	for _, c := range New().Commands {
+		names = append(names, c.Name)
+	}
+	// An app's owner manages their app; they do not run the platform, and being
+	// shown commands they cannot use only invites confusion
+	for _, expected := range []string{"up", "down", "restart", "status", "logs", "guide"} {
+		assert.Contains(t, names, expected)
+	}
+	for _, hidden := range []string{"serve", "admin", "shell", "enter"} {
+		assert.NotContains(t, names, hidden, "%q must not exist inside a container", hidden)
+	}
+	// The agent is PID 1 in there, so it has to stay reachable
+	assert.Contains(t, names, "agent")
 }

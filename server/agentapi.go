@@ -116,6 +116,7 @@ func (s *Server) agentGuide(appName, description string) *apiAgentInfoResponse {
 			"1. Static files (simplest, nothing to run):\n" +
 			"     static: " + appctl.PublicDir + "   # always serves " + appctl.PublicDir + "/, whatever this says\n\n" +
 			"2. Your own command, run in the workspace container:\n" +
+			"     prepare: cd " + appctl.SrcDir + " && go build -o ../" + appctl.BinDir + "/myapp .   # optional build step\n" +
 			"     run: ./" + appctl.BinDir + "/myapp   # MUST listen on 0.0.0.0:$PORT; $PORT is provided\n" +
 			"     (upload binaries with ?mode=755 so they are executable)\n\n" +
 			"3. Your own container image:\n" +
@@ -128,11 +129,13 @@ func (s *Server) agentGuide(appName, description string) *apiAgentInfoResponse {
 		SuggestedStack: "A single Go binary that embeds its frontend (go:embed) is the easiest thing to run here: " +
 			"one file, no runtime to install, instant start. Use run: ./" + appctl.BinDir + "/myapp listening on 0.0.0.0:$PORT. " +
 			"Python, Node and PHP work equally well, and a plain HTML site needs only static:.\n\n" +
-			"You can either build the binary wherever you are and upload it, or upload the source to " + appctl.SrcDir + "/ " +
-			"and compile it here -- the container has the Go toolchain (and python3, node and php). Compiling here " +
-			"is the better default when you are not sure your machine can produce a linux/amd64 binary, or has no " +
-			"toolchain at all; uploading a prebuilt binary is faster and keeps the app's disk small. " +
-			"Cross-compiling elsewhere works too: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o " + appctl.BinDir + "/myapp .",
+			"Prefer keeping the source here: upload it to " + appctl.SrcDir + "/ and build it in the container with a " +
+			"\"prepare:\" step in hostit.yml, e.g. prepare: cd " + appctl.SrcDir + " && go build -o ../" + appctl.BinDir + "/myapp . " +
+			"Prepare runs before the app starts, on every deploy; if it fails the app is not started and the error is in the logs. " +
+			"That way the build happens on the machine that runs it (no cross-compiling, no toolchain needed on your side), " +
+			"and the next session can still change the app. Uploading a prebuilt binary to " + appctl.BinDir + "/ also works and is " +
+			"faster -- build it with CGO_ENABLED=0 GOOS=linux GOARCH=amd64 -- but then only the binary is here, and whoever " +
+			"comes next has nothing to edit.",
 		Auth: "Send the token as: Authorization: Bearer <token>",
 		Endpoints: []apiAgentEndpoint{
 			{Method: "GET", Path: "/api/" + name + "/info", What: "This document plus the app's URL, state, README, file list and hostit.yml"},

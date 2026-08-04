@@ -283,6 +283,7 @@ const AllowedDomains = ({ setError }) => {
       <p className="hint">
         Anyone signing in with a Google address in one of these domains is approved automatically. Everyone else waits in the
         list above. Write it as <span className="mono">company.com</span> or <span className="mono">*@company.com</span>.
+        Public providers (gmail.com, outlook.com, ...) are refused: allowing one would let anyone in.
       </p>
       {domains === null && <Loading label="Loading domains..." />}
       {domains !== null && domains.length === 0 && <p className="empty">No domains yet: every sign-up needs approval.</p>}
@@ -377,7 +378,7 @@ const AdminInner = () => {
 
   const load = useCallback(async () => {
     try {
-      const [u, a, s] = await Promise.all([api.get("/v1/users"), api.get("/v1/apps"), api.get("/v1/settings")]);
+      const [u, a, s] = await Promise.all([api.get("/v1/users"), api.get("/v1/apps?all=true"), api.get("/v1/settings")]);
       setUsers(u);
       setApps(a);
       setSettings(s);

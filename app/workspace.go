@@ -79,6 +79,10 @@ func buildImageTag(appName string) string {
 // cannot reach each other, and ports are published on loopback only.
 func containerCreateArgs(conf *appctl.AppConfig, a *store.App, home, socketFile, hostitBin string, memoryMB int, ids IDs) []string {
 	args := []string{"create", "--name", containerName(a.Name), "--hostname", a.Name}
+	// Part of the container's identity, so an upgrade makes it stale and apply
+	// recreates it: the bind-mounted binary is a file, and a running container
+	// keeps the inode it started with
+	args = append(args, "--label", "hostit.version="+Version)
 	args = append(args,
 		"--uidmap", fmt.Sprintf("0:%d:1", ids.UID),
 		"--uidmap", fmt.Sprintf("1:%d:%d", ids.SubUID, ids.SubCount),
@@ -129,10 +133,18 @@ func imageRef(conf *appctl.AppConfig, appName string) string {
 	return conf.Image
 }
 
+// appendCommonMounts adds what every app container needs to talk to hostit: the
+// binary, and the directory holding the daemon's socket.
+//
+// The directory, not the socket itself: the daemon deletes and recreates the
+// socket on every start, so a mount of the file pins an inode that is already
+// gone, and the app's CLI answers "connection refused" until its container is
+// recreated. Mounting the directory lets it resolve the live socket by path.
 func appendCommonMounts(args []string, socketFile, hostitBin string) []string {
+	socketDir := filepath.Dir(socketFile)
 	return append(args,
 		"--volume", hostitBin+":"+hostitBin+":ro",
-		"--volume", socketFile+":"+socketFile)
+		"--volume", socketDir+":"+socketDir)
 }
 
 // absVolume resolves a relative volume source against the app home dir

@@ -77,6 +77,13 @@ func (a *Agent) Run() error {
 				return nil
 			}
 		}
+		if err := a.prepare(conf); err != nil {
+			slog.Error("Prepare step failed; not starting the app", "error", err)
+			if !a.sleepInterruptible() {
+				return nil
+			}
+			continue
+		}
 		cmd, err := a.startChild(conf)
 		if err != nil {
 			slog.Error("Cannot start command", "error", err)
@@ -183,6 +190,26 @@ func (a *Agent) loadConfig() *appctl.AppConfig {
 		return nil
 	}
 	return conf
+}
+
+// prepare runs the app's build step, if it has one, before the app starts. Its
+// output goes to the app log like everything else, so a failed build is visible
+// where its owner (or their agent) is already looking.
+func (a *Agent) prepare(conf *appctl.AppConfig) error {
+	if conf.Prepare == "" {
+		return nil
+	}
+	out, err := a.openLog()
+	if err != nil {
+		return err
+	}
+	slog.Info("Running prepare step", "command", conf.Prepare)
+	cmd := exec.Command("/bin/sh", "-lc", conf.Prepare)
+	cmd.Dir = a.home
+	cmd.Env = os.Environ()
+	cmd.Stdout = io.MultiWriter(os.Stdout, out)
+	cmd.Stderr = io.MultiWriter(os.Stderr, out)
+	return cmd.Run()
 }
 
 // startChild launches the run command in its own process group with output

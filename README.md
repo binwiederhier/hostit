@@ -27,43 +27,20 @@ runs `hostit up`, and the app is live with a cert.
 
 ## How it works
 
-```
-                        :80/:443 (TLS: wildcard, or per app on demand)
-                     +--------------------+
-  blog.apps.x.com -> |   hostit serve     | ->  proxies to 127.0.0.1:<port>
-hostit.apps.x.com -> |   (root daemon)    |     web app + REST API
-                     +--------------------+
-                       |            ^
-        useradd, keys, |            | /run/hostit/hostit.sock
-        nftables, unit |            | (peercred: the kernel says who calls)
-                       v            |
-   app user "blog" (own uid) -------+
-     home: /srv/hostit/apps/blog    <- 0750; scp/rsync/sftp write here
-     systemd hostit-app@blog        -> podman start --attach hostit-app-blog
-       +--------------- container "hostit-app-blog" ----------------------+
-       |  uidmap 0:<blog's uid>:1  <- container root IS the app's user    |
-       |  PID 1: hostit agent -> runs the `run:` command on 0.0.0.0:$PORT |
-       |  /home/blog  <- the home above, bind-mounted                     |
-       |  /usr/bin/hostit + /run/hostit/hostit.sock <- so the CLI works   |
-       |  own network stack (slirp4netns): no peers, no host loopback     |
-       +------------------------------------------------------------------+
-```
+One binary, running as root, is the whole control plane: it terminates TLS,
+proxies each subdomain to its app, serves the web app and REST API, and creates
+the Unix users and containers behind them.
 
-SSH logins are handed to `/usr/bin/hostit-shell`, which execs the session into
-the app's container, so users never get a host shell. The daemon creates and
-runs the containers (it is the only thing that runs as root), mapping container
-root to the app's own unprivileged uid: files in the bind-mounted home belong to
-the app on both sides, and a workload escape lands on that uid, not on root.
-Entering a container needs root podman, so app users reach it through
-`/usr/bin/hostit-enter`, a root helper behind a sudoers grant scoped to the
-`hostit-apps` group; it derives the target container from `SUDO_UID` and ignores
-its arguments when choosing one, so you can only ever enter your own app.
+Each app is four things created together: a Unix user, a home directory, a
+podman container whose root is mapped to that user's unprivileged uid, and a
+loopback port that nftables restricts to that uid. SSH logins are handed to
+`/usr/bin/hostit-shell`, which execs the session into the app's container, so
+users never get a host shell, and an escape inside the container lands on the
+app's own uid rather than on root.
 
-Each app has its own network stack (slirp4netns), ports are published on
-loopback only, and nftables restricts those ports to root and the owning uid, so
-apps cannot reach each other. Because containers are created centrally, there is
-one image store for the host: the workspace image is built once (~40s) instead of
-per app, and an app's home holds only its own files.
+**[ARCHITECTURE.md](ARCHITECTURE.md)** has the diagrams: the components, what
+isolates what, and sequence diagrams for creating an app, serving a request,
+logging in over SSH, and an agent deploying.
 
 ## Install (server)
 
@@ -288,13 +265,20 @@ README.md    what the app is, and its worklog
 Directories appear as you write into them. `static:` always serves `public/`,
 whatever value it carries.
 
-A compiled app can go either way: build the binary wherever you work and upload
-it to `bin/`, or put the source in `src/` and compile it in the container -- the
-workspace ships the Go toolchain (plus python3, node and php). Compiling in the
-container is the better default when the machine driving the API has no
-toolchain, or cannot produce a `linux/amd64` binary; uploading a prebuilt binary
-is faster and keeps the app smaller. The agent guide at `/api/{app}/info` says
-all of this too, so an assistant can choose for itself.
+**Keep the source here.** Put it in `src/` and give `hostit.yml` a build step:
+
+```yaml
+prepare: cd src && go build -o ../bin/myapp .
+run: ./bin/myapp
+```
+
+`prepare:` runs before the app starts, on every deploy; a failed build leaves the
+running app alone and puts the error in the logs. It builds on the machine that
+runs it, so nobody needs a cross-compiler or a toolchain of their own -- which is
+the point when the person deploying is talking to an assistant rather than a
+terminal. It also keeps the app editable: the next session has source to work
+with, not just a binary. Uploading a prebuilt binary to `bin/` still works and is
+faster. The agent guide at `/api/{app}/info` says all of this too.
 
 ## Create an app
 
@@ -367,8 +351,9 @@ New apps start as a **stub**: a placeholder page served in `static:` mode, whose
 README says so and lists what is installed. Each app's `README.md` is its
 description and worklog: the agent reads it first
 and writes back what it changed, so the next session (or a different agent)
-knows what the app is. hostit's own instructions live in `HOSTIT.txt`, so the
-two never compete. Agents are also asked to keep a one-line `description:` in
+knows what the app is. hostit's own instructions are not a file in the app --
+they are the SSH login banner, `hostit guide`, and `/docs` -- so nothing in the
+app directory competes with the app's own README. Agents are also asked to keep a one-line `description:` in
 `hostit.yml`; the app's page puts it into the prompt, so the next agent starts
 from what the app already is instead of from "this is a placeholder".
 

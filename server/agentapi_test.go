@@ -376,8 +376,11 @@ func TestGuideExplainsTheLayoutAndTheBuildChoice(t *testing.T) {
 	}
 	assert.Contains(t, guide.HostitYml, "static: "+appctl.PublicDir)
 
-	// Not everyone can produce a linux/amd64 binary, so say both options exist
-	assert.Contains(t, guide.SuggestedStack, "upload")
-	assert.Contains(t, guide.SuggestedStack, "compile it here")
+	// Not everyone can produce a linux/amd64 binary, and a binary-only app leaves
+	// the next session nothing to edit: the guide should push towards keeping the
+	// source here, while still saying an upload works
+	assert.Contains(t, guide.SuggestedStack, "prepare:")
+	assert.Contains(t, guide.SuggestedStack, appctl.SrcDir+"/")
+	assert.Contains(t, guide.SuggestedStack, "prebuilt binary")
 	assert.Contains(t, guide.Runtimes, "go")
 }

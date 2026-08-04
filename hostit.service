@@ -11,7 +11,12 @@ Type=exec
 ExecStart=/usr/bin/hostit serve
 Restart=on-failure
 RestartSec=2
-RuntimeDirectory=hostit
+
+# Deliberately NOT RuntimeDirectory=hostit: systemd would delete and recreate
+# /run/hostit on every restart, and app containers bind-mount that directory to
+# reach the daemon's socket. A new directory inode leaves every running app
+# looking at an empty one, so "hostit up" from inside a container stops working
+# until it is recreated. The daemon creates the directory itself instead.
 
 [Install]
 WantedBy=multi-user.target

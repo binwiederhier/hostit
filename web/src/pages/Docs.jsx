@@ -123,22 +123,25 @@ const Docs = () => (
         <span className="mono">hostit.yml</span> and <span className="mono">.ssh/</span>, and serving it puts them on the open
         internet.
       </p>
-      <h3>Compiled apps: build here or upload</h3>
+      <h3>Keep the source here, and let hostit build it</h3>
       <p>
-        Either works. Build the binary wherever you work and upload it to <span className="mono">bin/</span>, or put the source
-        in <span className="mono">src/</span> and compile it inside the container -- the workspace ships the Go toolchain, plus
-        python3, node and php.
-      </p>
-      <p>
-        Compiling in the container is the better default when the machine driving the API has no toolchain, or cannot produce a{" "}
-        <span className="mono">linux/amd64</span> binary. Uploading a prebuilt binary is faster and keeps the app smaller.
+        Put the source in <span className="mono">src/</span> and give <span className="mono">hostit.yml</span> a build step. It
+        runs before the app starts, on every deploy; if it fails the app is left alone and the error is in the logs.
       </p>
       <Snippet
-        text={`# in the container, over SSH:
-cd src && go build -o ../bin/myapp .
-# or from your own machine, then upload bin/myapp:
-CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o myapp .`}
+        text={`prepare: cd src && go build -o ../bin/myapp .
+run: ./bin/myapp`}
       />
+      <p>
+        This is the better default, and not only for convenience. It builds on the machine that runs it, so there is no
+        cross-compiling and you need no toolchain of your own -- which matters if you are driving all of this from a chat
+        window. And the app stays editable: the next session, yours or an assistant's, can read the source and change it.
+      </p>
+      <p>
+        Uploading a prebuilt binary to <span className="mono">bin/</span> also works and is faster (
+        <span className="mono">CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build</span>), but then the app is just a binary, and
+        whoever comes next has nothing to work with.
+      </p>
     </section>
 
     <section id="config">
@@ -159,10 +162,16 @@ static: public`}
       <h3>Your own command</h3>
       <Snippet
         text={`description: What this app is, in one line
+prepare: cd src && go build -o ../bin/myapp .
 run: ./bin/myapp
 env:
   DEBUG: "true"`}
       />
+      <p>
+        <span className="mono">prepare:</span> is optional and runs before the app starts, every deploy: compile, install
+        dependencies, build a frontend into <span className="mono">public/</span>. A failing build stops the deploy rather than
+        starting a broken app.
+      </p>
       <p>
         The command must listen on <span className="mono">0.0.0.0:$PORT</span>. <span className="mono">$PORT</span> is provided;
         nothing else is reachable from outside. hostit restarts the command if it exits.
@@ -269,6 +278,8 @@ hostit logs -f     # watch the output`}
       <p>
         An allowed domain approves, it never promotes: those accounts are ordinary users. Someone you explicitly denied stays
         denied even if their domain is allowed later, and removing a domain does not touch accounts already approved under it.
+        Public email providers cannot be allowed -- <span className="mono">gmail.com</span> is not an organisation, and allowing
+        it would open the instance to anyone with an email address.
       </p>
       <h3>Limits</h3>
       <p>

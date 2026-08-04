@@ -21,7 +21,7 @@ import (
 const (
 	// readmeFile is the app's own README: the agent reads it to learn what the
 	// app is and writes back what it changed, and the owner sees it in the web
-	// app. hostit's own instructions live in HOSTIT.txt, so the two never fight.
+	// app; hostit's own instructions are not a file here (see "hostit guide").
 	readmeFile = "README.md"
 	// maxUploadSize caps a single uploaded file
 	maxUploadSize = 64 * 1024 * 1024

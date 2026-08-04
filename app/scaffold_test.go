@@ -12,18 +12,18 @@ func TestScaffoldFiles(t *testing.T) {
 	t.Parallel()
 	m, _ := newTestManager(t)
 	files := m.scaffoldFiles("blog", 10000)
+	// The app directory holds the app's files and nothing of hostit's own: the
+	// platform explains itself through the login banner, "hostit guide" and /docs
+	assert.NotContains(t, files, "HOSTIT.txt")
 	// A new app runs as a static stub, so plain HTML works with no runtime
 	assert.Contains(t, files["hostit.yml"], "static: public")
-	assert.Contains(t, files["HOSTIT.txt"], "https://blog.apps.example.com")
-	assert.Contains(t, files["HOSTIT.txt"], "10000")
 	// Everyone must be told this is a stub, what is installed, and what to build with
-	for _, name := range []string{"HOSTIT.txt", "README.md", appctl.PublicDir + "/index.html"} {
+	for _, name := range []string{"README.md", appctl.PublicDir + "/index.html"} {
 		assert.Contains(t, strings.ToLower(files[name]), "stub", "%s must say it is a stub", name)
 		assert.Contains(t, files[name], "python3", "%s must list the runtimes", name)
 		assert.Contains(t, files[name], "php", "%s must list the runtimes", name)
 		assert.Contains(t, files[name], "Go binary", "%s must suggest the stack", name)
 	}
-	assert.Contains(t, files["HOSTIT.txt"], "apt-get install")
 	assert.Contains(t, files["README.md"], "# blog")
 }
 

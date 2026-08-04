@@ -166,3 +166,39 @@ func TestAppLogRotatesWhileRunning(t *testing.T) {
 	_, err = os.Stat(filepath.Join(home, appctl.LogDir, "app.log.old"))
 	assert.NoError(t, err, "the previous log must be kept as .old")
 }
+
+func TestAgentRunsPrepareBeforeTheCommand(t *testing.T) {
+	t.Parallel()
+	a, home := newTestAgent(t)
+	// The build step is what makes "keep your source here" workable for someone
+	// driving the API with no toolchain of their own
+	writeConfig(t, home, "prepare: printf 'built\\n' > artifact.txt\nrun: cat artifact.txt; sleep 5")
+	go func() {
+		_ = a.Run()
+	}()
+	t.Cleanup(a.Stop)
+
+	require.Eventually(t, func() bool {
+		b, err := os.ReadFile(filepath.Join(home, "artifact.txt"))
+		return err == nil && strings.Contains(string(b), "built")
+	}, 5*time.Second, 20*time.Millisecond, "prepare must run")
+	require.Eventually(t, func() bool {
+		b, err := os.ReadFile(filepath.Join(home, appctl.LogDir, "app.log"))
+		return err == nil && strings.Contains(string(b), "built")
+	}, 5*time.Second, 20*time.Millisecond, "the app must see what prepare produced")
+}
+
+func TestAgentDoesNotStartWhenPrepareFails(t *testing.T) {
+	t.Parallel()
+	a, home := newTestAgent(t)
+	// A failed build must not be papered over by starting the app anyway
+	writeConfig(t, home, "prepare: exit 3\nrun: touch started.txt; sleep 5")
+	go func() {
+		_ = a.Run()
+	}()
+	t.Cleanup(a.Stop)
+
+	time.Sleep(300 * time.Millisecond)
+	_, err := os.Stat(filepath.Join(home, "started.txt"))
+	assert.True(t, os.IsNotExist(err), "the app must not start when its build failed")
+}

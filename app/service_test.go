@@ -27,7 +27,6 @@ func TestCreateApp(t *testing.T) {
 	assert.Equal(t, []string{"blog"}, ops.createdUsers)
 	assert.Equal(t, []string{testPublicKey}, ops.authorizedKeys["blog"])
 	assert.Contains(t, ops.scaffolds["blog"], "hostit.yml")
-	assert.Contains(t, ops.scaffolds["blog"], "HOSTIT.txt")
 	assert.Contains(t, ops.scaffolds["blog"], "README.md")
 	stored, err := m.App("blog")
 	require.NoError(t, err)

@@ -74,8 +74,8 @@ func TestAgentCanBuildAnAppFromNothing(t *testing.T) {
 	e.waitForBody(fmt.Sprint(app["url"]), "stub")
 
 	// Now act as the agent: upload a Go-free static site, deploy, verify
-	e.put(fmt.Sprintf("/api/%s/files/index.html", name), token, "<h1>e2e built this</h1>")
-	e.put(fmt.Sprintf("/api/%s/files/hostit.yml", name), token, "static: .\n")
+	e.put(fmt.Sprintf("/api/%s/files/public/index.html", name), token, "<h1>e2e built this</h1>")
+	e.put(fmt.Sprintf("/api/%s/files/hostit.yml", name), token, "static: public\n")
 	e.post(fmt.Sprintf("/api/%s/deploy", name), token, nil)
 	e.waitForBody(fmt.Sprint(app["url"]), "e2e built this")
 
@@ -151,8 +151,8 @@ func TestExecutableUploadAndDescription(t *testing.T) {
 
 	// An uploaded program has to arrive runnable, or "run:" needs a chmod dance
 	e.put(fmt.Sprintf("/api/%s/files/serve.sh?mode=755", name), token,
-		"#!/bin/sh\nexec python3 -m http.server \"$PORT\" --bind 0.0.0.0\n")
-	e.put(fmt.Sprintf("/api/%s/files/index.html", name), token, "<h1>ran an uploaded program</h1>")
+		"#!/bin/sh\nexec python3 -m http.server \"$PORT\" --bind 0.0.0.0 --directory public\n")
+	e.put(fmt.Sprintf("/api/%s/files/public/index.html", name), token, "<h1>ran an uploaded program</h1>")
 	e.put(fmt.Sprintf("/api/%s/files/hostit.yml", name), token,
 		"description: An app the e2e suite described\nrun: ./serve.sh\n")
 	e.post(fmt.Sprintf("/api/%s/deploy", name), token, nil)

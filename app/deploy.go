@@ -150,8 +150,11 @@ func (m *Manager) RestartStaleAgents(version string) ([]string, error) {
 	}
 	restarted := make([]string, 0, len(apps))
 	for _, a := range apps {
-		if _, err := m.runner.Run("systemctl", "restart", unitName(a.Name)); err != nil {
-			slog.Warn("Cannot restart app after upgrade", "app", a.Name, "error", err)
+		// Up, not just a restart: a new binary may also want the container built
+		// differently (different mounts, different arguments), and only apply
+		// notices that
+		if _, err := m.Up(a.Name); err != nil {
+			slog.Warn("Cannot bring app up after upgrade", "app", a.Name, "error", err)
 			continue
 		}
 		restarted = append(restarted, a.Name)

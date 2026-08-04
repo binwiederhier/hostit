@@ -445,3 +445,41 @@ func proxyRequest(t *testing.T, s *Server, rawURL string) *httptest.ResponseReco
 	s.proxyHandler().ServeHTTP(rr, req)
 	return rr
 }
+
+func TestAppsListIsPersonalEvenForAdmins(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	admin := newActiveTestUser(t, s, "admin@example.com")
+	admin.Role = store.RoleAdmin
+	require.NoError(t, s.users.Update(admin))
+	adminToken, _, err := s.users.CreateToken(admin.ID, "t")
+	require.NoError(t, err)
+	other := newActiveTestUser(t, s, "someone@example.com")
+	require.NoError(t, s.apps.Store().AddApp(&store.App{Name: "mine", Port: 10000, Host: store.HostLocal, OwnerID: admin.ID}))
+	require.NoError(t, s.apps.Store().AddApp(&store.App{Name: "theirs", Port: 10001, Host: store.HostLocal, OwnerID: other.ID}))
+
+	// The dashboard says "N of M apps used" next to this list, and that count is
+	// the caller's own. Someone else's app in there is just confusing.
+	names := func(token, query string) []string {
+		rr := request(t, s.API(), "GET", "/v1/apps"+query, "", token)
+		require.Equal(t, http.StatusOK, rr.Code)
+		var apps []*apiAppResponse
+		require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &apps))
+		out := make([]string, 0, len(apps))
+		for _, a := range apps {
+			out = append(out, a.Name)
+		}
+		return out
+	}
+	assert.Equal(t, []string{"mine"}, names(adminToken, ""), "an admin's own list is still their own")
+
+	// The admin page asks for everything explicitly
+	assert.Equal(t, []string{"mine", "theirs"}, names(adminToken, "?all=true"))
+
+	// And only an admin may
+	userToken, _, err := s.users.CreateToken(other.ID, "t")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"theirs"}, names(userToken, ""))
+	rr := request(t, s.API(), "GET", "/v1/apps?all=true", "", userToken)
+	assert.Equal(t, http.StatusForbidden, rr.Code)
+}

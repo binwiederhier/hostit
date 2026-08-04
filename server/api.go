@@ -11,6 +11,12 @@ import (
 	"heckel.io/hostit/store"
 )
 
+var (
+	// ErrForbidden is returned when a caller asks for something their role does
+	// not cover, e.g. a non-admin asking to see everyone's apps
+	ErrForbidden = errors.New("administrator access required")
+)
+
 // API returns the REST API handler (session cookie or bearer token auth), e.g.
 // to mount it on additional listeners
 func (s *Server) API() http.Handler {
@@ -106,8 +112,8 @@ func (s *Server) handleAppsCreate(w http.ResponseWriter, r *http.Request, c *cal
 	writeJSON(w, http.StatusCreated, resp)
 }
 
-func (s *Server) handleAppsList(w http.ResponseWriter, _ *http.Request, c *caller) {
-	apps, err := s.visibleApps(c)
+func (s *Server) handleAppsList(w http.ResponseWriter, r *http.Request, c *caller) {
+	apps, err := s.listedApps(c, r.URL.Query().Get("all") == "true")
 	if err != nil {
 		writeAppError(w, err)
 		return
@@ -195,12 +201,21 @@ func (s *Server) handleAppsSetKeys(w http.ResponseWriter, r *http.Request, c *ca
 	writeJSON(w, http.StatusOK, s.appResponse(a))
 }
 
-// visibleApps returns the caller's own apps, or all apps for admins
-func (s *Server) visibleApps(c *caller) ([]*store.App, error) {
-	if c.isAdmin() {
-		return s.apps.Apps()
+// listedApps returns the caller's own apps, or every app when an admin asks for
+// them. Being an admin does not silently widen the list: the dashboard is a
+// personal view, with the caller's own app count printed next to it, so another
+// user's app appearing there is a bug rather than a privilege.
+func (s *Server) listedApps(c *caller, all bool) ([]*store.App, error) {
+	if !all {
+		if c.user == nil {
+			return s.apps.Apps() // The global admin token owns nothing, so "own" means all
+		}
+		return s.apps.Store().AppsByOwner(c.user.ID)
 	}
-	return s.apps.Store().AppsByOwner(c.user.ID)
+	if !c.isAdmin() {
+		return nil, ErrForbidden
+	}
+	return s.apps.Apps()
 }
 
 // ownedApp fetches an app the caller may act on (own app, or any app for admins)
@@ -255,6 +270,8 @@ func (s *Server) callerMemoryLimit(c *caller) (int, error) {
 // writeAppError maps app, store and user errors to HTTP status codes
 func writeAppError(w http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, ErrForbidden):
+		writeError(w, http.StatusForbidden, err)
 	case errors.Is(err, store.ErrAppNotFound):
 		writeError(w, http.StatusNotFound, err)
 	case errors.Is(err, app.ErrAppExists):

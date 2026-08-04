@@ -58,6 +58,7 @@ func execServe(c *cli.Context) error {
 		return err
 	}
 	defer s.Close()
+	app.Version = c.App.Version // Part of each container's identity; see app.Version
 	ops := app.NewSystemOps()
 	manager := app.NewManager(conf, s, ops, app.NewRunner())
 	users := user.NewManager(conf, s)

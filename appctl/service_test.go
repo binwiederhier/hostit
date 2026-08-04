@@ -215,3 +215,20 @@ func TestStaticModeAlwaysServesPublic(t *testing.T) {
 		assert.Contains(t, c.Command("/usr/bin/hostit"), `--dir "public"`, "static: %q", static)
 	}
 }
+
+func TestPrepareRunsBeforeTheApp(t *testing.T) {
+	t.Parallel()
+	// Without a build step, an agent driving the API can only compile by baking
+	// the build into "run:", which then rebuilds on every restart and turns a
+	// broken compile into a crash loop
+	c := &AppConfig{Prepare: "go build -o bin/app ./src", Run: "./bin/app"}
+	require.NoError(t, c.Validate())
+	assert.Equal(t, ModeProcess, c.Mode())
+	assert.Equal(t, "go build -o bin/app ./src", c.Prepare)
+	assert.Equal(t, "./bin/app", c.Command("/usr/bin/hostit"))
+
+	// It is a step, not a mode: on its own it says nothing about how to serve
+	assert.Error(t, (&AppConfig{Prepare: "make"}).Validate())
+	// And it works for static apps too (build a frontend into public/)
+	assert.NoError(t, (&AppConfig{Prepare: "npm run build", Static: PublicDir}).Validate())
+}

@@ -10,7 +10,7 @@ import (
 const (
 	// scaffoldHostitYml is the hostit.yml new apps start with: a working static
 	// stub, with the other modes documented right below it
-	scaffoldHostitYml = `# hostit app config -- apply changes with "hostit up", see HOSTIT.txt.
+	scaffoldHostitYml = `# hostit app config -- apply changes with "hostit up"; see "hostit guide".
 #
 # This is the stub app: it serves this directory as static files. Replace it.
 
@@ -29,6 +29,7 @@ static: public
 # --- Run mode: hostit runs your command in the workspace container ---
 # The command MUST listen on 0.0.0.0:$PORT ($PORT is set for you).
 #
+# prepare: cd src && go build -o ../bin/server .
 # run: ./bin/server
 # env:
 #   DEBUG: "true"
@@ -39,83 +40,6 @@ static: public
 # container-port: 80                      # port the app listens on INSIDE the container
 # volumes:
 #   - ./data:/data
-`
-
-	// scaffoldHostitTxt is the platform's own instructions; placeholders are the
-	// app URL, port, runtimes, port again, and the app name
-	scaffoldHostitTxt = `Welcome to your hostit app!
-
-Your app is served at:  %s
-Your assigned port:     %d
-
-RIGHT NOW THIS IS A STUB: the placeholder page in public/index.html is being
-served as static files (see "static:" in hostit.yml). Replace it with your app.
-
-Where things go
----------------
-  public/   files served on the web -- static mode serves exactly this directory
-  bin/      binaries and scripts your app runs (run: ./bin/myapp)
-  log/      your app's output, written by hostit ("hostit logs" reads it)
-  src/      your source, if you keep it here
-  hostit.yml, README.md at the top
-
-Directories are created as you write into them.
-
-If your app serves files itself, point it at public/ and NEVER at this home
-directory: it also holds hostit.yml and .ssh/, and serving it would put them on
-the open internet. E.g. python3 -m http.server $PORT --directory public
-
-What is installed
------------------
-The workspace container ships %s.
-Anything else: "apt-get update && apt-get install -y <package>" (you are root in
-here; installed packages last until the container is recreated).
-
-Suggested stack
----------------
-A single Go binary that embeds its frontend is the easiest thing to run here:
-one file, no runtime to install, starts instantly.
-
-    //go:embed all:web/dist
-    var site embed.FS      // serve this with http.FileServer
-
-    hostit.yml:  run: ./bin/myapp     # listening on 0.0.0.0:$PORT
-
-You can build it either way: compile it wherever you work and upload the binary
-to bin/, or put the source in src/ and compile it here (the Go toolchain is
-installed). Compiling here is the safer default if your machine cannot produce a
-linux/amd64 binary; uploading a prebuilt one is faster.
-
-    cd src && go build -o ../bin/myapp .        # ...or, from elsewhere:
-    CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o myapp .
-
-Python, Node and PHP work just as well if you prefer them, and plain HTML needs
-nothing at all (keep "static:").
-
-How it works
-------------
-- SSH puts you INSIDE your app's container: you are root in here, and you cannot
-  see other apps. Your files live in this home directory, which is the same
-  directory scp/rsync/sftp write to.
-- Static mode always serves public/, whatever "static:" says.
-- Edit hostit.yml to pick a mode: "static:" (serve files), "run:" (your command,
-  must listen on 0.0.0.0:$PORT, PORT=%d) or "image:"/"build:" (your own image).
-- Then run:
-
-    hostit up        # apply changes and (re)start
-    hostit status    # show service status
-    hostit logs -f   # follow logs
-    hostit restart   # restart
-    hostit down      # stop
-    hostit info      # show app name, URL, port
-
-Notes
------
-- Your app (%s) survives reboots and restarts on failure.
-- Changing image:/build:/env:/volumes: recreates the container, which also kicks
-  active SSH sessions. Changing "static:" or "run:" only restarts the process.
-- An AI agent can do all of this through the API instead; see the app's page in
-  the hostit web app for a prompt you can paste into it.
 `
 
 	// scaffoldAppReadme is the app's OWN readme: agents read it to learn what the
@@ -186,7 +110,7 @@ with what this app actually is, and keep it updated as you change things.
 # put your files here, edit hostit.yml, then:
 hostit up</pre>
   <p>Or let an AI agent do it: your app's page in hostit has a prompt to paste.
-     Details are in <code>HOSTIT.txt</code> in this directory.</p>
+     Over SSH, <code>hostit guide</code> explains the rest.</p>
   <div class="foot">Served by hostit</div>
 </div>
 `
@@ -197,8 +121,11 @@ hostit up</pre>
 func (m *Manager) scaffoldFiles(name string, port int) map[string]string {
 	url := m.URL(&store.App{Name: name, Port: port})
 	return map[string]string{
+		// Silences the host's login banner (Ubuntu's MOTD prints the host's IP,
+		// load and disk usage) and the "Last login" line, so an SSH session opens
+		// with hostit's own greeting and nothing about the machine underneath
+		".hushlogin":                     "",
 		"hostit.yml":                     scaffoldHostitYml,
-		"HOSTIT.txt":                     fmt.Sprintf(scaffoldHostitTxt, url, port, WorkspaceRuntimes, port, name),
 		"README.md":                      fmt.Sprintf(scaffoldAppReadme, name, url, WorkspaceRuntimes),
 		appctl.PublicDir + "/index.html": demoPage(name, m.config.SSHHostname()),
 	}

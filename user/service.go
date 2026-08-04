@@ -147,6 +147,9 @@ func (m *Manager) AllowDomain(domain string) (*store.AllowedDomain, error) {
 	if err != nil {
 		return nil, err
 	}
+	if publicMailProviders[domain] {
+		return nil, fmt.Errorf("%w: %s is a public email provider -- allowing it would let anyone in, not just your organisation", ErrInvalid, domain)
+	}
 	d := &store.AllowedDomain{Domain: domain}
 	if err := m.store.AddAllowedDomain(d); err != nil {
 		return nil, err
