@@ -59,7 +59,7 @@ container, and a loopback port with a firewall rule.
 flowchart TB
     subgraph one["One app: blog"]
         user["Unix user 'blog' (uid 1001)<br/>shell: /usr/bin/hostit-shell"]
-        home["/srv/hostit/apps/blog<br/>mode 0750, owned by blog"]
+        home["/var/lib/hostit/apps/blog<br/>mode 0750, owned by blog"]
 
         subgraph container["podman container hostit-app-blog"]
             direction TB

@@ -54,18 +54,39 @@ func (o *systemOps) LookupUID(username string) (int, error) {
 	return uid, err
 }
 
-// CreateUser creates the app user with its home dir; 0750 so other apps cannot
-// peek, and the hostit-shell login shell so SSH sessions land in the container
+// CreateUser creates the app user and its home directory; 0750 so other apps
+// cannot peek, and the hostit-shell login shell so SSH sessions land in the
+// container.
+//
+// hostit makes the directory itself rather than letting useradd do it, because
+// useradd would copy /etc/skel in with it. An app's directory should hold the
+// app's files and hostit's own, not four dotfiles from the distribution that
+// its owner never asked for and an agent has to look past.
 func (o *systemOps) CreateUser(username, home string) error {
 	if err := os.MkdirAll(filepath.Dir(home), 0o755); err != nil {
 		return err
 	}
-	err := run("useradd", "--create-home", "--home-dir", home, "--shell", userShellFile,
-		"--groups", AppsGroup, "--comment", "hostit app", username)
+	args := createUserArgs(username, home)
+	if err := run(args[0], args[1:]...); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(home, homeMode); err != nil {
+		return err
+	}
+	uid, gid, err := lookupIDs(username)
 	if err != nil {
 		return err
 	}
+	if err := os.Lchown(home, uid, gid); err != nil {
+		return err
+	}
 	return os.Chmod(home, homeMode)
+}
+
+// createUserArgs is the useradd command for a new app user
+func createUserArgs(username, home string) []string {
+	return []string{"useradd", "--no-create-home", "--home-dir", home, "--shell", userShellFile,
+		"--groups", AppsGroup, "--comment", "hostit app", username}
 }
 
 // DeleteUser stops everything the user runs and removes the account including

@@ -29,9 +29,9 @@ func TestContainerCreateArgsWorkspaceMode(t *testing.T) {
 	assert.Contains(t, cmd, "--volume /srv/hostit/apps/blog:/home/blog")
 	assert.Contains(t, cmd, "--volume /usr/bin/hostit:/usr/bin/hostit:ro")
 	assert.Contains(t, cmd, "--volume /run/hostit:/run/hostit")
-	assert.Contains(t, cmd, workspaceImage)
+	assert.Contains(t, cmd, workspaceImageTag())
 	// The agent supervises the run command as PID 1
-	assert.True(t, strings.HasSuffix(cmd, workspaceImage+" /usr/bin/hostit agent"), cmd)
+	assert.True(t, strings.HasSuffix(cmd, workspaceImageTag()+" /usr/bin/hostit agent"), cmd)
 }
 
 func TestContainerCreateArgsImageMode(t *testing.T) {
@@ -107,21 +107,21 @@ func TestContainerArgsChangeWithTheVersion(t *testing.T) {
 	t.Parallel()
 	conf := &appctl.AppConfig{Static: appctl.PublicDir}
 	a := &store.App{Name: "blog", Port: 10000}
-	args := func() []string {
-		return containerCreateArgs(conf, a, "/srv/hostit/apps/blog", "/run/hostit/hostit.sock", "/usr/bin/hostit", 0, testIDs)
-	}
-	Version = "v1.0.0"
-	before := containerConfigHash(args())
-	Version = "v1.1.0"
-	after := containerConfigHash(args())
-	t.Cleanup(func() { Version = "dev" })
+	args := containerCreateArgs(conf, a, "/var/lib/hostit/apps/blog", "/run/hostit/hostit.sock", "/usr/bin/hostit", 0, testIDs)
 
 	// The binary is bind-mounted as a file, so replacing it on the host leaves
 	// running containers on the old inode: the app's CLI and its agent stay on
 	// the previous version until the container is recreated. Making the version
 	// part of the container's identity is what triggers that recreate.
-	assert.NotEqual(t, before, after, "an upgrade must make the container stale")
-	assert.Contains(t, strings.Join(args(), " "), "hostit.version=v1.1.0")
+	assert.Contains(t, strings.Join(args, " "), "hostit.version="+Version)
+	older := append([]string{}, args...)
+	for i, arg := range older {
+		if arg == "hostit.version="+Version {
+			older[i] = "hostit.version=v0.0.1-old"
+		}
+	}
+	assert.NotEqual(t, containerConfigHash(args), containerConfigHash(older),
+		"an upgrade must make the container stale")
 }
 
 func TestContainerHasProcessAndMemoryLimits(t *testing.T) {
@@ -140,4 +140,15 @@ func TestContainerHasProcessAndMemoryLimits(t *testing.T) {
 	joined = strings.Join(containerCreateArgs(image, a, "/srv/hostit/apps/blog", "/run/hostit/hostit.sock", "/usr/bin/hostit", 512, testIDs), " ")
 	assert.Contains(t, joined, "--pids-limit "+strconv.Itoa(maxProcesses))
 	assert.Contains(t, joined, "--memory 512m")
+}
+
+func TestWorkspaceImageTagFollowsItsContent(t *testing.T) {
+	t.Parallel()
+	// The image is built once and then found by tag. With a fixed tag, editing
+	// the Containerfile -- adding vim, say -- would never rebuild it, and the
+	// change would silently never reach any app.
+	tag := workspaceImageTag()
+	assert.True(t, strings.HasPrefix(tag, workspaceImagePrefix+":"), "got %q", tag)
+	assert.Equal(t, tag, workspaceImageTag(), "the same content must give the same tag")
+	assert.NotEqual(t, tag, imageTagFor("FROM scratch\n"), "different content must give a different tag")
 }

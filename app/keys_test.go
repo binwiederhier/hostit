@@ -128,3 +128,17 @@ func TestWriteAuthorizedKeysWritesARealSSHDir(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, os.FileMode(0o700), stat.Mode().Perm())
 }
+
+func TestCreateUserArgsBringNoSkeleton(t *testing.T) {
+	t.Parallel()
+	// useradd copies /etc/skel into every new home: .bashrc, .profile,
+	// .bash_logout, .cloud-locale-test.skip. None of that is the app's, and an
+	// app directory should hold the app's files and hostit's own, nothing else.
+	args := createUserArgs("blog", "/srv/hostit/apps/blog")
+	joined := strings.Join(args, " ")
+	assert.Contains(t, joined, "--no-create-home")
+	assert.NotContains(t, joined, "--create-home")
+	assert.Contains(t, joined, "--home-dir /srv/hostit/apps/blog")
+	assert.Contains(t, joined, "--shell "+userShellFile)
+	assert.Contains(t, joined, "--groups "+AppsGroup)
+}

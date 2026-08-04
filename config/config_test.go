@@ -16,7 +16,8 @@ func TestNewConfigDefaults(t *testing.T) {
 	assert.Equal(t, ":443", c.ListenHTTPS)
 	assert.Equal(t, "/run/hostit/hostit.sock", c.SocketFile)
 	assert.Equal(t, "/var/lib/hostit", c.DataDir)
-	assert.Equal(t, "/srv/hostit/apps", c.AppsDir)
+	// Under the data directory, not /srv: one place holds hostit's state
+	assert.Equal(t, "/var/lib/hostit/apps", c.AppsDir)
 	assert.Equal(t, 10000, c.PortMin)
 	assert.Equal(t, 19999, c.PortMax)
 	assert.Equal(t, TLSLetsEncrypt, c.TLS)

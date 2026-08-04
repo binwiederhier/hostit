@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 const (
@@ -19,13 +20,14 @@ const (
 // each app building and storing its own ~230 MB copy (which is what the rootless
 // model forced, since rootless podman keeps its store inside each user's home).
 func (m *Manager) EnsureWorkspaceImage() error {
-	if m.ops.ImageExists(workspaceImage) {
+	image := workspaceImageTag()
+	if m.ops.ImageExists(image) {
 		return nil
 	}
 	// Two apps created at once must not both build this ~230 MB image
 	m.buildMu.Lock()
 	defer m.buildMu.Unlock()
-	if m.ops.ImageExists(workspaceImage) {
+	if m.ops.ImageExists(image) {
 		return nil // Someone built it while we waited
 	}
 	contextDir := filepath.Join(m.config.DataDir, workspaceSubDir)
@@ -35,10 +37,35 @@ func (m *Manager) EnsureWorkspaceImage() error {
 	if err := os.WriteFile(filepath.Join(contextDir, "Containerfile"), []byte(workspaceContainerfile), 0o644); err != nil {
 		return err
 	}
-	slog.Info("Building workspace image (one time, takes a minute)", "image", workspaceImage)
-	if err := m.ops.BuildImage(contextDir, workspaceImage); err != nil {
+	slog.Info("Building workspace image (one time, takes a minute)", "image", image)
+	if err := m.ops.BuildImage(contextDir, image); err != nil {
 		return fmt.Errorf("cannot build workspace image: %w", err)
 	}
-	slog.Info("Workspace image ready", "image", workspaceImage)
+	slog.Info("Workspace image ready", "image", image)
 	return nil
+}
+
+// PruneOldWorkspaceImages removes workspace images that are no longer the
+// current one. Each Containerfile change leaves its predecessor behind, and one
+// of these is well over a gigabyte on a small disk. Removal is best effort:
+// podman refuses while a container still references an image, and the next
+// start tries again once they have moved on.
+func (m *Manager) PruneOldWorkspaceImages() {
+	out, err := m.runner.Run("podman", "images", "--format", "{{.Repository}}:{{.Tag}}")
+	if err != nil {
+		slog.Warn("Cannot list images to prune", "error", err)
+		return
+	}
+	current := workspaceImageTag()
+	for _, image := range strings.Split(strings.TrimSpace(out), "\n") {
+		image = strings.TrimSpace(image)
+		if !strings.HasPrefix(image, workspaceImagePrefix+":") || image == current {
+			continue
+		}
+		if _, err := m.runner.Run("podman", "rmi", image); err != nil {
+			slog.Info("Keeping an old workspace image; something still uses it", "image", image)
+			continue
+		}
+		slog.Info("Removed an old workspace image", "image", image)
+	}
 }

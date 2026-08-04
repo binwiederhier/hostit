@@ -22,7 +22,7 @@ admin-token: CHANGE-ME
 
 # Directories (defaults shown)
 # data-dir: /var/lib/hostit      # registry DB + certs
-# apps-dir: /srv/hostit/apps     # app user home directories
+# apps-dir: /var/lib/hostit/apps # app user home directories
 
 # Hostnames (defaults shown)
 # api-host: hostit.apps.example.com   # admin API hostname (default: hostit.<base-domain>)

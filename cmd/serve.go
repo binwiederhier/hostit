@@ -21,8 +21,11 @@ const (
 	// settingSessionKey stores the generated cookie-signing key, so web sessions
 	// survive restarts when the operator did not configure one
 	settingSessionKey = "session_key"
-	// dataDirMode keeps /var/lib/hostit to root; nothing else needs to traverse it
-	dataDirMode = 0o700
+	// dataDirMode lets app users traverse /var/lib/hostit to their own home
+	// without reading it; the registry inside is 0600
+	dataDirMode = 0o711
+	// appsDirMode is the directory holding the app homes, each 0750 in turn
+	appsDirMode = 0o755
 )
 
 var (
@@ -44,13 +47,19 @@ func execServe(c *cli.Context) error {
 	if err := conf.Validate(); err != nil {
 		return err
 	}
-	// Root only: the registry holds every app's agent token and the session
-	// signing key. App users needed to traverse this while podman ran rootless;
-	// the daemon creates containers itself now, so nothing else belongs here.
+	// 0711: app users must traverse this to reach their own home below it, but
+	// must not be able to list it. What lives here is the registry -- every app's
+	// agent token and the session signing key -- which is 0600 besides.
 	if err := os.MkdirAll(conf.DataDir, dataDirMode); err != nil {
 		return err
 	}
 	if err := os.Chmod(conf.DataDir, dataDirMode); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(conf.AppsDir, appsDirMode); err != nil {
+		return err
+	}
+	if err := os.Chmod(conf.AppsDir, appsDirMode); err != nil {
 		return err
 	}
 	s, err := store.NewStore(filepath.Join(conf.DataDir, "hostit.db"))
@@ -83,6 +92,8 @@ func execServe(c *cli.Context) error {
 		} else if len(restarted) > 0 {
 			slog.Info("Restarted apps to pick up the new version", "apps", restarted, "version", c.App.Version)
 		}
+		// Once the apps are on the current image, its predecessors are dead weight
+		manager.PruneOldWorkspaceImages()
 	}()
 	srv := server.New(conf, manager, users)
 

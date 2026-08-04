@@ -25,7 +25,7 @@ func TestUpWorkspaceModeCreatesContainer(t *testing.T) {
 	assert.Contains(t, msg, "deployed")
 	// The workspace image is built once, host-wide, not per app
 	require.Len(t, ops.builds, 1)
-	assert.Equal(t, workspaceImage, ops.builds[0].tag)
+	assert.Equal(t, workspaceImageTag(), ops.builds[0].tag)
 	joined := runner.ran()
 	assert.Contains(t, joined, "podman create --name hostit-app-blog")
 	assert.Contains(t, joined, "systemctl enable --now hostit-app@blog")
@@ -102,7 +102,7 @@ func TestEnsureWithoutConfigCreatesIdleWorkspace(t *testing.T) {
 	require.NoError(t, err)
 	joined := runner.ran()
 	assert.Contains(t, joined, "podman create --name hostit-app-blog")
-	assert.Contains(t, joined, workspaceImage)
+	assert.Contains(t, joined, workspaceImageTag())
 	assert.Contains(t, joined, "systemctl restart hostit-app@blog")
 }
 

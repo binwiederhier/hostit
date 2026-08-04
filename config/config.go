@@ -76,7 +76,7 @@ func NewConfig() *Config {
 		ListenHTTPS:       ":443",
 		SocketFile:        "/run/hostit/hostit.sock",
 		DataDir:           "/var/lib/hostit",
-		AppsDir:           "/srv/hostit/apps",
+		AppsDir:           "/var/lib/hostit/apps",
 		TLS:               TLSLetsEncrypt,
 		PortMin:           10000,
 		PortMax:           19999,

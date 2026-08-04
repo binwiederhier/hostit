@@ -22,9 +22,11 @@ const (
 	// maxProcesses caps how many processes an app may have. Generous for a build
 	// (compilers fan out) and far below what it takes to exhaust the host.
 	maxProcesses = 512
-	// workspaceImage is the default image for static/run mode apps, built once into
-	// the daemon's (root) image store and shared by every app
-	workspaceImage = "localhost/hostit-workspace:1"
+	// workspaceImagePrefix names the default image for static/run mode apps, built
+	// once into the daemon's (root) image store and shared by every app. The tag
+	// after it is a hash of the Containerfile, so editing that file is enough to
+	// get the new image built and the containers recreated onto it.
+	workspaceImagePrefix = "localhost/hostit-workspace"
 	// buildImagePrefix names the image built for a build: mode app, one per app
 	buildImagePrefix = "localhost/hostit-app-"
 
@@ -33,7 +35,7 @@ const (
 	// The hostit binary itself is bind-mounted, not baked in.
 	workspaceContainerfile = `FROM docker.io/library/debian:stable-slim
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-      bash ca-certificates curl git less openssh-sftp-server procps rsync vim-tiny \
+      bash ca-certificates curl git less nano openssh-sftp-server procps rsync vim \
       python3 python3-venv python3-pip \
       nodejs npm \
       php-cli \
@@ -44,7 +46,7 @@ CMD ["/bin/bash"]
 
 	// WorkspaceRuntimes is what the workspace image ships, quoted verbatim to
 	// users and agents so nobody has to guess what is available
-	WorkspaceRuntimes = "python3 (with venv and pip), node and npm, php-cli, the go toolchain (go build works in here), plus git, curl and rsync"
+	WorkspaceRuntimes = "python3 (with venv and pip), node and npm, php-cli, the go toolchain (go build works in here), plus git, curl, rsync, vim and nano"
 )
 
 // IDs are the identity ranges a container is mapped into: the app's own uid/gid
@@ -55,6 +57,17 @@ type IDs struct {
 	SubUID   int
 	SubGID   int
 	SubCount int
+}
+
+// workspaceImageTag is the image built from the current Containerfile
+func workspaceImageTag() string {
+	return imageTagFor(workspaceContainerfile)
+}
+
+// imageTagFor derives a tag from what the image is built out of
+func imageTagFor(containerfile string) string {
+	sum := sha256.Sum256([]byte(containerfile))
+	return workspaceImagePrefix + ":" + hex.EncodeToString(sum[:6])
 }
 
 // containerName returns the container name of an app
@@ -107,7 +120,7 @@ func containerCreateArgs(conf *appctl.AppConfig, a *store.App, home, socketFile,
 			"--publish", fmt.Sprintf("127.0.0.1:%d:%d", a.Port, a.Port),
 			"--volume", home+":"+containerHome)
 		args = appendCommonMounts(args, socketFile, hostitBin)
-		args = append(args, workspaceImage, hostitBin, "agent")
+		args = append(args, workspaceImageTag(), hostitBin, "agent")
 		return args
 	}
 	args = append(args,
