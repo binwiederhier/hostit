@@ -33,7 +33,7 @@ func TestAgentInfoIsSelfExplanatory(t *testing.T) {
 	assert.Contains(t, resp.Runtimes, "go")
 	assert.Contains(t, resp.Runtimes, "php")
 	assert.Contains(t, resp.SuggestedStack, "Go binary")
-	assert.Contains(t, resp.HostitYml, "static:")
+	assert.Contains(t, resp.HostitYml, "mode: static")
 	assert.Equal(t, "https://apps.example.com/api", resp.BaseURL) // The base domain is the front door
 	paths := make([]string, 0, len(resp.Endpoints))
 	for _, e := range resp.Endpoints {
@@ -62,7 +62,7 @@ func TestAgentAppInfoIncludesReadmeAndFiles(t *testing.T) {
 	require.NoError(t, s.apps.WriteReadme("blog", "# blog\n\nThe finance dashboard.\n"))
 	require.NoError(t, s.apps.WriteFile("blog", "index.html", []byte("<h1>hi</h1>"), 0))
 	// The no-op system ops in these tests does not scaffold, so write the config
-	require.NoError(t, s.apps.WriteFile("blog", "hostit.yml", []byte("run: python3 -m http.server $PORT\n"), 0))
+	require.NoError(t, s.apps.WriteFile("blog", "hostit.yml", []byte("mode: app\nrun: python3 -m http.server $PORT\n"), 0))
 	rr := request(t, s.API(), "GET", "/api/blog/info", "", token)
 	require.Equal(t, http.StatusOK, rr.Code)
 	var resp apiAgentAppResponse
@@ -95,7 +95,7 @@ func TestAgentGuideTellsAnExistingAppApartFromAStub(t *testing.T) {
 
 	// Once the app describes itself it is finished work, and an agent that
 	// starts over would destroy it
-	require.NoError(t, s.apps.WriteFile("blog", "hostit.yml", []byte("description: The finance dashboard\nstatic: .\n"), 0))
+	require.NoError(t, s.apps.WriteFile("blog", "hostit.yml", []byte("description: The finance dashboard\nmode: static\n"), 0))
 	rr = request(t, s.API(), "GET", "/api/blog/info", "", token)
 	require.Equal(t, http.StatusOK, rr.Code)
 	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &resp))
@@ -374,7 +374,7 @@ func TestGuideExplainsTheLayoutAndTheBuildChoice(t *testing.T) {
 	for _, dir := range []string{appctl.PublicDir, appctl.BinDir, appctl.LogDir, appctl.SrcDir} {
 		assert.Contains(t, guide.Layout, dir+"/", "the layout must name %s/", dir)
 	}
-	assert.Contains(t, guide.HostitYml, "static: "+appctl.PublicDir)
+	assert.Contains(t, guide.HostitYml, "mode: static")
 
 	// Not everyone can produce a linux/amd64 binary, and a binary-only app leaves
 	// the next session nothing to edit: the guide should push towards keeping the

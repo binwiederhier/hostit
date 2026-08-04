@@ -9,8 +9,8 @@
   container root is the app's own unprivileged user, plus nftables)
 - **SSH access** (normal ssh/scp/sftp/rsync via the host's sshd; keys via the API)
 - a **subdomain** (`myapp.apps.example.com`) with **automatic Let's Encrypt TLS**
-- two ways to run: `static:` (hostit serves `public/`) or `run:` (your command,
-  supervised by the hostit agent) -- deployed with a single `hostit up`
+- two ways to run: `mode: static` (hostit serves `public/`) or `mode: app` (your
+  command, supervised by the hostit agent) -- deployed with a single `hostit up`
 - a workspace with **python3, node/npm, php-cli and go** preinstalled (and root,
   so `apt-get install` anything else)
 
@@ -268,6 +268,7 @@ whatever value it carries.
 **Keep the source here.** Put it in `src/` and give `hostit.yml` a build step:
 
 ```yaml
+mode: app
 prepare: cd src && go build -o ../bin/myapp .
 run: ./bin/myapp
 ```
@@ -374,13 +375,14 @@ that goes into a chat window.
 SSH in as the app user, upload files, describe the app in `hostit.yml`:
 
 ```yaml
-# Static mode: hostit serves a directory. Nothing to install, nothing to run.
-static: .            # or a subdirectory, e.g. static: public
+# mode: static -- hostit serves public/. Nothing to install, nothing to run.
+mode: static
 ```
 
 ```yaml
-# Run mode: your command in the workspace container;
+# mode: app -- your command in the workspace container;
 # it MUST listen on 0.0.0.0:$PORT
+mode: app
 run: ./server --debug
 env:
   FOO: bar
@@ -398,8 +400,7 @@ hostit info        # name, URL, port
 ```
 
 Changing `env:` recreates the container (which kicks active SSH sessions, like
-docker); changing `static:`, `prepare:` or `run:` only restarts the app inside
-it. Keys hostit does not know are an error, so a typo is reported rather than
+docker); changing `mode:`, `prepare:` or `run:` only restarts the app inside it. Keys hostit does not know are an error, so a typo is reported rather than
 quietly ignored.
 
 ## Notes

@@ -16,7 +16,7 @@ func TestScaffoldFiles(t *testing.T) {
 	// platform explains itself through the login banner, "hostit guide" and /docs
 	assert.NotContains(t, files, "HOSTIT.txt")
 	// A new app runs as a static stub, so plain HTML works with no runtime
-	assert.Contains(t, files["hostit.yml"], "static: public")
+	assert.Contains(t, files["hostit.yml"], "mode: static")
 	// Everyone must be told this is a stub, what is installed, and what to build with
 	for _, name := range []string{"README.md", appctl.PublicDir + "/index.html"} {
 		assert.Contains(t, strings.ToLower(files[name]), "stub", "%s must say it is a stub", name)

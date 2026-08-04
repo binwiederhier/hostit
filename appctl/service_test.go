@@ -12,14 +12,15 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestLoadAppConfigProcessMode(t *testing.T) {
+func TestLoadAppConfigAppMode(t *testing.T) {
 	t.Parallel()
 	c := writeAndLoadConfig(t, `
+mode: app
 run: ./server --debug
 env:
   FOO: bar
 `)
-	assert.Equal(t, ModeProcess, c.Mode())
+	assert.Equal(t, ModeApp, c.Mode)
 	assert.Equal(t, "./server --debug", c.Run)
 	assert.Equal(t, "bar", c.Env["FOO"])
 }
@@ -35,12 +36,10 @@ func TestConfigRefusesTheRemovedContainerMode(t *testing.T) {
 
 func TestLoadAppConfigStaticMode(t *testing.T) {
 	t.Parallel()
-	c := writeAndLoadConfig(t, "static: public\n")
-	assert.Equal(t, ModeStatic, c.Mode())
-	assert.Equal(t, "public", c.Static)
-	// A bare "static: ." serves the app directory itself
-	c = writeAndLoadConfig(t, `static: "."`)
-	assert.Equal(t, ModeStatic, c.Mode())
+	c := writeAndLoadConfig(t, "mode: static\n")
+	assert.Equal(t, ModeStatic, c.Mode)
+	// There is nothing else to say: a static app serves public/
+	assert.Contains(t, c.Command("/usr/bin/hostit"), `--dir "public"`)
 }
 
 func TestAppConfigValidate(t *testing.T) {
@@ -52,7 +51,10 @@ func TestAppConfigValidate(t *testing.T) {
 	}{
 		{"empty", ``, "hostit.yml"},
 		{"only comments", `# nothing here`, "hostit.yml"},
-		{"static and run", "static: public\nrun: ./server", "either"},
+		{"no mode", "run: ./server", "mode: static"},
+		{"static with a run command", "mode: static\nrun: ./server", "only applies"},
+		{"app without a run command", "mode: app", "needs a"},
+		{"unknown mode", "mode: nonsense", "unknown mode"},
 		// The removed container mode, and anything else hostit does not know
 		{"image", "image: nginx\ncontainer-port: 80", "image"},
 		{"build", "build: .", "build"},
@@ -168,9 +170,9 @@ func TestStaticModeAlwaysServesPublic(t *testing.T) {
 	// One place for the files an app puts on the web, whatever the config says:
 	// an agent that writes to public/ is always right
 	for _, static := range []string{"public", ".", "site", "true"} {
-		c := &AppConfig{Static: static}
+		c := &AppConfig{Mode: ModeStatic}
 		require.NoError(t, c.Validate())
-		assert.Equal(t, ModeStatic, c.Mode())
+		assert.Equal(t, ModeStatic, c.Mode)
 		assert.Contains(t, c.Command("/usr/bin/hostit"), `--dir "public"`, "static: %q", static)
 	}
 }
@@ -180,14 +182,45 @@ func TestPrepareRunsBeforeTheApp(t *testing.T) {
 	// Without a build step, an agent driving the API can only compile by baking
 	// the build into "run:", which then rebuilds on every restart and turns a
 	// broken compile into a crash loop
-	c := &AppConfig{Prepare: "go build -o bin/app ./src", Run: "./bin/app"}
+	c := &AppConfig{Mode: ModeApp, Prepare: "go build -o bin/app ./src", Run: "./bin/app"}
 	require.NoError(t, c.Validate())
-	assert.Equal(t, ModeProcess, c.Mode())
+	assert.Equal(t, ModeApp, c.Mode)
 	assert.Equal(t, "go build -o bin/app ./src", c.Prepare)
 	assert.Equal(t, "./bin/app", c.Command("/usr/bin/hostit"))
 
 	// It is a step, not a mode: on its own it says nothing about how to serve
 	assert.Error(t, (&AppConfig{Prepare: "make"}).Validate())
 	// And it works for static apps too (build a frontend into public/)
-	assert.NoError(t, (&AppConfig{Prepare: "npm run build", Static: PublicDir}).Validate())
+	assert.NoError(t, (&AppConfig{Mode: ModeStatic, Prepare: "npm run build"}).Validate())
+}
+
+func TestModeIsExplicit(t *testing.T) {
+	t.Parallel()
+	// "mode: static" read as though the value mattered, when the directory is
+	// always public/. The mode is a choice between two things, so it says so.
+	c, err := ParseAppConfigStrict([]byte("mode: static\n"))
+	require.NoError(t, err)
+	require.NoError(t, c.Validate())
+	assert.Equal(t, ModeStatic, c.Mode)
+	assert.Contains(t, c.Command("/usr/bin/hostit"), `--dir "public"`)
+
+	c, err = ParseAppConfigStrict([]byte("mode: app\nrun: ./bin/server\n"))
+	require.NoError(t, err)
+	require.NoError(t, c.Validate())
+	assert.Equal(t, ModeApp, c.Mode)
+	assert.Equal(t, "./bin/server", c.Command("/usr/bin/hostit"))
+
+	for _, yaml := range []string{
+		"mode: app\n",                       // nothing to run
+		"mode: static\nrun: ./bin/server\n", // run: means nothing here
+		"run: ./bin/server\n",               // no mode at all
+		"mode: nonsense\n",
+		"static: public\n", // the old spelling
+	} {
+		c, err := ParseAppConfigStrict([]byte(yaml))
+		if err != nil {
+			continue // strict parsing already rejected it
+		}
+		assert.Error(t, c.Validate(), "config %q must be refused", yaml)
+	}
 }

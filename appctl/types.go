@@ -17,9 +17,9 @@ const (
 	SrcDir    = "src"    // Source, if the app keeps its source on the host
 	DocsDir   = "docs"   // The app's own documentation, for whoever works on it next
 
-	// ModeProcess runs the app's "run" command directly (must listen on $PORT)
-	ModeProcess = Mode("process")
-	// ModeStatic serves a directory of files; hostit provides the web server
+	// ModeApp runs the app's own "run" command, which must listen on $PORT
+	ModeApp = Mode("app")
+	// ModeStatic serves PublicDir; hostit provides the web server
 	ModeStatic = Mode("static")
 )
 

@@ -18,7 +18,7 @@ func TestUpWorkspaceModeCreatesContainer(t *testing.T) {
 	t.Parallel()
 	m, ops, runner := newTestDeployManager(t)
 	createTestApp(t, m, "blog")
-	writeAppFile(t, m, "blog", "hostit.yml", "run: python3 -m http.server $PORT")
+	writeAppFile(t, m, "blog", "hostit.yml", "mode: app\nrun: python3 -m http.server $PORT")
 	runner.failOn("container inspect", assert.AnError) // No container yet -> create
 	msg, err := m.Up("blog")
 	require.NoError(t, err)
@@ -36,7 +36,7 @@ func TestUpWorkspaceModeUnchangedOnlyReloadsAgent(t *testing.T) {
 	t.Parallel()
 	m, ops, runner := newTestDeployManager(t)
 	a := createTestApp(t, m, "blog")
-	writeAppFile(t, m, "blog", "hostit.yml", "run: ./server")
+	writeAppFile(t, m, "blog", "hostit.yml", "mode: app\nrun: ./server")
 	// Existing container reports the exact hash of the desired config
 	conf := mustLoadConfig(t, m, "blog")
 	ids, err := ops.LookupIDs("blog")
@@ -137,7 +137,7 @@ func TestLogsWorkspaceModeReadsFile(t *testing.T) {
 	t.Parallel()
 	m, _, _ := newTestDeployManager(t)
 	createTestApp(t, m, "blog")
-	writeAppFile(t, m, "blog", "hostit.yml", "run: ./server")
+	writeAppFile(t, m, "blog", "hostit.yml", "mode: app\nrun: ./server")
 	writeAppFile(t, m, "blog", appctl.LogDir+"/app.log", "line1\nline2\nline3\n")
 	out, err := m.Logs("blog", 2)
 	require.NoError(t, err)
@@ -291,7 +291,7 @@ func TestRestartStaleAgents(t *testing.T) {
 	t.Parallel()
 	m, _, runner := newTestDeployManager(t)
 	createTestApp(t, m, "blog")
-	writeAppFile(t, m, "blog", "hostit.yml", "static: public")
+	writeAppFile(t, m, "blog", "hostit.yml", "mode: static")
 
 	// A running agent is the binary it was exec'd from: after an upgrade it
 	// keeps the old behaviour until its container restarts. That is how a
@@ -319,7 +319,7 @@ func TestExecInApp(t *testing.T) {
 	t.Parallel()
 	m, _, runner := newTestDeployManager(t)
 	createTestApp(t, m, "blog")
-	writeAppFile(t, m, "blog", "hostit.yml", "static: public")
+	writeAppFile(t, m, "blog", "hostit.yml", "mode: static")
 
 	// The command runs inside the app's own container, through a shell so that
 	// "cd src && go build" works, and never on the host

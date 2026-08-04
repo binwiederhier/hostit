@@ -15,16 +15,18 @@ import (
 )
 
 var (
-	errNoModeConfigured = errors.New("hostit.yml does not define an app: set \"static:\" (serve a directory of files) or \"run:\" (run your command on $PORT)")
-	errAmbiguousMode    = errors.New("set either \"static:\" or \"run:\", not both")
+	errNoModeConfigured = errors.New("hostit.yml must say what this app is: \"mode: static\" (hostit serves public/) or \"mode: app\" with a \"run:\" command listening on $PORT")
+	errUnknownMode      = errors.New("unknown mode; use \"mode: static\" or \"mode: app\"")
+	errNoRunCommand     = errors.New("\"mode: app\" needs a \"run:\" command, which must listen on 0.0.0.0:$PORT")
+	errRunWithoutApp    = errors.New("\"run:\" only applies to \"mode: app\"; a static app serves public/ and runs nothing")
 )
 
 // AppConfig is the per-app hostit.yml, written by the app owner (or Claude)
 type AppConfig struct {
 	Description string            `yaml:"description"` // One or two lines on what this app is, kept current by whoever builds it
 	Prepare     string            `yaml:"prepare"`     // Optional: build step run once before the app starts (compile, npm run build)
-	Static      string            `yaml:"static"`      // Static mode: any value selects it; the directory served is always PublicDir
-	Run         string            `yaml:"run"`         // Process mode: shell command, must listen on $PORT
+	Mode        Mode              `yaml:"mode"`        // How the app runs: ModeStatic (hostit serves PublicDir) or ModeApp (Run)
+	Run         string            `yaml:"run"`         // App mode: shell command, must listen on $PORT
 	Env         map[string]string `yaml:"env"`         // Extra environment variables
 }
 
@@ -70,29 +72,29 @@ func ParseAppConfigStrict(b []byte) (*AppConfig, error) {
 
 // Validate checks that exactly one mode is configured properly
 func (c *AppConfig) Validate() error {
-	if c.Static == "" && c.Run == "" {
+	switch c.Mode {
+	case "":
 		return errNoModeConfigured
-	}
-	if c.Static != "" && c.Run != "" {
-		return errAmbiguousMode
+	case ModeStatic:
+		if c.Run != "" {
+			return errRunWithoutApp
+		}
+	case ModeApp:
+		if c.Run == "" {
+			return errNoRunCommand
+		}
+	default:
+		return fmt.Errorf("%w: %q", errUnknownMode, c.Mode)
 	}
 	return nil
 }
 
-// Mode returns the app's run mode; only meaningful after Validate
-func (c *AppConfig) Mode() Mode {
-	if c.Static != "" {
-		return ModeStatic
-	}
-	return ModeProcess
-}
-
-// Command returns what the agent runs inside the workspace container. Static
-// apps get hostit's own file server, so they need no runtime of their own, and
-// it always serves PublicDir: one place for the files an app puts on the web,
-// whatever the config says.
+// Command returns what the agent runs inside the workspace container. A static
+// app gets hostit's own file server, pointed at PublicDir: one place for the
+// files an app puts on the web, so there is nothing to configure and nothing to
+// get wrong.
 func (c *AppConfig) Command(hostitBin string) string {
-	if c.Mode() == ModeStatic {
+	if c.Mode == ModeStatic {
 		return fmt.Sprintf("%s static --dir %q", hostitBin, PublicDir)
 	}
 	return c.Run

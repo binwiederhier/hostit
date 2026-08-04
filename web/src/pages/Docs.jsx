@@ -13,7 +13,6 @@ const sections = [
   { id: "config", title: "hostit.yml" },
   { id: "ssh", title: "SSH, scp and rsync" },
   { id: "api", title: "API reference" },
-  { id: "admins", title: "For administrators" },
 ];
 
 const Endpoint = ({ method, path, what }) => (
@@ -154,22 +153,24 @@ run: ./bin/myapp`}
     <section id="config">
       <h2>hostit.yml</h2>
       <p>
-        One file decides how the app runs. Pick one of two modes, then apply it with <span className="mono">hostit up</span>{" "}
+        One file decides how the app runs. Pick a mode, then apply it with <span className="mono">hostit up</span>{" "}
         over SSH or <span className="mono">POST /api/&lt;app&gt;/deploy</span>. Keys hostit does not know are an error, so a
         typo is reported rather than ignored.
       </p>
-      <h3>Static files</h3>
+      <h3>mode: static</h3>
       <Snippet
         text={`description: What this app is, in one line
-static: public`}
+mode: static`}
       />
       <p>
-        hostit serves <span className="mono">public/</span> itself. Nothing to run, nothing to install. This is the right mode
-        for plain HTML and for the built output of any frontend.
+        hostit serves <span className="mono">public/</span> itself. Nothing to run, nothing to install, and nothing else to
+        configure -- the directory is always <span className="mono">public/</span>. This is the right mode for plain HTML and
+        for the built output of any frontend.
       </p>
-      <h3>Your own command</h3>
+      <h3>mode: app</h3>
       <Snippet
         text={`description: What this app is, in one line
+mode: app
 prepare: cd src && go build -o ../bin/myapp .
 run: ./bin/myapp
 env:
@@ -275,42 +276,6 @@ hostit logs -f     # watch the output`}
           </tbody>
         </table>
       </div>
-    </section>
-
-    <section id="admins">
-      <h2>For administrators</h2>
-      <p>
-        The <a href="/admin">Admin</a> page manages people, apps and limits.
-      </p>
-      <h3>Letting people in</h3>
-      <p>
-        By default a new sign-in waits for approval. Two ways to skip that: <strong>Add user</strong> creates an approved
-        account for an email address before its owner has ever signed in, and <strong>Sign-up without approval</strong>{" "}
-        allowlists a whole email domain, so everyone at a company can onboard themselves.
-      </p>
-      <p>
-        An allowed domain approves, it never promotes: those accounts are ordinary users. Someone you explicitly denied stays
-        denied even if their domain is allowed later, and removing a domain does not touch accounts already approved under it.
-        Public email providers cannot be allowed -- <span className="mono">gmail.com</span> is not an organisation, and allowing
-        it would open the instance to anyone with an email address.
-      </p>
-      <h3>Limits</h3>
-      <p>
-        Each user has an app count, a container memory cap and a disk quota. Empty means "use the global default", which is set
-        at the bottom of the admin page. Memory is enforced by the kernel. Disk is a soft quota: hostit measures each app
-        periodically, shows the usage, and stops apps that exceed it.
-      </p>
-      <h3>What is separated from what</h3>
-      <p>
-        Apps are separated from each other by Unix user, container and network namespace, with each app's port restricted to
-        its own uid. SSH sessions exec straight into the container, so nobody gets a host shell, and the workload runs as the
-        app's own unprivileged user. An app's own files are the one thing its owner fully controls -- so everything hostit does
-        in an app's directory refuses to follow a symlink out of it.
-      </p>
-      <p className="hint">
-        One thing the package cannot do for you: app logins must not be able to forward ports, or a tenant can tunnel out of
-        the box. The README has the sshd snippet.
-      </p>
     </section>
 
     <p className="docs-foot">

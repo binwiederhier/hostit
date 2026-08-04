@@ -14,7 +14,7 @@ const (
 #
 # This is the stub app: it serves this directory as static files. Replace it.
 
-static: public
+mode: static
 
 # --- Description: one line saying what this app is ---
 # Uncomment and keep it current. The owner's web page shows it, and it is what
@@ -22,13 +22,13 @@ static: public
 #
 # description: A tiny app that does X
 #
-# --- Static mode (above): hostit serves public/ ---
+# --- mode: static (above) -- hostit serves public/ ---
 # Nothing else needed; good for plain HTML, or the built output of any frontend.
-# The directory served is always public/, whatever this value says.
 #
-# --- Run mode: hostit runs your command in the workspace container ---
+# --- mode: app -- hostit runs your command in the workspace container ---
 # The command MUST listen on 0.0.0.0:$PORT ($PORT is set for you).
 #
+# mode: app
 # prepare: cd src && go build -o ../bin/server .
 # run: ./bin/server
 # env:
@@ -45,7 +45,7 @@ static: public
 been built here yet.
 
 - URL: %s
-- Currently: ` + "`static: \".\"`" + ` in hostit.yml, serving index.html as static files
+- Currently: ` + "`mode: static`" + ` in hostit.yml, serving public/index.html
 - Available in the container: %s (install anything else with apt-get)
 - Suggested stack: a single Go binary with an embedded frontend -- one file to
   upload, no runtime to install. Python, Node, PHP and plain HTML work too.
@@ -89,7 +89,7 @@ with what this app actually is, and keep it updated as you change things.
 <div class="card">
   <h1><span class="dot"></span>%s<span class="tag">stub</span></h1>
   <p>Your app is running, but nothing has been built here yet. This placeholder
-     page is served as static files (<code>static: "."</code> in hostit.yml).</p>
+     page is served as static files (<code>mode: static</code> in hostit.yml).</p>
 
   <h2>What is installed</h2>
   <p>%s. Install anything else with <code>apt-get install</code> -- you are root

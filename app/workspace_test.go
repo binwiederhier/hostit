@@ -15,7 +15,7 @@ var testIDs = IDs{UID: 1001, GID: 1001, SubUID: 165536, SubGID: 165536, SubCount
 
 func TestContainerCreateArgsWorkspaceMode(t *testing.T) {
 	t.Parallel()
-	conf := &appctl.AppConfig{Run: "python3 -m http.server $PORT"}
+	conf := &appctl.AppConfig{Mode: appctl.ModeApp, Run: "python3 -m http.server $PORT"}
 	require.NoError(t, conf.Validate())
 	a := &store.App{Name: "blog", Port: 10000}
 	args := containerCreateArgs(conf, a, "/srv/hostit/apps/blog", "/run/hostit/hostit.sock", "/usr/bin/hostit", 0, testIDs)
@@ -37,10 +37,10 @@ func TestContainerCreateArgsWorkspaceMode(t *testing.T) {
 func TestContainerConfigHashChanges(t *testing.T) {
 	t.Parallel()
 	a := &store.App{Name: "blog", Port: 10000}
-	conf1 := &appctl.AppConfig{Run: "./server"}
-	conf2 := &appctl.AppConfig{Run: "./server"}
-	conf3 := &appctl.AppConfig{Run: "./other"}
-	conf4 := &appctl.AppConfig{Run: "./server", Env: map[string]string{"K": "v"}}
+	conf1 := &appctl.AppConfig{Mode: appctl.ModeApp, Run: "./server"}
+	conf2 := &appctl.AppConfig{Mode: appctl.ModeApp, Run: "./server"}
+	conf3 := &appctl.AppConfig{Mode: appctl.ModeApp, Run: "./other"}
+	conf4 := &appctl.AppConfig{Mode: appctl.ModeApp, Run: "./server", Env: map[string]string{"K": "v"}}
 	hash1 := containerConfigHash(containerCreateArgs(conf1, a, "/h", "/s", "/b", 0, testIDs))
 	hash2 := containerConfigHash(containerCreateArgs(conf2, a, "/h", "/s", "/b", 0, testIDs))
 	hash3 := containerConfigHash(containerCreateArgs(conf3, a, "/h", "/s", "/b", 0, testIDs))
@@ -63,7 +63,7 @@ func TestWorkspaceContainerfile(t *testing.T) {
 
 func TestContainerMountsTheSocketDirectory(t *testing.T) {
 	t.Parallel()
-	conf := &appctl.AppConfig{Static: appctl.PublicDir}
+	conf := &appctl.AppConfig{Mode: appctl.ModeStatic}
 	a := &store.App{Name: "blog", Port: 10000}
 	args := containerCreateArgs(conf, a, "/srv/hostit/apps/blog", "/run/hostit/hostit.sock", "/usr/bin/hostit", 0, IDs{UID: 1001, GID: 1001})
 	joined := strings.Join(args, " ")
@@ -78,7 +78,7 @@ func TestContainerMountsTheSocketDirectory(t *testing.T) {
 
 func TestContainerArgsChangeWithTheVersion(t *testing.T) {
 	t.Parallel()
-	conf := &appctl.AppConfig{Static: appctl.PublicDir}
+	conf := &appctl.AppConfig{Mode: appctl.ModeStatic}
 	a := &store.App{Name: "blog", Port: 10000}
 	args := containerCreateArgs(conf, a, "/var/lib/hostit/apps/blog", "/run/hostit/hostit.sock", "/usr/bin/hostit", 0, testIDs)
 
@@ -99,7 +99,7 @@ func TestContainerArgsChangeWithTheVersion(t *testing.T) {
 
 func TestContainerHasProcessAndMemoryLimits(t *testing.T) {
 	t.Parallel()
-	conf := &appctl.AppConfig{Static: appctl.PublicDir}
+	conf := &appctl.AppConfig{Mode: appctl.ModeStatic}
 	a := &store.App{Name: "blog", Port: 10000}
 	joined := strings.Join(containerCreateArgs(conf, a, "/srv/hostit/apps/blog", "/run/hostit/hostit.sock", "/usr/bin/hostit", 512, testIDs), " ")
 

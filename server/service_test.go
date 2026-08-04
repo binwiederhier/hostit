@@ -172,7 +172,7 @@ func TestAPIAppDescription(t *testing.T) {
 	s := newTestServer(t)
 	rr := request(t, s.API(), "POST", "/v1/apps", `{"name":"blog"}`, testToken)
 	require.Equal(t, http.StatusCreated, rr.Code)
-	require.NoError(t, s.apps.WriteFile("blog", "hostit.yml", []byte("description: A tiny blog\nstatic: .\n"), 0))
+	require.NoError(t, s.apps.WriteFile("blog", "hostit.yml", []byte("description: A tiny blog\nmode: static\n"), 0))
 
 	// Both the list and the single app carry it, so the page can build the
 	// prompt from whatever the app says it is

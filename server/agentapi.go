@@ -117,13 +117,12 @@ func (s *Server) agentGuide(appName, description string) *apiAgentInfoResponse {
 			"If your app serves files itself, point it at " + appctl.PublicDir + "/ and never at the home directory: " +
 			"the home also holds hostit.yml (which may carry env values) and .ssh/, and serving it puts them on the " +
 			"open internet. For example: python3 -m http.server $PORT --bind 0.0.0.0 --directory " + appctl.PublicDir + "",
-		HostitYml: "Two modes, pick one.\n\n" +
-			"1. Static files (simplest, nothing to run):\n" +
-			"     static: " + appctl.PublicDir + "   # always serves " + appctl.PublicDir + "/, whatever this says\n\n" +
-			"2. Your own command, run in the workspace container:\n" +
-			"     prepare: cd " + appctl.SrcDir + " && go build -o ../" + appctl.BinDir + "/myapp .   # optional build step\n" +
-			"     run: ./" + appctl.BinDir + "/myapp   # MUST listen on 0.0.0.0:$PORT; $PORT is provided\n" +
-			"     (upload binaries with ?mode=755 so they are executable)\n\n" +
+		HostitYml: "\"mode:\" says what this app is. Two answers.\n\n" +
+			"  mode: static     hostit serves " + appctl.PublicDir + "/ -- nothing to run, nothing else to set\n\n" +
+			"  mode: app        your command serves it:\n" +
+			"    prepare: cd " + appctl.SrcDir + " && go build -o ../" + appctl.BinDir + "/myapp .   # optional build step\n" +
+			"    run: ./" + appctl.BinDir + "/myapp   # MUST listen on 0.0.0.0:$PORT; $PORT is provided\n" +
+			"    (upload binaries with ?mode=755 so they are executable)\n\n" +
 			"Optional in both: env: {KEY: value}, and description: a one-liner about the app. " +
 			"Unknown keys are an error, so a typo is reported rather than ignored.",
 		Runtimes: app.WorkspaceRuntimes + ". Install anything else inside the container with apt-get; " +

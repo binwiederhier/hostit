@@ -52,10 +52,11 @@ func guideText(self *appctl.SelfInfo) string {
 		"  also holds hostit.yml and .ssh/, and serving it would publish them.\n" +
 		"\n" +
 		"HOW TO RUN SOMETHING\n" +
-		"  Pick one mode in hostit.yml, then run \"hostit up\":\n" +
+		"  Say what this app is in hostit.yml, then run \"hostit up\":\n" +
 		"\n" +
-		"    static: " + appctl.PublicDir + "     hostit serves your files, nothing to run\n" +
-		"    run: ./" + appctl.BinDir + "/myapp   your command, listening on 0.0.0.0:$PORT\n" +
+		"    mode: static          hostit serves " + appctl.PublicDir + "/, nothing to run\n" +
+		"    mode: app             your command serves it, via:\n" +
+		"      run: ./" + appctl.BinDir + "/myapp   listening on 0.0.0.0:$PORT\n" +
 		"\n" +
 		"  Keep a one-line \"description:\" in hostit.yml. Your app's page shows it,\n" +
 		"  and it is what the next AI session starts from.\n" +

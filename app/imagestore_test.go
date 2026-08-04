@@ -28,7 +28,7 @@ func TestDeployReusesTheOneWorkspaceImage(t *testing.T) {
 	m, ops, runner := newTestDeployManager(t)
 	ops.images[workspaceImageTag()] = true // Built once, host-wide
 	createTestApp(t, m, "blog")
-	writeAppFile(t, m, "blog", "hostit.yml", "run: ./server")
+	writeAppFile(t, m, "blog", "hostit.yml", "mode: app\nrun: ./server")
 	runner.failOn("container inspect", assert.AnError) // Force a create
 	_, err := m.Up("blog")
 	require.NoError(t, err)
@@ -41,7 +41,7 @@ func TestContainerRunsUnderTheAppsOwnIdentity(t *testing.T) {
 	t.Parallel()
 	m, _, runner := newTestDeployManager(t)
 	createTestApp(t, m, "blog")
-	writeAppFile(t, m, "blog", "hostit.yml", "run: ./server")
+	writeAppFile(t, m, "blog", "hostit.yml", "mode: app\nrun: ./server")
 	runner.failOn("container inspect", assert.AnError)
 	_, err := m.Up("blog")
 	require.NoError(t, err)

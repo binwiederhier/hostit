@@ -194,7 +194,7 @@ func TestDescriptionFromHostitYml(t *testing.T) {
 	createTestApp(t, m, "blog")
 	// A stub has none; whoever builds the app fills it in
 	assert.Empty(t, m.Description("blog"))
-	require.NoError(t, m.WriteFile("blog", "hostit.yml", []byte("description: Expense tracker for the finance team\nstatic: .\n"), 0))
+	require.NoError(t, m.WriteFile("blog", "hostit.yml", []byte("description: Expense tracker for the finance team\nmode: static\n"), 0))
 	assert.Equal(t, "Expense tracker for the finance team", m.Description("blog"))
 }
 
@@ -207,7 +207,7 @@ func TestDescriptionSurvivesAnUnfinishedConfig(t *testing.T) {
 	require.NoError(t, m.WriteFile("blog", "hostit.yml", []byte("description: A half-written app\n"), 0))
 	assert.Equal(t, "A half-written app", m.Description("blog"))
 	// Two modes at once is invalid too, and still not a reason to forget
-	require.NoError(t, m.WriteFile("blog", "hostit.yml", []byte("description: Two modes\nstatic: .\nrun: ./x\n"), 0))
+	require.NoError(t, m.WriteFile("blog", "hostit.yml", []byte("description: Two modes\nmode: static\nrun: ./x\n"), 0))
 	assert.Equal(t, "Two modes", m.Description("blog"))
 	// Unparseable YAML has no description to offer
 	require.NoError(t, m.WriteFile("blog", "hostit.yml", []byte("description: [unclosed\n"), 0))

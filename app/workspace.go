@@ -111,8 +111,12 @@ func containerCreateArgs(conf *appctl.AppConfig, a *store.App, home, socketFile,
 		"--workdir", containerHome,
 		"--publish", fmt.Sprintf("127.0.0.1:%d:%d", a.Port, a.Port),
 		"--volume", home+":"+containerHome)
-	for _, k := range sortedKeys(conf.Env) {
-		args = append(args, "--env", k+"="+conf.Env[k])
+	// conf is nil for an app with no usable hostit.yml: the container still comes
+	// up, so its owner can SSH in and fix it
+	if conf != nil {
+		for _, k := range sortedKeys(conf.Env) {
+			args = append(args, "--env", k+"="+conf.Env[k])
+		}
 	}
 	args = appendCommonMounts(args, socketFile, hostitBin)
 	args = append(args, workspaceImageTag(), hostitBin, "agent")

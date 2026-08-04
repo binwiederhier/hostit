@@ -69,11 +69,11 @@ func TestStaticHandlerDoesNotEscapeRoot(t *testing.T) {
 
 func TestStaticCommandInConfig(t *testing.T) {
 	t.Parallel()
-	c := &AppConfig{Static: "public"}
+	c := &AppConfig{Mode: ModeStatic}
 	require.NoError(t, c.Validate())
 	assert.Equal(t, `/usr/bin/hostit static --dir "public"`, c.Command("/usr/bin/hostit"))
 	// Other modes keep their own command
-	c = &AppConfig{Run: "./server"}
+	c = &AppConfig{Mode: ModeApp, Run: "./server"}
 	require.NoError(t, c.Validate())
 	assert.Equal(t, "./server", c.Command("/usr/bin/hostit"))
 }
