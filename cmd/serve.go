@@ -65,10 +65,14 @@ func execServe(c *cli.Context) error {
 		return err
 	}
 	// Build the shared workspace image once, so app creation and first logins
-	// don't pay a per-user image build
-	if err := manager.EnsureSharedImage(); err != nil {
-		slog.Warn("Cannot prepare shared workspace image; apps will build their own", "error", err)
-	}
+	// don't pay a per-user image build. This runs in the background: it takes
+	// about a minute on a small host, and the proxy must not wait for it (apps
+	// created meanwhile fall back to building their own image).
+	go func() {
+		if err := manager.EnsureSharedImage(); err != nil {
+			slog.Warn("Cannot prepare shared workspace image; apps will build their own", "error", err)
+		}
+	}()
 	srv := server.New(conf, manager, users)
 
 	// Periodically measure disk usage and enforce the soft quota
