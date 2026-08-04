@@ -32,6 +32,7 @@ type callerContextKey struct{}
 type caller struct {
 	user        *store.User
 	globalAdmin bool
+	appScope    string // Non-empty: an app-scoped token, limited to this one app
 }
 
 // isAdmin reports whether the caller may manage other users and global settings
@@ -185,11 +186,11 @@ func (s *Server) authenticate(r *http.Request) (*caller, error) {
 		if subtle.ConstantTimeCompare([]byte(token), []byte(s.config.AdminToken)) == 1 {
 			return &caller{globalAdmin: true}, nil
 		}
-		u, err := s.users.UserByToken(token)
+		u, scope, err := s.users.UserAndScopeByToken(token)
 		if err != nil {
 			return nil, err
 		}
-		return &caller{user: u}, nil
+		return &caller{user: u, appScope: scope}, nil
 	}
 	cookie, err := r.Cookie(sessionCookieName)
 	if err != nil || cookie.Value == "" {
@@ -224,6 +225,13 @@ func (s *Server) requireActive(next func(http.ResponseWriter, *http.Request, *ca
 	return s.authenticated(func(w http.ResponseWriter, r *http.Request, c *caller) {
 		if !c.isActive() {
 			writeError(w, http.StatusForbidden, user.ErrNotActive)
+			return
+		}
+		// An app-scoped token exists to be pasted into someone's agent, so it
+		// may only reach the agent API for its own app -- never the account or
+		// admin surface
+		if c.appScope != "" && !strings.HasPrefix(r.URL.Path, "/api/") {
+			writeError(w, http.StatusForbidden, errors.New("this token is limited to the app "+c.appScope+" and its /api/ endpoints"))
 			return
 		}
 		next(w, r, c)

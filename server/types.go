@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"time"
 
+	"heckel.io/hostit/app"
 	"heckel.io/hostit/store"
 	"heckel.io/hostit/user"
 )
@@ -83,9 +84,11 @@ type apiAddKeyRequest struct {
 	Key   string `json:"key"`
 }
 
-// apiAddTokenRequest is the body of POST /v1/account/tokens
+// apiAddTokenRequest is the body of POST /v1/account/tokens; an app_name limits
+// the token to that one app (what the per-app page hands to an agent)
 type apiAddTokenRequest struct {
-	Label string `json:"label"`
+	Label   string `json:"label"`
+	AppName string `json:"app_name"`
 }
 
 // apiTokenResponse is a created token; Token is set only on creation
@@ -93,6 +96,7 @@ type apiTokenResponse struct {
 	ID        string    `json:"id"`
 	Prefix    string    `json:"prefix"`
 	Label     string    `json:"label"`
+	AppName   string    `json:"app_name,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 	Token     string    `json:"token,omitempty"`
 }
@@ -153,4 +157,48 @@ type apiUpdateSettingsRequest struct {
 	DefaultAppLimit *int `json:"default_app_limit"`
 	DefaultMemoryMB *int `json:"default_memory_mb"`
 	DefaultDiskMB   *int `json:"default_disk_mb"`
+}
+
+// apiAgentEndpoint documents one endpoint in the agent-facing API index
+type apiAgentEndpoint struct {
+	Method string `json:"method"`
+	Path   string `json:"path"`
+	What   string `json:"what"`
+}
+
+// apiAgentInfoResponse is GET /api/info: everything an agent needs to work with
+// hostit without any prior knowledge
+type apiAgentInfoResponse struct {
+	Platform   string             `json:"platform"`
+	BaseURL    string             `json:"base_url"`
+	WhatIsThis string             `json:"what_is_this"`
+	Auth       string             `json:"auth"`
+	Workflow   []string           `json:"workflow"`
+	HostitYml  string             `json:"hostit_yml"`
+	Endpoints  []apiAgentEndpoint `json:"endpoints"`
+	Notes      []string           `json:"notes"`
+}
+
+// apiAgentAppResponse is GET /api/{app}/info
+type apiAgentAppResponse struct {
+	Name      string          `json:"name"`
+	URL       string          `json:"url"`
+	Running   bool            `json:"running"`
+	DiskMB    int             `json:"disk_mb"`
+	OverQuota bool            `json:"over_quota"`
+	Readme    string          `json:"readme"`
+	HostitYml string          `json:"hostit_yml"`
+	Files     []*app.FileInfo `json:"files"`
+	SSH       apiSSHInfo      `json:"ssh"`
+	Hint      string          `json:"hint"`
+}
+
+// apiReadmeRequest is the body of PUT /api/{app}/readme
+type apiReadmeRequest struct {
+	Readme string `json:"readme"`
+}
+
+// apiFilesWrittenResponse lists what a tar upload wrote
+type apiFilesWrittenResponse struct {
+	Written []string `json:"written"`
 }

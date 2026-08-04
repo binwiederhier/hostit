@@ -1,0 +1,187 @@
+package server
+
+import (
+	"archive/tar"
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+func TestAgentInfoIsSelfExplanatory(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	rr := request(t, s.API(), "GET", "/api/info", "", testToken)
+	require.Equal(t, http.StatusOK, rr.Code)
+	var resp apiAgentInfoResponse
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &resp))
+	// An agent lands here first, so it must learn what this is and what to call
+	assert.NotEmpty(t, resp.WhatIsThis)
+	assert.NotEmpty(t, resp.Workflow)
+	assert.NotEmpty(t, resp.Endpoints)
+	assert.NotEmpty(t, resp.HostitYml)
+	assert.Equal(t, "https://hostit.apps.example.com/api", resp.BaseURL)
+	paths := make([]string, 0, len(resp.Endpoints))
+	for _, e := range resp.Endpoints {
+		paths = append(paths, e.Method+" "+e.Path)
+	}
+	for _, want := range []string{
+		"GET /api/{app}/info", "POST /api/{app}/deploy", "POST /api/{app}/restart",
+		"PUT /api/{app}/files/{path}", "POST /api/{app}/files", "PUT /api/{app}/readme",
+	} {
+		assert.Contains(t, paths, want)
+	}
+}
+
+func TestAgentInfoNeedsNoAppScope(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	token := newAppToken(t, s, "blog")
+	rr := request(t, s.API(), "GET", "/api/info", "", token)
+	require.Equal(t, http.StatusOK, rr.Code)
+}
+
+func TestAgentAppInfoIncludesReadmeAndFiles(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	token := newAppToken(t, s, "blog")
+	require.NoError(t, s.apps.WriteReadme("blog", "# blog\n\nThe finance dashboard.\n"))
+	require.NoError(t, s.apps.WriteFile("blog", "index.html", []byte("<h1>hi</h1>")))
+	// The no-op system ops in these tests does not scaffold, so write the config
+	require.NoError(t, s.apps.WriteFile("blog", "hostit.yml", []byte("run: python3 -m http.server $PORT\n")))
+	rr := request(t, s.API(), "GET", "/api/blog/info", "", token)
+	require.Equal(t, http.StatusOK, rr.Code)
+	var resp apiAgentAppResponse
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &resp))
+	assert.Equal(t, "blog", resp.Name)
+	assert.Equal(t, "https://blog.apps.example.com", resp.URL)
+	assert.Contains(t, resp.Readme, "finance dashboard")
+	assert.Contains(t, resp.HostitYml, "run:")
+	names := make([]string, 0, len(resp.Files))
+	for _, f := range resp.Files {
+		names = append(names, f.Path)
+	}
+	assert.Contains(t, names, "index.html")
+	assert.Contains(t, resp.SSH.Command, "ssh blog@")
+}
+
+func TestAgentTokenCannotTouchOtherApps(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	token := newAppToken(t, s, "blog")
+	createTestApp(t, s, "other")
+	for _, path := range []string{"/api/other/info", "/api/other/logs", "/api/other/files"} {
+		rr := request(t, s.API(), "GET", path, "", token)
+		require.Equal(t, http.StatusForbidden, rr.Code, "path %s", path)
+	}
+	rr := request(t, s.API(), "POST", "/api/other/restart", "", token)
+	require.Equal(t, http.StatusForbidden, rr.Code)
+	// ... and it cannot reach the account-wide API either
+	rr = request(t, s.API(), "POST", "/v1/apps", `{"name":"sneaky"}`, token)
+	require.Equal(t, http.StatusForbidden, rr.Code)
+	rr = request(t, s.API(), "GET", "/v1/account/tokens", "", token)
+	require.Equal(t, http.StatusForbidden, rr.Code)
+}
+
+func TestAgentLifecycle(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	token := newAppToken(t, s, "blog")
+	for _, action := range []string{"stop", "restart", "start"} {
+		rr := request(t, s.API(), "POST", "/api/blog/"+action, "", token)
+		require.Equal(t, http.StatusOK, rr.Code, "action %s", action)
+		assert.Contains(t, rr.Body.String(), "message")
+	}
+	// GET must not perform actions: a crawler or prefetch must not restart apps
+	rr := request(t, s.API(), "GET", "/api/blog/restart", "", token)
+	assert.Equal(t, http.StatusMethodNotAllowed, rr.Code)
+}
+
+func TestAgentUploadSingleFile(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	token := newAppToken(t, s, "blog")
+	rr := request(t, s.API(), "PUT", "/api/blog/files/static/app.js", "console.log(1)", token)
+	require.Equal(t, http.StatusCreated, rr.Code)
+	b, err := s.apps.ReadFile("blog", "static/app.js")
+	require.NoError(t, err)
+	assert.Equal(t, "console.log(1)", string(b))
+	// Escapes never write outside the app: the router normalizes ".." away (307)
+	// and app.WriteFile refuses what still gets through
+	rr = request(t, s.API(), "PUT", "/api/blog/files/../../etc/passwd", "x", token)
+	assert.NotEqual(t, http.StatusCreated, rr.Code)
+	rr = request(t, s.API(), "PUT", "/api/blog/files/%2e%2e%2f%2e%2e%2fetc/passwd", "x", token)
+	assert.NotEqual(t, http.StatusCreated, rr.Code)
+	_, err = s.apps.ReadFile("blog", "etc/passwd")
+	assert.Error(t, err)
+}
+
+func TestAgentUploadTar(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	token := newAppToken(t, s, "blog")
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+	content := "print('hello')"
+	require.NoError(t, tw.WriteHeader(&tar.Header{Name: "app.py", Mode: 0644, Size: int64(len(content))}))
+	_, err := tw.Write([]byte(content))
+	require.NoError(t, err)
+	require.NoError(t, tw.Close())
+	req := httptest.NewRequest("POST", "/api/blog/files", bytes.NewReader(buf.Bytes()))
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/x-tar")
+	w := httptest.NewRecorder()
+	s.API().ServeHTTP(w, req)
+	require.Equal(t, http.StatusCreated, w.Code)
+	assert.Contains(t, w.Body.String(), "app.py")
+	b, err := s.apps.ReadFile("blog", "app.py")
+	require.NoError(t, err)
+	assert.Equal(t, content, string(b))
+}
+
+func TestAgentReadmeWrite(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	token := newAppToken(t, s, "blog")
+	body := `{"readme":"# blog\n\nRebuilt as a dashboard on 2026-08-04.\n"}`
+	rr := request(t, s.API(), "PUT", "/api/blog/readme", body, token)
+	require.Equal(t, http.StatusOK, rr.Code)
+	readme, err := s.apps.Readme("blog")
+	require.NoError(t, err)
+	assert.Contains(t, readme, "Rebuilt as a dashboard")
+}
+
+func TestAgentUnauthenticated(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	for _, path := range []string{"/api/info", "/api/blog/info"} {
+		rr := request(t, s.API(), "GET", path, "", "")
+		require.Equal(t, http.StatusUnauthorized, rr.Code, "path %s", path)
+	}
+}
+
+// newAppToken creates an app owned by a fresh user plus a token scoped to it
+func newAppToken(t *testing.T, s *Server, appName string) string {
+	t.Helper()
+	u := newActiveTestUser(t, s, appName+"-owner@example.com")
+	userToken, _, err := s.users.CreateToken(u.ID, "setup")
+	require.NoError(t, err)
+	rr := request(t, s.API(), "POST", "/v1/apps", fmt.Sprintf(`{"name":%q}`, appName), userToken)
+	require.Equal(t, http.StatusCreated, rr.Code, rr.Body.String())
+	token, _, err := s.users.CreateAppToken(u.ID, appName, "agent")
+	require.NoError(t, err)
+	return token
+}
+
+// createTestApp creates an app owned by someone else
+func createTestApp(t *testing.T, s *Server, appName string) {
+	t.Helper()
+	rr := request(t, s.API(), "POST", "/v1/apps", fmt.Sprintf(`{"name":%q}`, appName), testToken)
+	require.Equal(t, http.StatusCreated, rr.Code, strings.TrimSpace(rr.Body.String()))
+}

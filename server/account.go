@@ -83,7 +83,14 @@ func (s *Server) handleTokensAdd(w http.ResponseWriter, r *http.Request, c *call
 		writeError(w, http.StatusBadRequest, errors.New("the global admin token has no profile; use a user account"))
 		return
 	}
-	token, tk, err := s.users.CreateToken(c.user.ID, req.Label)
+	// An app-scoped token may only be minted for an app the caller owns
+	if req.AppName != "" {
+		if _, err := s.ownedApp(c, req.AppName); err != nil {
+			writeAppError(w, err)
+			return
+		}
+	}
+	token, tk, err := s.users.CreateAppToken(c.user.ID, req.AppName, req.Label)
 	if err != nil {
 		writeAppError(w, err)
 		return
@@ -92,6 +99,7 @@ func (s *Server) handleTokensAdd(w http.ResponseWriter, r *http.Request, c *call
 		ID:        tk.ID,
 		Prefix:    tk.Prefix,
 		Label:     tk.Label,
+		AppName:   tk.AppName,
 		CreatedAt: tk.CreatedAt,
 		Token:     token, // Shown exactly once
 	})

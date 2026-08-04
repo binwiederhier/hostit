@@ -49,6 +49,9 @@ func (s *Server) newAPIHandler() http.Handler {
 	mux.Handle("GET /v1/settings", s.requireAdmin(s.handleSettingsGet))
 	mux.Handle("PATCH /v1/settings", s.requireAdmin(s.handleSettingsUpdate))
 
+	// Agent-facing API (see agentapi.go)
+	s.newAgentRoutes(mux)
+
 	// The web app (single-page, embedded); must be last, it catches the rest
 	mux.Handle("/", s.webHandler())
 	return mux
