@@ -12,6 +12,12 @@
   default workspace image, or your own `image:`/`build:` container, deployed with
   a single `hostit up`
 
+Multi-user: people sign in with Google, an admin approves them from a small web
+app, and each user gets their own apps within admin-adjustable limits (app count,
+container memory, soft disk quota). Per-user API tokens make the same REST API and
+CLI available to their agent, which is the point: `hostit admin add myapp` with a
+user token is all Claude needs.
+
 The intended workflow: tell Claude "create an app on my host and deploy this" --
 it calls the REST API to get an SSH login, pushes the code, writes `hostit.yml`,
 runs `hostit up`, and the app is live with a cert.
@@ -77,10 +83,30 @@ apps.example.com.    A  <host-ip>
 *.apps.example.com.  A  <host-ip>
 ```
 
+## Users, roles and limits
+
+Set `google-client-id`, `google-client-secret` and `admin-emails` in the config
+to enable the web app at `https://hostit.<base-domain>`:
+
+- First Google login creates a **pending** account; an admin approves it (or the
+  email is in `admin-emails`, which auto-creates an active admin).
+- **Dashboard**: create/delete your apps, see usage vs limits, and copy the
+  "Use with Claude" snippet.
+- **Profile**: SSH keys (they grant access to *all* your apps) and API tokens.
+- **Admin**: approve/deny users, change roles, per-user limits, global defaults.
+
+Limits are `app_limit` (enforced at create), `memory_mb` (podman `--memory`,
+cgroup-enforced) and `disk_mb`. Disk is a **soft** quota: the daemon measures
+each app periodically, shows usage, and stops apps that exceed it. ext4 without
+project quotas cannot hard-cap, so nothing blocks a write mid-flight.
+
+Without Google credentials configured the web login returns 501 and the REST API
+plus CLI keep working with the admin token.
+
 ## Create an app
 
-Via the REST API (`https://hostit.<base-domain>`, Bearer token) or the bundled
-client:
+Via the REST API (`https://hostit.<base-domain>`, Bearer token: the global admin
+token or a user's own token) or the bundled client:
 
 ```sh
 export HOSTIT_HOST=https://hostit.apps.example.com
@@ -151,7 +177,9 @@ hostit info        # name, URL, port
 
 ```sh
 make test vet fmt
+make web            # build the React app into server/site (embedded at compile time)
 ```
 
 Layout follows the ntfy conventions: thin `main.go`, CLI wiring in `cmd/`, service
-packages at the root (`server/`, `app/`, `store/`, `appctl/`, `client/`, `config/`).
+packages at the root (`server/`, `app/`, `agent/`, `store/`, `user/`, `appctl/`,
+`client/`, `config/`), and the web app in `web/` (Vite + React, no UI framework).
