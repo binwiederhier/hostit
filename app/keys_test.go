@@ -9,9 +9,10 @@ import (
 )
 
 const (
-	keyA = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIC24brF98CyUY18aeOGGQY3+wILYYnUUBQqICmMTvTGL a@host"
-	keyB = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIC24brF98CyUY18aeOGGQY3+wILYYnUUBQqICmMTvTGL b@host"
-	keyC = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIC24brF98CyUY18aeOGGQY3+wILYYnUUBQqICmMTvTGL c@host"
+	// Three distinct keys: the merge logic compares key material, not comments
+	keyA = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBERERERERERERERERERERERERERERERERERERERERER a@host"
+	keyB = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIi b@host"
+	keyC = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMz c@host"
 )
 
 func TestMergeAuthorizedKeysIntoEmptyFile(t *testing.T) {
@@ -59,6 +60,20 @@ func TestMergeAuthorizedKeysIsIdempotent(t *testing.T) {
 	once := mergeAuthorizedKeys("", []string{keyA})
 	twice := mergeAuthorizedKeys(once, []string{keyA})
 	assert.Equal(t, once, twice)
+}
+
+func TestMergeAuthorizedKeysDropsDuplicatesOfManagedKeys(t *testing.T) {
+	t.Parallel()
+	// Apps written before the managed block existed have hostit's keys as plain
+	// lines; they must not end up listed twice
+	legacy := keyA + "\n"
+	out := mergeAuthorizedKeys(legacy, []string{keyA})
+	assert.Equal(t, 1, strings.Count(out, keyA), "a managed key appears exactly once")
+	// The same applies when a user pastes a key hostit already manages
+	out = mergeAuthorizedKeys(keyC+"\n"+keyA+"\n", []string{keyA, keyB})
+	assert.Equal(t, 1, strings.Count(out, keyA))
+	assert.Contains(t, out, keyC, "genuinely foreign keys are still kept")
+	assert.Contains(t, out, keyB)
 }
 
 func TestSyncKeysRewritesEveryAppOfTheOwner(t *testing.T) {
