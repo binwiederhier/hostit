@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strconv"
 	"syscall"
 
 	"github.com/urfave/cli/v2"
@@ -52,6 +53,12 @@ func execShell(c *cli.Context) error {
 		return cli.Exit("", 1)
 	}
 
+	// Only greet a human: scp, rsync and "ssh host <command>" must see nothing
+	// but their own protocol on the wire
+	if isTerminal(os.Stdin) && c.NArg() == 0 {
+		fmt.Fprint(os.Stdout, loginBanner(self))
+	}
+
 	// Hand over to the privileged helper, which execs us into our container
 	termName := os.Getenv("TERM")
 	if termName == "" {
@@ -64,6 +71,48 @@ func execShell(c *cli.Context) error {
 		return fmt.Errorf("sudo not found: %w", err)
 	}
 	return syscall.Exec(sudo, args, os.Environ())
+}
+
+// loginBanner is what an interactive SSH session sees first: the wordmark (with
+// the same green cursor as the web app's logo), which app this is, and the
+// handful of commands that do anything here.
+func loginBanner(self *appctl.SelfInfo) string {
+	return "\n" +
+		"  _               _   _ _   \n" +
+		" | |_   ___  ___ | |_(_) |_ \n" +
+		" | ' \\ / _ \\(_-< |  _| |  _|\n" +
+		" |_||_|\\___//__/  \\__|_|\\__| " + cursor + "\n" +
+		"\n" +
+		"  You are inside the container of your hostit app \"" + self.Name + "\".\n" +
+		"  It is yours alone: your own filesystem, processes and ports.\n" +
+		"\n" +
+		"  App:    " + self.Name + "\n" +
+		"  URL:    " + self.URL + "\n" +
+		"  Files:  " + homeDir() + " (upload with scp/rsync, or via the REST API)\n" +
+		"  Port:   listen on 0.0.0.0:$PORT (" + strconv.Itoa(self.Port) + ") -- nothing else is reachable\n" +
+		"\n" +
+		"  Configure the app in hostit.yml (static:, run: or image:), then:\n" +
+		"\n" +
+		"    hostit up          apply hostit.yml and (re)start the app\n" +
+		"    hostit down        stop the app\n" +
+		"    hostit restart     restart it\n" +
+		"    hostit status      is it running?\n" +
+		"    hostit logs -f     watch its output\n" +
+		"\n" +
+		"  See HOSTIT.txt for the full story; README.md is this app's own notes.\n" +
+		"\n"
+}
+
+// cursor is the wordmark's blinking block, drawn as a reverse-video space so
+// the source stays ASCII: green foreground reversed renders as a green block
+const cursor = "\x1b[32m\x1b[7m \x1b[0m"
+
+// homeDir is where the app's files live inside the container
+func homeDir() string {
+	if home := os.Getenv("HOME"); home != "" {
+		return home
+	}
+	return "your home directory"
 }
 
 func execAgent(_ *cli.Context) error {
