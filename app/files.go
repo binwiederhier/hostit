@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -203,7 +204,7 @@ func (m *Manager) ExtractTar(name string, r io.Reader) ([]string, error) {
 	tr := tar.NewReader(r)
 	for {
 		header, err := tr.Next()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			return written, nil
 		} else if err != nil {
 			return nil, fmt.Errorf("%w: broken archive: %s", ErrInvalid, err.Error())
@@ -258,7 +259,7 @@ func (m *Manager) ExtractTar(name string, r io.Reader) ([]string, error) {
 // about what the app is and what it changed
 func (m *Manager) Readme(name string) (string, error) {
 	b, err := m.ReadFile(name, readmeFile)
-	if os.IsNotExist(err) {
+	if errors.Is(err, fs.ErrNotExist) {
 		return "", nil
 	} else if err != nil {
 		return "", err

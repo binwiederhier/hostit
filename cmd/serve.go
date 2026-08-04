@@ -64,7 +64,7 @@ func execServe(c *cli.Context) error {
 	if err := ensureSessionKey(conf, s); err != nil {
 		return err
 	}
-	if err := applyStoredLimits(conf, s, manager, users); err != nil {
+	if err := applyStoredLimits(s, manager, users); err != nil {
 		return err
 	}
 	// Build the workspace image once. This runs in the background: it takes
@@ -116,7 +116,7 @@ func ensureSessionKey(conf *config.Config, s *store.Store) error {
 
 // applyStoredLimits primes the app manager with each app owner's memory and disk
 // limits, which live in the user records rather than in the app registry
-func applyStoredLimits(conf *config.Config, s *store.Store, apps *app.Manager, users *user.Manager) error {
+func applyStoredLimits(s *store.Store, apps *app.Manager, users *user.Manager) error {
 	registered, err := s.Apps()
 	if err != nil {
 		return err

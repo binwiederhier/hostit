@@ -305,7 +305,7 @@ func (s *Server) cookie(name, value string, maxAge int) *http.Cookie {
 		Path:     "/",
 		MaxAge:   maxAge,
 		HttpOnly: true,
-		Secure:   s.config.TLS != "off",
+		Secure:   s.config.TLS != config.TLSOff,
 		SameSite: http.SameSiteLaxMode,
 	}
 }

@@ -77,7 +77,8 @@ func (m *Manager) QuotaLoop(interval time.Duration, done <-chan struct{}) {
 }
 
 // measureDiskMB returns the app's disk usage in MB: its home directory, which
-// holds both the user's files and their rootless podman storage
+// since the move to root-managed containers holds only the app's own files (the
+// image store is shared and lives with the daemon)
 func (m *Manager) measureDiskMB(name string) (int, error) {
 	var total int64
 	err := filepath.WalkDir(m.appHome(name), func(path string, d fs.DirEntry, err error) error {

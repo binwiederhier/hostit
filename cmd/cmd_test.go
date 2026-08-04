@@ -6,6 +6,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"heckel.io/hostit/app"
 	"heckel.io/hostit/appctl"
 )
 
@@ -46,4 +47,12 @@ func TestLoginBanner(t *testing.T) {
 		assert.Contains(t, banner, want, "the banner must mention %q", want)
 	}
 	assert.True(t, strings.HasSuffix(banner, "\n"))
+}
+
+func TestAppUserRegexMatchesTheServerRule(t *testing.T) {
+	t.Parallel()
+	// Deliberately duplicated (cmd must not import the app package for this),
+	// so the only thing that can keep the two honest is a test
+	assert.Equal(t, app.AppNamePattern, appUserRegex.String(),
+		"the enter helper's user check must match the rule the server creates apps by")
 }

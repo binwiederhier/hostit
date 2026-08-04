@@ -18,6 +18,13 @@ import (
 	"heckel.io/hostit/store"
 )
 
+const (
+	// AppNamePattern is what an app may be called: safe as a Unix username and as
+	// a DNS label. Exported because the enter helper applies the same rule without
+	// importing this package's machinery.
+	AppNamePattern = `^[a-z]([a-z0-9-]{0,30}[a-z0-9])?$`
+)
+
 var (
 	// ErrAppExists is returned when the app name or a Unix user with that name already exists
 	ErrAppExists = errors.New("app or user already exists")
@@ -29,7 +36,7 @@ var (
 	ErrLimitReached = errors.New("limit reached")
 
 	// appNameRegex limits names to things that are safe as Unix usernames and DNS labels
-	appNameRegex = regexp.MustCompile(`^[a-z]([a-z0-9-]{0,30}[a-z0-9])?$`)
+	appNameRegex = regexp.MustCompile(AppNamePattern)
 
 	// reservedNames are blocked in addition to existing Unix users; mostly hostnames
 	// with special meaning and common system accounts that may not exist yet
@@ -90,7 +97,6 @@ type Manager struct {
 	store  *store.Store
 	ops    SystemOps
 	runner Runner
-	podman string // Resolved podman path for unit files, cached
 
 	// memoryMB and diskMB cache per-app limits, so redeploys and quota checks
 	// keep them; the authoritative values come from the owner's limits

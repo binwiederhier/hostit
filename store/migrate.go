@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 )
 
@@ -140,7 +141,7 @@ func currentVersion(db *sql.DB) (int, error) {
 	err := db.QueryRow(selectSchemaVersionQuery).Scan(&version)
 	if err == nil {
 		return version, nil
-	} else if err != sql.ErrNoRows {
+	} else if !errors.Is(err, sql.ErrNoRows) {
 		return 0, err
 	}
 	var count int

@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"heckel.io/hostit/app"
+	"heckel.io/hostit/config"
 	"heckel.io/hostit/store"
 )
 
@@ -68,7 +69,7 @@ func (s *Server) handleAgentInfo(w http.ResponseWriter, _ *http.Request, c *call
 // that single URL.
 func (s *Server) agentGuide(appName, description string) *apiAgentInfoResponse {
 	base := "https://" + s.config.APIHostname()
-	if s.config.TLS == "off" {
+	if s.config.TLS == config.TLSOff {
 		base = "http://" + s.config.APIHostname()
 	}
 	name := appName
@@ -326,5 +327,3 @@ func logLines(raw string) int {
 	}
 	return min(n, maxLogLines)
 }
-
-var _ = app.ErrInvalid // Keep the error mapping in writeAppError meaningful here

@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"heckel.io/hostit/app"
 	"os"
 	"os/exec"
 	"os/user"
@@ -22,7 +23,7 @@ const (
 var (
 	// appUserRegex re-validates the resolved account name before it is passed to
 	// podman, so a surprising name cannot turn into something argument-shaped
-	appUserRegex = regexp.MustCompile(`^[a-z]([a-z0-9-]{0,30}[a-z0-9])?$`)
+	appUserRegex = regexp.MustCompile(app.AppNamePattern)
 	// termRegex keeps TERM to boring terminal names
 	termRegex = regexp.MustCompile(`^[a-zA-Z0-9._-]{1,32}$`)
 

@@ -310,3 +310,38 @@ func TestSymlinksCannotEscapeTheAppHome(t *testing.T) {
 		assert.NoError(t, statErr, "deleting a link must not delete its target")
 	}
 }
+
+func TestProtectedPathsAreNotWritable(t *testing.T) {
+	t.Parallel()
+	m, _, _ := newTestDeployManager(t)
+	createTestApp(t, m, "blog")
+	// An agent token that could write .ssh/authorized_keys would grant itself
+	// SSH into the container; .hostit/ is hostit's own state
+	for _, rel := range []string{
+		".ssh/authorized_keys", ".ssh", ".hostit/app.log", ".hostit",
+		".config/x", ".local/share/x", ".cache/x",
+	} {
+		require.ErrorIs(t, m.WriteFile("blog", rel, []byte("x"), 0), ErrInvalid, "write %q", rel)
+		_, err := m.ReadFile("blog", rel)
+		require.ErrorIs(t, err, ErrInvalid, "read %q", rel)
+		require.ErrorIs(t, m.DeleteFile("blog", rel), ErrInvalid, "delete %q", rel)
+	}
+	// A dotfile of the app's own is still the app's business
+	require.NoError(t, m.WriteFile("blog", ".env", []byte("KEY=value"), 0))
+}
+
+func TestExtractTarRejectsSymlinkEntries(t *testing.T) {
+	t.Parallel()
+	m, _, _ := newTestDeployManager(t)
+	createTestApp(t, m, "blog")
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+	require.NoError(t, tw.WriteHeader(&tar.Header{
+		Name: "passwd", Linkname: "/etc/passwd", Typeflag: tar.TypeSymlink, Mode: 0o777,
+	}))
+	require.NoError(t, tw.Close())
+	_, err := m.ExtractTar("blog", &buf)
+	require.ErrorIs(t, err, ErrInvalid, "an archive must not be able to plant a symlink")
+	_, err = os.Lstat(filepath.Join(m.appHome("blog"), "passwd"))
+	assert.True(t, os.IsNotExist(err))
+}

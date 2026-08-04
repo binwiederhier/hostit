@@ -16,6 +16,9 @@ import (
 const (
 	// enterFile is the sudo-able wrapper that enters the caller's container
 	enterFile = "/usr/bin/hostit-enter"
+	// cursor is the wordmark's blinking block, drawn as a reverse-video space so
+	// the source stays ASCII: green foreground reversed renders as a green block
+	cursor = "\x1b[32m\x1b[7m \x1b[0m"
 )
 
 var (
@@ -102,10 +105,6 @@ func loginBanner(self *appctl.SelfInfo) string {
 		"  See HOSTIT.txt for the full story; README.md is this app's own notes.\n" +
 		"\n"
 }
-
-// cursor is the wordmark's blinking block, drawn as a reverse-video space so
-// the source stays ASCII: green foreground reversed renders as a green block
-const cursor = "\x1b[32m\x1b[7m \x1b[0m"
 
 // homeDir is where the app's files live inside the container
 func homeDir() string {

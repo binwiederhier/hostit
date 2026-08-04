@@ -3,9 +3,10 @@ import { Link, useNavigate } from "react-router-dom";
 import { api } from "../api";
 import { ErrorBanner, formatUsage, Loading, StatusDot, Wordmark } from "../components";
 
-const nameRe = /^[a-z][a-z0-9-]{0,30}[a-z0-9]$/;
+// Same rule the server enforces (app.AppNamePattern)
+const nameRe = /^[a-z]([a-z0-9-]{0,30}[a-z0-9])?$/;
 
-const nameHint = "Names are 2-32 characters: lowercase letters, digits and dashes, starting with a letter.";
+const nameHint = "Names are up to 32 characters: lowercase letters, digits and dashes, starting with a letter.";
 
 // The name form, shared by the empty state and the "New app" button. Both need
 // a name before anything can happen, so the CTA is the submit button itself.

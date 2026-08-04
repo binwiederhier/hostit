@@ -17,12 +17,12 @@ const (
 	// containerPrefix names an app's container; the daemon runs containers as
 	// root, so names share one namespace and must carry the app name
 	containerPrefix = "hostit-app-"
-	// unitPrefix is the systemd template unit instantiated per app
+	// unitTemplate is the systemd template unit instantiated per app
 	unitTemplate = "hostit-app@"
 	// workspaceImage is the default image for static/run mode apps, built once into
 	// the daemon's (root) image store and shared by every app
 	workspaceImage = "localhost/hostit-workspace:1"
-	// buildImageTag is the image tag used for build: mode, one per app
+	// buildImagePrefix names the image built for a build: mode app, one per app
 	buildImagePrefix = "localhost/hostit-app-"
 
 	// workspaceContainerfile builds the default workspace image: small, but with
