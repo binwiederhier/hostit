@@ -45,6 +45,57 @@ Don't change anything just yet. Check with me first: explore the API, read the a
 `;
 };
 
+// Start/stop/restart behind one button: only one of them is ever the sensible
+// next move, and none of them is what the page is for.
+const ActionsMenu = ({ running, busy, onAction }) => {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    if (!open) {
+      return undefined;
+    }
+    const close = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", close);
+    document.addEventListener("keydown", (e) => e.key === "Escape" && setOpen(false));
+    return () => document.removeEventListener("mousedown", close);
+  }, [open]);
+
+  const run = (action) => {
+    setOpen(false);
+    onAction(action);
+  };
+  const actions = running ? ["restart", "stop"] : ["start"];
+
+  return (
+    <div className="menu" ref={ref}>
+      <button
+        type="button"
+        className="btn"
+        onClick={() => setOpen(!open)}
+        disabled={busy}
+        aria-haspopup="menu"
+        aria-expanded={open}
+      >
+        {busy ? "Working..." : "Actions"} <span aria-hidden="true">&#9662;</span>
+      </button>
+      {open && (
+        <div className="menu-items" role="menu">
+          {actions.map((action) => (
+            <button key={action} type="button" role="menuitem" onClick={() => run(action)}>
+              {action.charAt(0).toUpperCase() + action.slice(1)}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
 const NotFound = ({ name }) => (
   <div className="card">
     <h2>This app does not exist (or is not yours)</h2>
@@ -255,24 +306,14 @@ const AppDetail = ({ account, refreshAccount }) => {
             {app.url}
           </a>
         </div>
-        {/* Only the actions that make sense for the current state: a stopped
-            app can be started, a running one stopped or restarted. Deleting
-            lives in the danger zone at the bottom. */}
+        {/* Seeing the app is what people come here to do, so that is the one
+            accented button; lifecycle hides in the menu, and deleting stays in
+            the danger zone at the bottom. */}
         <div className="header-actions">
-          {app.running ? (
-            <>
-              <button type="button" className="btn btn-small btn-primary" onClick={() => lifecycle("restart")} disabled={busy}>
-                {busy ? "Working..." : "Restart"}
-              </button>
-              <button type="button" className="btn btn-small" onClick={() => lifecycle("stop")} disabled={busy}>
-                Stop
-              </button>
-            </>
-          ) : (
-            <button type="button" className="btn btn-small btn-primary" onClick={() => lifecycle("start")} disabled={busy}>
-              {busy ? "Starting..." : "Start"}
-            </button>
-          )}
+          <ActionsMenu running={app.running} busy={busy} onAction={lifecycle} />
+          <a className="btn btn-primary" href={app.url} target="_blank" rel="noreferrer">
+            Open app
+          </a>
         </div>
       </div>
       <p className="usage app-status">

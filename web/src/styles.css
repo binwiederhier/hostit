@@ -879,3 +879,113 @@ th:last-child {
     flex: 1 1 100%;
   }
 }
+
+/* Documentation: long-form reading, so a narrower column and more air than the
+   app's dense panels */
+.docs {
+  max-width: 46rem;
+  margin: 0 auto;
+  padding-bottom: 48px;
+}
+
+.docs-header {
+  text-align: center;
+  padding: 24px 0 8px;
+}
+
+.docs-toc {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  padding: 14px 18px;
+  margin-bottom: 28px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 14px;
+}
+
+.docs section {
+  margin-bottom: 40px;
+  scroll-margin-top: 16px;
+}
+
+.docs h2 {
+  font-size: 21px;
+  margin: 0 0 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.docs h3 {
+  font-size: 16px;
+  margin: 24px 0 8px;
+}
+
+.docs p {
+  line-height: 1.65;
+}
+
+.docs .term {
+  margin: 14px 0;
+}
+
+.docs-table {
+  margin: 14px 0;
+}
+
+.docs-table td {
+  padding: 7px 12px 7px 0;
+  vertical-align: top;
+  font-size: 14px;
+}
+
+.docs-method {
+  color: var(--accent-strong);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.docs-foot {
+  text-align: center;
+  color: var(--muted);
+  font-size: 13px;
+  border-top: 1px solid var(--border);
+  padding-top: 20px;
+}
+
+/* Dropdown menu (app actions) */
+.menu {
+  position: relative;
+  display: inline-block;
+}
+
+.menu-items {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 20;
+  min-width: 140px;
+  padding: 4px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.14);
+}
+
+.menu-items button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  color: var(--text);
+  background: none;
+  border: 0;
+  border-radius: 6px;
+  padding: 7px 10px;
+  cursor: pointer;
+}
+
+.menu-items button:hover {
+  background: var(--surface-2);
+}

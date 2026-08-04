@@ -6,6 +6,7 @@ import Dashboard from "./pages/Dashboard";
 import AppDetail from "./pages/AppDetail";
 import Profile from "./pages/Profile";
 import Admin from "./pages/Admin";
+import Docs from "./pages/Docs";
 
 const logout = async () => {
   try {
@@ -86,6 +87,10 @@ const Nav = ({ account }) => (
         </NavLink>
         <NavLink to="/profile">Profile</NavLink>
         {account.role === "admin" && <NavLink to="/admin">Admin</NavLink>}
+        {/* A reference you read alongside the app, so: its own tab */}
+        <a href="/docs" target="_blank" rel="noreferrer">
+          Docs
+        </a>
       </nav>
       <div className="nav-session">
         <span className="nav-email" title={account.email}>
@@ -102,6 +107,9 @@ const Nav = ({ account }) => (
 const App = () => {
   const [account, setAccount] = useState(undefined); // undefined = loading, null = not logged in
   const [error, setError] = useState("");
+  // The docs describe the instance, not the account, so they open without one:
+  // they are a link people share, and a tab they leave open next to the app
+  const docsOnly = window.location.pathname === "/docs";
 
   const refreshAccount = useCallback(async () => {
     try {
@@ -118,9 +126,18 @@ const App = () => {
   }, []);
 
   useEffect(() => {
-    refreshAccount();
-  }, [refreshAccount]);
+    if (!docsOnly) {
+      refreshAccount();
+    }
+  }, [refreshAccount, docsOnly]);
 
+  if (docsOnly) {
+    return (
+      <main className="container">
+        <Docs />
+      </main>
+    );
+  }
   if (error) {
     return <LoadFailed message={error} onRetry={refreshAccount} />;
   }
