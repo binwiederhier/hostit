@@ -231,6 +231,43 @@ API endpoints: `POST/GET /v1/apps`, `GET/DELETE /v1/apps/{name}`,
 `PUT /v1/apps/{name}/keys`, `GET /v1/account` (+ `/keys`, `/tokens`),
 `GET/PATCH /v1/users/{id}` and `/v1/settings` for admins, `GET /v1/health`.
 
+## Let an AI agent run an app
+
+This is what hostit is for: a user creates an app in the web app, copies the
+prompt from its page, and pastes it into their own Claude Code (or any agent).
+The token in that prompt is **scoped to that one app**, so it cannot touch the
+user's other apps, their account, or anything admin.
+
+The agent needs no prior knowledge of hostit. `GET /api/info` is
+self-describing: it explains the platform, the `hostit.yml` format and every
+endpoint. Then:
+
+```sh
+export H=https://hostit.apps.example.com/api
+export T=hostit_...        # app-scoped token from the app's page
+
+curl -H "Authorization: Bearer $T" $H/info              # how this all works
+curl -H "Authorization: Bearer $T" $H/myapp/info        # README, files, config, state
+
+curl -X PUT -H "Authorization: Bearer $T" --data-binary @index.html \
+     $H/myapp/files/index.html                          # upload one file
+tar cf - . | curl -X POST -H "Authorization: Bearer $T" \
+     -H "Content-Type: application/x-tar" --data-binary @- $H/myapp/files
+
+curl -X POST -H "Authorization: Bearer $T" $H/myapp/deploy    # apply hostit.yml, (re)start
+curl -H "Authorization: Bearer $T" "$H/myapp/logs?lines=50"   # why is it not up?
+curl -X PUT -H "Authorization: Bearer $T" -H "Content-Type: application/json" \
+     -d '{"readme":"# myapp\n\nWhat this is."}' $H/myapp/readme
+```
+
+Each app's `README.md` is its description and worklog: the agent reads it first
+and writes back what it changed, so the next session (or a different agent)
+knows what the app is. hostit's own instructions live in `HOSTIT.txt`, so the
+two never compete.
+
+Actions are POST-only (`start`, `stop`, `restart`, `deploy`); a GET answers 405
+rather than doing anything. SSH still works for anyone who prefers scp/rsync.
+
 ## Deploy an app
 
 SSH in as the app user, upload files, describe the app in `hostit.yml`:
