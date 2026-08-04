@@ -45,8 +45,12 @@ func (s *Server) newAPIHandler() http.Handler {
 
 	// Administration
 	mux.Handle("GET /v1/users", s.requireAdmin(s.handleUsersList))
+	mux.Handle("POST /v1/users", s.requireAdmin(s.handleUsersInvite))
 	mux.Handle("PATCH /v1/users/{id}", s.requireAdmin(s.handleUsersUpdate))
 	mux.Handle("DELETE /v1/users/{id}", s.requireAdmin(s.handleUsersDelete))
+	mux.Handle("GET /v1/domains", s.requireAdmin(s.handleDomainsList))
+	mux.Handle("POST /v1/domains", s.requireAdmin(s.handleDomainsAdd))
+	mux.Handle("DELETE /v1/domains/{domain}", s.requireAdmin(s.handleDomainsDelete))
 	mux.Handle("GET /v1/settings", s.requireAdmin(s.handleSettingsGet))
 	mux.Handle("PATCH /v1/settings", s.requireAdmin(s.handleSettingsUpdate))
 
@@ -64,7 +68,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 
 // handleAppsCreate creates an app owned by the caller, enforcing their app limit.
 // The app's authorized_keys start as the caller's profile keys plus any keys in
-// the request (or a generated key pair if there are none at all).
+// the request; with neither, the app is reachable through the API only.
 func (s *Server) handleAppsCreate(w http.ResponseWriter, r *http.Request, c *caller) {
 	var req apiCreateAppRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -91,13 +95,13 @@ func (s *Server) handleAppsCreate(w http.ResponseWriter, r *http.Request, c *cal
 		ProfileKeys: profileKeys,
 		MemoryMB:    memoryMB,
 	}
-	a, creds, err := s.apps.CreateApp(req.Name, opts)
+	a, err := s.apps.CreateApp(req.Name, opts)
 	if err != nil {
 		writeAppError(w, err)
 		return
 	}
 	slog.Info("App created", "app", a.Name, "port", a.Port, "owner", c.userID())
-	resp := s.appResponse(a, creds)
+	resp := s.appResponse(a)
 	resp.AgentToken = s.agentToken(a) // Created with the app, never a separate step
 	writeJSON(w, http.StatusCreated, resp)
 }
@@ -110,7 +114,7 @@ func (s *Server) handleAppsList(w http.ResponseWriter, _ *http.Request, c *calle
 	}
 	resp := make([]*apiAppResponse, 0, len(apps))
 	for _, a := range apps {
-		resp = append(resp, s.appResponse(a, nil))
+		resp = append(resp, s.appResponse(a))
 	}
 	writeJSON(w, http.StatusOK, s.withState(resp))
 }
@@ -121,7 +125,7 @@ func (s *Server) handleAppsGet(w http.ResponseWriter, r *http.Request, c *caller
 		writeAppError(w, err)
 		return
 	}
-	resp := s.appResponse(a, nil)
+	resp := s.appResponse(a)
 	resp.AgentToken = s.agentToken(a)
 	writeJSON(w, http.StatusOK, s.withState([]*apiAppResponse{resp})[0])
 }
@@ -138,7 +142,7 @@ func (s *Server) handleAppsRotateToken(w http.ResponseWriter, r *http.Request, c
 		writeAppError(w, err)
 		return
 	}
-	resp := s.appResponse(a, nil)
+	resp := s.appResponse(a)
 	resp.AgentToken = token
 	writeJSON(w, http.StatusOK, resp)
 }
@@ -188,7 +192,7 @@ func (s *Server) handleAppsSetKeys(w http.ResponseWriter, r *http.Request, c *ca
 		writeAppError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, s.appResponse(a, nil))
+	writeJSON(w, http.StatusOK, s.appResponse(a))
 }
 
 // visibleApps returns the caller's own apps, or all apps for admins

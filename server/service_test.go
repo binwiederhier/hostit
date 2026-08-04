@@ -54,18 +54,20 @@ func TestAPICreateApp(t *testing.T) {
 	assert.Equal(t, 10000, resp.Port)
 	assert.Equal(t, "blog", resp.SSH.User)
 	assert.Equal(t, "apps.example.com", resp.SSH.Host)
-	assert.Empty(t, resp.PrivateKey) // Key was provided, none generated
 }
 
-func TestAPICreateAppGeneratedKey(t *testing.T) {
+func TestAPICreateAppWithoutKeys(t *testing.T) {
 	t.Parallel()
 	s := newTestServer(t)
+	// Creating an app must never mint an SSH key: a new user has nothing to do
+	// with a private key, and the app is managed through the API
 	rr := request(t, s.API(), "POST", "/v1/apps", `{"name":"blog"}`, testToken)
 	require.Equal(t, http.StatusCreated, rr.Code)
-	var resp apiAppResponse
-	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &resp))
-	assert.Contains(t, resp.PrivateKey, "OPENSSH PRIVATE KEY")
-	assert.Contains(t, resp.PublicKey, "ssh-ed25519")
+	assert.NotContains(t, rr.Body.String(), "PRIVATE KEY")
+	assert.NotContains(t, rr.Body.String(), "private_key")
+	keys, err := s.apps.Store().AppKeys("blog")
+	require.NoError(t, err)
+	assert.Empty(t, keys)
 }
 
 func TestAPICreateAppInvalidName(t *testing.T) {
@@ -103,6 +105,89 @@ func TestAPIListGetDeleteApp(t *testing.T) {
 	require.Equal(t, http.StatusNotFound, rr.Code)
 	rr = request(t, s.API(), "DELETE", "/v1/apps/blog", "", testToken)
 	require.Equal(t, http.StatusNotFound, rr.Code)
+}
+
+func TestAPIInviteUser(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	rr := request(t, s.API(), "POST", "/v1/users", `{"email":"NewHire@allowed.example","role":"user"}`, testToken)
+	require.Equal(t, http.StatusCreated, rr.Code)
+	var created apiUserResponse
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &created))
+	assert.Equal(t, "newhire@allowed.example", created.Email)
+	assert.Equal(t, store.StatusActive, created.Status, "an invited user does not wait for approval")
+	assert.Equal(t, store.RoleUser, created.Role)
+
+	// They show up in the user list right away, before ever signing in
+	rr = request(t, s.API(), "GET", "/v1/users", "", testToken)
+	require.Equal(t, http.StatusOK, rr.Code)
+	var users []*apiUserResponse
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &users))
+	require.Len(t, users, 1)
+	assert.Equal(t, "newhire@allowed.example", users[0].Email)
+
+	// Duplicates and junk are refused with a reason, not a 500
+	rr = request(t, s.API(), "POST", "/v1/users", `{"email":"newhire@allowed.example"}`, testToken)
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+	rr = request(t, s.API(), "POST", "/v1/users", `{"email":"not-an-email"}`, testToken)
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+}
+
+func TestAPIAllowedDomains(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	rr := request(t, s.API(), "GET", "/v1/domains", "", testToken)
+	require.Equal(t, http.StatusOK, rr.Code)
+	assert.Equal(t, "[]", strings.TrimSpace(rr.Body.String()))
+
+	// The admin types what they mean; hostit stores the bare domain
+	rr = request(t, s.API(), "POST", "/v1/domains", `{"domain":"*@allowed.example"}`, testToken)
+	require.Equal(t, http.StatusCreated, rr.Code)
+	var created apiDomainResponse
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &created))
+	assert.Equal(t, "allowed.example", created.Domain)
+
+	rr = request(t, s.API(), "GET", "/v1/domains", "", testToken)
+	require.Equal(t, http.StatusOK, rr.Code)
+	var domains []*apiDomainResponse
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &domains))
+	require.Len(t, domains, 1)
+	assert.Equal(t, "allowed.example", domains[0].Domain)
+
+	// And it works: the next sign-in from that domain needs no approval
+	u, err := s.users.Login("newhire@allowed.example", "New Hire")
+	require.NoError(t, err)
+	assert.Equal(t, store.StatusActive, u.Status)
+
+	rr = request(t, s.API(), "POST", "/v1/domains", `{"domain":"nope"}`, testToken)
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+	rr = request(t, s.API(), "DELETE", "/v1/domains/allowed.example", "", testToken)
+	require.Equal(t, http.StatusOK, rr.Code)
+	rr = request(t, s.API(), "DELETE", "/v1/domains/allowed.example", "", testToken)
+	assert.Equal(t, http.StatusNotFound, rr.Code)
+}
+
+func TestAPIAppDescription(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	rr := request(t, s.API(), "POST", "/v1/apps", `{"name":"blog"}`, testToken)
+	require.Equal(t, http.StatusCreated, rr.Code)
+	require.NoError(t, s.apps.WriteFile("blog", "hostit.yml", []byte("description: A tiny blog\nstatic: .\n"), 0))
+
+	// Both the list and the single app carry it, so the page can build the
+	// prompt from whatever the app says it is
+	rr = request(t, s.API(), "GET", "/v1/apps", "", testToken)
+	require.Equal(t, http.StatusOK, rr.Code)
+	var apps []*apiAppResponse
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &apps))
+	require.Len(t, apps, 1)
+	assert.Equal(t, "A tiny blog", apps[0].Description)
+
+	rr = request(t, s.API(), "GET", "/v1/apps/blog", "", testToken)
+	require.Equal(t, http.StatusOK, rr.Code)
+	var one apiAppResponse
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &one))
+	assert.Equal(t, "A tiny blog", one.Description)
 }
 
 func TestAPISetKeys(t *testing.T) {

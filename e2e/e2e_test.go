@@ -140,6 +140,33 @@ func TestTarUploadOfAWholeTree(t *testing.T) {
 	e.waitForBody(fmt.Sprint(app["url"]), "from a tarball")
 }
 
+func TestExecutableUploadAndDescription(t *testing.T) {
+	e := newEnv(t)
+	name := uniqueName("e2e-exec")
+	app := e.createApp(name)
+	t.Cleanup(func() {
+		e.deleteApp(name)
+	})
+	token := fmt.Sprint(app["agent_token"])
+
+	// An uploaded program has to arrive runnable, or "run:" needs a chmod dance
+	e.put(fmt.Sprintf("/api/%s/files/serve.sh?mode=755", name), token,
+		"#!/bin/sh\nexec python3 -m http.server \"$PORT\" --bind 0.0.0.0\n")
+	e.put(fmt.Sprintf("/api/%s/files/index.html", name), token, "<h1>ran an uploaded program</h1>")
+	e.put(fmt.Sprintf("/api/%s/files/hostit.yml", name), token,
+		"description: An app the e2e suite described\nrun: ./serve.sh\n")
+	e.post(fmt.Sprintf("/api/%s/deploy", name), token, nil)
+	e.waitForBody(fmt.Sprint(app["url"]), "ran an uploaded program")
+
+	// The description from hostit.yml is what the owner's page puts in the prompt
+	var got map[string]any
+	e.get("/v1/apps/"+name, e.token, &got)
+	assert.Equal(t, "An app the e2e suite described", got["description"])
+
+	// A mode that is not octal is refused rather than silently ignored
+	assert.Equal(t, http.StatusBadRequest, e.status("PUT", fmt.Sprintf("/api/%s/files/x?mode=99", name), token))
+}
+
 func TestAppTokenCannotLeaveItsApp(t *testing.T) {
 	e := newEnv(t)
 	mine, theirs := uniqueName("e2e-mine"), uniqueName("e2e-theirs")

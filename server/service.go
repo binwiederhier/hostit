@@ -256,7 +256,7 @@ func (s *Server) appLimits(name string) (memoryMB int, diskMB int) {
 }
 
 // appResponse converts an app (plus optional generated credentials) to its API form
-func (s *Server) appResponse(a *store.App, creds *app.Credentials) *apiAppResponse {
+func (s *Server) appResponse(a *store.App) *apiAppResponse {
 	resp := &apiAppResponse{
 		Name:       a.Name,
 		URL:        s.apps.URL(a),
@@ -264,16 +264,14 @@ func (s *Server) appResponse(a *store.App, creds *app.Credentials) *apiAppRespon
 		DiskMB:     a.DiskMB,
 		OverQuota:  a.OverQuota,
 		OwnerEmail: s.ownerEmail(a.OwnerID),
-		CreatedAt:  a.CreatedAt,
+		// What the app says it is, straight from its hostit.yml; empty for a stub
+		Description: s.apps.Description(a.Name),
+		CreatedAt:   a.CreatedAt,
 		SSH: apiSSHInfo{
 			User:    a.Name,
 			Host:    s.config.SSHHostname(),
 			Command: fmt.Sprintf("ssh %s@%s", a.Name, s.config.SSHHostname()),
 		},
-	}
-	if creds != nil {
-		resp.PrivateKey = creds.PrivateKey
-		resp.PublicKey = creds.PublicKey
 	}
 	return resp
 }

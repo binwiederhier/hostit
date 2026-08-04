@@ -29,6 +29,7 @@ var (
 
 // AppConfig is the per-app hostit.yml, written by the app owner (or Claude)
 type AppConfig struct {
+	Description   string            `yaml:"description"`    // One or two lines on what this app is, kept current by whoever builds it
 	Static        string            `yaml:"static"`         // Static mode: directory to serve ("." for the app dir)
 	Run           string            `yaml:"run"`            // Process mode: shell command, must listen on $PORT
 	Image         string            `yaml:"image"`          // Container mode: image to run

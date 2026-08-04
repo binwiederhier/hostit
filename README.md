@@ -255,6 +255,8 @@ curl -H "Authorization: Bearer $T" $H/myapp/info        # README, files, config,
 
 curl -X PUT -H "Authorization: Bearer $T" --data-binary @index.html \
      $H/myapp/files/index.html                          # upload one file
+curl -X PUT -H "Authorization: Bearer $T" --data-binary @myapp \
+     "$H/myapp/files/myapp?mode=755"                    # ...executable, for run: mode
 tar cf - . | curl -X POST -H "Authorization: Bearer $T" \
      -H "Content-Type: application/x-tar" --data-binary @- $H/myapp/files
 
@@ -269,7 +271,9 @@ README says so and lists what is installed. Each app's `README.md` is its
 description and worklog: the agent reads it first
 and writes back what it changed, so the next session (or a different agent)
 knows what the app is. hostit's own instructions live in `HOSTIT.txt`, so the
-two never compete.
+two never compete. Agents are also asked to keep a one-line `description:` in
+`hostit.yml`; the app's page puts it into the prompt, so the next agent starts
+from what the app already is instead of from "this is a placeholder".
 
 Actions are POST-only (`start`, `stop`, `restart`, `deploy`); a GET answers 405
 rather than doing anything. SSH still works for anyone who prefers scp/rsync:

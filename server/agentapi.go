@@ -3,8 +3,10 @@ package server
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -55,14 +57,14 @@ func methodNotAllowed(action string) http.HandlerFunc {
 
 // handleAgentInfo explains the platform to an agent that has never seen it
 func (s *Server) handleAgentInfo(w http.ResponseWriter, _ *http.Request, c *caller) {
-	writeJSON(w, http.StatusOK, s.agentGuide(""))
+	writeJSON(w, http.StatusOK, s.agentGuide("", ""))
 }
 
 // agentGuide is the instruction set handed to agents. It is returned both by
 // /api/info and inline by /api/{app}/info, because the prompt a user pastes
 // points only at their app: whatever an agent needs must be reachable from
 // that single URL.
-func (s *Server) agentGuide(appName string) *apiAgentInfoResponse {
+func (s *Server) agentGuide(appName, description string) *apiAgentInfoResponse {
 	base := "https://" + s.config.APIHostname()
 	if s.config.TLS == "off" {
 		base = "http://" + s.config.APIHostname()
@@ -70,6 +72,16 @@ func (s *Server) agentGuide(appName string) *apiAgentInfoResponse {
 	name := appName
 	if name == "" {
 		name = "{app}"
+	}
+	// An app that describes itself is finished work someone came back to. Say so
+	// first: an agent handed only a build-shaped prompt will otherwise start over
+	// and overwrite it.
+	whereYouAre := "You are looking at /api/" + name + "/info: it tells you what the app currently is. " +
+		"Its README.md is the app's description and worklog. A new app is a stub serving a placeholder page."
+	if description != "" {
+		whereYouAre = "You are looking at /api/" + name + "/info. This app is already built and live: " +
+			description + ". Do not rebuild it from scratch. Read its README.md (the app's worklog) and its " +
+			"files first, then make only the changes you were asked for."
 	}
 	return &apiAgentInfoResponse{
 		Platform: "hostit",
@@ -79,22 +91,25 @@ func (s *Server) agentGuide(appName string) *apiAgentInfoResponse {
 			"files, describe how to run it in hostit.yml, then deploy. Your token is limited to one " +
 			"app unless it is an account token.",
 		Workflow: []string{
-			"You are looking at /api/" + name + "/info: it tells you what the app currently is. Its README.md is the app's description and worklog. A new app is a stub serving a placeholder page.",
+			whereYouAre,
 			"Upload files: PUT /api/" + name + "/files/{path} with the file body, or POST /api/" + name + "/files with a tar archive for many files at once.",
 			"Write hostit.yml (upload it like any other file) to say how the app runs. See hostit_yml below.",
 			"POST /api/" + name + "/deploy to apply hostit.yml and (re)start the app.",
 			"GET /api/" + name + "/logs if it does not come up; the app must listen on 0.0.0.0:$PORT.",
 			"PUT /api/" + name + "/readme to record what this app is and what you changed, for whoever comes next.",
+			"Keep a one-line \"description:\" in hostit.yml saying what this app is. The owner's web page shows it, and the next session (or a different agent) starts from it instead of from a blank page.",
 		},
 		HostitYml: "Three modes, pick one.\n\n" +
 			"1. Static files (simplest, nothing to run):\n" +
 			"     static: .          # or a subdirectory such as: static: public\n\n" +
 			"2. Your own command, run in the workspace container:\n" +
-			"     run: ./myapp       # MUST listen on 0.0.0.0:$PORT; $PORT is provided\n\n" +
+			"     run: ./myapp       # MUST listen on 0.0.0.0:$PORT; $PORT is provided\n" +
+			"     (upload binaries with ?mode=755 so they are executable)\n\n" +
 			"3. Your own container image:\n" +
 			"     image: docker.io/library/nginx:alpine   # or: build: .\n" +
 			"     container-port: 80\n\n" +
-			"Optional everywhere: env: {KEY: value}. Image mode also takes volumes: [./data:/data].",
+			"Optional everywhere: env: {KEY: value}, and description: a one-liner about the app. " +
+			"Image mode also takes volumes: [./data:/data].",
 		Runtimes: app.WorkspaceRuntimes + ". Install anything else inside the container with apt-get; " +
 			"a new app starts as a stub serving a placeholder page.",
 		SuggestedStack: "A single Go binary that embeds its frontend (go:embed) is the easiest thing to run here: " +
@@ -106,7 +121,7 @@ func (s *Server) agentGuide(appName string) *apiAgentInfoResponse {
 			{Method: "GET", Path: "/api/" + name + "/logs", What: "Recent output; ?lines=N"},
 			{Method: "GET", Path: "/api/" + name + "/files", What: "List the app's files"},
 			{Method: "GET", Path: "/api/" + name + "/files/{path}", What: "Read one file"},
-			{Method: "PUT", Path: "/api/" + name + "/files/{path}", What: "Write one file (raw body)"},
+			{Method: "PUT", Path: "/api/" + name + "/files/{path}", What: "Write one file (raw body); add ?mode=755 for something executable"},
 			{Method: "DELETE", Path: "/api/" + name + "/files/{path}", What: "Delete one file"},
 			{Method: "POST", Path: "/api/" + name + "/files", What: "Upload a tar archive (Content-Type: application/x-tar)"},
 			{Method: "PUT", Path: "/api/" + name + "/readme", What: `Replace README.md: {"readme": "..."}`},
@@ -151,7 +166,7 @@ func (s *Server) handleAgentAppInfo(w http.ResponseWriter, _ *http.Request, c *c
 			Command: "ssh " + a.Name + "@" + s.config.SSHHostname(),
 		},
 		Hint:  "Upload files, write hostit.yml, then POST /api/" + a.Name + "/deploy. Everything you need is in this response.",
-		Guide: s.agentGuide(a.Name),
+		Guide: s.agentGuide(a.Name, s.apps.Description(a.Name)),
 	})
 }
 
@@ -195,12 +210,30 @@ func (s *Server) handleAgentFilePut(w http.ResponseWriter, r *http.Request, c *c
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
+	mode, err := uploadMode(r.URL.Query().Get("mode"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
 	path := r.PathValue("path")
-	if err := s.apps.WriteFile(a.Name, path, body); err != nil {
+	if err := s.apps.WriteFile(a.Name, path, body, mode); err != nil {
 		writeAppError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusCreated, &apiMessageResponse{Message: "wrote " + path})
+}
+
+// uploadMode parses an octal ?mode= such as 755, so a binary or script can be
+// uploaded ready to run; empty means the default
+func uploadMode(raw string) (os.FileMode, error) {
+	if raw == "" {
+		return 0, nil
+	}
+	parsed, err := strconv.ParseUint(raw, 8, 32)
+	if err != nil || parsed > 0o777 {
+		return 0, fmt.Errorf("invalid mode %q: use octal permissions such as 644 or 755", raw)
+	}
+	return os.FileMode(parsed), nil
 }
 
 func (s *Server) handleAgentFileDelete(w http.ResponseWriter, r *http.Request, c *caller, a *store.App) {

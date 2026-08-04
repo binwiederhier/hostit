@@ -27,24 +27,24 @@ type apiSSHInfo struct {
 	Command string `json:"command"`
 }
 
-// apiAppResponse is returned for all app-related endpoints; PrivateKey/PublicKey
-// are only set on creation when hostit generated a key pair for the caller
+// apiAppResponse is returned for all app-related endpoints
 type apiAppResponse struct {
-	Name        string     `json:"name"`
-	URL         string     `json:"url"`
-	Port        int        `json:"port"`
-	DiskMB      int        `json:"disk_mb"`
-	DiskLimit   int        `json:"disk_limit_mb"`
-	MemoryMB    int        `json:"memory_mb"`
-	MemoryLimit int        `json:"memory_limit_mb"`
-	Running     bool       `json:"running"`
-	OverQuota   bool       `json:"over_quota"`
-	OwnerEmail  string     `json:"owner_email,omitempty"`
+	Name        string `json:"name"`
+	URL         string `json:"url"`
+	Port        int    `json:"port"`
+	DiskMB      int    `json:"disk_mb"`
+	DiskLimit   int    `json:"disk_limit_mb"`
+	MemoryMB    int    `json:"memory_mb"`
+	MemoryLimit int    `json:"memory_limit_mb"`
+	Running     bool   `json:"running"`
+	OverQuota   bool   `json:"over_quota"`
+	OwnerEmail  string `json:"owner_email,omitempty"`
+	// Description is the app's own one-liner from hostit.yml, kept current by
+	// whoever builds it; empty means the app is still a stub
+	Description string     `json:"description"`
 	CreatedAt   time.Time  `json:"created_at"`
 	SSH         apiSSHInfo `json:"ssh"`
 	AgentToken  string     `json:"agent_token,omitempty"` // App-scoped; shown to the owner so the page can always render the prompt
-	PrivateKey  string     `json:"private_key,omitempty"`
-	PublicKey   string     `json:"public_key,omitempty"`
 }
 
 // apiHealthResponse is returned by GET /v1/health
@@ -118,6 +118,24 @@ type apiUserResponse struct {
 	DiskMB    *int         `json:"disk_mb"`
 	AppCount  int          `json:"app_count"`
 	CreatedAt time.Time    `json:"created_at"`
+}
+
+// apiInviteUserRequest is the body of POST /v1/users: an admin handing out
+// access before the person has ever signed in. An empty role means "user".
+type apiInviteUserRequest struct {
+	Email string     `json:"email"`
+	Role  store.Role `json:"role"`
+}
+
+// apiAddDomainRequest is the body of POST /v1/domains
+type apiAddDomainRequest struct {
+	Domain string `json:"domain"`
+}
+
+// apiDomainResponse is an email domain whose users skip the approval queue
+type apiDomainResponse struct {
+	Domain    string    `json:"domain"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 // apiUpdateUserRequest is the body of PATCH /v1/users/{id}. The *Set fields

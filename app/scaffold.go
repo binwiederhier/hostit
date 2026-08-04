@@ -15,6 +15,12 @@ const (
 
 static: "."
 
+# --- Description: one line saying what this app is ---
+# Uncomment and keep it current. The owner's web page shows it, and it is what
+# the next AI session starts from instead of a blank page.
+#
+# description: A tiny app that does X
+#
 # --- Static mode (above): hostit serves a directory of files ---
 # Nothing else needed; good for plain HTML, or the built output of any frontend.
 #

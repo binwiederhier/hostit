@@ -59,9 +59,9 @@ func TestAgentAppInfoIncludesReadmeAndFiles(t *testing.T) {
 	s := newTestServer(t)
 	token := newAppToken(t, s, "blog")
 	require.NoError(t, s.apps.WriteReadme("blog", "# blog\n\nThe finance dashboard.\n"))
-	require.NoError(t, s.apps.WriteFile("blog", "index.html", []byte("<h1>hi</h1>")))
+	require.NoError(t, s.apps.WriteFile("blog", "index.html", []byte("<h1>hi</h1>"), 0))
 	// The no-op system ops in these tests does not scaffold, so write the config
-	require.NoError(t, s.apps.WriteFile("blog", "hostit.yml", []byte("run: python3 -m http.server $PORT\n")))
+	require.NoError(t, s.apps.WriteFile("blog", "hostit.yml", []byte("run: python3 -m http.server $PORT\n"), 0))
 	rr := request(t, s.API(), "GET", "/api/blog/info", "", token)
 	require.Equal(t, http.StatusOK, rr.Code)
 	var resp apiAgentAppResponse
@@ -76,6 +76,39 @@ func TestAgentAppInfoIncludesReadmeAndFiles(t *testing.T) {
 	}
 	assert.Contains(t, names, "index.html")
 	assert.Contains(t, resp.SSH.Command, "ssh blog@")
+}
+
+func TestAgentGuideTellsAnExistingAppApartFromAStub(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	token := newAppToken(t, s, "blog")
+
+	// A stub invites a rebuild
+	var resp apiAgentAppResponse
+	rr := request(t, s.API(), "GET", "/api/blog/info", "", token)
+	require.Equal(t, http.StatusOK, rr.Code)
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &resp))
+	require.NotEmpty(t, resp.Guide.Workflow)
+	assert.Contains(t, resp.Guide.Workflow[0], "stub")
+	assert.NotContains(t, strings.ToLower(resp.Guide.Workflow[0]), "already built")
+
+	// Once the app describes itself it is finished work, and an agent that
+	// starts over would destroy it
+	require.NoError(t, s.apps.WriteFile("blog", "hostit.yml", []byte("description: The finance dashboard\nstatic: .\n"), 0))
+	rr = request(t, s.API(), "GET", "/api/blog/info", "", token)
+	require.Equal(t, http.StatusOK, rr.Code)
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &resp))
+	assert.Contains(t, resp.Guide.Workflow[0], "already built")
+	assert.Contains(t, resp.Guide.Workflow[0], "The finance dashboard")
+	assert.Contains(t, resp.Guide.Workflow[0], "Do not rebuild")
+	assert.NotContains(t, resp.Guide.Workflow[0], "stub")
+
+	// The platform-wide guide belongs to no app and keeps the neutral wording
+	rr = request(t, s.API(), "GET", "/api/info", "", token)
+	require.Equal(t, http.StatusOK, rr.Code)
+	var guide apiAgentInfoResponse
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &guide))
+	assert.Contains(t, guide.Workflow[0], "stub")
 }
 
 func TestAgentTokenCannotTouchOtherApps(t *testing.T) {
@@ -127,6 +160,18 @@ func TestAgentUploadSingleFile(t *testing.T) {
 	assert.NotEqual(t, http.StatusCreated, rr.Code)
 	_, err = s.apps.ReadFile("blog", "etc/passwd")
 	assert.Error(t, err)
+}
+
+func TestAgentUploadWithMode(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	token := newAppToken(t, s, "blog")
+	rr := request(t, s.API(), "PUT", "/api/blog/files/server?mode=755", "#!/bin/sh\necho hi\n", token)
+	require.Equal(t, http.StatusCreated, rr.Code)
+	// A rejected mode says why rather than silently writing the default
+	rr = request(t, s.API(), "PUT", "/api/blog/files/server?mode=999", "x", token)
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+	assert.Contains(t, rr.Body.String(), "octal")
 }
 
 func TestAgentUploadTar(t *testing.T) {

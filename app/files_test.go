@@ -16,12 +16,12 @@ func TestWriteAndReadFile(t *testing.T) {
 	t.Parallel()
 	m, _, _ := newTestDeployManager(t)
 	createTestApp(t, m, "blog")
-	require.NoError(t, m.WriteFile("blog", "index.html", []byte("<h1>hi</h1>")))
+	require.NoError(t, m.WriteFile("blog", "index.html", []byte("<h1>hi</h1>"), 0))
 	b, err := m.ReadFile("blog", "index.html")
 	require.NoError(t, err)
 	assert.Equal(t, "<h1>hi</h1>", string(b))
 	// Nested paths are created on the way
-	require.NoError(t, m.WriteFile("blog", "static/css/site.css", []byte("body{}")))
+	require.NoError(t, m.WriteFile("blog", "static/css/site.css", []byte("body{}"), 0))
 	b, err = m.ReadFile("blog", "static/css/site.css")
 	require.NoError(t, err)
 	assert.Equal(t, "body{}", string(b))
@@ -32,7 +32,7 @@ func TestWriteFileRejectsEscapes(t *testing.T) {
 	m, _, _ := newTestDeployManager(t)
 	createTestApp(t, m, "blog")
 	for _, path := range []string{"../evil", "../../etc/passwd", "/etc/passwd", "a/../../b", ""} {
-		err := m.WriteFile("blog", path, []byte("x"))
+		err := m.WriteFile("blog", path, []byte("x"), 0)
 		require.Error(t, err, "path %q must be rejected", path)
 		assert.ErrorIs(t, err, ErrInvalid)
 	}
@@ -53,8 +53,8 @@ func TestListFiles(t *testing.T) {
 	t.Parallel()
 	m, _, _ := newTestDeployManager(t)
 	createTestApp(t, m, "blog")
-	require.NoError(t, m.WriteFile("blog", "index.html", []byte("x")))
-	require.NoError(t, m.WriteFile("blog", "static/site.css", []byte("y")))
+	require.NoError(t, m.WriteFile("blog", "index.html", []byte("x"), 0))
+	require.NoError(t, m.WriteFile("blog", "static/site.css", []byte("y"), 0))
 	files, err := m.ListFiles("blog")
 	require.NoError(t, err)
 	names := make([]string, 0, len(files))
@@ -130,4 +130,69 @@ func TestReadmeRoundTrip(t *testing.T) {
 	readme, err = m.Readme("blog")
 	require.NoError(t, err)
 	assert.Contains(t, readme, "finance dashboard")
+}
+
+func TestWriteFileMode(t *testing.T) {
+	t.Parallel()
+	m, _, _ := newTestDeployManager(t)
+	createTestApp(t, m, "blog")
+	// A binary or script must be able to arrive ready to run
+	require.NoError(t, m.WriteFile("blog", "server", []byte("#!/bin/sh\necho hi\n"), 0o755))
+	stat, err := os.Stat(filepath.Join(m.appHome("blog"), "server"))
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o755), stat.Mode().Perm())
+
+	// The default is a plain file
+	require.NoError(t, m.WriteFile("blog", "page.html", []byte("<h1>hi</h1>"), 0))
+	stat, err = os.Stat(filepath.Join(m.appHome("blog"), "page.html"))
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o644), stat.Mode().Perm())
+
+	// Overwriting an existing file still applies the new mode
+	require.NoError(t, m.WriteFile("blog", "server", []byte("#!/bin/sh\necho bye\n"), 0o700))
+	stat, err = os.Stat(filepath.Join(m.appHome("blog"), "server"))
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o700), stat.Mode().Perm())
+
+	// Group and world write are never granted, owner read/write always are
+	require.NoError(t, m.WriteFile("blog", "odd", []byte("x"), 0o777))
+	stat, err = os.Stat(filepath.Join(m.appHome("blog"), "odd"))
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o755), stat.Mode().Perm())
+}
+
+func TestExtractTarKeepsEntryModes(t *testing.T) {
+	t.Parallel()
+	m, _, _ := newTestDeployManager(t)
+	createTestApp(t, m, "blog")
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+	entries := []struct {
+		name string
+		mode int64
+	}{{"run.sh", 0o755}, {"data.txt", 0o644}}
+	for _, e := range entries {
+		content := "x"
+		require.NoError(t, tw.WriteHeader(&tar.Header{Name: e.name, Mode: e.mode, Size: int64(len(content)), Typeflag: tar.TypeReg}))
+		_, err := tw.Write([]byte(content))
+		require.NoError(t, err)
+	}
+	require.NoError(t, tw.Close())
+	_, err := m.ExtractTar("blog", &buf)
+	require.NoError(t, err)
+	for _, e := range entries {
+		stat, err := os.Stat(filepath.Join(m.appHome("blog"), e.name))
+		require.NoError(t, err)
+		assert.Equal(t, os.FileMode(e.mode), stat.Mode().Perm(), "entry %s", e.name)
+	}
+}
+
+func TestDescriptionFromHostitYml(t *testing.T) {
+	t.Parallel()
+	m, _, _ := newTestDeployManager(t)
+	createTestApp(t, m, "blog")
+	// A stub has none; whoever builds the app fills it in
+	assert.Empty(t, m.Description("blog"))
+	require.NoError(t, m.WriteFile("blog", "hostit.yml", []byte("description: Expense tracker for the finance team\nstatic: .\n"), 0))
+	assert.Equal(t, "Expense tracker for the finance team", m.Description("blog"))
 }

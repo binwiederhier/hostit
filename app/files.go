@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"heckel.io/hostit/appctl"
 )
 
 const (
@@ -19,6 +21,8 @@ const (
 	readmeFile = "README.md"
 	// maxUploadSize caps a single uploaded file
 	maxUploadSize = 64 * 1024 * 1024
+	// defaultFileMode is what an upload gets when it does not ask for a mode
+	defaultFileMode = 0o644
 )
 
 var (
@@ -38,8 +42,9 @@ type FileInfo struct {
 }
 
 // WriteFile writes a file below the app's home directory, creating parent
-// directories, and gives it to the app user
-func (m *Manager) WriteFile(name, relPath string, content []byte) error {
+// directories, and gives it to the app user. A zero mode means the default;
+// anything else is used as-is, so a binary or script can arrive executable.
+func (m *Manager) WriteFile(name, relPath string, content []byte, mode os.FileMode) error {
 	full, err := m.safePath(name, relPath)
 	if err != nil {
 		return err
@@ -50,10 +55,25 @@ func (m *Manager) WriteFile(name, relPath string, content []byte) error {
 	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
 		return err
 	}
-	if err := os.WriteFile(full, content, 0o644); err != nil {
+	if err := os.WriteFile(full, content, fileMode(mode)); err != nil {
+		return err
+	}
+	// WriteFile only applies the mode when it creates the file, so an overwrite
+	// that changes the mode needs saying twice
+	if err := os.Chmod(full, fileMode(mode)); err != nil {
 		return err
 	}
 	return m.chownToApp(name, full)
+}
+
+// fileMode keeps uploaded permissions sane: the owner can always read and
+// write, nobody else can write, and anything beyond that (the execute bits) is
+// the caller's choice
+func fileMode(mode os.FileMode) os.FileMode {
+	if mode == 0 {
+		return defaultFileMode
+	}
+	return (mode.Perm() | 0o600) &^ 0o022
 }
 
 // ReadFile reads a file from the app's home directory
@@ -131,7 +151,8 @@ func (m *Manager) ExtractTar(name string, r io.Reader) ([]string, error) {
 			if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
 				return nil, err
 			}
-			f, err := os.OpenFile(full, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o644)
+			mode := fileMode(os.FileMode(header.Mode))
+			f, err := os.OpenFile(full, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, mode)
 			if err != nil {
 				return nil, err
 			}
@@ -142,6 +163,9 @@ func (m *Manager) ExtractTar(name string, r io.Reader) ([]string, error) {
 			}
 			if closeErr != nil {
 				return nil, closeErr
+			}
+			if err := os.Chmod(full, mode); err != nil {
+				return nil, err
 			}
 			if err := m.chownToApp(name, full); err != nil {
 				return nil, err
@@ -168,7 +192,17 @@ func (m *Manager) Readme(name string) (string, error) {
 
 // WriteReadme replaces the app's README
 func (m *Manager) WriteReadme(name, content string) error {
-	return m.WriteFile(name, readmeFile, []byte(content))
+	return m.WriteFile(name, readmeFile, []byte(content), 0)
+}
+
+// Description returns the app's own one-liner from hostit.yml, which whoever
+// builds the app is asked to keep current
+func (m *Manager) Description(name string) string {
+	conf, err := appctl.LoadAppConfig(filepath.Join(m.appHome(name), "hostit.yml"))
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(conf.Description)
 }
 
 // safePath resolves a client-supplied relative path inside the app's home and

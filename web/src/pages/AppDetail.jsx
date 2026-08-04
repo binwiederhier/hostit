@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { api, ApiError } from "../api";
 import { CopyButton, ErrorBanner, formatDate, formatUsage, Loading, Snippet, StatusDot } from "../components";
 
@@ -11,34 +11,39 @@ const tokenPlaceholder = "<this app has no agent token>";
 // The whole point of this page: a ready-to-paste prompt that teaches any agent
 // how to drive this one app. It only points at the app's own info endpoint,
 // which returns everything else the agent needs.
-const promptText = (name, token) => `I want to build a web app called ${name} hosted on hostit.
+//
+// Two shapes, because they are two different jobs. A stub is an invitation to
+// build. An app whose agent has written a description into hostit.yml is
+// finished work someone is coming back to: say that up front, or the next
+// session reads a "build me an app" prompt and starts over on top of it.
+const promptText = (name, url, token, description) => {
+  const api = `The app can be managed entirely through the hostit REST API. You can learn more about how to use the API by calling ${origin}/api/${name}/info, using the Bearer token ${token}. Follow the instructions returned by the API.`;
+  if (!description) {
+    return `I want to build a web app called "${name}" hosted at ${url}.
 
-The app can be managed entirely through the hostit REST API. You can learn more about how to use the API by calling ${origin}/api/${name}/info, using the Bearer token ${token}. Follow the instructions returned by the API.
+The app currently serves a placeholder page. Replace it.
 
-The app currently serves a placeholder page; replace it.
+${api}
 
-After exploring the hostit API, ask me questions on what app I want to build.
+Don't build anything just yet. Check with me first: explore the API, then tell me what you found and ask me what I want the app to do.
 `;
+  }
+  const details = description
+    .split("\n")
+    .map((line) => `  ${line}`)
+    .join("\n");
+  return `I want to continue working on my existing web app "${name}", hosted at ${url}.
 
-// Shown once, right after creation, when hostit generated an SSH key pair
-// because the account had no keys of its own.
-const PrivateKeyBox = ({ privateKey, onDismiss }) => (
-  <div className="warn-box">
-    <p>
-      <strong>This private key is shown only once. Save it now.</strong> hostit generated it for you because no SSH key was
-      provided; it grants SSH access to your apps.
-    </p>
-    <pre className="key-block">{privateKey}</pre>
-    <div className="btn-row">
-      <CopyButton text={privateKey} small={false}>
-        Copy private key
-      </CopyButton>
-      <button type="button" className="btn" onClick={onDismiss}>
-        Dismiss
-      </button>
-    </div>
-  </div>
-);
+App details:
+${details}
+
+The app is already built and live. Do not rebuild it from scratch.
+
+${api}
+
+Don't change anything just yet. Check with me first: explore the API, read the app's README.md and its current files, then tell me what it does today and wait for my instructions.
+`;
+};
 
 const NotFound = ({ name }) => (
   <div className="card">
@@ -149,16 +154,23 @@ const DangerZone = ({ name, onDeleted }) => {
 const AppDetail = ({ account, refreshAccount }) => {
   const { name } = useParams();
   const navigate = useNavigate();
-  const location = useLocation();
   const [app, setApp] = useState(null);
   const [error, setError] = useState("");
   const [missing, setMissing] = useState(false);
-  const [privateKey, setPrivateKey] = useState(location.state ? location.state.private_key || "" : "");
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState("");
+  const [hasKeys, setHasKeys] = useState(null); // null until we know, so nothing flickers
   const noteTimer = useRef(null);
 
   useEffect(() => () => clearTimeout(noteTimer.current), []);
+
+  // Whether SSH is usable at all depends on the profile, not on the app
+  useEffect(() => {
+    api
+      .get("/v1/account/keys")
+      .then((keys) => setHasKeys(keys.length > 0))
+      .catch(() => setHasKeys(null));
+  }, []);
 
   const load = useCallback(async () => {
     setMissing(false);
@@ -176,14 +188,6 @@ const AppDetail = ({ account, refreshAccount }) => {
   useEffect(() => {
     load();
   }, [load]);
-
-  // The one-time private key rides in on router state; scrub it from history so
-  // a reload or a back/forward does not resurrect it.
-  useEffect(() => {
-    if (location.state) {
-      navigate(location.pathname, { replace: true, state: null });
-    }
-  }, [location.pathname, location.state, navigate]);
 
   // Lifecycle runs through the agent API, which takes our session cookie just
   // like /v1 does; reload afterwards so the status dot follows the container.
@@ -231,7 +235,7 @@ const AppDetail = ({ account, refreshAccount }) => {
 
   const own = !account.limits || app.owner_email === undefined || app.owner_email === account.email;
   const token = app.agent_token || "";
-  const prompt = promptText(app.name, token || tokenPlaceholder);
+  const prompt = promptText(app.name, app.url, token || tokenPlaceholder, (app.description || "").trim());
 
   return (
     <>
@@ -278,7 +282,6 @@ const AppDetail = ({ account, refreshAccount }) => {
       </p>
       <ErrorBanner message={error} onDismiss={() => setError("")} />
       {note && <p className="hint action-note">{note}</p>}
-      {privateKey && <PrivateKeyBox privateKey={privateKey} onDismiss={() => setPrivateKey("")} />}
 
       <div className="card prompt-card">
         <h2>Prompt for your AI assistant</h2>
@@ -295,17 +298,22 @@ const AppDetail = ({ account, refreshAccount }) => {
 
       <div className="card">
         <h2>SSH access</h2>
-        <p>
-          Your app is served at{" "}
-          <a href={app.url} target="_blank" rel="noreferrer">
-            {app.url}
-          </a>
-          . If you would rather use ssh and scp than an agent, log in with:
-        </p>
-        {app.ssh && <Snippet text={app.ssh.command} />}
-        <p className="hint">
-          Your SSH keys from your <Link to="/profile">profile</Link> work here.
-        </p>
+        {/* Without a key in the profile the ssh command cannot work, so showing
+            it would only produce a "Permission denied" later. */}
+        {hasKeys === false ? (
+          <p>
+            You must add at least one SSH key to your <Link to="/profile">profile</Link> before you can reach this app over SSH.
+            Keys you add there are installed on every app you own.
+          </p>
+        ) : (
+          <>
+            <p>You can also access your app container via SSH and/or copy files via scp/rsync:</p>
+            {app.ssh && <Snippet text={app.ssh.command} />}
+            <p className="hint">
+              Your SSH keys from your <Link to="/profile">profile</Link> work here.
+            </p>
+          </>
+        )}
       </div>
 
       <AgentToken name={app.name} token={token} onRotated={setApp} />
