@@ -134,6 +134,33 @@ func TestTokenRoundTrip(t *testing.T) {
 	require.ErrorIs(t, err, store.ErrTokenNotFound)
 }
 
+func TestAppScopedToken(t *testing.T) {
+	t.Parallel()
+	m := newTestManager(t)
+	u := newActiveUser(t, m, "someone@example.com")
+	token, tk, err := m.CreateAppToken(u.ID, "blog", "claude")
+	require.NoError(t, err)
+	assert.Equal(t, "blog", tk.AppName)
+	// Resolving it yields both the user and the app it is limited to
+	got, scope, err := m.UserAndScopeByToken(token)
+	require.NoError(t, err)
+	assert.Equal(t, u.ID, got.ID)
+	assert.Equal(t, "blog", scope)
+	// An account-wide token has no scope
+	wide, _, err := m.CreateToken(u.ID, "laptop")
+	require.NoError(t, err)
+	_, scope, err = m.UserAndScopeByToken(wide)
+	require.NoError(t, err)
+	assert.Empty(t, scope)
+	// App tokens are listed with their app, and can be revoked like any other
+	tokens, err := m.Tokens(u.ID)
+	require.NoError(t, err)
+	require.Len(t, tokens, 2)
+	require.NoError(t, m.DeleteToken(u.ID, tk.ID))
+	_, _, err = m.UserAndScopeByToken(token)
+	require.ErrorIs(t, err, store.ErrTokenNotFound)
+}
+
 func TestTokenOfPendingUserRejected(t *testing.T) {
 	t.Parallel()
 	m := newTestManager(t)

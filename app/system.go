@@ -203,6 +203,15 @@ func (o *systemOps) WriteUserFile(username, home, relPath, content string, mode 
 	return os.Chown(filename, uid, gid)
 }
 
+// ChownToUser gives a path to the app user
+func (o *systemOps) ChownToUser(username, path string) error {
+	uid, gid, err := lookupIDs(username)
+	if err != nil {
+		return err
+	}
+	return os.Chown(path, uid, gid)
+}
+
 // ApplyPortRules atomically replaces the hostit nftables table: for each app
 // port, loopback connects are only allowed for root (the proxy, which also owns
 // the published container ports) and the app's own uid

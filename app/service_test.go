@@ -28,7 +28,8 @@ func TestCreateApp(t *testing.T) {
 	assert.Equal(t, []string{"blog"}, ops.createdUsers)
 	assert.Equal(t, []string{testPublicKey}, ops.authorizedKeys["blog"])
 	assert.Contains(t, ops.scaffolds["blog"], "hostit.yml")
-	assert.Contains(t, ops.scaffolds["blog"], "README.txt")
+	assert.Contains(t, ops.scaffolds["blog"], "HOSTIT.txt")
+	assert.Contains(t, ops.scaffolds["blog"], "README.md")
 	stored, err := m.App("blog")
 	require.NoError(t, err)
 	assert.Equal(t, 10000, stored.Port)
@@ -249,15 +250,27 @@ func (f *fakeSystemOps) WriteAuthorizedKeys(username, home string, keys []string
 	return nil
 }
 
+// WriteScaffold records the scaffold AND writes it, so tests that read app
+// files (README, hostit.yml) see what a real app would have
 func (f *fakeSystemOps) WriteScaffold(username, home string, files map[string]string) error {
-	for name := range files {
+	if err := os.MkdirAll(home, 0o755); err != nil {
+		return err
+	}
+	for name, content := range files {
 		f.scaffolds[username] = append(f.scaffolds[username], name)
+		if err := os.WriteFile(filepath.Join(home, name), []byte(content), 0o644); err != nil {
+			return err
+		}
 	}
 	return nil
 }
 
 func (f *fakeSystemOps) WriteUserFile(username, home, relPath, content string, mode os.FileMode) error {
 	f.userFiles[username+":"+relPath] = content
+	return nil
+}
+
+func (f *fakeSystemOps) ChownToUser(username, path string) error {
 	return nil
 }
 

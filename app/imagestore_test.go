@@ -3,7 +3,6 @@ package app
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -30,11 +29,11 @@ func TestDeployReusesTheOneWorkspaceImage(t *testing.T) {
 	ops.images[workspaceImage] = true // Built once, host-wide
 	createTestApp(t, m, "blog")
 	writeAppFile(t, m, "blog", "hostit.yml", "run: ./server")
-	runner.errs["container inspect"] = assert.AnError // Force a create
+	runner.failOn("container inspect", assert.AnError) // Force a create
 	_, err := m.Up("blog")
 	require.NoError(t, err)
 	assert.Empty(t, ops.builds, "the workspace image is shared, never rebuilt per app")
-	joined := strings.Join(runner.commands, "\n")
+	joined := runner.ran()
 	assert.Contains(t, joined, "podman create --name hostit-app-blog")
 }
 
@@ -43,10 +42,10 @@ func TestContainerRunsUnderTheAppsOwnIdentity(t *testing.T) {
 	m, _, runner := newTestDeployManager(t)
 	createTestApp(t, m, "blog")
 	writeAppFile(t, m, "blog", "hostit.yml", "run: ./server")
-	runner.errs["container inspect"] = assert.AnError
+	runner.failOn("container inspect", assert.AnError)
 	_, err := m.Up("blog")
 	require.NoError(t, err)
-	joined := strings.Join(runner.commands, "\n")
+	joined := runner.ran()
 	// Container root maps to the app's unprivileged uid, so an escape lands
 	// there rather than on real root, and its own network stack keeps it from
 	// reaching other apps

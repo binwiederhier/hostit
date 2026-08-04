@@ -64,6 +64,7 @@ type Token struct {
 	Hash      string    `json:"-"`
 	Prefix    string    `json:"prefix"`
 	Label     string    `json:"label"`
+	AppName   string    `json:"app_name"` // Empty = account-wide; otherwise the only app this token may touch
 	CreatedAt time.Time `json:"created_at"`
 	LastUsed  time.Time `json:"last_used"`
 }

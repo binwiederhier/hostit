@@ -164,19 +164,27 @@ func (m *Manager) SetDefaults(limits *Limits) error {
 	return m.store.SetSetting(settingDiskMB, strconv.Itoa(limits.DiskMB))
 }
 
-// CreateToken issues a new API token; the returned string is shown to the user
-// exactly once, only its hash is stored
+// CreateToken issues a new account-wide API token; the returned string is shown
+// to the user exactly once, only its hash is stored
 func (m *Manager) CreateToken(userID, label string) (string, *store.Token, error) {
+	return m.CreateAppToken(userID, "", label)
+}
+
+// CreateAppToken issues a token limited to a single app. These are what the web
+// app hands out for agents: the user pastes it into their own chat session, so
+// it must not be able to touch their other apps.
+func (m *Manager) CreateAppToken(userID, appName, label string) (string, *store.Token, error) {
 	b := make([]byte, tokenBytes)
 	if _, err := rand.Read(b); err != nil {
 		return "", nil, err
 	}
 	token := tokenPrefix + hex.EncodeToString(b)
 	tk := &store.Token{
-		UserID: userID,
-		Hash:   hashToken(token),
-		Prefix: token[:len(tokenPrefix)+tokenPrefixChars],
-		Label:  label,
+		UserID:  userID,
+		Hash:    hashToken(token),
+		Prefix:  token[:len(tokenPrefix)+tokenPrefixChars],
+		Label:   label,
+		AppName: appName,
 	}
 	if err := m.store.AddToken(tk); err != nil {
 		return "", nil, err
@@ -186,21 +194,28 @@ func (m *Manager) CreateToken(userID, label string) (string, *store.Token, error
 
 // UserByToken resolves an API token to its (active) user and records usage
 func (m *Manager) UserByToken(token string) (*store.User, error) {
+	u, _, err := m.UserAndScopeByToken(token)
+	return u, err
+}
+
+// UserAndScopeByToken resolves an API token to its (active) user and the app it
+// is limited to; an empty scope means the token covers the whole account
+func (m *Manager) UserAndScopeByToken(token string) (*store.User, string, error) {
 	tk, err := m.store.TokenByHash(hashToken(token))
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	u, err := m.store.User(tk.UserID)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	if u.Status != store.StatusActive {
-		return nil, ErrNotActive
+		return nil, "", ErrNotActive
 	}
 	if err := m.store.TouchToken(tk.ID); err != nil {
-		return nil, err
+		return nil, "", err
 	}
-	return u, nil
+	return u, tk.AppName, nil
 }
 
 // Tokens lists a user's tokens (hashes are never exposed)

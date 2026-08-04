@@ -14,7 +14,16 @@ const (
 
 // SetDiskLimit records the disk quota for an app; 0 means unlimited
 func (m *Manager) SetDiskLimit(name string, diskMB int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.diskMB[name] = diskMB
+}
+
+// diskLimit returns the recorded disk quota of an app
+func (m *Manager) diskLimit(name string) int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.diskMB[name]
 }
 
 // CheckQuotas measures every app's disk usage, records it, and stops apps that
@@ -33,7 +42,7 @@ func (m *Manager) CheckQuotas() error {
 			slog.Warn("Cannot measure disk usage", "app", a.Name, "error", err)
 			continue
 		}
-		limit := m.diskMB[a.Name]
+		limit := m.diskLimit(a.Name)
 		overQuota := limit > 0 && usage > limit
 		if err := m.store.UpdateAppUsage(a.Name, usage, overQuota); err != nil {
 			slog.Warn("Cannot record disk usage", "app", a.Name, "error", err)

@@ -74,6 +74,10 @@ var migrations = []string{
 		ALTER TABLE app ADD COLUMN over_quota INTEGER NOT NULL DEFAULT 0;
 		CREATE INDEX idx_app_owner ON app (owner_id);
 	`,
+	// 3: app-scoped tokens; an empty app_name keeps the account-wide meaning
+	`
+		ALTER TABLE token ADD COLUMN app_name TEXT NOT NULL DEFAULT '';
+	`,
 }
 
 // migrate brings the database up to the current schema version, creating it if

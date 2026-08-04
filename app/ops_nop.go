@@ -57,6 +57,10 @@ func (o *NopSystemOps) WriteUserFile(username, home, relPath, content string, mo
 	return nil
 }
 
+func (o *NopSystemOps) ChownToUser(username, path string) error {
+	return nil
+}
+
 func (o *NopSystemOps) ApplyPortRules(rules []PortRule) error {
 	return nil
 }

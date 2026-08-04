@@ -29,9 +29,9 @@ const (
 	`
 	deleteUserQuery = `DELETE FROM user WHERE id = ?`
 
-	insertTokenQuery        = `INSERT INTO token (id, user_id, hash, prefix, label, created_at) VALUES (?, ?, ?, ?, ?, ?)`
-	selectTokenByHashQuery  = `SELECT id, user_id, hash, prefix, label, created_at, last_used FROM token WHERE hash = ?`
-	selectTokensByUserQuery = `SELECT id, user_id, hash, prefix, label, created_at, last_used FROM token WHERE user_id = ? ORDER BY created_at`
+	insertTokenQuery        = `INSERT INTO token (id, user_id, hash, prefix, label, app_name, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`
+	selectTokenByHashQuery  = `SELECT id, user_id, hash, prefix, label, app_name, created_at, last_used FROM token WHERE hash = ?`
+	selectTokensByUserQuery = `SELECT id, user_id, hash, prefix, label, app_name, created_at, last_used FROM token WHERE user_id = ? ORDER BY created_at`
 	updateTokenUsedQuery    = `UPDATE token SET last_used = ? WHERE id = ?`
 	deleteTokenQuery        = `DELETE FROM token WHERE user_id = ? AND id = ?`
 	deleteTokensByUserQuery = `DELETE FROM token WHERE user_id = ?`
@@ -139,7 +139,7 @@ func (s *Store) AddToken(t *Token) error {
 	if t.CreatedAt.IsZero() {
 		t.CreatedAt = time.Now()
 	}
-	_, err := s.db.Exec(insertTokenQuery, t.ID, t.UserID, t.Hash, t.Prefix, t.Label, t.CreatedAt.Unix())
+	_, err := s.db.Exec(insertTokenQuery, t.ID, t.UserID, t.Hash, t.Prefix, t.Label, t.AppName, t.CreatedAt.Unix())
 	return err
 }
 
@@ -319,7 +319,7 @@ func scanTokenRow(rows *sql.Rows) (*Token, error) {
 func scanTokenValues(scan func(dest ...any) error) (*Token, error) {
 	var t Token
 	var createdAt, lastUsed int64
-	if err := scan(&t.ID, &t.UserID, &t.Hash, &t.Prefix, &t.Label, &createdAt, &lastUsed); err != nil {
+	if err := scan(&t.ID, &t.UserID, &t.Hash, &t.Prefix, &t.Label, &t.AppName, &createdAt, &lastUsed); err != nil {
 		return nil, err
 	}
 	t.CreatedAt = time.Unix(createdAt, 0)

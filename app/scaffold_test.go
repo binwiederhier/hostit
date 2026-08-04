@@ -12,8 +12,9 @@ func TestScaffoldFiles(t *testing.T) {
 	m, _ := newTestManager(t)
 	files := m.scaffoldFiles("blog", 10000)
 	assert.Contains(t, files["hostit.yml"], "run: python3 -m http.server $PORT")
-	assert.Contains(t, files["README.txt"], "https://blog.apps.example.com")
-	assert.Contains(t, files["README.txt"], "10000")
+	assert.Contains(t, files["HOSTIT.txt"], "https://blog.apps.example.com")
+	assert.Contains(t, files["HOSTIT.txt"], "10000")
+	assert.Contains(t, files["README.md"], "# blog")
 	assert.Contains(t, files["index.html"], "blog is running")
 }
 

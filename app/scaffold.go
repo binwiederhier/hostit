@@ -9,7 +9,7 @@ import (
 const (
 	// scaffoldHostitYml is the hostit.yml new apps start with: a working demo,
 	// with the alternatives documented right below it
-	scaffoldHostitYml = `# hostit app config -- apply changes with "hostit up", see README.txt.
+	scaffoldHostitYml = `# hostit app config -- apply changes with "hostit up", see HOSTIT.txt.
 #
 # This is the demo app. Replace it with your own.
 
@@ -34,7 +34,7 @@ run: python3 -m http.server $PORT
 
 	// scaffoldReadme is the README.txt template; placeholders are app URL, port,
 	// port again, and app name
-	scaffoldReadme = `Welcome to your hostit app!
+	scaffoldHostitTxt = `Welcome to your hostit app!
 
 Your app is served at:  %s
 Your assigned port:     %d
@@ -70,6 +70,21 @@ Notes
   (installed packages persist until the container is recreated).
 `
 
+	// scaffoldAppReadme is the app's OWN readme: agents read it to learn what the
+	// app is and write back what they changed, and the owner sees it in the web
+	// app. Placeholders are the app name and its URL.
+	scaffoldAppReadme = `# %s
+
+Nothing has been built here yet. This file is the app's description and
+worklog: whatever is written here is what hostit shows the owner, and what the
+next agent session reads first.
+
+- URL: %s
+- Replace index.html (or point hostit.yml at your own command or image)
+- Keep this file updated: what the app does, how it is built, what changed
+
+`
+
 	// demoPageTemplate is the placeholder page a new app serves right away; the
 	// placeholder is the app name (twice)
 	demoPageTemplate = `<!doctype html>
@@ -102,7 +117,7 @@ Notes
   <pre>ssh %s@%s
 # put your files here, edit hostit.yml, then:
 hostit up</pre>
-  <p>Everything you need is in <code>README.txt</code> in your app's home directory.</p>
+  <p>Everything you need is in <code>HOSTIT.txt</code> in your app's home directory.</p>
   <div class="foot">Served by hostit</div>
 </div>
 `
@@ -114,7 +129,8 @@ func (m *Manager) scaffoldFiles(name string, port int) map[string]string {
 	url := m.URL(&store.App{Name: name, Port: port})
 	return map[string]string{
 		"hostit.yml": scaffoldHostitYml,
-		"README.txt": fmt.Sprintf(scaffoldReadme, url, port, port, name),
+		"HOSTIT.txt": fmt.Sprintf(scaffoldHostitTxt, url, port, port, name),
+		"README.md":  fmt.Sprintf(scaffoldAppReadme, name, url),
 		"index.html": demoPage(name, m.config.SSHHostname()),
 	}
 }

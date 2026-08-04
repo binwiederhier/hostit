@@ -31,12 +31,13 @@ func TestCheckQuotasStopsOverQuotaApp(t *testing.T) {
 	createTestApp(t, m, "blog")
 	writeAppFile(t, m, "blog", "big.bin", strings.Repeat("x", 3*1024*1024))
 	m.SetDiskLimit("blog", 1) // 1 MB limit, app uses ~3 MB
+	runner.reset()
 	require.NoError(t, m.CheckQuotas())
 	a, err := m.App("blog")
 	require.NoError(t, err)
 	assert.True(t, a.OverQuota)
 	assert.GreaterOrEqual(t, a.DiskMB, 3)
-	assert.Contains(t, strings.Join(runner.commands, "\n"), "systemctl stop hostit-app@blog")
+	assert.Contains(t, runner.ran(), "systemctl stop hostit-app@blog")
 }
 
 func TestCheckQuotasLeavesCompliantAppRunning(t *testing.T) {
@@ -45,25 +46,28 @@ func TestCheckQuotasLeavesCompliantAppRunning(t *testing.T) {
 	createTestApp(t, m, "blog")
 	writeAppFile(t, m, "blog", "small.bin", "hello")
 	m.SetDiskLimit("blog", 100)
+	runner.reset()
 	require.NoError(t, m.CheckQuotas())
 	a, err := m.App("blog")
 	require.NoError(t, err)
 	assert.False(t, a.OverQuota)
-	assert.NotContains(t, strings.Join(runner.commands, "\n"), "stop")
+	assert.NotContains(t, runner.ran(), "stop")
 }
 
 func TestCheckQuotasClearsFlagWhenCleanedUp(t *testing.T) {
 	t.Parallel()
-	m, _, _ := newTestDeployManager(t)
+	m, _, runner := newTestDeployManager(t)
 	createTestApp(t, m, "blog")
 	writeAppFile(t, m, "blog", "big.bin", strings.Repeat("x", 3*1024*1024))
 	m.SetDiskLimit("blog", 1)
+	runner.reset()
 	require.NoError(t, m.CheckQuotas())
 	a, err := m.App("blog")
 	require.NoError(t, err)
 	require.True(t, a.OverQuota)
 	// User cleans up; the next check clears the flag
 	require.NoError(t, os.Remove(filepath.Join(m.appHome("blog"), "big.bin")))
+	runner.reset()
 	require.NoError(t, m.CheckQuotas())
 	a, err = m.App("blog")
 	require.NoError(t, err)
@@ -75,10 +79,11 @@ func TestCheckQuotasWithoutLimitIsNoOp(t *testing.T) {
 	m, _, runner := newTestDeployManager(t)
 	createTestApp(t, m, "blog")
 	writeAppFile(t, m, "blog", "big.bin", strings.Repeat("x", 3*1024*1024))
+	runner.reset()
 	require.NoError(t, m.CheckQuotas()) // No limit set for this app
 	a, err := m.App("blog")
 	require.NoError(t, err)
 	assert.False(t, a.OverQuota)
 	assert.GreaterOrEqual(t, a.DiskMB, 3) // Usage is still measured
-	assert.NotContains(t, strings.Join(runner.commands, "\n"), "stop")
+	assert.NotContains(t, runner.ran(), "stop")
 }

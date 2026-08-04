@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"sync"
 
 	"heckel.io/hostit/config"
 	"heckel.io/hostit/store"
@@ -50,6 +51,7 @@ type SystemOps interface {
 	WriteAuthorizedKeys(username, home string, keys []string) error
 	WriteScaffold(username, home string, files map[string]string) error
 	WriteUserFile(username, home, relPath, content string, mode os.FileMode) error
+	ChownToUser(username, path string) error
 	ApplyPortRules(rules []PortRule) error
 	ImageExists(tag string) bool
 	BuildImage(contextDir, tag string) error
@@ -96,6 +98,8 @@ type Manager struct {
 	// keep them; the authoritative values come from the owner's limits
 	memoryMB map[string]int
 	diskMB   map[string]int
+
+	mu sync.Mutex // Protects memoryMB, diskMB
 }
 
 // NewManager creates a Manager
@@ -169,7 +173,7 @@ func (m *Manager) CreateApp(name string, opts *CreateOptions) (*store.App, *Cred
 		_ = m.store.RemoveApp(name)
 		return nil, nil, err
 	}
-	m.memoryMB[name] = opts.MemoryMB
+	m.SetMemoryLimit(name, opts.MemoryMB)
 	m.ReconcilePortRules()
 
 	// Start the scaffolded demo app in the background, so the URL serves
