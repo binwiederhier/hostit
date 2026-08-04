@@ -12,9 +12,11 @@ import (
 )
 
 const (
-	// userdelRetries is how often userdel is retried while user processes are still dying
-	userdelRetries = 5
-	userdelDelay   = 500 * time.Millisecond
+	// userdelRetries is how often userdel is retried while user processes are
+	// still dying; after userdelKillAfter attempts, survivors are SIGKILLed
+	userdelRetries   = 10
+	userdelKillAfter = 2
+	userdelDelay     = time.Second
 	// userShellFile is the login shell for app users; it execs the SSH session
 	// into the app container (see cmd/shell.go)
 	userShellFile = "/usr/bin/hostit-shell"
@@ -54,9 +56,10 @@ func (o *systemOps) CreateUser(username, home string) error {
 	return os.Chmod(home, 0o750)
 }
 
-// DeleteUser stops everything the user runs and removes the account including home.
-// userdel can transiently fail while the user's processes are still terminating,
-// so it is retried a few times.
+// DeleteUser stops everything the user runs and removes the account including
+// home. Processes can linger (container runtimes reparent, sessions close
+// asynchronously), so escalate: ask systemd first, then kill what remains, and
+// retry userdel while the stragglers die.
 func (o *systemOps) DeleteUser(username string) error {
 	_ = run("loginctl", "disable-linger", username)
 	_ = run("loginctl", "terminate-user", username)
@@ -64,6 +67,9 @@ func (o *systemOps) DeleteUser(username string) error {
 	for i := 0; i < userdelRetries; i++ {
 		if err = run("userdel", "--remove", username); err == nil {
 			return nil
+		}
+		if i == userdelKillAfter {
+			_ = run("pkill", "--signal", "KILL", "--uid", username)
 		}
 		time.Sleep(userdelDelay)
 	}

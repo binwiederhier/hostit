@@ -120,6 +120,18 @@ func TestEnsureRunningContainerIsNoOp(t *testing.T) {
 	assert.NotContains(t, joined, "restart")
 }
 
+func TestDeleteAppStopsAppBeforeRemovingUser(t *testing.T) {
+	t.Parallel()
+	m, ops, runner := newTestDeployManager(t)
+	createTestApp(t, m, "blog")
+	require.NoError(t, m.DeleteApp("blog"))
+	joined := strings.Join(runner.commands, "\n")
+	// A running container keeps processes alive, which makes userdel fail
+	assert.Contains(t, joined, "systemctl --user disable --now hostit-app")
+	assert.Contains(t, joined, "podman rm --force hostit-app")
+	assert.Equal(t, []string{"blog"}, ops.deletedUsers)
+}
+
 func TestDownRestartStatus(t *testing.T) {
 	t.Parallel()
 	m, _, runner := newTestDeployManager(t)

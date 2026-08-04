@@ -201,6 +201,10 @@ func (m *Manager) DeleteApp(name string) error {
 	if _, err := m.store.App(name); err != nil {
 		return err
 	}
+	// Stop the app first: a running container keeps processes alive, and
+	// userdel refuses to remove a user that still has any
+	_, _ = m.runner.RunAsUser(name, "systemctl", "--user", "disable", "--now", unitName)
+	_, _ = m.runner.RunAsUser(name, "podman", "rm", "--force", containerName)
 	if err := m.ops.DeleteUser(name); err != nil {
 		return fmt.Errorf("cannot delete user %s: %w", name, err)
 	}
