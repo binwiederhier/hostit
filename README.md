@@ -9,9 +9,11 @@
   container root is the app's own unprivileged user, plus nftables)
 - **SSH access** (normal ssh/scp/sftp/rsync via the host's sshd; keys via the API)
 - a **subdomain** (`myapp.apps.example.com`) with **automatic Let's Encrypt TLS**
-- supervised execution: a `run:` command supervised by the hostit agent in the
-  default workspace image, or your own `image:`/`build:` container, deployed with
-  a single `hostit up`
+- three ways to run: `static:` (hostit serves a directory), `run:` (your command,
+  supervised by the hostit agent), or your own `image:`/`build:` container --
+  deployed with a single `hostit up`
+- a workspace with **python3, node/npm, php-cli and go** preinstalled (and root,
+  so `apt-get install` anything else)
 
 Multi-user: people sign in with Google, an admin approves them from a small web
 app, and each user gets their own apps within admin-adjustable limits (app count,
@@ -244,7 +246,7 @@ endpoint. Then:
 
 ```sh
 export H=https://hostit.apps.example.com/api
-export T=hostit_...        # app-scoped token from the app's page
+export T=hostit_...        # created with the app, shown on the app's page
 
 curl -H "Authorization: Bearer $T" $H/info              # how this all works
 curl -H "Authorization: Bearer $T" $H/myapp/info        # README, files, config, state
@@ -260,7 +262,9 @@ curl -X PUT -H "Authorization: Bearer $T" -H "Content-Type: application/json" \
      -d '{"readme":"# myapp\n\nWhat this is."}' $H/myapp/readme
 ```
 
-Each app's `README.md` is its description and worklog: the agent reads it first
+New apps start as a **stub**: a placeholder page served in `static:` mode, whose
+README says so and lists what is installed. Each app's `README.md` is its
+description and worklog: the agent reads it first
 and writes back what it changed, so the next session (or a different agent)
 knows what the app is. hostit's own instructions live in `HOSTIT.txt`, so the
 two never compete.
@@ -273,7 +277,12 @@ rather than doing anything. SSH still works for anyone who prefers scp/rsync.
 SSH in as the app user, upload files, describe the app in `hostit.yml`:
 
 ```yaml
-# Workspace mode: run a command in your workspace container;
+# Static mode: hostit serves a directory. Nothing to install, nothing to run.
+static: .            # or a subdirectory, e.g. static: public
+```
+
+```yaml
+# Run mode: your command in the workspace container;
 # it MUST listen on 0.0.0.0:$PORT
 run: ./server --debug
 env:
