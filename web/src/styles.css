@@ -17,6 +17,8 @@
   --on-accent: #ffffff;
   --danger: #b42323;
   --danger-bg: #fbe9e9;
+  --status-up: #16a34a;
+  --status-down: #d13333;
   --warn-border: #e4c65b;
   --warn-bg: #fdf6dd;
   --term-bg: #14181d;
@@ -40,6 +42,8 @@
     --on-accent: #08130e;
     --danger: #f08585;
     --danger-bg: #3a1c1c;
+    --status-up: #4ade80;
+    --status-down: #f87171;
     --warn-border: #8a7327;
     --warn-bg: #2c2612;
     --term-bg: #10141a;
@@ -267,9 +271,61 @@ p {
   margin: -8px 0 16px;
 }
 
+.action-note {
+  margin: 0 0 14px;
+}
+
+/* Title, live state and URL on the left, actions on the right */
+.app-header {
+  align-items: flex-start;
+}
+
+.app-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.app-title-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.header-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
 /* Not .mono: on a heading, its 0.95em would resolve against the body size */
 .app-title {
   font-family: var(--mono);
+}
+
+.status-label {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.status-dot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  margin-right: 8px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.status-up {
+  background: var(--status-up);
+}
+
+.status-down {
+  background: var(--status-down);
 }
 
 .app-url {
@@ -332,6 +388,13 @@ p {
 
 .btn:hover:not(:disabled) {
   background: var(--surface-2);
+}
+
+/* Links styled as buttons (e.g. "Manage") should not pick up link underlines */
+a.btn,
+a.btn:hover {
+  display: inline-block;
+  text-decoration: none;
 }
 
 .btn:disabled {
@@ -745,5 +808,10 @@ th:last-child {
   .open-link {
     display: block;
     margin-left: 0;
+  }
+
+  /* Give the title its own row so the action buttons wrap underneath it */
+  .app-heading {
+    flex: 1 1 100%;
   }
 }

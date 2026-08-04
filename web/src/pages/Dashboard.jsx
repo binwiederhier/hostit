@@ -1,36 +1,33 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api } from "../api";
-import { ErrorBanner, Loading } from "../components";
+import { ErrorBanner, formatUsage, Loading, StatusDot } from "../components";
 
 const nameRe = /^[a-z][a-z0-9-]{0,30}[a-z0-9]$/;
 
-const AppRow = ({ app, account, isAdmin, onDelete }) => {
-  const own = !isAdmin || app.owner_email === account.email;
-  return (
-    <tr>
-      <td>
-        <Link className="mono app-link" to={`/app/${app.name}`}>
-          {app.name}
-        </Link>
-        <a className="open-link" href={app.url} target="_blank" rel="noreferrer">
-          open -&gt;
-        </a>
-      </td>
-      {isAdmin && <td className="cell-muted">{app.owner_email}</td>}
-      <td className="mono">{app.port}</td>
-      <td>
-        {app.disk_mb} MB{own && ` of ${account.limits.disk_mb} MB`}
-        {app.over_quota && <span className="badge badge-danger">over quota</span>}
-      </td>
-      <td className="cell-actions">
-        <button type="button" className="btn btn-small btn-danger" onClick={() => onDelete(app)}>
-          Delete
-        </button>
-      </td>
-    </tr>
-  );
-};
+const AppRow = ({ app }) => (
+  <tr>
+    <td>
+      <StatusDot running={app.running} />
+      <Link className="mono app-link" to={`/app/${app.name}`}>
+        {app.name}
+      </Link>
+      <a className="open-link" href={app.url} target="_blank" rel="noreferrer">
+        open -&gt;
+      </a>
+    </td>
+    <td>{formatUsage(app.memory_mb, app.memory_limit_mb)}</td>
+    <td>
+      {formatUsage(app.disk_mb, app.disk_limit_mb)}
+      {app.over_quota && <span className="badge badge-danger">over quota</span>}
+    </td>
+    <td className="cell-actions">
+      <Link className="btn btn-small btn-primary" to={`/app/${app.name}`}>
+        Manage
+      </Link>
+    </td>
+  </tr>
+);
 
 const Dashboard = ({ account, refreshAccount }) => {
   const [apps, setApps] = useState(null);
@@ -39,7 +36,6 @@ const Dashboard = ({ account, refreshAccount }) => {
   const [creating, setCreating] = useState(false);
   const navigate = useNavigate();
 
-  const isAdmin = account.role === "admin";
   const atLimit = account.usage.apps >= account.limits.app_limit;
   const nameValid = nameRe.test(name);
 
@@ -76,20 +72,6 @@ const Dashboard = ({ account, refreshAccount }) => {
     }
   };
 
-  const remove = async (app) => {
-    if (!window.confirm(`Delete app "${app.name}"? This permanently deletes its container, files and user.`)) {
-      return;
-    }
-    setError("");
-    try {
-      await api.del(`/v1/apps/${app.name}`);
-      await load();
-      refreshAccount();
-    } catch (err) {
-      setError(err.message);
-    }
-  };
-
   return (
     <>
       <div className="page-header">
@@ -110,15 +92,14 @@ const Dashboard = ({ account, refreshAccount }) => {
               <thead>
                 <tr>
                   <th>Name</th>
-                  {isAdmin && <th>Owner</th>}
-                  <th>Port</th>
+                  <th>RAM</th>
                   <th>Disk</th>
                   <th aria-label="Actions" />
                 </tr>
               </thead>
               <tbody>
                 {apps.map((app) => (
-                  <AppRow key={app.name} app={app} account={account} isAdmin={isAdmin} onDelete={remove} />
+                  <AppRow key={app.name} app={app} />
                 ))}
               </tbody>
             </table>

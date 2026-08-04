@@ -32,8 +32,9 @@ func TestStatesReadsRunningAndMemory(t *testing.T) {
 	createTestApp(t, m, "two")
 	// systemctl prints one line per unit, in the order asked
 	runner.returns("systemctl is-active", "active\ninactive\n")
-	runner.returns("podman stats", `[{"Name":"hostit-app-one","MemUsage":"24.5MB / 512MB"},
-	                                 {"Name":"not-ours","MemUsage":"99MB / 512MB"}]`)
+	// Exactly the shape podman 4.9 prints
+	runner.returns("podman stats", `[{"id":"abc","name":"hostit-app-one","cpu_percent":"0.00%","mem_usage":"24.5MB / 536.9MB","pids":"11"},
+	                                 {"id":"def","name":"not-ours","mem_usage":"99MB / 536.9MB"}]`)
 	states := m.States([]string{"one", "two"})
 	require.Len(t, states, 2)
 	assert.True(t, states["one"].Running)

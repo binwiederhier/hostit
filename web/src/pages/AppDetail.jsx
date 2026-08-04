@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { api, ApiError } from "../api";
-import { CopyButton, ErrorBanner, Loading, Snippet } from "../components";
+import { CopyButton, ErrorBanner, formatUsage, Loading, Snippet, StatusDot } from "../components";
 
 // The SPA is served by the hostit daemon itself, so the agent API lives on our
 // own origin under /api.
@@ -109,7 +109,7 @@ const AgentToken = ({ name, token, onRotated }) => {
 
 // Delete behind a type-the-name confirmation, since it takes the container,
 // the files and the user with it.
-const DangerZone = ({ name, onDeleted }) => {
+const DangerZone = ({ name, cardRef, inputRef, onDeleted }) => {
   const [confirm, setConfirm] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -131,7 +131,7 @@ const DangerZone = ({ name, onDeleted }) => {
   };
 
   return (
-    <div className="card danger-card">
+    <div className="card danger-card" ref={cardRef}>
       <h2>Danger zone</h2>
       <p className="hint">
         Deleting <span className="mono">{name}</span> permanently removes its container, files and user. Type the app name to
@@ -141,6 +141,7 @@ const DangerZone = ({ name, onDeleted }) => {
       <form className="inline-form" onSubmit={remove}>
         <input
           type="text"
+          ref={inputRef}
           value={confirm}
           onChange={(e) => setConfirm(e.target.value)}
           placeholder={name}
@@ -162,6 +163,13 @@ const AppDetail = ({ account, refreshAccount }) => {
   const [error, setError] = useState("");
   const [missing, setMissing] = useState(false);
   const [privateKey, setPrivateKey] = useState(location.state ? location.state.private_key || "" : "");
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState("");
+  const dangerRef = useRef(null);
+  const confirmRef = useRef(null);
+  const noteTimer = useRef(null);
+
+  useEffect(() => () => clearTimeout(noteTimer.current), []);
 
   const load = useCallback(async () => {
     setMissing(false);
@@ -188,6 +196,39 @@ const AppDetail = ({ account, refreshAccount }) => {
     }
   }, [location.pathname, location.state, navigate]);
 
+  // Lifecycle runs through the agent API, which takes our session cookie just
+  // like /v1 does; reload afterwards so the status dot follows the container.
+  const lifecycle = async (action) => {
+    if (busy) {
+      return;
+    }
+    setBusy(true);
+    setError("");
+    setNote("");
+    clearTimeout(noteTimer.current);
+    try {
+      const res = await api.post(`/api/${encodeURIComponent(name)}/${action}`);
+      setNote(res && res.message ? res.message : "Done.");
+      noteTimer.current = setTimeout(() => setNote(""), 5000);
+      await load();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Delete stays behind the type-the-name confirmation; the header button only
+  // takes you down to it.
+  const revealDanger = () => {
+    if (dangerRef.current) {
+      dangerRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+    if (confirmRef.current) {
+      confirmRef.current.focus({ preventScroll: true });
+    }
+  };
+
   const deleted = () => {
     refreshAccount();
     navigate("/", { replace: true });
@@ -211,7 +252,6 @@ const AppDetail = ({ account, refreshAccount }) => {
   }
 
   const own = !account.limits || app.owner_email === undefined || app.owner_email === account.email;
-  const diskLimit = own && account.limits ? ` of ${account.limits.disk_mb} MB` : "";
   const token = app.agent_token || "";
   const prompt = promptText(app.name, token || tokenPlaceholder);
 
@@ -220,18 +260,41 @@ const AppDetail = ({ account, refreshAccount }) => {
       <p className="crumb">
         <Link to="/">&larr; Apps</Link>
       </p>
-      <div className="page-header">
-        <h1 className="app-title">{app.name}</h1>
-        <a className="app-url" href={app.url} target="_blank" rel="noreferrer">
-          {app.url}
-        </a>
+      <div className="page-header app-header">
+        <div className="app-heading">
+          <div className="app-title-row">
+            <h1 className="app-title">
+              <StatusDot running={app.running} />
+              {app.name}
+            </h1>
+            <span className="status-label">{app.running ? "running" : "stopped"}</span>
+          </div>
+          <a className="app-url" href={app.url} target="_blank" rel="noreferrer">
+            {app.url}
+          </a>
+        </div>
+        <div className="header-actions">
+          <button type="button" className="btn btn-small" onClick={() => lifecycle("start")} disabled={busy}>
+            Start
+          </button>
+          <button type="button" className="btn btn-small" onClick={() => lifecycle("stop")} disabled={busy}>
+            Stop
+          </button>
+          <button type="button" className="btn btn-small" onClick={() => lifecycle("restart")} disabled={busy}>
+            Restart
+          </button>
+          <button type="button" className="btn btn-small btn-danger" onClick={revealDanger} disabled={busy}>
+            Delete
+          </button>
+        </div>
       </div>
       <p className="usage app-status">
-        {app.disk_mb} MB{diskLimit} used
+        RAM {formatUsage(app.memory_mb, app.memory_limit_mb)} &middot; disk {formatUsage(app.disk_mb, app.disk_limit_mb)}
         {app.over_quota && <span className="badge badge-danger">over quota</span>} &middot; created {formatDate(app.created_at)}
         {!own && app.owner_email && <> &middot; owned by {app.owner_email}</>}
       </p>
       <ErrorBanner message={error} onDismiss={() => setError("")} />
+      {note && <p className="hint action-note">{note}</p>}
       {privateKey && <PrivateKeyBox privateKey={privateKey} onDismiss={() => setPrivateKey("")} />}
 
       <div className="card prompt-card">
@@ -264,7 +327,7 @@ const AppDetail = ({ account, refreshAccount }) => {
 
       <AgentToken name={app.name} token={token} onRotated={setApp} />
 
-      <DangerZone name={app.name} onDeleted={deleted} />
+      <DangerZone name={app.name} cardRef={dangerRef} inputRef={confirmRef} onDeleted={deleted} />
     </>
   );
 };

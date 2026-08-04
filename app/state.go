@@ -55,10 +55,11 @@ func (m *Manager) memoryUsage() map[string]int {
 	if err != nil {
 		return usage
 	}
+	// podman prints lowercase snake_case keys, e.g.
+	//   {"name":"hostit-app-blog","mem_usage":"4.633MB / 536.9MB"}
 	var stats []struct {
-		Name          string `json:"Name"`
-		MemUsage      string `json:"MemUsage"` // e.g. "12.3MB / 512MB"
-		MemUsageBytes any    `json:"MemUsageBytes"`
+		Name     string `json:"name"`
+		MemUsage string `json:"mem_usage"`
 	}
 	if err := json.Unmarshal([]byte(out), &stats); err != nil {
 		return usage

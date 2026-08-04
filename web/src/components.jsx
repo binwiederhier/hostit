@@ -33,6 +33,15 @@ export const CopyButton = ({ text, small = true, disabled = false, children }) =
   );
 };
 
+// Green when the container is up, red when it is not. The title carries the
+// state for anyone who cannot see the color.
+export const StatusDot = ({ running }) => (
+  <span className={`status-dot ${running ? "status-up" : "status-down"}`} title={running ? "running" : "stopped"} />
+);
+
+// "12 of 512 MB", or just "12 MB" when the app has no limit for that resource.
+export const formatUsage = (used, limit) => (limit ? `${used} of ${limit} MB` : `${used} MB`);
+
 export const ErrorBanner = ({ message, onDismiss }) => {
   if (!message) {
     return null;
