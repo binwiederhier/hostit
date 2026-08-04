@@ -236,8 +236,17 @@ const AppDetail = ({ account, refreshAccount }) => {
     }
   }, [name]);
 
+  // A newly created app is still starting when its owner lands here, so the
+  // first thing they see is a red dot for an app that is coming up fine. Look
+  // again while that is settling, then just often enough to stay honest.
   useEffect(() => {
     load();
+    const timers = [5, 10, 15].map((seconds) => setTimeout(load, seconds * 1000));
+    const ticker = setInterval(load, 60000);
+    return () => {
+      timers.forEach(clearTimeout);
+      clearInterval(ticker);
+    };
   }, [load]);
 
   // Lifecycle runs through the agent API, which takes our session cookie just

@@ -107,3 +107,49 @@ func TestStatesSurvivesBrokenOutput(t *testing.T) {
 	require.Len(t, states, 1)
 	assert.Equal(t, 0, states["one"].MemoryMB)
 }
+
+func TestCachedStatesRefreshForAnAppItHasNeverSeen(t *testing.T) {
+	t.Parallel()
+	m, _, runner := newTestDeployManager(t)
+	createTestApp(t, m, "one")
+	runner.returns("systemctl is-active", "active\n")
+	runner.returns("podman stats", `[{"name":"hostit-app-one","mem_usage":"5MB / 536.9MB"}]`)
+	m.RefreshStates()
+
+	// A just-created app is the case that matters: its owner is redirected to its
+	// page immediately and sees the status dot. Waiting for the TTL to lapse
+	// would show "stopped" for ten seconds after it started.
+	createTestApp(t, m, "two")
+	runner.returns("systemctl is-active", "active\nactive\n")
+	runner.returns("podman stats", `[{"name":"hostit-app-one","mem_usage":"5MB / 536.9MB"},{"name":"hostit-app-two","mem_usage":"3MB / 536.9MB"}]`)
+	states := m.CachedStates([]string{"two"})
+	assert.False(t, states["two"].Running, "the answer is still immediate")
+	require.Eventually(t, func() bool {
+		return m.CachedStates([]string{"two"})["two"].Running
+	}, 5*time.Second, 10*time.Millisecond, "an unknown app must trigger a refresh, TTL or not")
+}
+
+func TestLifecycleInvalidatesTheCachedState(t *testing.T) {
+	t.Parallel()
+	m, _, runner := newTestDeployManager(t)
+	createTestApp(t, m, "one")
+	runner.returns("systemctl is-active", "inactive\n")
+	m.RefreshStates()
+	require.False(t, m.CachedStates([]string{"one"})["one"].Running)
+
+	// Someone just pressed Start. Answering "stopped" for another ten seconds
+	// makes the button look broken.
+	runner.returns("systemctl is-active", "active\n")
+	_, err := m.Ensure("one") // What POST /start calls
+	require.NoError(t, err)
+	require.Eventually(t, func() bool {
+		return m.CachedStates([]string{"one"})["one"].Running
+	}, 5*time.Second, 10*time.Millisecond, "starting an app must make its cached state stale")
+
+	// Every way to change an app's state has to do this, or the dot lies
+	runner.returns("systemctl is-active", "inactive\n")
+	require.NoError(t, m.Down("one"))
+	require.Eventually(t, func() bool {
+		return !m.CachedStates([]string{"one"})["one"].Running
+	}, 5*time.Second, 10*time.Millisecond, "stopping an app must too")
+}

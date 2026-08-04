@@ -22,6 +22,12 @@ const (
 	logsTimeout = 5 * time.Second
 )
 
+var (
+	// stateSettleDelays is when to look again after a lifecycle action, while the
+	// unit is still making up its mind about being active
+	stateSettleDelays = []time.Duration{2 * time.Second, 6 * time.Second}
+)
+
 // State is what an app is doing right now: whether its service is up and how
 // much memory its container is using
 type State struct {
@@ -36,16 +42,42 @@ type State struct {
 func (m *Manager) CachedStates(names []string) map[string]State {
 	m.stateMu.Lock()
 	cached := make(map[string]State, len(names))
+	unknown := false
 	for _, name := range names {
-		cached[name] = m.stateCache[name]
+		state, ok := m.stateCache[name]
+		cached[name] = state
+		unknown = unknown || !ok
 	}
 	stale := time.Since(m.stateFresh) > stateTTL
 	m.stateMu.Unlock()
 
-	if stale {
+	// An app the cache has never seen was just created, and its owner is looking
+	// at its page right now: waiting out the TTL would show them "stopped" for
+	// ten seconds after it started
+	if stale || unknown {
 		go m.refreshOnce()
 	}
 	return cached
+}
+
+// stateChanged is called when an app was just started, stopped or replaced. It
+// drops what the cache knew, and looks again shortly after.
+//
+// Forgetting alone is not enough: "systemctl start" returns before the unit
+// reports active, so an immediate measurement records "stopped" and the cache
+// then serves that confidently for a whole TTL. The owner is watching the status
+// dot while this happens, so the answer has to catch up in seconds, not tens of
+// seconds.
+func (m *Manager) stateChanged(name string) {
+	m.stateMu.Lock()
+	delete(m.stateCache, name)
+	m.stateMu.Unlock()
+	for _, delay := range stateSettleDelays {
+		go func() {
+			time.Sleep(delay)
+			m.refreshOnce()
+		}()
+	}
 }
 
 // beginRefresh claims the right to refresh, so only one runs at a time. Two

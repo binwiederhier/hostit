@@ -22,6 +22,7 @@ const (
 // Up deploys the app from its hostit.yml: builds images as needed, recreates the
 // container if its configuration changed, and (re)starts or reloads the service
 func (m *Manager) Up(name string) (string, error) {
+	defer m.stateChanged(name)
 	a, err := m.store.App(name)
 	if err != nil {
 		return "", err
@@ -50,6 +51,7 @@ func (m *Manager) Up(name string) (string, error) {
 // never recreates or reloads a live container (used on SSH login). Without a
 // (valid) hostit.yml it provisions an idle workspace.
 func (m *Manager) Ensure(name string) (string, error) {
+	defer m.stateChanged(name)
 	a, err := m.store.App(name)
 	if err != nil {
 		return "", err
@@ -72,6 +74,7 @@ func (m *Manager) Ensure(name string) (string, error) {
 
 // Down stops the app and disables it at boot
 func (m *Manager) Down(name string) error {
+	defer m.stateChanged(name)
 	if _, err := m.store.App(name); err != nil {
 		return err
 	}
@@ -81,6 +84,7 @@ func (m *Manager) Down(name string) error {
 
 // Restart restarts the app's service (and thus its container)
 func (m *Manager) Restart(name string) error {
+	defer m.stateChanged(name)
 	if _, err := m.store.App(name); err != nil {
 		return err
 	}
