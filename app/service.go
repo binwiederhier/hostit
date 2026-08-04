@@ -19,6 +19,10 @@ import (
 )
 
 const (
+	// settingAgentVersion records the hostit version the running agents were
+	// started from, so an upgrade knows whose behaviour is stale
+	settingAgentVersion = "agent_version"
+
 	// AppNamePattern is what an app may be called: safe as a Unix username and as
 	// a DNS label. Exported because the enter helper applies the same rule without
 	// importing this package's machinery.

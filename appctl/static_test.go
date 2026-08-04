@@ -77,3 +77,46 @@ func TestStaticCommandInConfig(t *testing.T) {
 	require.NoError(t, c.Validate())
 	assert.Equal(t, "./server", c.Command("/usr/bin/hostit"))
 }
+
+func TestStaticHandlerNeverListsADirectory(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "assets"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "assets", "a.css"), []byte("body{}"), 0o644))
+	h := StaticHandler(dir)
+
+	// The root has no index.html here. Listing it publishes the whole directory
+	// to the internet, which is how an app's .ssh ended up on the web once.
+	for _, path := range []string{"/", "/assets/", "/assets"} {
+		rr := httptest.NewRecorder()
+		h.ServeHTTP(rr, httptest.NewRequest("GET", path, nil))
+		assert.Equal(t, http.StatusNotFound, rr.Code, "listing %q must not be served", path)
+		assert.NotContains(t, rr.Body.String(), "a.css", "listing %q leaked a filename", path)
+	}
+	// A named file inside is still fine
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, httptest.NewRequest("GET", "/assets/a.css", nil))
+	assert.Equal(t, http.StatusOK, rr.Code)
+}
+
+func TestStaticHandlerRefusesDotfiles(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, ".ssh"), 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ".ssh", "authorized_keys"), []byte("ssh-ed25519 AAAA me"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ".env"), []byte("SECRET=1"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "index.html"), []byte("<h1>hi</h1>"), 0o644))
+	h := StaticHandler(dir)
+
+	// Whatever directory this ends up pointed at, nothing hidden goes out
+	for _, path := range []string{"/.ssh/authorized_keys", "/.env", "/.ssh/", "/./.env"} {
+		rr := httptest.NewRecorder()
+		h.ServeHTTP(rr, httptest.NewRequest("GET", path, nil))
+		assert.Equal(t, http.StatusNotFound, rr.Code, "%q must not be served", path)
+		assert.NotContains(t, rr.Body.String(), "ssh-ed25519")
+		assert.NotContains(t, rr.Body.String(), "SECRET")
+	}
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, httptest.NewRequest("GET", "/", nil))
+	assert.Equal(t, http.StatusOK, rr.Code, "the app's own index still works")
+}

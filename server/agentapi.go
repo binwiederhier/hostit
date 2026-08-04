@@ -108,7 +108,10 @@ func (s *Server) agentGuide(appName, description string) *apiAgentInfoResponse {
 			"  " + appctl.BinDir + "/      binaries and scripts the app runs (run: ./" + appctl.BinDir + "/myapp)\n" +
 			"  " + appctl.LogDir + "/      the app's output, written by hostit; read it with GET /logs\n" +
 			"  " + appctl.SrcDir + "/      source, if you keep the app's source here\n\n" +
-			"hostit.yml and README.md live at the top. Directories are created as you write into them.",
+			"hostit.yml and README.md live at the top. Directories are created as you write into them.\n\n" +
+			"If your app serves files itself, point it at " + appctl.PublicDir + "/ and never at the home directory: " +
+			"the home also holds hostit.yml (which may carry env values) and .ssh/, and serving it puts them on the " +
+			"open internet. For example: python3 -m http.server $PORT --bind 0.0.0.0 --directory " + appctl.PublicDir + "",
 		HostitYml: "Three modes, pick one.\n\n" +
 			"1. Static files (simplest, nothing to run):\n" +
 			"     static: " + appctl.PublicDir + "   # always serves " + appctl.PublicDir + "/, whatever this says\n\n" +

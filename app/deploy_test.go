@@ -335,3 +335,31 @@ func TestMountSourcesMustResolveInsideTheApp(t *testing.T) {
 	conf.Build = "escape"
 	require.ErrorIs(t, m.checkMountSources("blog", conf), ErrInvalid, "so must a build context")
 }
+
+func TestRestartStaleAgents(t *testing.T) {
+	t.Parallel()
+	m, _, runner := newTestDeployManager(t)
+	createTestApp(t, m, "blog")
+	writeAppFile(t, m, "blog", "hostit.yml", "static: public")
+
+	// A running agent is the binary it was exec'd from: after an upgrade it
+	// keeps the old behaviour until its container restarts. That is how a
+	// changed static: directory once kept serving the old one.
+	restarted, err := m.RestartStaleAgents("v0.3.0")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"blog"}, restarted)
+	assert.Contains(t, runner.ran(), "systemctl restart hostit-app@blog")
+
+	// Same version again is a no-op: restarts interrupt apps, so they only
+	// happen when the binary behind the agents actually changed
+	runner.reset()
+	restarted, err = m.RestartStaleAgents("v0.3.0")
+	require.NoError(t, err)
+	assert.Empty(t, restarted)
+	assert.NotContains(t, runner.ran(), "systemctl restart")
+
+	// A new version restarts them again
+	restarted, err = m.RestartStaleAgents("v0.4.0")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"blog"}, restarted)
+}

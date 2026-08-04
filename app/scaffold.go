@@ -61,6 +61,10 @@ Where things go
 
 Directories are created as you write into them.
 
+If your app serves files itself, point it at public/ and NEVER at this home
+directory: it also holds hostit.yml and .ssh/, and serving it would put them on
+the open internet. E.g. python3 -m http.server $PORT --directory public
+
 What is installed
 -----------------
 The workspace container ships %s.

@@ -117,6 +117,12 @@ const Docs = () => (
         </tbody>
       </table>
       <p>Directories appear as you write into them.</p>
+      <p className="hint">
+        If your app serves files itself (rather than using <span className="mono">static:</span>), point it at{" "}
+        <span className="mono">public/</span> and never at the home directory. The home also holds{" "}
+        <span className="mono">hostit.yml</span> and <span className="mono">.ssh/</span>, and serving it puts them on the open
+        internet.
+      </p>
       <h3>Compiled apps: build here or upload</h3>
       <p>
         Either works. Build the binary wherever you work and upload it to <span className="mono">bin/</span>, or put the source

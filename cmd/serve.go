@@ -73,6 +73,15 @@ func execServe(c *cli.Context) error {
 		if err := manager.EnsureWorkspaceImage(); err != nil {
 			slog.Warn("Cannot prepare shared workspace image; apps will build their own", "error", err)
 		}
+		// Agents keep the behaviour of the binary they were exec'd from, so an
+		// upgrade only reaches them on a restart. In the background: this costs
+		// each app a moment, and the proxy should be up first.
+		restarted, err := manager.RestartStaleAgents(c.App.Version)
+		if err != nil {
+			slog.Warn("Cannot restart apps after upgrade", "error", err)
+		} else if len(restarted) > 0 {
+			slog.Info("Restarted apps to pick up the new version", "apps", restarted, "version", c.App.Version)
+		}
 	}()
 	srv := server.New(conf, manager, users)
 
