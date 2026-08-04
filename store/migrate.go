@@ -12,8 +12,8 @@ const (
 		);
 	`
 	selectSchemaVersionQuery = `SELECT version FROM schema_version LIMIT 1`
+	deleteSchemaVersionQuery = `DELETE FROM schema_version`
 	insertSchemaVersionQuery = `INSERT INTO schema_version (version) VALUES (?)`
-	updateSchemaVersionQuery = `UPDATE schema_version SET version = ?`
 	appTableExistsQuery      = `SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'app'`
 )
 
@@ -88,11 +88,32 @@ func migrate(db *sql.DB) error {
 		return err
 	}
 	for i := version; i < len(migrations); i++ {
-		if _, err := db.Exec(migrations[i]); err != nil {
-			return fmt.Errorf("migration %d failed: %w", i+1, err)
+		if err := applyMigration(db, i); err != nil {
+			return err
 		}
 	}
-	return setVersion(db, version, len(migrations))
+	return nil
+}
+
+// applyMigration runs one migration and records the new version in the same
+// transaction, so a failure leaves the database untouched and a success can
+// never be replayed (which would fail with "table already exists")
+func applyMigration(db *sql.DB, index int) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() // No-op once committed
+	if _, err := tx.Exec(migrations[index]); err != nil {
+		return fmt.Errorf("migration %d failed: %w", index+1, err)
+	}
+	if _, err := tx.Exec(deleteSchemaVersionQuery); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(insertSchemaVersionQuery, index+1); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // currentVersion returns the schema version, inferring 1 for pre-versioning
@@ -113,13 +134,4 @@ func currentVersion(db *sql.DB) (int, error) {
 		return 1, nil
 	}
 	return 0, nil
-}
-
-func setVersion(db *sql.DB, from, to int) error {
-	if from == 0 {
-		_, err := db.Exec(insertSchemaVersionQuery, to)
-		return err
-	}
-	_, err := db.Exec(updateSchemaVersionQuery, to)
-	return err
 }

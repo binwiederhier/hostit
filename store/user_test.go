@@ -217,6 +217,45 @@ func TestMigrationFromV1Schema(t *testing.T) {
 	require.NoError(t, s.AddUser(&User{Email: "a@b.c", Role: RoleUser, Status: StatusActive}))
 }
 
+func TestMigrationIsIdempotent(t *testing.T) {
+	t.Parallel()
+	// A pre-versioning database must migrate exactly once: reopening it may not
+	// re-run migrations (which would fail with "table already exists")
+	filename := filepath.Join(t.TempDir(), "hostit.db")
+	old, err := newRawDB(filename)
+	require.NoError(t, err)
+	_, err = old.Exec(`CREATE TABLE app (name TEXT PRIMARY KEY, port INTEGER NOT NULL UNIQUE, host TEXT NOT NULL, created_at INTEGER NOT NULL)`)
+	require.NoError(t, err)
+	require.NoError(t, old.Close())
+	for i := 0; i < 3; i++ {
+		s, err := NewStore(filename)
+		require.NoError(t, err, "open %d must succeed", i+1)
+		require.NoError(t, s.Close())
+	}
+	// Same for a database created from scratch
+	fresh := filepath.Join(t.TempDir(), "fresh.db")
+	for i := 0; i < 3; i++ {
+		s, err := NewStore(fresh)
+		require.NoError(t, err, "fresh open %d must succeed", i+1)
+		require.NoError(t, s.Close())
+	}
+}
+
+func TestMigrationRecordsVersion(t *testing.T) {
+	t.Parallel()
+	filename := filepath.Join(t.TempDir(), "hostit.db")
+	s, err := NewStore(filename)
+	require.NoError(t, err)
+	defer s.Close()
+	var version int
+	require.NoError(t, s.db.QueryRow(selectSchemaVersionQuery).Scan(&version))
+	assert.Equal(t, len(migrations), version)
+	// Exactly one row, always
+	var count int
+	require.NoError(t, s.db.QueryRow(`SELECT COUNT(*) FROM schema_version`).Scan(&count))
+	assert.Equal(t, 1, count)
+}
+
 func intPtr(i int) *int {
 	return &i
 }
