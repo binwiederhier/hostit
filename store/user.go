@@ -350,7 +350,8 @@ func scanTokenValues(scan func(dest ...any) error) (*Token, error) {
 	}
 	t.CreatedAt = time.Unix(createdAt, 0)
 	if lastUsed > 0 {
-		t.LastUsed = time.Unix(lastUsed, 0)
+		used := time.Unix(lastUsed, 0)
+		t.LastUsed = &used
 	}
 	return &t, nil
 }
