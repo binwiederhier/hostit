@@ -47,8 +47,17 @@ const Dashboard = ({ account, refreshAccount }) => {
     }
   }, []);
 
+  // The server answers from a cache so the list renders at once; its numbers may
+  // be a few seconds old, so ask again shortly after and then keep it fresh
+  // while the page is open.
   useEffect(() => {
     load();
+    const soon = setTimeout(load, 2000);
+    const ticker = setInterval(load, 15000);
+    return () => {
+      clearTimeout(soon);
+      clearInterval(ticker);
+    };
   }, [load]);
 
   const create = async (e) => {
