@@ -235,8 +235,8 @@ const AppDetail = ({ account, refreshAccount }) => {
         <Link to="/">&larr; Apps</Link>
       </p>
       <div className="page-header">
-        <h1 className="mono">{app.name}</h1>
-        <a href={app.url} target="_blank" rel="noreferrer">
+        <h1 className="app-title">{app.name}</h1>
+        <a className="app-url" href={app.url} target="_blank" rel="noreferrer">
           {app.url}
         </a>
       </div>

@@ -267,6 +267,16 @@ p {
   margin: -8px 0 16px;
 }
 
+/* Not .mono: on a heading, its 0.95em would resolve against the body size */
+.app-title {
+  font-family: var(--mono);
+}
+
+.app-url {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .open-link {
   margin-left: 10px;
   font-size: 12px;
@@ -295,12 +305,16 @@ p {
   line-height: 1.7;
   color: var(--term-text);
   white-space: pre-wrap;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
   padding-right: 120px;
 }
 
 .danger-card {
   border-color: var(--danger);
+}
+
+.danger-card .inline-form input {
+  max-width: 260px;
 }
 
 /* Buttons */
