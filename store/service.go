@@ -56,9 +56,19 @@ func NewStore(filename string) (*Store, error) {
 }
 
 // newRawDB opens the database without migrating it; tests use it to fabricate
-// old schema versions
+// old schema versions.
+//
+// Background work (demo app startup, quota checks) hits the database
+// concurrently with API requests, so use WAL plus a busy timeout, and serialize
+// access with a single connection: SQLite writes are exclusive anyway, and at
+// this scale one connection is plenty.
 func newRawDB(filename string) (*sql.DB, error) {
-	return sql.Open("sqlite", filename)
+	db, err := sql.Open("sqlite", filename+"?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)")
+	if err != nil {
+		return nil, err
+	}
+	db.SetMaxOpenConns(1)
+	return db, nil
 }
 
 // AddApp inserts a new app; name and port must be unique

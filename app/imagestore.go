@@ -16,18 +16,19 @@ const (
 	workspaceSubDir = "workspace"
 )
 
-// storageConf is the podman storage configuration handed to every app user: it
-// points at the daemon-managed read-only image store, so nobody has to build or
-// store their own copy of the workspace image
+// storageConf is the podman storage configuration handed to every app user.
+//
+// It deliberately does NOT reference the daemon's shared image store via
+// additionalimagestores: the shared layers are owned by host root, which is not
+// mapped into an app user's rootless user namespace, so starting a container
+// fails ("creating /etc/mtab symlink: permission denied") when overlay tries to
+// copy up files owned by an unmapped uid. Sharing images across rootless users
+// needs a different runtime model (see plans/260804-hostit-image-sharing.md).
 func storageConf(imageStoreDir string) string {
-	return fmt.Sprintf(`# Managed by hostit. The shared image store holds the workspace image,
-# so it is neither rebuilt nor duplicated per app.
+	return `# Managed by hostit.
 [storage]
 driver = "overlay"
-
-[storage.options]
-additionalimagestores = [%q]
-`, imageStoreDir)
+`
 }
 
 // EnsureSharedImage builds the workspace image into the shared read-only store

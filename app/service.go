@@ -182,11 +182,16 @@ func (m *Manager) CreateApp(name string, opts *CreateOptions) (*store.App, *Cred
 	m.memoryMB[name] = opts.MemoryMB
 	m.ReconcilePortRules()
 
-	// Start the scaffolded demo app, so the URL serves something immediately
-	// instead of a bad gateway page
-	if _, err := m.Up(name); err != nil {
-		slog.Warn("Cannot start demo app; the app exists but serves nothing yet", "app", name, "error", err)
-	}
+	// Start the scaffolded demo app in the background, so the URL serves
+	// something without the API call waiting for a container (and, on the app
+	// user's first app, an image build) to come up
+	go func() {
+		if _, err := m.Up(name); err != nil {
+			slog.Warn("Cannot start demo app; the app exists but serves nothing yet", "app", name, "error", err)
+			return
+		}
+		slog.Info("Demo app started", "app", name)
+	}()
 	return app, creds, nil
 }
 

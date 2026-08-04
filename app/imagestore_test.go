@@ -14,7 +14,9 @@ func TestStorageConf(t *testing.T) {
 	t.Parallel()
 	conf := storageConf("/var/lib/hostit/imagestore")
 	assert.Contains(t, conf, `driver = "overlay"`)
-	assert.Contains(t, conf, `additionalimagestores = ["/var/lib/hostit/imagestore"]`)
+	// Sharing the daemon's image store is NOT possible for rootless users: the
+	// layers are owned by host root, which is unmapped in their user namespace
+	assert.NotContains(t, conf, "additionalimagestores")
 }
 
 func TestCreateAppWritesStorageConf(t *testing.T) {
@@ -22,8 +24,8 @@ func TestCreateAppWritesStorageConf(t *testing.T) {
 	m, ops, _ := newTestDeployManager(t)
 	createTestApp(t, m, "blog")
 	conf, ok := ops.userFiles["blog:.config/containers/storage.conf"]
-	require.True(t, ok, "storage.conf must be written so the shared image store is used")
-	assert.Contains(t, conf, m.imageStoreDir())
+	require.True(t, ok, "each app user needs a podman storage config")
+	assert.Contains(t, conf, "overlay")
 }
 
 func TestEnsureSharedImageBuildsOnce(t *testing.T) {
@@ -43,16 +45,16 @@ func TestEnsureSharedImageBuildsOnce(t *testing.T) {
 	assert.Len(t, ops.sharedBuilds, 1)
 }
 
-func TestDeployUsesSharedImageWithoutBuilding(t *testing.T) {
+func TestDeployBuildsWorkspaceImageWhenMissing(t *testing.T) {
 	t.Parallel()
-	m, ops, runner := newTestDeployManager(t)
-	ops.sharedImages[workspaceImage] = true
+	m, _, runner := newTestDeployManager(t)
 	createTestApp(t, m, "blog")
 	writeAppFile(t, m, "blog", "hostit.yml", "run: ./server")
-	runner.errs["container inspect"] = assert.AnError // Force a create
+	runner.errs["image exists"] = assert.AnError
+	runner.errs["container inspect"] = assert.AnError
 	_, err := m.Up("blog")
 	require.NoError(t, err)
 	joined := strings.Join(runner.commands, "\n")
-	assert.NotContains(t, joined, "podman build", "the shared image must not be rebuilt per user")
+	assert.Contains(t, joined, "podman build --tag "+workspaceImage)
 	assert.Contains(t, joined, "podman create --name hostit-app")
 }
