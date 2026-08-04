@@ -147,8 +147,10 @@ func (s *Store) RemoveApp(name string) error {
 	if err := checkAffected(result, ErrAppNotFound); err != nil {
 		return err
 	}
-	_, err = s.db.Exec(deleteAppKeysQuery, name)
-	return err
+	if _, err := s.db.Exec(deleteAppKeysQuery, name); err != nil {
+		return err
+	}
+	return s.RemoveTokensByApp(name)
 }
 
 // Close closes the underlying database

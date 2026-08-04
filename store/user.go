@@ -29,11 +29,13 @@ const (
 	`
 	deleteUserQuery = `DELETE FROM user WHERE id = ?`
 
-	insertTokenQuery        = `INSERT INTO token (id, user_id, hash, prefix, label, app_name, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`
-	selectTokenByHashQuery  = `SELECT id, user_id, hash, prefix, label, app_name, created_at, last_used FROM token WHERE hash = ?`
-	selectTokensByUserQuery = `SELECT id, user_id, hash, prefix, label, app_name, created_at, last_used FROM token WHERE user_id = ? ORDER BY created_at`
+	insertTokenQuery        = `INSERT INTO token (id, user_id, hash, prefix, label, app_name, secret, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+	selectTokenByHashQuery  = `SELECT id, user_id, hash, prefix, label, app_name, secret, created_at, last_used FROM token WHERE hash = ?`
+	selectTokensByUserQuery = `SELECT id, user_id, hash, prefix, label, app_name, secret, created_at, last_used FROM token WHERE user_id = ? ORDER BY created_at`
 	updateTokenUsedQuery    = `UPDATE token SET last_used = ? WHERE id = ?`
+	selectTokensByAppQuery  = `SELECT id, user_id, hash, prefix, label, app_name, secret, created_at, last_used FROM token WHERE app_name = ? ORDER BY created_at`
 	deleteTokenQuery        = `DELETE FROM token WHERE user_id = ? AND id = ?`
+	deleteTokensByAppQuery  = `DELETE FROM token WHERE app_name = ?`
 	deleteTokensByUserQuery = `DELETE FROM token WHERE user_id = ?`
 
 	insertUserKeyQuery  = `INSERT INTO user_key (id, user_id, label, key, created_at) VALUES (?, ?, ?, ?, ?)`
@@ -139,7 +141,7 @@ func (s *Store) AddToken(t *Token) error {
 	if t.CreatedAt.IsZero() {
 		t.CreatedAt = time.Now()
 	}
-	_, err := s.db.Exec(insertTokenQuery, t.ID, t.UserID, t.Hash, t.Prefix, t.Label, t.AppName, t.CreatedAt.Unix())
+	_, err := s.db.Exec(insertTokenQuery, t.ID, t.UserID, t.Hash, t.Prefix, t.Label, t.AppName, t.Secret, t.CreatedAt.Unix())
 	return err
 }
 
@@ -164,6 +166,30 @@ func (s *Store) TokensByUser(userID string) ([]*Token, error) {
 		tokens = append(tokens, t)
 	}
 	return tokens, rows.Err()
+}
+
+// TokensByApp returns the tokens scoped to one app
+func (s *Store) TokensByApp(appName string) ([]*Token, error) {
+	rows, err := s.db.Query(selectTokensByAppQuery, appName)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	tokens := make([]*Token, 0)
+	for rows.Next() {
+		t, err := scanTokenRow(rows)
+		if err != nil {
+			return nil, err
+		}
+		tokens = append(tokens, t)
+	}
+	return tokens, rows.Err()
+}
+
+// RemoveTokensByApp deletes every token scoped to an app, used when it is deleted
+func (s *Store) RemoveTokensByApp(appName string) error {
+	_, err := s.db.Exec(deleteTokensByAppQuery, appName)
+	return err
 }
 
 // TouchToken records that a token was just used
@@ -319,7 +345,7 @@ func scanTokenRow(rows *sql.Rows) (*Token, error) {
 func scanTokenValues(scan func(dest ...any) error) (*Token, error) {
 	var t Token
 	var createdAt, lastUsed int64
-	if err := scan(&t.ID, &t.UserID, &t.Hash, &t.Prefix, &t.Label, &t.AppName, &createdAt, &lastUsed); err != nil {
+	if err := scan(&t.ID, &t.UserID, &t.Hash, &t.Prefix, &t.Label, &t.AppName, &t.Secret, &createdAt, &lastUsed); err != nil {
 		return nil, err
 	}
 	t.CreatedAt = time.Unix(createdAt, 0)

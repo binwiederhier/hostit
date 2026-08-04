@@ -19,7 +19,7 @@ const (
 	containerPrefix = "hostit-app-"
 	// unitPrefix is the systemd template unit instantiated per app
 	unitTemplate = "hostit-app@"
-	// workspaceImage is the default image for run: mode apps, built once into
+	// workspaceImage is the default image for static/run mode apps, built once into
 	// the daemon's (root) image store and shared by every app
 	workspaceImage = "localhost/hostit-workspace:1"
 	// buildImageTag is the image tag used for build: mode, one per app
@@ -30,10 +30,18 @@ const (
 	// The hostit binary itself is bind-mounted, not baked in.
 	workspaceContainerfile = `FROM docker.io/library/debian:stable-slim
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-      bash ca-certificates curl git less openssh-sftp-server procps python3 rsync vim-tiny \
+      bash ca-certificates curl git less openssh-sftp-server procps rsync vim-tiny \
+      python3 python3-venv python3-pip \
+      nodejs npm \
+      php-cli \
+      golang-go \
     && rm -rf /var/lib/apt/lists/*
 CMD ["/bin/bash"]
 `
+
+	// WorkspaceRuntimes is what the workspace image ships, quoted verbatim to
+	// users and agents so nobody has to guess what is available
+	WorkspaceRuntimes = "python3 (with venv and pip), node and npm, php-cli, go, plus git, curl and rsync"
 )
 
 // IDs are the identity ranges a container is mapped into: the app's own uid/gid
@@ -80,7 +88,7 @@ func containerCreateArgs(conf *appctl.AppConfig, a *store.App, home, socketFile,
 	if memoryMB > 0 {
 		args = append(args, "--memory", strconv.Itoa(memoryMB)+"m")
 	}
-	if conf == nil || conf.Mode() == appctl.ModeProcess {
+	if conf == nil || conf.Mode() == appctl.ModeProcess || conf.Mode() == appctl.ModeStatic {
 		containerHome := "/home/" + a.Name
 		args = append(args,
 			"--env", fmt.Sprintf("PORT=%d", a.Port),

@@ -3,12 +3,20 @@ package cmd
 import (
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
+	"time"
 
 	"github.com/urfave/cli/v2"
 	"heckel.io/hostit/appctl"
+)
+
+const (
+	// staticReadHeaderTimeout bounds header reads of the static file server
+	staticReadHeaderTimeout = 10 * time.Second
 )
 
 var (
@@ -40,6 +48,15 @@ var (
 			&cli.BoolFlag{Name: "follow", Aliases: []string{"f"}, Usage: "follow the log output"},
 			&cli.IntFlag{Name: "lines", Aliases: []string{"n"}, Value: 100, Usage: "number of lines to show"},
 		},
+	}
+	cmdStatic = &cli.Command{
+		Name:  "static",
+		Usage: "Serve a directory over HTTP (used by \"static:\" apps)",
+		Flags: []cli.Flag{
+			&cli.StringFlag{Name: "dir", Aliases: []string{"d"}, Value: ".", Usage: "directory to serve"},
+			&cli.IntFlag{Name: "port", Aliases: []string{"p"}, Usage: "port to listen on; defaults to $PORT"},
+		},
+		Action: execStatic,
 	}
 	cmdInfo = &cli.Command{
 		Name:   "info",
@@ -119,6 +136,30 @@ func execInfo(_ *cli.Context) error {
 	}
 	fmt.Printf("App:  %s\nURL:  %s\nPort: %d (a \"run:\" app must listen on 0.0.0.0:$PORT inside the container)\n", self.Name, self.URL, self.Port)
 	return nil
+}
+
+// execStatic serves a directory; this is what a "static:" app runs, so a plain
+// HTML app needs no runtime of its own
+func execStatic(c *cli.Context) error {
+	port := c.Int("port")
+	if port == 0 {
+		port, _ = strconv.Atoi(os.Getenv("PORT"))
+	}
+	if port == 0 {
+		return errors.New("no port: pass --port or set $PORT")
+	}
+	dir := c.String("dir")
+	if _, err := os.Stat(dir); err != nil {
+		return fmt.Errorf("cannot serve %s: %w", dir, err)
+	}
+	addr := fmt.Sprintf("0.0.0.0:%d", port)
+	fmt.Printf("Serving %s on %s\n", dir, addr)
+	server := &http.Server{
+		Addr:              addr,
+		Handler:           appctl.StaticHandler(dir),
+		ReadHeaderTimeout: staticReadHeaderTimeout,
+	}
+	return server.ListenAndServe()
 }
 
 func newController() *appctl.Controller {

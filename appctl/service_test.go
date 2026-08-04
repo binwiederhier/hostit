@@ -37,6 +37,16 @@ volumes:
 	assert.Equal(t, 80, c.ContainerPort)
 }
 
+func TestLoadAppConfigStaticMode(t *testing.T) {
+	t.Parallel()
+	c := writeAndLoadConfig(t, "static: public\n")
+	assert.Equal(t, ModeStatic, c.Mode())
+	assert.Equal(t, "public", c.Static)
+	// A bare "static: ." serves the app directory itself
+	c = writeAndLoadConfig(t, `static: "."`)
+	assert.Equal(t, ModeStatic, c.Mode())
+}
+
 func TestAppConfigValidate(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -50,6 +60,8 @@ func TestAppConfigValidate(t *testing.T) {
 		{"image without port", `image: nginx`, "container-port"},
 		{"build without port", `build: .`, "container-port"},
 		{"build and image", "build: .\nimage: nginx\ncontainer-port: 80", "either"},
+		{"static and run", "static: public\nrun: ./server", "either"},
+		{"static and image", "static: public\nimage: nginx\ncontainer-port: 80", "either"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

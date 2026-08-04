@@ -65,6 +65,7 @@ type Token struct {
 	Prefix    string    `json:"prefix"`
 	Label     string    `json:"label"`
 	AppName   string    `json:"app_name"` // Empty = account-wide; otherwise the only app this token may touch
+	Secret    string    `json:"-"`        // Only set for app tokens, so their page can show them again
 	CreatedAt time.Time `json:"created_at"`
 	LastUsed  time.Time `json:"last_used"`
 }

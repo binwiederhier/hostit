@@ -124,7 +124,7 @@ func (m *Manager) apply(a *store.App, conf *appctl.AppConfig, allowReload bool) 
 	}
 	// The daemon builds this at startup, but an app created while that is still
 	// running must not fail; EnsureWorkspaceImage is a no-op once it exists
-	if conf == nil || conf.Mode() == appctl.ModeProcess {
+	if conf == nil || conf.Mode() != appctl.ModeContainer {
 		if err := m.EnsureWorkspaceImage(); err != nil {
 			return "", err
 		}
@@ -157,7 +157,7 @@ func (m *Manager) apply(a *store.App, conf *appctl.AppConfig, allowReload bool) 
 		}
 		return "deployed (container created and started)", nil
 	}
-	if allowReload && conf != nil && conf.Mode() == appctl.ModeProcess {
+	if allowReload && conf != nil && conf.Mode() != appctl.ModeContainer {
 		if _, err := m.runner.Run("podman", "kill", "--signal", "HUP", containerName(name)); err != nil {
 			return "", err
 		}

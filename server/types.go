@@ -38,6 +38,7 @@ type apiAppResponse struct {
 	OwnerEmail string     `json:"owner_email,omitempty"`
 	CreatedAt  time.Time  `json:"created_at"`
 	SSH        apiSSHInfo `json:"ssh"`
+	AgentToken string     `json:"agent_token,omitempty"` // App-scoped; shown to the owner so the page can always render the prompt
 	PrivateKey string     `json:"private_key,omitempty"`
 	PublicKey  string     `json:"public_key,omitempty"`
 }
@@ -169,14 +170,16 @@ type apiAgentEndpoint struct {
 // apiAgentInfoResponse is GET /api/info: everything an agent needs to work with
 // hostit without any prior knowledge
 type apiAgentInfoResponse struct {
-	Platform   string             `json:"platform"`
-	BaseURL    string             `json:"base_url"`
-	WhatIsThis string             `json:"what_is_this"`
-	Auth       string             `json:"auth"`
-	Workflow   []string           `json:"workflow"`
-	HostitYml  string             `json:"hostit_yml"`
-	Endpoints  []apiAgentEndpoint `json:"endpoints"`
-	Notes      []string           `json:"notes"`
+	Platform       string             `json:"platform"`
+	BaseURL        string             `json:"base_url"`
+	WhatIsThis     string             `json:"what_is_this"`
+	Auth           string             `json:"auth"`
+	Workflow       []string           `json:"workflow"`
+	HostitYml      string             `json:"hostit_yml"`
+	Runtimes       string             `json:"runtimes"`
+	SuggestedStack string             `json:"suggested_stack"`
+	Endpoints      []apiAgentEndpoint `json:"endpoints"`
+	Notes          []string           `json:"notes"`
 }
 
 // apiAgentAppResponse is GET /api/{app}/info

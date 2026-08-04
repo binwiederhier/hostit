@@ -186,6 +186,11 @@ func (m *Manager) CreateAppToken(userID, appName, label string) (string, *store.
 		Label:   label,
 		AppName: appName,
 	}
+	if appName != "" {
+		// An app token is meant to be pasted into the owner's agent, so its page
+		// must be able to show it again; account-wide tokens stay hash-only
+		tk.Secret = token
+	}
 	if err := m.store.AddToken(tk); err != nil {
 		return "", nil, err
 	}
@@ -216,6 +221,38 @@ func (m *Manager) UserAndScopeByToken(token string) (*store.User, string, error)
 		return nil, "", err
 	}
 	return u, tk.AppName, nil
+}
+
+// AppToken returns the token scoped to an app, creating one if it has none.
+// Apps get a token the moment they are created, so the owner never has to think
+// about credentials before handing the app to an agent.
+func (m *Manager) AppToken(userID, appName string) (string, error) {
+	tokens, err := m.store.TokensByApp(appName)
+	if err != nil {
+		return "", err
+	}
+	for _, tk := range tokens {
+		if tk.Secret != "" {
+			return tk.Secret, nil
+		}
+	}
+	token, _, err := m.CreateAppToken(userID, appName, "agent")
+	return token, err
+}
+
+// RotateAppToken replaces an app's token, invalidating the previous one
+func (m *Manager) RotateAppToken(userID, appName string) (string, error) {
+	tokens, err := m.store.TokensByApp(appName)
+	if err != nil {
+		return "", err
+	}
+	for _, tk := range tokens {
+		if err := m.store.RemoveToken(tk.UserID, tk.ID); err != nil {
+			return "", err
+		}
+	}
+	token, _, err := m.CreateAppToken(userID, appName, "agent")
+	return token, err
 }
 
 // Tokens lists a user's tokens (hashes are never exposed)

@@ -20,6 +20,9 @@ import (
 )
 
 const (
+	// hostitBinFile is where the hostit binary is mounted inside the container;
+	// "static:" apps run its file server
+	hostitBinFile = "/usr/bin/hostit"
 	// defaultRestartDelay is the pause before restarting an exited command
 	defaultRestartDelay = 2 * time.Second
 	// killTimeout is how long a child gets after SIGTERM before SIGKILL
@@ -82,7 +85,7 @@ func (a *Agent) Run() error {
 			}
 			continue
 		}
-		slog.Info("Started app command", "pid", cmd.Process.Pid, "command", conf.Run)
+		slog.Info("Started app command", "pid", cmd.Process.Pid, "command", conf.Command(hostitBinFile))
 		exited := a.waitFor(cmd) // Exactly one waiter per child (Wait must not be called twice)
 
 		// Wait for the child to exit, a reload request, or shutdown
@@ -165,7 +168,7 @@ func (a *Agent) loadConfig() *appctl.AppConfig {
 		slog.Error("Cannot parse hostit.yml", "error", err)
 		return nil
 	}
-	if conf.Run == "" {
+	if conf.Command(hostitBinFile) == "" {
 		return nil
 	}
 	return conf
@@ -178,7 +181,7 @@ func (a *Agent) startChild(conf *appctl.AppConfig) (*exec.Cmd, error) {
 	if err != nil {
 		return nil, err
 	}
-	cmd := exec.Command("/bin/sh", "-lc", conf.Run)
+	cmd := exec.Command("/bin/sh", "-lc", conf.Command(hostitBinFile))
 	cmd.Dir = a.home
 	cmd.Env = os.Environ()
 	cmd.Stdout = io.MultiWriter(os.Stdout, out)

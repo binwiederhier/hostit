@@ -78,6 +78,12 @@ var migrations = []string{
 	`
 		ALTER TABLE token ADD COLUMN app_name TEXT NOT NULL DEFAULT '';
 	`,
+	// 4: an app's agent token is stored in the clear so its page can always show
+	// it (the owner pastes it into a chat, and hiding it after creation only
+	// forces regeneration). Account-wide tokens stay hash-only.
+	`
+		ALTER TABLE token ADD COLUMN secret TEXT NOT NULL DEFAULT '';
+	`,
 }
 
 // migrate brings the database up to the current schema version, creating it if

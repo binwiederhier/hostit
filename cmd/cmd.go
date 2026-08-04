@@ -19,6 +19,7 @@ func New() *cli.App {
 			cmdStatus,
 			cmdLogs,
 			cmdInfo,
+			cmdStatic,
 			cmdAdmin,
 			cmdShell,
 			cmdEnter,

@@ -15,18 +15,21 @@ type Mode string
 const (
 	// ModeProcess runs the app's "run" command directly (must listen on $PORT)
 	ModeProcess = Mode("process")
-	// ModeContainer runs the app as a rootless podman container
+	// ModeContainer runs the app as a podman container of the app's own image
 	ModeContainer = Mode("container")
+	// ModeStatic serves a directory of files; hostit provides the web server
+	ModeStatic = Mode("static")
 )
 
 var (
-	errNoModeConfigured = errors.New("hostit.yml does not define an app: set either \"run:\" (process mode) or \"image:\"/\"build:\" (container mode)")
-	errAmbiguousMode    = errors.New("set either \"run:\" or one of \"image:\"/\"build:\", not both")
+	errNoModeConfigured = errors.New("hostit.yml does not define an app: set \"static:\" (serve files), \"run:\" (run a command) or \"image:\"/\"build:\" (your own container image)")
+	errAmbiguousMode    = errors.New("set either \"static:\", \"run:\" or one of \"image:\"/\"build:\", not several")
 	errNoContainerPort  = errors.New("container mode requires \"container-port:\" (the port the app listens on inside the container)")
 )
 
 // AppConfig is the per-app hostit.yml, written by the app owner (or Claude)
 type AppConfig struct {
+	Static        string            `yaml:"static"`         // Static mode: directory to serve ("." for the app dir)
 	Run           string            `yaml:"run"`            // Process mode: shell command, must listen on $PORT
 	Image         string            `yaml:"image"`          // Container mode: image to run
 	Build         string            `yaml:"build"`          // Container mode: build context dir with a Dockerfile
@@ -87,10 +90,16 @@ func ParseAppConfig(b []byte) (*AppConfig, error) {
 
 // Validate checks that exactly one mode is configured properly
 func (c *AppConfig) Validate() error {
-	if c.Run == "" && c.Image == "" && c.Build == "" {
+	if c.Static == "" && c.Run == "" && c.Image == "" && c.Build == "" {
 		return errNoModeConfigured
 	}
-	if c.Run != "" && (c.Image != "" || c.Build != "") {
+	set := 0
+	for _, configured := range []bool{c.Static != "", c.Run != "", c.Image != "" || c.Build != ""} {
+		if configured {
+			set++
+		}
+	}
+	if set > 1 {
 		return errAmbiguousMode
 	}
 	if c.Image != "" && c.Build != "" {
@@ -104,8 +113,20 @@ func (c *AppConfig) Validate() error {
 
 // Mode returns the app's run mode; only meaningful after Validate
 func (c *AppConfig) Mode() Mode {
+	if c.Static != "" {
+		return ModeStatic
+	}
 	if c.Run != "" {
 		return ModeProcess
 	}
 	return ModeContainer
+}
+
+// Command returns what the agent runs inside the workspace container. Static
+// apps get hostit's own file server, so they need no runtime of their own.
+func (c *AppConfig) Command(hostitBin string) string {
+	if c.Mode() == ModeStatic {
+		return fmt.Sprintf("%s static --dir %q", hostitBin, c.Static)
+	}
+	return c.Run
 }

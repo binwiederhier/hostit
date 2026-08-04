@@ -41,6 +41,7 @@ func (s *Server) newAPIHandler() http.Handler {
 	mux.Handle("GET /v1/apps/{name}", s.requireActive(s.handleAppsGet))
 	mux.Handle("DELETE /v1/apps/{name}", s.requireActive(s.handleAppsDelete))
 	mux.Handle("PUT /v1/apps/{name}/keys", s.requireActive(s.handleAppsSetKeys))
+	mux.Handle("POST /v1/apps/{name}/token", s.requireActive(s.handleAppsRotateToken))
 
 	// Administration
 	mux.Handle("GET /v1/users", s.requireAdmin(s.handleUsersList))
@@ -96,7 +97,9 @@ func (s *Server) handleAppsCreate(w http.ResponseWriter, r *http.Request, c *cal
 		return
 	}
 	slog.Info("App created", "app", a.Name, "port", a.Port, "owner", c.userID())
-	writeJSON(w, http.StatusCreated, s.appResponse(a, creds))
+	resp := s.appResponse(a, creds)
+	resp.AgentToken = s.agentToken(a) // Created with the app, never a separate step
+	writeJSON(w, http.StatusCreated, resp)
 }
 
 func (s *Server) handleAppsList(w http.ResponseWriter, _ *http.Request, c *caller) {
@@ -118,7 +121,40 @@ func (s *Server) handleAppsGet(w http.ResponseWriter, r *http.Request, c *caller
 		writeAppError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, s.appResponse(a, nil))
+	resp := s.appResponse(a, nil)
+	resp.AgentToken = s.agentToken(a)
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// handleAppsRotateToken issues a fresh agent token, invalidating the old one
+func (s *Server) handleAppsRotateToken(w http.ResponseWriter, r *http.Request, c *caller) {
+	a, err := s.ownedApp(c, r.PathValue("name"))
+	if err != nil {
+		writeAppError(w, err)
+		return
+	}
+	token, err := s.users.RotateAppToken(a.OwnerID, a.Name)
+	if err != nil {
+		writeAppError(w, err)
+		return
+	}
+	resp := s.appResponse(a, nil)
+	resp.AgentToken = token
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// agentToken returns the app's agent token, creating it if the app predates
+// automatic creation; failures are not fatal, the page just shows no token
+func (s *Server) agentToken(a *store.App) string {
+	if a.OwnerID == "" {
+		return "" // Unowned apps (admin-token created) have no owner to bill it to
+	}
+	token, err := s.users.AppToken(a.OwnerID, a.Name)
+	if err != nil {
+		slog.Warn("Cannot read agent token", "app", a.Name, "error", err)
+		return ""
+	}
+	return token
 }
 
 func (s *Server) handleAppsDelete(w http.ResponseWriter, r *http.Request, c *caller) {

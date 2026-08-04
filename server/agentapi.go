@@ -67,20 +67,27 @@ func (s *Server) handleAgentInfo(w http.ResponseWriter, _ *http.Request, c *call
 			"files, describe how to run it in hostit.yml, then deploy. Your token is limited to one " +
 			"app unless it is an account token.",
 		Workflow: []string{
-			"GET /api/{app}/info to see what the app currently is; its README.md is the app's description and worklog.",
+			"GET /api/{app}/info to see what the app currently is; its README.md is the app's description and worklog. A new app is a stub serving a placeholder page.",
 			"Upload files: PUT /api/{app}/files/{path} with the file body, or POST /api/{app}/files with a tar archive for many files at once.",
 			"Write hostit.yml (upload it like any other file) to say how the app runs. See hostit_yml below.",
 			"POST /api/{app}/deploy to apply hostit.yml and (re)start the app.",
 			"GET /api/{app}/logs if it does not come up; the app must listen on 0.0.0.0:$PORT.",
 			"PUT /api/{app}/readme to record what this app is and what you changed, for whoever comes next.",
 		},
-		HostitYml: "Two modes. Run a command in the workspace container (Debian with python3, curl, git):\n" +
-			"  run: python3 -m http.server $PORT\n" +
-			"The command MUST listen on 0.0.0.0:$PORT; $PORT is provided.\n\n" +
-			"Or run your own container image:\n" +
-			"  image: docker.io/library/nginx:alpine\n" +
-			"  container-port: 80\n" +
-			"Optional in both modes: env: {KEY: value}. Container mode also takes volumes: [./data:/data].",
+		HostitYml: "Three modes, pick one.\n\n" +
+			"1. Static files (simplest, nothing to run):\n" +
+			"     static: .          # or a subdirectory such as: static: public\n\n" +
+			"2. Your own command, run in the workspace container:\n" +
+			"     run: ./myapp       # MUST listen on 0.0.0.0:$PORT; $PORT is provided\n\n" +
+			"3. Your own container image:\n" +
+			"     image: docker.io/library/nginx:alpine   # or: build: .\n" +
+			"     container-port: 80\n\n" +
+			"Optional everywhere: env: {KEY: value}. Image mode also takes volumes: [./data:/data].",
+		Runtimes: app.WorkspaceRuntimes + ". Install anything else inside the container with apt-get; " +
+			"a new app starts as a stub serving a placeholder page.",
+		SuggestedStack: "A single Go binary that embeds its frontend (go:embed) is the easiest thing to run here: " +
+			"one file to upload, no runtime to install, instant start. Use run: ./myapp listening on 0.0.0.0:$PORT. " +
+			"Python, Node and PHP work equally well, and a plain HTML site needs only static:.",
 		Auth: "Send the token as: Authorization: Bearer <token>",
 		Endpoints: []apiAgentEndpoint{
 			{Method: "GET", Path: "/api/info", What: "This document"},

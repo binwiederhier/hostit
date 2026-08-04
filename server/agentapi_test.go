@@ -26,6 +26,13 @@ func TestAgentInfoIsSelfExplanatory(t *testing.T) {
 	assert.NotEmpty(t, resp.Workflow)
 	assert.NotEmpty(t, resp.Endpoints)
 	assert.NotEmpty(t, resp.HostitYml)
+	// An agent must learn what it can build with, and what we recommend
+	assert.Contains(t, resp.Runtimes, "python3")
+	assert.Contains(t, resp.Runtimes, "node")
+	assert.Contains(t, resp.Runtimes, "go")
+	assert.Contains(t, resp.Runtimes, "php")
+	assert.Contains(t, resp.SuggestedStack, "Go binary")
+	assert.Contains(t, resp.HostitYml, "static:")
 	assert.Equal(t, "https://hostit.apps.example.com/api", resp.BaseURL)
 	paths := make([]string, 0, len(resp.Endpoints))
 	for _, e := range resp.Endpoints {
@@ -155,6 +162,44 @@ func TestAgentReadmeWrite(t *testing.T) {
 	readme, err := s.apps.Readme("blog")
 	require.NoError(t, err)
 	assert.Contains(t, readme, "Rebuilt as a dashboard")
+}
+
+func TestAppGetsItsTokenOnCreation(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	u := newActiveTestUser(t, s, "owner@example.com")
+	userToken, _, err := s.users.CreateToken(u.ID, "setup")
+	require.NoError(t, err)
+
+	// Creating an app hands back a token straight away: no extra click, no
+	// second call, so the page can render the prompt immediately
+	rr := request(t, s.API(), "POST", "/v1/apps", `{"name":"blog"}`, userToken)
+	require.Equal(t, http.StatusCreated, rr.Code)
+	var created apiAppResponse
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &created))
+	require.NotEmpty(t, created.AgentToken)
+
+	// ... and it keeps showing the same token later, so it is never "lost"
+	rr = request(t, s.API(), "GET", "/v1/apps/blog", "", userToken)
+	require.Equal(t, http.StatusOK, rr.Code)
+	var fetched apiAppResponse
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &fetched))
+	assert.Equal(t, created.AgentToken, fetched.AgentToken)
+
+	// The token really works, and only on this app
+	rr = request(t, s.API(), "GET", "/api/blog/info", "", created.AgentToken)
+	assert.Equal(t, http.StatusOK, rr.Code)
+
+	// Rotating replaces it and kills the old one
+	rr = request(t, s.API(), "POST", "/v1/apps/blog/token", "", userToken)
+	require.Equal(t, http.StatusOK, rr.Code)
+	var rotated apiAppResponse
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &rotated))
+	assert.NotEqual(t, created.AgentToken, rotated.AgentToken)
+	rr = request(t, s.API(), "GET", "/api/blog/info", "", created.AgentToken)
+	assert.Equal(t, http.StatusUnauthorized, rr.Code)
+	rr = request(t, s.API(), "GET", "/api/blog/info", "", rotated.AgentToken)
+	assert.Equal(t, http.StatusOK, rr.Code)
 }
 
 func TestAgentUnauthenticated(t *testing.T) {
