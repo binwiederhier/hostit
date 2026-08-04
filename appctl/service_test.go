@@ -166,3 +166,40 @@ func newTestController(t *testing.T, routes map[string]any) *Controller {
 	})
 	return NewController(socketFile)
 }
+
+func TestValidateRefusesVolumesThatLeaveTheApp(t *testing.T) {
+	t.Parallel()
+	// hostit.yml is written by the app's own owner (or their agent), and these
+	// strings become arguments to root podman. An absolute source would mount
+	// any host directory into the container -- with ":U" it would also hand its
+	// ownership to the tenant.
+	for _, volume := range []string{
+		"/:/hostfs",
+		"/etc:/hostetc",
+		"/etc:/hostetc:U",
+		"../../etc:/hostetc",
+		"./data:/data:U",
+		"data:/data:rshared",
+		"data:/data:nonsense",
+	} {
+		c := &AppConfig{Image: "nginx", ContainerPort: 80, Volumes: []string{volume}}
+		assert.Error(t, c.Validate(), "volume %q must be refused", volume)
+	}
+	// The useful shapes still work
+	for _, volume := range []string{"data:/data", "./data:/data", "data:/data:ro", "data:/data:rw", "data:/data:z"} {
+		c := &AppConfig{Image: "nginx", ContainerPort: 80, Volumes: []string{volume}}
+		assert.NoError(t, c.Validate(), "volume %q must be allowed", volume)
+	}
+}
+
+func TestValidateRefusesABuildContextOutsideTheApp(t *testing.T) {
+	t.Parallel()
+	for _, build := range []string{"/etc/hostit", "/", "../..", "../sibling"} {
+		c := &AppConfig{Build: build, ContainerPort: 80}
+		assert.Error(t, c.Validate(), "build %q must be refused", build)
+	}
+	for _, build := range []string{".", "./docker", "docker"} {
+		c := &AppConfig{Build: build, ContainerPort: 80}
+		assert.NoError(t, c.Validate(), "build %q must be allowed", build)
+	}
+}

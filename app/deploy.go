@@ -29,11 +29,11 @@ func (m *Manager) Up(name string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("%w: %s", ErrInvalid, err.Error())
 	}
+	if err := m.checkMountSources(name, conf); err != nil {
+		return "", err
+	}
 	if conf.Build != "" {
-		buildDir := conf.Build
-		if !filepath.IsAbs(buildDir) {
-			buildDir = filepath.Join(m.appHome(name), buildDir)
-		}
+		buildDir := filepath.Join(m.appHome(name), conf.Build)
 		if _, err := m.runner.Run("podman", "build", "--tag", buildImageTag(name), buildDir); err != nil {
 			return "", fmt.Errorf("image build failed: %w", err)
 		}
@@ -119,6 +119,38 @@ func (m *Manager) Logs(name string, lines int) (string, error) {
 		return "", fmt.Errorf("no logs yet: %w", err)
 	}
 	return tailLines(string(b), lines), nil
+}
+
+// checkMountSources resolves every path hostit is about to hand to root podman
+// through the app's own root. Validation already refused absolute and climbing
+// paths, but the app user can still plant a symlink: podman would follow it and
+// mount whatever it points at.
+func (m *Manager) checkMountSources(name string, conf *appctl.AppConfig) error {
+	sources := make([]string, 0, len(conf.Volumes)+1)
+	if conf.Build != "" {
+		sources = append(sources, conf.Build)
+	}
+	for _, volume := range conf.Volumes {
+		src, _, found := strings.Cut(volume, ":")
+		if !found {
+			return fmt.Errorf("%w: volume %q must be src:dst", ErrInvalid, volume)
+		}
+		sources = append(sources, src)
+	}
+	if len(sources) == 0 {
+		return nil
+	}
+	root, err := m.appRoot(name)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	for _, src := range sources {
+		if _, err := root.Stat(src); err != nil {
+			return fmt.Errorf("%w: %q does not resolve inside the app directory: %s", ErrInvalid, src, err.Error())
+		}
+	}
+	return nil
 }
 
 // apply converges the app container to the desired config: recreate it when the

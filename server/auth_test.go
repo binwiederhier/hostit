@@ -1,8 +1,10 @@
 package server
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -55,7 +57,7 @@ func TestAuthWithSessionCookie(t *testing.T) {
 	req := httptest.NewRequest("GET", "/v1/account", nil)
 	value, err := s.sessions.encode(u.ID)
 	require.NoError(t, err)
-	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: value})
+	req.AddCookie(&http.Cookie{Name: s.cookieName(sessionCookieName), Value: value})
 	rr := httptest.NewRecorder()
 	s.API().ServeHTTP(rr, req)
 	require.Equal(t, http.StatusOK, rr.Code)
@@ -98,13 +100,13 @@ func TestAuthRejectsPendingUser(t *testing.T) {
 	req := httptest.NewRequest("GET", "/v1/apps", nil)
 	value, err := s.sessions.encode(u.ID)
 	require.NoError(t, err)
-	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: value})
+	req.AddCookie(&http.Cookie{Name: s.cookieName(sessionCookieName), Value: value})
 	rr := httptest.NewRecorder()
 	s.API().ServeHTTP(rr, req)
 	require.Equal(t, http.StatusForbidden, rr.Code)
 	// ... but /v1/account works, so the web app can show "waiting for approval"
 	req = httptest.NewRequest("GET", "/v1/account", nil)
-	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: value})
+	req.AddCookie(&http.Cookie{Name: s.cookieName(sessionCookieName), Value: value})
 	rr = httptest.NewRecorder()
 	s.API().ServeHTTP(rr, req)
 	require.Equal(t, http.StatusOK, rr.Code)
@@ -164,7 +166,7 @@ func TestGoogleLoginRedirect(t *testing.T) {
 	// The state is also set as a cookie, so the callback can verify it
 	cookies := rr.Result().Cookies()
 	require.NotEmpty(t, cookies)
-	assert.Equal(t, stateCookieName, cookies[0].Name)
+	assert.Equal(t, s.cookieName(stateCookieName), cookies[0].Name)
 }
 
 func TestGoogleLoginDisabledWithoutConfig(t *testing.T) {
@@ -182,7 +184,7 @@ func TestGoogleCallbackStateMismatch(t *testing.T) {
 	s.config.GoogleClientID = "client-id"
 	s.config.GoogleClientSecret = "secret"
 	req := httptest.NewRequest("GET", "/auth/callback?code=abc&state=wrong", nil)
-	req.AddCookie(&http.Cookie{Name: stateCookieName, Value: "right"})
+	req.AddCookie(&http.Cookie{Name: s.cookieName(stateCookieName), Value: "right"})
 	rr := httptest.NewRecorder()
 	s.API().ServeHTTP(rr, req)
 	require.Equal(t, http.StatusBadRequest, rr.Code)
@@ -199,14 +201,14 @@ func TestGoogleCallbackCreatesSession(t *testing.T) {
 		return &googleIdentity{Email: "new@example.com", Name: "New Person", EmailVerified: true}, nil
 	}
 	req := httptest.NewRequest("GET", "/auth/callback?code=the-code&state=st", nil)
-	req.AddCookie(&http.Cookie{Name: stateCookieName, Value: "st"})
+	req.AddCookie(&http.Cookie{Name: s.cookieName(stateCookieName), Value: "st"})
 	rr := httptest.NewRecorder()
 	s.API().ServeHTTP(rr, req)
 	require.Equal(t, http.StatusFound, rr.Code)
 	assert.Equal(t, "/", rr.Header().Get("Location"))
 	var session *http.Cookie
 	for _, c := range rr.Result().Cookies() {
-		if c.Name == sessionCookieName {
+		if c.Name == s.cookieName(sessionCookieName) {
 			session = c
 		}
 	}
@@ -227,7 +229,7 @@ func TestGoogleCallbackRejectsUnverifiedEmail(t *testing.T) {
 		return &googleIdentity{Email: "spoof@example.com", EmailVerified: false}, nil
 	}
 	req := httptest.NewRequest("GET", "/auth/callback?code=c&state=st", nil)
-	req.AddCookie(&http.Cookie{Name: stateCookieName, Value: "st"})
+	req.AddCookie(&http.Cookie{Name: s.cookieName(stateCookieName), Value: "st"})
 	rr := httptest.NewRecorder()
 	s.API().ServeHTTP(rr, req)
 	require.Equal(t, http.StatusForbidden, rr.Code)
@@ -242,7 +244,89 @@ func TestLogoutClearsCookie(t *testing.T) {
 	require.Equal(t, http.StatusOK, rr.Code)
 	cookies := rr.Result().Cookies()
 	require.NotEmpty(t, cookies)
-	assert.Equal(t, sessionCookieName, cookies[0].Name)
+	assert.Equal(t, s.cookieName(sessionCookieName), cookies[0].Name)
 	assert.Empty(t, cookies[0].Value)
 	assert.True(t, cookies[0].MaxAge < 0)
+}
+
+func TestAppTokenCannotReachTheAccountSurface(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	u := newActiveTestUser(t, s, "owner@example.com")
+	require.NoError(t, s.apps.Store().AddApp(&store.App{Name: "blog", Port: 10000, Host: store.HostLocal, OwnerID: u.ID}))
+	token, _, err := s.users.CreateAppToken(u.ID, "blog", "agent")
+	require.NoError(t, err)
+
+	// This token gets pasted into a third-party AI assistant. It must not be
+	// able to tell that assistant who the owner is or what else they have.
+	rr := request(t, s.API(), "GET", "/v1/account", "", token)
+	assert.Equal(t, http.StatusForbidden, rr.Code)
+	assert.NotContains(t, rr.Body.String(), "owner@example.com")
+	// Its own app still works
+	rr = request(t, s.API(), "GET", "/api/blog/info", "", token)
+	assert.Equal(t, http.StatusOK, rr.Code)
+}
+
+func TestOwnerlessAppTokenDoesNotPanic(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	// An app created with the global admin token has no owner, but its agent
+	// token still works; nothing may dereference the user behind it
+	rr := request(t, s.API(), "POST", "/v1/apps", `{"name":"orphan"}`, testToken)
+	require.Equal(t, http.StatusCreated, rr.Code)
+	var created apiAppResponse
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &created))
+	require.NotEmpty(t, created.AgentToken)
+	rr = request(t, s.API(), "GET", "/v1/account", "", created.AgentToken)
+	assert.Equal(t, http.StatusForbidden, rr.Code)
+}
+
+func TestSessionCookieCannotBeShadowedByAnApp(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	// Apps live on subdomains of the same registrable domain, so a tenant's page
+	// can set a cookie for the parent domain. The __Host- prefix makes the
+	// browser refuse any cookie with a Domain attribute, which is the only thing
+	// that stops an app from planting a session on the web app.
+	name := s.cookieName(sessionCookieName)
+	assert.True(t, strings.HasPrefix(name, "__Host-"),
+		"the session cookie must carry the __Host- prefix, got %q", name)
+	c := s.cookie(name, "value", 60)
+	assert.Empty(t, c.Domain, "__Host- forbids a Domain attribute")
+	assert.Equal(t, "/", c.Path)
+	assert.True(t, c.Secure)
+	assert.True(t, c.HttpOnly)
+}
+
+func TestCookieAuthRejectsCrossSiteWrites(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	u := newActiveTestUser(t, s, "owner@example.com")
+	session, err := s.sessions.encode(u.ID)
+	require.NoError(t, err)
+
+	withCookie := func(method, path, body, fetchSite, origin string) int {
+		req := httptest.NewRequest(method, path, strings.NewReader(body))
+		req.AddCookie(&http.Cookie{Name: s.cookieName(sessionCookieName), Value: session})
+		req.Header.Set("Content-Type", "application/json")
+		if fetchSite != "" {
+			req.Header.Set("Sec-Fetch-Site", fetchSite)
+		}
+		if origin != "" {
+			req.Header.Set("Origin", origin)
+		}
+		rr := httptest.NewRecorder()
+		s.API().ServeHTTP(rr, req)
+		return rr.Code
+	}
+
+	// A form or fetch from an app's page must not act as the signed-in user:
+	// this is how a tenant would make itself an admin
+	assert.Equal(t, http.StatusForbidden, withCookie("POST", "/v1/apps", `{"name":"evil"}`, "cross-site", "https://blog.apps.example.com"))
+	assert.Equal(t, http.StatusForbidden, withCookie("POST", "/v1/apps", `{"name":"evil"}`, "", "https://blog.apps.example.com"))
+	// The web app itself keeps working, with either signal
+	assert.Equal(t, http.StatusCreated, withCookie("POST", "/v1/apps", `{"name":"mine"}`, "same-origin", ""))
+	assert.Equal(t, http.StatusCreated, withCookie("POST", "/v1/apps", `{"name":"mine2"}`, "", "https://apps.example.com"))
+	// Reads are not state-changing, so they are left alone
+	assert.Equal(t, http.StatusOK, withCookie("GET", "/v1/apps", "", "cross-site", "https://blog.apps.example.com"))
 }

@@ -313,3 +313,24 @@ func TestLogsCannotBeSymlinkedToAnythingElse(t *testing.T) {
 	assert.NotContains(t, out, "hunter2", "logs must never read through a symlink")
 	assert.Error(t, err)
 }
+
+func TestMountSourcesMustResolveInsideTheApp(t *testing.T) {
+	t.Parallel()
+	m, _, _ := newTestDeployManager(t)
+	createTestApp(t, m, "blog")
+	home := m.appHome("blog")
+	require.NoError(t, os.MkdirAll(filepath.Join(home, "data"), 0o755))
+	// A relative source passes validation, so the link is the way out
+	require.NoError(t, os.Symlink("/etc", filepath.Join(home, "escape")))
+
+	conf := &appctl.AppConfig{Image: "nginx", ContainerPort: 80, Volumes: []string{"data:/data"}}
+	require.NoError(t, m.checkMountSources("blog", conf), "a real directory in the app is fine")
+
+	conf.Volumes = []string{"escape:/hostetc"}
+	require.ErrorIs(t, m.checkMountSources("blog", conf), ErrInvalid, "a link out of the app must be refused")
+
+	conf.Volumes = nil
+	conf.Image = ""
+	conf.Build = "escape"
+	require.ErrorIs(t, m.checkMountSources("blog", conf), ErrInvalid, "so must a build context")
+}

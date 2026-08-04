@@ -4,6 +4,9 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -25,6 +28,12 @@ var (
 	errNoModeConfigured = errors.New("hostit.yml does not define an app: set \"static:\" (serve files), \"run:\" (run a command) or \"image:\"/\"build:\" (your own container image)")
 	errAmbiguousMode    = errors.New("set either \"static:\", \"run:\" or one of \"image:\"/\"build:\", not several")
 	errNoContainerPort  = errors.New("container mode requires \"container-port:\" (the port the app listens on inside the container)")
+	errInvalidVolume    = errors.New("invalid mount")
+
+	// allowedVolumeOptions is what a mount may ask for. Notably absent: "U",
+	// which tells podman to chown the source to the container's uid, and the
+	// propagation options, which reach outside the container.
+	allowedVolumeOptions = map[string]bool{"ro": true, "rw": true, "z": true, "Z": true}
 )
 
 // AppConfig is the per-app hostit.yml, written by the app owner (or Claude)
@@ -108,6 +117,55 @@ func (c *AppConfig) Validate() error {
 	}
 	if c.Mode() == ModeContainer && c.ContainerPort == 0 {
 		return errNoContainerPort
+	}
+	if err := validateBuild(c.Build); err != nil {
+		return err
+	}
+	return validateVolumes(c.Volumes)
+}
+
+// validateVolumes keeps volume mounts inside the app. These strings become
+// arguments to root podman, so an absolute or climbing source would mount a
+// host directory into the container -- and with ":U" hand it to the app's uid.
+func validateVolumes(volumes []string) error {
+	for _, volume := range volumes {
+		src, rest, found := strings.Cut(volume, ":")
+		if !found {
+			return fmt.Errorf("%w: volume %q must be src:dst", errInvalidVolume, volume)
+		}
+		if err := containedPath(src, "volume source"); err != nil {
+			return err
+		}
+		_, options, hasOptions := strings.Cut(rest, ":")
+		if !hasOptions {
+			continue
+		}
+		for _, option := range strings.Split(options, ",") {
+			if !allowedVolumeOptions[option] {
+				return fmt.Errorf("%w: volume option %q is not allowed", errInvalidVolume, option)
+			}
+		}
+	}
+	return nil
+}
+
+// validateBuild keeps the build context inside the app; podman reads it as root
+func validateBuild(build string) error {
+	if build == "" {
+		return nil
+	}
+	return containedPath(build, "build context")
+}
+
+// containedPath rejects a path that is absolute or climbs out of the app dir
+func containedPath(p, what string) error {
+	if p == "" || path.IsAbs(p) || filepath.IsAbs(p) {
+		return fmt.Errorf("%w: %s %q must be relative to the app directory", errInvalidVolume, what, p)
+	}
+	for _, segment := range strings.Split(filepath.ToSlash(p), "/") {
+		if segment == ".." {
+			return fmt.Errorf("%w: %s %q must not leave the app directory", errInvalidVolume, what, p)
+		}
 	}
 	return nil
 }

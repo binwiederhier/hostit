@@ -14,9 +14,13 @@ import (
 )
 
 const (
-	// sessionCookieName holds the signed session; stateCookieName the OAuth state
+	// sessionCookieName holds the signed session; stateCookieName the OAuth state.
+	// The __Host- prefix is what keeps an app subdomain from planting a session
+	// on the web app: browsers refuse such a cookie if it carries a Domain
+	// attribute. It also requires Secure, so plain-HTTP setups drop the prefix.
 	sessionCookieName = "hostit_session"
 	stateCookieName   = "hostit_state"
+	hostCookiePrefix  = "__Host-"
 	// sessionTTL is how long a web login lasts
 	sessionTTL = 30 * 24 * time.Hour
 )

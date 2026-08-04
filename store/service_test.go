@@ -1,6 +1,7 @@
 package store
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -96,4 +97,24 @@ func newTestStore(t *testing.T) *Store {
 		_ = s.Close()
 	})
 	return s
+}
+
+func TestDatabaseIsPrivate(t *testing.T) {
+	t.Parallel()
+	// The registry holds every app's agent token in the clear (so its page can
+	// show it) and the session signing key: only root may read it
+	dir := t.TempDir()
+	filename := filepath.Join(dir, "hostit.db")
+	s, err := NewStore(filename)
+	require.NoError(t, err)
+	defer s.Close()
+	require.NoError(t, s.SetSetting("session_key", "secret")) // Force a WAL write
+	for _, suffix := range []string{"", "-wal", "-shm"} {
+		stat, err := os.Stat(filename + suffix)
+		if os.IsNotExist(err) {
+			continue
+		}
+		require.NoError(t, err)
+		assert.Equal(t, os.FileMode(0o600), stat.Mode().Perm(), "%s must not be readable by anyone else", filename+suffix)
+	}
 }

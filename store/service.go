@@ -8,12 +8,17 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io/fs"
+	"os"
 	"time"
 
 	_ "modernc.org/sqlite" // SQLite driver (pure Go, no cgo)
 )
 
 const (
+	// dbFileMode keeps the registry (tokens, session key) readable by root only
+	dbFileMode = 0o600
+
 	insertAppQuery = `INSERT INTO app (name, port, host, owner_id, created_at) VALUES (?, ?, ?, ?, ?)`
 	selectAppQuery = `
 		SELECT name, port, host, owner_id, disk_mb, over_quota, created_at
@@ -52,7 +57,22 @@ func NewStore(filename string) (*Store, error) {
 	if err := migrate(db); err != nil {
 		return nil, fmt.Errorf("cannot migrate database: %w", err)
 	}
+	if err := restrictDBFiles(filename); err != nil {
+		return nil, err
+	}
 	return &Store{db: db}, nil
+}
+
+// restrictDBFiles keeps the registry to root. It holds every app's agent token
+// in the clear (so the app's page can show it again) and the session signing
+// key, either of which is enough to impersonate a user.
+func restrictDBFiles(filename string) error {
+	for _, suffix := range []string{"", "-wal", "-shm"} {
+		if err := os.Chmod(filename+suffix, dbFileMode); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return err
+		}
+	}
+	return nil
 }
 
 // newRawDB opens the database without migrating it; tests use it to fabricate

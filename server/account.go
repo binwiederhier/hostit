@@ -338,6 +338,9 @@ func (s *Server) accountResponse(c *caller) (*apiAccountResponse, error) {
 			Status: store.StatusActive,
 		}, nil
 	}
+	if c.user == nil {
+		return nil, errors.New("this token has no account behind it")
+	}
 	limits, err := s.users.Limits(c.user)
 	if err != nil {
 		return nil, err

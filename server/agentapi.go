@@ -7,7 +7,7 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"path/filepath"
+	"path"
 	"strconv"
 	"strings"
 
@@ -20,6 +20,8 @@ const (
 	agentLogLines = 100
 	// maxTarUpload caps a bulk upload
 	maxTarUpload = 256 * 1024 * 1024
+	// maxLogLines caps what "?lines=" may ask for
+	maxLogLines = 10000
 )
 
 // newAgentRoutes registers the agent-facing API. It is deliberately separate
@@ -171,13 +173,7 @@ func (s *Server) handleAgentAppInfo(w http.ResponseWriter, _ *http.Request, c *c
 }
 
 func (s *Server) handleAgentLogs(w http.ResponseWriter, r *http.Request, c *caller, a *store.App) {
-	lines := agentLogLines
-	if v := r.URL.Query().Get("lines"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			lines = n
-		}
-	}
-	out, err := s.apps.Logs(a.Name, lines)
+	out, err := s.apps.Logs(a.Name, logLines(r.URL.Query().Get("lines")))
 	if err != nil {
 		writeJSON(w, http.StatusOK, &apiOutputResponse{Output: "(no logs yet: " + err.Error() + ")"})
 		return
@@ -200,7 +196,12 @@ func (s *Server) handleAgentFileGet(w http.ResponseWriter, r *http.Request, c *c
 		writeAppError(w, err)
 		return
 	}
-	w.Header().Set("Content-Type", contentTypeFor(r.PathValue("path")))
+	// Served from the web app's own origin, and an admin may read any user's
+	// files: never let one tenant's HTML run here. Downloading is the only thing
+	// this endpoint is for.
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Content-Disposition", "attachment; filename="+strconv.Quote(path.Base(r.PathValue("path"))))
 	_, _ = w.Write(b)
 }
 
@@ -212,12 +213,12 @@ func (s *Server) handleAgentFilePut(w http.ResponseWriter, r *http.Request, c *c
 	}
 	// Straight from the socket to disk: a body big enough to matter must never
 	// be held in the daemon, which shares a small box with every app container
-	path := r.PathValue("path")
-	if err := s.apps.WriteFileFrom(a.Name, path, r.Body, mode); err != nil {
+	relPath := r.PathValue("path")
+	if err := s.apps.WriteFileFrom(a.Name, relPath, r.Body, mode); err != nil {
 		writeAppError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, &apiMessageResponse{Message: "wrote " + path})
+	writeJSON(w, http.StatusCreated, &apiMessageResponse{Message: "wrote " + relPath})
 }
 
 // uploadMode parses an octal ?mode= such as 755, so a binary or script can be
@@ -315,22 +316,15 @@ func (s *Server) requireApp(next func(http.ResponseWriter, *http.Request, *calle
 	})
 }
 
-// contentTypeFor keeps file reads honest without pulling in a MIME database
-func contentTypeFor(path string) string {
-	switch strings.ToLower(filepath.Ext(path)) {
-	case ".html", ".htm":
-		return "text/html; charset=utf-8"
-	case ".css":
-		return "text/css; charset=utf-8"
-	case ".js":
-		return "text/javascript; charset=utf-8"
-	case ".json":
-		return "application/json"
-	case ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg":
-		return "application/octet-stream"
-	default:
-		return "text/plain; charset=utf-8"
+// logLines turns the "?lines=" parameter into a bounded line count; the value
+// reaches "podman logs --tail" and a tail of the log file, so an absurd number
+// would be an absurd allocation
+func logLines(raw string) int {
+	n, err := strconv.Atoi(raw)
+	if err != nil || n <= 0 {
+		return agentLogLines
 	}
+	return min(n, maxLogLines)
 }
 
 var _ = app.ErrInvalid // Keep the error mapping in writeAppError meaningful here

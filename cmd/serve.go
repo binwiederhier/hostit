@@ -21,6 +21,8 @@ const (
 	// settingSessionKey stores the generated cookie-signing key, so web sessions
 	// survive restarts when the operator did not configure one
 	settingSessionKey = "session_key"
+	// dataDirMode keeps /var/lib/hostit to root; nothing else needs to traverse it
+	dataDirMode = 0o700
 )
 
 var (
@@ -42,12 +44,13 @@ func execServe(c *cli.Context) error {
 	if err := conf.Validate(); err != nil {
 		return err
 	}
-	// 0755: app users must traverse into it for the staged workspace
-	// Containerfile; secrets (certs) live in subdirs with their own 0700 perms
-	if err := os.MkdirAll(conf.DataDir, 0o755); err != nil {
+	// Root only: the registry holds every app's agent token and the session
+	// signing key. App users needed to traverse this while podman ran rootless;
+	// the daemon creates containers itself now, so nothing else belongs here.
+	if err := os.MkdirAll(conf.DataDir, dataDirMode); err != nil {
 		return err
 	}
-	if err := os.Chmod(conf.DataDir, 0o755); err != nil {
+	if err := os.Chmod(conf.DataDir, dataDirMode); err != nil {
 		return err
 	}
 	s, err := store.NewStore(filepath.Join(conf.DataDir, "hostit.db"))

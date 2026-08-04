@@ -331,3 +331,32 @@ func createTestApp(t *testing.T, s *Server, appName string) {
 	rr := request(t, s.API(), "POST", "/v1/apps", fmt.Sprintf(`{"name":%q}`, appName), testToken)
 	require.Equal(t, http.StatusCreated, rr.Code, strings.TrimSpace(rr.Body.String()))
 }
+
+func TestFileReadIsNeverRenderedAsAPage(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	token := newAppToken(t, s, "blog")
+	require.NoError(t, s.apps.WriteFile("blog", "evil.html", []byte("<script>alert(1)</script>"), 0))
+	// This endpoint lives on the web app's own origin, and an admin may read any
+	// user's files: a tenant's page must not execute there
+	rr := request(t, s.API(), "GET", "/api/blog/files/evil.html", "", token)
+	require.Equal(t, http.StatusOK, rr.Code)
+	assert.NotContains(t, rr.Header().Get("Content-Type"), "text/html")
+	assert.Equal(t, "nosniff", rr.Header().Get("X-Content-Type-Options"))
+	assert.Contains(t, rr.Header().Get("Content-Disposition"), "attachment")
+	assert.Contains(t, rr.Body.String(), "<script>") // The content itself is intact
+}
+
+func TestLogLinesAreBounded(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	token := newAppToken(t, s, "blog")
+	// "?lines=" reaches podman --tail and a tail of the log file; an absurd
+	// value must not become an absurd allocation
+	rr := request(t, s.API(), "GET", "/api/blog/logs?lines=99999999", "", token)
+	require.Equal(t, http.StatusOK, rr.Code)
+	assert.Equal(t, maxLogLines, logLines("99999999"))
+	assert.Equal(t, agentLogLines, logLines("0"))
+	assert.Equal(t, agentLogLines, logLines("nonsense"))
+	assert.Equal(t, 50, logLines("50"))
+}
