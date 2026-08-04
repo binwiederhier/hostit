@@ -54,7 +54,7 @@ func TestAuthWithSessionCookie(t *testing.T) {
 	t.Parallel()
 	s := newTestServer(t)
 	u := newActiveTestUser(t, s, "phil@example.com")
-	req := httptest.NewRequest("GET", "/v1/account", nil)
+	req := httptest.NewRequest("GET", "/api/account", nil)
 	value, err := s.sessions.encode(u.ID)
 	require.NoError(t, err)
 	req.AddCookie(&http.Cookie{Name: s.cookieName(sessionCookieName), Value: value})
@@ -70,7 +70,7 @@ func TestAuthWithUserToken(t *testing.T) {
 	u := newActiveTestUser(t, s, "phil@example.com")
 	token, _, err := s.users.CreateToken(u.ID, "claude")
 	require.NoError(t, err)
-	rr := request(t, s.API(), "GET", "/v1/account", "", token)
+	rr := request(t, s.API(), "GET", "/api/account", "", token)
 	require.Equal(t, http.StatusOK, rr.Code)
 	assert.Contains(t, rr.Body.String(), "phil@example.com")
 }
@@ -78,7 +78,7 @@ func TestAuthWithUserToken(t *testing.T) {
 func TestAuthWithGlobalAdminToken(t *testing.T) {
 	t.Parallel()
 	s := newTestServer(t)
-	rr := request(t, s.API(), "GET", "/v1/account", "", testToken)
+	rr := request(t, s.API(), "GET", "/api/account", "", testToken)
 	require.Equal(t, http.StatusOK, rr.Code)
 	assert.Contains(t, rr.Body.String(), `"role":"admin"`)
 }
@@ -86,9 +86,9 @@ func TestAuthWithGlobalAdminToken(t *testing.T) {
 func TestAuthRejectsUnknownCredentials(t *testing.T) {
 	t.Parallel()
 	s := newTestServer(t)
-	rr := request(t, s.API(), "GET", "/v1/account", "", "hostit_bogus")
+	rr := request(t, s.API(), "GET", "/api/account", "", "hostit_bogus")
 	require.Equal(t, http.StatusUnauthorized, rr.Code)
-	rr = request(t, s.API(), "GET", "/v1/account", "", "")
+	rr = request(t, s.API(), "GET", "/api/account", "", "")
 	require.Equal(t, http.StatusUnauthorized, rr.Code)
 }
 
@@ -97,7 +97,7 @@ func TestAuthRejectsPendingUser(t *testing.T) {
 	s := newTestServer(t)
 	u, err := s.users.Login("pending@example.com", "Pending")
 	require.NoError(t, err)
-	req := httptest.NewRequest("GET", "/v1/apps", nil)
+	req := httptest.NewRequest("GET", "/api/apps", nil)
 	value, err := s.sessions.encode(u.ID)
 	require.NoError(t, err)
 	req.AddCookie(&http.Cookie{Name: s.cookieName(sessionCookieName), Value: value})
@@ -105,7 +105,7 @@ func TestAuthRejectsPendingUser(t *testing.T) {
 	s.API().ServeHTTP(rr, req)
 	require.Equal(t, http.StatusForbidden, rr.Code)
 	// ... but /v1/account works, so the web app can show "waiting for approval"
-	req = httptest.NewRequest("GET", "/v1/account", nil)
+	req = httptest.NewRequest("GET", "/api/account", nil)
 	req.AddCookie(&http.Cookie{Name: s.cookieName(sessionCookieName), Value: value})
 	rr = httptest.NewRecorder()
 	s.API().ServeHTTP(rr, req)
@@ -119,7 +119,7 @@ func TestAdminOnlyEndpoints(t *testing.T) {
 	u := newActiveTestUser(t, s, "user@example.com")
 	token, _, err := s.users.CreateToken(u.ID, "t")
 	require.NoError(t, err)
-	for _, path := range []string{"/v1/users", "/v1/settings", "/v1/domains"} {
+	for _, path := range []string{"/api/users", "/api/settings", "/api/domains"} {
 		rr := request(t, s.API(), "GET", path, "", token)
 		require.Equal(t, http.StatusForbidden, rr.Code, "path %s", path)
 		rr = request(t, s.API(), "GET", path, "", testToken)
@@ -133,7 +133,7 @@ func TestWebIsServedOnTheBaseDomain(t *testing.T) {
 	// The base domain is the front door; the old hostit.<base> keeps working so
 	// links and prompts handed out earlier do not break
 	for _, host := range []string{"apps.example.com", "hostit.apps.example.com"} {
-		rr := proxyRequest(t, s, "http://"+host+"/v1/health")
+		rr := proxyRequest(t, s, "http://"+host+"/api/health")
 		assert.Equal(t, http.StatusOK, rr.Code, "host %s must serve the API", host)
 	}
 	// An app subdomain still goes to the app, not the web UI
@@ -259,11 +259,11 @@ func TestAppTokenCannotReachTheAccountSurface(t *testing.T) {
 
 	// This token gets pasted into a third-party AI assistant. It must not be
 	// able to tell that assistant who the owner is or what else they have.
-	rr := request(t, s.API(), "GET", "/v1/account", "", token)
+	rr := request(t, s.API(), "GET", "/api/account", "", token)
 	assert.Equal(t, http.StatusForbidden, rr.Code)
 	assert.NotContains(t, rr.Body.String(), "owner@example.com")
 	// Its own app still works
-	rr = request(t, s.API(), "GET", "/api/blog/info", "", token)
+	rr = request(t, s.API(), "GET", "/api/apps/blog/info", "", token)
 	assert.Equal(t, http.StatusOK, rr.Code)
 }
 
@@ -272,12 +272,12 @@ func TestOwnerlessAppTokenDoesNotPanic(t *testing.T) {
 	s := newTestServer(t)
 	// An app created with the global admin token has no owner, but its agent
 	// token still works; nothing may dereference the user behind it
-	rr := request(t, s.API(), "POST", "/v1/apps", `{"name":"orphan"}`, testToken)
+	rr := request(t, s.API(), "POST", "/api/apps", `{"name":"orphan"}`, testToken)
 	require.Equal(t, http.StatusCreated, rr.Code)
 	var created apiAppResponse
 	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &created))
 	require.NotEmpty(t, created.AgentToken)
-	rr = request(t, s.API(), "GET", "/v1/account", "", created.AgentToken)
+	rr = request(t, s.API(), "GET", "/api/account", "", created.AgentToken)
 	assert.Equal(t, http.StatusForbidden, rr.Code)
 }
 
@@ -322,11 +322,37 @@ func TestCookieAuthRejectsCrossSiteWrites(t *testing.T) {
 
 	// A form or fetch from an app's page must not act as the signed-in user:
 	// this is how a tenant would make itself an admin
-	assert.Equal(t, http.StatusForbidden, withCookie("POST", "/v1/apps", `{"name":"evil"}`, "cross-site", "https://blog.apps.example.com"))
-	assert.Equal(t, http.StatusForbidden, withCookie("POST", "/v1/apps", `{"name":"evil"}`, "", "https://blog.apps.example.com"))
+	assert.Equal(t, http.StatusForbidden, withCookie("POST", "/api/apps", `{"name":"evil"}`, "cross-site", "https://blog.apps.example.com"))
+	assert.Equal(t, http.StatusForbidden, withCookie("POST", "/api/apps", `{"name":"evil"}`, "", "https://blog.apps.example.com"))
 	// The web app itself keeps working, with either signal
-	assert.Equal(t, http.StatusCreated, withCookie("POST", "/v1/apps", `{"name":"mine"}`, "same-origin", ""))
-	assert.Equal(t, http.StatusCreated, withCookie("POST", "/v1/apps", `{"name":"mine2"}`, "", "https://apps.example.com"))
+	assert.Equal(t, http.StatusCreated, withCookie("POST", "/api/apps", `{"name":"mine"}`, "same-origin", ""))
+	assert.Equal(t, http.StatusCreated, withCookie("POST", "/api/apps", `{"name":"mine2"}`, "", "https://apps.example.com"))
 	// Reads are not state-changing, so they are left alone
-	assert.Equal(t, http.StatusOK, withCookie("GET", "/v1/apps", "", "cross-site", "https://blog.apps.example.com"))
+	assert.Equal(t, http.StatusOK, withCookie("GET", "/api/apps", "", "cross-site", "https://blog.apps.example.com"))
+}
+
+func TestAppTokenIsScopedByPathPrefix(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	u := newActiveTestUser(t, s, "owner@example.com")
+	require.NoError(t, s.apps.Store().AddApp(&store.App{Name: "blog", Port: 10000, Host: store.HostLocal, OwnerID: u.ID}))
+	require.NoError(t, s.apps.Store().AddApp(&store.App{Name: "other", Port: 10001, Host: store.HostLocal, OwnerID: u.ID}))
+	token, _, err := s.users.CreateAppToken(u.ID, "blog", "agent")
+	require.NoError(t, err)
+
+	// The prefix is the permission: /api/apps/blog/ and the platform guide,
+	// nothing else.
+	allowed := []string{"/api/apps/blog/info", "/api/blog/info", "/api/info", "/api/info"}
+	for _, path := range allowed {
+		rr := request(t, s.API(), "GET", path, "", token)
+		assert.NotEqual(t, http.StatusForbidden, rr.Code, "%s must be reachable", path)
+	}
+	refused := []string{
+		"/api/account", "/api/apps", "/api/users",
+		"/api/apps/other/info", "/api/settings",
+	}
+	for _, path := range refused {
+		rr := request(t, s.API(), "GET", path, "", token)
+		assert.Equal(t, http.StatusForbidden, rr.Code, "%s must be refused", path)
+	}
 }

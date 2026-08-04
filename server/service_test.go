@@ -27,7 +27,7 @@ const (
 func TestAPIHealth(t *testing.T) {
 	t.Parallel()
 	s := newTestServer(t)
-	rr := request(t, s.API(), "GET", "/v1/health", "", "")
+	rr := request(t, s.API(), "GET", "/api/health", "", "")
 	require.Equal(t, http.StatusOK, rr.Code)
 	assert.Contains(t, rr.Body.String(), `"healthy":true`)
 }
@@ -36,7 +36,7 @@ func TestAPIUnauthorized(t *testing.T) {
 	t.Parallel()
 	s := newTestServer(t)
 	for _, token := range []string{"", "wrong"} {
-		rr := request(t, s.API(), "GET", "/v1/apps", "", token)
+		rr := request(t, s.API(), "GET", "/api/apps", "", token)
 		require.Equal(t, http.StatusUnauthorized, rr.Code)
 	}
 }
@@ -45,7 +45,7 @@ func TestAPICreateApp(t *testing.T) {
 	t.Parallel()
 	s := newTestServer(t)
 	body := fmt.Sprintf(`{"name":"blog","ssh_keys":["%s"]}`, testPublicKey)
-	rr := request(t, s.API(), "POST", "/v1/apps", body, testToken)
+	rr := request(t, s.API(), "POST", "/api/apps", body, testToken)
 	require.Equal(t, http.StatusCreated, rr.Code)
 	var resp apiAppResponse
 	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &resp))
@@ -61,7 +61,7 @@ func TestAPICreateAppWithoutKeys(t *testing.T) {
 	s := newTestServer(t)
 	// Creating an app must never mint an SSH key: a new user has nothing to do
 	// with a private key, and the app is managed through the API
-	rr := request(t, s.API(), "POST", "/v1/apps", `{"name":"blog"}`, testToken)
+	rr := request(t, s.API(), "POST", "/api/apps", `{"name":"blog"}`, testToken)
 	require.Equal(t, http.StatusCreated, rr.Code)
 	assert.NotContains(t, rr.Body.String(), "PRIVATE KEY")
 	assert.NotContains(t, rr.Body.String(), "private_key")
@@ -73,44 +73,44 @@ func TestAPICreateAppWithoutKeys(t *testing.T) {
 func TestAPICreateAppInvalidName(t *testing.T) {
 	t.Parallel()
 	s := newTestServer(t)
-	rr := request(t, s.API(), "POST", "/v1/apps", `{"name":"NOPE!"}`, testToken)
+	rr := request(t, s.API(), "POST", "/api/apps", `{"name":"NOPE!"}`, testToken)
 	require.Equal(t, http.StatusBadRequest, rr.Code)
 }
 
 func TestAPICreateAppDuplicate(t *testing.T) {
 	t.Parallel()
 	s := newTestServer(t)
-	rr := request(t, s.API(), "POST", "/v1/apps", `{"name":"blog"}`, testToken)
+	rr := request(t, s.API(), "POST", "/api/apps", `{"name":"blog"}`, testToken)
 	require.Equal(t, http.StatusCreated, rr.Code)
-	rr = request(t, s.API(), "POST", "/v1/apps", `{"name":"blog"}`, testToken)
+	rr = request(t, s.API(), "POST", "/api/apps", `{"name":"blog"}`, testToken)
 	require.Equal(t, http.StatusConflict, rr.Code)
 }
 
 func TestAPIListGetDeleteApp(t *testing.T) {
 	t.Parallel()
 	s := newTestServer(t)
-	rr := request(t, s.API(), "POST", "/v1/apps", `{"name":"blog"}`, testToken)
+	rr := request(t, s.API(), "POST", "/api/apps", `{"name":"blog"}`, testToken)
 	require.Equal(t, http.StatusCreated, rr.Code)
-	rr = request(t, s.API(), "GET", "/v1/apps", "", testToken)
+	rr = request(t, s.API(), "GET", "/api/apps", "", testToken)
 	require.Equal(t, http.StatusOK, rr.Code)
 	var apps []*apiAppResponse
 	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &apps))
 	require.Len(t, apps, 1)
 	assert.Equal(t, "blog", apps[0].Name)
-	rr = request(t, s.API(), "GET", "/v1/apps/blog", "", testToken)
+	rr = request(t, s.API(), "GET", "/api/apps/blog", "", testToken)
 	require.Equal(t, http.StatusOK, rr.Code)
-	rr = request(t, s.API(), "DELETE", "/v1/apps/blog", "", testToken)
+	rr = request(t, s.API(), "DELETE", "/api/apps/blog", "", testToken)
 	require.Equal(t, http.StatusOK, rr.Code)
-	rr = request(t, s.API(), "GET", "/v1/apps/blog", "", testToken)
+	rr = request(t, s.API(), "GET", "/api/apps/blog", "", testToken)
 	require.Equal(t, http.StatusNotFound, rr.Code)
-	rr = request(t, s.API(), "DELETE", "/v1/apps/blog", "", testToken)
+	rr = request(t, s.API(), "DELETE", "/api/apps/blog", "", testToken)
 	require.Equal(t, http.StatusNotFound, rr.Code)
 }
 
 func TestAPIInviteUser(t *testing.T) {
 	t.Parallel()
 	s := newTestServer(t)
-	rr := request(t, s.API(), "POST", "/v1/users", `{"email":"NewHire@allowed.example","role":"user"}`, testToken)
+	rr := request(t, s.API(), "POST", "/api/users", `{"email":"NewHire@allowed.example","role":"user"}`, testToken)
 	require.Equal(t, http.StatusCreated, rr.Code)
 	var created apiUserResponse
 	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &created))
@@ -119,7 +119,7 @@ func TestAPIInviteUser(t *testing.T) {
 	assert.Equal(t, store.RoleUser, created.Role)
 
 	// They show up in the user list right away, before ever signing in
-	rr = request(t, s.API(), "GET", "/v1/users", "", testToken)
+	rr = request(t, s.API(), "GET", "/api/users", "", testToken)
 	require.Equal(t, http.StatusOK, rr.Code)
 	var users []*apiUserResponse
 	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &users))
@@ -127,27 +127,27 @@ func TestAPIInviteUser(t *testing.T) {
 	assert.Equal(t, "newhire@allowed.example", users[0].Email)
 
 	// Duplicates and junk are refused with a reason, not a 500
-	rr = request(t, s.API(), "POST", "/v1/users", `{"email":"newhire@allowed.example"}`, testToken)
+	rr = request(t, s.API(), "POST", "/api/users", `{"email":"newhire@allowed.example"}`, testToken)
 	assert.Equal(t, http.StatusBadRequest, rr.Code)
-	rr = request(t, s.API(), "POST", "/v1/users", `{"email":"not-an-email"}`, testToken)
+	rr = request(t, s.API(), "POST", "/api/users", `{"email":"not-an-email"}`, testToken)
 	assert.Equal(t, http.StatusBadRequest, rr.Code)
 }
 
 func TestAPIAllowedDomains(t *testing.T) {
 	t.Parallel()
 	s := newTestServer(t)
-	rr := request(t, s.API(), "GET", "/v1/domains", "", testToken)
+	rr := request(t, s.API(), "GET", "/api/domains", "", testToken)
 	require.Equal(t, http.StatusOK, rr.Code)
 	assert.Equal(t, "[]", strings.TrimSpace(rr.Body.String()))
 
 	// The admin types what they mean; hostit stores the bare domain
-	rr = request(t, s.API(), "POST", "/v1/domains", `{"domain":"*@allowed.example"}`, testToken)
+	rr = request(t, s.API(), "POST", "/api/domains", `{"domain":"*@allowed.example"}`, testToken)
 	require.Equal(t, http.StatusCreated, rr.Code)
 	var created apiDomainResponse
 	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &created))
 	assert.Equal(t, "allowed.example", created.Domain)
 
-	rr = request(t, s.API(), "GET", "/v1/domains", "", testToken)
+	rr = request(t, s.API(), "GET", "/api/domains", "", testToken)
 	require.Equal(t, http.StatusOK, rr.Code)
 	var domains []*apiDomainResponse
 	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &domains))
@@ -159,31 +159,31 @@ func TestAPIAllowedDomains(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, store.StatusActive, u.Status)
 
-	rr = request(t, s.API(), "POST", "/v1/domains", `{"domain":"nope"}`, testToken)
+	rr = request(t, s.API(), "POST", "/api/domains", `{"domain":"nope"}`, testToken)
 	assert.Equal(t, http.StatusBadRequest, rr.Code)
-	rr = request(t, s.API(), "DELETE", "/v1/domains/allowed.example", "", testToken)
+	rr = request(t, s.API(), "DELETE", "/api/domains/allowed.example", "", testToken)
 	require.Equal(t, http.StatusOK, rr.Code)
-	rr = request(t, s.API(), "DELETE", "/v1/domains/allowed.example", "", testToken)
+	rr = request(t, s.API(), "DELETE", "/api/domains/allowed.example", "", testToken)
 	assert.Equal(t, http.StatusNotFound, rr.Code)
 }
 
 func TestAPIAppDescription(t *testing.T) {
 	t.Parallel()
 	s := newTestServer(t)
-	rr := request(t, s.API(), "POST", "/v1/apps", `{"name":"blog"}`, testToken)
+	rr := request(t, s.API(), "POST", "/api/apps", `{"name":"blog"}`, testToken)
 	require.Equal(t, http.StatusCreated, rr.Code)
 	require.NoError(t, s.apps.WriteFile("blog", "hostit.yml", []byte("description: A tiny blog\nmode: static\n"), 0))
 
 	// Both the list and the single app carry it, so the page can build the
 	// prompt from whatever the app says it is
-	rr = request(t, s.API(), "GET", "/v1/apps", "", testToken)
+	rr = request(t, s.API(), "GET", "/api/apps", "", testToken)
 	require.Equal(t, http.StatusOK, rr.Code)
 	var apps []*apiAppResponse
 	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &apps))
 	require.Len(t, apps, 1)
 	assert.Equal(t, "A tiny blog", apps[0].Description)
 
-	rr = request(t, s.API(), "GET", "/v1/apps/blog", "", testToken)
+	rr = request(t, s.API(), "GET", "/api/apps/blog", "", testToken)
 	require.Equal(t, http.StatusOK, rr.Code)
 	var one apiAppResponse
 	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &one))
@@ -193,21 +193,21 @@ func TestAPIAppDescription(t *testing.T) {
 func TestAPISetKeys(t *testing.T) {
 	t.Parallel()
 	s := newTestServer(t)
-	rr := request(t, s.API(), "POST", "/v1/apps", `{"name":"blog"}`, testToken)
+	rr := request(t, s.API(), "POST", "/api/apps", `{"name":"blog"}`, testToken)
 	require.Equal(t, http.StatusCreated, rr.Code)
 	body := fmt.Sprintf(`{"ssh_keys":["%s"]}`, testPublicKey)
-	rr = request(t, s.API(), "PUT", "/v1/apps/blog/keys", body, testToken)
+	rr = request(t, s.API(), "PUT", "/api/apps/blog/keys", body, testToken)
 	require.Equal(t, http.StatusOK, rr.Code)
-	rr = request(t, s.API(), "PUT", "/v1/apps/blog/keys", `{"ssh_keys":["junk"]}`, testToken)
+	rr = request(t, s.API(), "PUT", "/api/apps/blog/keys", `{"ssh_keys":["junk"]}`, testToken)
 	require.Equal(t, http.StatusBadRequest, rr.Code)
-	rr = request(t, s.API(), "PUT", "/v1/apps/nope/keys", body, testToken)
+	rr = request(t, s.API(), "PUT", "/api/apps/nope/keys", body, testToken)
 	require.Equal(t, http.StatusNotFound, rr.Code)
 }
 
 func TestSocketSelf(t *testing.T) {
 	t.Parallel()
 	s := newTestServer(t)
-	rr := request(t, s.API(), "POST", "/v1/apps", `{"name":"blog"}`, testToken)
+	rr := request(t, s.API(), "POST", "/api/apps", `{"name":"blog"}`, testToken)
 	require.Equal(t, http.StatusCreated, rr.Code)
 	s.usernameForUID = func(uid int) (string, error) {
 		return "blog", nil
@@ -243,12 +243,12 @@ func TestAppResponseIncludesUsageAndOwner(t *testing.T) {
 	u := newActiveTestUser(t, s, "owner@example.com")
 	token, _, err := s.users.CreateToken(u.ID, "t")
 	require.NoError(t, err)
-	rr := request(t, s.API(), "POST", "/v1/apps", `{"name":"blog"}`, token)
+	rr := request(t, s.API(), "POST", "/api/apps", `{"name":"blog"}`, token)
 	require.Equal(t, http.StatusCreated, rr.Code)
 	require.NoError(t, s.apps.Store().UpdateAppUsage("blog", 42, true))
 
 	// The owner sees usage and quota state on their own app
-	rr = request(t, s.API(), "GET", "/v1/apps", "", token)
+	rr = request(t, s.API(), "GET", "/api/apps", "", token)
 	require.Equal(t, http.StatusOK, rr.Code)
 	var apps []*apiAppResponse
 	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &apps))
@@ -257,7 +257,7 @@ func TestAppResponseIncludesUsageAndOwner(t *testing.T) {
 	assert.True(t, apps[0].OverQuota)
 
 	// Admins additionally see who owns each app
-	rr = request(t, s.API(), "GET", "/v1/apps", "", testToken)
+	rr = request(t, s.API(), "GET", "/api/apps", "", testToken)
 	require.Equal(t, http.StatusOK, rr.Code)
 	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &apps))
 	require.Len(t, apps, 1)
@@ -267,7 +267,7 @@ func TestAppResponseIncludesUsageAndOwner(t *testing.T) {
 func TestSocketSelfLifecycle(t *testing.T) {
 	t.Parallel()
 	s := newTestServer(t)
-	rr := request(t, s.API(), "POST", "/v1/apps", `{"name":"blog"}`, testToken)
+	rr := request(t, s.API(), "POST", "/api/apps", `{"name":"blog"}`, testToken)
 	require.Equal(t, http.StatusCreated, rr.Code)
 	s.usernameForUID = func(uid int) (string, error) {
 		return "blog", nil
@@ -386,7 +386,7 @@ func TestProxyAppDown(t *testing.T) {
 func TestProxyRoutesAPIHost(t *testing.T) {
 	t.Parallel()
 	s := newTestServer(t)
-	rr := proxyRequest(t, s, "http://apps.example.com/v1/health")
+	rr := proxyRequest(t, s, "http://apps.example.com/api/health")
 	require.Equal(t, http.StatusOK, rr.Code)
 	assert.Contains(t, rr.Body.String(), `"healthy":true`)
 }
@@ -461,7 +461,7 @@ func TestAppsListIsPersonalEvenForAdmins(t *testing.T) {
 	// The dashboard says "N of M apps used" next to this list, and that count is
 	// the caller's own. Someone else's app in there is just confusing.
 	names := func(token, query string) []string {
-		rr := request(t, s.API(), "GET", "/v1/apps"+query, "", token)
+		rr := request(t, s.API(), "GET", "/api/apps"+query, "", token)
 		require.Equal(t, http.StatusOK, rr.Code)
 		var apps []*apiAppResponse
 		require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &apps))
@@ -480,6 +480,19 @@ func TestAppsListIsPersonalEvenForAdmins(t *testing.T) {
 	userToken, _, err := s.users.CreateToken(other.ID, "t")
 	require.NoError(t, err)
 	assert.Equal(t, []string{"theirs"}, names(userToken, ""))
-	rr := request(t, s.API(), "GET", "/v1/apps?all=true", "", userToken)
+	rr := request(t, s.API(), "GET", "/api/apps?all=true", "", userToken)
 	assert.Equal(t, http.StatusForbidden, rr.Code)
+}
+
+func TestUnknownAPIPathIsNotAWebPage(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	// The SPA catch-all answers unknown paths with index.html, which is right for
+	// a browser and useless to an agent: under /api that has to be a JSON 404,
+	// including for the paths this API used to have.
+	for _, path := range []string{"/api/nope", "/api/blog/info", "/api/apps/blog/nope", "/v1/apps"} {
+		rr := request(t, s.API(), "GET", path, "", testToken)
+		assert.Equal(t, http.StatusNotFound, rr.Code, "path %s", path)
+		assert.NotContains(t, rr.Body.String(), "<!doctype html>", "path %s must not answer with the web app", path)
+	}
 }

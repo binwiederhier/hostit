@@ -20,7 +20,7 @@ const SshKeys = () => {
 
   const load = useCallback(async () => {
     try {
-      setKeys(await api.get("/v1/account/keys"));
+      setKeys(await api.get("/api/account/keys"));
     } catch (err) {
       setError(err.message);
     }
@@ -38,7 +38,7 @@ const SshKeys = () => {
     setBusy(true);
     setError("");
     try {
-      await api.post("/v1/account/keys", { label: label.trim(), key: key.trim() });
+      await api.post("/api/account/keys", { label: label.trim(), key: key.trim() });
       setLabel("");
       setKey("");
       await load();
@@ -55,7 +55,7 @@ const SshKeys = () => {
     }
     setError("");
     try {
-      await api.del(`/v1/account/keys/${k.id}`);
+      await api.del(`/api/account/keys/${k.id}`);
       await load();
     } catch (err) {
       setError(err.message);
@@ -118,7 +118,7 @@ const Tokens = () => {
 
   const load = useCallback(async () => {
     try {
-      setTokens(await api.get("/v1/account/tokens"));
+      setTokens(await api.get("/api/account/tokens"));
     } catch (err) {
       setError(err.message);
     }
@@ -136,7 +136,7 @@ const Tokens = () => {
     setBusy(true);
     setError("");
     try {
-      setNewToken(await api.post("/v1/account/tokens", { label: label.trim() }));
+      setNewToken(await api.post("/api/account/tokens", { label: label.trim() }));
       setLabel("");
       await load();
     } catch (err) {
@@ -152,7 +152,7 @@ const Tokens = () => {
     }
     setError("");
     try {
-      await api.del(`/v1/account/tokens/${t.id}`);
+      await api.del(`/api/account/tokens/${t.id}`);
       await load();
     } catch (err) {
       setError(err.message);

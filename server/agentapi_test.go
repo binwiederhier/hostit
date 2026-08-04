@@ -40,8 +40,8 @@ func TestAgentInfoIsSelfExplanatory(t *testing.T) {
 		paths = append(paths, e.Method+" "+e.Path)
 	}
 	for _, want := range []string{
-		"GET /api/{app}/info", "POST /api/{app}/deploy", "POST /api/{app}/restart",
-		"PUT /api/{app}/files/{path}", "POST /api/{app}/files", "PUT /api/{app}/readme",
+		"GET /api/apps/{app}/info", "POST /api/apps/{app}/deploy", "POST /api/apps/{app}/restart",
+		"PUT /api/apps/{app}/files/{path}", "POST /api/apps/{app}/files", "PUT /api/apps/{app}/readme",
 	} {
 		assert.Contains(t, paths, want)
 	}
@@ -63,7 +63,7 @@ func TestAgentAppInfoIncludesReadmeAndFiles(t *testing.T) {
 	require.NoError(t, s.apps.WriteFile("blog", "index.html", []byte("<h1>hi</h1>"), 0))
 	// The no-op system ops in these tests does not scaffold, so write the config
 	require.NoError(t, s.apps.WriteFile("blog", "hostit.yml", []byte("mode: app\nrun: python3 -m http.server $PORT\n"), 0))
-	rr := request(t, s.API(), "GET", "/api/blog/info", "", token)
+	rr := request(t, s.API(), "GET", "/api/apps/blog/info", "", token)
 	require.Equal(t, http.StatusOK, rr.Code)
 	var resp apiAgentAppResponse
 	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &resp))
@@ -71,8 +71,8 @@ func TestAgentAppInfoIncludesReadmeAndFiles(t *testing.T) {
 	assert.Equal(t, "https://blog.apps.example.com", resp.URL)
 	assert.Contains(t, resp.Readme, "finance dashboard")
 	assert.Contains(t, resp.HostitYml, "run:")
-	names := make([]string, 0, len(resp.Files))
-	for _, f := range resp.Files {
+	names := make([]string, 0, len(resp.Files.Files))
+	for _, f := range resp.Files.Files {
 		names = append(names, f.Path)
 	}
 	assert.Contains(t, names, "index.html")
@@ -86,7 +86,7 @@ func TestAgentGuideTellsAnExistingAppApartFromAStub(t *testing.T) {
 
 	// A stub invites a rebuild
 	var resp apiAgentAppResponse
-	rr := request(t, s.API(), "GET", "/api/blog/info", "", token)
+	rr := request(t, s.API(), "GET", "/api/apps/blog/info", "", token)
 	require.Equal(t, http.StatusOK, rr.Code)
 	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &resp))
 	require.NotEmpty(t, resp.Guide.Workflow)
@@ -96,7 +96,7 @@ func TestAgentGuideTellsAnExistingAppApartFromAStub(t *testing.T) {
 	// Once the app describes itself it is finished work, and an agent that
 	// starts over would destroy it
 	require.NoError(t, s.apps.WriteFile("blog", "hostit.yml", []byte("description: The finance dashboard\nmode: static\n"), 0))
-	rr = request(t, s.API(), "GET", "/api/blog/info", "", token)
+	rr = request(t, s.API(), "GET", "/api/apps/blog/info", "", token)
 	require.Equal(t, http.StatusOK, rr.Code)
 	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &resp))
 	assert.Contains(t, resp.Guide.Workflow[0], "already built")
@@ -117,16 +117,16 @@ func TestAgentTokenCannotTouchOtherApps(t *testing.T) {
 	s := newTestServer(t)
 	token := newAppToken(t, s, "blog")
 	createTestApp(t, s, "other")
-	for _, path := range []string{"/api/other/info", "/api/other/logs", "/api/other/files"} {
+	for _, path := range []string{"/api/apps/other/info", "/api/apps/other/logs", "/api/apps/other/files"} {
 		rr := request(t, s.API(), "GET", path, "", token)
 		require.Equal(t, http.StatusForbidden, rr.Code, "path %s", path)
 	}
-	rr := request(t, s.API(), "POST", "/api/other/restart", "", token)
+	rr := request(t, s.API(), "POST", "/api/apps/other/restart", "", token)
 	require.Equal(t, http.StatusForbidden, rr.Code)
 	// ... and it cannot reach the account-wide API either
-	rr = request(t, s.API(), "POST", "/v1/apps", `{"name":"sneaky"}`, token)
+	rr = request(t, s.API(), "POST", "/api/apps", `{"name":"sneaky"}`, token)
 	require.Equal(t, http.StatusForbidden, rr.Code)
-	rr = request(t, s.API(), "GET", "/v1/account/tokens", "", token)
+	rr = request(t, s.API(), "GET", "/api/account/tokens", "", token)
 	require.Equal(t, http.StatusForbidden, rr.Code)
 }
 
@@ -135,12 +135,12 @@ func TestAgentLifecycle(t *testing.T) {
 	s := newTestServer(t)
 	token := newAppToken(t, s, "blog")
 	for _, action := range []string{"stop", "restart", "start"} {
-		rr := request(t, s.API(), "POST", "/api/blog/"+action, "", token)
+		rr := request(t, s.API(), "POST", "/api/apps/blog/"+action, "", token)
 		require.Equal(t, http.StatusOK, rr.Code, "action %s", action)
 		assert.Contains(t, rr.Body.String(), "message")
 	}
 	// GET must not perform actions: a crawler or prefetch must not restart apps
-	rr := request(t, s.API(), "GET", "/api/blog/restart", "", token)
+	rr := request(t, s.API(), "GET", "/api/apps/blog/restart", "", token)
 	assert.Equal(t, http.StatusMethodNotAllowed, rr.Code)
 }
 
@@ -148,16 +148,16 @@ func TestAgentUploadSingleFile(t *testing.T) {
 	t.Parallel()
 	s := newTestServer(t)
 	token := newAppToken(t, s, "blog")
-	rr := request(t, s.API(), "PUT", "/api/blog/files/static/app.js", "console.log(1)", token)
+	rr := request(t, s.API(), "PUT", "/api/apps/blog/files/static/app.js", "console.log(1)", token)
 	require.Equal(t, http.StatusCreated, rr.Code)
 	b, err := s.apps.ReadFile("blog", "static/app.js")
 	require.NoError(t, err)
 	assert.Equal(t, "console.log(1)", string(b))
 	// Escapes never write outside the app: the router normalizes ".." away (307)
 	// and app.WriteFile refuses what still gets through
-	rr = request(t, s.API(), "PUT", "/api/blog/files/../../etc/passwd", "x", token)
+	rr = request(t, s.API(), "PUT", "/api/apps/blog/files/../../etc/passwd", "x", token)
 	assert.NotEqual(t, http.StatusCreated, rr.Code)
-	rr = request(t, s.API(), "PUT", "/api/blog/files/%2e%2e%2f%2e%2e%2fetc/passwd", "x", token)
+	rr = request(t, s.API(), "PUT", "/api/apps/blog/files/%2e%2e%2f%2e%2e%2fetc/passwd", "x", token)
 	assert.NotEqual(t, http.StatusCreated, rr.Code)
 	_, err = s.apps.ReadFile("blog", "etc/passwd")
 	assert.Error(t, err)
@@ -167,10 +167,10 @@ func TestAgentUploadWithMode(t *testing.T) {
 	t.Parallel()
 	s := newTestServer(t)
 	token := newAppToken(t, s, "blog")
-	rr := request(t, s.API(), "PUT", "/api/blog/files/server?mode=755", "#!/bin/sh\necho hi\n", token)
+	rr := request(t, s.API(), "PUT", "/api/apps/blog/files/server?mode=755", "#!/bin/sh\necho hi\n", token)
 	require.Equal(t, http.StatusCreated, rr.Code)
 	// A rejected mode says why rather than silently writing the default
-	rr = request(t, s.API(), "PUT", "/api/blog/files/server?mode=999", "x", token)
+	rr = request(t, s.API(), "PUT", "/api/apps/blog/files/server?mode=999", "x", token)
 	assert.Equal(t, http.StatusBadRequest, rr.Code)
 	assert.Contains(t, rr.Body.String(), "octal")
 }
@@ -186,7 +186,7 @@ func TestAgentUploadTar(t *testing.T) {
 	_, err := tw.Write([]byte(content))
 	require.NoError(t, err)
 	require.NoError(t, tw.Close())
-	req := httptest.NewRequest("POST", "/api/blog/files", bytes.NewReader(buf.Bytes()))
+	req := httptest.NewRequest("POST", "/api/apps/blog/files", bytes.NewReader(buf.Bytes()))
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/x-tar")
 	w := httptest.NewRecorder()
@@ -203,7 +203,7 @@ func TestAgentReadmeWrite(t *testing.T) {
 	s := newTestServer(t)
 	token := newAppToken(t, s, "blog")
 	body := `{"readme":"# blog\n\nRebuilt as a dashboard on 2026-08-04.\n"}`
-	rr := request(t, s.API(), "PUT", "/api/blog/readme", body, token)
+	rr := request(t, s.API(), "PUT", "/api/apps/blog/readme", body, token)
 	require.Equal(t, http.StatusOK, rr.Code)
 	readme, err := s.apps.Readme("blog")
 	require.NoError(t, err)
@@ -219,26 +219,26 @@ func TestAppGetsItsTokenOnCreation(t *testing.T) {
 
 	// Creating an app hands back a token straight away: no extra click, no
 	// second call, so the page can render the prompt immediately
-	rr := request(t, s.API(), "POST", "/v1/apps", `{"name":"blog"}`, userToken)
+	rr := request(t, s.API(), "POST", "/api/apps", `{"name":"blog"}`, userToken)
 	require.Equal(t, http.StatusCreated, rr.Code)
 	var created apiAppResponse
 	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &created))
 	require.NotEmpty(t, created.AgentToken)
 
 	// ... and it keeps showing the same token later, so it is never "lost"
-	rr = request(t, s.API(), "GET", "/v1/apps/blog", "", userToken)
+	rr = request(t, s.API(), "GET", "/api/apps/blog", "", userToken)
 	require.Equal(t, http.StatusOK, rr.Code)
 	var fetched apiAppResponse
 	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &fetched))
 	assert.Equal(t, created.AgentToken, fetched.AgentToken)
 
 	// The token really works, and only on this app
-	rr = request(t, s.API(), "GET", "/api/blog/info", "", created.AgentToken)
+	rr = request(t, s.API(), "GET", "/api/apps/blog/info", "", created.AgentToken)
 	assert.Equal(t, http.StatusOK, rr.Code)
 
 	// The profile lists account tokens only; an app's token lives on its page,
 	// so it does not add a row here for every app the user owns
-	rr = request(t, s.API(), "GET", "/v1/account/tokens", "", userToken)
+	rr = request(t, s.API(), "GET", "/api/account/tokens", "", userToken)
 	require.Equal(t, http.StatusOK, rr.Code)
 	var listed []*apiTokenResponse
 	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &listed))
@@ -248,14 +248,14 @@ func TestAppGetsItsTokenOnCreation(t *testing.T) {
 	}
 
 	// Rotating replaces it and kills the old one
-	rr = request(t, s.API(), "POST", "/v1/apps/blog/token", "", userToken)
+	rr = request(t, s.API(), "POST", "/api/apps/blog/token", "", userToken)
 	require.Equal(t, http.StatusOK, rr.Code)
 	var rotated apiAppResponse
 	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &rotated))
 	assert.NotEqual(t, created.AgentToken, rotated.AgentToken)
-	rr = request(t, s.API(), "GET", "/api/blog/info", "", created.AgentToken)
+	rr = request(t, s.API(), "GET", "/api/apps/blog/info", "", created.AgentToken)
 	assert.Equal(t, http.StatusUnauthorized, rr.Code)
-	rr = request(t, s.API(), "GET", "/api/blog/info", "", rotated.AgentToken)
+	rr = request(t, s.API(), "GET", "/api/apps/blog/info", "", rotated.AgentToken)
 	assert.Equal(t, http.StatusOK, rr.Code)
 }
 
@@ -264,16 +264,16 @@ func TestAdminCreatedAppStillGetsAWorkingToken(t *testing.T) {
 	s := newTestServer(t)
 	// The global admin token creates apps that belong to nobody; their agent
 	// token must still work, so an admin can hand an app to someone
-	rr := request(t, s.API(), "POST", "/v1/apps", `{"name":"orphan"}`, testToken)
+	rr := request(t, s.API(), "POST", "/api/apps", `{"name":"orphan"}`, testToken)
 	require.Equal(t, http.StatusCreated, rr.Code)
 	var created apiAppResponse
 	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &created))
 	require.NotEmpty(t, created.AgentToken)
 
-	rr = request(t, s.API(), "GET", "/api/orphan/info", "", created.AgentToken)
+	rr = request(t, s.API(), "GET", "/api/apps/orphan/info", "", created.AgentToken)
 	assert.Equal(t, http.StatusOK, rr.Code)
 	// ... and it is still confined to that app
-	rr = request(t, s.API(), "GET", "/v1/apps", "", created.AgentToken)
+	rr = request(t, s.API(), "GET", "/api/apps", "", created.AgentToken)
 	assert.Equal(t, http.StatusForbidden, rr.Code)
 }
 
@@ -284,30 +284,30 @@ func TestAccountTokenReachesEveryAppOfTheUser(t *testing.T) {
 	userToken, _, err := s.users.CreateToken(u.ID, "laptop")
 	require.NoError(t, err)
 	for _, name := range []string{"one", "two"} {
-		rr := request(t, s.API(), "POST", "/v1/apps", fmt.Sprintf(`{"name":%q}`, name), userToken)
+		rr := request(t, s.API(), "POST", "/api/apps", fmt.Sprintf(`{"name":%q}`, name), userToken)
 		require.Equal(t, http.StatusCreated, rr.Code)
 	}
 	// An account token drives every app the user owns, through the agent API too
 	for _, name := range []string{"one", "two"} {
-		rr := request(t, s.API(), "GET", "/api/"+name+"/info", "", userToken)
+		rr := request(t, s.API(), "GET", "/api/apps/"+name+"/info", "", userToken)
 		assert.Equal(t, http.StatusOK, rr.Code, "account token must reach %s", name)
-		rr = request(t, s.API(), "POST", "/api/"+name+"/restart", "", userToken)
+		rr = request(t, s.API(), "POST", "/api/apps/"+name+"/restart", "", userToken)
 		assert.Equal(t, http.StatusOK, rr.Code)
 	}
 	// ... but not somebody else's app
 	other := newActiveTestUser(t, s, "other@example.com")
 	otherToken, _, err := s.users.CreateToken(other.ID, "laptop")
 	require.NoError(t, err)
-	rr := request(t, s.API(), "POST", "/v1/apps", `{"name":"theirs"}`, otherToken)
+	rr := request(t, s.API(), "POST", "/api/apps", `{"name":"theirs"}`, otherToken)
 	require.Equal(t, http.StatusCreated, rr.Code)
-	rr = request(t, s.API(), "GET", "/api/theirs/info", "", userToken)
+	rr = request(t, s.API(), "GET", "/api/apps/theirs/info", "", userToken)
 	assert.Equal(t, http.StatusNotFound, rr.Code, "one user's token must not reach another's app")
 }
 
 func TestAgentUnauthenticated(t *testing.T) {
 	t.Parallel()
 	s := newTestServer(t)
-	for _, path := range []string{"/api/info", "/api/blog/info"} {
+	for _, path := range []string{"/api/info", "/api/apps/blog/info"} {
 		rr := request(t, s.API(), "GET", path, "", "")
 		require.Equal(t, http.StatusUnauthorized, rr.Code, "path %s", path)
 	}
@@ -319,7 +319,7 @@ func newAppToken(t *testing.T, s *Server, appName string) string {
 	u := newActiveTestUser(t, s, appName+"-owner@example.com")
 	userToken, _, err := s.users.CreateToken(u.ID, "setup")
 	require.NoError(t, err)
-	rr := request(t, s.API(), "POST", "/v1/apps", fmt.Sprintf(`{"name":%q}`, appName), userToken)
+	rr := request(t, s.API(), "POST", "/api/apps", fmt.Sprintf(`{"name":%q}`, appName), userToken)
 	require.Equal(t, http.StatusCreated, rr.Code, rr.Body.String())
 	token, _, err := s.users.CreateAppToken(u.ID, appName, "agent")
 	require.NoError(t, err)
@@ -329,7 +329,7 @@ func newAppToken(t *testing.T, s *Server, appName string) string {
 // createTestApp creates an app owned by someone else
 func createTestApp(t *testing.T, s *Server, appName string) {
 	t.Helper()
-	rr := request(t, s.API(), "POST", "/v1/apps", fmt.Sprintf(`{"name":%q}`, appName), testToken)
+	rr := request(t, s.API(), "POST", "/api/apps", fmt.Sprintf(`{"name":%q}`, appName), testToken)
 	require.Equal(t, http.StatusCreated, rr.Code, strings.TrimSpace(rr.Body.String()))
 }
 
@@ -340,7 +340,7 @@ func TestFileReadIsNeverRenderedAsAPage(t *testing.T) {
 	require.NoError(t, s.apps.WriteFile("blog", "evil.html", []byte("<script>alert(1)</script>"), 0))
 	// This endpoint lives on the web app's own origin, and an admin may read any
 	// user's files: a tenant's page must not execute there
-	rr := request(t, s.API(), "GET", "/api/blog/files/evil.html", "", token)
+	rr := request(t, s.API(), "GET", "/api/apps/blog/files/evil.html", "", token)
 	require.Equal(t, http.StatusOK, rr.Code)
 	assert.NotContains(t, rr.Header().Get("Content-Type"), "text/html")
 	assert.Equal(t, "nosniff", rr.Header().Get("X-Content-Type-Options"))
@@ -354,7 +354,7 @@ func TestLogLinesAreBounded(t *testing.T) {
 	token := newAppToken(t, s, "blog")
 	// "?lines=" reaches podman --tail and a tail of the log file; an absurd
 	// value must not become an absurd allocation
-	rr := request(t, s.API(), "GET", "/api/blog/logs?lines=99999999", "", token)
+	rr := request(t, s.API(), "GET", "/api/apps/blog/logs?lines=99999999", "", token)
 	require.Equal(t, http.StatusOK, rr.Code)
 	assert.Equal(t, maxLogLines, logLines("99999999"))
 	assert.Equal(t, agentLogLines, logLines("0"))
@@ -390,20 +390,20 @@ func TestAgentRunEndpoint(t *testing.T) {
 	s := newTestServer(t)
 	token := newAppToken(t, s, "blog")
 
-	rr := request(t, s.API(), "POST", "/api/blog/run", `{"command":"go build ./..."}`, token)
+	rr := request(t, s.API(), "POST", "/api/apps/blog/run", `{"command":"go build ./..."}`, token)
 	require.Equal(t, http.StatusOK, rr.Code)
 	var res apiRunResponse
 	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &res))
 	assert.Equal(t, 0, res.ExitCode)
 
 	// An empty command is a mistake; a GET is not a way to run anything
-	rr = request(t, s.API(), "POST", "/api/blog/run", `{"command":""}`, token)
+	rr = request(t, s.API(), "POST", "/api/apps/blog/run", `{"command":""}`, token)
 	assert.Equal(t, http.StatusBadRequest, rr.Code)
-	rr = request(t, s.API(), "GET", "/api/blog/run", "", token)
+	rr = request(t, s.API(), "GET", "/api/apps/blog/run", "", token)
 	assert.Equal(t, http.StatusMethodNotAllowed, rr.Code)
 
 	// And it is scoped like everything else on the agent API
 	other := newAppToken(t, s, "other")
-	rr = request(t, s.API(), "POST", "/api/blog/run", `{"command":"whoami"}`, other)
+	rr = request(t, s.API(), "POST", "/api/apps/blog/run", `{"command":"whoami"}`, other)
 	assert.Equal(t, http.StatusForbidden, rr.Code)
 }

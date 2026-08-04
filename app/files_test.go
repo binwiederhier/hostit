@@ -3,6 +3,7 @@ package app
 import (
 	"archive/tar"
 	"bytes"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -56,23 +57,23 @@ func TestListFiles(t *testing.T) {
 	createTestApp(t, m, "blog")
 	require.NoError(t, m.WriteFile("blog", "index.html", []byte("x"), 0))
 	require.NoError(t, m.WriteFile("blog", "static/site.css", []byte("y"), 0))
-	files, err := m.ListFiles("blog")
+	listing, err := m.ListFiles("blog", "")
 	require.NoError(t, err)
-	names := make([]string, 0, len(files))
-	for _, f := range files {
+	names := make([]string, 0, len(listing.Files))
+	for _, f := range listing.Files {
 		names = append(names, f.Path)
 	}
 	assert.Contains(t, names, "index.html")
-	assert.Contains(t, names, "static/site.css")
+	assert.Contains(t, names, "static")
 	// Neither hostit's state nor the shell dotfiles useradd copies from
 	// /etc/skel belong in what an agent sees
 	require.NoError(t, os.WriteFile(filepath.Join(m.appHome("blog"), ".bashrc"), []byte("x"), 0644))
 	require.NoError(t, os.MkdirAll(filepath.Join(m.appHome("blog"), ".ssh"), 0700))
 	require.NoError(t, os.WriteFile(filepath.Join(m.appHome("blog"), ".ssh", "authorized_keys"), []byte("k"), 0600))
-	files, err = m.ListFiles("blog")
+	listing, err = m.ListFiles("blog", "")
 	require.NoError(t, err)
 	names = names[:0]
-	for _, f := range files {
+	for _, f := range listing.Files {
 		names = append(names, f.Path)
 	}
 	assert.Contains(t, names, "index.html")
@@ -344,4 +345,60 @@ func TestExtractTarRejectsSymlinkEntries(t *testing.T) {
 	require.ErrorIs(t, err, ErrInvalid, "an archive must not be able to plant a symlink")
 	_, err = os.Lstat(filepath.Join(m.appHome("blog"), "passwd"))
 	assert.True(t, os.IsNotExist(err))
+}
+
+func TestListFilesIsOneLevelAtATime(t *testing.T) {
+	t.Parallel()
+	m, _, _ := newTestDeployManager(t)
+	createTestApp(t, m, "blog")
+	require.NoError(t, m.WriteFile("blog", "public/index.html", []byte("<h1>hi</h1>"), 0))
+	require.NoError(t, m.WriteFile("blog", "public/css/site.css", []byte("body{}"), 0))
+	require.NoError(t, m.WriteFile("blog", "hostit.yml", []byte("mode: static\n"), 0))
+
+	// The whole tree was returned before, which is fine until an app has a
+	// node_modules and the listing is thirty thousand entries of someone else's
+	// code, built in memory, on the endpoint an agent calls first
+	root, err := m.ListFiles("blog", "")
+	require.NoError(t, err)
+	names := map[string]FileType{}
+	for _, f := range root.Files {
+		names[f.Path] = f.Type
+	}
+	assert.Equal(t, FileTypeDir, names["public"])
+	assert.Equal(t, FileTypeFile, names["hostit.yml"])
+	assert.NotContains(t, names, "public/index.html", "a listing shows one level")
+	assert.False(t, root.Truncated)
+
+	// ...and you can walk into it
+	sub, err := m.ListFiles("blog", "public")
+	require.NoError(t, err)
+	paths := make([]string, 0)
+	for _, f := range sub.Files {
+		paths = append(paths, f.Path)
+	}
+	assert.Contains(t, paths, "public/index.html")
+	assert.Contains(t, paths, "public/css")
+
+	// Dependency directories are noise an agent should not have to page through
+	require.NoError(t, m.WriteFile("blog", "node_modules/left-pad/index.js", []byte("x"), 0))
+	root, err = m.ListFiles("blog", "")
+	require.NoError(t, err)
+	for _, f := range root.Files {
+		assert.NotEqual(t, "node_modules", f.Path, "dependency directories are skipped")
+	}
+	_, err = m.ListFiles("blog", "../etc")
+	require.ErrorIs(t, err, ErrInvalid)
+}
+
+func TestListFilesCapsAHugeDirectory(t *testing.T) {
+	t.Parallel()
+	m, _, _ := newTestDeployManager(t)
+	createTestApp(t, m, "blog")
+	for i := 0; i < maxListEntries+50; i++ {
+		require.NoError(t, m.WriteFile("blog", fmt.Sprintf("public/f%d.txt", i), []byte("x"), 0))
+	}
+	listing, err := m.ListFiles("blog", "public")
+	require.NoError(t, err)
+	assert.Len(t, listing.Files, maxListEntries)
+	assert.True(t, listing.Truncated, "a caller must be told the listing is partial")
 }

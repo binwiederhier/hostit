@@ -154,7 +154,7 @@ run: ./bin/myapp`}
       <h2>hostit.yml</h2>
       <p>
         One file decides how the app runs. Pick a mode, then apply it with <span className="mono">hostit up</span>{" "}
-        over SSH or <span className="mono">POST /api/&lt;app&gt;/deploy</span>. Keys hostit does not know are an error, so a
+        over SSH or <span className="mono">POST /api/apps/&lt;app&gt;/deploy</span>. Keys hostit does not know are an error, so a
         typo is reported rather than ignored.
       </p>
       <h3>mode: static</h3>
@@ -182,7 +182,7 @@ env:
         starting a broken app.
       </p>
       <p>
-        While you are still getting the build to work, <span className="mono">POST /api/&lt;app&gt;/run</span> runs a single
+        While you are still getting the build to work, <span className="mono">POST /api/apps/&lt;app&gt;/run</span> runs a single
         command in the container and returns its output, so an assistant can iterate on a compile error without SSH. It is
         bounded (one minute by default, five at most); once the command works, move it into{" "}
         <span className="mono">prepare:</span>.
@@ -236,30 +236,30 @@ hostit logs -f     # watch the output`}
         <span className="mono">/api/&lt;app&gt;/</span>. An <strong>account token</strong> (Profile → API tokens) can do
         anything you can, including creating and deleting apps.
       </p>
-      <Snippet text={`curl -H "Authorization: Bearer <token>" ${origin}/api/<app>/info`} />
+      <Snippet text={`curl -H "Authorization: Bearer <token>" ${origin}/api/apps/<app>/info`} />
       <p>
-        <span className="mono">/api/&lt;app&gt;/info</span> returns the app's state and a full description of the API, so an
+        <span className="mono">/api/apps/&lt;app&gt;/info</span> returns the app's state and a full description of the API, so an
         assistant pointed at that one URL needs nothing else.
       </p>
       <h3>App API</h3>
       <div className="table-wrap">
         <table className="docs-table">
           <tbody>
-            <Endpoint method="GET" path="/api/{app}/info" what="State, README, file list, config, and the guide" />
-            <Endpoint method="GET" path="/api/{app}/logs?lines=N" what="Recent output" />
-            <Endpoint method="GET" path="/api/{app}/files" what="List the app's files" />
-            <Endpoint method="GET" path="/api/{app}/files/{path}" what="Read one file" />
-            <Endpoint method="PUT" path="/api/{app}/files/{path}?mode=755" what="Write one file; mode makes it executable" />
-            <Endpoint method="DELETE" path="/api/{app}/files/{path}" what="Delete one file" />
-            <Endpoint method="POST" path="/api/{app}/files" what="Upload a tar archive (Content-Type: application/x-tar)" />
-            <Endpoint method="PUT" path="/api/{app}/readme" what={`Replace README.md: {"readme": "..."}`} />
+            <Endpoint method="GET" path="/api/apps/{app}/info" what="State, README, file list, config, and the guide" />
+            <Endpoint method="GET" path="/api/apps/{app}/logs?lines=N" what="Recent output" />
+            <Endpoint method="GET" path="/api/apps/{app}/files?path=" what="List one directory (type file|dir) of the app's files" />
+            <Endpoint method="GET" path="/api/apps/{app}/files/{path}" what="Read one file" />
+            <Endpoint method="PUT" path="/api/apps/{app}/files/{path}?mode=755" what="Write one file; mode makes it executable" />
+            <Endpoint method="DELETE" path="/api/apps/{app}/files/{path}" what="Delete one file" />
+            <Endpoint method="POST" path="/api/apps/{app}/files" what="Upload a tar archive (Content-Type: application/x-tar)" />
+            <Endpoint method="PUT" path="/api/apps/{app}/readme" what={`Replace README.md: {"readme": "..."}`} />
             <Endpoint
               method="POST"
-              path="/api/{app}/run"
+              path="/api/apps/{app}/run"
               what={`Run one command in the container: {"command": "cd src && go build ./..."}`}
             />
-            <Endpoint method="POST" path="/api/{app}/deploy" what="Apply hostit.yml and (re)start" />
-            <Endpoint method="POST" path="/api/{app}/start|stop|restart" what="Lifecycle; POST only" />
+            <Endpoint method="POST" path="/api/apps/{app}/deploy" what="Apply hostit.yml and (re)start" />
+            <Endpoint method="POST" path="/api/apps/{app}/start|stop|restart" what="Lifecycle; POST only" />
           </tbody>
         </table>
       </div>
@@ -267,12 +267,12 @@ hostit logs -f     # watch the output`}
       <div className="table-wrap">
         <table className="docs-table">
           <tbody>
-            <Endpoint method="GET" path="/v1/account" what="Who you are, your limits and usage" />
-            <Endpoint method="GET|POST" path="/v1/apps" what="List your apps, or create one" />
-            <Endpoint method="GET|DELETE" path="/v1/apps/{name}" what="One app, or delete it" />
-            <Endpoint method="POST" path="/v1/apps/{name}/token" what="Rotate the app's agent token" />
-            <Endpoint method="GET|POST" path="/v1/account/keys" what="Your SSH keys" />
-            <Endpoint method="GET|POST" path="/v1/account/tokens" what="Your account tokens" />
+            <Endpoint method="GET" path="/api/account" what="Who you are, your limits and usage" />
+            <Endpoint method="GET|POST" path="/api/apps" what="List your apps, or create one" />
+            <Endpoint method="GET|DELETE" path="/api/apps/{name}" what="One app, or delete it" />
+            <Endpoint method="POST" path="/api/apps/{name}/token" what="Rotate the app's agent token" />
+            <Endpoint method="GET|POST" path="/api/account/keys" what="Your SSH keys" />
+            <Endpoint method="GET|POST" path="/api/account/tokens" what="Your account tokens" />
           </tbody>
         </table>
       </div>

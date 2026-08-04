@@ -195,11 +195,16 @@ func (m *Manager) CreateApp(name string, opts *CreateOptions) (*store.App, error
 	// something without the API call waiting for a container (and, on the app
 	// user's first app, an image build) to come up
 	go func() {
+		// How long this took is the question asked whenever an app "would not
+		// start": the API returns at once, and the wait is podman's queue behind
+		// whatever else the host is doing
+		started := time.Now()
 		if _, err := m.Up(name); err != nil {
-			slog.Warn("Cannot start demo app; the app exists but serves nothing yet", "app", name, "error", err)
+			slog.Warn("Cannot start demo app; the app exists but serves nothing yet",
+				"app", name, "took", time.Since(started).Round(time.Second), "error", err)
 			return
 		}
-		slog.Info("Demo app started", "app", name)
+		slog.Info("Demo app started", "app", name, "took", time.Since(started).Round(time.Second))
 	}()
 	return app, nil
 }

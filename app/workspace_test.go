@@ -1,6 +1,7 @@
 package app
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 	"testing"
@@ -22,10 +23,10 @@ func TestContainerCreateArgsWorkspaceMode(t *testing.T) {
 	cmd := strings.Join(args, " ")
 	assert.Contains(t, cmd, "create --name hostit-app-blog")
 	assert.Contains(t, cmd, "--hostname blog")
-	assert.Contains(t, cmd, "--env PORT=10000")
+	assert.Contains(t, cmd, "--env PORT=80")
 	assert.Contains(t, cmd, "--env HOME=/home/blog")
 	assert.Contains(t, cmd, "--workdir /home/blog")
-	assert.Contains(t, cmd, "--publish 127.0.0.1:10000:10000")
+	assert.Contains(t, cmd, "--publish 127.0.0.1:10000:80")
 	assert.Contains(t, cmd, "--volume /srv/hostit/apps/blog:/home/blog")
 	assert.Contains(t, cmd, "--volume /usr/bin/hostit:/usr/bin/hostit:ro")
 	assert.Contains(t, cmd, "--volume /run/hostit:/run/hostit")
@@ -119,4 +120,18 @@ func TestWorkspaceImageTagFollowsItsContent(t *testing.T) {
 	assert.True(t, strings.HasPrefix(tag, workspaceImagePrefix+":"), "got %q", tag)
 	assert.Equal(t, tag, workspaceImageTag(), "the same content must give the same tag")
 	assert.NotEqual(t, tag, imageTagFor("FROM scratch\n"), "different content must give a different tag")
+}
+
+func TestAppsListenOnPortEightyInside(t *testing.T) {
+	t.Parallel()
+	conf := &appctl.AppConfig{Mode: appctl.ModeApp, Run: "./bin/server"}
+	a := &store.App{Name: "blog", Port: 10007}
+	joined := strings.Join(containerCreateArgs(conf, a, "/var/lib/hostit/apps/blog", "/run/hostit/hostit.sock", "/usr/bin/hostit", 0, testIDs), " ")
+
+	// The host port is hostit's bookkeeping. Inside its own network namespace an
+	// app has :80 to itself, so that is what it should listen on -- nobody should
+	// have to care which number the platform picked outside.
+	assert.Contains(t, joined, fmt.Sprintf("--publish 127.0.0.1:%d:%d", a.Port, containerPort))
+	assert.Contains(t, joined, fmt.Sprintf("--env PORT=%d", containerPort))
+	assert.Equal(t, 80, containerPort)
 }

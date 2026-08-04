@@ -12,6 +12,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -39,6 +40,9 @@ const (
 	// tempPrefix marks the scratch file an upload streams into before it is
 	// renamed into place; callers may not write names that start with it
 	tempPrefix = ".hostit-upload-"
+	// maxListEntries caps one directory listing; a bigger directory comes back
+	// truncated rather than as megabytes of JSON
+	maxListEntries = 500
 	// maxConfigSize caps hostit.yml when it is read on a request path. Apps write
 	// their own, and the app list reads one per app on every poll, so a caller
 	// must not be able to turn that into megabytes of YAML parsing.
@@ -52,13 +56,34 @@ var (
 	// /etc/skel, which are noise for an agent) but stay writable, so an app can
 	// still have its own .env or .dockerignore.
 	protectedDirs = []string{".hostit/", ".ssh/", ".config/", ".local/", ".cache/"}
+
+	// skippedDirs are somebody else's code: an agent gains nothing from paging
+	// through them, and they dwarf everything the app actually wrote
+	skippedDirs = []string{"node_modules", "vendor", "__pycache__", ".git", ".venv", "venv", "target"}
 )
 
-// FileInfo describes one file in an app's home directory
+// FileType distinguishes the two things a listing can contain
+type FileType string
+
+const (
+	// FileTypeFile is a regular file; FileTypeDir is a directory to descend into
+	FileTypeFile = FileType("file")
+	FileTypeDir  = FileType("dir")
+)
+
+// FileInfo describes one entry in an app's directory
 type FileInfo struct {
 	Path     string    `json:"path"`
+	Type     FileType  `json:"type"`
 	Size     int64     `json:"size"`
 	Modified time.Time `json:"modified"`
+}
+
+// Listing is one directory's worth of entries
+type Listing struct {
+	Path      string      `json:"path"`
+	Files     []*FileInfo `json:"files"`
+	Truncated bool        `json:"truncated"`
 }
 
 // WriteFile writes a file below the app's home directory, creating parent
@@ -162,34 +187,56 @@ func (m *Manager) DeleteFile(name, relPath string) error {
 }
 
 // ListFiles returns the app's own files, skipping hostit's internal state
-func (m *Manager) ListFiles(name string) ([]*FileInfo, error) {
-	home := m.appHome(name)
-	files := make([]*FileInfo, 0)
-	err := filepath.WalkDir(home, func(p string, d fs.DirEntry, err error) error {
+// ListFiles returns one directory of the app, not the whole tree. An app with a
+// node_modules would otherwise answer with tens of thousands of entries, built
+// in memory, on the endpoint an agent calls first. Directories come back as
+// entries to descend into, and an overlong directory is cut with Truncated set
+// rather than silently shortened.
+func (m *Manager) ListFiles(name, dir string) (*Listing, error) {
+	rel := ""
+	if strings.TrimSpace(dir) != "" && strings.Trim(dir, "./") != "" {
+		var err error
+		if rel, err = m.safeRel(name, dir); err != nil {
+			return nil, err
+		}
+	}
+	root, err := m.appRoot(name)
+	if err != nil {
+		return nil, err
+	}
+	defer root.Close()
+	target := rel
+	if target == "" {
+		target = "."
+	}
+	entries, err := fs.ReadDir(root.FS(), target)
+	if err != nil {
+		return nil, err
+	}
+	listing := &Listing{Path: rel, Files: make([]*FileInfo, 0, len(entries))}
+	for _, entry := range entries {
+		child := entry.Name()
+		if rel != "" {
+			child = rel + "/" + child
+		}
+		if isHiddenFromListing(child) || (entry.IsDir() && isHiddenFromListing(child+"/")) {
+			continue
+		}
+		if len(listing.Files) >= maxListEntries {
+			listing.Truncated = true
+			break
+		}
+		info, err := entry.Info()
 		if err != nil {
-			return nil // Unreadable entries must not abort the listing
+			continue // An entry that vanished mid-listing is not worth failing over
 		}
-		rel, relErr := filepath.Rel(home, p)
-		if relErr != nil || rel == "." {
-			return nil
+		file := &FileInfo{Path: child, Type: FileTypeFile, Size: info.Size(), Modified: info.ModTime()}
+		if entry.IsDir() {
+			file.Type, file.Size = FileTypeDir, 0
 		}
-		if d.IsDir() {
-			if isHiddenFromListing(rel + "/") {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if isHiddenFromListing(rel) {
-			return nil
-		}
-		info, infoErr := d.Info()
-		if infoErr != nil {
-			return nil
-		}
-		files = append(files, &FileInfo{Path: rel, Size: info.Size(), Modified: info.ModTime()})
-		return nil
-	})
-	return files, err
+		listing.Files = append(listing.Files, file)
+	}
+	return listing, nil
 }
 
 // ExtractTar unpacks an uploaded tar archive into the app's home directory and
@@ -377,8 +424,8 @@ func isHiddenFromListing(rel string) bool {
 	if isProtected(rel) {
 		return true
 	}
-	for _, segment := range strings.Split(rel, "/") {
-		if strings.HasPrefix(segment, ".") {
+	for _, segment := range strings.Split(strings.TrimSuffix(rel, "/"), "/") {
+		if strings.HasPrefix(segment, ".") || slices.Contains(skippedDirs, segment) {
 			return true
 		}
 	}

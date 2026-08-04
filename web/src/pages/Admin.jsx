@@ -197,7 +197,7 @@ const DeleteUserDialog = ({ user, users, onCancel, onDone, setError }) => {
     setError("");
     try {
       const query = choice === "transfer" ? `?apps=transfer&transfer_to=${target}` : "?apps=delete";
-      await api.del(`/v1/users/${user.id}${query}`);
+      await api.del(`/api/users/${user.id}${query}`);
       onDone();
     } catch (err) {
       setError(err.message);
@@ -275,7 +275,7 @@ const InviteUser = ({ onAdded, setError }) => {
     setBusy(true);
     setError("");
     try {
-      await api.post("/v1/users", { email: email.trim(), role });
+      await api.post("/api/users", { email: email.trim(), role });
       setEmail("");
       setRole("user");
       onAdded();
@@ -315,7 +315,7 @@ const AllowedDomains = ({ setError }) => {
 
   const load = useCallback(async () => {
     try {
-      setDomains(await api.get("/v1/domains"));
+      setDomains(await api.get("/api/domains"));
     } catch (err) {
       setError(err.message);
     }
@@ -333,7 +333,7 @@ const AllowedDomains = ({ setError }) => {
     setBusy(true);
     setError("");
     try {
-      await api.post("/v1/domains", { domain: domain.trim() });
+      await api.post("/api/domains", { domain: domain.trim() });
       setDomain("");
       await load();
     } catch (err) {
@@ -349,7 +349,7 @@ const AllowedDomains = ({ setError }) => {
     }
     setError("");
     try {
-      await api.del(`/v1/domains/${encodeURIComponent(d.domain)}`);
+      await api.del(`/api/domains/${encodeURIComponent(d.domain)}`);
       await load();
     } catch (err) {
       setError(err.message);
@@ -410,7 +410,7 @@ const Defaults = ({ settings, onSaved, setError }) => {
     setError("");
     setSaved(false);
     try {
-      await api.patch("/v1/settings", {
+      await api.patch("/api/settings", {
         default_app_limit: Number(appLimit),
         default_memory_mb: Number(memoryMb),
         default_disk_mb: Number(diskMb),
@@ -457,7 +457,7 @@ const AdminInner = () => {
 
   const load = useCallback(async () => {
     try {
-      const [u, a, s] = await Promise.all([api.get("/v1/users"), api.get("/v1/apps?all=true"), api.get("/v1/settings")]);
+      const [u, a, s] = await Promise.all([api.get("/api/users"), api.get("/api/apps?all=true"), api.get("/api/settings")]);
       setUsers(u);
       setApps(a);
       setSettings(s);
@@ -473,7 +473,7 @@ const AdminInner = () => {
   const patchUser = async (user, body) => {
     setError("");
     try {
-      await api.patch(`/v1/users/${user.id}`, body);
+      await api.patch(`/api/users/${user.id}`, body);
       await load();
     } catch (err) {
       setError(err.message);

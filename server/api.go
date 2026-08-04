@@ -11,6 +11,14 @@ import (
 	"heckel.io/hostit/store"
 )
 
+const (
+	// apiPrefix is where the API lives: /api/apps/{app}/... for one app's own
+	// endpoints, /api/account and /api/users for everything else. The split it
+	// replaced (/api/{app} versus /v1) said nothing about which token reached
+	// what, which is the only distinction that matters here.
+	apiPrefix = "/api"
+)
+
 var (
 	// ErrForbidden is returned when a caller asks for something their role does
 	// not cover, e.g. a non-admin asking to see everyone's apps
@@ -23,9 +31,14 @@ func (s *Server) API() http.Handler {
 	return s.api
 }
 
+// route registers one API endpoint under the single prefix everything shares
+func route(mux *http.ServeMux, method, path string, h http.Handler) {
+	mux.Handle(method+" "+apiPrefix+path, h)
+}
+
 func (s *Server) newAPIHandler() http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /v1/health", s.handleHealth)
+	route(mux, "GET", "/health", http.HandlerFunc(s.handleHealth))
 
 	// Web login (Google OAuth) and session teardown
 	mux.HandleFunc("GET /auth/google", s.handleGoogleLogin)
@@ -33,35 +46,45 @@ func (s *Server) newAPIHandler() http.Handler {
 	mux.HandleFunc("POST /auth/logout", s.handleLogout)
 
 	// Account: readable while pending, so the web app can explain the wait
-	mux.Handle("GET /v1/account", s.authenticated(s.handleAccount))
-	mux.Handle("GET /v1/account/keys", s.requireActive(s.handleKeysList))
-	mux.Handle("POST /v1/account/keys", s.requireActive(s.handleKeysAdd))
-	mux.Handle("DELETE /v1/account/keys/{id}", s.requireActive(s.handleKeysDelete))
-	mux.Handle("GET /v1/account/tokens", s.requireActive(s.handleTokensList))
-	mux.Handle("POST /v1/account/tokens", s.requireActive(s.handleTokensAdd))
-	mux.Handle("DELETE /v1/account/tokens/{id}", s.requireActive(s.handleTokensDelete))
+	route(mux, "GET", "/account", s.authenticated(s.handleAccount))
+	route(mux, "GET", "/account/keys", s.requireActive(s.handleKeysList))
+	route(mux, "POST", "/account/keys", s.requireActive(s.handleKeysAdd))
+	route(mux, "DELETE", "/account/keys/{id}", s.requireActive(s.handleKeysDelete))
+	route(mux, "GET", "/account/tokens", s.requireActive(s.handleTokensList))
+	route(mux, "POST", "/account/tokens", s.requireActive(s.handleTokensAdd))
+	route(mux, "DELETE", "/account/tokens/{id}", s.requireActive(s.handleTokensDelete))
 
 	// Apps: scoped to the caller; admins see and manage everything
-	mux.Handle("POST /v1/apps", s.requireActive(s.handleAppsCreate))
-	mux.Handle("GET /v1/apps", s.requireActive(s.handleAppsList))
-	mux.Handle("GET /v1/apps/{name}", s.requireActive(s.handleAppsGet))
-	mux.Handle("DELETE /v1/apps/{name}", s.requireActive(s.handleAppsDelete))
-	mux.Handle("PUT /v1/apps/{name}/keys", s.requireActive(s.handleAppsSetKeys))
-	mux.Handle("POST /v1/apps/{name}/token", s.requireActive(s.handleAppsRotateToken))
+	route(mux, "POST", "/apps", s.requireActive(s.handleAppsCreate))
+	route(mux, "GET", "/apps", s.requireActive(s.handleAppsList))
+	route(mux, "GET", "/apps/{name}", s.requireActive(s.handleAppsGet))
+	route(mux, "DELETE", "/apps/{name}", s.requireActive(s.handleAppsDelete))
+	route(mux, "PUT", "/apps/{name}/keys", s.requireActive(s.handleAppsSetKeys))
+	route(mux, "POST", "/apps/{name}/token", s.requireActive(s.handleAppsRotateToken))
 
 	// Administration
-	mux.Handle("GET /v1/users", s.requireAdmin(s.handleUsersList))
-	mux.Handle("POST /v1/users", s.requireAdmin(s.handleUsersInvite))
-	mux.Handle("PATCH /v1/users/{id}", s.requireAdmin(s.handleUsersUpdate))
-	mux.Handle("DELETE /v1/users/{id}", s.requireAdmin(s.handleUsersDelete))
-	mux.Handle("GET /v1/domains", s.requireAdmin(s.handleDomainsList))
-	mux.Handle("POST /v1/domains", s.requireAdmin(s.handleDomainsAdd))
-	mux.Handle("DELETE /v1/domains/{domain}", s.requireAdmin(s.handleDomainsDelete))
-	mux.Handle("GET /v1/settings", s.requireAdmin(s.handleSettingsGet))
-	mux.Handle("PATCH /v1/settings", s.requireAdmin(s.handleSettingsUpdate))
+	route(mux, "GET", "/users", s.requireAdmin(s.handleUsersList))
+	route(mux, "POST", "/users", s.requireAdmin(s.handleUsersInvite))
+	route(mux, "PATCH", "/users/{id}", s.requireAdmin(s.handleUsersUpdate))
+	route(mux, "DELETE", "/users/{id}", s.requireAdmin(s.handleUsersDelete))
+	route(mux, "GET", "/domains", s.requireAdmin(s.handleDomainsList))
+	route(mux, "POST", "/domains", s.requireAdmin(s.handleDomainsAdd))
+	route(mux, "DELETE", "/domains/{domain}", s.requireAdmin(s.handleDomainsDelete))
+	route(mux, "GET", "/settings", s.requireAdmin(s.handleSettingsGet))
+	route(mux, "PATCH", "/settings", s.requireAdmin(s.handleSettingsUpdate))
 
 	// Agent-facing API (see agentapi.go)
 	s.newAgentRoutes(mux)
+
+	// Anything else under the API prefix is a mistake, and an agent deserves to
+	// hear it as JSON rather than receive the web app's index.html with a 200.
+	// This also covers the paths the API used to have.
+	mux.HandleFunc(apiPrefix+"/", func(w http.ResponseWriter, r *http.Request) {
+		writeError(w, http.StatusNotFound, fmt.Errorf("no such endpoint: %s %s (see %s/info)", r.Method, r.URL.Path, apiPrefix))
+	})
+	mux.HandleFunc("/v1/", func(w http.ResponseWriter, r *http.Request) {
+		writeError(w, http.StatusNotFound, fmt.Errorf("the API moved to %s; %s is gone", apiPrefix, r.URL.Path))
+	})
 
 	// The web app (single-page, embedded); must be last, it catches the rest
 	mux.Handle("/", s.webHandler())

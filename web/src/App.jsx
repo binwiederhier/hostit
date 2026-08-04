@@ -113,7 +113,7 @@ const App = () => {
 
   const refreshAccount = useCallback(async () => {
     try {
-      setAccount(await api.get("/v1/account"));
+      setAccount(await api.get("/api/account"));
       setError("");
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {

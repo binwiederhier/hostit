@@ -96,7 +96,7 @@ const Dashboard = ({ account, refreshAccount }) => {
 
   const load = useCallback(async () => {
     try {
-      setApps(await api.get("/v1/apps"));
+      setApps(await api.get("/api/apps"));
     } catch (err) {
       setError(err.message);
     }
@@ -123,7 +123,7 @@ const Dashboard = ({ account, refreshAccount }) => {
     setCreating(true);
     setError("");
     try {
-      const res = await api.post("/v1/apps", { name });
+      const res = await api.post("/api/apps", { name });
       setName("");
       setAdding(false);
       refreshAccount();

@@ -207,16 +207,16 @@ type apiAgentInfoResponse struct {
 
 // apiAgentAppResponse is GET /api/{app}/info
 type apiAgentAppResponse struct {
-	Name      string          `json:"name"`
-	URL       string          `json:"url"`
-	Running   bool            `json:"running"`
-	DiskMB    int             `json:"disk_mb"`
-	OverQuota bool            `json:"over_quota"`
-	Readme    string          `json:"readme"`
-	HostitYml string          `json:"hostit_yml"`
-	Files     []*app.FileInfo `json:"files"`
-	SSH       apiSSHInfo      `json:"ssh"`
-	Hint      string          `json:"hint"`
+	Name      string       `json:"name"`
+	URL       string       `json:"url"`
+	Running   bool         `json:"running"`
+	DiskMB    int          `json:"disk_mb"`
+	OverQuota bool         `json:"over_quota"`
+	Readme    string       `json:"readme"`
+	HostitYml string       `json:"hostit_yml"`
+	Files     *app.Listing `json:"files"`
+	SSH       apiSSHInfo   `json:"ssh"`
+	Hint      string       `json:"hint"`
 	// Guide is the full instruction set, inlined so an agent pointed at this one
 	// URL needs nothing else
 	Guide *apiAgentInfoResponse `json:"guide"`

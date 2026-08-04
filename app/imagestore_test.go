@@ -52,7 +52,7 @@ func TestContainerRunsUnderTheAppsOwnIdentity(t *testing.T) {
 	assert.Contains(t, joined, "--uidmap 0:1001:1")
 	assert.Contains(t, joined, "--gidmap 0:1001:1")
 	assert.Contains(t, joined, "--network slirp4netns")
-	assert.Contains(t, joined, "--publish 127.0.0.1:10000:10000")
+	assert.Contains(t, joined, "--publish 127.0.0.1:10000:80")
 }
 
 func TestPruneOldWorkspaceImages(t *testing.T) {

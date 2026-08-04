@@ -62,7 +62,7 @@ func TestAgentCanBuildAnAppFromNothing(t *testing.T) {
 
 	// Everything an agent needs must hang off this one URL
 	var info map[string]any
-	e.get(fmt.Sprintf("/api/%s/info", name), token, &info)
+	e.get(fmt.Sprintf("/api/apps/%s/info", name), token, &info)
 	guide, ok := info["guide"].(map[string]any)
 	require.True(t, ok, "per-app info must inline the guide")
 	assert.NotEmpty(t, guide["hostit_yml"])
@@ -74,16 +74,16 @@ func TestAgentCanBuildAnAppFromNothing(t *testing.T) {
 	e.waitForBody(fmt.Sprint(app["url"]), "stub")
 
 	// Now act as the agent: upload a Go-free static site, deploy, verify
-	e.put(fmt.Sprintf("/api/%s/files/public/index.html", name), token, "<h1>e2e built this</h1>")
-	e.put(fmt.Sprintf("/api/%s/files/hostit.yml", name), token, "static: public\n")
-	e.post(fmt.Sprintf("/api/%s/deploy", name), token, nil)
+	e.put(fmt.Sprintf("/api/apps/%s/files/public/index.html", name), token, "<h1>e2e built this</h1>")
+	e.put(fmt.Sprintf("/api/apps/%s/files/hostit.yml", name), token, "mode: static\n")
+	e.post(fmt.Sprintf("/api/apps/%s/deploy", name), token, nil)
 	e.waitForBody(fmt.Sprint(app["url"]), "e2e built this")
 
 	// Record what it is, as the prompt asks agents to do
-	e.putJSON(fmt.Sprintf("/api/%s/readme", name), token, map[string]string{
+	e.putJSON(fmt.Sprintf("/api/apps/%s/readme", name), token, map[string]string{
 		"readme": "# " + name + "\n\nBuilt by the e2e suite.\n",
 	})
-	e.get(fmt.Sprintf("/api/%s/info", name), token, &info)
+	e.get(fmt.Sprintf("/api/apps/%s/info", name), token, &info)
 	assert.Contains(t, fmt.Sprint(info["readme"]), "Built by the e2e suite")
 }
 
@@ -97,19 +97,19 @@ func TestRunModeWithARealRuntime(t *testing.T) {
 	token := fmt.Sprint(app["agent_token"])
 
 	// A python app, proving the workspace runtimes are usable
-	e.put(fmt.Sprintf("/api/%s/files/server.py", name), token,
+	e.put(fmt.Sprintf("/api/apps/%s/files/server.py", name), token,
 		"import http.server,os\n"+
 			"class H(http.server.BaseHTTPRequestHandler):\n"+
 			"    def do_GET(s):\n"+
 			"        s.send_response(200); s.end_headers(); s.wfile.write(b'python is here')\n"+
 			"http.server.HTTPServer(('0.0.0.0', int(os.environ['PORT'])), H).serve_forever()\n")
-	e.put(fmt.Sprintf("/api/%s/files/hostit.yml", name), token, "run: python3 server.py\n")
-	e.post(fmt.Sprintf("/api/%s/deploy", name), token, nil)
+	e.put(fmt.Sprintf("/api/apps/%s/files/hostit.yml", name), token, "mode: app\nrun: python3 server.py\n")
+	e.post(fmt.Sprintf("/api/apps/%s/deploy", name), token, nil)
 	e.waitForBody(fmt.Sprint(app["url"]), "python is here")
 
 	// Logs must be readable when something goes wrong
 	var logs map[string]any
-	e.get(fmt.Sprintf("/api/%s/logs?lines=20", name), token, &logs)
+	e.get(fmt.Sprintf("/api/apps/%s/logs?lines=20", name), token, &logs)
 	assert.NotNil(t, logs["output"])
 }
 
@@ -127,7 +127,7 @@ func TestTarUploadOfAWholeTree(t *testing.T) {
 	files := map[string]string{
 		"public/index.html": "<h1>from a tarball</h1>",
 		"public/app.css":    "body{}",
-		"hostit.yml":        "static: public\n",
+		"hostit.yml":        "mode: static\n",
 	}
 	for path, content := range files {
 		require.NoError(t, tw.WriteHeader(&tar.Header{Name: path, Mode: 0644, Size: int64(len(content)), Typeflag: tar.TypeReg}))
@@ -135,8 +135,8 @@ func TestTarUploadOfAWholeTree(t *testing.T) {
 		require.NoError(t, err)
 	}
 	require.NoError(t, tw.Close())
-	e.postRaw(fmt.Sprintf("/api/%s/files", name), token, "application/x-tar", buf.Bytes())
-	e.post(fmt.Sprintf("/api/%s/deploy", name), token, nil)
+	e.postRaw(fmt.Sprintf("/api/apps/%s/files", name), token, "application/x-tar", buf.Bytes())
+	e.post(fmt.Sprintf("/api/apps/%s/deploy", name), token, nil)
 	e.waitForBody(fmt.Sprint(app["url"]), "from a tarball")
 }
 
@@ -150,21 +150,21 @@ func TestExecutableUploadAndDescription(t *testing.T) {
 	token := fmt.Sprint(app["agent_token"])
 
 	// An uploaded program has to arrive runnable, or "run:" needs a chmod dance
-	e.put(fmt.Sprintf("/api/%s/files/serve.sh?mode=755", name), token,
+	e.put(fmt.Sprintf("/api/apps/%s/files/serve.sh?mode=755", name), token,
 		"#!/bin/sh\nexec python3 -m http.server \"$PORT\" --bind 0.0.0.0 --directory public\n")
-	e.put(fmt.Sprintf("/api/%s/files/public/index.html", name), token, "<h1>ran an uploaded program</h1>")
-	e.put(fmt.Sprintf("/api/%s/files/hostit.yml", name), token,
-		"description: An app the e2e suite described\nrun: ./serve.sh\n")
-	e.post(fmt.Sprintf("/api/%s/deploy", name), token, nil)
+	e.put(fmt.Sprintf("/api/apps/%s/files/public/index.html", name), token, "<h1>ran an uploaded program</h1>")
+	e.put(fmt.Sprintf("/api/apps/%s/files/hostit.yml", name), token,
+		"description: An app the e2e suite described\nmode: app\nrun: ./serve.sh\n")
+	e.post(fmt.Sprintf("/api/apps/%s/deploy", name), token, nil)
 	e.waitForBody(fmt.Sprint(app["url"]), "ran an uploaded program")
 
 	// The description from hostit.yml is what the owner's page puts in the prompt
 	var got map[string]any
-	e.get("/v1/apps/"+name, e.token, &got)
+	e.get("/api/apps/"+name, e.token, &got)
 	assert.Equal(t, "An app the e2e suite described", got["description"])
 
 	// A mode that is not octal is refused rather than silently ignored
-	assert.Equal(t, http.StatusBadRequest, e.status("PUT", fmt.Sprintf("/api/%s/files/x?mode=99", name), token))
+	assert.Equal(t, http.StatusBadRequest, e.status("PUT", fmt.Sprintf("/api/apps/%s/files/x?mode=99", name), token))
 }
 
 func TestAppTokenCannotLeaveItsApp(t *testing.T) {
@@ -178,13 +178,13 @@ func TestAppTokenCannotLeaveItsApp(t *testing.T) {
 	})
 	token := fmt.Sprint(app["agent_token"])
 
-	assert.Equal(t, http.StatusOK, e.status("GET", fmt.Sprintf("/api/%s/info", mine), token))
-	assert.Equal(t, http.StatusForbidden, e.status("GET", fmt.Sprintf("/api/%s/info", theirs), token))
-	assert.Equal(t, http.StatusForbidden, e.status("POST", fmt.Sprintf("/api/%s/restart", theirs), token))
-	assert.Equal(t, http.StatusForbidden, e.status("GET", "/v1/apps", token))
-	assert.Equal(t, http.StatusForbidden, e.status("GET", "/v1/users", token))
+	assert.Equal(t, http.StatusOK, e.status("GET", fmt.Sprintf("/api/apps/%s/info", mine), token))
+	assert.Equal(t, http.StatusForbidden, e.status("GET", fmt.Sprintf("/api/apps/%s/info", theirs), token))
+	assert.Equal(t, http.StatusForbidden, e.status("POST", fmt.Sprintf("/api/apps/%s/restart", theirs), token))
+	assert.Equal(t, http.StatusForbidden, e.status("GET", "/api/apps", token))
+	assert.Equal(t, http.StatusForbidden, e.status("GET", "/api/users", token))
 	// Actions are POST-only, so a stray GET cannot restart anything
-	assert.Equal(t, http.StatusMethodNotAllowed, e.status("GET", fmt.Sprintf("/api/%s/restart", mine), token))
+	assert.Equal(t, http.StatusMethodNotAllowed, e.status("GET", fmt.Sprintf("/api/apps/%s/restart", mine), token))
 }
 
 func TestUnknownAppAndStoppedApp(t *testing.T) {
@@ -199,13 +199,13 @@ func TestUnknownAppAndStoppedApp(t *testing.T) {
 	e.waitForBody(url, "stub")
 
 	// A stopped app shows the "not running" page, with owner instructions
-	e.post(fmt.Sprintf("/api/%s/stop", name), token, nil)
+	e.post(fmt.Sprintf("/api/apps/%s/stop", name), token, nil)
 	body := e.waitForBody(url, "not running")
 	assert.Contains(t, body, "ssh "+name+"@", "the owner hint names the app's ssh login")
 	assert.NotContains(t, body, "127.0.0.1", "no internals for visitors")
 
 	// Starting it again brings the stub back
-	e.post(fmt.Sprintf("/api/%s/start", name), token, nil)
+	e.post(fmt.Sprintf("/api/apps/%s/start", name), token, nil)
 	e.waitForBody(url, "stub")
 }
 
@@ -218,13 +218,13 @@ func uniqueName(prefix string) string {
 func (e *env) createApp(name string) map[string]any {
 	e.t.Helper()
 	var app map[string]any
-	e.doJSON("POST", "/v1/apps", e.token, map[string]string{"name": name}, &app, http.StatusCreated)
+	e.doJSON("POST", "/api/apps", e.token, map[string]string{"name": name}, &app, http.StatusCreated)
 	return app
 }
 
 func (e *env) deleteApp(name string) {
 	e.t.Helper()
-	req, err := http.NewRequest("DELETE", e.host+"/v1/apps/"+name, nil)
+	req, err := http.NewRequest("DELETE", e.host+"/api/apps/"+name, nil)
 	require.NoError(e.t, err)
 	req.Header.Set("Authorization", "Bearer "+e.token)
 	resp, err := http.DefaultClient.Do(req)

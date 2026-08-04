@@ -27,29 +27,29 @@ const (
 	maxLogLines = 10000
 )
 
-// newAgentRoutes registers the agent-facing API. It is deliberately separate
-// from /v1 (which serves the web app and the CLI): everything here is shaped so
-// that an AI agent handed one token and one URL can discover the rest.
+// newAgentRoutes registers the per-app API. Everything here lives under
+// /api/apps/{app}/ because that prefix is exactly what an app-scoped token
+// may reach: the shape of the URL is the shape of the permission.
 func (s *Server) newAgentRoutes(mux *http.ServeMux) {
-	mux.Handle("GET /api/info", s.requireActive(s.handleAgentInfo))
-	mux.Handle("GET /api/{app}/info", s.requireApp(s.handleAgentAppInfo))
-	mux.Handle("GET /api/{app}/logs", s.requireApp(s.handleAgentLogs))
-	mux.Handle("GET /api/{app}/files", s.requireApp(s.handleAgentFileList))
-	mux.Handle("PUT /api/{app}/files/{path...}", s.requireApp(s.handleAgentFilePut))
-	mux.Handle("GET /api/{app}/files/{path...}", s.requireApp(s.handleAgentFileGet))
-	mux.Handle("DELETE /api/{app}/files/{path...}", s.requireApp(s.handleAgentFileDelete))
-	mux.Handle("POST /api/{app}/files", s.requireApp(s.handleAgentFileUpload))
-	mux.Handle("PUT /api/{app}/readme", s.requireApp(s.handleAgentReadmePut))
-	mux.Handle("POST /api/{app}/deploy", s.requireApp(s.handleAgentDeploy))
-	mux.Handle("POST /api/{app}/start", s.requireApp(s.handleAgentStart))
-	mux.Handle("POST /api/{app}/stop", s.requireApp(s.handleAgentStop))
-	mux.Handle("POST /api/{app}/restart", s.requireApp(s.handleAgentRestart))
-	mux.Handle("POST /api/{app}/run", s.requireApp(s.handleAgentRun))
+	route(mux, "GET", "/info", s.requireActive(s.handleAgentInfo))
+	route(mux, "GET", "/apps/{app}/info", s.requireApp(s.handleAgentAppInfo))
+	route(mux, "GET", "/apps/{app}/logs", s.requireApp(s.handleAgentLogs))
+	route(mux, "GET", "/apps/{app}/files", s.requireApp(s.handleAgentFileList))
+	route(mux, "PUT", "/apps/{app}/files/{path...}", s.requireApp(s.handleAgentFilePut))
+	route(mux, "GET", "/apps/{app}/files/{path...}", s.requireApp(s.handleAgentFileGet))
+	route(mux, "DELETE", "/apps/{app}/files/{path...}", s.requireApp(s.handleAgentFileDelete))
+	route(mux, "POST", "/apps/{app}/files", s.requireApp(s.handleAgentFileUpload))
+	route(mux, "PUT", "/apps/{app}/readme", s.requireApp(s.handleAgentReadmePut))
+	route(mux, "POST", "/apps/{app}/deploy", s.requireApp(s.handleAgentDeploy))
+	route(mux, "POST", "/apps/{app}/start", s.requireApp(s.handleAgentStart))
+	route(mux, "POST", "/apps/{app}/stop", s.requireApp(s.handleAgentStop))
+	route(mux, "POST", "/apps/{app}/restart", s.requireApp(s.handleAgentRestart))
+	route(mux, "POST", "/apps/{app}/run", s.requireApp(s.handleAgentRun))
 
 	// Actions are POST-only. Without these, a GET would fall through to the web
 	// app's catch-all and answer with HTML, which is confusing for an agent.
 	for _, action := range []string{"deploy", "start", "stop", "restart", "run"} {
-		mux.HandleFunc("GET /api/{app}/"+action, methodNotAllowed(action))
+		route(mux, "GET", "/apps/{app}/"+action, methodNotAllowed(action))
 	}
 }
 
@@ -64,6 +64,12 @@ func methodNotAllowed(action string) http.HandlerFunc {
 // handleAgentInfo explains the platform to an agent that has never seen it
 func (s *Server) handleAgentInfo(w http.ResponseWriter, _ *http.Request, c *caller) {
 	writeJSON(w, http.StatusOK, s.agentGuide("", ""))
+}
+
+// appsPath is where one app's endpoints live, which is also exactly what its
+// token may reach
+func appsPath(name string) string {
+	return apiPrefix + "/apps/" + name
 }
 
 // agentGuide is the instruction set handed to agents. It is returned both by
@@ -91,7 +97,7 @@ func (s *Server) agentGuide(appName, description string) *apiAgentInfoResponse {
 	}
 	return &apiAgentInfoResponse{
 		Platform: "hostit",
-		BaseURL:  base + "/api",
+		BaseURL:  base + apiPrefix,
 		WhatIsThis: "hostit hosts small web apps. Each app is an isolated container with its own " +
 			"subdomain and HTTPS certificate. You manage an app entirely through this API: upload " +
 			"files, describe how to run it in hostit.yml, then deploy. Your token is limited to one " +
@@ -139,19 +145,19 @@ func (s *Server) agentGuide(appName, description string) *apiAgentInfoResponse {
 			"comes next has nothing to edit.",
 		Auth: "Send the token as: Authorization: Bearer <token>",
 		Endpoints: []apiAgentEndpoint{
-			{Method: "GET", Path: "/api/" + name + "/info", What: "This document plus the app's URL, state, README, file list and hostit.yml"},
-			{Method: "GET", Path: "/api/" + name + "/logs", What: "Recent output; ?lines=N"},
-			{Method: "GET", Path: "/api/" + name + "/files", What: "List the app's files"},
-			{Method: "GET", Path: "/api/" + name + "/files/{path}", What: "Read one file"},
-			{Method: "PUT", Path: "/api/" + name + "/files/{path}", What: "Write one file (raw body); add ?mode=755 for something executable"},
-			{Method: "DELETE", Path: "/api/" + name + "/files/{path}", What: "Delete one file"},
-			{Method: "POST", Path: "/api/" + name + "/files", What: "Upload a tar archive (Content-Type: application/x-tar)"},
-			{Method: "PUT", Path: "/api/" + name + "/readme", What: `Replace README.md: {"readme": "..."}`},
-			{Method: "POST", Path: "/api/" + name + "/run", What: `Run one shell command in the app's container: {"command": "cd src && go build ./..."} -- returns its output and exit code`},
-			{Method: "POST", Path: "/api/" + name + "/deploy", What: "Apply hostit.yml and (re)start"},
-			{Method: "POST", Path: "/api/" + name + "/start", What: "Start the app"},
-			{Method: "POST", Path: "/api/" + name + "/stop", What: "Stop the app"},
-			{Method: "POST", Path: "/api/" + name + "/restart", What: "Restart the app"},
+			{Method: "GET", Path: "" + appsPath(name) + "/info", What: "This document plus the app's URL, state, README, file list and hostit.yml"},
+			{Method: "GET", Path: "" + appsPath(name) + "/logs", What: "Recent output; ?lines=N"},
+			{Method: "GET", Path: "" + appsPath(name) + "/files", What: "List the app's files"},
+			{Method: "GET", Path: "" + appsPath(name) + "/files/{path}", What: "Read one file"},
+			{Method: "PUT", Path: "" + appsPath(name) + "/files/{path}", What: "Write one file (raw body); add ?mode=755 for something executable"},
+			{Method: "DELETE", Path: "" + appsPath(name) + "/files/{path}", What: "Delete one file"},
+			{Method: "POST", Path: "" + appsPath(name) + "/files", What: "Upload a tar archive (Content-Type: application/x-tar)"},
+			{Method: "PUT", Path: "" + appsPath(name) + "/readme", What: `Replace README.md: {"readme": "..."}`},
+			{Method: "POST", Path: "" + appsPath(name) + "/run", What: `Run one shell command in the app's container: {"command": "cd src && go build ./..."} -- returns its output and exit code`},
+			{Method: "POST", Path: "" + appsPath(name) + "/deploy", What: "Apply hostit.yml and (re)start"},
+			{Method: "POST", Path: "" + appsPath(name) + "/start", What: "Start the app"},
+			{Method: "POST", Path: "" + appsPath(name) + "/stop", What: "Stop the app"},
+			{Method: "POST", Path: "" + appsPath(name) + "/restart", What: "Restart the app"},
 		},
 		Notes: []string{
 			"Apps also accept SSH: the owner's SSH keys work, and you can scp/rsync into the app's home directory.",
@@ -169,7 +175,7 @@ func (s *Server) handleAgentAppInfo(w http.ResponseWriter, _ *http.Request, c *c
 		writeAppError(w, err)
 		return
 	}
-	files, err := s.apps.ListFiles(a.Name)
+	files, err := s.apps.ListFiles(a.Name, "")
 	if err != nil {
 		writeAppError(w, err)
 		return
@@ -226,13 +232,16 @@ func (s *Server) handleAgentLogs(w http.ResponseWriter, r *http.Request, c *call
 	writeJSON(w, http.StatusOK, &apiOutputResponse{Output: out})
 }
 
-func (s *Server) handleAgentFileList(w http.ResponseWriter, _ *http.Request, c *caller, a *store.App) {
-	files, err := s.apps.ListFiles(a.Name)
+// handleAgentFileList lists one directory, named by ?path= and defaulting to the
+// app's root. It is not the whole tree: an app with dependencies installed would
+// otherwise answer with tens of thousands of entries.
+func (s *Server) handleAgentFileList(w http.ResponseWriter, r *http.Request, c *caller, a *store.App) {
+	listing, err := s.apps.ListFiles(a.Name, r.URL.Query().Get("path"))
 	if err != nil {
 		writeAppError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, files)
+	writeJSON(w, http.StatusOK, listing)
 }
 
 func (s *Server) handleAgentFileGet(w http.ResponseWriter, r *http.Request, c *caller, a *store.App) {

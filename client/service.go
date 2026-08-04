@@ -36,7 +36,7 @@ func New(host, token string) *Client {
 // and an app without keys is managed through the API alone
 func (c *Client) CreateApp(name string, sshKeys []string) (*App, error) {
 	var app App
-	err := c.request("POST", "/v1/apps", &createAppRequest{Name: name, SSHKeys: sshKeys}, &app)
+	err := c.request("POST", "/api/apps", &createAppRequest{Name: name, SSHKeys: sshKeys}, &app)
 	if err != nil {
 		return nil, err
 	}
@@ -46,7 +46,7 @@ func (c *Client) CreateApp(name string, sshKeys []string) (*App, error) {
 // Apps lists all apps
 func (c *Client) Apps() ([]*App, error) {
 	apps := make([]*App, 0)
-	if err := c.request("GET", "/v1/apps", nil, &apps); err != nil {
+	if err := c.request("GET", "/api/apps", nil, &apps); err != nil {
 		return nil, err
 	}
 	return apps, nil
@@ -55,7 +55,7 @@ func (c *Client) Apps() ([]*App, error) {
 // App returns a single app by name
 func (c *Client) App(name string) (*App, error) {
 	var app App
-	if err := c.request("GET", "/v1/apps/"+name, nil, &app); err != nil {
+	if err := c.request("GET", "/api/apps/"+name, nil, &app); err != nil {
 		return nil, err
 	}
 	return &app, nil
@@ -63,12 +63,12 @@ func (c *Client) App(name string) (*App, error) {
 
 // DeleteApp deletes an app, its Unix user and its home directory
 func (c *Client) DeleteApp(name string) error {
-	return c.request("DELETE", "/v1/apps/"+name, nil, nil)
+	return c.request("DELETE", "/api/apps/"+name, nil, nil)
 }
 
 // SetKeys replaces an app's authorized SSH keys
 func (c *Client) SetKeys(name string, sshKeys []string) error {
-	return c.request("PUT", "/v1/apps/"+name+"/keys", &setKeysRequest{SSHKeys: sshKeys}, nil)
+	return c.request("PUT", "/api/apps/"+name+"/keys", &setKeysRequest{SSHKeys: sshKeys}, nil)
 }
 
 func (c *Client) request(method, path string, body, response any) error {

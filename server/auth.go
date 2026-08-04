@@ -225,11 +225,11 @@ func (s *Server) authenticated(next func(http.ResponseWriter, *http.Request, *ca
 			return
 		}
 		// An app-scoped token exists to be pasted into someone's agent, so it may
-		// only reach the agent API for its own app. This belongs here rather than
-		// in requireActive: /v1/account is authenticated-only (pending users must
+		// only reach its own app's endpoints. This belongs here rather than in
+		// requireActive: /api/account is authenticated-only (pending users must
 		// see why they are waiting), and would otherwise skip the check entirely.
-		if c.appScope != "" && !strings.HasPrefix(r.URL.Path, "/api/") {
-			writeError(w, http.StatusForbidden, errors.New("this token is limited to the app "+c.appScope+" and its /api/ endpoints"))
+		if c.appScope != "" && !withinAppScope(r.URL.Path, c.appScope) {
+			writeError(w, http.StatusForbidden, errors.New("this token is limited to the app "+c.appScope+", under "+apiPrefix+"/apps/"+c.appScope+"/"))
 			return
 		}
 		next(w, r, c)
@@ -256,6 +256,19 @@ func (s *Server) requireAdmin(next func(http.ResponseWriter, *http.Request, *cal
 		}
 		next(w, r, c)
 	})
+}
+
+// withinAppScope reports whether a path belongs to one app's own endpoints. The
+// prefix is the permission: an app token that could reach /api/account would
+// tell whoever it was pasted to who its owner is.
+func withinAppScope(path, app string) bool {
+	// The platform guide explains the API to whoever holds the token and says
+	// nothing about any particular app, so an agent can always read it
+	if path == apiPrefix+"/info" {
+		return true
+	}
+	prefix := apiPrefix + "/apps/" + app
+	return path == prefix || strings.HasPrefix(path, prefix+"/")
 }
 
 // checkSameOrigin refuses a state-changing request that a browser sent on its

@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"heckel.io/hostit/appctl"
 	"heckel.io/hostit/store"
@@ -162,6 +163,7 @@ func (m *Manager) apply(a *store.App, conf *appctl.AppConfig, allowReload bool) 
 	}
 
 	// Recreate the container if the desired config differs from the running one
+	started := time.Now()
 	desired := containerCreateArgs(conf, a, m.appHome(name), m.config.SocketFile, hostitBinFile, m.memoryLimit(name), ids)
 	hash := containerConfigHash(desired)
 	current, err := m.runner.Run("podman", "container", "inspect", containerName(name), "--format", inspectHashFormat)
@@ -174,6 +176,7 @@ func (m *Manager) apply(a *store.App, conf *appctl.AppConfig, allowReload bool) 
 			return "", fmt.Errorf("cannot create container: %w", err)
 		}
 		recreated = true
+		slog.Info("Container recreated", "app", name, "took", time.Since(started).Round(time.Second))
 	}
 
 	// Start if needed; otherwise a changed run: command only needs an agent reload

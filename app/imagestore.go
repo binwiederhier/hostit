@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 const (
@@ -38,10 +39,11 @@ func (m *Manager) EnsureWorkspaceImage() error {
 		return err
 	}
 	slog.Info("Building workspace image (one time, takes a minute)", "image", image)
+	started := time.Now()
 	if err := m.ops.BuildImage(contextDir, image); err != nil {
 		return fmt.Errorf("cannot build workspace image: %w", err)
 	}
-	slog.Info("Workspace image ready", "image", image)
+	slog.Info("Workspace image ready", "image", image, "took", time.Since(started).Round(time.Second))
 	return nil
 }
 

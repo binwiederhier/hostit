@@ -19,6 +19,10 @@ const (
 	containerPrefix = "hostit-app-"
 	// unitTemplate is the systemd template unit instantiated per app
 	unitTemplate = "hostit-app@"
+	// containerPort is what an app listens on inside its own network namespace.
+	// Every app has the whole namespace to itself, so they can all use the same
+	// obvious number and never see the loopback port hostit picked outside.
+	containerPort = 80
 	// maxProcesses caps how many processes an app may have. Generous for a build
 	// (compilers fan out) and far below what it takes to exhaust the host.
 	maxProcesses = 512
@@ -106,10 +110,10 @@ func containerCreateArgs(conf *appctl.AppConfig, a *store.App, home, socketFile,
 	args = append(args, "--pids-limit", strconv.Itoa(maxProcesses))
 	containerHome := containerHomeDir(a.Name)
 	args = append(args,
-		"--env", fmt.Sprintf("PORT=%d", a.Port),
+		"--env", fmt.Sprintf("PORT=%d", containerPort),
 		"--env", "HOME="+containerHome,
 		"--workdir", containerHome,
-		"--publish", fmt.Sprintf("127.0.0.1:%d:%d", a.Port, a.Port),
+		"--publish", fmt.Sprintf("127.0.0.1:%d:%d", a.Port, containerPort),
 		"--volume", home+":"+containerHome)
 	// conf is nil for an app with no usable hostit.yml: the container still comes
 	// up, so its owner can SSH in and fix it

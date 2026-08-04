@@ -17,7 +17,7 @@ const tokenPlaceholder = "<this app has no agent token>";
 // finished work someone is coming back to: say that up front, or the next
 // session reads a "build me an app" prompt and starts over on top of it.
 const promptText = (name, url, token, description) => {
-  const api = `The app can be managed entirely through the hostit REST API. You can learn more about how to use the API by calling ${origin}/api/${name}/info, using the Bearer token ${token}. Follow the instructions returned by the API.`;
+  const api = `The app can be managed entirely through the hostit REST API. You can learn more about how to use the API by calling ${origin}/api/apps/${name}/info, using the Bearer token ${token}. Follow the instructions returned by the API.`;
   if (!description) {
     return `I want to build a web app called "${name}" hosted at ${url}.
 
@@ -125,7 +125,7 @@ const AgentToken = ({ name, token, onRotated }) => {
     setBusy(true);
     setError("");
     try {
-      onRotated(await api.post(`/v1/apps/${encodeURIComponent(name)}/token`));
+      onRotated(await api.post(`/api/apps/${encodeURIComponent(name)}/token`));
     } catch (err) {
       setError(err.message);
     } finally {
@@ -174,7 +174,7 @@ const DangerZone = ({ name, onDeleted }) => {
     setBusy(true);
     setError("");
     try {
-      await api.del(`/v1/apps/${encodeURIComponent(name)}`);
+      await api.del(`/api/apps/${encodeURIComponent(name)}`);
       onDeleted();
     } catch (err) {
       setError(err.message);
@@ -222,7 +222,7 @@ const AppDetail = ({ account, refreshAccount }) => {
   // Whether SSH is usable at all depends on the profile, not on the app
   useEffect(() => {
     api
-      .get("/v1/account/keys")
+      .get("/api/account/keys")
       .then((keys) => setHasKeys(keys.length > 0))
       .catch(() => setHasKeys(null));
   }, []);
@@ -230,7 +230,7 @@ const AppDetail = ({ account, refreshAccount }) => {
   const load = useCallback(async () => {
     setMissing(false);
     try {
-      setApp(await api.get(`/v1/apps/${encodeURIComponent(name)}`));
+      setApp(await api.get(`/api/apps/${encodeURIComponent(name)}`));
     } catch (err) {
       if (err instanceof ApiError && err.status === 404) {
         setMissing(true);
@@ -264,7 +264,7 @@ const AppDetail = ({ account, refreshAccount }) => {
     setNote("");
     clearTimeout(noteTimer.current);
     try {
-      const res = await api.post(`/api/${encodeURIComponent(name)}/${action}`);
+      const res = await api.post(`/api/apps/${encodeURIComponent(name)}/${action}`);
       setNote(res && res.message ? res.message : "Done.");
       noteTimer.current = setTimeout(() => setNote(""), 5000);
       await load();

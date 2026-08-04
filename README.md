@@ -309,11 +309,11 @@ pair: an app with no keys is managed through the API, and SSH starts working as
 soon as a key is added to the owner's profile. New apps are scaffolded with a
 demo page and started right away, so the URL serves something immediately.
 
-API endpoints: `POST/GET /v1/apps`, `GET/DELETE /v1/apps/{name}`,
-`PUT /v1/apps/{name}/keys`, `POST /v1/apps/{name}/token`, `GET /v1/account`
-(+ `/keys`, `/tokens`), `GET /v1/health`. Admin-only: `GET/POST /v1/users`,
-`PATCH/DELETE /v1/users/{id}`, `GET/POST /v1/domains`,
-`DELETE /v1/domains/{domain}`, `GET/PATCH /v1/settings`.
+Everything lives under `/api`. One app's own endpoints are under
+`/api/apps/{app}/` -- which is exactly what an app-scoped token may reach, so
+the shape of the URL is the shape of the permission. Account and admin endpoints
+are `/api/account` (+ `/keys`, `/tokens`), `/api/apps`, `/api/users`,
+`/api/domains`, `/api/settings`, and `/api/health`.
 
 ## Let an AI agent run an app
 
@@ -325,29 +325,30 @@ user's other apps, their account, or anything admin.
 The agent needs no prior knowledge of hostit, and the prompt is three lines:
 `GET /api/<app>/info` returns the app's state *and* the full instruction set
 (every endpoint, the `hostit.yml` format, what is installed), so one URL plus
-one token is the whole briefing. `GET /api/info` returns the same guide without
-an app, for account-wide tokens. In shell terms:
+one token is the whole briefing. `GET /api/info` returns the same guide
+without an app, for account-wide tokens. In shell terms:
 
 ```sh
 export H=https://hostit.apps.example.com/api
 export T=hostit_...        # created with the app, shown on the app's page
 
 curl -H "Authorization: Bearer $T" $H/info              # how this all works
-curl -H "Authorization: Bearer $T" $H/myapp/info        # README, files, config, state
+curl -H "Authorization: Bearer $T" $H/apps/myapp/info    # README, files, config, state
+curl -H "Authorization: Bearer $T" "$H/apps/myapp/files?path=public"  # one directory
 
 curl -X PUT -H "Authorization: Bearer $T" --data-binary @index.html \
-     $H/myapp/files/index.html                          # upload one file
+     $H/apps/myapp/files/public/index.html                    # upload one file
 curl -X PUT -H "Authorization: Bearer $T" --data-binary @myapp \
-     "$H/myapp/files/myapp?mode=755"                    # ...executable, for run: mode
+     "$H/apps/myapp/files/myapp?mode=755"                    # ...executable, for run: mode
 tar cf - . | curl -X POST -H "Authorization: Bearer $T" \
-     -H "Content-Type: application/x-tar" --data-binary @- $H/myapp/files
+     -H "Content-Type: application/x-tar" --data-binary @- $H/apps/myapp/files
 
 curl -X POST -H "Authorization: Bearer $T" -H "Content-Type: application/json" \
-     -d '{"command":"cd src && go build -o ../bin/myapp ."}' $H/myapp/run
-curl -X POST -H "Authorization: Bearer $T" $H/myapp/deploy    # apply hostit.yml, (re)start
-curl -H "Authorization: Bearer $T" "$H/myapp/logs?lines=50"   # why is it not up?
+     -d '{"command":"cd src && go build -o ../bin/myapp ."}' $H/apps/myapp/run
+curl -X POST -H "Authorization: Bearer $T" $H/apps/myapp/deploy    # apply hostit.yml, (re)start
+curl -H "Authorization: Bearer $T" "$H/apps/myapp/logs?lines=50"   # why is it not up?
 curl -X PUT -H "Authorization: Bearer $T" -H "Content-Type: application/json" \
-     -d '{"readme":"# myapp\n\nWhat this is."}' $H/myapp/readme
+     -d '{"readme":"# myapp\n\nWhat this is."}' $H/apps/myapp/readme
 ```
 
 New apps start as a **stub**: a placeholder page served in `static:` mode, whose
