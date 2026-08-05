@@ -44,6 +44,29 @@ func TestStatesReadsRunningAndMemory(t *testing.T) {
 	assert.Equal(t, 0, states["two"].MemoryMB, "no stats line means no usage")
 }
 
+func TestStatesReportsAppProcessState(t *testing.T) {
+	t.Parallel()
+	m, _, runner := newTestDeployManager(t)
+	createTestApp(t, m, "up")     // container up, agent says the app is running
+	createTestApp(t, m, "paused") // container up, but the app was stopped
+	createTestApp(t, m, "fresh")  // container up, but the agent left no breadcrumb yet
+	createTestApp(t, m, "off")    // container down
+	writeAppFile(t, m, "up", "log/state", "running\n")
+	writeAppFile(t, m, "paused", "log/state", "stopped\n")
+	// "fresh" has no log/state file at all
+	runner.returns("systemctl is-active", "active\nactive\nactive\ninactive\n")
+
+	states := m.States([]string{"up", "paused", "fresh", "off"})
+	require.Len(t, states, 4)
+	assert.True(t, states["up"].AppRunning, "the agent reported the app running")
+	assert.False(t, states["paused"].AppRunning, "the agent reported the app stopped")
+	assert.False(t, states["fresh"].AppRunning, "no breadcrumb means not serving")
+	assert.False(t, states["off"].AppRunning, "a down container cannot be serving")
+	// The container is up for all but "off", regardless of the app process
+	assert.True(t, states["paused"].Running)
+	assert.False(t, states["off"].Running)
+}
+
 func TestStatesDegradeRatherThanBlock(t *testing.T) {
 	t.Parallel()
 	m, _, runner := newTestDeployManager(t)

@@ -34,6 +34,10 @@ const (
 	homeMode = 0o750
 	// appLogFile is where the agent records an app's output, below the app's home
 	appLogFile = appctl.AppLogFile
+	// appStateFile is where the agent records the run: process state; maxStateRead
+	// caps that tiny file when the daemon reads it
+	appStateFile = appctl.AppStateFile
+	maxStateRead = 64
 	// maxLogRead caps how much of that log a request reads; the agent rotates it
 	// at 10 MB, and a reader only ever wants the tail
 	maxLogRead = 16 * 1024 * 1024

@@ -36,7 +36,8 @@ type apiAppResponse struct {
 	DiskLimit   int    `json:"disk_limit_mb"`
 	MemoryMB    int    `json:"memory_mb"`
 	MemoryLimit int    `json:"memory_limit_mb"`
-	Running     bool   `json:"running"`
+	Running     bool   `json:"running"`     // The app's container is up
+	AppRunning  bool   `json:"app_running"` // The run: command inside it is up
 	OverQuota   bool   `json:"over_quota"`
 	OwnerEmail  string `json:"owner_email,omitempty"`
 	// Description is the app's own one-liner from hostit.yml, kept current by

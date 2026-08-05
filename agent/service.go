@@ -75,6 +75,7 @@ func (a *Agent) Run() error {
 		// container alive, until start (or reload) wakes us.
 		if a.paused.Load() {
 			slog.Info("App stopped; container stays up until it is started")
+			a.writeState("stopped")
 			if !a.waitWake() {
 				return nil
 			}
@@ -83,6 +84,7 @@ func (a *Agent) Run() error {
 		conf := a.loadConfig()
 		if conf == nil {
 			slog.Info("No run command configured; idling until reload")
+			a.writeState("idle")
 			if !a.waitWake() {
 				return nil
 			}
@@ -104,12 +106,14 @@ func (a *Agent) Run() error {
 			continue
 		}
 		slog.Info("Started app command", "pid", cmd.Process.Pid, "command", conf.Command(hostitBinFile))
+		a.writeState("running")
 		exited := a.waitFor(cmd) // Exactly one waiter per child (Wait must not be called twice)
 
 		// Wait for the child to exit, a reload request, or shutdown
 		select {
 		case exit := <-exited:
 			slog.Warn("App command exited, restarting", "status", exit.status, "delay", a.restartDelay)
+			a.writeState("crashed")
 			if !a.sleepInterruptible() {
 				return nil
 			}
@@ -166,6 +170,16 @@ func (a *Agent) signalWake() {
 	select {
 	case a.wake <- struct{}{}:
 	default:
+	}
+}
+
+// writeState records the run: process state for the daemon to read. The daemon
+// cannot see inside the container, so this file is how it tells a stopped or
+// crashed app (container up, nothing serving) from a healthy one. Best-effort.
+func (a *Agent) writeState(state string) {
+	path := filepath.Join(a.home, appctl.AppStateFile)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err == nil {
+		_ = os.WriteFile(path, []byte(state), 0o644)
 	}
 }
 

@@ -22,6 +22,10 @@ const (
 	// AppLogFile is where the agent writes the app's output, relative to the home;
 	// the agent, the daemon and the CLI's "logs -f" all resolve the same path here
 	AppLogFile = LogDir + "/app.log"
+	// AppStateFile is where the agent records the run: process state
+	// ("running"/"stopped"/"crashed"/"idle") for the daemon to read: the daemon
+	// cannot see inside the container, so the agent leaves this breadcrumb
+	AppStateFile = LogDir + "/state"
 
 	// ModeApp runs the app's own "run" command, which must listen on $PORT
 	ModeApp = Mode("app")

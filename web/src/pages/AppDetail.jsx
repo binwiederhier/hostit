@@ -50,7 +50,7 @@ Read that and the app's README.md and docs/, then reply exactly: "I understand t
 // Start/stop/restart behind one button: only one of them is ever the sensible
 // next move, and none of them is what the page is for. Delete lives here too,
 // set apart at the bottom, so the whole rare-actions surface is one menu.
-const ActionsMenu = ({ running, busy, onAction, onDelete }) => {
+const ActionsMenu = ({ running, appRunning, busy, onAction, onDelete }) => {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
 
@@ -82,13 +82,16 @@ const ActionsMenu = ({ running, busy, onAction, onDelete }) => {
   };
   // App verbs act on the run: command inside a running container; power verbs act
   // on the container itself. When it is off, the only thing to do is power it on.
-  const appVerbs = [
-    { verb: "restart", label: "Restart app" },
-    { verb: "stop", label: "Stop app" },
-    { verb: "start", label: "Start app" },
-  ];
+  // Which app verbs make sense depends on whether the run: process is up: offer
+  // Stop/Restart to a running app, and only Start to a stopped one.
+  const appVerbs = appRunning
+    ? [
+        { verb: "restart", label: "Restart app" },
+        { verb: "stop", label: "Stop app" },
+      ]
+    : [{ verb: "start", label: "Start app" }];
   const powerVerbs = [
-    { verb: "reboot", label: "Reboot container" },
+    { verb: "reboot", label: "Reboot" },
     { verb: "poweroff", label: "Power off" },
   ];
 
@@ -316,14 +319,18 @@ const AppDetail = ({ account, refreshAccount }) => {
     }
     setBusy(true);
     setError("");
-    // The status dot tracks the container. Flip it now for the power verbs rather
-    // than after the request (container teardown takes a couple of seconds, and
-    // waiting on it feels broken); the catch-up poll reconciles. The app verbs
-    // (start/stop/restart the run: command) leave the container up, so they do
-    // not touch the dot.
+    // Flip the dot now rather than after the request (teardown takes a couple of
+    // seconds, and waiting on it feels broken); the catch-up poll reconciles.
+    // Power verbs move the container (and with it the app process); app verbs
+    // (start/stop/restart the run: command) leave the container up and only move
+    // the app process.
     const containerState = { poweron: true, reboot: true, poweroff: false };
+    const appState = { start: true, restart: true, stop: false };
     if (action in containerState) {
-      setApp((prev) => (prev ? { ...prev, running: containerState[action] } : prev));
+      const up = containerState[action];
+      setApp((prev) => (prev ? { ...prev, running: up, app_running: up } : prev));
+    } else if (action in appState) {
+      setApp((prev) => (prev ? { ...prev, app_running: appState[action] } : prev));
     }
     try {
       await api.post(`/api/apps/${encodeURIComponent(name)}/${action}`);
@@ -371,10 +378,12 @@ const AppDetail = ({ account, refreshAccount }) => {
         <div className="app-heading">
           <div className="app-title-row">
             <h1 className="app-title">
-              <StatusDot running={app.running} />
+              <StatusDot running={app.running} appRunning={app.app_running} />
               {app.name}
             </h1>
-            <span className="status-label">{app.running ? "running" : "stopped"}</span>
+            <span className="status-label">
+              {!app.running ? "stopped" : app.app_running ? "running" : "app stopped"}
+            </span>
           </div>
           <a className="app-url" href={app.url} target="_blank" rel="noreferrer">
             {app.url}
@@ -383,7 +392,13 @@ const AppDetail = ({ account, refreshAccount }) => {
         {/* Seeing the app is what people come here to do, so that is the one
             accented button; lifecycle and delete hide in the menu. */}
         <div className="header-actions">
-          <ActionsMenu running={app.running} busy={busy} onAction={lifecycle} onDelete={() => setConfirmDelete(true)} />
+          <ActionsMenu
+            running={app.running}
+            appRunning={app.app_running}
+            busy={busy}
+            onAction={lifecycle}
+            onDelete={() => setConfirmDelete(true)}
+          />
           {/* A shell in the container, in the browser -- only useful while it runs */}
           {app.running && (
             <button type="button" className="btn" onClick={() => setShowTerminal(true)}>

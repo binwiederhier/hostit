@@ -83,6 +83,25 @@ func TestAgentPauseAndResume(t *testing.T) {
 	require.Eventually(t, func() bool { return countUp() >= 2 }, 3*time.Second, 20*time.Millisecond)
 }
 
+func TestAgentWritesRunState(t *testing.T) {
+	t.Parallel()
+	a, home := newTestAgent(t)
+	stateFile := filepath.Join(home, appctl.AppStateFile)
+	writeConfig(t, home, "run: sleep 60")
+	go func() {
+		_ = a.Run()
+	}()
+	defer a.Stop()
+
+	// The daemon cannot see inside the container, so the agent leaves a breadcrumb
+	// the daemon reads to color the status dot.
+	waitForFileContains(t, stateFile, "running") // started
+	a.Pause()
+	waitForFileContains(t, stateFile, "stopped") // paused leaves it stopped
+	a.Resume()
+	waitForFileContains(t, stateFile, "running") // back up
+}
+
 func TestAgentStopKillsChild(t *testing.T) {
 	t.Parallel()
 	a, home := newTestAgent(t)

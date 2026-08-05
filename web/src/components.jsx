@@ -33,11 +33,14 @@ export const CopyButton = ({ text, small = true, disabled = false, children }) =
   );
 };
 
-// Green when the container is up, red when it is not. The title carries the
-// state for anyone who cannot see the color.
-export const StatusDot = ({ running }) => (
-  <span className={`status-dot ${running ? "status-up" : "status-down"}`} title={running ? "running" : "stopped"} />
-);
+// Green when the app's run: process is up, orange when only its container is up
+// (booted but not serving), red when the container is down. The title carries
+// the state for anyone who cannot see the color.
+export const StatusDot = ({ running, appRunning }) => {
+  const cls = !running ? "status-down" : appRunning ? "status-up" : "status-degraded";
+  const title = !running ? "stopped" : appRunning ? "running" : "container up, app stopped";
+  return <span className={`status-dot ${cls}`} title={title} />;
+};
 
 // "12 of 512 MB", or just "12 MB" when the app has no limit for that resource.
 export const formatUsage = (used, limit) => (limit ? `${used} of ${limit} MB` : `${used} MB`);

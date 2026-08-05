@@ -18,6 +18,7 @@
   --danger: #b42323;
   --danger-bg: #fbe9e9;
   --status-up: #16a34a;
+  --status-degraded: #e08a1e;
   --status-down: #d13333;
   --warn-border: #e4c65b;
   --warn-bg: #fdf6dd;
@@ -43,6 +44,7 @@
     --danger: #f08585;
     --danger-bg: #3a1c1c;
     --status-up: #4ade80;
+    --status-degraded: #fbbf24;
     --status-down: #f87171;
     --warn-border: #8a7327;
     --warn-bg: #2c2612;
@@ -327,6 +329,10 @@ p {
 
 .status-up {
   background: var(--status-up);
+}
+
+.status-degraded {
+  background: var(--status-degraded);
 }
 
 .status-down {

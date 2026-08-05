@@ -89,7 +89,7 @@ const EmptyState = (props) => (
 const AppRow = ({ app }) => (
   <tr>
     <td className="cell-name">
-      <StatusDot running={app.running} />
+      <StatusDot running={app.running} appRunning={app.app_running} />
       <Link className="mono app-link" to={`/app/${app.name}`}>
         {app.name}
       </Link>

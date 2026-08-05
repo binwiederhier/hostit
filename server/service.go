@@ -232,7 +232,7 @@ func (s *Server) withState(resp []*apiAppResponse) []*apiAppResponse {
 	states := s.apps.CachedStates(names)
 	for _, r := range resp {
 		state := states[r.Name]
-		r.Running, r.MemoryMB = state.Running, state.MemoryMB
+		r.Running, r.AppRunning, r.MemoryMB = state.Running, state.AppRunning, state.MemoryMB
 		r.MemoryLimit, r.DiskLimit = s.appLimits(r.Name)
 	}
 	return resp

@@ -25,11 +25,12 @@ var (
 	stateSettleDelays = []time.Duration{2 * time.Second, 6 * time.Second}
 )
 
-// State is what an app is doing right now: whether its service is up and how
-// much memory its container is using
+// State is what an app is doing right now: whether its container is up, whether
+// the run: process inside it is up, and how much memory its container is using
 type State struct {
-	Running  bool `json:"running"`
-	MemoryMB int  `json:"memory_mb"`
+	Running    bool `json:"running"`     // The container's systemd unit is active
+	AppRunning bool `json:"app_running"` // The run: command inside it is up
+	MemoryMB   int  `json:"memory_mb"`
 }
 
 // CachedStates returns the last known state of the given apps immediately and,
@@ -148,7 +149,9 @@ func (m *Manager) States(names []string) map[string]State {
 		return states
 	}
 	for name, running := range m.runningStates(names) {
-		states[name] = State{Running: running}
+		// The app can only be up if its container is; a stopped or crashed app
+		// leaves the container running but reports something other than "running".
+		states[name] = State{Running: running, AppRunning: running && m.appProcessRunning(name)}
 	}
 	for name, memoryMB := range m.memoryUsage() {
 		state := states[name]
@@ -156,6 +159,21 @@ func (m *Manager) States(names []string) map[string]State {
 		states[name] = state
 	}
 	return states
+}
+
+// appProcessRunning reads the state the agent left; anything unreadable means
+// "not running", which is the safe default (the app is not serving).
+func (m *Manager) appProcessRunning(name string) bool {
+	root, err := m.appRoot(name)
+	if err != nil {
+		return false
+	}
+	defer root.Close()
+	b, err := readCapped(root, appStateFile, maxStateRead)
+	if err != nil {
+		return false
+	}
+	return strings.TrimSpace(string(b)) == "running"
 }
 
 // runningStates asks systemd about every app's unit in one call; "systemctl

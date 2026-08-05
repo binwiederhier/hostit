@@ -124,7 +124,7 @@ const UserRow = ({ user, defaults, onPatch, onDelete }) => {
 const AppRow = ({ app }) => (
   <tr>
     <td>
-      <StatusDot running={app.running} />
+      <StatusDot running={app.running} appRunning={app.app_running} />
       <Link className="mono app-link" to={`/app/${app.name}`}>
         {app.name}
       </Link>
