@@ -363,3 +363,45 @@ func TestExecCapsItsOutput(t *testing.T) {
 	assert.False(t, truncated)
 	assert.Equal(t, "all good", short)
 }
+
+func TestReconcileUnitsRemovesUnitsOfDeletedApps(t *testing.T) {
+	t.Parallel()
+	m, _, runner := newTestDeployManager(t)
+	createTestApp(t, m, "blog")
+	runner.reset()
+	runner.returns("systemctl list-units", "hostit-app@blog.service loaded active running\nhostit-app@gone.service loaded failed failed\nhostit-app@e2e-old.service loaded activating auto-restart\n")
+
+	runner.returns("podman ps", "hostit-app-blog\nhostit-app-ghost\nsomething-else\n")
+
+	// A unit whose app is gone is not harmless: Restart=always keeps systemd
+	// retrying it forever, and its enable symlink brings it back after a reboot
+	removed := m.ReconcileOrphans()
+	assert.ElementsMatch(t, []string{"gone", "e2e-old", "ghost"}, removed)
+	ran := runner.ran()
+	assert.Contains(t, ran, "systemctl disable --now hostit-app@gone")
+	assert.Contains(t, ran, "systemctl reset-failed hostit-app@gone")
+	assert.Contains(t, ran, "systemctl disable --now hostit-app@e2e-old")
+	assert.NotContains(t, ran, "disable --now hostit-app@blog", "a live app must be left alone")
+
+	// Containers outlive their app the same way: deleting an app races the
+	// background start that follows creating one, and the loser is a container
+	// nothing will ever start
+	assert.Contains(t, ran, "podman rm --force hostit-app-ghost")
+	assert.NotContains(t, ran, "podman rm --force hostit-app-blog")
+	assert.NotContains(t, ran, "something-else", "only hostit's own containers are ours to remove")
+}
+
+func TestUpRefusesAnAppThatWasDeletedMeanwhile(t *testing.T) {
+	t.Parallel()
+	m, _, runner := newTestDeployManager(t)
+	createTestApp(t, m, "blog")
+	writeAppFile(t, m, "blog", "hostit.yml", "mode: static")
+	require.NoError(t, m.store.RemoveApp("blog"))
+	runner.reset()
+
+	// Creating an app starts it in the background; deleting it a second later
+	// used to leave that start to finish and recreate the container
+	_, err := m.Up("blog")
+	require.Error(t, err)
+	assert.NotContains(t, runner.ran(), "podman create", "a deleted app must not get a container")
+}

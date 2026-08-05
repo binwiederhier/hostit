@@ -97,6 +97,13 @@ func execServe(c *cli.Context) error {
 	}()
 	srv := server.New(conf, manager, users)
 
+	// The registry is the source of truth: an app deleted while the daemon was
+	// down, or whose unit outlived it, leaves systemd retrying something that no
+	// longer exists
+	if removed := manager.ReconcileOrphans(); len(removed) > 0 {
+		slog.Info("Cleaned up leftovers of apps that no longer exist", "apps", removed)
+	}
+
 	// Periodically measure disk usage and enforce the soft quota
 	done := make(chan struct{})
 	defer close(done)

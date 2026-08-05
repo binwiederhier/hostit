@@ -111,6 +111,89 @@ func (m *Manager) Logs(name string, lines int) (string, error) {
 	return tailLines(string(b), lines), nil
 }
 
+// ReconcileOrphans removes the host state of apps that no longer exist -- their
+// systemd units and their containers -- and returns the names it cleaned up.
+//
+// The registry is the source of truth, as it is for port rules. A unit left
+// behind by a deleted app is not inert: hostit-app@.service is Restart=always,
+// so systemd retries it forever against a container that is gone, and its
+// enable symlink starts it again after a reboot.
+func (m *Manager) ReconcileOrphans() []string {
+	out, err := m.runner.Run("systemctl", "list-units", unitTemplate+"*", "--all", "--no-legend", "--plain")
+	if err != nil {
+		slog.Warn("Cannot list app units to reconcile", "error", err)
+		return nil
+	}
+	apps, err := m.store.Apps()
+	if err != nil {
+		slog.Warn("Cannot list apps to reconcile units", "error", err)
+		return nil
+	}
+	known := make(map[string]bool, len(apps))
+	for _, a := range apps {
+		known[a.Name] = true
+	}
+	removed := make([]string, 0)
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		name, ok := appNameFromUnit(strings.Fields(strings.TrimSpace(line)))
+		if !ok || known[name] {
+			continue
+		}
+		unit := unitName(name)
+		if _, err := m.runner.Run("systemctl", "disable", "--now", unit); err != nil {
+			slog.Warn("Cannot disable the unit of a deleted app", "app", name, "error", err)
+		}
+		// Without this the unit lingers in "failed" forever, which is how these
+		// are noticed in the first place
+		if _, err := m.runner.Run("systemctl", "reset-failed", unit); err != nil {
+			slog.Debug("Cannot reset the unit of a deleted app", "app", name, "error", err)
+		}
+		removed = append(removed, name)
+	}
+	removed = append(removed, m.reconcileContainers(known)...)
+	if len(removed) > 0 {
+		slog.Info("Removed leftovers of deleted apps", "apps", removed)
+	}
+	return removed
+}
+
+// reconcileContainers removes containers whose app is gone. Deleting an app
+// races the background start that follows creating one: if the start wins, it
+// leaves a container behind that nothing will ever run.
+func (m *Manager) reconcileContainers(known map[string]bool) []string {
+	out, err := m.runner.Run("podman", "ps", "--all", "--format", "{{.Names}}")
+	if err != nil {
+		slog.Warn("Cannot list containers to reconcile", "error", err)
+		return nil
+	}
+	removed := make([]string, 0)
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		name, ok := strings.CutPrefix(strings.TrimSpace(line), containerPrefix)
+		if !ok || name == "" || known[name] {
+			continue
+		}
+		if _, err := m.runner.Run("podman", "rm", "--force", containerName(name)); err != nil {
+			slog.Warn("Cannot remove the container of a deleted app", "app", name, "error", err)
+			continue
+		}
+		removed = append(removed, name)
+	}
+	return removed
+}
+
+// appNameFromUnit picks the app name out of a "systemctl list-units" line
+func appNameFromUnit(fields []string) (string, bool) {
+	if len(fields) == 0 {
+		return "", false
+	}
+	unit := strings.TrimSuffix(strings.TrimPrefix(fields[0], "\u25cf "), ".service")
+	name, ok := strings.CutPrefix(unit, unitTemplate)
+	if !ok || name == "" || strings.Contains(name, "@") {
+		return "", false
+	}
+	return name, true
+}
+
 // RestartStaleAgents restarts every running app whose agent predates this build
 // and returns the names it restarted.
 //
@@ -169,6 +252,13 @@ func (m *Manager) apply(a *store.App, conf *appctl.AppConfig, allowReload bool) 
 	current, err := m.runner.Run("podman", "container", "inspect", containerName(name), "--format", inspectHashFormat)
 	recreated := false
 	if err != nil || strings.TrimSpace(current) != hash {
+		// Creating an app starts it in the background, and the owner may delete it
+		// while that is still in flight. Checking again here keeps the loser of
+		// that race from leaving a container behind; ReconcileOrphans catches the
+		// rest of the window at the next start.
+		if _, err := m.store.App(name); err != nil {
+			return "", err
+		}
 		_, _ = m.runner.Run("systemctl", "stop", unitName(name))
 		_, _ = m.runner.Run("podman", "rm", "--force", containerName(name))
 		createArgs := append([]string{"podman"}, withConfigLabel(desired, hash)...)

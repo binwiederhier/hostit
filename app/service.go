@@ -217,7 +217,12 @@ func (m *Manager) DeleteApp(name string) error {
 	}
 	// Stop the app first: a running container keeps processes alive, and
 	// userdel refuses to remove a user that still has any
-	_, _ = m.runner.Run("systemctl", "disable", "--now", unitName(name))
+	if _, err := m.runner.Run("systemctl", "disable", "--now", unitName(name)); err != nil {
+		slog.Warn("Cannot disable the app's unit; reconciling at next start", "app", name, "error", err)
+	}
+	// The unit lingers in "failed" otherwise, and a Restart=always unit that
+	// systemd still knows about keeps retrying a container that is gone
+	_, _ = m.runner.Run("systemctl", "reset-failed", unitName(name))
 	_, _ = m.runner.Run("podman", "rm", "--force", containerName(name))
 	if err := m.ops.DeleteUser(name); err != nil {
 		return fmt.Errorf("cannot delete user %s: %w", name, err)
