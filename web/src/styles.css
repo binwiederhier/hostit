@@ -1011,6 +1011,37 @@ th:last-child {
   overflow-y: auto;
 }
 
+/* Browser terminal (xterm) */
+.term-window {
+  display: flex;
+  flex-direction: column;
+  width: min(92vw, 940px);
+  height: min(80vh, 580px);
+  background: #14181d;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
+}
+
+.term-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  background: #1b2027;
+  border-bottom: 1px solid var(--border);
+  color: #e8ecf1;
+  font-size: 13px;
+}
+
+.term-host {
+  flex: 1;
+  min-height: 0;
+  padding: 6px 8px;
+}
+
 .choice {
   display: flex;
   gap: 10px;

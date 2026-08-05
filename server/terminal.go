@@ -1,0 +1,105 @@
+package server
+
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"os"
+	"os/exec"
+	"time"
+
+	"github.com/coder/websocket"
+	"github.com/creack/pty"
+)
+
+const (
+	// terminalMaxDuration caps a single browser terminal session, so a tab left
+	// open forever does not hold a shell (and a podman exec) on the host forever.
+	terminalMaxDuration = 60 * time.Minute
+	// terminalReadLimit bounds a single websocket message; terminal input arrives
+	// in tiny frames, so anything large is a client bug or abuse.
+	terminalReadLimit = 64 * 1024
+)
+
+// handleTerminal bridges a browser terminal to an interactive shell in the app's
+// container. It is registered under requireActive and resolves an owned app, so
+// only the owner (or an admin) reaches it; the shell runs as the container's own
+// mapped user, exactly like an SSH session. The origin check on the upgrade stops
+// another site -- including a tenant's own app page -- from opening one on a
+// signed-in user's behalf.
+func (s *Server) handleTerminal(w http.ResponseWriter, r *http.Request, c *caller) {
+	a, err := s.ownedApp(c, r.PathValue("name"))
+	if err != nil {
+		writeAppError(w, err)
+		return
+	}
+	args, err := s.apps.TerminalArgs(a.Name)
+	if err != nil {
+		writeAppError(w, err)
+		return
+	}
+	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
+		OriginPatterns: s.config.WebHostnames(), // only our own web origins may connect
+	})
+	if err != nil {
+		return // Accept has already written the failure
+	}
+	defer conn.CloseNow()
+	conn.SetReadLimit(terminalReadLimit)
+
+	ctx, cancel := context.WithTimeout(r.Context(), terminalMaxDuration)
+	defer cancel()
+
+	// A pty so podman exec -it has a real terminal; its master is what we bridge
+	cmd := exec.CommandContext(ctx, "podman", args...)
+	cmd.Env = append(os.Environ(), "TERM=xterm-256color")
+	ptmx, err := pty.Start(cmd)
+	if err != nil {
+		conn.Close(websocket.StatusInternalError, "cannot start shell")
+		return
+	}
+	defer func() {
+		_ = ptmx.Close()
+		if cmd.Process != nil {
+			_ = cmd.Process.Kill()
+		}
+	}()
+
+	// Shell output -> browser
+	go func() {
+		defer cancel()
+		buf := make([]byte, 4096)
+		for {
+			n, err := ptmx.Read(buf)
+			if n > 0 {
+				if conn.Write(ctx, websocket.MessageBinary, buf[:n]) != nil {
+					return
+				}
+			}
+			if err != nil {
+				return
+			}
+		}
+	}()
+
+	// Browser -> shell. A text frame is a resize control message; binary is input.
+	for {
+		typ, data, err := conn.Read(ctx)
+		if err != nil {
+			return
+		}
+		if typ == websocket.MessageText {
+			var rs struct {
+				Cols uint16 `json:"cols"`
+				Rows uint16 `json:"rows"`
+			}
+			if json.Unmarshal(data, &rs) == nil && rs.Cols > 0 && rs.Rows > 0 {
+				_ = pty.Setsize(ptmx, &pty.Winsize{Cols: rs.Cols, Rows: rs.Rows})
+			}
+			continue
+		}
+		if _, err := ptmx.Write(data); err != nil {
+			return
+		}
+	}
+}

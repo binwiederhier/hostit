@@ -216,7 +216,6 @@ const Dashboard = ({ account, refreshAccount }) => {
                   </tbody>
                 </table>
               </div>
-              <p className="hint">Open an app to get a prompt you can paste into an AI assistant.</p>
             </>
           )}
         </div>

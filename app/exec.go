@@ -76,6 +76,17 @@ func (m *Manager) Exec(name, command string, timeout time.Duration) (*ExecResult
 	return res, nil
 }
 
+// TerminalArgs is the podman argv for an interactive login shell in the app's
+// container, run as the container's own (unprivileged, mapped) user -- the same
+// entry point an SSH session gets. The server attaches it to a pty and a
+// websocket; it lives here so container naming stays in one place.
+func (m *Manager) TerminalArgs(name string) ([]string, error) {
+	if _, err := m.store.App(name); err != nil {
+		return nil, err
+	}
+	return []string{"exec", "-it", containerName(name), "/bin/bash", "-l"}, nil
+}
+
 // execTimeout keeps a caller's request inside what the host can afford
 func execTimeout(requested time.Duration) time.Duration {
 	if requested <= 0 {

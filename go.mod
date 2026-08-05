@@ -4,6 +4,8 @@ go 1.26.5
 
 require (
 	github.com/caddyserver/certmagic v0.25.4
+	github.com/coder/websocket v1.8.15
+	github.com/creack/pty v1.1.24
 	github.com/libdns/route53 v1.6.2
 	github.com/stretchr/testify v1.11.1
 	github.com/urfave/cli/v2 v2.27.7

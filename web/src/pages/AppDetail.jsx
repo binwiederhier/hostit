@@ -1,7 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { api, ApiError } from "../api";
 import { CopyButton, ErrorBanner, formatDate, formatUsage, Loading, Snippet, StatusDot } from "../components";
+
+// xterm is heavy and only needed when a terminal is actually opened, so it is
+// split into its own chunk and loaded on demand.
+const AppTerminal = lazy(() => import("./AppTerminal"));
 
 // The SPA is served by the hostit daemon itself, so the agent API lives on our
 // own origin under /api.
@@ -237,6 +241,7 @@ const AppDetail = ({ account, refreshAccount }) => {
   const [missing, setMissing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [showTerminal, setShowTerminal] = useState(false);
   const [hasKeys, setHasKeys] = useState(null); // null until we know, so nothing flickers
   const catchUpTimers = useRef([]);
 
@@ -353,6 +358,12 @@ const AppDetail = ({ account, refreshAccount }) => {
             accented button; lifecycle and delete hide in the menu. */}
         <div className="header-actions">
           <ActionsMenu running={app.running} busy={busy} onAction={lifecycle} onDelete={() => setConfirmDelete(true)} />
+          {/* A shell in the container, in the browser -- only useful while it runs */}
+          {app.running && (
+            <button type="button" className="btn" onClick={() => setShowTerminal(true)}>
+              Terminal
+            </button>
+          )}
           <a className="btn btn-primary" href={app.url} target="_blank" rel="noreferrer">
             Open app
           </a>
@@ -400,6 +411,11 @@ const AppDetail = ({ account, refreshAccount }) => {
 
       <ApiAccess name={app.name} token={token} onRotated={setApp} />
 
+      {showTerminal && (
+        <Suspense fallback={null}>
+          <AppTerminal name={app.name} onClose={() => setShowTerminal(false)} />
+        </Suspense>
+      )}
       {confirmDelete && (
         <DeleteAppDialog name={app.name} onCancel={() => setConfirmDelete(false)} onDeleted={deleted} />
       )}
