@@ -68,21 +68,39 @@ var (
 			},
 			{
 				Name:      "start",
-				Usage:     "Start the app",
+				Usage:     "Start the app's run: command (inside a running container)",
 				ArgsUsage: "<name>",
 				Action:    execRemoteAction("start"),
 			},
 			{
 				Name:      "stop",
-				Usage:     "Stop the app, and keep it stopped across reboots",
+				Usage:     "Stop the app's run: command, leaving the container running",
 				ArgsUsage: "<name>",
 				Action:    execRemoteAction("stop"),
 			},
 			{
 				Name:      "restart",
-				Usage:     "Restart the app",
+				Usage:     "Restart the app's run: command (fast; no container recreate)",
 				ArgsUsage: "<name>",
 				Action:    execRemoteAction("restart"),
+			},
+			{
+				Name:      "poweron",
+				Usage:     "Start the app's container",
+				ArgsUsage: "<name>",
+				Action:    execRemoteAction("poweron"),
+			},
+			{
+				Name:      "poweroff",
+				Usage:     "Stop the app's container, and keep it off across reboots",
+				ArgsUsage: "<name>",
+				Action:    execRemoteAction("poweroff"),
+			},
+			{
+				Name:      "reboot",
+				Usage:     "Reboot the app's container",
+				ArgsUsage: "<name>",
+				Action:    execRemoteAction("reboot"),
 			},
 			{
 				Name:      "logs",
@@ -157,6 +175,12 @@ func execRemoteAction(verb string) cli.ActionFunc {
 			err = cl.Stop(name)
 		case "restart":
 			err = cl.Restart(name)
+		case "poweron":
+			err = cl.PowerOn(name)
+		case "poweroff":
+			err = cl.PowerOff(name)
+		case "reboot":
+			err = cl.Reboot(name)
 		}
 		if err != nil {
 			return err
@@ -172,11 +196,17 @@ func execRemoteAction(verb string) cli.ActionFunc {
 func actionMessage(verb, name string) string {
 	switch verb {
 	case "start":
-		return name + " started"
+		return name + ": app started"
 	case "stop":
-		return name + " stopped"
+		return name + ": app stopped"
 	case "restart":
-		return name + " restarted"
+		return name + ": app restarted"
+	case "poweron":
+		return name + ": powered on"
+	case "poweroff":
+		return name + ": powered off"
+	case "reboot":
+		return name + ": rebooted"
 	}
 	return name + ": " + verb
 }

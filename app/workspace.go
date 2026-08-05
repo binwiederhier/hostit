@@ -49,6 +49,17 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-ins
       python3 python3-venv python3-pip \
       golang-go \
     && rm -rf /var/lib/apt/lists/*
+# System-wide shell niceties so every login shell (SSH and the web terminal)
+# gets the usual colours and ll/la aliases, without a dotfile in the app's home.
+RUN cat > /etc/profile.d/hostit.sh <<'PROFILE'
+alias ls='ls --color=auto'
+alias ll='ls -alF'
+alias la='ls -A'
+alias l='ls -CF'
+alias grep='grep --color=auto'
+[ -x /usr/bin/dircolors ] && eval "$(dircolors -b)"
+export PS1='\[\033[01;32m\]\u@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\$ '
+PROFILE
 CMD ["/bin/bash"]
 `
 

@@ -13,6 +13,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -44,9 +45,11 @@ type Agent struct {
 	reap         bool // Reap orphan zombies; enabled when running as PID 1
 	exits        chan childExit
 	reloads      chan struct{}
+	wake         chan struct{}
 	stop         chan struct{}
 	logFile      *appLog
 	stopOnce     sync.Once
+	paused       atomic.Bool // App stopped by the owner; the container stays up
 }
 
 // New creates an Agent for the app living in home (usually $HOME)
@@ -57,6 +60,7 @@ func New(home string) *Agent {
 		reap:         os.Getpid() == 1,
 		exits:        make(chan childExit, 16),
 		reloads:      make(chan struct{}, 1),
+		wake:         make(chan struct{}, 1),
 		stop:         make(chan struct{}),
 	}
 }
@@ -67,15 +71,22 @@ func (a *Agent) Run() error {
 	a.wireSignals()
 	defer a.closeLog()
 	for {
+		// The owner stopped the app but left the container up: idle, keeping the
+		// container alive, until start (or reload) wakes us.
+		if a.paused.Load() {
+			slog.Info("App stopped; container stays up until it is started")
+			if !a.waitWake() {
+				return nil
+			}
+			continue
+		}
 		conf := a.loadConfig()
 		if conf == nil {
 			slog.Info("No run command configured; idling until reload")
-			select {
-			case <-a.reloads:
-				continue
-			case <-a.stop:
+			if !a.waitWake() {
 				return nil
 			}
+			continue
 		}
 		if err := a.prepare(conf); err != nil {
 			slog.Error("Prepare step failed; not starting the app", "error", err)
@@ -102,6 +113,9 @@ func (a *Agent) Run() error {
 			if !a.sleepInterruptible() {
 				return nil
 			}
+		case <-a.wake:
+			// Paused or resumed: stop the command and let the loop top decide
+			a.killAndWait(cmd, exited)
 		case <-a.reloads:
 			slog.Info("Reloading: stopping app command")
 			a.killAndWait(cmd, exited)
@@ -112,10 +126,45 @@ func (a *Agent) Run() error {
 	}
 }
 
-// Reload asks the agent to re-read hostit.yml and restart the command
+// waitWake blocks in an idle state (paused, or no run command) until something
+// asks the agent to re-evaluate; it returns false only on shutdown.
+func (a *Agent) waitWake() bool {
+	select {
+	case <-a.wake:
+		return true
+	case <-a.reloads:
+		return true
+	case <-a.stop:
+		return false
+	}
+}
+
+// Reload asks the agent to re-read hostit.yml and restart the command. Reloading
+// implies the app should run, so it clears a pause.
 func (a *Agent) Reload() {
+	a.paused.Store(false)
 	select {
 	case a.reloads <- struct{}{}:
+	default:
+	}
+}
+
+// Pause stops the app command but leaves the container running ("stop app"); the
+// supervisor idles until Resume. Start/stop of the container is a separate thing.
+func (a *Agent) Pause() {
+	a.paused.Store(true)
+	a.signalWake()
+}
+
+// Resume restarts the app command after a Pause ("start app")
+func (a *Agent) Resume() {
+	a.paused.Store(false)
+	a.signalWake()
+}
+
+func (a *Agent) signalWake() {
+	select {
+	case a.wake <- struct{}{}:
 	default:
 	}
 }
@@ -131,12 +180,16 @@ func (a *Agent) Stop() {
 // starts the zombie reaper on SIGCHLD
 func (a *Agent) wireSignals() {
 	sigs := make(chan os.Signal, 4)
-	signal.Notify(sigs, syscall.SIGHUP, syscall.SIGTERM, syscall.SIGINT)
+	signal.Notify(sigs, syscall.SIGHUP, syscall.SIGUSR1, syscall.SIGUSR2, syscall.SIGTERM, syscall.SIGINT)
 	go func() {
 		for sig := range sigs {
 			switch sig {
 			case syscall.SIGHUP:
 				a.Reload()
+			case syscall.SIGUSR1:
+				a.Pause()
+			case syscall.SIGUSR2:
+				a.Resume()
 			default:
 				a.Stop()
 			}
@@ -281,6 +334,8 @@ func (a *Agent) sleepInterruptible() bool {
 	case <-time.After(a.restartDelay):
 		return true
 	case <-a.reloads:
+		return true
+	case <-a.wake:
 		return true
 	case <-a.stop:
 		return false

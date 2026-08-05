@@ -56,6 +56,33 @@ func TestAgentReload(t *testing.T) {
 	waitForFileContains(t, filepath.Join(home, "marks.txt"), "two")
 }
 
+func TestAgentPauseAndResume(t *testing.T) {
+	t.Parallel()
+	a, home := newTestAgent(t)
+	marks := filepath.Join(home, "marks.txt")
+	// One "up" line is written each time the command starts, then it sleeps
+	writeConfig(t, home, "run: echo up >> marks.txt; sleep 60")
+	go func() {
+		_ = a.Run()
+	}()
+	defer a.Stop()
+	waitForFileContains(t, marks, "up") // started once
+
+	countUp := func() int {
+		b, _ := os.ReadFile(marks)
+		return strings.Count(string(b), "up")
+	}
+
+	// Pause stops the command and, crucially, keeps it stopped: no restart loop
+	a.Pause()
+	time.Sleep(300 * time.Millisecond)
+	assert.Equal(t, 1, countUp(), "a paused app must not restart")
+
+	// Resume starts it again
+	a.Resume()
+	require.Eventually(t, func() bool { return countUp() >= 2 }, 3*time.Second, 20*time.Millisecond)
+}
+
 func TestAgentStopKillsChild(t *testing.T) {
 	t.Parallel()
 	a, home := newTestAgent(t)

@@ -59,6 +59,29 @@ func (m *Manager) Ensure(name string) (string, error) {
 	return m.apply(a, conf, false)
 }
 
+// RestartApp reloads the run: command inside the running container, without
+// recreating the container -- the fast path for iterating on the app itself.
+func (m *Manager) RestartApp(name string) error { return m.signalAgent(name, "HUP") }
+
+// StopApp stops the run: command but leaves the container running, so a shell
+// (SSH or the web terminal) and the container's state are untouched.
+func (m *Manager) StopApp(name string) error { return m.signalAgent(name, "USR1") }
+
+// StartApp starts the run: command again after StopApp
+func (m *Manager) StartApp(name string) error { return m.signalAgent(name, "USR2") }
+
+// signalAgent delivers a control signal to the app's agent (PID 1 in the
+// container); it needs the container running, since it acts on the process.
+func (m *Manager) signalAgent(name, signal string) error {
+	if _, err := m.store.App(name); err != nil {
+		return err
+	}
+	if _, err := m.runner.Run("podman", "kill", "--signal", signal, containerName(name)); err != nil {
+		return fmt.Errorf("%w: the container is not running (power it on first)", ErrInvalid)
+	}
+	return nil
+}
+
 // Down stops the app and disables it at boot
 func (m *Manager) Down(name string) error {
 	defer m.stateChanged(name)

@@ -86,16 +86,22 @@ const AppTerminal = ({ name, onClose, fullPage = false }) => {
         <span className="mono">{name} &mdash; terminal</span>
         <span className="term-bar-actions">
           {!fullPage && (
-            <button type="button" className="btn btn-small" onClick={popOut} title="Open in a new window">
-              Pop out
+            <button type="button" className="term-btn" onClick={popOut} title="Open in a new window" aria-label="Pop out">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M6 3H3v10h10v-3M9.5 2H14v4.5M14 2 7.5 8.5" />
+              </svg>
             </button>
           )}
-          <button type="button" className="btn btn-small" onClick={toggleFullscreen} title="Fullscreen">
-            Fullscreen
+          <button type="button" className="term-btn" onClick={toggleFullscreen} title="Fullscreen" aria-label="Fullscreen">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M2 6V2h4M14 6V2h-4M2 10v4h4M14 10v4h-4" />
+            </svg>
           </button>
           {onClose && (
-            <button type="button" className="btn btn-small" onClick={onClose}>
-              Close
+            <button type="button" className="term-btn" onClick={onClose} title="Close" aria-label="Close">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M4 4l8 8M12 4l-8 8" />
+              </svg>
             </button>
           )}
         </span>

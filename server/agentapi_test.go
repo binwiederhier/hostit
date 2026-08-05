@@ -42,7 +42,8 @@ func TestAgentInfoIsSelfExplanatory(t *testing.T) {
 		paths = append(paths, e.Method+" "+e.Path)
 	}
 	for _, want := range []string{
-		"GET /api/apps/{app}/info", "POST /api/apps/{app}/deploy", "POST /api/apps/{app}/restart",
+		"GET /api/apps/{app}/info", "POST /api/apps/{app}/deploy",
+		"POST /api/apps/{app}/start|stop|restart", "POST /api/apps/{app}/poweron|poweroff|reboot",
 		"PUT /api/apps/{app}/files/{path}", "POST /api/apps/{app}/files", "PUT /api/apps/{app}/readme",
 	} {
 		assert.Contains(t, paths, want)

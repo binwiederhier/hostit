@@ -259,7 +259,8 @@ hostit logs -f     # watch the output`}
               what={`Run one command in the container: {"command": "cd src && go build ./..."}`}
             />
             <Endpoint method="POST" path="/api/apps/{app}/deploy" what="Apply hostit.yml and (re)start" />
-            <Endpoint method="POST" path="/api/apps/{app}/start|stop|restart" what="Lifecycle; POST only" />
+            <Endpoint method="POST" path="/api/apps/{app}/start|stop|restart" what="The run: command: start / stop / restart it (container stays up)" />
+            <Endpoint method="POST" path="/api/apps/{app}/poweron|poweroff|reboot" what="The container: power on / off / reboot" />
           </tbody>
         </table>
       </div>

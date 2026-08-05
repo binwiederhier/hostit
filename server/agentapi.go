@@ -41,6 +41,10 @@ func (s *Server) newAgentRoutes(mux *http.ServeMux) {
 	route(mux, "POST", "/apps/{app}/files", s.requireApp(s.handleAgentFileUpload))
 	route(mux, "PUT", "/apps/{app}/readme", s.requireApp(s.handleAgentReadmePut))
 	route(mux, "POST", "/apps/{app}/deploy", s.requireApp(s.handleAgentDeploy))
+	// The container ("power") verbs, and the app-process verbs, kept distinct
+	route(mux, "POST", "/apps/{app}/poweron", s.requireApp(s.handleAgentPowerOn))
+	route(mux, "POST", "/apps/{app}/poweroff", s.requireApp(s.handleAgentPowerOff))
+	route(mux, "POST", "/apps/{app}/reboot", s.requireApp(s.handleAgentReboot))
 	route(mux, "POST", "/apps/{app}/start", s.requireApp(s.handleAgentStart))
 	route(mux, "POST", "/apps/{app}/stop", s.requireApp(s.handleAgentStop))
 	route(mux, "POST", "/apps/{app}/restart", s.requireApp(s.handleAgentRestart))
@@ -48,7 +52,7 @@ func (s *Server) newAgentRoutes(mux *http.ServeMux) {
 
 	// Actions are POST-only. Without these, a GET would fall through to the web
 	// app's catch-all and answer with HTML, which is confusing for an agent.
-	for _, action := range []string{"deploy", "start", "stop", "restart", "run"} {
+	for _, action := range []string{"deploy", "poweron", "poweroff", "reboot", "start", "stop", "restart", "run"} {
 		route(mux, "GET", "/apps/{app}/"+action, methodNotAllowed(action))
 	}
 }
@@ -155,14 +159,13 @@ func (s *Server) agentGuide(appName, description string) *apiAgentInfoResponse {
 			{Method: "PUT", Path: "" + appsPath(name) + "/readme", What: `Replace README.md: {"readme": "..."}`},
 			{Method: "POST", Path: "" + appsPath(name) + "/run", What: `Run one shell command in the app's container: {"command": "cd src && go build ./..."} -- returns its output and exit code`},
 			{Method: "POST", Path: "" + appsPath(name) + "/deploy", What: "Apply hostit.yml and (re)start"},
-			{Method: "POST", Path: "" + appsPath(name) + "/start", What: "Start the app"},
-			{Method: "POST", Path: "" + appsPath(name) + "/stop", What: "Stop the app"},
-			{Method: "POST", Path: "" + appsPath(name) + "/restart", What: "Restart the app"},
+			{Method: "POST", Path: "" + appsPath(name) + "/start|stop|restart", What: "The run: command: start, stop, or restart it (fast; container stays up)"},
+			{Method: "POST", Path: "" + appsPath(name) + "/poweron|poweroff|reboot", What: "The container: power it on, off, or reboot it"},
 		},
 		Notes: []string{
 			"Apps also accept SSH: the owner's SSH keys work, and you can scp/rsync into the app's home directory.",
 			"Changing env: recreates the container (which ends any SSH session in it); changing mode:, prepare: or run: only restarts the app inside it.",
-			"/run is bounded: a minute by default, five at most, and its output is capped. Anything longer belongs in \"prepare:\". A command you background (with & and its output redirected) keeps running after /run returns -- useful, but nothing will stop it except POST /restart, which replaces the container.",
+			"/run is bounded: a minute by default, five at most, and its output is capped. Anything longer belongs in \"prepare:\". A command you background (with & and its output redirected) keeps running after /run returns -- useful, but nothing will stop it except POST /reboot, which replaces the container.",
 			"Your app has 512 processes and its memory limit to work with, and the disk quota is shared with everything else in the app. A build that fans out past that fails rather than taking the host with it.",
 			"Deleting or renaming apps is done by the owner in the web app, not through this API.",
 		},
@@ -327,7 +330,12 @@ func (s *Server) handleAgentDeploy(w http.ResponseWriter, _ *http.Request, c *ca
 	writeJSON(w, http.StatusOK, &apiMessageResponse{Message: msg + " -- " + s.apps.URL(a)})
 }
 
-func (s *Server) handleAgentStart(w http.ResponseWriter, _ *http.Request, c *caller, a *store.App) {
+// The "power" verbs act on the container (the machine): power it on, off, or
+// reboot it. The "app" verbs act on the run: process inside a running container.
+// Keeping them separate is the point -- restarting your app should not mean
+// tearing the whole container down.
+
+func (s *Server) handleAgentPowerOn(w http.ResponseWriter, _ *http.Request, c *caller, a *store.App) {
 	msg, err := s.apps.Ensure(a.Name)
 	if err != nil {
 		writeAppError(w, err)
@@ -336,20 +344,44 @@ func (s *Server) handleAgentStart(w http.ResponseWriter, _ *http.Request, c *cal
 	writeJSON(w, http.StatusOK, &apiMessageResponse{Message: msg})
 }
 
-func (s *Server) handleAgentStop(w http.ResponseWriter, _ *http.Request, c *caller, a *store.App) {
+func (s *Server) handleAgentPowerOff(w http.ResponseWriter, _ *http.Request, c *caller, a *store.App) {
 	if err := s.apps.Down(a.Name); err != nil {
 		writeAppError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, &apiMessageResponse{Message: "stopped"})
+	writeJSON(w, http.StatusOK, &apiMessageResponse{Message: "powered off"})
 }
 
-func (s *Server) handleAgentRestart(w http.ResponseWriter, _ *http.Request, c *caller, a *store.App) {
+func (s *Server) handleAgentReboot(w http.ResponseWriter, _ *http.Request, c *caller, a *store.App) {
 	if err := s.apps.Restart(a.Name); err != nil {
 		writeAppError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, &apiMessageResponse{Message: "restarted"})
+	writeJSON(w, http.StatusOK, &apiMessageResponse{Message: "rebooted"})
+}
+
+func (s *Server) handleAgentStart(w http.ResponseWriter, _ *http.Request, c *caller, a *store.App) {
+	if err := s.apps.StartApp(a.Name); err != nil {
+		writeAppError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, &apiMessageResponse{Message: "app started"})
+}
+
+func (s *Server) handleAgentStop(w http.ResponseWriter, _ *http.Request, c *caller, a *store.App) {
+	if err := s.apps.StopApp(a.Name); err != nil {
+		writeAppError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, &apiMessageResponse{Message: "app stopped"})
+}
+
+func (s *Server) handleAgentRestart(w http.ResponseWriter, _ *http.Request, c *caller, a *store.App) {
+	if err := s.apps.RestartApp(a.Name); err != nil {
+		writeAppError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, &apiMessageResponse{Message: "app restarted"})
 }
 
 // requireApp resolves {app} and enforces both ownership and token scope: an

@@ -80,7 +80,17 @@ const ActionsMenu = ({ running, busy, onAction, onDelete }) => {
     setOpen(false);
     onDelete();
   };
-  const actions = running ? ["restart", "stop"] : ["start"];
+  // App verbs act on the run: command inside a running container; power verbs act
+  // on the container itself. When it is off, the only thing to do is power it on.
+  const appVerbs = [
+    { verb: "restart", label: "Restart app" },
+    { verb: "stop", label: "Stop app" },
+    { verb: "start", label: "Start app" },
+  ];
+  const powerVerbs = [
+    { verb: "reboot", label: "Reboot container" },
+    { verb: "poweroff", label: "Power off" },
+  ];
 
   return (
     <div className="menu" ref={ref}>
@@ -96,11 +106,24 @@ const ActionsMenu = ({ running, busy, onAction, onDelete }) => {
       </button>
       {open && (
         <div className="menu-items" role="menu">
-          {actions.map((action) => (
-            <button key={action} type="button" role="menuitem" onClick={() => run(action)}>
-              {action.charAt(0).toUpperCase() + action.slice(1)}
+          {running ? (
+            <>
+              {appVerbs.map((a) => (
+                <button key={a.verb} type="button" role="menuitem" onClick={() => run(a.verb)}>
+                  {a.label}
+                </button>
+              ))}
+              {powerVerbs.map((a) => (
+                <button key={a.verb} type="button" role="menuitem" className="menu-item-sep" onClick={() => run(a.verb)}>
+                  {a.label}
+                </button>
+              ))}
+            </>
+          ) : (
+            <button type="button" role="menuitem" onClick={() => run("poweron")}>
+              Power on
             </button>
-          ))}
+          )}
           <button type="button" role="menuitem" className="menu-item-danger" onClick={remove}>
             Delete app...
           </button>
@@ -293,12 +316,15 @@ const AppDetail = ({ account, refreshAccount }) => {
     }
     setBusy(true);
     setError("");
-    // Flip the dot now rather than after the request: stopping a container takes
-    // a couple of seconds (SIGTERM grace, then netns and mount teardown), and
-    // waiting on that to show the result feels broken. The catch-up poll
-    // reconciles, and lifecycle actions are idempotent, so an optimistic guess
-    // that turns out wrong is corrected within seconds and harms nothing.
-    setApp((prev) => (prev ? { ...prev, running: action !== "stop" } : prev));
+    // The status dot tracks the container. Flip it now for the power verbs rather
+    // than after the request (container teardown takes a couple of seconds, and
+    // waiting on it feels broken); the catch-up poll reconciles. The app verbs
+    // (start/stop/restart the run: command) leave the container up, so they do
+    // not touch the dot.
+    const containerState = { poweron: true, reboot: true, poweroff: false };
+    if (action in containerState) {
+      setApp((prev) => (prev ? { ...prev, running: containerState[action] } : prev));
+    }
     try {
       await api.post(`/api/apps/${encodeURIComponent(name)}/${action}`);
     } catch (err) {

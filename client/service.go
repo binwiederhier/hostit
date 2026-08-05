@@ -78,21 +78,39 @@ func (c *Client) Deploy(name string) (string, error) {
 	return c.action(name, "deploy")
 }
 
-// Start brings the app up without applying config changes
+// Start starts the app's run: command inside its (running) container
 func (c *Client) Start(name string) error {
 	_, err := c.action(name, "start")
 	return err
 }
 
-// Stop stops the app and leaves it stopped across reboots
+// Stop stops the run: command but leaves the container running
 func (c *Client) Stop(name string) error {
 	_, err := c.action(name, "stop")
 	return err
 }
 
-// Restart restarts the app
+// Restart reloads the run: command without recreating the container
 func (c *Client) Restart(name string) error {
 	_, err := c.action(name, "restart")
+	return err
+}
+
+// PowerOn starts the app's container
+func (c *Client) PowerOn(name string) error {
+	_, err := c.action(name, "poweron")
+	return err
+}
+
+// PowerOff stops the app's container (and keeps it stopped across reboots)
+func (c *Client) PowerOff(name string) error {
+	_, err := c.action(name, "poweroff")
+	return err
+}
+
+// Reboot restarts the app's container
+func (c *Client) Reboot(name string) error {
+	_, err := c.action(name, "reboot")
 	return err
 }
 
