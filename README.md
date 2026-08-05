@@ -11,8 +11,8 @@
 - a **subdomain** (`myapp.apps.example.com`) with **automatic Let's Encrypt TLS**
 - two ways to run: `mode: static` (hostit serves `public/`) or `mode: app` (your
   command, supervised by the hostit agent) -- deployed with a single `hostit up`
-- a workspace with **python3, node/npm, php-cli and go** preinstalled (and root,
-  so `apt-get install` anything else)
+- a workspace with **python3, node/npm, php-cli, go and sqlite3** preinstalled
+  (and root, so `apt-get install` anything else)
 
 Multi-user: people sign in with Google, an admin approves them from a small web
 app, and each user gets their own apps within admin-adjustable limits (app count,
@@ -119,9 +119,9 @@ What each boundary is, so it is clear what hostit does and does not promise:
   (deliberately, so the app's page can show it again) and the session signing key.
 - **Between an app's files and the daemon.** The app owns its home directory, so
   every file operation hostit performs there as root goes through `os.OpenRoot`:
-  a symlink out of the home is refused by the kernel rather than followed. The
-  same applies to anything in `hostit.yml` that becomes a podman argument --
-  mount sources must resolve inside the app.
+  a symlink out of the home is refused by the kernel rather than followed. That
+  includes reading `hostit.yml` itself, which the tenant controls -- so pointing
+  it at a symlink cannot walk the daemon out of the app.
 - **Between tenants and the web app.** Apps are subdomains of the web app, which
   `SameSite=Lax` does not separate, so cookie-authenticated writes require a
   same-origin signal and the session cookie carries the `__Host-` prefix. Files
@@ -262,8 +262,8 @@ hostit.yml   how the app runs
 README.md    what the app is, and its worklog
 ```
 
-Directories appear as you write into them. `static:` always serves `public/`,
-whatever value it carries.
+Directories appear as you write into them. `mode: static` serves `public/`, and
+only `public/`.
 
 **Keep the source here.** Put it in `src/` and give `hostit.yml` a build step:
 
@@ -279,7 +279,7 @@ runs it, so nobody needs a cross-compiler or a toolchain of their own -- which i
 the point when the person deploying is talking to an assistant rather than a
 terminal. It also keeps the app editable: the next session has source to work
 with, not just a binary. Uploading a prebuilt binary to `bin/` still works and is
-faster. The agent guide at `/api/{app}/info` says all of this too.
+faster. The agent guide at `/api/apps/{app}/info` says all of this too.
 
 ## Create an app
 
@@ -305,7 +305,7 @@ Or with curl:
 ```sh
 curl -s -H "Authorization: Bearer $HOSTIT_TOKEN" \
   -d '{"name": "blog", "ssh_keys": ["ssh-ed25519 AAAA... me@laptop"]}' \
-  "$HOSTIT_HOST/v1/apps"
+  "$HOSTIT_HOST/api/apps"
 ```
 
 The response contains the URL and the SSH login. hostit never generates a key
@@ -332,7 +332,7 @@ The token in that prompt is **scoped to that one app**, so it cannot touch the
 user's other apps, their account, or anything admin.
 
 The agent needs no prior knowledge of hostit, and the prompt is three lines:
-`GET /api/<app>/info` returns the app's state *and* the full instruction set
+`GET /api/apps/<app>/info` returns the app's state *and* the full instruction set
 (every endpoint, the `hostit.yml` format, what is installed), so one URL plus
 one token is the whole briefing. `GET /api/info` returns the same guide
 without an app, for account-wide tokens. In shell terms:
@@ -360,7 +360,7 @@ curl -X PUT -H "Authorization: Bearer $T" -H "Content-Type: application/json" \
      -d '{"readme":"# myapp\n\nWhat this is."}' $H/apps/myapp/readme
 ```
 
-New apps start as a **stub**: a placeholder page served in `static:` mode, whose
+New apps start as a **stub**: a placeholder page served in `mode: static`, whose
 README says so and lists what is installed. Each app's `README.md` is its
 description and worklog: the agent reads it first
 and writes back what it changed, so the next session (or a different agent)

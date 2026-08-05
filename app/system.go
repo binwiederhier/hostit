@@ -236,41 +236,6 @@ func (o *systemOps) WriteScaffold(username, home string, files map[string]string
 	return nil
 }
 
-// WriteUserFile writes a file (creating parent dirs) below the user's home,
-// owned by the user; used for systemd user units
-func (o *systemOps) WriteUserFile(username, home, relPath, content string, mode os.FileMode) error {
-	uid, gid, err := lookupIDs(username)
-	if err != nil {
-		return err
-	}
-	root, err := os.OpenRoot(home)
-	if err != nil {
-		return err
-	}
-	defer root.Close()
-
-	// Create parent dirs one by one so each new one can be chowned to the user
-	dir := path.Dir(filepath.ToSlash(relPath))
-	var missing []string
-	for d := dir; d != "." && d != "/"; d = path.Dir(d) {
-		if _, err := root.Lstat(d); err != nil {
-			missing = append([]string{d}, missing...)
-		}
-	}
-	for _, d := range missing {
-		if err := root.Mkdir(d, 0o755); err != nil {
-			return err
-		}
-		if err := root.Lchown(d, uid, gid); err != nil {
-			return err
-		}
-	}
-	if err := root.WriteFile(relPath, []byte(content), mode); err != nil {
-		return err
-	}
-	return root.Lchown(relPath, uid, gid)
-}
-
 // ChownToUser gives a path to the app user. Lchown, not Chown: the app user
 // owns the directory this runs in, and chown(2) would follow a symlink they
 // planted and hand its target away.

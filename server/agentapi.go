@@ -73,7 +73,7 @@ func appsPath(name string) string {
 }
 
 // agentGuide is the instruction set handed to agents. It is returned both by
-// /api/info and inline by /api/{app}/info, because the prompt a user pastes
+// /api/info and inline by /api/apps/{app}/info, because the prompt a user pastes
 // points only at their app: whatever an agent needs must be reachable from
 // that single URL.
 func (s *Server) agentGuide(appName, description string) *apiAgentInfoResponse {
@@ -88,10 +88,10 @@ func (s *Server) agentGuide(appName, description string) *apiAgentInfoResponse {
 	// An app that describes itself is finished work someone came back to. Say so
 	// first: an agent handed only a build-shaped prompt will otherwise start over
 	// and overwrite it.
-	whereYouAre := "You are looking at /api/" + name + "/info: it tells you what the app currently is. " +
+	whereYouAre := "You are looking at " + appsPath(name) + "/info: it tells you what the app currently is. " +
 		"Its README.md is the app's description and worklog. A new app is a stub serving a placeholder page."
 	if description != "" {
-		whereYouAre = "You are looking at /api/" + name + "/info. This app is already built and live: " +
+		whereYouAre = "You are looking at " + appsPath(name) + "/info. This app is already built and live: " +
 			description + ". Do not rebuild it from scratch. Read its README.md (the app's worklog) and its " +
 			"files first, then make only the changes you were asked for."
 	}
@@ -104,13 +104,13 @@ func (s *Server) agentGuide(appName, description string) *apiAgentInfoResponse {
 			"app unless it is an account token.",
 		Workflow: []string{
 			whereYouAre,
-			"Upload files: PUT /api/" + name + "/files/{path} with the file body, or POST /api/" + name + "/files with a tar archive for many files at once. Put them where they belong (see layout below).",
+			"Upload files: PUT " + appsPath(name) + "/files/{path} with the file body, or POST " + appsPath(name) + "/files with a tar archive for many files at once. Put them where they belong (see layout below).",
 			"Write hostit.yml (upload it like any other file) to say how the app runs. See hostit_yml below.",
-			"POST /api/" + name + "/deploy to apply hostit.yml and (re)start the app.",
-			"GET /api/" + name + "/logs if it does not come up; the app must listen on 0.0.0.0:$PORT.",
-			"PUT /api/" + name + "/readme to record what this app is and what you changed, for whoever comes next.",
+			"POST " + appsPath(name) + "/deploy to apply hostit.yml and (re)start the app.",
+			"GET " + appsPath(name) + "/logs if it does not come up; the app must listen on 0.0.0.0:$PORT.",
+			"PUT " + appsPath(name) + "/readme to record what this app is and what you changed, for whoever comes next.",
 			"Keep the app's own documentation in " + appctl.DocsDir + "/ -- how it works, why it is built the way it is, anything the next session would otherwise have to re-derive. Read it before you change anything, and update it after every change that matters. README.md is the summary and worklog; " + appctl.DocsDir + "/ is the detail.",
-			"Compiling or installing dependencies: POST /api/" + name + "/run with a shell command. It runs in the app's container, where the toolchains are, and returns the output and exit code -- so you can iterate on a build error without SSH. It is bounded (a minute by default, five at most): make the build a \"prepare:\" step in hostit.yml once it works, so it also runs on every deploy.",
+			"Compiling or installing dependencies: POST " + appsPath(name) + "/run with a shell command. It runs in the app's container, where the toolchains are, and returns the output and exit code -- so you can iterate on a build error without SSH. It is bounded (a minute by default, five at most): make the build a \"prepare:\" step in hostit.yml once it works, so it also runs on every deploy.",
 			"Keep a one-line \"description:\" in hostit.yml saying what this app is. The owner's web page shows it, and the next session (or a different agent) starts from it instead of from a blank page.",
 		},
 		Layout: "The app's home directory has a place for each kind of thing:\n\n" +
@@ -135,7 +135,7 @@ func (s *Server) agentGuide(appName, description string) *apiAgentInfoResponse {
 			"a new app starts as a stub serving a placeholder page.",
 		SuggestedStack: "A single Go binary that embeds its frontend (go:embed) is the easiest thing to run here: " +
 			"one file, no runtime to install, instant start. Use run: ./" + appctl.BinDir + "/myapp listening on 0.0.0.0:$PORT. " +
-			"Python, Node and PHP work equally well, and a plain HTML site needs only static:.\n\n" +
+			"Python, Node and PHP work equally well, and a plain HTML site needs only mode: static.\n\n" +
 			"Prefer keeping the source here: upload it to " + appctl.SrcDir + "/ and build it in the container with a " +
 			"\"prepare:\" step in hostit.yml, e.g. prepare: cd " + appctl.SrcDir + " && go build -o ../" + appctl.BinDir + "/myapp . " +
 			"Prepare runs before the app starts, on every deploy; if it fails the app is not started and the error is in the logs. " +
@@ -161,7 +161,7 @@ func (s *Server) agentGuide(appName, description string) *apiAgentInfoResponse {
 		},
 		Notes: []string{
 			"Apps also accept SSH: the owner's SSH keys work, and you can scp/rsync into the app's home directory.",
-			"Changing image/build/env/volumes recreates the container; changing only static:/run: restarts the process.",
+			"Changing env: recreates the container (which ends any SSH session in it); changing mode:, prepare: or run: only restarts the app inside it.",
 			"/run is bounded: a minute by default, five at most, and its output is capped. Anything longer belongs in \"prepare:\". A command you background (with & and its output redirected) keeps running after /run returns -- useful, but nothing will stop it except POST /restart, which replaces the container.",
 			"Your app has 512 processes and its memory limit to work with, and the disk quota is shared with everything else in the app. A build that fans out past that fails rather than taking the host with it.",
 			"Deleting or renaming apps is done by the owner in the web app, not through this API.",
@@ -196,7 +196,7 @@ func (s *Server) handleAgentAppInfo(w http.ResponseWriter, _ *http.Request, c *c
 			Host:    s.config.SSHHostname(),
 			Command: "ssh " + a.Name + "@" + s.config.SSHHostname(),
 		},
-		Hint:  "Upload files, write hostit.yml, then POST /api/" + a.Name + "/deploy. Everything you need is in this response.",
+		Hint:  "Upload files, write hostit.yml, then POST " + appsPath(a.Name) + "/deploy. Everything you need is in this response.",
 		Guide: s.agentGuide(a.Name, s.apps.Description(a.Name)),
 	})
 }

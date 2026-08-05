@@ -354,14 +354,6 @@ p {
   padding-right: 120px;
 }
 
-.danger-card {
-  border-color: var(--danger);
-}
-
-.danger-card .inline-form input {
-  max-width: 260px;
-}
-
 /* Buttons */
 .btn {
   font: inherit;
@@ -988,6 +980,15 @@ th:last-child {
 
 .menu-items button:hover {
   background: var(--surface-2);
+}
+
+/* Delete sits apart from the lifecycle actions: a divider above it and the
+   danger color, so it never gets clicked by reflex. */
+.menu-item-danger {
+  margin-top: 4px;
+  border-top: 1px solid var(--border) !important;
+  border-radius: 0 0 6px 6px !important;
+  color: var(--danger) !important;
 }
 
 /* Modal (asking what to do with someone's apps before deleting them) */

@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 
 	"gopkg.in/yaml.v3"
 )
@@ -30,15 +29,15 @@ type AppConfig struct {
 	Env         map[string]string `yaml:"env"`         // Extra environment variables
 }
 
-// LoadAppConfig reads and validates an app's hostit.yml
-func LoadAppConfig(filename string) (*AppConfig, error) {
-	b, err := os.ReadFile(filename)
-	if err != nil {
-		return nil, err
-	}
+// LoadAppConfig parses and validates an app's hostit.yml. It takes the raw bytes
+// rather than a path on purpose: hostit.yml is written by the tenant, so the
+// daemon must read it through the app's os.Root (which refuses a symlink out of
+// the home), never with os.ReadFile on a joined path, which would follow such a
+// link as root -- straight to /dev/zero or a root-only file.
+func LoadAppConfig(b []byte) (*AppConfig, error) {
 	c, err := ParseAppConfigStrict(b)
 	if err != nil {
-		return nil, fmt.Errorf("cannot parse %s: %w", filename, err)
+		return nil, fmt.Errorf("cannot parse %s: %w", ConfigFile, err)
 	}
 	if err := c.Validate(); err != nil {
 		return nil, err

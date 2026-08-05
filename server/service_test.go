@@ -340,26 +340,25 @@ func TestProxyUnknownApp(t *testing.T) {
 	assert.NotContains(t, body, "127.0.0.1")
 }
 
-func TestProxyAppDownPage(t *testing.T) {
+func TestProxyAppDownIsIndistinguishableFromUnknown(t *testing.T) {
 	t.Parallel()
 	s := newTestServer(t)
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
 	registerAppWithBackend(t, s, "blog", backend.URL)
-	backend.Close()
-	rr := proxyRequest(t, s, "http://blog.apps.example.com/")
-	require.Equal(t, http.StatusBadGateway, rr.Code)
-	assert.Contains(t, rr.Header().Get("Content-Type"), "text/html")
-	body := rr.Body.String()
-	// The visitor learns only that it is not running right now
-	assert.Contains(t, body, "not running")
-	// The owner gets actionable instructions, addressed to them
-	assert.Contains(t, body, "ssh blog@apps.example.com")
-	assert.Contains(t, body, "hostit up")
-	assert.Contains(t, body, "hostit logs")
-	// ... but no internals
+	backend.Close() // Now nothing listens on the app port
+
+	down := proxyRequest(t, s, "http://blog.apps.example.com/")
+	unknown := proxyRequest(t, s, "http://nope.apps.example.com/")
+	// A registered-but-stopped app must look exactly like a free name, or a
+	// visitor could enumerate which app names are taken. Same status, same body.
+	assert.Equal(t, unknown.Code, down.Code)
+	assert.Equal(t, unknown.Body.String(), down.Body.String())
+	body := down.Body.String()
+	// And the page names neither the app nor how the platform is wired up
+	assert.NotContains(t, body, "blog")
+	assert.NotContains(t, body, "ssh ")
+	assert.NotContains(t, body, "hostit up")
 	assert.NotContains(t, body, "127.0.0.1")
-	assert.NotContains(t, body, "/srv/hostit")
-	assert.NotContains(t, strings.ToLower(body), "port 1")
 }
 
 func TestProxyUnknownHost(t *testing.T) {
@@ -371,16 +370,6 @@ func TestProxyUnknownHost(t *testing.T) {
 		rr := proxyRequest(t, s, u)
 		require.Equal(t, http.StatusNotFound, rr.Code, "url %s", u)
 	}
-}
-
-func TestProxyAppDown(t *testing.T) {
-	t.Parallel()
-	s := newTestServer(t)
-	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
-	registerAppWithBackend(t, s, "blog", backend.URL)
-	backend.Close() // Now nothing listens on the app port
-	rr := proxyRequest(t, s, "http://blog.apps.example.com/")
-	require.Equal(t, http.StatusBadGateway, rr.Code)
 }
 
 func TestProxyRoutesAPIHost(t *testing.T) {
@@ -408,6 +397,21 @@ func newTestServer(t *testing.T) *Server {
 }
 
 // newActiveTestUser creates an approved user, as an admin would after approval
+func TestTLSIsOnlyIssuedForTheWebAppAndRegisteredApps(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	require.NoError(t, s.apps.Store().AddApp(&store.App{Name: "blog", Port: 10000, Host: store.HostLocal}))
+
+	// Allowed: the web app itself and a real app's subdomain
+	assert.NoError(t, s.allowTLSHost("apps.example.com"))
+	assert.NoError(t, s.allowTLSHost("blog.apps.example.com"))
+	// Refused: unknown names, nested labels and foreign domains, so a stranger
+	// pointing DNS at the box cannot make us burn the ACME rate limit
+	assert.Error(t, s.allowTLSHost("nosuchapp.apps.example.com"))
+	assert.Error(t, s.allowTLSHost("a.b.apps.example.com"))
+	assert.Error(t, s.allowTLSHost("evil.example.org"))
+}
+
 func newActiveTestUser(t *testing.T, s *Server, email string) *store.User {
 	t.Helper()
 	u, err := s.users.Login(email, "Test User")

@@ -169,7 +169,6 @@ type fakeSystemOps struct {
 	deletedUsers   []string
 	authorizedKeys map[string][]string
 	scaffolds      map[string][]string
-	userFiles      map[string]string
 	uids           map[string]int
 	portRules      [][]PortRule
 	images         map[string]bool
@@ -191,7 +190,6 @@ func newFakeSystemOps() *fakeSystemOps {
 	return &fakeSystemOps{
 		authorizedKeys: make(map[string][]string),
 		scaffolds:      make(map[string][]string),
-		userFiles:      make(map[string]string),
 		uids:           make(map[string]int),
 		images:         make(map[string]bool),
 	}
@@ -277,11 +275,6 @@ func (f *fakeSystemOps) WriteScaffold(username, home string, files map[string]st
 			return err
 		}
 	}
-	return nil
-}
-
-func (f *fakeSystemOps) WriteUserFile(username, home, relPath, content string, mode os.FileMode) error {
-	f.userFiles[username+":"+relPath] = content
 	return nil
 }
 

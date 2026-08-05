@@ -38,9 +38,10 @@ const (
 	workspaceContainerfile = `FROM docker.io/library/debian:stable-slim
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
       bash ca-certificates curl git htop less nano openssh-sftp-server procps rsync vim \
+      sqlite3 \
       python3 python3-venv python3-pip \
       nodejs npm \
-      php-cli \
+      php-cli php-sqlite3 \
       golang-go \
     && rm -rf /var/lib/apt/lists/*
 CMD ["/bin/bash"]
@@ -48,7 +49,7 @@ CMD ["/bin/bash"]
 
 	// WorkspaceRuntimes is what the workspace image ships, quoted verbatim to
 	// users and agents so nobody has to guess what is available
-	WorkspaceRuntimes = "python3 (with venv and pip), node and npm, php-cli, the go toolchain (go build works in here), plus git, curl, rsync, htop, vim and nano"
+	WorkspaceRuntimes = "python3 (with venv and pip), node and npm, php-cli, the go toolchain (go build works in here), sqlite3 for persistent data, plus git, curl, rsync, htop, vim and nano"
 )
 
 // IDs are the identity ranges a container is mapped into: the app's own uid/gid
@@ -108,6 +109,11 @@ func containerCreateArgs(conf *appctl.AppConfig, a *store.App, home, socketFile,
 	// A fork bomb in one app must not take the host with it. podman has a
 	// default for this, but a default is the distribution's opinion.
 	args = append(args, "--pids-limit", strconv.Itoa(maxProcesses))
+	// A setuid binary the tenant plants must not escalate beyond where it started.
+	// Caps are left in place on purpose: the app is container-root so it can
+	// apt-get and bind port 80, and the uid map already keeps those caps off the
+	// host, so an escape lands as an unprivileged user regardless.
+	args = append(args, "--security-opt", "no-new-privileges")
 	containerHome := containerHomeDir(a.Name)
 	args = append(args,
 		"--env", fmt.Sprintf("PORT=%d", containerPort),
@@ -123,9 +129,15 @@ func containerCreateArgs(conf *appctl.AppConfig, a *store.App, home, socketFile,
 		}
 	}
 	args = appendCommonMounts(args, socketFile, hostitBin)
+	// The trailer: image, then the command podman runs in it. Everything before it
+	// is a flag, so a late-added label (withConfigLabel) goes in just ahead of it.
 	args = append(args, workspaceImageTag(), hostitBin, "agent")
 	return args
 }
+
+// containerArgsTrailer is how many elements at the end of containerCreateArgs are
+// the image and its command rather than flags: [imageTag, hostitBin, "agent"].
+const containerArgsTrailer = 3
 
 // containerConfigHash returns a short hash of the container configuration; it is
 // stored as a label so the daemon can decide whether a recreate is needed
@@ -145,19 +157,7 @@ func appendCommonMounts(args []string, socketFile, hostitBin string) []string {
 	socketDir := filepath.Dir(socketFile)
 	return append(args,
 		"--volume", hostitBin+":"+hostitBin+":ro",
-		"--volume", socketDir+":"+socketDir)
-}
-
-// absVolume resolves a relative volume source against the app home dir
-func absVolume(volume, home string) string {
-	src, rest, found := strings.Cut(volume, ":")
-	if !found {
-		return volume
-	}
-	if !filepath.IsAbs(src) {
-		src = filepath.Join(home, src)
-	}
-	return src + ":" + rest
+		"--volume", socketDir+":"+socketDir+":ro")
 }
 
 func sortedKeys(m map[string]string) []string {

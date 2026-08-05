@@ -48,13 +48,13 @@ type errorResponse struct {
 	Error string `json:"error"`
 }
 
-// createAppRequest mirrors the server's POST /v1/apps body
+// createAppRequest mirrors the server's POST /api/apps body
 type createAppRequest struct {
 	Name    string   `json:"name"`
 	SSHKeys []string `json:"ssh_keys,omitempty"`
 }
 
-// setKeysRequest mirrors the server's PUT /v1/apps/{name}/keys body
+// setKeysRequest mirrors the server's PUT /api/apps/{name}/keys body
 type setKeysRequest struct {
 	SSHKeys []string `json:"ssh_keys"`
 }

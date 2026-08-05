@@ -94,7 +94,7 @@ func loginBanner(self *appctl.SelfInfo) string {
 		"  Files:  " + containerHome(self.Name) + " (upload with scp/rsync, or via the REST API)\n" +
 		"  Port:   listen on 0.0.0.0:$PORT (" + strconv.Itoa(self.Port) + ") -- nothing else is reachable\n" +
 		"\n" +
-		"  Configure the app in hostit.yml (static:, run: or image:), then:\n" +
+		"  Configure the app in hostit.yml (mode: static, or mode: app with run:), then:\n" +
 		"\n" +
 		"    hostit up          apply hostit.yml and (re)start the app\n" +
 		"    hostit down        stop the app\n" +

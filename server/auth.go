@@ -212,7 +212,7 @@ func (s *Server) authenticate(r *http.Request) (*caller, error) {
 }
 
 // authenticated wraps a handler with authentication only (no status check), for
-// endpoints pending users must reach, e.g. GET /v1/account
+// endpoints pending users must reach, e.g. GET /api/account
 func (s *Server) authenticated(next func(http.ResponseWriter, *http.Request, *caller)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		c, err := s.authenticate(r)

@@ -119,7 +119,7 @@ const UserRow = ({ user, defaults, onPatch, onDelete }) => {
   );
 };
 
-// Same shape as the dashboard row, plus the owner: for an admin /v1/apps
+// Same shape as the dashboard row, plus the owner: for an admin /api/apps
 // returns every user's apps, in server order (already sorted by name).
 const AppRow = ({ app }) => (
   <tr>

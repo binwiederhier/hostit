@@ -21,14 +21,14 @@ var (
 		Usage: "Manage apps on a hostit server via its REST API",
 		Flags: []cli.Flag{
 			&cli.StringFlag{Name: "host", Aliases: []string{"H"}, EnvVars: []string{"HOSTIT_HOST"}, Usage: "API base URL, e.g. https://hostit.apps.example.com"},
-			&cli.StringFlag{Name: "token", Aliases: []string{"t"}, EnvVars: []string{"HOSTIT_TOKEN"}, Usage: "admin token"},
+			&cli.StringFlag{Name: "token", Aliases: []string{"t"}, EnvVars: []string{"HOSTIT_TOKEN"}, Usage: "account or admin API token"},
 		},
 		Subcommands: []*cli.Command{
 			{
 				Name:      "add",
 				Usage:     "Create a new app (subdomain + SSH login)",
 				ArgsUsage: "<name>",
-				Action:    execAdminAdd,
+				Action:    execAppsAdd,
 				Flags: []cli.Flag{
 					&cli.StringSliceFlag{Name: "ssh-key", Aliases: []string{"k"}, Usage: "authorized SSH public key (literal or path to .pub file); repeatable"},
 					&cli.BoolFlag{Name: "json", Usage: "print raw JSON response"},
@@ -37,7 +37,7 @@ var (
 			{
 				Name:   "list",
 				Usage:  "List all apps",
-				Action: execAdminList,
+				Action: execAppsList,
 				Flags: []cli.Flag{
 					&cli.BoolFlag{Name: "json", Usage: "print raw JSON response"},
 				},
@@ -46,7 +46,7 @@ var (
 				Name:      "remove",
 				Usage:     "Delete an app, its Unix user and ALL its data",
 				ArgsUsage: "<name>",
-				Action:    execAdminRemove,
+				Action:    execAppsRemove,
 				Flags: []cli.Flag{
 					&cli.BoolFlag{Name: "force", Usage: "do not ask for confirmation"},
 				},
@@ -55,7 +55,7 @@ var (
 				Name:      "keys",
 				Usage:     "Replace an app's authorized SSH keys",
 				ArgsUsage: "<name>",
-				Action:    execAdminKeys,
+				Action:    execAppsKeys,
 				Flags: []cli.Flag{
 					&cli.StringSliceFlag{Name: "ssh-key", Aliases: []string{"k"}, Usage: "authorized SSH public key (literal or path to .pub file); repeatable"},
 				},
@@ -106,8 +106,8 @@ var (
 	}
 )
 
-func execAdminAdd(c *cli.Context) error {
-	cl, err := adminClient(c)
+func execAppsAdd(c *cli.Context) error {
+	cl, err := appsClient(c)
 	if err != nil {
 		return err
 	}
@@ -136,7 +136,7 @@ func execAdminAdd(c *cli.Context) error {
 // execRemoteAction runs one lifecycle verb against a remote app
 func execRemoteAction(verb string) cli.ActionFunc {
 	return func(c *cli.Context) error {
-		cl, err := adminClient(c)
+		cl, err := appsClient(c)
 		if err != nil {
 			return err
 		}
@@ -182,7 +182,7 @@ func actionMessage(verb, name string) string {
 }
 
 func execRemoteLogs(c *cli.Context) error {
-	cl, err := adminClient(c)
+	cl, err := appsClient(c)
 	if err != nil {
 		return err
 	}
@@ -198,7 +198,7 @@ func execRemoteLogs(c *cli.Context) error {
 }
 
 func execRemoteRun(c *cli.Context) error {
-	cl, err := adminClient(c)
+	cl, err := appsClient(c)
 	if err != nil {
 		return err
 	}
@@ -219,8 +219,8 @@ func execRemoteRun(c *cli.Context) error {
 	return nil
 }
 
-func execAdminList(c *cli.Context) error {
-	cl, err := adminClient(c)
+func execAppsList(c *cli.Context) error {
+	cl, err := appsClient(c)
 	if err != nil {
 		return err
 	}
@@ -241,8 +241,8 @@ func execAdminList(c *cli.Context) error {
 	return nil
 }
 
-func execAdminRemove(c *cli.Context) error {
-	cl, err := adminClient(c)
+func execAppsRemove(c *cli.Context) error {
+	cl, err := appsClient(c)
 	if err != nil {
 		return err
 	}
@@ -267,8 +267,8 @@ func execAdminRemove(c *cli.Context) error {
 	return nil
 }
 
-func execAdminKeys(c *cli.Context) error {
-	cl, err := adminClient(c)
+func execAppsKeys(c *cli.Context) error {
+	cl, err := appsClient(c)
 	if err != nil {
 		return err
 	}
@@ -286,7 +286,7 @@ func execAdminKeys(c *cli.Context) error {
 	return nil
 }
 
-func adminClient(c *cli.Context) (*client.Client, error) {
+func appsClient(c *cli.Context) (*client.Client, error) {
 	host, token := c.String("host"), c.String("token")
 	if host == "" || token == "" {
 		return nil, errors.New("--host and --token are required (or set HOSTIT_HOST and HOSTIT_TOKEN)")

@@ -17,6 +17,12 @@ const (
 	SrcDir    = "src"    // Source, if the app keeps its source on the host
 	DocsDir   = "docs"   // The app's own documentation, for whoever works on it next
 
+	// ConfigFile is the app's hostit.yml, the one file that describes how it runs
+	ConfigFile = "hostit.yml"
+	// AppLogFile is where the agent writes the app's output, relative to the home;
+	// the agent, the daemon and the CLI's "logs -f" all resolve the same path here
+	AppLogFile = LogDir + "/app.log"
+
 	// ModeApp runs the app's own "run" command, which must listen on $PORT
 	ModeApp = Mode("app")
 	// ModeStatic serves PublicDir; hostit provides the web server

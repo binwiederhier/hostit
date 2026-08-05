@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"net"
 	"net/http"
-	"os"
 	"path/filepath"
 	"testing"
 
@@ -64,9 +63,7 @@ func TestAppConfigValidate(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			filename := filepath.Join(t.TempDir(), "hostit.yml")
-			require.NoError(t, os.WriteFile(filename, []byte(tt.yaml), 0600))
-			_, err := LoadAppConfig(filename)
+			_, err := LoadAppConfig([]byte(tt.yaml))
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), tt.wantErr)
 		})
@@ -132,9 +129,7 @@ func TestControllerDaemonUnreachable(t *testing.T) {
 
 func writeAndLoadConfig(t *testing.T, content string) *AppConfig {
 	t.Helper()
-	filename := filepath.Join(t.TempDir(), "hostit.yml")
-	require.NoError(t, os.WriteFile(filename, []byte(content), 0600))
-	c, err := LoadAppConfig(filename)
+	c, err := LoadAppConfig([]byte(content))
 	require.NoError(t, err)
 	return c
 }
@@ -167,13 +162,17 @@ func newTestController(t *testing.T, routes map[string]any) *Controller {
 
 func TestStaticModeAlwaysServesPublic(t *testing.T) {
 	t.Parallel()
-	// One place for the files an app puts on the web, whatever the config says:
-	// an agent that writes to public/ is always right
-	for _, static := range []string{"public", ".", "site", "true"} {
-		c := &AppConfig{Mode: ModeStatic}
-		require.NoError(t, c.Validate())
-		assert.Equal(t, ModeStatic, c.Mode)
-		assert.Contains(t, c.Command("/usr/bin/hostit"), `--dir "public"`, "static: %q", static)
+	// A static app serves exactly public/, so there is no directory to configure
+	c := &AppConfig{Mode: ModeStatic}
+	require.NoError(t, c.Validate())
+	assert.Contains(t, c.Command("/usr/bin/hostit"), `--dir "public"`)
+
+	// The old "static: <dir>" spelling carried a directory value; it is now an
+	// unknown key whatever it points at, so a stale config is reported rather
+	// than quietly served from the wrong place.
+	for _, value := range []string{"public", ".", "site", "true"} {
+		_, err := ParseAppConfigStrict([]byte("static: " + value + "\n"))
+		assert.Error(t, err, "static: %q must be rejected", value)
 	}
 }
 

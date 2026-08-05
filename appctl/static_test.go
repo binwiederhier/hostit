@@ -1,6 +1,7 @@
 package appctl
 
 import (
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -59,11 +60,19 @@ func TestStaticHandlerDoesNotEscapeRoot(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(filepath.Dir(dir), "outside.txt"), []byte("nope"), 0644))
-	h := StaticHandler(dir)
+	// A real server + a client that follows redirects: net/http answers a raw
+	// "/../x" with a 301 to the cleaned path and an empty body, so asserting on
+	// that first response passes without the handler doing anything. Following it
+	// to the end is what proves the file outside the root is never served.
+	srv := httptest.NewServer(StaticHandler(dir))
+	defer srv.Close()
 	for _, path := range []string{"/../outside.txt", "/%2e%2e/outside.txt"} {
-		rr := httptest.NewRecorder()
-		h.ServeHTTP(rr, httptest.NewRequest("GET", path, nil))
-		assert.NotContains(t, rr.Body.String(), "nope", "path %s must not escape the root", path)
+		resp, err := http.Get(srv.URL + path)
+		require.NoError(t, err)
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		assert.NotEqual(t, http.StatusOK, resp.StatusCode, "path %s must not resolve to a file", path)
+		assert.NotContains(t, string(body), "nope", "path %s must not escape the root", path)
 	}
 }
 

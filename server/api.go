@@ -173,7 +173,9 @@ func (s *Server) handleAppsRotateToken(w http.ResponseWriter, r *http.Request, c
 	}
 	resp := s.appResponse(a)
 	resp.AgentToken = token
-	writeJSON(w, http.StatusOK, resp)
+	// Through withState like every other app response, or rotating a token would
+	// hand the web app an app with no live state and flip its status dot to stopped.
+	writeJSON(w, http.StatusOK, s.withState([]*apiAppResponse{resp})[0])
 }
 
 // agentToken returns the app's agent token, creating it if the app predates
@@ -221,7 +223,7 @@ func (s *Server) handleAppsSetKeys(w http.ResponseWriter, r *http.Request, c *ca
 		writeAppError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, s.appResponse(a))
+	writeJSON(w, http.StatusOK, s.withState([]*apiAppResponse{s.appResponse(a)})[0])
 }
 
 // listedApps returns the caller's own apps, or every app when an admin asks for

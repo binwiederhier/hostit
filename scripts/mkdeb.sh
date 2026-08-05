@@ -38,12 +38,13 @@ Section: net
 Priority: optional
 Architecture: $ARCH
 Maintainer: Philipp C. Heckel <phil@heckel.io>
-Depends: openssh-server, podman, uidmap, slirp4netns, nftables
-Recommends: podman, uidmap, slirp4netns
+Depends: openssh-server, podman, uidmap, slirp4netns, nftables, dbus-user-session
+Recommends: passt
 Description: Self-hosted mini-app platform with SSH access, subdomains and TLS
  hostit runs isolated mini apps as Unix users behind a TLS-terminating
  reverse proxy. Apps are created via a REST API and deployed over SSH
- with "hostit up", either as plain processes or rootless podman containers.
+ with "hostit up"; each runs in its own podman container with a per-app
+ uid mapping.
 EOF
 
 # Normalize permissions (umask leaks 775 into the staging tree otherwise)

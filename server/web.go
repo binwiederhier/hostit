@@ -17,6 +17,9 @@ var site embed.FS
 const (
 	// indexFile is served for all non-asset paths, so client-side routing works
 	indexFile = "index.html"
+	// assetDir is where Vite writes content-hashed assets (see web/vite.config.js
+	// assetsDir); everything under it is safe to cache forever
+	assetDir = "static/media/"
 	// assetCacheControl is used for hashed Vite assets, which never change
 	assetCacheControl = "public, max-age=31536000, immutable"
 )
@@ -45,7 +48,7 @@ func (s *Server) webHandler() http.Handler {
 			s.serveIndex(w, r, sub)
 			return
 		}
-		if strings.HasPrefix(name, "assets/") {
+		if strings.HasPrefix(name, assetDir) {
 			w.Header().Set("Cache-Control", assetCacheControl)
 		}
 		fileServer.ServeHTTP(w, r)

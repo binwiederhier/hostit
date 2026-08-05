@@ -30,7 +30,7 @@ flowchart TB
     end
 
     browser -->|"HTTPS :443"| daemon
-    agent -->|"HTTPS /api/blog/*"| daemon
+    agent -->|"HTTPS /api/apps/blog/*"| daemon
     ssh_client -->|"SSH :22"| sshd
 
     daemon -->|"proxy to 127.0.0.1:port"| app1
@@ -104,7 +104,7 @@ sequenceDiagram
     participant S as SQLite
     participant OS as useradd / podman / systemd
 
-    U->>D: POST /v1/apps {"name":"blog"}
+    U->>D: POST /api/apps {"name":"blog"}
     D->>D: validate name, check the owner's app limit
     D->>S: allocate a free port
     D->>OS: useradd blog (home 0750, shell hostit-shell)
@@ -187,19 +187,19 @@ sequenceDiagram
     participant H as App home
     participant C as Container agent (PID 1)
 
-    AG->>D: GET /api/blog/info (Bearer hostit_...)
-    D->>D: token -> app scope; refuse anything outside /api/blog/
+    AG->>D: GET /api/apps/blog/info (Bearer hostit_...)
+    D->>D: token -> app scope; refuse anything outside /api/apps/blog/
     D-->>AG: state, README, files, hostit.yml, and the full guide
 
-    AG->>D: PUT /api/blog/files/bin/server?mode=755
+    AG->>D: PUT /api/apps/blog/files/bin/server?mode=755
     D->>H: stream to a temp file inside the app's root, chown, rename
-    AG->>D: PUT /api/blog/files/hostit.yml
-    AG->>D: POST /api/blog/deploy
+    AG->>D: PUT /api/apps/blog/files/hostit.yml
+    AG->>D: POST /api/apps/blog/deploy
 
     alt container config unchanged
         D->>C: SIGHUP
         C->>C: re-read hostit.yml, restart the run command
-    else image, env or mounts changed
+    else env: changed
         D->>D: recreate the container, then start it
     end
     D-->>AG: deployed
@@ -261,7 +261,7 @@ Service packages at the root, thin `main.go`, no `internal/`:
 | `appctl` | the `hostit.yml` contract and the client for the app-side CLI |
 | `agent` | PID 1 inside a container: supervises the app, rotates its log |
 | `cmd` | the CLI: `serve`, the app commands, `admin`, and the SSH plumbing |
-| `client` | Go client for the REST API, used by `hostit admin` |
+| `client` | Go client for the REST API, used by `hostit apps` |
 
 The same binary is all of these; which commands it offers depends on where it
 runs. Inside a container it presents only the app's own commands.

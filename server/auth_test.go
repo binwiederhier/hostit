@@ -104,7 +104,7 @@ func TestAuthRejectsPendingUser(t *testing.T) {
 	rr := httptest.NewRecorder()
 	s.API().ServeHTTP(rr, req)
 	require.Equal(t, http.StatusForbidden, rr.Code)
-	// ... but /v1/account works, so the web app can show "waiting for approval"
+	// ... but /api/account works, so the web app can show "waiting for approval"
 	req = httptest.NewRequest("GET", "/api/account", nil)
 	req.AddCookie(&http.Cookie{Name: s.cookieName(sessionCookieName), Value: value})
 	rr = httptest.NewRecorder()
@@ -137,7 +137,7 @@ func TestWebIsServedOnTheBaseDomain(t *testing.T) {
 		assert.Equal(t, http.StatusOK, rr.Code, "host %s must serve the API", host)
 	}
 	// An app subdomain still goes to the app, not the web UI
-	rr := proxyRequest(t, s, "http://nosuchapp.apps.example.com/v1/health")
+	rr := proxyRequest(t, s, "http://nosuchapp.apps.example.com/api/health")
 	assert.Equal(t, http.StatusNotFound, rr.Code)
 }
 
@@ -321,12 +321,16 @@ func TestCookieAuthRejectsCrossSiteWrites(t *testing.T) {
 	}
 
 	// A form or fetch from an app's page must not act as the signed-in user:
-	// this is how a tenant would make itself an admin
+	// this is how a tenant would make itself an admin. "same-site" is the exact
+	// value a browser sends from blog.apps.example.com to apps.example.com, so it
+	// must be refused just like "cross-site".
 	assert.Equal(t, http.StatusForbidden, withCookie("POST", "/api/apps", `{"name":"evil"}`, "cross-site", "https://blog.apps.example.com"))
-	assert.Equal(t, http.StatusForbidden, withCookie("POST", "/api/apps", `{"name":"evil"}`, "", "https://blog.apps.example.com"))
-	// The web app itself keeps working, with either signal
+	assert.Equal(t, http.StatusForbidden, withCookie("POST", "/api/apps", `{"name":"evil2"}`, "same-site", "https://blog.apps.example.com"))
+	assert.Equal(t, http.StatusForbidden, withCookie("POST", "/api/apps", `{"name":"evil3"}`, "", "https://blog.apps.example.com"))
+	// The web app itself keeps working, with any of the safe signals
 	assert.Equal(t, http.StatusCreated, withCookie("POST", "/api/apps", `{"name":"mine"}`, "same-origin", ""))
-	assert.Equal(t, http.StatusCreated, withCookie("POST", "/api/apps", `{"name":"mine2"}`, "", "https://apps.example.com"))
+	assert.Equal(t, http.StatusCreated, withCookie("POST", "/api/apps", `{"name":"mine2"}`, "none", ""))
+	assert.Equal(t, http.StatusCreated, withCookie("POST", "/api/apps", `{"name":"mine3"}`, "", "https://apps.example.com"))
 	// Reads are not state-changing, so they are left alone
 	assert.Equal(t, http.StatusOK, withCookie("GET", "/api/apps", "", "cross-site", "https://blog.apps.example.com"))
 }
@@ -337,19 +341,23 @@ func TestAppTokenIsScopedByPathPrefix(t *testing.T) {
 	u := newActiveTestUser(t, s, "owner@example.com")
 	require.NoError(t, s.apps.Store().AddApp(&store.App{Name: "blog", Port: 10000, Host: store.HostLocal, OwnerID: u.ID}))
 	require.NoError(t, s.apps.Store().AddApp(&store.App{Name: "other", Port: 10001, Host: store.HostLocal, OwnerID: u.ID}))
+	// A name that has blog's name as a string prefix: the scope check must not be
+	// fooled into treating "blogsy" as inside "blog".
+	require.NoError(t, s.apps.Store().AddApp(&store.App{Name: "blogsy", Port: 10002, Host: store.HostLocal, OwnerID: u.ID}))
 	token, _, err := s.users.CreateAppToken(u.ID, "blog", "agent")
 	require.NoError(t, err)
 
-	// The prefix is the permission: /api/apps/blog/ and the platform guide,
-	// nothing else.
-	allowed := []string{"/api/apps/blog/info", "/api/blog/info", "/api/info", "/api/info"}
+	// The prefix is the permission: the app's own endpoints and the platform
+	// guide, and these must actually resolve (200), not merely be non-forbidden.
+	allowed := []string{"/api/apps/blog/info", "/api/info"}
 	for _, path := range allowed {
 		rr := request(t, s.API(), "GET", path, "", token)
-		assert.NotEqual(t, http.StatusForbidden, rr.Code, "%s must be reachable", path)
+		assert.Equal(t, http.StatusOK, rr.Code, "%s must be reachable", path)
 	}
 	refused := []string{
-		"/api/account", "/api/apps", "/api/users",
-		"/api/apps/other/info", "/api/settings",
+		"/api/account", "/api/apps", "/api/users", "/api/settings",
+		"/api/apps/other/info",  // another app
+		"/api/apps/blogsy/info", // string prefix, but a different app
 	}
 	for _, path := range refused {
 		rr := request(t, s.API(), "GET", path, "", token)

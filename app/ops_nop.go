@@ -1,7 +1,6 @@
 package app
 
 import (
-	"os"
 	"time"
 )
 
@@ -51,10 +50,6 @@ func (o *NopSystemOps) WriteAuthorizedKeys(username, home string, keys []string)
 }
 
 func (o *NopSystemOps) WriteScaffold(username, home string, files map[string]string) error {
-	return nil
-}
-
-func (o *NopSystemOps) WriteUserFile(username, home, relPath, content string, mode os.FileMode) error {
 	return nil
 }
 

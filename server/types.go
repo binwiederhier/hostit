@@ -9,13 +9,13 @@ import (
 	"heckel.io/hostit/user"
 )
 
-// apiCreateAppRequest is the body of POST /v1/apps
+// apiCreateAppRequest is the body of POST /api/apps
 type apiCreateAppRequest struct {
 	Name    string   `json:"name"`
 	SSHKeys []string `json:"ssh_keys"`
 }
 
-// apiSetKeysRequest is the body of PUT /v1/apps/{name}/keys
+// apiSetKeysRequest is the body of PUT /api/apps/{name}/keys
 type apiSetKeysRequest struct {
 	SSHKeys []string `json:"ssh_keys"`
 }
@@ -47,7 +47,7 @@ type apiAppResponse struct {
 	AgentToken  string     `json:"agent_token,omitempty"` // App-scoped; shown to the owner so the page can always render the prompt
 }
 
-// apiHealthResponse is returned by GET /v1/health
+// apiHealthResponse is returned by GET /api/health
 type apiHealthResponse struct {
 	Healthy bool `json:"healthy"`
 }
@@ -73,7 +73,7 @@ type apiUsage struct {
 	DiskMB int `json:"disk_mb"`
 }
 
-// apiAccountResponse is GET /v1/account: who the caller is and what they may use
+// apiAccountResponse is GET /api/account: who the caller is and what they may use
 type apiAccountResponse struct {
 	Email  string       `json:"email"`
 	Name   string       `json:"name"`
@@ -83,13 +83,13 @@ type apiAccountResponse struct {
 	Usage  *apiUsage    `json:"usage,omitempty"`
 }
 
-// apiAddKeyRequest is the body of POST /v1/account/keys
+// apiAddKeyRequest is the body of POST /api/account/keys
 type apiAddKeyRequest struct {
 	Label string `json:"label"`
 	Key   string `json:"key"`
 }
 
-// apiAddTokenRequest is the body of POST /v1/account/tokens; an app_name limits
+// apiAddTokenRequest is the body of POST /api/account/tokens; an app_name limits
 // the token to that one app (what the per-app page hands to an agent)
 type apiAddTokenRequest struct {
 	Label   string `json:"label"`
@@ -120,14 +120,14 @@ type apiUserResponse struct {
 	CreatedAt time.Time    `json:"created_at"`
 }
 
-// apiInviteUserRequest is the body of POST /v1/users: an admin handing out
+// apiInviteUserRequest is the body of POST /api/users: an admin handing out
 // access before the person has ever signed in. An empty role means "user".
 type apiInviteUserRequest struct {
 	Email string     `json:"email"`
 	Role  store.Role `json:"role"`
 }
 
-// apiAddDomainRequest is the body of POST /v1/domains
+// apiAddDomainRequest is the body of POST /api/domains
 type apiAddDomainRequest struct {
 	Domain string `json:"domain"`
 }
@@ -138,7 +138,7 @@ type apiDomainResponse struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
-// apiUpdateUserRequest is the body of PATCH /v1/users/{id}. The *Set fields
+// apiUpdateUserRequest is the body of PATCH /api/users/{id}. The *Set fields
 // distinguish "absent" from "explicitly null" for the nullable limit overrides.
 type apiUpdateUserRequest struct {
 	Role     *store.Role   `json:"role"`
@@ -175,7 +175,7 @@ type apiSettingsResponse struct {
 	DefaultDiskMB   int `json:"default_disk_mb"`
 }
 
-// apiUpdateSettingsRequest is the body of PATCH /v1/settings
+// apiUpdateSettingsRequest is the body of PATCH /api/settings
 type apiUpdateSettingsRequest struct {
 	DefaultAppLimit *int `json:"default_app_limit"`
 	DefaultMemoryMB *int `json:"default_memory_mb"`
@@ -205,7 +205,7 @@ type apiAgentInfoResponse struct {
 	Notes          []string           `json:"notes"`
 }
 
-// apiAgentAppResponse is GET /api/{app}/info
+// apiAgentAppResponse is GET /api/apps/{app}/info
 type apiAgentAppResponse struct {
 	Name      string       `json:"name"`
 	URL       string       `json:"url"`
@@ -222,7 +222,7 @@ type apiAgentAppResponse struct {
 	Guide *apiAgentInfoResponse `json:"guide"`
 }
 
-// apiRunRequest is the body of POST /api/{app}/run
+// apiRunRequest is the body of POST /api/apps/{app}/run
 type apiRunRequest struct {
 	Command        string `json:"command"`
 	TimeoutSeconds int    `json:"timeout_seconds"` // 0 = the default; capped by the daemon
@@ -236,7 +236,7 @@ type apiRunResponse struct {
 	TimedOut  bool   `json:"timed_out"`
 }
 
-// apiReadmeRequest is the body of PUT /api/{app}/readme
+// apiReadmeRequest is the body of PUT /api/apps/{app}/readme
 type apiReadmeRequest struct {
 	Readme string `json:"readme"`
 }

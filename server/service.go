@@ -60,9 +60,12 @@ func New(conf *config.Config, apps *app.Manager, users *user.Manager) *Server {
 		usernameForUID: usernameForUID,
 	}
 	s.exchangeGoogleCode = s.exchangeGoogleCodeLive
-	s.api = s.newAPIHandler()
+	// The web app and REST API get the full header set (CSP, framing denial) plus
+	// the base headers; the public proxy gets only the base headers, so proxied
+	// tenant apps are not straitjacketed by our CSP.
+	s.api = s.withWebSecurityHeaders(s.withBaseSecurityHeaders(s.newAPIHandler()))
 	s.socket = s.newSocketHandler()
-	s.proxy = s.newProxyHandler()
+	s.proxy = s.withBaseSecurityHeaders(s.newProxyHandler())
 	return s
 }
 

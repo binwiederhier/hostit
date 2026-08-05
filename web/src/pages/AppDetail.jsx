@@ -50,8 +50,9 @@ Don't change anything just yet. Check with me first: explore the API, read the a
 };
 
 // Start/stop/restart behind one button: only one of them is ever the sensible
-// next move, and none of them is what the page is for.
-const ActionsMenu = ({ running, busy, onAction }) => {
+// next move, and none of them is what the page is for. Delete lives here too,
+// set apart at the bottom, so the whole rare-actions surface is one menu.
+const ActionsMenu = ({ running, busy, onAction, onDelete }) => {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
 
@@ -64,14 +65,22 @@ const ActionsMenu = ({ running, busy, onAction }) => {
         setOpen(false);
       }
     };
+    const onKey = (e) => e.key === "Escape" && setOpen(false);
     document.addEventListener("mousedown", close);
-    document.addEventListener("keydown", (e) => e.key === "Escape" && setOpen(false));
-    return () => document.removeEventListener("mousedown", close);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", close);
+      document.removeEventListener("keydown", onKey);
+    };
   }, [open]);
 
   const run = (action) => {
     setOpen(false);
     onAction(action);
+  };
+  const remove = () => {
+    setOpen(false);
+    onDelete();
   };
   const actions = running ? ["restart", "stop"] : ["start"];
 
@@ -94,6 +103,9 @@ const ActionsMenu = ({ running, busy, onAction }) => {
               {action.charAt(0).toUpperCase() + action.slice(1)}
             </button>
           ))}
+          <button type="button" role="menuitem" className="menu-item-danger" onClick={remove}>
+            Delete app...
+          </button>
         </div>
       )}
     </div>
@@ -114,7 +126,7 @@ const NotFound = ({ name }) => (
 
 // The app-scoped token is created with the app and returned by the API on
 // every fetch, so it is always on display here; rotating it mints a new one.
-const AgentToken = ({ name, token, onRotated }) => {
+const ApiAccess = ({ name, token, onRotated }) => {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -135,14 +147,23 @@ const AgentToken = ({ name, token, onRotated }) => {
 
   return (
     <div className="card">
-      <h2>Agent token</h2>
+      <h2>API access</h2>
       <ErrorBanner message={error} onDismiss={() => setError("")} />
-      {!token && <p className="empty">This app has no owner, so it has no agent token.</p>}
+      {!token && <p className="empty">This app has no owner, so it has no API token.</p>}
       {token && (
         <>
           <p className="hint">
-            This token lets an AI assistant manage this app, and only this app. Anyone with it can change or delete this app's
-            contents, so treat it like a password.
+            Everything on this page can also be done through the REST API. This token is scoped to this one app: point an AI
+            assistant (or your own scripts) at{" "}
+            <span className="mono">
+              {origin}/api/apps/{name}/info
+            </span>{" "}
+            with it and the API describes the rest. Anyone holding it can change or delete this app's contents, so treat it like a
+            password. See the{" "}
+            <a href="/docs#api" target="_blank" rel="noreferrer">
+              API reference
+            </a>{" "}
+            for the full list of endpoints.
           </p>
           <pre className="key-block">{token}</pre>
           <div className="btn-row">
@@ -160,8 +181,9 @@ const AgentToken = ({ name, token, onRotated }) => {
 };
 
 // Delete behind a type-the-name confirmation, since it takes the container,
-// the files and the user with it.
-const DangerZone = ({ name, onDeleted }) => {
+// the files and the user with it. A modal, not a section at the bottom of the
+// page: it is reached deliberately from the Actions menu, never stumbled into.
+const DeleteAppDialog = ({ name, onCancel, onDeleted }) => {
   const [confirm, setConfirm] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -183,24 +205,31 @@ const DangerZone = ({ name, onDeleted }) => {
   };
 
   return (
-    <div className="card danger-card">
-      <h2>Danger zone</h2>
-      <p className="hint">
-        Deleting <span className="mono">{name}</span> permanently removes its container, files and user. Type the app name to
-        confirm.
-      </p>
-      <ErrorBanner message={error} onDismiss={() => setError("")} />
-      <form className="inline-form" onSubmit={remove}>
+    <div className="modal-backdrop" role="dialog" aria-modal="true">
+      <form className="card modal" onSubmit={remove}>
+        <h2>Delete {name}</h2>
+        <p>
+          This permanently removes <span className="mono">{name}</span>: its container, all its files and its Unix user.{" "}
+          <strong>This cannot be undone.</strong>
+        </p>
+        <p className="hint">Type the app name to confirm.</p>
+        <ErrorBanner message={error} onDismiss={() => setError("")} />
         <input
           type="text"
           value={confirm}
           onChange={(e) => setConfirm(e.target.value)}
           placeholder={name}
           aria-label="Type the app name to confirm deletion"
+          autoFocus
         />
-        <button type="submit" className="btn btn-danger" disabled={busy || confirm !== name}>
-          {busy ? "Deleting..." : "Delete app"}
-        </button>
+        <div className="btn-row">
+          <button type="button" className="btn" onClick={onCancel} disabled={busy}>
+            Cancel
+          </button>
+          <button type="submit" className="btn btn-danger" disabled={busy || confirm !== name}>
+            {busy ? "Deleting..." : "Delete app"}
+          </button>
+        </div>
       </form>
     </div>
   );
@@ -214,8 +243,10 @@ const AppDetail = ({ account, refreshAccount }) => {
   const [missing, setMissing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState("");
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [hasKeys, setHasKeys] = useState(null); // null until we know, so nothing flickers
   const noteTimer = useRef(null);
+  const catchUpTimers = useRef([]);
 
   useEffect(() => () => clearTimeout(noteTimer.current), []);
 
@@ -240,21 +271,27 @@ const AppDetail = ({ account, refreshAccount }) => {
     }
   }, [name]);
 
-  // A newly created app is still starting when its owner lands here, so the
-  // first thing they see is a red dot for an app that is coming up fine. Look
-  // again while that is settling, then just often enough to stay honest.
-  useEffect(() => {
-    load();
-    const timers = [5, 10, 15].map((seconds) => setTimeout(load, seconds * 1000));
-    const ticker = setInterval(load, 60000);
-    return () => {
-      timers.forEach(clearTimeout);
-      clearInterval(ticker);
-    };
+  // A container takes a few seconds to come up, so a single reload right after
+  // landing (or after start/restart) catches it mid-boot and shows a red dot for
+  // an app that is fine. Look again a few times while it settles.
+  const scheduleCatchUp = useCallback(() => {
+    catchUpTimers.current.forEach(clearTimeout);
+    catchUpTimers.current = [5, 10, 15].map((seconds) => setTimeout(load, seconds * 1000));
   }, [load]);
 
+  useEffect(() => {
+    load();
+    scheduleCatchUp();
+    const ticker = setInterval(load, 60000);
+    return () => {
+      catchUpTimers.current.forEach(clearTimeout);
+      clearInterval(ticker);
+    };
+  }, [load, scheduleCatchUp]);
+
   // Lifecycle runs through the agent API, which takes our session cookie just
-  // like /v1 does; reload afterwards so the status dot follows the container.
+  // like the REST API does; reload afterwards so the status dot follows the
+  // container, then keep looking while it settles (start/restart take a moment).
   const lifecycle = async (action) => {
     if (busy) {
       return;
@@ -268,6 +305,7 @@ const AppDetail = ({ account, refreshAccount }) => {
       setNote(res && res.message ? res.message : "Done.");
       noteTimer.current = setTimeout(() => setNote(""), 5000);
       await load();
+      scheduleCatchUp();
     } catch (err) {
       setError(err.message);
     } finally {
@@ -320,10 +358,9 @@ const AppDetail = ({ account, refreshAccount }) => {
           </a>
         </div>
         {/* Seeing the app is what people come here to do, so that is the one
-            accented button; lifecycle hides in the menu, and deleting stays in
-            the danger zone at the bottom. */}
+            accented button; lifecycle and delete hide in the menu. */}
         <div className="header-actions">
-          <ActionsMenu running={app.running} busy={busy} onAction={lifecycle} />
+          <ActionsMenu running={app.running} busy={busy} onAction={lifecycle} onDelete={() => setConfirmDelete(true)} />
           <a className="btn btn-primary" href={app.url} target="_blank" rel="noreferrer">
             Open app
           </a>
@@ -370,9 +407,11 @@ const AppDetail = ({ account, refreshAccount }) => {
         )}
       </div>
 
-      <AgentToken name={app.name} token={token} onRotated={setApp} />
+      <ApiAccess name={app.name} token={token} onRotated={setApp} />
 
-      <DangerZone name={app.name} onDeleted={deleted} />
+      {confirmDelete && (
+        <DeleteAppDialog name={app.name} onCancel={() => setConfirmDelete(false)} onDeleted={deleted} />
+      )}
     </>
   );
 };

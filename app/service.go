@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -68,7 +67,6 @@ type SystemOps interface {
 	DeleteUser(username string) error
 	WriteAuthorizedKeys(username, home string, keys []string) error
 	WriteScaffold(username, home string, files map[string]string) error
-	WriteUserFile(username, home, relPath, content string, mode os.FileMode) error
 	ChownToUser(username, path string) error
 	ApplyPortRules(rules []PortRule) error
 	ImageExists(tag string) bool

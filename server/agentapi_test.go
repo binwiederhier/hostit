@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -153,14 +155,22 @@ func TestAgentUploadSingleFile(t *testing.T) {
 	b, err := s.apps.ReadFile("blog", "static/app.js")
 	require.NoError(t, err)
 	assert.Equal(t, "console.log(1)", string(b))
-	// Escapes never write outside the app: the router normalizes ".." away (307)
-	// and app.WriteFile refuses what still gets through
+	// Escapes never write outside the app. The router normalizes a raw ".." away
+	// with a redirect, so it never reaches the handler as written...
 	rr = request(t, s.API(), "PUT", "/api/apps/blog/files/../../etc/passwd", "x", token)
-	assert.NotEqual(t, http.StatusCreated, rr.Code)
+	assert.GreaterOrEqual(t, rr.Code, 300)
+	assert.Less(t, rr.Code, 400)
+	// ...and an encoded ".." that does reach the handler is refused as a bad
+	// request (a clean 4xx), not a crash and not a write.
 	rr = request(t, s.API(), "PUT", "/api/apps/blog/files/%2e%2e%2f%2e%2e%2fetc/passwd", "x", token)
-	assert.NotEqual(t, http.StatusCreated, rr.Code)
+	assert.GreaterOrEqual(t, rr.Code, 400)
+	assert.Less(t, rr.Code, 500)
+	// The file lands nowhere: not inside the app, and not where the escape aimed
+	// (two levels up from the app home, i.e. under AppsDir).
 	_, err = s.apps.ReadFile("blog", "etc/passwd")
 	assert.Error(t, err)
+	_, statErr := os.Stat(filepath.Join(s.config.AppsDir, "etc", "passwd"))
+	assert.True(t, os.IsNotExist(statErr), "traversal must not write above the app home")
 }
 
 func TestAgentUploadWithMode(t *testing.T) {

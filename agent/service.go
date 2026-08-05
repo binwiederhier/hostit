@@ -21,7 +21,7 @@ import (
 
 const (
 	// hostitBinFile is where the hostit binary is mounted inside the container;
-	// "static:" apps run its file server
+	// "mode: static" apps run its file server
 	hostitBinFile = "/usr/bin/hostit"
 	// defaultRestartDelay is the pause before restarting an exited command
 	defaultRestartDelay = 2 * time.Second

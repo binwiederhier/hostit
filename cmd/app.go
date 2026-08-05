@@ -51,7 +51,7 @@ var (
 	}
 	cmdStatic = &cli.Command{
 		Name:  "static",
-		Usage: "Serve a directory over HTTP (used by \"static:\" apps)",
+		Usage: "Serve a directory over HTTP (used by \"mode: static\" apps)",
 		Flags: []cli.Flag{
 			&cli.StringFlag{Name: "dir", Aliases: []string{"d"}, Value: ".", Usage: "directory to serve"},
 			&cli.IntFlag{Name: "port", Aliases: []string{"p"}, Usage: "port to listen on; defaults to $PORT"},
@@ -108,14 +108,13 @@ func execStatus(_ *cli.Context) error {
 	return nil
 }
 
-// execLogs prints (or follows) app logs; the agent log file is used when
-// available (workspace apps, both inside and outside the container), otherwise
-// the daemon serves them (podman logs for image apps, no follow)
+// execLogs prints (or follows) app logs. Following tails the agent's log file
+// directly; a plain read goes through the daemon so it works from anywhere.
 func execLogs(c *cli.Context) error {
-	logFile := filepath.Join(os.Getenv("HOME"), ".hostit", "app.log")
+	logFile := filepath.Join(os.Getenv("HOME"), appctl.AppLogFile)
 	if c.Bool("follow") {
 		if _, err := os.Stat(logFile); err != nil {
-			return errors.New("cannot follow: no agent log file (image-mode apps do not support -f yet); try \"hostit logs\" without -f")
+			return errors.New("cannot follow: no agent log file yet; try \"hostit logs\" without -f")
 		}
 		tail := exec.Command("tail", "-n", fmt.Sprintf("%d", c.Int("lines")), "-F", logFile)
 		tail.Stdin, tail.Stdout, tail.Stderr = os.Stdin, os.Stdout, os.Stderr
@@ -138,8 +137,8 @@ func execInfo(_ *cli.Context) error {
 	return nil
 }
 
-// execStatic serves a directory; this is what a "static:" app runs, so a plain
-// HTML app needs no runtime of its own
+// execStatic serves a directory; this is what a "mode: static" app runs, so a
+// plain HTML app needs no runtime of its own
 func execStatic(c *cli.Context) error {
 	port := c.Int("port")
 	if port == 0 {

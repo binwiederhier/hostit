@@ -1,16 +1,16 @@
 package server
 
 import (
-	"fmt"
 	"html/template"
 	"net/http"
 	"strings"
 )
 
-// errorPageTemplate renders the pages visitors see when an app subdomain does
-// not serve anything. It deliberately says little: the headline is for casual
-// visitors, and only the app-down page carries an owner hint (which reveals
-// nothing a visitor could not guess from the URL).
+// errorPageTemplate renders the page visitors see when an app subdomain does
+// not serve anything. It deliberately says little and looks the same whether the
+// name is free or a registered app that is merely stopped: anything else lets an
+// outsider enumerate which app names are taken. The owner learns their app is
+// down from the dashboard, not from this page.
 var errorPageTemplate = template.Must(template.New("errorpage").Parse(`<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -41,39 +41,21 @@ var errorPageTemplate = template.Must(template.New("errorpage").Parse(`<!doctype
 <div class="card">
   <h1><span class="dot"></span>{{.Headline}}</h1>
   <p>{{.Message}}</p>
-  {{if .OwnerHint}}
-  <details>
-    <summary>Is this your app?</summary>
-    <pre>{{.OwnerHint}}</pre>
-  </details>
-  {{end}}
   <div class="foot">hostit</div>
 </div>
 `))
 
 // errorPageData is the template input
 type errorPageData struct {
-	Title     string
-	Headline  string
-	Message   string
-	OwnerHint string
+	Title    string
+	Headline string
+	Message  string
 }
 
-// writeAppDownPage is served when an app exists but nothing answers on its port
-func (s *Server) writeAppDownPage(w http.ResponseWriter, appName string) {
-	hint := fmt.Sprintf("ssh %s@%s\nhostit status     # is it running?\nhostit logs -n 50 # why did it stop?\nhostit up         # start it again",
-		appName, s.config.SSHHostname())
-	s.writeErrorPage(w, http.StatusBadGateway, &errorPageData{
-		Title:     appName + " is not running",
-		Headline:  "This app is not running",
-		Message:   "It exists, but nothing is answering right now. If you were expecting content here, check back in a moment.",
-		OwnerHint: hint,
-	})
-}
-
-// writeUnknownAppPage is served for hostnames that belong to no app; it must not
-// reveal whether a name is taken
-func (s *Server) writeUnknownAppPage(w http.ResponseWriter) {
+// writeNothingHerePage is served both for a hostname that belongs to no app and
+// for an app that exists but is not answering. The two cases are deliberately
+// identical, so a visitor cannot tell a free name from a stopped app.
+func (s *Server) writeNothingHerePage(w http.ResponseWriter) {
 	s.writeErrorPage(w, http.StatusNotFound, &errorPageData{
 		Title:    "Nothing here",
 		Headline: "There is nothing here",

@@ -76,6 +76,24 @@ func TestUpInvalidConfig(t *testing.T) {
 	assert.Contains(t, err.Error(), "hostit.yml")
 }
 
+func TestUpRefusesASymlinkedConfig(t *testing.T) {
+	t.Parallel()
+	m, _, _ := newTestDeployManager(t)
+	createTestApp(t, m, "blog")
+	// A tenant owns their home, so they can replace hostit.yml with a symlink out
+	// of it. The daemon reads that file as root: following the link would let a
+	// tenant point it at /dev/zero (read forever, OOM the whole daemon) or a
+	// root-only file. Reading through the app's os.Root must refuse the symlink,
+	// whatever it points at, rather than dereferencing it.
+	outside := filepath.Join(t.TempDir(), "outside.yml")
+	require.NoError(t, os.WriteFile(outside, []byte("mode: static\n"), 0o600))
+	link := filepath.Join(m.appHome("blog"), "hostit.yml")
+	require.NoError(t, os.Remove(link)) // Drop the scaffolded config, then plant the symlink
+	require.NoError(t, os.Symlink(outside, link))
+	_, err := m.Up("blog")
+	require.ErrorIs(t, err, ErrInvalid)
+}
+
 func TestEnsureWithoutConfigCreatesIdleWorkspace(t *testing.T) {
 	t.Parallel()
 	m, _, runner := newTestDeployManager(t)
@@ -158,8 +176,11 @@ func TestPortRulesReconciledOnCreateAndDelete(t *testing.T) {
 	require.NoError(t, m.DeleteApp("wiki"))
 	last = ops.portRules[len(ops.portRules)-1]
 	require.Len(t, last, 1)
-	assert.Equal(t, "blog", "blog") // Remaining rule belongs to blog
+	// The one remaining rule is blog's: its port and its uid, not wiki's
+	ids, err := ops.LookupIDs("blog")
+	require.NoError(t, err)
 	assert.Equal(t, 10000, last[0].Port)
+	assert.Equal(t, ids.UID, last[0].UID)
 }
 
 // failOn makes any command containing substr fail
@@ -224,7 +245,7 @@ func writeAppFile(t *testing.T, m *Manager, name, filename, content string) {
 
 func mustLoadConfig(t *testing.T, m *Manager, name string) *appctl.AppConfig {
 	t.Helper()
-	conf, err := appctl.LoadAppConfig(filepath.Join(m.appHome(name), "hostit.yml"))
+	conf, err := m.loadConfig(name)
 	require.NoError(t, err)
 	return conf
 }
@@ -233,6 +254,7 @@ func mustLoadConfig(t *testing.T, m *Manager, name string) *appctl.AppConfig {
 // substring
 type fakeRunner struct {
 	commands []string
+	timeouts []time.Duration // Outer bound passed to each RunTimeout call, in order
 	outputs  map[string]string
 	errs     map[string]error
 	mu       sync.Mutex // Protects commands; the demo app deploys in the background
@@ -248,6 +270,9 @@ func newFakeRunner() *fakeRunner {
 }
 
 func (f *fakeRunner) RunTimeout(timeout time.Duration, args ...string) (string, error) {
+	f.mu.Lock()
+	f.timeouts = append(f.timeouts, timeout)
+	f.mu.Unlock()
 	return f.Run(args...)
 }
 

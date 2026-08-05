@@ -17,9 +17,6 @@ const (
 	// stateRefreshInterval keeps the cache warm while nobody is looking, so the
 	// first page load after a quiet period is not the one that pays
 	stateRefreshInterval = 30 * time.Second
-	// logsTimeout bounds "podman logs", which an agent asks for right after a
-	// deploy -- exactly when another app's build may be holding podman's lock
-	logsTimeout = 5 * time.Second
 )
 
 var (

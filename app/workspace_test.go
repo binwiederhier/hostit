@@ -60,6 +60,10 @@ func TestWorkspaceContainerfile(t *testing.T) {
 	assert.Contains(t, workspaceContainerfile, "openssh-sftp-server")
 	assert.Contains(t, workspaceContainerfile, "rsync")
 	assert.Contains(t, workspaceContainerfile, "FROM docker.io/library/debian")
+	// A persistent app keeps its data in a SQLite file; ship the CLI so an owner
+	// can inspect it over SSH and PHP's driver so PDO works
+	assert.Contains(t, workspaceContainerfile, "sqlite3")
+	assert.Contains(t, workspaceContainerfile, "php-sqlite3")
 }
 
 func TestContainerMountsTheSocketDirectory(t *testing.T) {
@@ -73,8 +77,37 @@ func TestContainerMountsTheSocketDirectory(t *testing.T) {
 	// of the socket file pins an inode that is already gone: the app's CLI then
 	// gets "connection refused" until its container is recreated. Mounting the
 	// directory lets the container resolve the current socket by path.
-	assert.Contains(t, joined, "--volume /run/hostit:/run/hostit")
+	// Read-only: the app only connects to the socket, it never writes the dir
+	assert.Contains(t, joined, "--volume /run/hostit:/run/hostit:ro")
 	assert.NotContains(t, joined, "--volume /run/hostit/hostit.sock:/run/hostit/hostit.sock")
+}
+
+func TestEnvOrderDoesNotChangeTheConfigHash(t *testing.T) {
+	t.Parallel()
+	conf := &appctl.AppConfig{Mode: appctl.ModeApp, Run: "./server", Env: map[string]string{
+		"A": "1", "B": "2", "C": "3", "D": "4", "E": "5",
+	}}
+	a := &store.App{Name: "blog", Port: 10000}
+	// Go randomizes map iteration per run, so without sortedKeys the env would land
+	// in a different order each time and every deploy would see a "changed" config
+	// and needlessly recreate the container. The hash must be stable.
+	first := containerConfigHash(containerCreateArgs(conf, a, "/var/lib/hostit/apps/blog", "/run/hostit/hostit.sock", "/usr/bin/hostit", 0, testIDs))
+	for i := 0; i < 50; i++ {
+		got := containerConfigHash(containerCreateArgs(conf, a, "/var/lib/hostit/apps/blog", "/run/hostit/hostit.sock", "/usr/bin/hostit", 0, testIDs))
+		require.Equal(t, first, got)
+	}
+}
+
+func TestContainerRefusesPrivilegeEscalation(t *testing.T) {
+	t.Parallel()
+	conf := &appctl.AppConfig{Mode: appctl.ModeStatic}
+	a := &store.App{Name: "blog", Port: 10000}
+	args := containerCreateArgs(conf, a, "/var/lib/hostit/apps/blog", "/run/hostit/hostit.sock", "/usr/bin/hostit", 0, testIDs)
+	// A setuid binary in the container (planted by the tenant, who is root there)
+	// must not let a process gain privileges beyond what it started with. Caps are
+	// deliberately NOT dropped: the app is container-root on purpose (apt-get,
+	// binding port 80), and the uid map already keeps those caps off the host.
+	assert.Contains(t, strings.Join(args, " "), "--security-opt no-new-privileges")
 }
 
 func TestContainerArgsChangeWithTheVersion(t *testing.T) {

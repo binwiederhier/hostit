@@ -31,10 +31,10 @@ nfpms:
       - podman
       - uidmap
       - slirp4netns
+      - nftables
+      - dbus-user-session
     recommends:
-      - podman
-      - uidmap
-      - slirp4netns
+      - passt
     contents:
       - src: server.yml.example
         dst: /etc/hostit/server.yml.example

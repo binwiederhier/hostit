@@ -27,7 +27,7 @@ func (m *Manager) Up(name string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	conf, err := appctl.LoadAppConfig(filepath.Join(m.appHome(name), "hostit.yml"))
+	conf, err := m.loadConfig(name)
 	if err != nil {
 		return "", fmt.Errorf("%w: %s", ErrInvalid, err.Error())
 	}
@@ -43,7 +43,7 @@ func (m *Manager) Ensure(name string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	conf, err := appctl.LoadAppConfig(filepath.Join(m.appHome(name), "hostit.yml"))
+	conf, err := m.loadConfig(name)
 	if err != nil {
 		conf = nil // Fall back to an idle workspace
 	}
@@ -299,6 +299,22 @@ func (m *Manager) appHome(name string) string {
 	return filepath.Join(m.config.AppsDir, name)
 }
 
+// loadConfig reads and validates an app's hostit.yml through its os.Root, so a
+// symlink the tenant planted there cannot walk the root daemon out of the home,
+// and the file is capped rather than read unbounded.
+func (m *Manager) loadConfig(name string) (*appctl.AppConfig, error) {
+	root, err := m.appRoot(name)
+	if err != nil {
+		return nil, err
+	}
+	defer root.Close()
+	b, err := readCapped(root, configFile, maxConfigSize)
+	if err != nil {
+		return nil, err
+	}
+	return appctl.LoadAppConfig(b)
+}
+
 // SetMemoryLimit records the container memory cap for an app; applied on the
 // next container (re)creation
 func (m *Manager) SetMemoryLimit(name string, memoryMB int) {
@@ -314,14 +330,16 @@ func (m *Manager) memoryLimit(name string) int {
 	return m.memoryMB[name]
 }
 
-// withConfigLabel inserts the config-hash label into create args; options must
-// precede the image, and args always start with "create --name X --hostname Y"
+// withConfigLabel inserts the config-hash label into create args. A label is a
+// flag, so it goes anywhere before the image; inserting it just ahead of the
+// trailing image+command survives new flags being added at the front (the common
+// change) rather than depending on a fixed offset into the leading flags.
 func withConfigLabel(args []string, hash string) []string {
-	const optionsStart = 5 // len("create --name <name> --hostname <host>")
+	cut := len(args) - containerArgsTrailer
 	out := make([]string, 0, len(args)+2)
-	out = append(out, args[:optionsStart]...)
+	out = append(out, args[:cut]...)
 	out = append(out, "--label", "hostit.config="+hash)
-	out = append(out, args[optionsStart:]...)
+	out = append(out, args[cut:]...)
 	return out
 }
 

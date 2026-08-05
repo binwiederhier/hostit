@@ -44,7 +44,7 @@ type Config struct {
 	SocketFile       string  `yaml:"socket-file"`       // Unix socket for the app-side CLI (peercred-authenticated)
 	DataDir          string  `yaml:"data-dir"`          // SQLite registry + ACME certs
 	AppsDir          string  `yaml:"apps-dir"`          // Home directories of app users
-	APIHost          string  `yaml:"api-host"`          // Hostname routed to the admin API; defaults to hostit.<base-domain>
+	APIHost          string  `yaml:"api-host"`          // Hostname routed to the admin API; defaults to <base-domain>
 	SSHHost          string  `yaml:"ssh-host"`          // Hostname reported for SSH access; defaults to base-domain
 	TLS              TLSMode `yaml:"tls"`               // "letsencrypt" or "off"
 	LetsEncryptEmail string  `yaml:"letsencrypt-email"` // Optional contact email for ACME

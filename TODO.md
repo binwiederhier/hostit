@@ -42,8 +42,8 @@ The plan predating this file is `~/Code/plans/260804-hostit-multiuser.md`.
   and is served if someone points a web server at the wrong directory. A real
   secret store (or at least a separate file that is never in `public/`) would
   make it safe to put credentials in an app.
-- **Log following.** `GET /api/{app}/logs?lines=N` is a snapshot. An agent
+- **Log following.** `GET /api/apps/{app}/logs?lines=N` is a snapshot. An agent
   watching a slow start has to poll.
-- **Long jobs.** `POST /api/{app}/run` is bounded at five minutes, so a first
+- **Long jobs.** `POST /api/apps/{app}/run` is bounded at five minutes, so a first
   `npm install` on a small box can outlast it. Anything longer has to become a
   `prepare:` step, which is fine but not obvious.

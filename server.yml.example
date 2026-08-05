@@ -14,6 +14,33 @@ admin-token: CHANGE-ME
 # tls: letsencrypt
 # letsencrypt-email: you@example.com
 
+# Wildcard TLS via DNS-01, instead of on-demand per-subdomain certs. With a DNS
+# provider configured hostit obtains ONE *.<base-domain> certificate, so a brand
+# new app serves TLS immediately. Only "route53" is supported. The AWS values are
+# optional and fall back to the usual AWS env vars / instance credentials.
+# dns-provider: route53
+# aws-region: us-east-1
+# aws-access-key-id: ...
+# aws-secret-key: ...
+# aws-hosted-zone-id: ...
+
+# Web login (Google OAuth). Leave empty to run token-only with no web app. Create
+# credentials at https://console.cloud.google.com/apis/credentials with the
+# redirect URI https://<base-domain>/auth/callback.
+# google-client-id: ...
+# google-client-secret: ...
+
+# Emails that become active admins on their first Google login (skip approval).
+# admin-emails:
+#   - you@example.com
+
+# Secret for signing session cookies. Generated and persisted under data-dir if
+# left empty; set it only to share sessions across a rebuild.
+# session-key: ...
+
+# How often each app's disk usage is measured for the soft quota.
+# disk-check-interval: 1h
+
 # Listeners (defaults shown)
 # listen-http: ":80"
 # listen-https: ":443"
@@ -25,8 +52,8 @@ admin-token: CHANGE-ME
 # apps-dir: /var/lib/hostit/apps # app user home directories
 
 # Hostnames (defaults shown)
-# api-host: hostit.apps.example.com   # admin API hostname (default: hostit.<base-domain>)
-# ssh-host: apps.example.com          # SSH hostname reported to clients (default: <base-domain>)
+# api-host: apps.example.com   # admin API + web app hostname (default: <base-domain>)
+# ssh-host: apps.example.com   # SSH hostname reported to clients (default: <base-domain>)
 
 # Per-app loopback port range (defaults shown)
 # port-min: 10000

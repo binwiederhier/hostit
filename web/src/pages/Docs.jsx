@@ -124,7 +124,7 @@ const Docs = () => (
       </table>
       <p>Directories appear as you write into them.</p>
       <p className="hint">
-        If your app serves files itself (rather than using <span className="mono">static:</span>), point it at{" "}
+        If your app serves files itself (rather than using <span className="mono">mode: static</span>), point it at{" "}
         <span className="mono">public/</span> and never at the home directory. The home also holds{" "}
         <span className="mono">hostit.yml</span> and <span className="mono">.ssh/</span>, and serving it puts them on the open
         internet.
@@ -217,7 +217,7 @@ rsync -av ./site/ <app>@${host.replace(/^[^.]*\./, "")}:public/`}
       <p>
         The session lands <em>inside</em> the app's container, where you are root and can{" "}
         <span className="mono">apt-get install</span> whatever you need. Installed packages last until the container is
-        recreated, so anything permanent belongs in the app's own image or its build steps.
+        recreated, so anything permanent belongs in a prepare: step.
       </p>
       <p>Inside, these commands manage the app:</p>
       <Snippet
@@ -233,7 +233,7 @@ hostit logs -f     # watch the output`}
       <h2>API reference</h2>
       <p>
         Two kinds of credential. An <strong>app token</strong> (shown on the app's page) can only touch that app, through{" "}
-        <span className="mono">/api/&lt;app&gt;/</span>. An <strong>account token</strong> (Profile → API tokens) can do
+        <span className="mono">/api/apps/&lt;app&gt;/</span>. An <strong>account token</strong> (Profile → API tokens) can do
         anything you can, including creating and deleting apps.
       </p>
       <Snippet text={`curl -H "Authorization: Bearer <token>" ${origin}/api/apps/<app>/info`} />
