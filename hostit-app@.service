@@ -10,7 +10,7 @@ Wants=network-online.target
 [Service]
 Type=exec
 ExecStart=/usr/bin/podman start --attach hostit-app-%i
-ExecStop=/usr/bin/podman stop --time 5 hostit-app-%i
+ExecStop=/usr/bin/podman stop --time 2 hostit-app-%i
 Restart=always
 RestartSec=2
 

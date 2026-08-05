@@ -236,13 +236,9 @@ const AppDetail = ({ account, refreshAccount }) => {
   const [error, setError] = useState("");
   const [missing, setMissing] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [note, setNote] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [hasKeys, setHasKeys] = useState(null); // null until we know, so nothing flickers
-  const noteTimer = useRef(null);
   const catchUpTimers = useRef([]);
-
-  useEffect(() => () => clearTimeout(noteTimer.current), []);
 
   // Whether SSH is usable at all depends on the profile, not on the app
   useEffect(() => {
@@ -292,18 +288,20 @@ const AppDetail = ({ account, refreshAccount }) => {
     }
     setBusy(true);
     setError("");
-    setNote("");
-    clearTimeout(noteTimer.current);
+    // Flip the dot now rather than after the request: stopping a container takes
+    // a couple of seconds (SIGTERM grace, then netns and mount teardown), and
+    // waiting on that to show the result feels broken. The catch-up poll
+    // reconciles, and lifecycle actions are idempotent, so an optimistic guess
+    // that turns out wrong is corrected within seconds and harms nothing.
+    setApp((prev) => (prev ? { ...prev, running: action !== "stop" } : prev));
     try {
-      const res = await api.post(`/api/apps/${encodeURIComponent(name)}/${action}`);
-      setNote(res && res.message ? res.message : "Done.");
-      noteTimer.current = setTimeout(() => setNote(""), 5000);
-      await load();
-      scheduleCatchUp();
+      await api.post(`/api/apps/${encodeURIComponent(name)}/${action}`);
     } catch (err) {
       setError(err.message);
     } finally {
       setBusy(false);
+      await load();
+      scheduleCatchUp();
     }
   };
 
@@ -366,7 +364,6 @@ const AppDetail = ({ account, refreshAccount }) => {
         {!own && app.owner_email && <> &middot; owned by {app.owner_email}</>}
       </p>
       <ErrorBanner message={error} onDismiss={() => setError("")} />
-      {note && <p className="hint action-note">{note}</p>}
 
       <div className="card prompt-card">
         <h2>Prompt for your AI assistant</h2>

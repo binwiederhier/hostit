@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -13,7 +14,7 @@ import (
 
 func TestChatRoomKeepsOnlyTheLastMessages(t *testing.T) {
 	t.Parallel()
-	room := &chatRoom{}
+	room := newChatRoom()
 	for i := 0; i < maxChatMessages+50; i++ {
 		room.post("u", "msg")
 	}
@@ -23,7 +24,7 @@ func TestChatRoomKeepsOnlyTheLastMessages(t *testing.T) {
 
 func TestChatRoomTruncatesAndRejectsEmpty(t *testing.T) {
 	t.Parallel()
-	room := &chatRoom{}
+	room := newChatRoom()
 	_, ok := room.post("someone", "   ")
 	assert.False(t, ok, "a blank message is refused")
 
@@ -35,6 +36,34 @@ func TestChatRoomTruncatesAndRejectsEmpty(t *testing.T) {
 	blank, ok := room.post("", "hi")
 	require.True(t, ok)
 	assert.Equal(t, "anon", blank.Name, "a missing name defaults to anon")
+}
+
+func TestChatRoomBroadcastsToSubscribers(t *testing.T) {
+	t.Parallel()
+	room := newChatRoom()
+	room.post("a", "already here")
+
+	// subscribe hands back the backlog and a live channel, atomically
+	ch, backlog, unsub := room.subscribe()
+	require.Len(t, backlog, 1)
+	assert.Equal(t, "already here", backlog[0].Text)
+
+	room.post("b", "live one")
+	select {
+	case m := <-ch:
+		assert.Equal(t, "live one", m.Text)
+	case <-time.After(time.Second):
+		t.Fatal("subscriber never received the live message")
+	}
+
+	// after unsubscribing, no more messages are delivered
+	unsub()
+	room.post("c", "after unsub")
+	select {
+	case m := <-ch:
+		t.Fatalf("received %q after unsubscribing", m.Text)
+	case <-time.After(50 * time.Millisecond):
+	}
 }
 
 func TestPlaceholderHandlerServesPageAndChat(t *testing.T) {

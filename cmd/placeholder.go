@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/urfave/cli/v2"
 )
@@ -21,6 +22,9 @@ const (
 	maxChatText     = 280
 	maxChatMessages = 100
 	maxChatBody     = 4096
+	// sseKeepalive is how often the stream sends a comment to keep the connection
+	// (and any proxy in between) from timing the idle stream out
+	sseKeepalive = 25 * time.Second
 )
 
 var cmdPlaceholder = &cli.Command{
@@ -38,16 +42,23 @@ type chatMessage struct {
 	Text string `json:"text"`
 }
 
-// chatRoom is a bounded in-memory message log. It exists only to make the
-// placeholder feel alive and to show a real backend is running; nothing here
-// survives a restart, and it holds at most maxChatMessages.
+// chatRoom is a bounded in-memory message log with live subscribers. It exists
+// only to make the placeholder feel alive and to show a real backend is running;
+// nothing here survives a restart, and it holds at most maxChatMessages.
 type chatRoom struct {
 	msgs []chatMessage
-	mu   sync.Mutex // Protects msgs
+	subs map[chan chatMessage]struct{} // Live SSE listeners; a post fans out to each
+	mu   sync.Mutex                    // Protects msgs and subs
+}
+
+func newChatRoom() *chatRoom {
+	return &chatRoom{subs: make(map[chan chatMessage]struct{})}
 }
 
 // post validates and appends a message, returning false for an empty one. Name
-// and text are trimmed to their limits so one visitor cannot flood memory.
+// and text are trimmed to their limits so one visitor cannot flood memory. Each
+// new message is fanned out to the live subscribers (dropped for any that is not
+// keeping up, so one stuck client cannot block a post).
 func (r *chatRoom) post(name, text string) (chatMessage, bool) {
 	name, text = strings.TrimSpace(name), strings.TrimSpace(text)
 	if text == "" {
@@ -63,6 +74,12 @@ func (r *chatRoom) post(name, text string) (chatMessage, bool) {
 	if len(r.msgs) > maxChatMessages {
 		r.msgs = r.msgs[len(r.msgs)-maxChatMessages:]
 	}
+	for ch := range r.subs {
+		select {
+		case ch <- msg:
+		default:
+		}
+	}
 	return msg, true
 }
 
@@ -72,6 +89,23 @@ func (r *chatRoom) list() []chatMessage {
 	out := make([]chatMessage, len(r.msgs))
 	copy(out, r.msgs)
 	return out
+}
+
+// subscribe returns a channel of future messages plus the current backlog, taken
+// under the same lock so a listener sees every message exactly once, and an
+// unsubscribe to call when the listener goes away.
+func (r *chatRoom) subscribe() (<-chan chatMessage, []chatMessage, func()) {
+	ch := make(chan chatMessage, 32)
+	r.mu.Lock()
+	backlog := make([]chatMessage, len(r.msgs))
+	copy(backlog, r.msgs)
+	r.subs[ch] = struct{}{}
+	r.mu.Unlock()
+	return ch, backlog, func() {
+		r.mu.Lock()
+		delete(r.subs, ch)
+		r.mu.Unlock()
+	}
 }
 
 // truncate caps a string to n runes (not bytes, so it never splits a character)
@@ -87,8 +121,41 @@ func truncate(s string, n int) string {
 // messages client-side with textContent, so a message is never interpreted as
 // HTML: the chat is public and unauthenticated, and this is what keeps it safe.
 func placeholderHandler() http.Handler {
-	room := &chatRoom{}
+	room := newChatRoom()
 	mux := http.NewServeMux()
+	// Server-sent events: the browser opens this once and the backend pushes each
+	// new message, so there is no polling. The backlog is sent first, then live
+	// messages, with a periodic comment to keep the connection open through proxies.
+	mux.HandleFunc("/chat/stream", func(w http.ResponseWriter, r *http.Request) {
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			http.Error(w, "streaming unsupported", http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("Connection", "keep-alive")
+		ch, backlog, unsubscribe := room.subscribe()
+		defer unsubscribe()
+		for _, m := range backlog {
+			writeChatEvent(w, m)
+		}
+		flusher.Flush()
+		keepalive := time.NewTicker(sseKeepalive)
+		defer keepalive.Stop()
+		for {
+			select {
+			case <-r.Context().Done():
+				return
+			case m := <-ch:
+				writeChatEvent(w, m)
+				flusher.Flush()
+			case <-keepalive.C:
+				_, _ = io.WriteString(w, ": keepalive\n\n")
+				flusher.Flush()
+			}
+		}
+	})
 	mux.HandleFunc("/chat", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
@@ -123,6 +190,15 @@ func placeholderHandler() http.Handler {
 func writeChatJSON(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(v)
+}
+
+// writeChatEvent writes one message as an SSE "data:" frame
+func writeChatEvent(w http.ResponseWriter, m chatMessage) {
+	b, err := json.Marshal(m)
+	if err != nil {
+		return
+	}
+	_, _ = fmt.Fprintf(w, "data: %s\n\n", b)
 }
 
 func execPlaceholder(c *cli.Context) error {
@@ -193,18 +269,19 @@ const placeholderPage = `<!doctype html>
 </div>
 <script>
   var log = document.getElementById("log");
-  function render(msgs) {
-    if (!msgs || !msgs.length) { return; }
-    log.innerHTML = "";
-    msgs.forEach(function (m) {
-      var row = document.createElement("div"); row.className = "msg";
-      var who = document.createElement("span"); who.className = "name"; who.textContent = m.name + ": ";
-      var what = document.createElement("span"); what.textContent = m.text;
-      row.appendChild(who); row.appendChild(what); log.appendChild(row);
-    });
+  var empty = true;
+  function append(m) {
+    if (empty) { log.innerHTML = ""; empty = false; }
+    var row = document.createElement("div"); row.className = "msg";
+    var who = document.createElement("span"); who.className = "name"; who.textContent = m.name + ": ";
+    var what = document.createElement("span"); what.textContent = m.text;
+    row.appendChild(who); row.appendChild(what); log.appendChild(row);
     log.scrollTop = log.scrollHeight;
   }
-  function load() { fetch("/chat").then(function (r) { return r.json(); }).then(render).catch(function () {}); }
+  // Server-sent events: the backend pushes the backlog and then each new message
+  // as it arrives, so there is no polling. EventSource reconnects on its own.
+  var stream = new EventSource("/chat/stream");
+  stream.onmessage = function (e) { try { append(JSON.parse(e.data)); } catch (_) {} };
   document.getElementById("f").addEventListener("submit", function (e) {
     e.preventDefault();
     var text = document.getElementById("text");
@@ -212,9 +289,7 @@ const placeholderPage = `<!doctype html>
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name: document.getElementById("name").value, text: text.value })
-    }).then(function () { text.value = ""; load(); });
+    }).then(function () { text.value = ""; });
   });
-  load();
-  setInterval(load, 3000);
 </script>
 `

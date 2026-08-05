@@ -58,9 +58,11 @@ still means SSH or an external agent. These bring that into the browser.
 
 ## Smaller things
 
-- **License.** Add an Apache 2.0 `LICENSE` file. The packaging already declares
-  `license: Apache 2.0` (`.goreleaser.yml`, `scripts/mkdeb.sh`), but the repo
-  has no license file, so the declared license has nothing to point at.
+- **Custom domains for apps.** Let an app answer on the owner's own hostname
+  (e.g. `blog.example.com`) as well as its `<app>.<base-domain>` subdomain. Needs
+  a `domain` per app in the store, the proxy matching it (`appNameFromHost` only
+  knows the base domain today), on-demand TLS allowing it (`allowTLSHost`), and a
+  DNS/verification step so someone cannot claim a domain they do not control.
 - **Secrets.** `env:` values live in `hostit.yml`, which sits in the app's home
   and is served if someone points a web server at the wrong directory. A real
   secret store (or at least a separate file that is never in `public/`) would
