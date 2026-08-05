@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -69,6 +70,60 @@ func (c *Client) DeleteApp(name string) error {
 // SetKeys replaces an app's authorized SSH keys
 func (c *Client) SetKeys(name string, sshKeys []string) error {
 	return c.request("PUT", "/api/apps/"+name+"/keys", &setKeysRequest{SSHKeys: sshKeys}, nil)
+}
+
+// Deploy applies the app's hostit.yml and (re)starts it, and returns what the
+// server said it did
+func (c *Client) Deploy(name string) (string, error) {
+	return c.action(name, "deploy")
+}
+
+// Start brings the app up without applying config changes
+func (c *Client) Start(name string) error {
+	_, err := c.action(name, "start")
+	return err
+}
+
+// Stop stops the app and leaves it stopped across reboots
+func (c *Client) Stop(name string) error {
+	_, err := c.action(name, "stop")
+	return err
+}
+
+// Restart restarts the app
+func (c *Client) Restart(name string) error {
+	_, err := c.action(name, "restart")
+	return err
+}
+
+// Logs returns the app's recent output
+func (c *Client) Logs(name string, lines int) (string, error) {
+	var resp outputResponse
+	path := fmt.Sprintf("/api/apps/%s/logs?lines=%d", url.PathEscape(name), lines)
+	if err := c.request("GET", path, nil, &resp); err != nil {
+		return "", err
+	}
+	return resp.Output, nil
+}
+
+// Run executes one shell command inside the app's container. A zero timeout
+// leaves the bound to the server, which caps it either way.
+func (c *Client) Run(name, command string, timeoutSeconds int) (*RunResult, error) {
+	var res RunResult
+	req := &runRequest{Command: command, TimeoutSeconds: timeoutSeconds}
+	if err := c.request("POST", "/api/apps/"+url.PathEscape(name)+"/run", req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+// action posts one lifecycle verb and returns the server's message
+func (c *Client) action(name, verb string) (string, error) {
+	var resp messageResponse
+	if err := c.request("POST", "/api/apps/"+url.PathEscape(name)+"/"+verb, nil, &resp); err != nil {
+		return "", err
+	}
+	return resp.Message, nil
 }
 
 func (c *Client) request(method, path string, body, response any) error {

@@ -16,16 +16,23 @@ func TestNewCommands(t *testing.T) {
 	for _, c := range app.Commands {
 		names = append(names, c.Name)
 	}
-	for _, expected := range []string{"serve", "up", "down", "restart", "status", "logs", "info", "guide", "admin"} {
+	// On the host: run the daemon, and drive apps over the API. The commands that
+	// act on "this app" need a container to be in, so they are not offered here.
+	for _, expected := range []string{"serve", "apps"} {
 		assert.Contains(t, names, expected)
 	}
-	admin := app.Command("admin")
-	require.NotNil(t, admin)
+	for _, hidden := range []string{"up", "down", "status", "logs", "guide"} {
+		assert.NotContains(t, names, hidden, "%q cannot work outside a container", hidden)
+	}
+	apps := app.Command("apps")
+	require.NotNil(t, apps)
 	subNames := make([]string, 0)
-	for _, c := range admin.Subcommands {
+	for _, c := range apps.Subcommands {
 		subNames = append(subNames, c.Name)
 	}
-	for _, expected := range []string{"add", "list", "remove", "keys"} {
+	// Everything the app's own page offers, from any machine with a token: the
+	// CLI could create and delete apps but not start, stop or look at one
+	for _, expected := range []string{"add", "list", "remove", "keys", "deploy", "start", "stop", "restart", "logs", "run"} {
 		assert.Contains(t, subNames, expected)
 	}
 }
@@ -100,4 +107,13 @@ func TestCommandsInsideAContainerAreTheAppsOwn(t *testing.T) {
 	}
 	// The agent is PID 1 in there, so it has to stay reachable
 	assert.Contains(t, names, "agent")
+}
+
+func TestActionMessages(t *testing.T) {
+	t.Parallel()
+	// "snake stoped" and "snake restared" is what deriving English from the verb
+	// gets you
+	assert.Equal(t, "blog started", actionMessage("start", "blog"))
+	assert.Equal(t, "blog stopped", actionMessage("stop", "blog"))
+	assert.Equal(t, "blog restarted", actionMessage("restart", "blog"))
 }

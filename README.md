@@ -17,7 +17,7 @@
 Multi-user: people sign in with Google, an admin approves them from a small web
 app, and each user gets their own apps within admin-adjustable limits (app count,
 container memory, soft disk quota). Per-user API tokens make the same REST API and
-CLI available to their agent, which is the point: `hostit admin add myapp` with a
+CLI available to their agent, which is the point: `hostit apps add myapp` with a
 user token is all an AI agent needs.
 
 The intended workflow: tell your agent "create an app on my host and deploy this"
@@ -290,10 +290,14 @@ token or a user's own token) or the bundled client:
 export HOSTIT_HOST=https://hostit.apps.example.com
 export HOSTIT_TOKEN=...
 
-hostit admin add blog                            # reachable through the API only
-hostit admin add blog -k ~/.ssh/id_ed25519.pub   # ...plus SSH with your key
-hostit admin list
-hostit admin remove blog                         # deletes user + ALL app data
+hostit apps add blog                            # reachable through the API only
+hostit apps add blog -k ~/.ssh/id_ed25519.pub   # ...plus SSH with your key
+hostit apps list
+hostit apps deploy blog                         # apply its hostit.yml and start it
+hostit apps start|stop|restart blog
+hostit apps logs -n 50 blog
+hostit apps run blog "cd src && go build -o ../bin/blog ."
+hostit apps remove blog                         # deletes user + ALL app data
 ```
 
 Or with curl:
@@ -319,6 +323,11 @@ are `/api/account` (+ `/keys`, `/tokens`), `/api/apps`, `/api/users`,
 
 This is what hostit is for: a user creates an app in the web app, copies the
 prompt from its page, and pastes it into their own Claude Code (or any agent).
+An account token drives every app you own through these commands; an app token
+drives only its own app. The same commands run inside an app's container without
+`apps` and without a token (`hostit up`, `hostit logs -f`, `hostit guide`), where
+the daemon knows which app you are from the uid asking.
+
 The token in that prompt is **scoped to that one app**, so it cannot touch the
 user's other apps, their account, or anything admin.
 

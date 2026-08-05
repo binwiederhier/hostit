@@ -80,3 +80,28 @@ func newTestClient(t *testing.T, token string) *Client {
 	t.Cleanup(httpServer.Close)
 	return New(httpServer.URL, token)
 }
+
+func TestLifecycleFromTheClient(t *testing.T) {
+	t.Parallel()
+	c := newTestClient(t, testToken)
+	_, err := c.CreateApp("blog", nil)
+	require.NoError(t, err)
+
+	// Everything the app's own page can do, a token can do from anywhere
+	require.NoError(t, c.Restart("blog"))
+	require.NoError(t, c.Stop("blog"))
+	require.NoError(t, c.Start("blog"))
+	// Deploying needs a hostit.yml, which this bare app has not got: the point is
+	// that the client carries the server's reason back rather than swallowing it
+	_, err = c.Deploy("blog")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "hostit.yml")
+
+	out, err := c.Logs("blog", 20)
+	require.NoError(t, err)
+	assert.NotNil(t, out)
+
+	res, err := c.Run("blog", "echo hi", 0)
+	require.NoError(t, err)
+	assert.Equal(t, 0, res.ExitCode)
+}
