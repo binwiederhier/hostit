@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"strconv"
 	"syscall"
 
 	"github.com/urfave/cli/v2"
@@ -92,7 +91,6 @@ func loginBanner(self *appctl.SelfInfo) string {
 		"  App:    " + self.Name + "\n" +
 		"  URL:    " + self.URL + "\n" +
 		"  Files:  " + containerHome(self.Name) + " (upload with scp/rsync, or via the REST API)\n" +
-		"  Port:   listen on 0.0.0.0:$PORT (" + strconv.Itoa(self.Port) + ") -- nothing else is reachable\n" +
 		"\n" +
 		"  Configure the app in hostit.yml (mode: static, or mode: app with run:), then:\n" +
 		"\n" +

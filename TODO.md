@@ -56,6 +56,25 @@ still means SSH or an external agent. These bring that into the browser.
   without wiring up an external agent. Needs an LLM backend + config; the app
   token already confines it to one app, which is most of the scoping done.
 
+## Hard disk quotas
+
+Today the quota is soft: a background walk measures each app's home
+periodically and stops the container once it is over. So an app can write
+several GB and only later get shut down -- the writes are not actually
+prevented, and the box can fill in between checks. It should refuse the write
+at the limit (EDQUOT) instead.
+
+- **ext4 project quotas** are the fit (the box is ext4): enable `prjquota`,
+  give each app home a project id and a block limit, and writes past it fail
+  immediately. Container root is the app's host uid, and writes land as that
+  uid in the bind-mounted home, so the quota follows the files correctly.
+- Alternatives if project quotas are awkward: a per-app fixed-size loopback
+  ext4 image mounted at the home (hard cap, heavier), or moving app data onto
+  XFS with project quotas.
+- Either way `disk_mb` becomes the enforced limit rather than the shut-down
+  threshold; the periodic walk stays only for *reporting* usage, and the
+  "stop when over quota" behaviour goes away.
+
 ## Smaller things
 
 - **Custom domains for apps.** Let an app answer on the owner's own hostname

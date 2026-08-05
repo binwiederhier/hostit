@@ -47,7 +47,9 @@ func TestLoginBanner(t *testing.T) {
 	// Where am I, and what is this?
 	assert.Contains(t, banner, "blog")
 	assert.Contains(t, banner, "https://blog.apps.example.com")
-	assert.Contains(t, banner, "10001")
+	// The port is no longer shown: the app is told to listen on $PORT, and a
+	// number the owner cannot usefully act on was just noise.
+	assert.NotContains(t, banner, "10001")
 	// What can I do here?
 	for _, want := range []string{"hostit up", "hostit logs", "hostit status", "hostit.yml"} {
 		assert.Contains(t, banner, want, "the banner must mention %q", want)

@@ -1042,6 +1042,26 @@ th:last-child {
   padding: 6px 8px;
 }
 
+.term-bar-actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* The popped-out / full-window terminal: covers the whole viewport (over the nav) */
+.term-page {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  padding: 12px;
+  background: #14181d;
+}
+
+.term-window-full {
+  width: 100%;
+  height: 100%;
+}
+
 .choice {
   display: flex;
   gap: 10px;

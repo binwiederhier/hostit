@@ -33,7 +33,7 @@ func (s *Server) handleTerminal(w http.ResponseWriter, r *http.Request, c *calle
 		writeAppError(w, err)
 		return
 	}
-	args, err := s.apps.TerminalArgs(a.Name)
+	prog, args, err := s.apps.TerminalCommand(a.Name)
 	if err != nil {
 		writeAppError(w, err)
 		return
@@ -50,8 +50,10 @@ func (s *Server) handleTerminal(w http.ResponseWriter, r *http.Request, c *calle
 	ctx, cancel := context.WithTimeout(r.Context(), terminalMaxDuration)
 	defer cancel()
 
-	// A pty so podman exec -it has a real terminal; its master is what we bridge
-	cmd := exec.CommandContext(ctx, "podman", args...)
+	// A pty so the login shell (and the podman exec it leads to) has a real
+	// terminal; its master is what we bridge to the browser. TERM makes colours
+	// and readline behave, exactly as an SSH client's TERM would.
+	cmd := exec.CommandContext(ctx, prog, args...)
 	cmd.Env = append(os.Environ(), "TERM=xterm-256color")
 	ptmx, err := pty.Start(cmd)
 	if err != nil {

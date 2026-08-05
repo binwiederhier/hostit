@@ -76,15 +76,17 @@ func (m *Manager) Exec(name, command string, timeout time.Duration) (*ExecResult
 	return res, nil
 }
 
-// TerminalArgs is the podman argv for an interactive login shell in the app's
-// container, run as the container's own (unprivileged, mapped) user -- the same
-// entry point an SSH session gets. The server attaches it to a pty and a
-// websocket; it lives here so container naming stays in one place.
-func (m *Manager) TerminalArgs(name string) ([]string, error) {
+// TerminalCommand is what the server runs, on a pty, for a browser terminal: the
+// app's own login shell as the app user -- exactly what SSH runs. Going through
+// hostit-shell (not straight to "podman exec") means the browser terminal is
+// identical to an SSH session: the same banner, the same TERM and colours, the
+// same entry into the container. runuser drops from the root daemon to the app
+// user so the socket sees the right identity, just as sshd would.
+func (m *Manager) TerminalCommand(name string) (string, []string, error) {
 	if _, err := m.store.App(name); err != nil {
-		return nil, err
+		return "", nil, err
 	}
-	return []string{"exec", "-it", containerName(name), "/bin/bash", "-l"}, nil
+	return "runuser", []string{"-u", name, "--", userShellFile}, nil
 }
 
 // execTimeout keeps a caller's request inside what the host can afford

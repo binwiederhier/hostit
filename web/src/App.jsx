@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
-import { BrowserRouter, Link, Navigate, NavLink, Route, Routes } from "react-router-dom";
+import { lazy, Suspense, useCallback, useEffect, useState } from "react";
+import { BrowserRouter, Link, Navigate, NavLink, Route, Routes, useParams } from "react-router-dom";
 import { api, ApiError } from "./api";
 import { Loading, Wordmark } from "./components";
 import Dashboard from "./pages/Dashboard";
@@ -7,6 +7,18 @@ import AppDetail from "./pages/AppDetail";
 import Profile from "./pages/Profile";
 import Admin from "./pages/Admin";
 import Docs from "./pages/Docs";
+
+// The popped-out, full-window terminal (also reachable directly). xterm is heavy,
+// so it stays a lazy chunk, loaded only when a terminal is actually opened.
+const AppTerminal = lazy(() => import("./pages/AppTerminal"));
+const TerminalRoute = () => {
+  const { name } = useParams();
+  return (
+    <Suspense fallback={null}>
+      <AppTerminal name={name} fullPage />
+    </Suspense>
+  );
+};
 
 const logout = async () => {
   try {
@@ -164,6 +176,7 @@ const App = () => {
         <Routes>
           <Route path="/" element={<Dashboard account={account} refreshAccount={refreshAccount} />} />
           <Route path="/app/:name" element={<AppDetail account={account} refreshAccount={refreshAccount} />} />
+          <Route path="/app/:name/terminal" element={<TerminalRoute />} />
           <Route path="/profile" element={<Profile />} />
           <Route path="/admin" element={<Admin account={account} />} />
           <Route path="*" element={<Navigate to="/" replace />} />
