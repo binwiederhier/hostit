@@ -70,9 +70,9 @@ func TestWorkspaceContainerfile(t *testing.T) {
 	assert.Contains(t, workspaceContainerfile, "golang-go")
 	assert.Contains(t, workspaceContainerfile, "python3")
 	assert.Contains(t, workspaceContainerfile, "sqlite3")
-	// Shell niceties (ll/colors) for every login shell, set system-wide
-	assert.Contains(t, workspaceContainerfile, "alias ll=")
+	// Shell niceties (ll/colors) written into a system-wide profile.d script
 	assert.Contains(t, workspaceContainerfile, "/etc/profile.d/hostit.sh")
+	assert.Contains(t, workspaceContainerfile, "base64 -d")
 	// Dropped to keep the image small (they inflate every per-app container and
 	// the disk); an app that needs them installs them with apt-get
 	assert.NotContains(t, workspaceContainerfile, "nodejs")
