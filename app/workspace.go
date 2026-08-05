@@ -26,6 +26,13 @@ const (
 	// maxProcesses caps how many processes an app may have. Generous for a build
 	// (compilers fan out) and far below what it takes to exhaust the host.
 	maxProcesses = 512
+	// uidBlockSize is how many host uids each app owns: a contiguous block whose
+	// base is container-root. 65536 so the container has a full uid range (up to
+	// nobody). A single contiguous block is what lets podman idmap-mount the image.
+	uidBlockSize = 65536
+	// uidBlockStart is the first app's base uid, high above system users; blocks
+	// are spaced uidBlockSize apart (by port) so they never overlap.
+	uidBlockStart = 1_000_000
 	// workspaceImagePrefix names the default image for static/run mode apps, built
 	// once into the daemon's (root) image store and shared by every app. The tag
 	// after it is a hash of the Containerfile, so editing that file is enough to
@@ -40,26 +47,27 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-ins
       bash ca-certificates curl git htop less nano openssh-sftp-server procps rsync vim \
       sqlite3 \
       python3 python3-venv python3-pip \
-      nodejs npm \
-      php-cli php-sqlite3 \
       golang-go \
     && rm -rf /var/lib/apt/lists/*
 CMD ["/bin/bash"]
 `
 
 	// WorkspaceRuntimes is what the workspace image ships, quoted verbatim to
-	// users and agents so nobody has to guess what is available
-	WorkspaceRuntimes = "python3 (with venv and pip), node and npm, php-cli, the go toolchain (go build works in here), sqlite3 for persistent data, plus git, curl, rsync, htop, vim and nano"
+	// users and agents so nobody has to guess what is available. It is kept lean
+	// on purpose (a big image makes every per-app container slower to create and
+	// heavier on disk); anything else installs with apt-get.
+	WorkspaceRuntimes = "python3 (with venv and pip), the go toolchain (go build works in here), sqlite3 for persistent data, plus git, curl, rsync, htop, vim and nano (install anything else, e.g. node or php, with apt-get)"
 )
 
-// IDs are the identity ranges a container is mapped into: the app's own uid/gid
-// become container root, and the subordinate ranges cover everything above it
+// IDs is the app's contiguous host uid/gid block. Container uid 0 maps to UID on
+// the host and the block runs Count ids up from there. Being one contiguous
+// range matters: it is a single uniform offset, so podman uses a kernel
+// idmapped mount (instant, no copy) instead of chowning a private copy of the
+// whole image for the mapping (which a split "0:uid:1 + 1:subuid:N" map forces).
 type IDs struct {
-	UID      int
-	GID      int
-	SubUID   int
-	SubGID   int
-	SubCount int
+	UID   int
+	GID   int
+	Count int
 }
 
 // workspaceImageTag is the image built from the current Containerfile
@@ -98,10 +106,8 @@ func containerCreateArgs(conf *appctl.AppConfig, a *store.App, home, socketFile,
 	// keeps the inode it started with
 	args = append(args, "--label", "hostit.version="+Version)
 	args = append(args,
-		"--uidmap", fmt.Sprintf("0:%d:1", ids.UID),
-		"--uidmap", fmt.Sprintf("1:%d:%d", ids.SubUID, ids.SubCount),
-		"--gidmap", fmt.Sprintf("0:%d:1", ids.GID),
-		"--gidmap", fmt.Sprintf("1:%d:%d", ids.SubGID, ids.SubCount),
+		"--uidmap", fmt.Sprintf("0:%d:%d", ids.UID, ids.Count),
+		"--gidmap", fmt.Sprintf("0:%d:%d", ids.GID, ids.Count),
 		"--network", "slirp4netns")
 	if memoryMB > 0 {
 		args = append(args, "--memory", strconv.Itoa(memoryMB)+"m")

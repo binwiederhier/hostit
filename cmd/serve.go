@@ -83,6 +83,9 @@ func execServe(c *cli.Context) error {
 		if err := manager.EnsureWorkspaceImage(); err != nil {
 			slog.Warn("Cannot prepare shared workspace image; apps will build their own", "error", err)
 		}
+		// One-off: move any app still on the old split-uid scheme onto its
+		// contiguous block, so it becomes idmapped like new apps. No-op once done.
+		manager.MigrateToBlockUIDs()
 		// Agents keep the behaviour of the binary they were exec'd from, so an
 		// upgrade only reaches them on a restart. In the background: this costs
 		// each app a moment, and the proxy should be up first.

@@ -36,8 +36,31 @@ What has to exist before this works:
 
 The plan predating this file is `~/Code/plans/260804-hostit-multiuser.md`.
 
+## Web app
+
+The dashboard can create, manage and delete apps, but working *inside* an app
+still means SSH or an external agent. These bring that into the browser.
+
+- **Terminal in the browser.** The app page shows an `ssh <app>@host` command;
+  a real terminal (xterm.js talking to a WebSocket the daemon bridges to
+  `podman exec -it` in the app's container) would give the owner a shell without
+  leaving the dashboard. Same isolation as `hostit-shell`: exec into the app's
+  own container as its uid, cookie-auth on our origin, scoped to an owned app.
+- **File browser.** `GET /api/apps/{app}/files` already lists a directory and
+  `/files/{path}` reads/writes one, so the API is there. A tree/list view with
+  view-edit-upload-delete would make small changes (fix a line in `public/`,
+  drop in a file) possible without SSH or an agent.
+- **Optional built-in agent (claude-code-style).** A chat panel on the app page
+  that drives the app's own REST API with its app-scoped token -- the pasteable
+  prompt, but hosted -- so a non-technical owner can say "make me a landing page"
+  without wiring up an external agent. Needs an LLM backend + config; the app
+  token already confines it to one app, which is most of the scoping done.
+
 ## Smaller things
 
+- **License.** Add an Apache 2.0 `LICENSE` file. The packaging already declares
+  `license: Apache 2.0` (`.goreleaser.yml`, `scripts/mkdeb.sh`), but the repo
+  has no license file, so the declared license has nothing to point at.
 - **Secrets.** `env:` values live in `hostit.yml`, which sits in the app's home
   and is served if someone points a web server at the wrong directory. A real
   secret store (or at least a separate file that is never in `public/`) would

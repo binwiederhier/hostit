@@ -204,6 +204,51 @@ func appNameFromUnit(fields []string) (string, bool) {
 // app once kept serving its old directory through an upgrade that way, with the
 // app's whole home on the internet. Restarting costs each app a moment of
 // downtime, so it only happens when the version actually changed.
+// MigrateToBlockUIDs is a one-off that moves any app still on the old split-uid
+// scheme onto its contiguous uid block, so it too creates instantly (podman
+// idmap-mounts the image) and stops holding a private chowned copy of it. New
+// apps are born on their block, so this only ever touches pre-migration apps.
+// Idempotent (an app already on its block is skipped) and best-effort (a per-app
+// failure is logged, never fatal).
+func (m *Manager) MigrateToBlockUIDs() {
+	apps, err := m.store.Apps()
+	if err != nil {
+		slog.Warn("uid migration: cannot list apps", "error", err)
+		return
+	}
+	migrated := false
+	for _, a := range apps {
+		want := m.uidFor(a.Port)
+		have, err := m.ops.LookupUID(a.Name)
+		if err != nil {
+			slog.Warn("uid migration: cannot read app uid, skipping", "app", a.Name, "error", err)
+			continue
+		}
+		if have == want {
+			continue // already on its block
+		}
+		started := time.Now()
+		// Stop the app first: usermod refuses a uid change while the user has live
+		// processes, and removing the container frees its old chowned image copy.
+		_, _ = m.runner.Run("systemctl", "stop", unitName(a.Name))
+		_, _ = m.runner.Run("podman", "rm", "--force", containerName(a.Name))
+		if err := m.ops.RemapUser(a.Name, m.appHome(a.Name), want); err != nil {
+			slog.Error("uid migration: cannot remap app, left as-is", "app", a.Name, "from", have, "to", want, "error", err)
+			continue
+		}
+		if _, err := m.Ensure(a.Name); err != nil {
+			slog.Error("uid migration: remapped but could not restart", "app", a.Name, "error", err)
+			continue
+		}
+		migrated = true
+		slog.Info("uid migration: moved app to its uid block", "app", a.Name, "from", have, "to", want, "took", time.Since(started).Round(time.Second))
+	}
+	// The nftables rules key off the uid, so rebuild them once the uids have moved
+	if migrated {
+		m.ReconcilePortRules()
+	}
+}
+
 func (m *Manager) RestartStaleAgents(version string) ([]string, error) {
 	settings, err := m.store.Settings()
 	if err != nil {

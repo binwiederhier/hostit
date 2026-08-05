@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"heckel.io/hostit/appctl"
 )
 
 func TestScaffoldFiles(t *testing.T) {
@@ -15,25 +14,15 @@ func TestScaffoldFiles(t *testing.T) {
 	// The app directory holds the app's files and nothing of hostit's own: the
 	// platform explains itself through the login banner, "hostit guide" and /docs
 	assert.NotContains(t, files, "HOSTIT.txt")
-	// A new app runs as a static stub, so plain HTML works with no runtime
-	assert.Contains(t, files["hostit.yml"], "mode: static")
-	// Everyone must be told this is a stub, what is installed, and what to build with
-	for _, name := range []string{"README.md", appctl.PublicDir + "/index.html"} {
-		assert.Contains(t, strings.ToLower(files[name]), "stub", "%s must say it is a stub", name)
-		assert.Contains(t, files[name], "python3", "%s must list the runtimes", name)
-		assert.Contains(t, files[name], "php", "%s must list the runtimes", name)
-		assert.Contains(t, files[name], "Go binary", "%s must suggest the stack", name)
-	}
-	assert.Contains(t, files["README.md"], "# blog")
-}
-
-func TestDemoPage(t *testing.T) {
-	t.Parallel()
-	page := demoPage("blog", "apps.example.com")
-	assert.Contains(t, page, "<title>blog (stub)</title>")
-	assert.Contains(t, page, "ssh blog@apps.example.com")
-	assert.Contains(t, page, "max-width: 620px")
-	assert.Contains(t, page, "width: 100%;") // %% unescaped exactly once
-	assert.NotContains(t, page, "%%")
-	assert.NotContains(t, page, "%!") // No Sprintf argument errors
+	// A new app runs hostit's built-in placeholder: a real backend, so the app
+	// proves it can execute code, not just serve files
+	assert.Contains(t, files["hostit.yml"], "mode: app")
+	assert.Contains(t, files["hostit.yml"], "hostit placeholder")
+	// No static page is scaffolded: the placeholder backend serves its own
+	assert.NotContains(t, files, "public/index.html")
+	// The README still tells everyone this is a stub and what to build with
+	readme := files["README.md"]
+	assert.Contains(t, strings.ToLower(readme), "stub")
+	assert.Contains(t, readme, "# blog")
+	assert.Contains(t, readme, "Go binary")
 }

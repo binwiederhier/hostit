@@ -28,9 +28,6 @@ const (
 	// AppsGroup owns the sudoers grant that lets app users enter their own
 	// container (and nothing else); see /etc/sudoers.d/hostit
 	AppsGroup = "hostit-apps"
-	// subUIDFile and subGIDFile hold the subordinate ranges containers map into
-	subUIDFile = "/etc/subuid"
-	subGIDFile = "/etc/subgid"
 )
 
 // systemOps is the real SystemOps implementation; it shells out to the usual
@@ -62,31 +59,51 @@ func (o *systemOps) LookupUID(username string) (int, error) {
 // useradd would copy /etc/skel in with it. An app's directory should hold the
 // app's files and hostit's own, not four dotfiles from the distribution that
 // its owner never asked for and an agent has to look past.
-func (o *systemOps) CreateUser(username, home string) error {
+func (o *systemOps) CreateUser(username, home string, uid int) error {
 	if err := os.MkdirAll(filepath.Dir(home), 0o755); err != nil {
 		return err
 	}
-	args := createUserArgs(username, home)
+	// A group at the same id as the user, so the container's uid and gid blocks
+	// are the one contiguous host range that lets podman idmap-mount the image.
+	if err := run("groupadd", "--gid", strconv.Itoa(uid), username); err != nil {
+		return err
+	}
+	args := createUserArgs(username, home, uid)
 	if err := run(args[0], args[1:]...); err != nil {
 		return err
 	}
 	if err := os.MkdirAll(home, homeMode); err != nil {
 		return err
 	}
-	uid, gid, err := lookupIDs(username)
-	if err != nil {
-		return err
-	}
-	if err := os.Lchown(home, uid, gid); err != nil {
+	if err := os.Lchown(home, uid, uid); err != nil {
 		return err
 	}
 	return os.Chmod(home, homeMode)
 }
 
-// createUserArgs is the useradd command for a new app user
-func createUserArgs(username, home string) []string {
+// createUserArgs is the useradd command for a new app user, pinned to a specific
+// uid/gid (its contiguous id block; see IDs)
+func createUserArgs(username, home string, uid int) []string {
+	id := strconv.Itoa(uid)
 	return []string{"useradd", "--no-create-home", "--home-dir", home, "--shell", userShellFile,
-		"--groups", AppsGroup, "--comment", "hostit app", username}
+		"--uid", id, "--gid", id, "--groups", AppsGroup, "--comment", "hostit app", username}
+}
+
+// RemapUser moves an existing app user and its home to a new uid/gid block. Used
+// only by the one-off migration to contiguous blocks; the app must be stopped
+// first, since usermod refuses a uid change while the user has live processes.
+func (o *systemOps) RemapUser(username, home string, uid int) error {
+	id := strconv.Itoa(uid)
+	if err := run("groupmod", "--gid", id, username); err != nil {
+		return err
+	}
+	if err := run("usermod", "--uid", id, "--gid", username, username); err != nil {
+		return err
+	}
+	// Flatten every file in the home to the new base: usermod only rechowns files
+	// still owned by the old primary uid, not ones a container process wrote as a
+	// subordinate uid.
+	return run("chown", "-R", id+":"+id, home)
 }
 
 // DeleteUser stops everything the user runs and removes the account including
@@ -108,22 +125,15 @@ func (o *systemOps) DeleteUser(username string) error {
 	return err
 }
 
-// LookupIDs returns the identity ranges a container is mapped into: the user's
-// own uid/gid (which become container root) plus their subordinate ranges
+// LookupIDs returns the app's contiguous id block: its uid/gid (which become
+// container root) and the block size that runs up from there. No /etc/subuid
+// lookup: the block is [uid, uid+uidBlockSize), mapped explicitly by root.
 func (o *systemOps) LookupIDs(username string) (IDs, error) {
 	uid, gid, err := lookupIDs(username)
 	if err != nil {
 		return IDs{}, err
 	}
-	subUID, count, err := lookupSubID(subUIDFile, username)
-	if err != nil {
-		return IDs{}, err
-	}
-	subGID, _, err := lookupSubID(subGIDFile, username)
-	if err != nil {
-		return IDs{}, err
-	}
-	return IDs{UID: uid, GID: gid, SubUID: subUID, SubGID: subGID, SubCount: count}, nil
+	return IDs{UID: uid, GID: gid, Count: uidBlockSize}, nil
 }
 
 // ImageExists reports whether the daemon's image store holds the given image
@@ -134,28 +144,6 @@ func (o *systemOps) ImageExists(tag string) bool {
 // BuildImage builds an image into the daemon's image store, shared by all apps
 func (o *systemOps) BuildImage(contextDir, tag string) error {
 	return run("podman", "build", "--tag", tag, contextDir)
-}
-
-// lookupSubID reads a user's subordinate id range from /etc/subuid or /etc/subgid
-func lookupSubID(filename, username string) (start int, count int, err error) {
-	b, err := os.ReadFile(filename)
-	if err != nil {
-		return 0, 0, err
-	}
-	for _, line := range strings.Split(string(b), "\n") {
-		fields := strings.Split(strings.TrimSpace(line), ":")
-		if len(fields) != 3 || fields[0] != username {
-			continue
-		}
-		if start, err = strconv.Atoi(fields[1]); err != nil {
-			return 0, 0, err
-		}
-		if count, err = strconv.Atoi(fields[2]); err != nil {
-			return 0, 0, err
-		}
-		return start, count, nil
-	}
-	return 0, 0, fmt.Errorf("no subordinate id range for %s in %s", username, filename)
 }
 
 // WriteAuthorizedKeys updates the hostit-managed block of the app's

@@ -8,44 +8,38 @@ import { CopyButton, ErrorBanner, formatDate, formatUsage, Loading, Snippet, Sta
 const origin = window.location.origin;
 const tokenPlaceholder = "<this app has no agent token>";
 
-// The whole point of this page: a ready-to-paste prompt that teaches any agent
-// how to drive this one app. It only points at the app's own info endpoint,
-// which returns everything else the agent needs.
+// The whole point of this page: a short, ready-to-paste prompt that points an
+// agent at the app's own info endpoint. Everything the agent needs to know about
+// the API is returned by that call, so the prompt stays small and does not
+// duplicate it -- it only sets the agent's stance: learn the API, then wait for
+// the owner rather than interrogating them or building on a guess.
 //
 // Two shapes, because they are two different jobs. A stub is an invitation to
 // build. An app whose agent has written a description into hostit.yml is
 // finished work someone is coming back to: say that up front, or the next
 // session reads a "build me an app" prompt and starts over on top of it.
 const promptText = (name, url, token, description) => {
-  const api = `The app can be managed entirely through the hostit REST API. You can learn more about how to use the API by calling ${origin}/api/apps/${name}/info, using the Bearer token ${token}. Follow the instructions returned by the API.`;
+  const apiLine = `Manage it through the hostit REST API: call ${origin}/api/apps/${name}/info with the Bearer token ${token} to learn how, then follow what it returns.`;
   if (!description) {
-    return `I want to build a web app called "${name}" hosted at ${url}.
+    return `I've created a hostit app called "${name}" at ${url}.
 
-The app currently serves a placeholder page. Replace it.
+${apiLine}
 
-${api}
-
-Keep the app's own documentation in docs/, and update it after every change that matters.
-
-Don't build anything just yet. Check with me first: explore the API, then tell me what you found and ask me what I want the app to do.
+Read that, then reply exactly: "I understand the hostit API. I'm ready to build. Tell me what you want to make." Do not ask exploratory questions and do not build anything until I tell you what to make.
 `;
   }
   const details = description
     .split("\n")
     .map((line) => `  ${line}`)
     .join("\n");
-  return `I want to continue working on my existing web app "${name}", hosted at ${url}.
+  return `I'm continuing work on my hostit app "${name}" at ${url}.
 
 App details:
 ${details}
 
-The app is already built and live. Do not rebuild it from scratch.
+${apiLine}
 
-${api}
-
-The app's own documentation is in docs/. Read it before changing anything, and update it after every change that matters.
-
-Don't change anything just yet. Check with me first: explore the API, read the app's README.md and docs/, then tell me what it does today and wait for my instructions.
+Read that and the app's README.md and docs/, then reply exactly: "I understand the hostit API and this app. I'm ready to continue. Tell me what you want to change." Do not rebuild it from scratch, do not ask exploratory questions, and do not change anything until I tell you what to do.
 `;
 };
 

@@ -11,8 +11,8 @@
 - a **subdomain** (`myapp.apps.example.com`) with **automatic Let's Encrypt TLS**
 - two ways to run: `mode: static` (hostit serves `public/`) or `mode: app` (your
   command, supervised by the hostit agent) -- deployed with a single `hostit up`
-- a workspace with **python3, node/npm, php-cli, go and sqlite3** preinstalled
-  (and root, so `apt-get install` anything else)
+- a lean workspace with **python3, go and sqlite3** preinstalled (and root, so
+  `apt-get install` node, php or anything else you need)
 
 Multi-user: people sign in with Google, an admin approves them from a small web
 app, and each user gets their own apps within admin-adjustable limits (app count,

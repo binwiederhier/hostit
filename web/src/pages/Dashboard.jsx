@@ -38,6 +38,39 @@ const CreateForm = ({ name, setName, onSubmit, creating, atLimit, big = false, i
   );
 };
 
+// New app behind a modal, reached from the "New app" button. A dialog asks for
+// the one thing needed -- the name -- instead of a field unfolding in place,
+// which read as an odd half-state next to the app list.
+const NewAppDialog = ({ name, setName, onSubmit, creating, atLimit, onCancel }) => {
+  const valid = nameRe.test(name);
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true">
+      <form className="card modal" onSubmit={onSubmit}>
+        <h2>New app</h2>
+        <p>Give it a name. It becomes the subdomain and the SSH login, and cannot be changed later.</p>
+        <input
+          type="text"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="app name, e.g. blog"
+          aria-label="New app name"
+          autoFocus
+          disabled={creating}
+        />
+        <p className="hint">{nameHint}</p>
+        <div className="btn-row">
+          <button type="button" className="btn" onClick={onCancel} disabled={creating}>
+            Cancel
+          </button>
+          <button type="submit" className="btn btn-primary" disabled={creating || !valid || atLimit}>
+            {creating ? "Creating..." : "Create app"}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+};
+
 // What a brand-new account sees. It has to answer "what is this and what do I
 // do now?" on its own, so: the mark, one line of pitch, and the one action.
 const EmptyState = (props) => (
@@ -135,9 +168,9 @@ const Dashboard = ({ account, refreshAccount }) => {
     }
   };
 
-  const startAdding = () => {
-    setAdding(true);
-    setTimeout(() => inputRef.current && inputRef.current.focus(), 0);
+  const cancelAdding = () => {
+    setAdding(false);
+    setName("");
   };
 
   const formProps = { name, setName, onSubmit: create, creating, atLimit, inputRef };
@@ -151,8 +184,8 @@ const Dashboard = ({ account, refreshAccount }) => {
           <span className="usage">
             {account.usage.apps} of {account.limits.app_limit} apps used
           </span>
-          {!empty && !adding && (
-            <button type="button" className="btn btn-primary" onClick={startAdding} disabled={atLimit}>
+          {!empty && (
+            <button type="button" className="btn btn-primary" onClick={() => setAdding(true)} disabled={atLimit}>
               New app
             </button>
           )}
@@ -163,7 +196,6 @@ const Dashboard = ({ account, refreshAccount }) => {
       {!empty && (
         <div className="card">
           {apps === null && !error && <Loading label="Loading apps..." />}
-          {adding && <CreateForm {...formProps} />}
           {apps !== null && apps.length > 0 && (
             <>
               <div className="table-wrap">
@@ -188,6 +220,9 @@ const Dashboard = ({ account, refreshAccount }) => {
             </>
           )}
         </div>
+      )}
+      {adding && (
+        <NewAppDialog name={name} setName={setName} onSubmit={create} creating={creating} atLimit={atLimit} onCancel={cancelAdding} />
       )}
     </>
   );

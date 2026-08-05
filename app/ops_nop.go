@@ -34,10 +34,14 @@ func (o *NopSystemOps) LookupUID(username string) (int, error) {
 }
 
 func (o *NopSystemOps) LookupIDs(username string) (IDs, error) {
-	return IDs{UID: 1001, GID: 1001, SubUID: 100000, SubGID: 100000, SubCount: 65536}, nil
+	return IDs{UID: 1001, GID: 1001, Count: 65536}, nil
 }
 
-func (o *NopSystemOps) CreateUser(username, home string) error {
+func (o *NopSystemOps) CreateUser(username, home string, uid int) error {
+	return nil
+}
+
+func (o *NopSystemOps) RemapUser(username, home string, uid int) error {
 	return nil
 }
 

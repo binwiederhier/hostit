@@ -76,6 +76,33 @@ func TestUpInvalidConfig(t *testing.T) {
 	assert.Contains(t, err.Error(), "hostit.yml")
 }
 
+func TestMigrateToBlockUIDsRemapsOldApps(t *testing.T) {
+	t.Parallel()
+	m, ops, runner := newTestDeployManager(t)
+	a := createTestApp(t, m, "blog")
+	// New apps are already on their block; force an old split-scheme uid to
+	// simulate an app that predates the migration.
+	ops.setUID("blog", 1005)
+	runner.reset()
+
+	m.MigrateToBlockUIDs()
+
+	// It was moved onto its contiguous block, and its old container was torn down
+	// so the new (idmapped) one could take its place.
+	want := m.uidFor(a.Port)
+	got, err := ops.LookupUID("blog")
+	require.NoError(t, err)
+	assert.Equal(t, want, got)
+	joined := runner.ran()
+	assert.Contains(t, joined, "systemctl stop hostit-app@blog")
+	assert.Contains(t, joined, "podman rm --force hostit-app-blog")
+
+	// Idempotent: an app already on its block is left untouched
+	runner.reset()
+	m.MigrateToBlockUIDs()
+	assert.NotContains(t, runner.ran(), "podman rm --force hostit-app-blog")
+}
+
 func TestUpRefusesASymlinkedConfig(t *testing.T) {
 	t.Parallel()
 	m, _, _ := newTestDeployManager(t)

@@ -135,7 +135,7 @@ func (s *Server) agentGuide(appName, description string) *apiAgentInfoResponse {
 			"a new app starts as a stub serving a placeholder page.",
 		SuggestedStack: "A single Go binary that embeds its frontend (go:embed) is the easiest thing to run here: " +
 			"one file, no runtime to install, instant start. Use run: ./" + appctl.BinDir + "/myapp listening on 0.0.0.0:$PORT. " +
-			"Python, Node and PHP work equally well, and a plain HTML site needs only mode: static.\n\n" +
+			"Python works out of the box, a plain HTML site needs only mode: static, and node, php or anything else installs with apt-get.\n\n" +
 			"Prefer keeping the source here: upload it to " + appctl.SrcDir + "/ and build it in the container with a " +
 			"\"prepare:\" step in hostit.yml, e.g. prepare: cd " + appctl.SrcDir + " && go build -o ../" + appctl.BinDir + "/myapp . " +
 			"Prepare runs before the app starts, on every deploy; if it fails the app is not started and the error is in the logs. " +

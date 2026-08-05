@@ -63,7 +63,8 @@ type SystemOps interface {
 	UserExists(username string) bool
 	LookupUID(username string) (int, error)
 	LookupIDs(username string) (IDs, error)
-	CreateUser(username, home string) error
+	CreateUser(username, home string, uid int) error
+	RemapUser(username, home string, uid int) error
 	DeleteUser(username string) error
 	WriteAuthorizedKeys(username, home string, keys []string) error
 	WriteScaffold(username, home string, files map[string]string) error
@@ -140,6 +141,12 @@ func NewManager(conf *config.Config, s *store.Store, ops SystemOps, runner Runne
 // SSH access and scaffolds the home directory. Its authorized_keys are the union
 // of the request keys and the owner's profile keys; an app with neither is fine,
 // since apps are driven through the API and SSH is opt-in.
+// uidFor is an app's base uid: a contiguous uidBlockSize-wide block, one per
+// app, spaced by port so blocks never overlap. Container uid 0 maps here.
+func (m *Manager) uidFor(port int) int {
+	return uidBlockStart + (port-m.config.PortMin)*uidBlockSize
+}
+
 func (m *Manager) CreateApp(name string, opts *CreateOptions) (*store.App, error) {
 	if opts == nil {
 		opts = &CreateOptions{}
@@ -158,9 +165,11 @@ func (m *Manager) CreateApp(name string, opts *CreateOptions) (*store.App, error
 	appKeys := opts.RequestKeys
 	sshKeys := append(append([]string{}, appKeys...), opts.ProfileKeys...)
 
-	// Create the user, install keys and scaffold the home directory
+	// Create the user, install keys and scaffold the home directory. The uid is a
+	// contiguous block derived from the (unique) port, so the container maps as a
+	// single offset and podman idmap-mounts the image instead of copying it.
 	home := filepath.Join(m.config.AppsDir, name)
-	if err := m.ops.CreateUser(name, home); err != nil {
+	if err := m.ops.CreateUser(name, home, m.uidFor(port)); err != nil {
 		return nil, fmt.Errorf("cannot create user %s: %w", name, err)
 	}
 	cleanup := func() {

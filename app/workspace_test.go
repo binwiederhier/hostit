@@ -12,7 +12,7 @@ import (
 	"heckel.io/hostit/store"
 )
 
-var testIDs = IDs{UID: 1001, GID: 1001, SubUID: 165536, SubGID: 165536, SubCount: 65536}
+var testIDs = IDs{UID: 1001, GID: 1001, Count: 65536}
 
 func TestContainerCreateArgsWorkspaceMode(t *testing.T) {
 	t.Parallel()
@@ -27,6 +27,11 @@ func TestContainerCreateArgsWorkspaceMode(t *testing.T) {
 	assert.Contains(t, cmd, "--env HOME=/home/blog")
 	assert.Contains(t, cmd, "--workdir /home/blog")
 	assert.Contains(t, cmd, "--publish 127.0.0.1:10000:80")
+	// A single contiguous id block, container 0 -> host 1001, so podman idmaps the
+	// image (no per-app copy) rather than chowning it. Not the old split map.
+	assert.Contains(t, cmd, "--uidmap 0:1001:65536")
+	assert.Contains(t, cmd, "--gidmap 0:1001:65536")
+	assert.NotContains(t, cmd, "--uidmap 0:1001:1")
 	assert.Contains(t, cmd, "--volume /srv/hostit/apps/blog:/home/blog")
 	assert.Contains(t, cmd, "--volume /usr/bin/hostit:/usr/bin/hostit:ro")
 	assert.Contains(t, cmd, "--volume /run/hostit:/run/hostit")
@@ -60,10 +65,15 @@ func TestWorkspaceContainerfile(t *testing.T) {
 	assert.Contains(t, workspaceContainerfile, "openssh-sftp-server")
 	assert.Contains(t, workspaceContainerfile, "rsync")
 	assert.Contains(t, workspaceContainerfile, "FROM docker.io/library/debian")
-	// A persistent app keeps its data in a SQLite file; ship the CLI so an owner
-	// can inspect it over SSH and PHP's driver so PDO works
+	// Kept: the flagship Go toolchain, python for quick apps, and sqlite3 so an
+	// owner can inspect a persistent app's database over SSH
+	assert.Contains(t, workspaceContainerfile, "golang-go")
+	assert.Contains(t, workspaceContainerfile, "python3")
 	assert.Contains(t, workspaceContainerfile, "sqlite3")
-	assert.Contains(t, workspaceContainerfile, "php-sqlite3")
+	// Dropped to keep the image small (they inflate every per-app container and
+	// the disk); an app that needs them installs them with apt-get
+	assert.NotContains(t, workspaceContainerfile, "nodejs")
+	assert.NotContains(t, workspaceContainerfile, "php")
 }
 
 func TestContainerMountsTheSocketDirectory(t *testing.T) {

@@ -1,6 +1,7 @@
 package app
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -48,9 +49,10 @@ func TestContainerRunsUnderTheAppsOwnIdentity(t *testing.T) {
 	joined := runner.ran()
 	// Container root maps to the app's unprivileged uid, so an escape lands
 	// there rather than on real root, and its own network stack keeps it from
-	// reaching other apps
-	assert.Contains(t, joined, "--uidmap 0:1001:1")
-	assert.Contains(t, joined, "--gidmap 0:1001:1")
+	// reaching other apps. One contiguous block, so podman idmap-mounts the image.
+	uid := m.uidFor(10000)
+	assert.Contains(t, joined, fmt.Sprintf("--uidmap 0:%d:65536", uid))
+	assert.Contains(t, joined, fmt.Sprintf("--gidmap 0:%d:65536", uid))
 	assert.Contains(t, joined, "--network slirp4netns")
 	assert.Contains(t, joined, "--publish 127.0.0.1:10000:80")
 }

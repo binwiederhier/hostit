@@ -211,7 +211,7 @@ func (f *fakeSystemOps) BuildImage(contextDir, tag string) error {
 
 func (f *fakeSystemOps) LookupIDs(username string) (IDs, error) {
 	uid, _ := f.LookupUID(username)
-	return IDs{UID: uid, GID: uid, SubUID: 100000 + uid*65536, SubGID: 100000 + uid*65536, SubCount: 65536}, nil
+	return IDs{UID: uid, GID: uid, Count: 65536}, nil
 }
 
 func (f *fakeSystemOps) UserExists(username string) bool {
@@ -234,15 +234,29 @@ func (f *fakeSystemOps) LookupUID(username string) (int, error) {
 	return 1001, nil
 }
 
-func (f *fakeSystemOps) CreateUser(username, home string) error {
+func (f *fakeSystemOps) CreateUser(username, home string, uid int) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.createUserErr != nil {
 		return f.createUserErr
 	}
 	f.createdUsers = append(f.createdUsers, username)
-	f.uids[username] = 1000 + len(f.createdUsers)
+	f.uids[username] = uid
 	return nil
+}
+
+func (f *fakeSystemOps) RemapUser(username, home string, uid int) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.uids[username] = uid
+	return nil
+}
+
+// setUID forces a user's uid, to simulate an app created before the block scheme
+func (f *fakeSystemOps) setUID(username string, uid int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.uids[username] = uid
 }
 
 func (f *fakeSystemOps) DeleteUser(username string) error {
