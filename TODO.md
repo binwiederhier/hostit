@@ -55,6 +55,12 @@ still means SSH or an external agent. These bring that into the browser.
   prompt, but hosted -- so a non-technical owner can say "make me a landing page"
   without wiring up an external agent. Needs an LLM backend + config; the app
   token already confines it to one app, which is most of the scoping done.
+- **Bug: assistant tool-group count flickers.** In the chat transcript, when a
+  collapsed tool group grows (e.g. "2 actions" -> "3 actions" as the next tool
+  streams in), the chip flickers. Likely the group re-renders/remounts as the
+  streamed items are folded into a group in `renderTranscript`/`ToolGroup`
+  (AppAssistant.jsx) -- stabilise the group's key/identity so the count updates
+  in place instead of the chip briefly disappearing.
 
 ## Hard disk quotas
 
