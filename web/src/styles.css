@@ -182,13 +182,13 @@ p {
 }
 
 .nav-inner {
+  position: relative;
   max-width: 920px;
   margin: 0 auto;
   padding: 10px 16px;
   display: flex;
   align-items: center;
   gap: 18px;
-  flex-wrap: wrap;
 }
 
 .nav-brand {
@@ -197,6 +197,36 @@ p {
 
 .nav-brand:hover {
   text-decoration: none;
+}
+
+/* The links and session sit inline on wide screens; the burger is hidden. */
+.nav-menu {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 18px;
+  min-width: 0;
+}
+
+.nav-burger {
+  display: none;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  width: 36px;
+  height: 34px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+  cursor: pointer;
+}
+
+.nav-burger span {
+  display: block;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--text);
 }
 
 .nav-links {
@@ -237,6 +267,48 @@ p {
   text-overflow: ellipsis;
   white-space: nowrap;
   max-width: 220px;
+}
+
+/* Narrow screens: collapse the links and session behind the burger. */
+@media (max-width: 640px) {
+  .nav-inner {
+    justify-content: space-between;
+  }
+  .nav-burger {
+    display: flex;
+  }
+  .nav-menu {
+    display: none;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    flex: none;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+    padding: 14px 16px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    box-shadow: 0 10px 18px rgba(0, 0, 0, 0.09);
+  }
+  .nav-menu-open {
+    display: flex;
+  }
+  .nav-links {
+    flex-direction: column;
+    gap: 2px;
+  }
+  .nav-links a {
+    padding: 9px 10px;
+  }
+  .nav-session {
+    margin-left: 0;
+    justify-content: space-between;
+  }
+  .nav-email {
+    max-width: none;
+  }
 }
 
 /* Cards */
@@ -1184,7 +1256,9 @@ th:last-child {
 .asst-page {
   display: flex;
   flex-direction: column;
-  height: calc(100vh - 120px);
+  /* dvh, not vh: mobile browsers count the address-bar area in vh, which pushes
+     the input field behind it (seen in Firefox on Android). */
+  height: calc(100dvh - 120px);
   min-height: 400px;
 }
 
@@ -1265,7 +1339,13 @@ th:last-child {
   color: var(--danger);
 }
 
-/* Markdown inside an assistant bubble: keep it tight, not document-spaced. */
+/* Markdown inside an assistant bubble: keep it tight, not document-spaced. The
+   bubble sets white-space: pre-wrap for plain user text; reset it here or the
+   newlines between markdown block tags render as big blank gaps. */
+.asst-md {
+  white-space: normal;
+}
+
 .asst-md > :first-child {
   margin-top: 0;
 }

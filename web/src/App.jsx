@@ -80,34 +80,52 @@ const LoadFailed = ({ message, onRetry }) => (
   </div>
 );
 
-const Nav = ({ account }) => (
-  <header className="nav">
-    <div className="nav-inner">
-      <Link to="/" className="nav-brand">
-        <Wordmark />
-      </Link>
-      <nav className="nav-links">
-        <NavLink to="/" end>
-          Dashboard
-        </NavLink>
-        <NavLink to="/profile">Profile</NavLink>
-        {account.role === "admin" && <NavLink to="/admin">Admin</NavLink>}
-        {/* A reference you read alongside the app, so: its own tab */}
-        <a href="/docs" target="_blank" rel="noreferrer">
-          Docs
-        </a>
-      </nav>
-      <div className="nav-session">
-        <span className="nav-email" title={account.email}>
-          {account.email}
-        </span>
-        <button type="button" className="btn btn-small" onClick={logout}>
-          Logout
+const Nav = ({ account }) => {
+  // On a narrow screen the links and session collapse behind a burger.
+  const [open, setOpen] = useState(false);
+  const close = () => setOpen(false);
+  return (
+    <header className="nav">
+      <div className="nav-inner">
+        <Link to="/" className="nav-brand" onClick={close}>
+          <Wordmark />
+        </Link>
+        <button
+          type="button"
+          className="nav-burger"
+          onClick={() => setOpen((o) => !o)}
+          aria-label="Menu"
+          aria-expanded={open}
+        >
+          <span />
+          <span />
+          <span />
         </button>
+        <div className={`nav-menu${open ? " nav-menu-open" : ""}`}>
+          <nav className="nav-links" onClick={close}>
+            <NavLink to="/" end>
+              Dashboard
+            </NavLink>
+            <NavLink to="/profile">Profile</NavLink>
+            {account.role === "admin" && <NavLink to="/admin">Admin</NavLink>}
+            {/* A reference you read alongside the app, so: its own tab */}
+            <a href="/docs" target="_blank" rel="noreferrer">
+              Docs
+            </a>
+          </nav>
+          <div className="nav-session">
+            <span className="nav-email" title={account.email}>
+              {account.email}
+            </span>
+            <button type="button" className="btn btn-small" onClick={logout}>
+              Logout
+            </button>
+          </div>
+        </div>
       </div>
-    </div>
-  </header>
-);
+    </header>
+  );
+};
 
 const App = () => {
   const [account, setAccount] = useState(undefined); // undefined = loading, null = not logged in
