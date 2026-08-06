@@ -459,6 +459,10 @@ const AppDetail = ({ account, refreshAccount }) => {
             onAction={lifecycle}
             onDelete={() => setConfirmDelete(true)}
           />
+          {/* Build/change the app from the browser, no local machine needed */}
+          <Link className="btn" to={`/app/${app.name}/assistant`}>
+            Build with AI
+          </Link>
           {/* A shell in the container, in the browser -- only useful while it runs */}
           {app.running && (
             <button type="button" className="btn" onClick={() => setShowTerminal(true)}>

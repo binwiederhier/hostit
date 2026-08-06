@@ -19,6 +19,7 @@ import (
 	"github.com/caddyserver/certmagic"
 	"golang.org/x/sync/errgroup"
 	"heckel.io/hostit/app"
+	"heckel.io/hostit/assistant"
 	"heckel.io/hostit/config"
 	"heckel.io/hostit/store"
 	"heckel.io/hostit/user"
@@ -34,13 +35,14 @@ const (
 
 // Server is the hostit daemon; create with New, run with Run
 type Server struct {
-	config   *config.Config
-	apps     *app.Manager
-	users    *user.Manager
-	sessions *sessionManager
-	api      http.Handler
-	socket   http.Handler
-	proxy    http.Handler
+	config    *config.Config
+	apps      *app.Manager
+	users     *user.Manager
+	assistant *assistant.Manager // nil unless an Anthropic API key is configured
+	sessions  *sessionManager
+	api       http.Handler
+	socket    http.Handler
+	proxy     http.Handler
 
 	// usernameForUID maps a peer-credential UID to a username; overridden in tests
 	usernameForUID func(uid int) (string, error)
@@ -60,6 +62,11 @@ func New(conf *config.Config, apps *app.Manager, users *user.Manager) *Server {
 		usernameForUID: usernameForUID,
 	}
 	s.exchangeGoogleCode = s.exchangeGoogleCodeLive
+	// The built-in coding assistant, if an API key is configured. Its tools are the
+	// app's own operations, so it is confined to one app the way an agent token is.
+	if conf.AssistantEnabled() {
+		s.assistant = assistant.NewManager(assistant.NewClient(conf.AnthropicAPIKey), &appOps{apps: apps}, conf.AssistantModel)
+	}
 	// The web app and REST API get the full header set (CSP, framing denial) plus
 	// the base headers; the public proxy gets only the base headers, so proxied
 	// tenant apps are not straitjacketed by our CSP.

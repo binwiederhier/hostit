@@ -1,0 +1,112 @@
+package assistant
+
+import (
+	"encoding/json"
+)
+
+// Message is one turn in the conversation sent to the model. Content is a list of
+// blocks because a single turn can carry several things at once: the model's
+// thinking, its text, and its tool calls; our tool results go back the same way.
+type Message struct {
+	Role    string         `json:"role"` // "user" or "assistant"
+	Content []ContentBlock `json:"content"`
+}
+
+// ContentBlock is one piece of a message. The Anthropic API uses a tagged union
+// keyed on Type; we keep every field on one struct with omitempty so a block
+// round-trips unchanged -- crucially the thinking block's Signature, which the
+// API rejects a follow-up turn without.
+type ContentBlock struct {
+	Type string `json:"type"`
+
+	// type: text
+	Text string `json:"text,omitempty"`
+
+	// type: thinking / redacted_thinking
+	Thinking  string `json:"thinking,omitempty"`
+	Signature string `json:"signature,omitempty"`
+	Data      string `json:"data,omitempty"`
+
+	// type: tool_use
+	ID    string          `json:"id,omitempty"`
+	Name  string          `json:"name,omitempty"`
+	Input json.RawMessage `json:"input,omitempty"`
+
+	// type: tool_result
+	ToolUseID string `json:"tool_use_id,omitempty"`
+	Content   any    `json:"content,omitempty"`
+	IsError   bool   `json:"is_error,omitempty"`
+}
+
+// Tool is a function the model may call. InputSchema is a JSON Schema object
+// describing the arguments; the model fills it in and we dispatch on Name.
+type Tool struct {
+	Name        string          `json:"name"`
+	Description string          `json:"description"`
+	InputSchema json.RawMessage `json:"input_schema"`
+}
+
+// thinkingConfig turns on extended thinking with a token budget. The model
+// reasons before it answers or calls a tool, and returns that reasoning as
+// thinking blocks we stream to the UI and feed back on the next turn.
+type thinkingConfig struct {
+	Type         string `json:"type"` // "enabled"
+	BudgetTokens int    `json:"budget_tokens"`
+}
+
+// request is the body of POST /v1/messages
+type request struct {
+	Model     string          `json:"model"`
+	MaxTokens int             `json:"max_tokens"`
+	System    string          `json:"system,omitempty"`
+	Messages  []Message       `json:"messages"`
+	Tools     []Tool          `json:"tools,omitempty"`
+	Thinking  *thinkingConfig `json:"thinking,omitempty"`
+}
+
+// response is the model's reply. StopReason is "tool_use" when it wants us to run
+// tools and feed the results back, "end_turn" when it is done.
+type response struct {
+	ID         string         `json:"id"`
+	Role       string         `json:"role"`
+	Content    []ContentBlock `json:"content"`
+	StopReason string         `json:"stop_reason"`
+	Usage      usage          `json:"usage"`
+}
+
+type usage struct {
+	InputTokens  int `json:"input_tokens"`
+	OutputTokens int `json:"output_tokens"`
+}
+
+// apiError is the body the API returns on a non-2xx response
+type apiError struct {
+	Type  string `json:"type"`
+	Error struct {
+		Type    string `json:"type"`
+		Message string `json:"message"`
+	} `json:"error"`
+}
+
+// Event is one thing that happened during a run, streamed to the client as it
+// happens so a phone watching the build sees the loop unfold: the model's
+// thinking, its text, each tool it calls, and each result.
+type Event struct {
+	Type    string `json:"type"` // thinking | text | tool_use | tool_result | done | error
+	Text    string `json:"text,omitempty"`
+	Tool    string `json:"tool,omitempty"`
+	Input   string `json:"input,omitempty"`
+	Output  string `json:"output,omitempty"`
+	IsError bool   `json:"is_error,omitempty"`
+	Error   string `json:"error,omitempty"`
+}
+
+// ExecResult is what running a command in the app's container produced. It
+// mirrors app.ExecResult but lives here so this package does not depend on the
+// app package: the server adapts one to the other.
+type ExecResult struct {
+	Output    string
+	ExitCode  int
+	Truncated bool
+	TimedOut  bool
+}

@@ -28,6 +28,9 @@ const (
 	// what a wildcard certificate requires (Let's Encrypt does not issue
 	// wildcards over HTTP-01)
 	DNSProviderRoute53 = "route53"
+	// DefaultAssistantModel is the model the built-in assistant uses unless the
+	// operator names another one
+	DefaultAssistantModel = "claude-sonnet-5"
 )
 
 var (
@@ -69,6 +72,15 @@ type Config struct {
 	AdminEmails        []string `yaml:"admin-emails"`         // These emails become active admins on first login
 	DiskCheckInterval  Duration `yaml:"disk-check-interval"`  // How often app disk usage is measured
 	Breakglass         bool     `yaml:"breakglass"`           // Allow the admin token to mint a session for an admin email (no Google); for e2e/recovery
+
+	// Built-in coding assistant (the in-browser agent). An empty API key disables it.
+	AnthropicAPIKey string `yaml:"anthropic-api-key"` // Anthropic API key for the built-in assistant; empty disables it
+	AssistantModel  string `yaml:"assistant-model"`   // Model the assistant uses; defaults to DefaultAssistantModel
+}
+
+// AssistantEnabled reports whether the built-in coding assistant is configured
+func (c *Config) AssistantEnabled() bool {
+	return c.AnthropicAPIKey != ""
 }
 
 // IsAdminEmail reports whether the given address is one of the configured admins
@@ -93,6 +105,7 @@ func NewConfig() *Config {
 		PortMin:           10000,
 		PortMax:           19999,
 		DiskCheckInterval: Duration(15 * time.Minute),
+		AssistantModel:    DefaultAssistantModel,
 	}
 }
 
