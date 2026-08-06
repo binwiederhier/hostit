@@ -66,6 +66,23 @@ still means SSH or an external agent. These bring that into the browser.
   owner's apps (with status dots) so you can jump straight to any app -- especially
   handy from an app detail page -- instead of going back to the list first. The
   item still navigates to the list on click; the caret opens the switcher.
+- **Ask host-vs-build in the new-app modal.** When creating an app, let the owner
+  pick their intent: "just host my existing app" or "build one here". The choice
+  picks the default app-detail view (below) -- host leans on details/deploy, build
+  opens the split chat+preview workspace -- so each person lands in the surface
+  that fits what they came to do.
+- **Multiple app-detail views, likely as tabs.** The page is one fixed layout
+  today (the split chat + preview). Offer a few and let the owner switch: (1) the
+  split view (now); (2) a file browser + embedded terminal (edit files, run
+  commands, no chat); (3) a details-only view (address, SSH, token, resources);
+  (4) a log view (tail of the app's output). Tabs across the top is the obvious
+  shape; the new-app intent above sets the initial tab.
+- **Defined behavior when no Anthropic key is set.** The built-in assistant needs
+  an Anthropic API key in config; today it's assumed present. Decide and implement
+  the no-key path: the assistant endpoints should report "not configured" cleanly
+  (not a 500), and the UI should hide or disable the chat surface (and default the
+  app-detail view away from the split/chat layout) so a server without a key is
+  still fully usable for hosting.
 - **Semi-live app previews on the dashboard.** Thumbnails of each app in the list.
   Browser-side screenshotting is out (the app iframe is a different origin, so its
   pixels can't be read). Two workable options: (A) scaled-down live sandboxed
