@@ -112,6 +112,65 @@ const ToolCall = ({ item }) => {
   );
 };
 
+// Consecutive tool calls collapse into one group -- expanded while they run so
+// progress is visible, collapsed once done to keep the history tidy. Each call
+// inside stays individually expandable.
+const ToolGroup = ({ tools }) => {
+  const running = tools.some((t) => t.output == null);
+  const anyError = tools.some((t) => t.isError);
+  const [override, setOverride] = useState(null); // null = follow the running state
+  const open = override ?? running;
+  const current = tools.find((t) => t.output == null) || tools[tools.length - 1];
+  return (
+    <div className="asst-group">
+      <button type="button" className="asst-group-head" onClick={() => setOverride(!open)}>
+        <span className="asst-tool-icon" aria-hidden="true">
+          {"\u{1F527}"}
+        </span>
+        <span className="asst-tool-summary">
+          {running ? summarize(current.tool, current.input) : `${tools.length} actions`}
+        </span>
+        {running && <span className="asst-tool-spinner" aria-hidden="true" />}
+        {!running && anyError && <span className="asst-tool-badge">error</span>}
+        <span className="asst-tool-chev" aria-hidden="true">
+          {open ? "▾" : "▸"}
+        </span>
+      </button>
+      {open && (
+        <div className="asst-group-body">
+          {tools.map((t) => (
+            <ToolCall key={t.id} item={t} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// renderTranscript walks the items, folding runs of tool calls into groups.
+const renderTranscript = (items) => {
+  const out = [];
+  let i = 0;
+  while (i < items.length) {
+    if (items[i].kind === "tool") {
+      const group = [];
+      while (i < items.length && items[i].kind === "tool") {
+        group.push(items[i]);
+        i++;
+      }
+      if (group.length === 1) {
+        out.push(<ToolCall key={group[0].id} item={group[0]} />);
+      } else {
+        out.push(<ToolGroup key={group[0].id} tools={group} />);
+      }
+    } else {
+      out.push(<Turn key={items[i].id} item={items[i]} />);
+      i++;
+    }
+  }
+  return out;
+};
+
 const Turn = ({ item }) => {
   switch (item.kind) {
     case "user":
@@ -303,9 +362,7 @@ const AppAssistant = () => {
             container. Try: &ldquo;make the homepage say hello in big letters&rdquo;.
           </p>
         )}
-        {items.map((item) => (
-          <Turn key={item.id} item={item} />
-        ))}
+        {renderTranscript(items)}
         {busy && <WorkingIndicator />}
       </div>
 
