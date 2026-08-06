@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useParams } from "react-router-dom";
 import { marked } from "marked";
 import DOMPurify from "dompurify";
 
@@ -230,15 +229,24 @@ const drainEvents = (buffer, onEvent) => {
   return rest;
 };
 
-const AppAssistant = () => {
-  const { name } = useParams();
+const AppAssistant = ({ name, onClose }) => {
   const [items, setItems] = useState([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const scrollRef = useRef(null);
+  const taRef = useRef(null);
   const idRef = useRef(0);
   const nextId = () => `i${idRef.current++}`;
+
+  // Grow the input with its content, up to a few lines, then scroll.
+  useEffect(() => {
+    const ta = taRef.current;
+    if (ta) {
+      ta.style.height = "auto";
+      ta.style.height = `${Math.min(ta.scrollHeight, 140)}px`;
+    }
+  }, [input]);
 
   // Load the persisted conversation once, so a reload or another device continues
   // where this one left off.
@@ -287,7 +295,7 @@ const AppAssistant = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const send = async (reset = false) => {
+  const send = async () => {
     const message = input.trim();
     if (!message || busy) return;
     setInput("");
@@ -298,7 +306,7 @@ const AppAssistant = () => {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "same-origin",
-        body: JSON.stringify({ message, reset }),
+        body: JSON.stringify({ message }),
       });
       if (!resp.ok || !resp.body) {
         const text = await resp.text().catch(() => "");
@@ -321,20 +329,13 @@ const AppAssistant = () => {
     }
   };
 
-  const clear = async () => {
-    if (busy) return;
-    try {
-      await fetch(`/api/apps/${encodeURIComponent(name)}/assistant`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "same-origin",
-        body: JSON.stringify({ message: "(new conversation)", reset: true }),
-      });
-    } catch {
-      // best effort
-    }
-    setItems([]);
-  };
+  // Escape closes the modal, matching the terminal.
+  useEffect(() => {
+    if (!onClose) return undefined;
+    const onKey = (e) => e.key === "Escape" && onClose();
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
 
   const onKeyDown = (e) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -344,40 +345,44 @@ const AppAssistant = () => {
   };
 
   return (
-    <div className="asst-page">
-      <header className="asst-header">
-        <Link to={`/app/${name}`} className="asst-back">
-          &larr; {name}
-        </Link>
-        <span className="asst-title">AI assistant (preview)</span>
-        <button type="button" className="btn btn-small" onClick={clear} disabled={busy || items.length === 0}>
-          New chat
-        </button>
-      </header>
+    <div className="modal-backdrop" role="dialog" aria-modal="true">
+      <div className="asst-window">
+        <header className="asst-header">
+          <span className="asst-title">
+            <span className="asst-title-app">{name}</span> &middot; AI assistant (preview)
+          </span>
+          <button type="button" className="term-btn asst-close" onClick={onClose} title="Close" aria-label="Close">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M4 4l8 8M12 4l-8 8" />
+            </svg>
+          </button>
+        </header>
 
-      <div className="asst-transcript" ref={scrollRef}>
-        {loaded && items.length === 0 && (
-          <p className="asst-empty">
-            Ask me to build or change <strong>{name}</strong>. I can read and write its files and run commands in its
-            container. Try: &ldquo;make the homepage say hello in big letters&rdquo;.
-          </p>
-        )}
-        {renderTranscript(items)}
-        {busy && <WorkingIndicator />}
-      </div>
+        <div className="asst-transcript" ref={scrollRef}>
+          {loaded && items.length === 0 && (
+            <p className="asst-empty">
+              Ask me to build or change <strong>{name}</strong>. I can read and write its files and run commands in its
+              container. Try: &ldquo;make the homepage say hello in big letters&rdquo;.
+            </p>
+          )}
+          {renderTranscript(items)}
+          {busy && <WorkingIndicator />}
+        </div>
 
-      <div className="asst-input">
-        <textarea
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={onKeyDown}
-          placeholder="Tell the assistant what to build or change..."
-          rows={2}
-          disabled={busy}
-        />
-        <button type="button" className="btn btn-primary" onClick={() => send()} disabled={busy || !input.trim()}>
-          Send
-        </button>
+        <div className="asst-input">
+          <textarea
+            ref={taRef}
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={onKeyDown}
+            placeholder="Tell the assistant what to build or change..."
+            rows={1}
+            disabled={busy}
+          />
+          <button type="button" className="btn btn-primary asst-send" onClick={() => send()} disabled={busy || !input.trim()}>
+            Send
+          </button>
+        </div>
       </div>
     </div>
   );

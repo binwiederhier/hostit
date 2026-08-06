@@ -1252,38 +1252,53 @@ th:last-child {
   margin-top: 18px;
 }
 
-/* Built-in AI assistant (PoC): a full-height chat that streams the agent loop. */
-.asst-page {
+/* Built-in AI assistant (PoC): a modal chat that streams the agent loop. */
+.asst-window {
   display: flex;
   flex-direction: column;
-  /* dvh, not vh: mobile browsers count the address-bar area in vh, which pushes
-     the input field behind it (seen in Firefox on Android). */
-  height: calc(100dvh - 120px);
-  min-height: 400px;
+  width: min(92vw, 820px);
+  height: min(85vh, 760px);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
 }
 
 .asst-header {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding-bottom: 10px;
+  padding: 10px 12px;
+  background: var(--surface-2);
   border-bottom: 1px solid var(--border);
-}
-
-.asst-back {
-  font-weight: 600;
 }
 
 .asst-title {
   color: var(--muted);
-  font-size: 14px;
+  font-size: 13px;
   margin-right: auto;
+}
+
+.asst-title-app {
+  color: var(--text);
+  font-weight: 700;
+  font-family: var(--mono);
+}
+
+.asst-close {
+  color: var(--muted);
+}
+
+.asst-close:hover {
+  background: var(--surface);
+  color: var(--text);
 }
 
 .asst-transcript {
   flex: 1;
   overflow-y: auto;
-  padding: 14px 2px;
+  padding: 14px;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -1318,9 +1333,13 @@ th:last-child {
   color: var(--on-accent);
 }
 
+/* The assistant's own replies are not bubbled -- only what the user writes is.
+   They read as plain page text at full width. */
 .asst-text {
-  align-self: flex-start;
-  background: var(--surface-2);
+  align-self: stretch;
+  max-width: 100%;
+  padding: 0 2px;
+  background: none;
   color: var(--text);
 }
 
@@ -1557,12 +1576,52 @@ th:last-child {
 .asst-input {
   display: flex;
   gap: 8px;
-  padding-top: 10px;
+  align-items: flex-end;
+  padding: 10px 12px;
   border-top: 1px solid var(--border);
+  background: var(--surface);
 }
 
 .asst-input textarea {
   flex: 1;
   resize: none;
   font: inherit;
+  min-height: 40px;
+  max-height: 140px;
+  padding: 9px 11px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.asst-input textarea:focus {
+  outline: 2px solid var(--focus);
+  outline-offset: 0;
+}
+
+/* Compact send button that does not stretch with the growing textarea. */
+.asst-send {
+  flex: none;
+}
+
+/* On a phone, the terminal and assistant modals fill the whole screen. */
+@media (max-width: 640px) {
+  .term-window,
+  .asst-window {
+    width: 100vw;
+    height: 100dvh;
+    max-height: none;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+  .modal-backdrop {
+    padding: 0;
+  }
+  /* Keep small dialogs off the very edges even with no backdrop padding. */
+  .modal {
+    margin: 12px;
+    max-height: calc(100dvh - 24px);
+  }
 }

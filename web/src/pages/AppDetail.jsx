@@ -6,6 +6,8 @@ import { CopyButton, ErrorBanner, formatDate, formatUsage, Loading, Snippet, Sta
 // xterm is heavy and only needed when a terminal is actually opened, so it is
 // split into its own chunk and loaded on demand.
 const AppTerminal = lazy(() => import("./AppTerminal"));
+// The assistant pulls in a markdown renderer, so it stays a lazy chunk too.
+const AppAssistant = lazy(() => import("./AppAssistant"));
 
 // The SPA is served by the hostit daemon itself, so the agent API lives on our
 // own origin under /api.
@@ -285,6 +287,7 @@ const AppDetail = ({ account, refreshAccount }) => {
   const [pending, setPending] = useState(null); // an in-flight lifecycle transition, or null
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [showTerminal, setShowTerminal] = useState(false);
+  const [showAssistant, setShowAssistant] = useState(false);
   const [hasKeys, setHasKeys] = useState(null); // null until we know, so nothing flickers
   const catchUpTimers = useRef([]);
 
@@ -460,9 +463,9 @@ const AppDetail = ({ account, refreshAccount }) => {
             onDelete={() => setConfirmDelete(true)}
           />
           {/* Build/change the app from the browser, no local machine needed */}
-          <Link className="btn" to={`/app/${app.name}/assistant`}>
+          <button type="button" className="btn" onClick={() => setShowAssistant(true)}>
             Build with AI
-          </Link>
+          </button>
           {/* A shell in the container, in the browser -- only useful while it runs */}
           {app.running && (
             <button type="button" className="btn" onClick={() => setShowTerminal(true)}>
@@ -519,6 +522,11 @@ const AppDetail = ({ account, refreshAccount }) => {
       {showTerminal && (
         <Suspense fallback={null}>
           <AppTerminal name={app.name} onClose={() => setShowTerminal(false)} />
+        </Suspense>
+      )}
+      {showAssistant && (
+        <Suspense fallback={null}>
+          <AppAssistant name={app.name} onClose={() => setShowAssistant(false)} />
         </Suspense>
       )}
       {confirmDelete && (
