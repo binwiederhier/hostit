@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -67,6 +68,17 @@ type Config struct {
 	SessionKey         string   `yaml:"session-key"`          // Secret for signing session cookies; generated if empty
 	AdminEmails        []string `yaml:"admin-emails"`         // These emails become active admins on first login
 	DiskCheckInterval  Duration `yaml:"disk-check-interval"`  // How often app disk usage is measured
+	Breakglass         bool     `yaml:"breakglass"`           // Allow the admin token to mint a session for an admin email (no Google); for e2e/recovery
+}
+
+// IsAdminEmail reports whether the given address is one of the configured admins
+func (c *Config) IsAdminEmail(email string) bool {
+	for _, e := range c.AdminEmails {
+		if strings.EqualFold(strings.TrimSpace(e), strings.TrimSpace(email)) {
+			return true
+		}
+	}
+	return false
 }
 
 // NewConfig returns a Config with all defaults set; BaseDomain and AdminToken must be filled in

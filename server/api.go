@@ -43,6 +43,7 @@ func (s *Server) newAPIHandler() http.Handler {
 	// Web login (Google OAuth) and session teardown
 	mux.HandleFunc("GET /auth/google", s.handleGoogleLogin)
 	mux.HandleFunc("GET /auth/callback", s.handleGoogleCallback)
+	mux.HandleFunc("POST /auth/breakglass", s.handleBreakglass)
 	mux.HandleFunc("POST /auth/logout", s.handleLogout)
 
 	// Account: readable while pending, so the web app can explain the wait

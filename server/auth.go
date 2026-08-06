@@ -124,6 +124,40 @@ func (s *Server) handleGoogleCallback(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/", http.StatusFound)
 }
 
+// handleBreakglass mints a normal session cookie for a configured admin email,
+// authorized by the admin token alone -- no Google round-trip. It exists for e2e
+// testing and recovery, and grants nothing new: the admin token already carries
+// full admin rights over the REST API. It is off unless the "breakglass" config
+// flag is set, and the email must be one of admin-emails.
+func (s *Server) handleBreakglass(w http.ResponseWriter, r *http.Request) {
+	if !s.config.Breakglass {
+		writeError(w, http.StatusNotFound, errors.New("breakglass login is not enabled"))
+		return
+	}
+	c, err := s.authenticate(r)
+	if err != nil || !c.globalAdmin {
+		writeError(w, http.StatusForbidden, errors.New("breakglass login requires the admin token"))
+		return
+	}
+	email := r.URL.Query().Get("email")
+	if !s.config.IsAdminEmail(email) {
+		writeError(w, http.StatusForbidden, errors.New("email must be one of admin-emails"))
+		return
+	}
+	u, err := s.users.Login(email, email)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	value, err := s.sessions.encode(u.ID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	http.SetCookie(w, s.cookie(s.cookieName(sessionCookieName), value, int(sessionTTL.Seconds())))
+	writeJSON(w, http.StatusOK, &apiMessageResponse{Message: "signed in as " + email})
+}
+
 // handleLogout clears the session cookie
 func (s *Server) handleLogout(w http.ResponseWriter, _ *http.Request) {
 	http.SetCookie(w, s.cookie(s.cookieName(sessionCookieName), "", -1))

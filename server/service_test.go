@@ -380,6 +380,39 @@ func TestProxyRoutesAPIHost(t *testing.T) {
 	assert.Contains(t, rr.Body.String(), `"healthy":true`)
 }
 
+func TestBreakglassLogin(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	s.config.AdminEmails = []string{"phil@example.com"}
+
+	// Off by default: invisible even with the admin token.
+	rr := request(t, s.API(), "POST", "/auth/breakglass?email=phil@example.com", "", testToken)
+	assert.Equal(t, http.StatusNotFound, rr.Code)
+
+	s.config.Breakglass = true
+	// No/wrong token is refused, so enabling it does not open a hole.
+	assert.Equal(t, http.StatusForbidden, request(t, s.API(), "POST", "/auth/breakglass?email=phil@example.com", "", "").Code)
+	assert.Equal(t, http.StatusForbidden, request(t, s.API(), "POST", "/auth/breakglass?email=phil@example.com", "", "wrong").Code)
+	// A non-admin email is refused even with the admin token.
+	assert.Equal(t, http.StatusForbidden, request(t, s.API(), "POST", "/auth/breakglass?email=stranger@example.com", "", testToken).Code)
+
+	// Admin token + admin email mints a working session cookie.
+	rr = request(t, s.API(), "POST", "/auth/breakglass?email=phil@example.com", "", testToken)
+	require.Equal(t, http.StatusOK, rr.Code)
+	cookies := rr.Result().Cookies()
+	require.NotEmpty(t, cookies, "a session cookie must be set")
+
+	// The cookie authenticates a follow-up request as that admin.
+	req := httptest.NewRequest("GET", "/api/account", nil)
+	for _, c := range cookies {
+		req.AddCookie(c)
+	}
+	rec := httptest.NewRecorder()
+	s.API().ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Contains(t, rec.Body.String(), "phil@example.com")
+}
+
 func newTestServer(t *testing.T) *Server {
 	t.Helper()
 	conf := config.NewConfig()
