@@ -1,6 +1,8 @@
 package app
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -65,6 +67,34 @@ func TestStatesReportsAppProcessState(t *testing.T) {
 	// The container is up for all but "off", regardless of the app process
 	assert.True(t, states["paused"].Running)
 	assert.False(t, states["off"].Running)
+}
+
+func TestStatesReportsStartTimes(t *testing.T) {
+	t.Parallel()
+	m, _, runner := newTestDeployManager(t)
+	createTestApp(t, m, "one")
+	runner.returns("systemctl is-active", "active\n")
+	runner.returns("podman ps", "hostit-app-one|1786001000\nnot-ours|1786000000\n")
+	writeAppFile(t, m, "one", "log/state", "running\n")
+
+	// The container start time comes from podman; the app start time is the state
+	// file's mtime. Pin the mtime so the assertion is exact.
+	stateFile := filepath.Join(m.appHome("one"), "log", "state")
+	early := time.Unix(1786001111, 0)
+	require.NoError(t, os.Chtimes(stateFile, early, early))
+
+	states := m.States([]string{"one"})
+	assert.Equal(t, int64(1786001000), states["one"].StartedAt, "container start time from podman ps")
+	assert.Equal(t, early.UnixMilli(), states["one"].AppStartedAt, "app start time from the state file mtime")
+
+	// A restart rewrites the state file, bumping its mtime -- this is the only
+	// signal that tells "the app restarted" apart from "nothing happened", since
+	// the running state is identical before and after.
+	later := time.Unix(1786009999, 0)
+	require.NoError(t, os.Chtimes(stateFile, later, later))
+	states = m.States([]string{"one"})
+	assert.Equal(t, later.UnixMilli(), states["one"].AppStartedAt, "the restart moved the app start time forward")
+	assert.Greater(t, states["one"].AppStartedAt, early.UnixMilli())
 }
 
 func TestStatesDegradeRatherThanBlock(t *testing.T) {

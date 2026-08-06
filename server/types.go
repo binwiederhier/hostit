@@ -29,17 +29,19 @@ type apiSSHInfo struct {
 
 // apiAppResponse is returned for all app-related endpoints
 type apiAppResponse struct {
-	Name        string `json:"name"`
-	URL         string `json:"url"`
-	Port        int    `json:"port"`
-	DiskMB      int    `json:"disk_mb"`
-	DiskLimit   int    `json:"disk_limit_mb"`
-	MemoryMB    int    `json:"memory_mb"`
-	MemoryLimit int    `json:"memory_limit_mb"`
-	Running     bool   `json:"running"`     // The app's container is up
-	AppRunning  bool   `json:"app_running"` // The run: command inside it is up
-	OverQuota   bool   `json:"over_quota"`
-	OwnerEmail  string `json:"owner_email,omitempty"`
+	Name         string `json:"name"`
+	URL          string `json:"url"`
+	Port         int    `json:"port"`
+	DiskMB       int    `json:"disk_mb"`
+	DiskLimit    int    `json:"disk_limit_mb"`
+	MemoryMB     int    `json:"memory_mb"`
+	MemoryLimit  int    `json:"memory_limit_mb"`
+	Running      bool   `json:"running"`        // The app's container is up
+	AppRunning   bool   `json:"app_running"`    // The run: command inside it is up
+	StartedAt    int64  `json:"started_at"`     // Unix seconds the container last started
+	AppStartedAt int64  `json:"app_started_at"` // Unix millis the run: process last changed state
+	OverQuota    bool   `json:"over_quota"`
+	OwnerEmail   string `json:"owner_email,omitempty"`
 	// Description is the app's own one-liner from hostit.yml, kept current by
 	// whoever builds it; empty means the app is still a stub
 	Description string     `json:"description"`

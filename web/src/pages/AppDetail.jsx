@@ -12,6 +12,23 @@ const AppTerminal = lazy(() => import("./AppTerminal"));
 const origin = window.location.origin;
 const tokenPlaceholder = "<this app has no agent token>";
 
+// How a lifecycle action is watched to completion. `done(app, base)` decides when
+// the transition has actually happened: `base` is the app's start times captured
+// at the click. Reboot and restart end in the same running state they began in, so
+// they wait for a start time strictly newer than the baseline; the others just
+// wait for the container or app process to flip. Power/reboot bring the whole app
+// back up (the agent starts the run: command), so their target is app_running.
+const TRANSITIONS = {
+  poweron: { label: "Powering on", done: (a) => a.running && a.app_running },
+  poweroff: { label: "Powering off", done: (a) => !a.running },
+  reboot: { label: "Rebooting", done: (a, b) => a.running && a.app_running && a.started_at > b.started_at },
+  start: { label: "Starting app", done: (a) => a.running && a.app_running },
+  stop: { label: "Stopping app", done: (a) => a.running && !a.app_running },
+  restart: { label: "Restarting app", done: (a, b) => a.running && a.app_running && a.app_started_at > b.app_started_at },
+};
+const transitionPollMs = 2000;
+const transitionTimeoutMs = 90000;
+
 // The whole point of this page: a short, ready-to-paste prompt that points an
 // agent at the app's own info endpoint. Everything the agent needs to know about
 // the API is returned by that call, so the prompt stays small and does not
@@ -265,7 +282,7 @@ const AppDetail = ({ account, refreshAccount }) => {
   const [app, setApp] = useState(null);
   const [error, setError] = useState("");
   const [missing, setMissing] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const [pending, setPending] = useState(null); // an in-flight lifecycle transition, or null
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [showTerminal, setShowTerminal] = useState(false);
   const [hasKeys, setHasKeys] = useState(null); // null until we know, so nothing flickers
@@ -310,29 +327,70 @@ const AppDetail = ({ account, refreshAccount }) => {
     };
   }, [load, scheduleCatchUp]);
 
-  // Lifecycle runs through the agent API, which takes our session cookie just
-  // like the REST API does; reload afterwards so the status dot follows the
-  // container, then keep looking while it settles (start/restart take a moment).
+  // Lifecycle runs through the agent API, which takes our session cookie just like
+  // the REST API does. We do not guess the result: we record the app's start times
+  // at the moment of the click and then poll until the app has actually reached the
+  // target state. That is the only way to show a reboot or an app restart honestly,
+  // since both end in the same running state they began in -- "done" means a start
+  // time newer than the one we saw, not merely "running" again.
   const lifecycle = async (action) => {
-    if (busy) {
+    if (pending) {
       return;
     }
-    setBusy(true);
+    const transition = TRANSITIONS[action];
+    const base = { started_at: app?.started_at || 0, app_started_at: app?.app_started_at || 0 };
     setError("");
-    // No optimistic dot flip: the daemon drops its state cache on every action and
-    // re-measures a couple of seconds later (scheduleCatchUp polls for it), so the
-    // dot moves once, when the real state settles. Flipping it early only made it
-    // flap (orange -> green -> orange) when load() then read the still-stale cache.
+    setPending({ verb: action, label: transition.label, base, since: Date.now() });
     try {
       await api.post(`/api/apps/${encodeURIComponent(name)}/${action}`);
     } catch (err) {
+      // The action itself was refused (e.g. an app verb while the container is
+      // down): there is nothing to wait for, so stop and surface it.
       setError(err.message);
-    } finally {
-      setBusy(false);
-      await load();
-      scheduleCatchUp();
+      setPending(null);
     }
   };
+
+  // While a transition is pending, poll every couple of seconds until the app
+  // reaches the target state (or we give up). The daemon keeps its state cache
+  // warm for the whole settle window, so each poll sees real progress.
+  useEffect(() => {
+    if (!pending) {
+      return undefined;
+    }
+    const done = TRANSITIONS[pending.verb].done;
+    let cancelled = false;
+    let timer;
+    const poll = async () => {
+      try {
+        const fresh = await api.get(`/api/apps/${encodeURIComponent(name)}`);
+        if (cancelled) {
+          return;
+        }
+        setApp(fresh);
+        if (done(fresh, pending.base)) {
+          setPending(null);
+          return;
+        }
+      } catch {
+        // Transient error mid-transition: keep polling.
+      }
+      if (cancelled) {
+        return;
+      }
+      if (Date.now() - pending.since > transitionTimeoutMs) {
+        setPending(null);
+        setError(`${pending.label} did not finish in time; showing the last known state`);
+        return;
+      }
+      timer = setTimeout(poll, transitionPollMs);
+    };
+    timer = setTimeout(poll, transitionPollMs);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [pending, name]);
 
   const deleted = () => {
     refreshAccount();
@@ -369,12 +427,23 @@ const AppDetail = ({ account, refreshAccount }) => {
         <div className="app-heading">
           <div className="app-title-row">
             <h1 className="app-title">
-              <StatusDot running={app.running} appRunning={app.app_running} />
+              <StatusDot running={app.running} appRunning={app.app_running} pending={!!pending} />
               {app.name}
             </h1>
-            <span className="status-label">
-              {!app.running ? "stopped" : app.app_running ? "running" : "app stopped"}
-            </span>
+            {pending ? (
+              <span className="status-label status-label-pending">
+                {pending.label}
+                <span className="ellipsis" aria-hidden="true">
+                  <span>.</span>
+                  <span>.</span>
+                  <span>.</span>
+                </span>
+              </span>
+            ) : (
+              <span className="status-label">
+                {!app.running ? "Powered off" : app.app_running ? "Running" : "App stopped"}
+              </span>
+            )}
           </div>
           <a className="app-url" href={app.url} target="_blank" rel="noreferrer">
             {app.url}
@@ -386,7 +455,7 @@ const AppDetail = ({ account, refreshAccount }) => {
           <ActionsMenu
             running={app.running}
             appRunning={app.app_running}
-            busy={busy}
+            busy={!!pending}
             onAction={lifecycle}
             onDelete={() => setConfirmDelete(true)}
           />

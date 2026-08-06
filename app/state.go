@@ -19,18 +19,28 @@ const (
 	stateRefreshInterval = 30 * time.Second
 )
 
-var (
-	// stateSettleDelays is when to look again after a lifecycle action, while the
-	// unit is still making up its mind about being active
-	stateSettleDelays = []time.Duration{2 * time.Second, 6 * time.Second}
+const (
+	// stateSettleInterval is how often to re-measure after a lifecycle action, and
+	// stateSettleWindow is for how long. A reboot or an app restart can take several
+	// seconds, and the UI polls every couple of seconds waiting for it, so the cache
+	// has to keep up for the whole transition rather than just glancing once or twice.
+	stateSettleInterval = 2 * time.Second
+	stateSettleWindow   = 40 * time.Second
 )
 
 // State is what an app is doing right now: whether its container is up, whether
-// the run: process inside it is up, and how much memory its container is using
+// the run: process inside it is up, and how much memory its container is using.
+//
+// StartedAt and AppStartedAt are the only way the UI can tell a reboot or an app
+// restart apart from "nothing happened yet": both leave the app in the same
+// running state it was in before, so the UI waits for a start time newer than the
+// one it saw when the action was issued.
 type State struct {
-	Running    bool `json:"running"`     // The container's systemd unit is active
-	AppRunning bool `json:"app_running"` // The run: command inside it is up
-	MemoryMB   int  `json:"memory_mb"`
+	Running      bool  `json:"running"`        // The container's systemd unit is active
+	AppRunning   bool  `json:"app_running"`    // The run: command inside it is up
+	MemoryMB     int   `json:"memory_mb"`      //
+	StartedAt    int64 `json:"started_at"`     // Unix seconds the container last started (0 if down)
+	AppStartedAt int64 `json:"app_started_at"` // Unix millis the run: process last changed state (0 if never)
 }
 
 // CachedStates returns the last known state of the given apps immediately and,
@@ -70,12 +80,15 @@ func (m *Manager) stateChanged(name string) {
 	m.stateMu.Lock()
 	delete(m.stateCache, name)
 	m.stateMu.Unlock()
-	for _, delay := range stateSettleDelays {
-		go func() {
-			time.Sleep(delay)
+	// Re-measure repeatedly for the length of a transition, not just once: the UI
+	// watches the app's start time to know a reboot/restart finished, and it can
+	// only see that if the cache is refreshed the whole time the action is settling.
+	go func() {
+		for elapsed := time.Duration(0); elapsed < stateSettleWindow; elapsed += stateSettleInterval {
+			time.Sleep(stateSettleInterval)
 			m.refreshOnce()
-		}()
-	}
+		}
+	}()
 }
 
 // beginRefresh claims the right to refresh, so only one runs at a time. Two
@@ -148,10 +161,17 @@ func (m *Manager) States(names []string) map[string]State {
 	if len(names) == 0 {
 		return states
 	}
+	starts := m.containerStartTimes(names)
 	for name, running := range m.runningStates(names) {
 		// The app can only be up if its container is; a stopped or crashed app
 		// leaves the container running but reports something other than "running".
-		states[name] = State{Running: running, AppRunning: running && m.appProcessRunning(name)}
+		appRunning, appStartedAt := m.appProcessState(name)
+		states[name] = State{
+			Running:      running,
+			AppRunning:   running && appRunning,
+			StartedAt:    starts[name],
+			AppStartedAt: appStartedAt,
+		}
 	}
 	for name, memoryMB := range m.memoryUsage() {
 		state := states[name]
@@ -161,19 +181,53 @@ func (m *Manager) States(names []string) map[string]State {
 	return states
 }
 
-// appProcessRunning reads the state the agent left; anything unreadable means
-// "not running", which is the safe default (the app is not serving).
-func (m *Manager) appProcessRunning(name string) bool {
+// appProcessState reads the breadcrumb the agent leaves: whether the run: process
+// is up, and the time it last changed state (the file's mtime, bumped on every
+// start/stop/crash). The time lets the UI see an app restart, which otherwise
+// looks identical to no change. Anything unreadable means "not running", which is
+// the safe default (the app is not serving).
+func (m *Manager) appProcessState(name string) (running bool, startedAt int64) {
 	root, err := m.appRoot(name)
 	if err != nil {
-		return false
+		return false, 0
 	}
 	defer root.Close()
 	b, err := readCapped(root, appStateFile, maxStateRead)
 	if err != nil {
-		return false
+		return false, 0
 	}
-	return strings.TrimSpace(string(b)) == "running"
+	// Milliseconds, not seconds: a restart of an app that started less than a second
+	// ago would otherwise land in the same second and look like nothing changed.
+	if stat, err := root.Stat(appStateFile); err == nil {
+		startedAt = stat.ModTime().UnixMilli()
+	}
+	return strings.TrimSpace(string(b)) == "running", startedAt
+}
+
+// containerStartTimes reports when each app's container last started, as Unix
+// seconds; a container that is not running is simply absent. podman prints one
+// line per running container, which recreate/restart makes newer -- the signal
+// the UI uses to know a reboot actually happened.
+func (m *Manager) containerStartTimes(names []string) map[string]int64 {
+	starts := make(map[string]int64, len(names))
+	out, err := m.runner.RunTimeout(stateTimeout, "podman", "ps", "--format", "{{.Names}}|{{.StartedAt}}")
+	if err != nil {
+		return starts
+	}
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		fields := strings.SplitN(strings.TrimSpace(line), "|", 2)
+		if len(fields) != 2 {
+			continue
+		}
+		name := strings.TrimPrefix(fields[0], containerPrefix)
+		if name == fields[0] {
+			continue // Not one of ours
+		}
+		if ts, err := strconv.ParseInt(strings.TrimSpace(fields[1]), 10, 64); err == nil {
+			starts[name] = ts
+		}
+	}
+	return starts
 }
 
 // runningStates asks systemd about every app's unit in one call; "systemctl
