@@ -65,7 +65,7 @@ func New(conf *config.Config, apps *app.Manager, users *user.Manager) *Server {
 	// The built-in coding assistant, if an API key is configured. Its tools are the
 	// app's own operations, so it is confined to one app the way an agent token is.
 	if conf.AssistantEnabled() {
-		s.assistant = assistant.NewManager(assistant.NewClient(conf.AnthropicAPIKey), &appOps{apps: apps}, conf.AssistantModel)
+		s.assistant = assistant.NewManager(assistant.NewClient(conf.AnthropicAPIKey), &appOps{apps: apps}, &appTranscripts{store: apps.Store()}, conf.AssistantModel)
 	}
 	// The web app and REST API get the full header set (CSP, framing denial) plus
 	// the base headers; the public proxy gets only the base headers, so proxied

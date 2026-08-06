@@ -92,6 +92,15 @@ var migrations = []string{
 			created_at INTEGER NOT NULL
 		);
 	`,
+	// 6: the built-in assistant's conversation per app, stored as one JSON blob so
+	// it survives reloads, restarts and following along from another device
+	`
+		CREATE TABLE assistant_session (
+			app_name TEXT PRIMARY KEY,
+			transcript TEXT NOT NULL,
+			updated_at INTEGER NOT NULL
+		);
+	`,
 }
 
 // migrate brings the database up to the current schema version, creating it if

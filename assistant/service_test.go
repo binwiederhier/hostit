@@ -79,7 +79,7 @@ func TestRunExecutesToolThenFinishes(t *testing.T) {
 		}},
 		{StopReason: "end_turn", Content: []ContentBlock{{Type: "text", Text: "Done."}}},
 	}}
-	m := NewManager(fc, ops, "test-model")
+	m := NewManager(fc, ops, NewMemoryStore(), "test-model")
 
 	var events []Event
 	err := m.Run(context.Background(), "blog", "make a hello page", func(e Event) { events = append(events, e) })
@@ -111,7 +111,7 @@ func TestToolErrorIsReportedButLoopContinues(t *testing.T) {
 		{StopReason: "tool_use", Content: []ContentBlock{toolUse("tu_1", "read_file", `{"path":"missing.txt"}`)}},
 		{StopReason: "end_turn", Content: []ContentBlock{{Type: "text", Text: "That file does not exist yet."}}},
 	}}
-	m := NewManager(fc, ops, "test-model")
+	m := NewManager(fc, ops, NewMemoryStore(), "test-model")
 
 	var events []Event
 	err := m.Run(context.Background(), "blog", "read missing.txt", func(e Event) { events = append(events, e) })
@@ -132,7 +132,7 @@ func TestRunStopsAtStepLimit(t *testing.T) {
 	t.Parallel()
 	// A model that never stops asking for tools must not loop forever
 	fc := &endlessToolCompleter{}
-	m := NewManager(fc, newFakeOps(), "test-model")
+	m := NewManager(fc, newFakeOps(), NewMemoryStore(), "test-model")
 
 	var last Event
 	err := m.Run(context.Background(), "blog", "go", func(e Event) { last = e })
@@ -149,7 +149,7 @@ func TestTranscriptPersistsAcrossRuns(t *testing.T) {
 		{StopReason: "end_turn", Content: []ContentBlock{{Type: "text", Text: "second reply"}}},
 		{StopReason: "end_turn", Content: []ContentBlock{{Type: "text", Text: "third reply"}}},
 	}}
-	m := NewManager(fc, ops, "test-model")
+	m := NewManager(fc, ops, NewMemoryStore(), "test-model")
 
 	require.NoError(t, m.Run(context.Background(), "blog", "hello", func(Event) {}))
 	require.NoError(t, m.Run(context.Background(), "blog", "again", func(Event) {}))
@@ -167,10 +167,48 @@ func TestTranscriptPersistsAcrossRuns(t *testing.T) {
 	assert.Len(t, fc.calls[2].Messages, 1, "after reset only the new message remains")
 }
 
+func TestTranscriptIsPersistedAndRendered(t *testing.T) {
+	t.Parallel()
+	store := NewMemoryStore()
+	ops := newFakeOps()
+	fc := &fakeCompleter{replies: []response{
+		{StopReason: "tool_use", Content: []ContentBlock{
+			{Type: "text", Text: "Writing the page"},
+			toolUse("tu_1", "write_file", `{"path":"public/index.html","content":"hi"}`),
+		}},
+		{StopReason: "end_turn", Content: []ContentBlock{{Type: "text", Text: "Done."}}},
+	}}
+	require.NoError(t, NewManager(fc, ops, store, "m").Run(context.Background(), "blog", "make a page", func(Event) {}))
+
+	// A different manager on the same store recovers the conversation as display
+	// items -- what a reload or another device sees.
+	items, err := NewManager(&fakeCompleter{}, ops, store, "m").Transcript("blog")
+	require.NoError(t, err)
+	kinds := make([]string, len(items))
+	var tool Item
+	for i, it := range items {
+		kinds[i] = it.Kind
+		if it.Kind == "tool" {
+			tool = it
+		}
+	}
+	assert.Equal(t, []string{"user", "text", "tool", "text"}, kinds)
+	assert.Equal(t, "make a page", items[0].Text)
+	assert.Equal(t, "write_file", tool.Tool)
+	assert.Contains(t, tool.Output, "wrote 2 bytes", "the tool result must be folded onto its call")
+
+	// Reset clears the stored conversation
+	m := NewManager(&fakeCompleter{}, ops, store, "m")
+	require.NoError(t, m.Reset("blog"))
+	items, err = m.Transcript("blog")
+	require.NoError(t, err)
+	assert.Empty(t, items)
+}
+
 func TestRunReportsAPIError(t *testing.T) {
 	t.Parallel()
 	fc := &fakeCompleter{} // no replies -> complete returns an error
-	m := NewManager(fc, newFakeOps(), "test-model")
+	m := NewManager(fc, newFakeOps(), NewMemoryStore(), "test-model")
 
 	var events []Event
 	err := m.Run(context.Background(), "blog", "hi", func(e Event) { events = append(events, e) })

@@ -36,6 +36,13 @@ const (
 	selectPortsQuery           = `SELECT port FROM app ORDER BY port`
 	updateAppUsageQuery        = `UPDATE app SET disk_mb = ?, over_quota = ? WHERE name = ?`
 	deleteAppQuery             = `DELETE FROM app WHERE name = ?`
+
+	selectAssistantSessionQuery = `SELECT transcript FROM assistant_session WHERE app_name = ?`
+	upsertAssistantSessionQuery = `
+		INSERT INTO assistant_session (app_name, transcript, updated_at) VALUES (?, ?, ?)
+		ON CONFLICT(app_name) DO UPDATE SET transcript = excluded.transcript, updated_at = excluded.updated_at
+	`
+	deleteAssistantSessionQuery = `DELETE FROM assistant_session WHERE app_name = ?`
 )
 
 var (
@@ -170,7 +177,33 @@ func (s *Store) RemoveApp(name string) error {
 	if _, err := s.db.Exec(deleteAppKeysQuery, name); err != nil {
 		return err
 	}
+	if _, err := s.db.Exec(deleteAssistantSessionQuery, name); err != nil {
+		return err
+	}
 	return s.RemoveTokensByApp(name)
+}
+
+// LoadAssistantSession returns the app's stored assistant transcript (a JSON
+// blob), or an empty string if there is none yet
+func (s *Store) LoadAssistantSession(appName string) (string, error) {
+	var transcript string
+	err := s.db.QueryRow(selectAssistantSessionQuery, appName).Scan(&transcript)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	return transcript, err
+}
+
+// SaveAssistantSession stores (upserts) the app's assistant transcript
+func (s *Store) SaveAssistantSession(appName, transcript string) error {
+	_, err := s.db.Exec(upsertAssistantSessionQuery, appName, transcript, time.Now().Unix())
+	return err
+}
+
+// DeleteAssistantSession forgets the app's assistant transcript
+func (s *Store) DeleteAssistantSession(appName string) error {
+	_, err := s.db.Exec(deleteAssistantSessionQuery, appName)
+	return err
 }
 
 // Close closes the underlying database

@@ -1248,10 +1248,7 @@ th:last-child {
   font-style: italic;
   font-size: 14px;
   padding: 2px 12px;
-}
-
-.asst-working {
-  opacity: 0.7;
+  white-space: pre-wrap;
 }
 
 .asst-error {
@@ -1260,14 +1257,69 @@ th:last-child {
   color: var(--danger);
 }
 
+/* Markdown inside an assistant bubble: keep it tight, not document-spaced. */
+.asst-md > :first-child {
+  margin-top: 0;
+}
+
+.asst-md > :last-child {
+  margin-bottom: 0;
+}
+
+.asst-md p {
+  margin: 8px 0;
+}
+
+.asst-md ul,
+.asst-md ol {
+  margin: 8px 0;
+  padding-left: 22px;
+}
+
+.asst-md li {
+  margin: 2px 0;
+}
+
+.asst-md code {
+  font-family: var(--mono);
+  font-size: 0.92em;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 1px 5px;
+}
+
+.asst-md pre {
+  background: var(--term-bg);
+  color: var(--term-text);
+  padding: 12px;
+  border-radius: 8px;
+  overflow-x: auto;
+}
+
+.asst-md pre code {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: inherit;
+}
+
+.asst-md h1,
+.asst-md h2,
+.asst-md h3 {
+  font-size: 15px;
+  margin: 12px 0 6px;
+}
+
+/* Tool call: a compact one-line chip, expandable to its exact input/output. */
 .asst-tool {
   align-self: flex-start;
-  max-width: 90%;
+  max-width: 92%;
+  min-width: 0;
   border: 1px solid var(--border);
   border-radius: 10px;
   overflow: hidden;
-  font-family: var(--mono);
-  font-size: 13px;
+  background: var(--surface);
 }
 
 .asst-tool-error {
@@ -1276,43 +1328,108 @@ th:last-child {
 
 .asst-tool-head {
   display: flex;
-  gap: 8px;
-  align-items: baseline;
+  gap: 9px;
+  align-items: center;
   width: 100%;
-  padding: 7px 10px;
+  padding: 8px 11px;
   background: var(--surface-2);
   border: 0;
   cursor: pointer;
   text-align: left;
   color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.3;
 }
 
-.asst-tool-name {
-  font-weight: 700;
-  color: var(--accent-strong);
+.asst-tool-icon {
+  flex: none;
+  font-size: 14px;
 }
 
-.asst-tool-arg {
-  color: var(--muted);
+.asst-tool-summary {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  flex: 1;
+  font-family: var(--mono);
+  font-size: 13px;
 }
 
-.asst-tool-toggle {
+.asst-tool-badge {
+  flex: none;
+  color: var(--danger);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.asst-tool-chev {
+  flex: none;
   color: var(--muted);
+  font-size: 11px;
 }
 
-.asst-tool-output {
+.asst-tool-spinner {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: asst-spin 0.7s linear infinite;
+}
+
+.asst-tool-body {
+  padding: 8px 11px 11px;
+}
+
+.asst-tool-label {
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 6px 0 3px;
+}
+
+.asst-tool-pre {
   margin: 0;
-  padding: 10px;
+  padding: 9px 10px;
   background: var(--term-bg);
   color: var(--term-text);
+  border-radius: 7px;
   overflow-x: auto;
-  max-height: 320px;
+  max-height: 300px;
+  font-family: var(--mono);
+  font-size: 12.5px;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+/* Rotating "Working... / Baking..." status while the loop runs. */
+.asst-working {
+  align-self: flex-start;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--muted);
+  font-size: 14px;
+  padding: 2px 12px;
+}
+
+.asst-working-spinner {
+  width: 13px;
+  height: 13px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: asst-spin 0.7s linear infinite;
+}
+
+@keyframes asst-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .asst-input {

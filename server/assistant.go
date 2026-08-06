@@ -10,7 +10,40 @@ import (
 
 	"heckel.io/hostit/app"
 	"heckel.io/hostit/assistant"
+	"heckel.io/hostit/store"
 )
+
+// appTranscripts persists the assistant's per-app conversation in the registry as
+// one JSON blob, adapting the SQLite store to assistant.Store.
+type appTranscripts struct {
+	store *store.Store
+}
+
+var _ assistant.Store = (*appTranscripts)(nil)
+
+func (t *appTranscripts) Load(app string) ([]assistant.Message, error) {
+	blob, err := t.store.LoadAssistantSession(app)
+	if err != nil || blob == "" {
+		return nil, err
+	}
+	var messages []assistant.Message
+	if err := json.Unmarshal([]byte(blob), &messages); err != nil {
+		return nil, err
+	}
+	return messages, nil
+}
+
+func (t *appTranscripts) Save(app string, messages []assistant.Message) error {
+	blob, err := json.Marshal(messages)
+	if err != nil {
+		return err
+	}
+	return t.store.SaveAssistantSession(app, string(blob))
+}
+
+func (t *appTranscripts) Delete(app string) error {
+	return t.store.DeleteAssistantSession(app)
+}
 
 const (
 	// assistantMaxMessage caps a single user prompt to the assistant
@@ -111,7 +144,10 @@ func (s *Server) handleAssistant(w http.ResponseWriter, r *http.Request, c *call
 		return
 	}
 	if req.Reset {
-		s.assistant.Reset(a.Name)
+		if err := s.assistant.Reset(a.Name); err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
 	}
 	flusher, ok := w.(http.Flusher)
 	if !ok {
@@ -137,6 +173,32 @@ func (s *Server) handleAssistant(w http.ResponseWriter, r *http.Request, c *call
 	// Run already reports its own failure as a final error event; nothing else to
 	// do with the returned error here.
 	_ = s.assistant.Run(r.Context(), a.Name, req.Message, emit)
+}
+
+// handleAssistantTranscript returns an owned app's stored conversation, so a
+// reload or another device shows the history rather than a blank chat.
+func (s *Server) handleAssistantTranscript(w http.ResponseWriter, r *http.Request, c *caller) {
+	if s.assistant == nil {
+		writeJSON(w, http.StatusOK, &apiAssistantTranscript{Enabled: false})
+		return
+	}
+	a, err := s.ownedApp(c, r.PathValue("name"))
+	if err != nil {
+		writeAppError(w, err)
+		return
+	}
+	items, err := s.assistant.Transcript(a.Name)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, &apiAssistantTranscript{Enabled: true, Items: items})
+}
+
+// apiAssistantTranscript is GET /api/apps/{name}/assistant
+type apiAssistantTranscript struct {
+	Enabled bool             `json:"enabled"`
+	Items   []assistant.Item `json:"items"`
 }
 
 func secondsToDuration(seconds int) time.Duration {

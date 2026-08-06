@@ -14,7 +14,7 @@ func TestDispatchTools(t *testing.T) {
 	ops.execFn = func(command string) ExecResult {
 		return ExecResult{Output: "built\n", ExitCode: 0}
 	}
-	m := NewManager(&fakeCompleter{}, ops, "test-model")
+	m := NewManager(&fakeCompleter{}, ops, NewMemoryStore(), "test-model")
 
 	t.Run("write_file writes and confirms", func(t *testing.T) {
 		out, isErr := m.dispatch("blog", "write_file", json.RawMessage(`{"path":"public/index.html","content":"hi"}`))

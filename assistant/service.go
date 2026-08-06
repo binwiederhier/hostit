@@ -9,7 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sync"
+	"log/slog"
 )
 
 const (
@@ -29,32 +29,39 @@ var (
 	errMaxIterations = errors.New("assistant reached its step limit without finishing")
 )
 
-// Manager runs assistant sessions. One transcript is kept per app in memory (a
-// PoC simplification: it is lost on restart and there is one conversation per
-// app), guarded by mu.
+// Manager runs assistant sessions. One conversation is kept per app, persisted
+// through the Store so it survives reloads and restarts.
 type Manager struct {
-	client   completer
-	ops      AppOps
-	model    string
-	sessions map[string][]Message
-	mu       sync.Mutex // Protects sessions
+	client completer
+	ops    AppOps
+	store  Store
+	model  string
 }
 
-// NewManager wires the loop to a model client and the app operations it drives
-func NewManager(client completer, ops AppOps, model string) *Manager {
+// NewManager wires the loop to a model client, the app operations it drives, and
+// the store that persists each app's conversation
+func NewManager(client completer, ops AppOps, store Store, model string) *Manager {
 	return &Manager{
-		client:   client,
-		ops:      ops,
-		model:    model,
-		sessions: make(map[string][]Message),
+		client: client,
+		ops:    ops,
+		store:  store,
+		model:  model,
 	}
 }
 
 // Reset forgets an app's conversation, so the next message starts fresh
-func (m *Manager) Reset(app string) {
-	m.mu.Lock()
-	delete(m.sessions, app)
-	m.mu.Unlock()
+func (m *Manager) Reset(app string) error {
+	return m.store.Delete(app)
+}
+
+// Transcript returns the app's stored conversation as display items, for a page
+// that is loading it fresh (a reload, or another device joining)
+func (m *Manager) Transcript(app string) ([]Item, error) {
+	history, err := m.store.Load(app)
+	if err != nil {
+		return nil, err
+	}
+	return toItems(history), nil
 }
 
 // Run sends one user message for an app and drives the loop to completion,
@@ -147,16 +154,18 @@ func (m *Manager) emitReply(content []ContentBlock, emit func(Event)) []ContentB
 }
 
 func (m *Manager) load(app string) []Message {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	// Copy so the caller's appends never race a concurrent Run on the same app
-	return append([]Message(nil), m.sessions[app]...)
+	history, err := m.store.Load(app)
+	if err != nil {
+		slog.Warn("Cannot load assistant transcript; starting fresh", "app", app, "error", err)
+		return nil
+	}
+	return history
 }
 
 func (m *Manager) save(app string, history []Message) {
-	m.mu.Lock()
-	m.sessions[app] = history
-	m.mu.Unlock()
+	if err := m.store.Save(app, history); err != nil {
+		slog.Warn("Cannot persist assistant transcript", "app", app, "error", err)
+	}
 }
 
 // systemPrompt sets the model's stance: it is working on one hostit app, it makes
