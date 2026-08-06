@@ -96,10 +96,10 @@ func TestRunExecutesToolThenFinishes(t *testing.T) {
 	assert.Contains(t, types, "tool_result")
 	assert.Equal(t, "done", types[len(types)-1])
 
-	// The follow-up turn fed the results back and preserved the thinking signature,
-	// which the API rejects a turn without.
+	// The follow-up turn fed the tool results back, but did NOT echo the thinking
+	// block (adaptive thinking blocks are shown, not replayed).
 	require.Len(t, fc.calls, 2)
-	assert.True(t, hasThinkingSignature(fc.calls[1].Messages, "sig-1"), "thinking block must round-trip with its signature")
+	assert.False(t, hasThinkingSignature(fc.calls[1].Messages, "sig-1"), "thinking must not be echoed back to the API")
 	assert.True(t, hasToolResult(fc.calls[1].Messages, "tu_1"), "the tool result must be fed back")
 }
 

@@ -82,11 +82,12 @@ func (m *Manager) Run(ctx context.Context, app, userText string, emit func(Event
 			return err
 		}
 
-		// Keep the reply verbatim in the transcript -- including thinking blocks
-		// with their signatures, which the next turn is rejected without.
-		history = append(history, Message{Role: "assistant", Content: resp.Content})
-
+		// Stream the reply to the client, then keep it in the transcript. Thinking
+		// blocks are shown but not stored: an adaptive thinking block carries
+		// internal fields we do not round-trip, and the model does not need its
+		// earlier thinking echoed back to keep going.
 		toolUses := m.emitReply(resp.Content, emit)
+		history = append(history, Message{Role: "assistant", Content: withoutThinking(resp.Content)})
 		if len(toolUses) == 0 {
 			// No tool calls: the model has said its piece and is done.
 			m.save(app, history)
@@ -112,6 +113,19 @@ func (m *Manager) Run(ctx context.Context, app, userText string, emit func(Event
 	m.save(app, history)
 	emit(Event{Type: "error", Error: errMaxIterations.Error()})
 	return errMaxIterations
+}
+
+// withoutThinking drops thinking blocks so they are not echoed back to the API.
+// The visible reply (text, tool calls) is what the next turn needs.
+func withoutThinking(blocks []ContentBlock) []ContentBlock {
+	out := make([]ContentBlock, 0, len(blocks))
+	for _, b := range blocks {
+		if b.Type == "thinking" || b.Type == "redacted_thinking" {
+			continue
+		}
+		out = append(out, b)
+	}
+	return out
 }
 
 // emitReply streams the model's text and thinking to the client and returns the

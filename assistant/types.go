@@ -13,9 +13,9 @@ type Message struct {
 }
 
 // ContentBlock is one piece of a message. The Anthropic API uses a tagged union
-// keyed on Type; we keep every field on one struct with omitempty so a block
-// round-trips unchanged -- crucially the thinking block's Signature, which the
-// API rejects a follow-up turn without.
+// keyed on Type; we keep every field on one struct with omitempty. Thinking
+// blocks are shown to the user but stripped before a turn is fed back (see
+// withoutThinking), so their internal fields do not need to round-trip.
 type ContentBlock struct {
 	Type string `json:"type"`
 
