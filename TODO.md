@@ -119,6 +119,13 @@ at the limit (EDQUOT) instead.
 
 ## Smaller things
 
+- **Rename an app.** Let an owner rename an existing app. The name is the app's
+  identity today -- subdomain, Unix user, home directory, container name, TLS cert,
+  authorized_keys, the app-scoped token's `app_name`, the assistant session -- so a
+  rename has to move or reissue all of them atomically (or refuse if the app is
+  running). Simplest first cut: stop the app, rename user + home + container +
+  store row + re-point DNS/cert on next request, restart. Consider keeping the old
+  subdomain as a redirect for a while so links do not break.
 - **Custom domains for apps.** Let an app answer on the owner's own hostname
   (e.g. `blog.example.com`) as well as its `<app>.<base-domain>` subdomain. Needs
   a `domain` per app in the store, the proxy matching it (`appNameFromHost` only
