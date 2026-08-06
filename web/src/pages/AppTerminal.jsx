@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
@@ -9,12 +9,20 @@ import "@xterm/xterm/css/xterm.css";
 // shell an SSH session gets (banner, colours, shortcuts), so it is owner-only on
 // the server side.
 //
-// Two shapes: a modal on the app page (with a pop-out button), and a full-window
-// page reached by that pop-out (and directly at /app/<name>/terminal).
-const AppTerminal = ({ name, onClose, fullPage = false }) => {
+// Two shapes: a floating panel on the app page (draggable, minimizable, and
+// deliberately not dimming the page behind it so the live preview stays visible),
+// and a full-window page reached by the pop-out (and directly at
+// /app/<name>/terminal).
+const AppTerminal = ({ name, onClose, onMinimize, onReady, onSessionEnd, minimized = false, fullPage = false }) => {
   const hostRef = useRef(null);
   const frameRef = useRef(null);
   const fitRef = useRef(null);
+  const sendSizeRef = useRef(() => {});
+  // Set just before we tear the socket down ourselves, so onclose can tell an
+  // intentional close (unmount) from the server ending the session (e.g. a reboot).
+  const closingRef = useRef(false);
+  // Where the floating panel sits; null until first dragged, so CSS places it.
+  const [pos, setPos] = useState(null);
 
   useEffect(() => {
     const term = new Terminal({
@@ -40,12 +48,23 @@ const AppTerminal = ({ name, onClose, fullPage = false }) => {
         ws.send(JSON.stringify({ cols: term.cols, rows: term.rows }));
       }
     };
+    sendSizeRef.current = sendSize;
     ws.onopen = () => {
       sendSize();
       term.focus();
+      if (onReady) {
+        onReady(); // the shell is connected; the page can stop showing "connecting"
+      }
     };
     ws.onmessage = (e) => term.write(new Uint8Array(e.data));
-    ws.onclose = () => term.write("\r\n\x1b[90m[session closed]\x1b[0m\r\n");
+    ws.onclose = () => {
+      term.write("\r\n\x1b[90m[session closed]\x1b[0m\r\n");
+      // The server ended the session (a reboot/poweroff killed the container, or
+      // the time cap hit) rather than us tearing it down: let the page reflect it.
+      if (!closingRef.current && onSessionEnd) {
+        onSessionEnd();
+      }
+    };
     ws.onerror = () => term.write("\r\n\x1b[31m[connection error]\x1b[0m\r\n");
 
     const dataSub = term.onData((d) => {
@@ -56,15 +75,32 @@ const AppTerminal = ({ name, onClose, fullPage = false }) => {
     const onResize = () => sendSize();
     window.addEventListener("resize", onResize);
     document.addEventListener("fullscreenchange", onResize);
+    // The floating window is user-resizable (CSS resize), which the window resize
+    // event does not cover: watch the element itself and refit on any size change.
+    const ro = new ResizeObserver(() => sendSize());
+    if (frameRef.current) {
+      ro.observe(frameRef.current);
+    }
 
     return () => {
       window.removeEventListener("resize", onResize);
       document.removeEventListener("fullscreenchange", onResize);
+      ro.disconnect();
       dataSub.dispose();
+      closingRef.current = true; // our own teardown, not a server-side session end
       ws.close();
       term.dispose();
     };
   }, [name]);
+
+  // Coming back from minimized, the window was display:none so xterm could not
+  // measure it: re-measure and tell the pty once it is visible again.
+  useEffect(() => {
+    if (!minimized) {
+      // Two frames: let the window lay out before xterm measures it.
+      requestAnimationFrame(() => requestAnimationFrame(() => sendSizeRef.current()));
+    }
+  }, [minimized]);
 
   const toggleFullscreen = () => {
     if (document.fullscreenElement) {
@@ -80,11 +116,52 @@ const AppTerminal = ({ name, onClose, fullPage = false }) => {
     }
   };
 
+  // Drag the panel by its title bar. We track the pointer's offset from the
+  // window's top-left and keep the whole bar on screen.
+  const startDrag = (e) => {
+    if (fullPage) return;
+    const rect = frameRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const offX = e.clientX - rect.left;
+    const offY = e.clientY - rect.top;
+    const move = (ev) => {
+      const left = Math.min(window.innerWidth - 80, Math.max(0, ev.clientX - offX));
+      const top = Math.min(window.innerHeight - 40, Math.max(0, ev.clientY - offY));
+      setPos({ left, top });
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      document.body.classList.remove("ws-resizing");
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    document.body.classList.add("ws-resizing");
+  };
+
   const frame = (
-    <div className={fullPage ? "term-window term-window-full" : "term-window"} ref={frameRef}>
-      <div className="term-bar">
+    <div
+      className={
+        (fullPage ? "term-window term-window-full" : "term-window term-window-float") +
+        (!fullPage && minimized ? " term-window-hidden" : "")
+      }
+      ref={frameRef}
+      style={
+        !fullPage && pos
+          ? { left: `${pos.left}px`, top: `${pos.top}px`, right: "auto", bottom: "auto", transform: "none" }
+          : undefined
+      }
+    >
+      <div className={fullPage ? "term-bar" : "term-bar term-bar-drag"} onPointerDown={startDrag}>
         <span className="mono">{name} &mdash; terminal</span>
         <span className="term-bar-actions">
+          {!fullPage && onMinimize && (
+            <button type="button" className="term-btn" onClick={onMinimize} title="Minimize" aria-label="Minimize">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 12h10" />
+              </svg>
+            </button>
+          )}
           {!fullPage && (
             <button type="button" className="term-btn" onClick={popOut} title="Open in a new window" aria-label="Pop out">
               <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -106,6 +183,7 @@ const AppTerminal = ({ name, onClose, fullPage = false }) => {
           )}
         </span>
       </div>
+      {/* The host stays mounted (and the session alive) while the window is hidden. */}
       <div className="term-host" ref={hostRef} />
     </div>
   );
@@ -113,11 +191,9 @@ const AppTerminal = ({ name, onClose, fullPage = false }) => {
   if (fullPage) {
     return <div className="term-page">{frame}</div>;
   }
-  return (
-    <div className="modal-backdrop" role="dialog" aria-modal="true">
-      {frame}
-    </div>
-  );
+  // No backdrop: the floating panel deliberately leaves the page (and its live
+  // preview) visible and interactive behind it.
+  return frame;
 };
 
 export default AppTerminal;

@@ -1,5 +1,5 @@
-import { lazy, Suspense, useCallback, useEffect, useState } from "react";
-import { BrowserRouter, Link, Navigate, NavLink, Route, Routes } from "react-router-dom";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { BrowserRouter, Link, Navigate, NavLink, Route, Routes, useLocation } from "react-router-dom";
 import { api, ApiError } from "./api";
 import { Loading, Wordmark } from "./components";
 import Dashboard from "./pages/Dashboard";
@@ -80,49 +80,116 @@ const LoadFailed = ({ message, onRetry }) => (
 );
 
 const Nav = ({ account }) => {
-  // On a narrow screen the links and session collapse behind a burger.
-  const [open, setOpen] = useState(false);
-  const close = () => setOpen(false);
+  // The app detail page runs full width; the nav widens to match, so the logo and
+  // links slide out to the left edge and the avatar to the right.
+  const { pathname } = useLocation();
+  const wide = /^\/app\/[^/]+$/.test(pathname);
   return (
-    <header className="nav">
+    <header className={"nav" + (wide ? " nav-wide" : "")}>
       <div className="nav-inner">
-        <Link to="/" className="nav-brand" onClick={close}>
-          <Wordmark />
-        </Link>
-        <button
-          type="button"
-          className="nav-burger"
-          onClick={() => setOpen((o) => !o)}
-          aria-label="Menu"
-          aria-expanded={open}
-        >
-          <span />
-          <span />
-          <span />
-        </button>
-        <div className={`nav-menu${open ? " nav-menu-open" : ""}`}>
-          <nav className="nav-links" onClick={close}>
-            <NavLink to="/" end>
-              Dashboard
-            </NavLink>
-            <NavLink to="/profile">Profile</NavLink>
-            {account.role === "admin" && <NavLink to="/admin">Admin</NavLink>}
-            {/* A reference you read alongside the app, so: its own tab */}
-            <a href="/docs" target="_blank" rel="noreferrer">
-              Docs
-            </a>
-          </nav>
-          <div className="nav-session">
-            <span className="nav-email" title={account.email}>
-              {account.email}
-            </span>
-            <button type="button" className="btn btn-small" onClick={logout}>
-              Logout
-            </button>
-          </div>
-        </div>
+      <Link to="/" className="nav-brand">
+        <Wordmark />
+      </Link>
+      {/* Inline on wide screens; on narrow ones these move into the profile menu,
+          so there is a single menu (the avatar), not also a burger. */}
+      <div className="nav-menu">
+        <nav className="nav-links">
+          <NavLink to="/" end>
+            Dashboard
+          </NavLink>
+          <NavLink to="/profile">Profile</NavLink>
+          {account.role === "admin" && <NavLink to="/admin">Admin</NavLink>}
+          {/* A reference you read alongside the app, so: its own tab */}
+          <a href="/docs" target="_blank" rel="noreferrer">
+            Docs
+          </a>
+        </nav>
+      </div>
+      <div className="nav-right">
+        <ProfileMenu account={account} />
+      </div>
       </div>
     </header>
+  );
+};
+
+// The account, behind a circular initial avatar in the top-right corner: it shows
+// the name Google gave us (falling back to the email), and is the single menu on
+// narrow screens -- the nav links live inside it there, so there is no burger.
+const ProfileMenu = ({ account }) => {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!open) {
+      return undefined;
+    }
+    const close = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) {
+        setOpen(false);
+      }
+    };
+    const onKey = (e) => e.key === "Escape" && setOpen(false);
+    document.addEventListener("mousedown", close);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", close);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+  const close = () => setOpen(false);
+  const name = (account.name || "").trim();
+  const initial = (name || account.email || "?").charAt(0).toUpperCase();
+  return (
+    <div className="nav-profile" ref={ref}>
+      <button
+        type="button"
+        className="avatar"
+        onClick={() => setOpen((o) => !o)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label="Account"
+        title={name || account.email}
+      >
+        {initial}
+      </button>
+      {open && (
+        <div className="nav-profile-pop" role="menu">
+          <div className="nav-profile-head">
+            <span className="avatar avatar-lg" aria-hidden="true">
+              {initial}
+            </span>
+            <span className="nav-profile-who">
+              {name && <span className="nav-profile-name">{name}</span>}
+              <span className="nav-profile-email" title={account.email}>
+                {account.email}
+              </span>
+            </span>
+          </div>
+          <div className="nav-profile-div" />
+          {/* Shown only on narrow screens, where the bar's inline nav is hidden */}
+          <div className="nav-profile-nav">
+            <NavLink to="/" end role="menuitem" onClick={close}>
+              Dashboard
+            </NavLink>
+            <NavLink to="/profile" role="menuitem" onClick={close}>
+              Profile
+            </NavLink>
+            {account.role === "admin" && (
+              <NavLink to="/admin" role="menuitem" onClick={close}>
+                Admin
+              </NavLink>
+            )}
+            <a href="/docs" target="_blank" rel="noreferrer" role="menuitem" onClick={close}>
+              Docs
+            </a>
+          </div>
+          <div className="nav-profile-div nav-profile-navdiv" />
+          <button type="button" role="menuitem" onClick={logout}>
+            Log out
+          </button>
+        </div>
+      )}
+    </div>
   );
 };
 

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api } from "../api";
-import { ErrorBanner, formatUsage, Loading, StatusDot, Wordmark } from "../components";
+import { ErrorBanner, Loading, StatusDot, Wordmark } from "../components";
 
 // Same rule the server enforces (app.AppNamePattern)
 const nameRe = /^[a-z]([a-z0-9-]{0,30}[a-z0-9])?$/;
@@ -92,14 +92,10 @@ const AppRow = ({ app }) => (
       <Link className="mono app-link" to={`/app/${app.name}`}>
         {app.name}
       </Link>
+      {app.over_quota && <span className="badge badge-danger">over quota</span>}
     </td>
     {/* What the app says it is, from its hostit.yml */}
     <td className="cell-description">{app.description || <span className="cell-muted">no description yet</span>}</td>
-    <td>{formatUsage(app.memory_mb, app.memory_limit_mb)}</td>
-    <td>
-      {formatUsage(app.disk_mb, app.disk_limit_mb)}
-      {app.over_quota && <span className="badge badge-danger">over quota</span>}
-    </td>
     <td className="cell-actions">
       <div className="btn-row btn-row-end">
         <Link className="btn btn-small" to={`/app/${app.name}`}>
@@ -203,8 +199,6 @@ const Dashboard = ({ account, refreshAccount }) => {
                     <tr>
                       <th>Name</th>
                       <th>Description</th>
-                      <th>RAM</th>
-                      <th>Disk</th>
                       <th aria-label="Actions" />
                     </tr>
                   </thead>

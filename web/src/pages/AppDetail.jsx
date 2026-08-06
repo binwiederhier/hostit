@@ -1,7 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { api, ApiError } from "../api";
-import { CopyButton, ErrorBanner, formatDate, formatUsage, Loading, Snippet, StatusDot } from "../components";
+import { CopyButton, ErrorBanner, Loading, Snippet, StatusDot } from "../components";
 
 // xterm is heavy and only needed when a terminal is actually opened, so it is
 // split into its own chunk and loaded on demand.
@@ -13,6 +13,10 @@ const AppAssistant = lazy(() => import("./AppAssistant"));
 // own origin under /api.
 const origin = window.location.origin;
 const tokenPlaceholder = "<this app has no agent token>";
+
+// The chat/preview split remembers how the owner sized it, across apps and reloads.
+const splitKey = "hostit.ws.chatFrac";
+const defaultChatFrac = 0.52;
 
 // How a lifecycle action is watched to completion. `done(app, base)` decides when
 // the transition has actually happened: `base` is the app's start times captured
@@ -30,17 +34,20 @@ const TRANSITIONS = {
 };
 const transitionPollMs = 2000;
 const transitionTimeoutMs = 90000;
+// The detail page shows live gauges, so it refreshes faster than the dashboard.
+// The daemon serves state from a warm cache, so this stays cheap.
+const detailPollMs = 8000;
 
-// The whole point of this page: a short, ready-to-paste prompt that points an
-// agent at the app's own info endpoint. Everything the agent needs to know about
-// the API is returned by that call, so the prompt stays small and does not
-// duplicate it -- it only sets the agent's stance: learn the API, then wait for
-// the owner rather than interrogating them or building on a guess.
+// The whole point of the prompt: a short, ready-to-paste block that points an
+// external agent at the app's own info endpoint. Everything the agent needs to
+// know about the API is returned by that call, so the prompt stays small and does
+// not duplicate it -- it only sets the agent's stance: learn the API, then wait
+// for the owner rather than interrogating them or building on a guess.
 //
 // Two shapes, because they are two different jobs. A stub is an invitation to
-// build. An app whose agent has written a description into hostit.yml is
-// finished work someone is coming back to: say that up front, or the next
-// session reads a "build me an app" prompt and starts over on top of it.
+// build. An app whose agent has written a description into hostit.yml is finished
+// work someone is coming back to: say that up front, or the next session reads a
+// "build me an app" prompt and starts over on top of it.
 const promptText = (name, url, token, description) => {
   const apiLine = `Manage it through the hostit REST API: call ${origin}/api/apps/${name}/info with the Bearer token ${token} to learn how, then follow what it returns.`;
   if (!description) {
@@ -66,13 +73,81 @@ Read that and the app's README.md and docs/, then reply exactly: "I understand t
 `;
 };
 
-// Start/stop/restart behind one button: only one of them is ever the sensible
-// next move, and none of them is what the page is for. Delete lives here too,
-// set apart at the bottom, so the whole rare-actions surface is one menu.
-const ActionsMenu = ({ running, appRunning, busy, onAction, onDelete }) => {
+// A small svg icon set, so the top bar reads as buttons, not a wall of words.
+const TerminalIcon = () => (
+  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <rect x="1.5" y="2.5" width="13" height="11" rx="1.5" />
+    <path d="M4 6l2.2 2L4 10M8.5 10.5H11.5" />
+  </svg>
+);
+const ControlsIcon = () => (
+  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M2 4.5h7M11.5 4.5h2.5M2 11.5h2.5M7 11.5h7" />
+    <circle cx="10" cy="4.5" r="1.6" />
+    <circle cx="6" cy="11.5" r="1.6" />
+  </svg>
+);
+const BackIcon = () => (
+  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M9.5 3.5 5 8l4.5 4.5" />
+  </svg>
+);
+const SparkleIcon = () => (
+  <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+    <path d="M8 0.8l1.5 4.2 4.2 1.5-4.2 1.5L8 12.2 6.5 8 2.3 6.5 6.5 5z" />
+    <path d="M13 9.5l0.6 1.6 1.6 0.6-1.6 0.6L13 14l-0.6-1.7-1.6-0.6 1.6-0.6z" />
+  </svg>
+);
+
+// formatUptime turns a container start time (Unix seconds) into a short duration
+// like "3d 4h", "2h 15m", "8m" or "42s"; a stopped container has no uptime.
+const formatUptime = (startedAt) => {
+  if (!startedAt) {
+    return "-";
+  }
+  let s = Math.max(0, Math.floor(Date.now() / 1000 - startedAt));
+  const d = Math.floor(s / 86400);
+  s -= d * 86400;
+  const h = Math.floor(s / 3600);
+  s -= h * 3600;
+  const m = Math.floor(s / 60);
+  s -= m * 60;
+  if (d) return `${d}d ${h}h`;
+  if (h) return `${h}h ${m}m`;
+  if (m) return `${m}m`;
+  return `${s}s`;
+};
+
+// One resource readout: a label and its value, the value going red near a limit.
+const Res = ({ label, value, hot }) => (
+  <div className="res">
+    <span className="res-k">{label}</span>
+    <span className={"res-v" + (hot ? " res-v-hot" : "")}>{value}</span>
+  </div>
+);
+
+// CPU / RAM / Disk / Uptime in a compact 2x2 grid, sitting beside the controls.
+// Only meaningful while the container is up, so the caller shows it only then.
+const UsageGrid = ({ app }) => {
+  const cpuHot = (app.cpu_percent || 0) >= 90;
+  const memHot = app.memory_limit_mb && app.memory_mb / app.memory_limit_mb >= 0.9;
+  const diskHot = (app.disk_limit_mb && app.disk_mb / app.disk_limit_mb >= 0.9) || app.over_quota;
+  const mb = (used, limit) => (limit ? `${used}/${limit} MB` : `${used} MB`);
+  return (
+    <div className="ws-resources">
+      <Res label="CPU" value={`${app.cpu_percent || 0}%`} hot={cpuHot} />
+      <Res label="Disk" value={mb(app.disk_mb, app.disk_limit_mb)} hot={diskHot} />
+      <Res label="RAM" value={mb(app.memory_mb, app.memory_limit_mb)} hot={memHot} />
+      <Res label="Uptime" value={formatUptime(app.started_at)} />
+    </div>
+  );
+};
+
+// A small dropdown wrapper shared by the Actions and Terminal menus: closes on an
+// outside click or Escape.
+const useDropdown = () => {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
-
   useEffect(() => {
     if (!open) {
       return undefined;
@@ -90,6 +165,64 @@ const ActionsMenu = ({ running, appRunning, busy, onAction, onDelete }) => {
       document.removeEventListener("keydown", onKey);
     };
   }, [open]);
+  return { open, setOpen, ref };
+};
+
+// A split button for the terminal: the left half (the icon) opens the web shell
+// directly; the right half (the caret) drops a menu (web shell / SSH). When a
+// shell session is running -- even minimized out of sight -- the button goes dark
+// so the owner can see it is still there, and the icon click brings it back.
+const TerminalSplitButton = ({ active, connecting, onWebShell, onSsh }) => {
+  const { open, setOpen, ref } = useDropdown();
+  const pick = (fn) => {
+    setOpen(false);
+    fn();
+  };
+  const cls = ["menu split-btn", active ? "split-btn-active" : "", connecting ? "split-btn-loading" : ""]
+    .join(" ")
+    .trim();
+  return (
+    <div className={cls} ref={ref}>
+      <button
+        type="button"
+        className="btn split-btn-main"
+        onClick={onWebShell}
+        disabled={connecting}
+        title={connecting ? "Connecting..." : active ? "Show web shell" : "Open web shell"}
+        aria-label={connecting ? "Connecting" : active ? "Show web shell" : "Open web shell"}
+      >
+        <TerminalIcon />
+      </button>
+      <button
+        type="button"
+        className="btn split-btn-caret"
+        onClick={() => setOpen(!open)}
+        disabled={connecting}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label="Terminal options"
+      >
+        <span aria-hidden="true">&#9662;</span>
+      </button>
+      {open && (
+        <div className="menu-items" role="menu">
+          <button type="button" role="menuitem" onClick={() => pick(onWebShell)}>
+            Web shell
+          </button>
+          <button type="button" role="menuitem" onClick={() => pick(onSsh)}>
+            Connect via SSH
+          </button>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// Start/stop/restart behind one button: only one of them is ever the sensible
+// next move. Delete lives here too, set apart at the bottom, so the whole
+// rare-actions surface is one menu.
+const ActionsMenu = ({ running, appRunning, busy, onAction, onDelete }) => {
+  const { open, setOpen, ref } = useDropdown();
 
   const run = (action) => {
     setOpen(false);
@@ -118,13 +251,16 @@ const ActionsMenu = ({ running, appRunning, busy, onAction, onDelete }) => {
     <div className="menu" ref={ref}>
       <button
         type="button"
-        className="btn"
+        className="btn btn-icon"
         onClick={() => setOpen(!open)}
         disabled={busy}
         aria-haspopup="menu"
         aria-expanded={open}
+        title={busy ? "Working..." : "Actions"}
+        aria-label="Actions"
       >
-        {busy ? "Working..." : "Actions"} <span aria-hidden="true">&#9662;</span>
+        <ControlsIcon />
+        <span aria-hidden="true">&#9662;</span>
       </button>
       {open && (
         <div className="menu-items" role="menu">
@@ -167,8 +303,9 @@ const NotFound = ({ name }) => (
   </div>
 );
 
-// The app-scoped token is created with the app and returned by the API on
-// every fetch, so it is always on display here; rotating it mints a new one.
+// The app-scoped token is created with the app and returned by the API on every
+// fetch, so it is always on display; rotating it mints a new one. Lives in the
+// "bring your own AI" dialog next to the copy-paste prompt.
 const ApiAccess = ({ name, token, onRotated }) => {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -189,24 +326,13 @@ const ApiAccess = ({ name, token, onRotated }) => {
   };
 
   return (
-    <div className="card">
-      <h2>API access</h2>
+    <>
       <ErrorBanner message={error} onDismiss={() => setError("")} />
       {!token && <p className="empty">This app has no owner, so it has no API token.</p>}
       {token && (
         <>
           <p className="hint">
-            Everything on this page can also be done through the REST API. This token is scoped to this one app: point an AI
-            assistant (or your own scripts) at{" "}
-            <span className="mono">
-              {origin}/api/apps/{name}/info
-            </span>{" "}
-            with it and the API describes the rest. Anyone holding it can change or delete this app's contents, so treat it like a
-            password. See the{" "}
-            <a href="/docs#api" target="_blank" rel="noreferrer">
-              API reference
-            </a>{" "}
-            for the full list of endpoints.
+            Scoped to this one app. Anyone holding it can change or delete the app, so treat it like a password.
           </p>
           <pre className="key-block">{token}</pre>
           <div className="btn-row">
@@ -219,13 +345,92 @@ const ApiAccess = ({ name, token, onRotated }) => {
           </div>
         </>
       )}
+    </>
+  );
+};
+
+// "Bring your own Claude": the ready-to-paste prompt, the app address and the API
+// token, all in one modal reached from the sparkle button. This is where the
+// address/token/regenerate controls live now that the page itself is a workspace.
+const PromptDialog = ({ app, token, prompt, onRotated, onClose }) => {
+  useEscape(onClose);
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true" onMouseDown={onClose}>
+      <div className="card modal modal-wide" onMouseDown={(e) => e.stopPropagation()}>
+        <div className="modal-head">
+          <h2>Use your own AI agent</h2>
+          <button type="button" className="term-btn" onClick={onClose} title="Close" aria-label="Close">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M4 4l8 8M12 4l-8 8" />
+            </svg>
+          </button>
+        </div>
+        <p className="hint">
+          Prefer Claude Code or another agent over the built-in chat? Paste this prompt and it will learn this app's
+          API and wait for your instructions.
+        </p>
+        <div className="term prompt-block">
+          <pre>{prompt}</pre>
+          <div className="term-copy">
+            <CopyButton text={prompt} small={false}>
+              Copy prompt
+            </CopyButton>
+          </div>
+        </div>
+
+        <div className="field-row">
+          <span className="field-k">Address</span>
+          <a className="field-v mono" href={app.url} target="_blank" rel="noreferrer">
+            {hostOf(app.url)}
+          </a>
+          <CopyButton text={app.url} small>
+            Copy
+          </CopyButton>
+        </div>
+
+        <h3 className="modal-sub">API token</h3>
+        <ApiAccess name={app.name} token={token} onRotated={onRotated} />
+      </div>
     </div>
   );
 };
 
-// Delete behind a type-the-name confirmation, since it takes the container,
-// the files and the user with it. A modal, not a section at the bottom of the
-// page: it is reached deliberately from the Actions menu, never stumbled into.
+// How to reach the container over SSH: the ready command, an scp hint and a link
+// to where the keys that make it work are managed.
+const SshDialog = ({ app, hasKeys, onClose }) => {
+  useEscape(onClose);
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true" onMouseDown={onClose}>
+      <div className="card modal" onMouseDown={(e) => e.stopPropagation()}>
+        <div className="modal-head">
+          <h2>Connect via SSH</h2>
+          <button type="button" className="term-btn" onClick={onClose} title="Close" aria-label="Close">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M4 4l8 8M12 4l-8 8" />
+            </svg>
+          </button>
+        </div>
+        {hasKeys === false ? (
+          <p className="hint">
+            Add an SSH key to your <Link to="/profile">profile</Link> first. Keys there work on every app you own; then
+            this command connects you.
+          </p>
+        ) : (
+          <p className="hint">Shell in, or copy files with scp/rsync. The SSH keys on your profile authorize this.</p>
+        )}
+        {app.ssh && <Snippet text={app.ssh.command} />}
+        <p className="hint" style={{ marginTop: "14px" }}>
+          Manage the keys that grant access on your{" "}
+          <Link to="/profile">SSH keys page</Link>.
+        </p>
+      </div>
+    </div>
+  );
+};
+
+// Delete behind a type-the-name confirmation, since it takes the container, the
+// files and the user with it. A modal, not a section on the page: it is reached
+// deliberately from the Actions menu, never stumbled into.
 const DeleteAppDialog = ({ name, onCancel, onDeleted }) => {
   const [confirm, setConfirm] = useState("");
   const [error, setError] = useState("");
@@ -278,6 +483,16 @@ const DeleteAppDialog = ({ name, onCancel, onDeleted }) => {
   );
 };
 
+// useEscape calls back when Escape is pressed -- shared by the page's modals.
+const useEscape = (onClose) => {
+  useEffect(() => {
+    if (!onClose) return undefined;
+    const onKey = (e) => e.key === "Escape" && onClose();
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+};
+
 const AppDetail = ({ account, refreshAccount }) => {
   const { name } = useParams();
   const navigate = useNavigate();
@@ -286,10 +501,86 @@ const AppDetail = ({ account, refreshAccount }) => {
   const [missing, setMissing] = useState(false);
   const [pending, setPending] = useState(null); // an in-flight lifecycle transition, or null
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [showTerminal, setShowTerminal] = useState(false);
-  const [showAssistant, setShowAssistant] = useState(false);
+  const [termOpen, setTermOpen] = useState(false); // a shell session exists (mounted)
+  const [termMin, setTermMin] = useState(false); // ...but hidden out of the way
+  const [termConnecting, setTermConnecting] = useState(false); // opening, not yet connected
+  const termOpenRef = useRef(false);
+  termOpenRef.current = termOpen;
+  const [showSsh, setShowSsh] = useState(false);
+  const [showPrompt, setShowPrompt] = useState(false);
   const [hasKeys, setHasKeys] = useState(null); // null until we know, so nothing flickers
   const catchUpTimers = useRef([]);
+
+  // The live preview reloads whenever the app is (re)deployed by anything -- the
+  // chat's deploy tool, an external `hostit deploy`, a restart. We remount the
+  // iframe by bumping its key, and flag "refreshing" until it loads again.
+  const [previewKey, setPreviewKey] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
+  const lastAppStart = useRef(null);
+  const refreshTimer = useRef(null);
+
+  const reloadPreview = useCallback(() => {
+    // Always freshen the URL so the preview is current whenever it is next shown.
+    setPreviewKey((k) => k + 1);
+    // On small screens the preview is hidden: there is no pane to spin over, and a
+    // hidden lazy iframe never fires onLoad, so skip the "refreshing" status there.
+    if (window.matchMedia("(max-width: 820px)").matches) {
+      return;
+    }
+    setRefreshing(true);
+    clearTimeout(refreshTimer.current);
+    // Fallback: some apps never fire load on the iframe; do not spin forever.
+    refreshTimer.current = setTimeout(() => setRefreshing(false), 6000);
+  }, []);
+
+  // Open the web shell, or bring back a minimized session. The terminal stays
+  // mounted while minimized so the shell keeps running, so only a fresh open (not
+  // a restore) shows the "connecting" pulse.
+  const openWebShell = useCallback(() => {
+    if (!termOpenRef.current) {
+      setTermConnecting(true);
+    }
+    setTermOpen(true);
+    setTermMin(false);
+  }, []);
+
+  // Tear the terminal down: on the user's close, and when the server ends the
+  // session (a reboot/poweroff), so the button stops showing a live session.
+  const closeTerminal = useCallback(() => {
+    setTermOpen(false);
+    setTermMin(false);
+    setTermConnecting(false);
+  }, []);
+
+  // The chat/preview divider position, remembered across reloads.
+  const [chatFrac, setChatFrac] = useState(() => {
+    const saved = parseFloat(localStorage.getItem(splitKey) || "");
+    return saved >= 0.2 && saved <= 0.8 ? saved : defaultChatFrac;
+  });
+  const chatFracRef = useRef(chatFrac);
+  chatFracRef.current = chatFrac;
+  const splitRef = useRef(null);
+
+  const startResize = (e) => {
+    e.preventDefault();
+    let latest = chatFracRef.current; // track here; React state lags a frame behind
+    const move = (ev) => {
+      const rect = splitRef.current?.getBoundingClientRect();
+      if (!rect || rect.width === 0) return;
+      const clientX = ev.touches ? ev.touches[0].clientX : ev.clientX;
+      latest = Math.min(0.8, Math.max(0.2, (clientX - rect.left) / rect.width));
+      setChatFrac(latest);
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      document.body.classList.remove("ws-resizing");
+      localStorage.setItem(splitKey, String(latest));
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    document.body.classList.add("ws-resizing");
+  };
 
   // Whether SSH is usable at all depends on the profile, not on the app
   useEffect(() => {
@@ -323,12 +614,31 @@ const AppDetail = ({ account, refreshAccount }) => {
   useEffect(() => {
     load();
     scheduleCatchUp();
-    const ticker = setInterval(load, 60000);
+    const ticker = setInterval(load, detailPollMs);
     return () => {
       catchUpTimers.current.forEach(clearTimeout);
       clearInterval(ticker);
+      clearTimeout(refreshTimer.current);
     };
   }, [load, scheduleCatchUp]);
+
+  // The app process restarting (a deploy, restart or reboot) is our signal to
+  // reload the preview: whatever changed is now live. Skip the very first read,
+  // which only establishes the baseline.
+  useEffect(() => {
+    if (!app) return;
+    const startedAt = app.app_started_at || 0;
+    if (lastAppStart.current === null) {
+      lastAppStart.current = startedAt;
+      return;
+    }
+    if (startedAt !== lastAppStart.current) {
+      lastAppStart.current = startedAt;
+      if (app.running) {
+        reloadPreview();
+      }
+    }
+  }, [app, reloadPreview]);
 
   // Lifecycle runs through the agent API, which takes our session cookie just like
   // the REST API does. We do not guess the result: we record the app's start times
@@ -421,18 +731,36 @@ const AppDetail = ({ account, refreshAccount }) => {
   const token = app.agent_token || "";
   const prompt = promptText(app.name, app.url, token || tokenPlaceholder, (app.description || "").trim());
 
+  // A cache-busting query on the preview URL, bumped on every reload, so a refresh
+  // always fetches the live app rather than the browser's cached copy.
+  const previewSrc = app.url + (app.url.includes("?") ? "&" : "?") + "hostit_preview=" + previewKey;
+
+  // "Running" is the unremarkable state, so it is left unsaid; only the states
+  // worth noticing get a label.
+  const statusText = pending
+    ? null
+    : refreshing
+      ? "Refreshing preview"
+      : !app.running
+        ? "Powered off"
+        : app.app_running
+          ? ""
+          : "App stopped";
+  const statusPending = !!pending || refreshing;
+
   return (
     <>
-      <p className="crumb">
-        <Link to="/">&larr; Apps</Link>
-      </p>
-      <div className="page-header app-header">
-        <div className="app-heading">
-          <div className="app-title-row">
-            <h1 className="app-title">
-              <StatusDot running={app.running} appRunning={app.app_running} pending={!!pending} />
-              {app.name}
-            </h1>
+      <div className="ws-page">
+        {/* Top bar. Left: identity (the "Running" state is left unsaid -- only the
+            notable states are named). Right: the live resources beside the
+            controls, all vertically centred. */}
+        <div className="ws-topbar">
+          <Link to="/" className="ws-back" aria-label="Back to apps" title="Back to apps">
+            <BackIcon />
+          </Link>
+          <div className="ws-idrow">
+            <StatusDot running={app.running} appRunning={app.app_running} pending={statusPending} />
+            <span className="ws-name">{app.name}</span>
             {pending ? (
               <span className="status-label status-label-pending">
                 {pending.label}
@@ -443,97 +771,134 @@ const AppDetail = ({ account, refreshAccount }) => {
                 </span>
               </span>
             ) : (
-              <span className="status-label">
-                {!app.running ? "Powered off" : app.app_running ? "Running" : "App stopped"}
-              </span>
+              statusText && (
+                <span className={"status-label" + (refreshing ? " status-label-pending" : "")}>{statusText}</span>
+              )
             )}
           </div>
-          <a className="app-url" href={app.url} target="_blank" rel="noreferrer">
-            {app.url}
-          </a>
-        </div>
-        {/* Seeing the app is what people come here to do, so that is the one
-            accented button; lifecycle and delete hide in the menu. */}
-        <div className="header-actions">
-          <ActionsMenu
-            running={app.running}
-            appRunning={app.app_running}
-            busy={!!pending}
-            onAction={lifecycle}
-            onDelete={() => setConfirmDelete(true)}
-          />
-          {/* Build/change the app from the browser, no local machine needed */}
-          <button type="button" className="btn" onClick={() => setShowAssistant(true)}>
-            Build with AI
-          </button>
-          {/* A shell in the container, in the browser -- only useful while it runs */}
-          {app.running && (
-            <button type="button" className="btn" onClick={() => setShowTerminal(true)}>
-              Terminal
-            </button>
-          )}
-          <a className="btn btn-primary" href={app.url} target="_blank" rel="noreferrer">
-            Open app
-          </a>
-        </div>
-      </div>
-      <p className="usage app-status">
-        RAM {formatUsage(app.memory_mb, app.memory_limit_mb)} &middot; disk {formatUsage(app.disk_mb, app.disk_limit_mb)}
-        {app.over_quota && <span className="badge badge-danger">over quota</span>} &middot; created {formatDate(app.created_at)}
-        {!own && app.owner_email && <> &middot; owned by {app.owner_email}</>}
-      </p>
-      <ErrorBanner message={error} onDismiss={() => setError("")} />
 
-      <div className="card prompt-card">
-        <h2>Prompt for your AI assistant</h2>
-        <div className="term prompt-block">
-          <pre>{prompt}</pre>
-          <div className="term-copy">
-            <CopyButton text={prompt} small={false} disabled={token === ""}>
-              Copy prompt
-            </CopyButton>
+          <div className="ws-topright">
+            {app.running && <UsageGrid app={app} />}
+            <div className="ws-topacts">
+              {app.running && (
+                <TerminalSplitButton
+                  active={termOpen && !termConnecting}
+                  connecting={termConnecting}
+                  onWebShell={openWebShell}
+                  onSsh={() => setShowSsh(true)}
+                />
+              )}
+              <button
+                type="button"
+                className="btn btn-icon btn-sparkle"
+                onClick={() => setShowPrompt(true)}
+                title="Use your own AI agent"
+                aria-label="Use your own AI agent"
+              >
+                <SparkleIcon />
+              </button>
+              <ActionsMenu
+                running={app.running}
+                appRunning={app.app_running}
+                busy={!!pending}
+                onAction={lifecycle}
+                onDelete={() => setConfirmDelete(true)}
+              />
+              <a className="btn btn-primary" href={app.url} target="_blank" rel="noreferrer">
+                Open app &#8599;
+              </a>
+            </div>
           </div>
         </div>
-        <p className="hint">Paste this into Claude Code (or any AI agent).</p>
+        <ErrorBanner message={error} onDismiss={() => setError("")} />
+
+        {/* The workspace: build on the left, watch it change on the right, with a
+            draggable divider between them. */}
+        <div
+          className="ws-split"
+          ref={splitRef}
+          style={{ gridTemplateColumns: `minmax(0, ${chatFrac}fr) 10px minmax(0, ${1 - chatFrac}fr)` }}
+        >
+          <div className="ws-chat">
+            <Suspense fallback={<div className="ws-chat-loading">Loading assistant...</div>}>
+              <AppAssistant name={app.name} embedded onPreviewRefresh={reloadPreview} />
+            </Suspense>
+          </div>
+
+          <div
+            className="ws-resizer"
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize chat and preview"
+            onPointerDown={startResize}
+            onTouchStart={startResize}
+          >
+            <span className="ws-resizer-grip" aria-hidden="true" />
+          </div>
+
+          <div className="ws-right">
+            {app.running ? (
+              <div className="ws-preview">
+                {refreshing && (
+                  <div className="ws-preview-badge">
+                    <span className="ws-preview-spinner" aria-hidden="true" /> Refreshing
+                  </div>
+                )}
+                {/* The app runs in its own origin; sandbox keeps it from navigating
+                    the dashboard away or opening windows. A per-reload cache-buster
+                    on the URL forces a real fetch: Go's file server sets no
+                    Cache-Control, so a plain reload would serve the browser's stale
+                    copy and a "refresh" would appear to do nothing (or revert). */}
+                <iframe
+                  key={previewKey}
+                  title={`Live preview of ${app.name}`}
+                  src={previewSrc}
+                  loading="lazy"
+                  sandbox="allow-scripts allow-same-origin allow-forms"
+                  onLoad={() => setRefreshing(false)}
+                />
+              </div>
+            ) : (
+              <div className="ws-preview ws-preview-off">
+                <p>
+                  The app is powered off. Use <strong>Actions</strong> to power it on, then it shows here.
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
-      <div className="card">
-        <h2>SSH access</h2>
-        {/* Without a key in the profile the ssh command cannot work, so showing
-            it would only produce a "Permission denied" later. */}
-        {hasKeys === false ? (
-          <p>
-            You must add at least one SSH key to your <Link to="/profile">profile</Link> before you can reach this app over SSH.
-            Keys you add there are installed on every app you own.
-          </p>
-        ) : (
-          <>
-            <p>You can also access your app container via SSH and/or copy files via scp/rsync:</p>
-            {app.ssh && <Snippet text={app.ssh.command} />}
-            <p className="hint">
-              Your SSH keys from your <Link to="/profile">profile</Link> work here.
-            </p>
-          </>
-        )}
-      </div>
-
-      <ApiAccess name={app.name} token={token} onRotated={setApp} />
-
-      {showTerminal && (
+      {termOpen && (
         <Suspense fallback={null}>
-          <AppTerminal name={app.name} onClose={() => setShowTerminal(false)} />
+          <AppTerminal
+            name={app.name}
+            minimized={termMin}
+            onReady={() => setTermConnecting(false)}
+            onMinimize={() => setTermMin(true)}
+            onClose={closeTerminal}
+            onSessionEnd={closeTerminal}
+          />
         </Suspense>
       )}
-      {showAssistant && (
-        <Suspense fallback={null}>
-          <AppAssistant name={app.name} onClose={() => setShowAssistant(false)} />
-        </Suspense>
+      {showSsh && <SshDialog app={app} hasKeys={hasKeys} onClose={() => setShowSsh(false)} />}
+      {showPrompt && (
+        <PromptDialog app={app} token={token} prompt={prompt} onRotated={setApp} onClose={() => setShowPrompt(false)} />
       )}
       {confirmDelete && (
         <DeleteAppDialog name={app.name} onCancel={() => setConfirmDelete(false)} onDeleted={deleted} />
       )}
     </>
   );
+};
+
+// hostOf returns just the hostname of a URL, for a compact address display
+const hostOf = (url) => {
+  try {
+    return new URL(url).host;
+  } catch {
+    return url;
+  }
 };
 
 export default AppDetail;

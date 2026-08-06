@@ -33,6 +33,7 @@ const TOOL_ICONS = {
   run_command: "\u{1F5A5}\u{FE0F}",
   read_logs: "\u{1F4DC}",
   deploy: "\u{1F680}",
+  refresh_preview: "\u{1F504}",
 };
 
 const truncate = (s, n) => (s && s.length > n ? s.slice(0, n) + "…" : s || "");
@@ -58,6 +59,8 @@ const summarize = (tool, input) => {
       return "Read logs";
     case "deploy":
       return "Deployed the app";
+    case "refresh_preview":
+      return "Refreshed the preview";
     default:
       return tool;
   }
@@ -211,7 +214,7 @@ const WorkingIndicator = () => {
   );
 };
 
-const AppAssistant = ({ name, onClose }) => {
+const AppAssistant = ({ name, onClose, embedded = false, onPreviewRefresh }) => {
   const [items, setItems] = useState([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -221,12 +224,14 @@ const AppAssistant = ({ name, onClose }) => {
   const idRef = useRef(0);
   const nextId = () => `i${idRef.current++}`;
 
-  // Grow the input with its content, up to a few lines, then scroll.
+  // Grow the input with its content, up to a few lines, then scroll. Only show a
+  // scrollbar once it actually overflows the cap, not at rest.
   useEffect(() => {
     const ta = taRef.current;
     if (ta) {
       ta.style.height = "auto";
       ta.style.height = `${Math.min(ta.scrollHeight, 140)}px`;
+      ta.style.overflowY = ta.scrollHeight > 140 ? "auto" : "hidden";
     }
   }, [input]);
 
@@ -280,11 +285,19 @@ const AppAssistant = ({ name, onClose }) => {
       if (ev.type === "user") next.push({ id: nextId(), kind: "user", text: ev.text });
       else if (ev.type === "thinking" && (ev.text || "").trim()) next.push({ id: nextId(), kind: "thinking", text: ev.text });
       else if (ev.type === "text") next.push({ id: nextId(), kind: "text", text: ev.text });
-      else if (ev.type === "tool_use") next.push({ id: nextId(), kind: "tool", tool: ev.tool, input: ev.input, output: null });
+      else if (ev.type === "tool_use") {
+        next.push({ id: nextId(), kind: "tool", tool: ev.tool, input: ev.input, output: null });
+        // A deploy or an explicit refresh means the live preview is now stale; ask
+        // the page hosting us to reload it. (A deploy also bumps app_started_at, so
+        // this is belt-and-suspenders; a static-file refresh has only this signal.)
+        if ((ev.tool === "deploy" || ev.tool === "refresh_preview") && onPreviewRefresh) {
+          onPreviewRefresh();
+        }
+      }
       return next;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loadTranscript]);
+  }, [loadTranscript, onPreviewRefresh]);
 
   // Live event stream (SSE). Every watcher subscribes, so a run started on any
   // device shows up here; EventSource reconnects on its own if the link drops.
@@ -343,9 +356,9 @@ const AppAssistant = ({ name, onClose }) => {
     }
   };
 
-  return (
-    <div className="modal-backdrop" role="dialog" aria-modal="true">
-      <div className="asst-window">
+  const inner = (
+    <>
+      {!embedded && (
         <header className="asst-header">
           <span className="asst-title">
             <span className="asst-title-app">{name}</span> &middot; AI assistant (preview)
@@ -356,33 +369,43 @@ const AppAssistant = ({ name, onClose }) => {
             </svg>
           </button>
         </header>
+      )}
 
-        <div className="asst-transcript" ref={scrollRef}>
-          {loaded && items.length === 0 && (
-            <p className="asst-empty">
-              Ask me to build or change <strong>{name}</strong>. I can read and write its files and run commands in its
-              container. Try: &ldquo;make the homepage say hello in big letters&rdquo;.
-            </p>
-          )}
-          {renderTranscript(items)}
-          {busy && <WorkingIndicator />}
-        </div>
-
-        <div className="asst-input">
-          <textarea
-            ref={taRef}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={onKeyDown}
-            placeholder="Build or change your app..."
-            rows={1}
-            disabled={busy}
-          />
-          <button type="button" className="btn btn-primary asst-send" onClick={() => send()} disabled={busy || !input.trim()}>
-            Send
-          </button>
-        </div>
+      <div className="asst-transcript" ref={scrollRef}>
+        {loaded && items.length === 0 && (
+          <p className="asst-empty">
+            Ask me to build or change <strong>{name}</strong> &mdash; in plain English. I can read and write its files
+            and run commands in its container, then publish. Try: &ldquo;add a leaderboard&rdquo;.
+          </p>
+        )}
+        {renderTranscript(items)}
+        {busy && <WorkingIndicator />}
       </div>
+
+      <div className="asst-input">
+        <textarea
+          ref={taRef}
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={onKeyDown}
+          placeholder="Build or change your app..."
+          rows={1}
+          disabled={busy}
+        />
+        <button type="button" className="btn btn-primary asst-send" onClick={() => send()} disabled={busy || !input.trim()}>
+          Send
+        </button>
+      </div>
+    </>
+  );
+
+  // Embedded (Direction C): the chat is a panel on the app page, not a modal.
+  if (embedded) {
+    return <div className="asst-window asst-embedded">{inner}</div>;
+  }
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true">
+      <div className="asst-window">{inner}</div>
     </div>
   );
 };
