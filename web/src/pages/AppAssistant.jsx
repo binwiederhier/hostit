@@ -211,24 +211,6 @@ const WorkingIndicator = () => {
   );
 };
 
-// drainEvents pulls complete "data: {...}\n\n" frames out of a growing buffer.
-const drainEvents = (buffer, onEvent) => {
-  let rest = buffer;
-  let idx;
-  while ((idx = rest.indexOf("\n\n")) >= 0) {
-    const frame = rest.slice(0, idx);
-    rest = rest.slice(idx + 2);
-    if (frame.startsWith("data: ")) {
-      try {
-        onEvent(JSON.parse(frame.slice(6)));
-      } catch {
-        // ignore a partial/garbled frame
-      }
-    }
-  }
-  return rest;
-};
-
 const AppAssistant = ({ name, onClose }) => {
   const [items, setItems] = useState([]);
   const [input, setInput] = useState("");
@@ -248,33 +230,42 @@ const AppAssistant = ({ name, onClose }) => {
     }
   }, [input]);
 
-  // Load the persisted conversation once, so a reload or another device continues
-  // where this one left off.
-  useEffect(() => {
-    let cancelled = false;
-    api()
-      .then((data) => {
-        if (cancelled) return;
-        const withIds = (data.items || []).map((it) => ({ ...it, id: nextId() }));
-        setItems(withIds);
-        setLoaded(true);
-      })
-      .catch(() => setLoaded(true));
-    return () => {
-      cancelled = true;
-    };
-    async function api() {
+  // Load the persisted conversation and whether a turn is running -- what a reload
+  // or another device continues from.
+  const loadTranscript = useCallback(async () => {
+    try {
       const r = await fetch(`/api/apps/${encodeURIComponent(name)}/assistant`, { credentials: "same-origin" });
-      return r.ok ? r.json() : { items: [] };
+      const data = r.ok ? await r.json() : { items: [], running: false };
+      setItems((data.items || []).map((it) => ({ ...it, id: nextId() })));
+      setBusy(!!data.running);
+    } finally {
+      setLoaded(true);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [name]);
 
   useEffect(() => {
+    loadTranscript();
+  }, [loadTranscript]);
+
+  useEffect(() => {
     scrollRef.current?.scrollTo(0, scrollRef.current.scrollHeight);
   }, [items, busy]);
 
-  const onEvent = useCallback((ev) => {
+  // Apply one streamed event. The run is server-owned and broadcast, so these
+  // arrive for anyone's turn on this app, not just ours.
+  const handleEvent = useCallback((ev) => {
+    if (ev.type === "done") {
+      setBusy(false);
+      loadTranscript(); // reconcile every watcher to the committed transcript
+      return;
+    }
+    if (ev.type === "error") {
+      setBusy(false);
+      setItems((prev) => [...prev, { id: nextId(), kind: "error", text: ev.error }]);
+      return;
+    }
+    setBusy(true);
     setItems((prev) => {
       const next = [...prev];
       if (ev.type === "tool_result") {
@@ -286,46 +277,53 @@ const AppAssistant = ({ name, onClose }) => {
         }
         return next;
       }
-      if (ev.type === "thinking" && (ev.text || "").trim()) next.push({ id: nextId(), kind: "thinking", text: ev.text });
+      if (ev.type === "user") next.push({ id: nextId(), kind: "user", text: ev.text });
+      else if (ev.type === "thinking" && (ev.text || "").trim()) next.push({ id: nextId(), kind: "thinking", text: ev.text });
       else if (ev.type === "text") next.push({ id: nextId(), kind: "text", text: ev.text });
       else if (ev.type === "tool_use") next.push({ id: nextId(), kind: "tool", tool: ev.tool, input: ev.input, output: null });
-      else if (ev.type === "error") next.push({ id: nextId(), kind: "error", text: ev.error });
       return next;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [loadTranscript]);
 
+  // Live event stream (SSE). Every watcher subscribes, so a run started on any
+  // device shows up here; EventSource reconnects on its own if the link drops.
+  useEffect(() => {
+    const es = new EventSource(`/api/apps/${encodeURIComponent(name)}/assistant/stream`);
+    es.onmessage = (e) => {
+      try {
+        handleEvent(JSON.parse(e.data));
+      } catch {
+        // ignore a malformed frame
+      }
+    };
+    return () => es.close();
+  }, [name, handleEvent]);
+
+  // Send a message: the server starts the turn in the background and everything
+  // comes back on the stream. We do not render it optimistically -- the stream
+  // echoes the message so every device shows it the same way.
   const send = async () => {
     const message = input.trim();
     if (!message || busy) return;
     setInput("");
-    setItems((prev) => [...prev, { id: nextId(), kind: "user", text: message }]);
     setBusy(true);
     try {
-      const resp = await fetch(`/api/apps/${encodeURIComponent(name)}/assistant`, {
+      const r = await fetch(`/api/apps/${encodeURIComponent(name)}/assistant`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "same-origin",
         body: JSON.stringify({ message }),
       });
-      if (!resp.ok || !resp.body) {
-        const text = await resp.text().catch(() => "");
-        onEvent({ type: "error", error: text || `request failed (${resp.status})` });
-        return;
+      if (r.status === 409) {
+        return; // a turn is already running; it will stream in
       }
-      const reader = resp.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        buffer = drainEvents(buffer, onEvent);
+      if (!r.ok) {
+        const text = await r.text().catch(() => "");
+        handleEvent({ type: "error", error: text || `request failed (${r.status})` });
       }
     } catch (err) {
-      onEvent({ type: "error", error: err.message });
-    } finally {
-      setBusy(false);
+      handleEvent({ type: "error", error: err.message });
     }
   };
 

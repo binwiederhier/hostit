@@ -51,6 +51,9 @@ const (
 	// assistantReadCap bounds a file the assistant reads, so one huge file cannot
 	// blow up the model's context
 	assistantReadCap = 128 * 1024
+	// assistantKeepalive is how often the event stream sends a comment so idle
+	// connections are not dropped by a proxy
+	assistantKeepalive = 20 * time.Second
 )
 
 // appOps adapts app.Manager to assistant.AppOps: it turns the assistant's generic
@@ -118,9 +121,10 @@ func (o *appOps) Deploy(name string) (string, error) {
 	return o.apps.Up(name)
 }
 
-// handleAssistant runs one assistant turn for an owned app and streams the loop
-// -- thinking, text, each tool call and its result -- to the browser as SSE, so a
-// phone watching the build sees it happen live.
+// handleAssistant starts a turn for an owned app. The run is owned by the server
+// (a background goroutine), not by this request, so it keeps going after the
+// sender leaves; its events go to every subscriber of the stream endpoint. This
+// returns as soon as the turn starts, or 409 if one is already running.
 func (s *Server) handleAssistant(w http.ResponseWriter, r *http.Request, c *caller) {
 	if s.assistant == nil {
 		writeError(w, http.StatusNotImplemented, errors.New("the built-in assistant is not configured on this server"))
@@ -133,7 +137,6 @@ func (s *Server) handleAssistant(w http.ResponseWriter, r *http.Request, c *call
 	}
 	var req struct {
 		Message string `json:"message"`
-		Reset   bool   `json:"reset"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, assistantMaxMessage)).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, err)
@@ -143,11 +146,29 @@ func (s *Server) handleAssistant(w http.ResponseWriter, r *http.Request, c *call
 		writeError(w, http.StatusBadRequest, errors.New("message is required"))
 		return
 	}
-	if req.Reset {
-		if err := s.assistant.Reset(a.Name); err != nil {
-			writeError(w, http.StatusInternalServerError, err)
+	if err := s.assistant.Send(a.Name, req.Message); err != nil {
+		if errors.Is(err, assistant.ErrBusy) {
+			writeError(w, http.StatusConflict, err)
 			return
 		}
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusAccepted, &apiMessageResponse{Message: "started"})
+}
+
+// handleAssistantStream is the live event feed for an app's assistant, as SSE.
+// Every watcher (browser, phone) subscribes here and sees the same stream, so a
+// run started on one device shows up on all of them.
+func (s *Server) handleAssistantStream(w http.ResponseWriter, r *http.Request, c *caller) {
+	if s.assistant == nil {
+		writeError(w, http.StatusNotImplemented, errors.New("the built-in assistant is not configured on this server"))
+		return
+	}
+	a, err := s.ownedApp(c, r.PathValue("name"))
+	if err != nil {
+		writeAppError(w, err)
+		return
 	}
 	flusher, ok := w.(http.Flusher)
 	if !ok {
@@ -160,23 +181,34 @@ func (s *Server) handleAssistant(w http.ResponseWriter, r *http.Request, c *call
 	w.WriteHeader(http.StatusOK)
 	flusher.Flush()
 
-	// emit serializes one event to the client. Called from Run's goroutine in
-	// order, so no locking is needed.
-	emit := func(ev assistant.Event) {
-		b, err := json.Marshal(ev)
-		if err != nil {
+	events, cancel := s.assistant.Subscribe(a.Name)
+	defer cancel()
+	keepalive := time.NewTicker(assistantKeepalive)
+	defer keepalive.Stop()
+	for {
+		select {
+		case ev, ok := <-events:
+			if !ok {
+				return // dropped (too slow); the client reconnects and reloads
+			}
+			b, err := json.Marshal(ev)
+			if err != nil {
+				continue
+			}
+			fmt.Fprintf(w, "data: %s\n\n", b)
+			flusher.Flush()
+		case <-keepalive.C:
+			fmt.Fprint(w, ": keepalive\n\n") // SSE comment; keeps proxies from idling us out
+			flusher.Flush()
+		case <-r.Context().Done():
 			return
 		}
-		fmt.Fprintf(w, "data: %s\n\n", b)
-		flusher.Flush()
 	}
-	// Run already reports its own failure as a final error event; nothing else to
-	// do with the returned error here.
-	_ = s.assistant.Run(r.Context(), a.Name, req.Message, emit)
 }
 
-// handleAssistantTranscript returns an owned app's stored conversation, so a
-// reload or another device shows the history rather than a blank chat.
+// handleAssistantTranscript returns an owned app's stored conversation plus
+// whether a turn is running, so a reload or another device shows the history and
+// resumes the live state rather than a blank chat.
 func (s *Server) handleAssistantTranscript(w http.ResponseWriter, r *http.Request, c *caller) {
 	if s.assistant == nil {
 		writeJSON(w, http.StatusOK, &apiAssistantTranscript{Enabled: false})
@@ -192,12 +224,13 @@ func (s *Server) handleAssistantTranscript(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, &apiAssistantTranscript{Enabled: true, Items: items})
+	writeJSON(w, http.StatusOK, &apiAssistantTranscript{Enabled: true, Items: items, Running: s.assistant.Running(a.Name)})
 }
 
 // apiAssistantTranscript is GET /api/apps/{name}/assistant
 type apiAssistantTranscript struct {
 	Enabled bool             `json:"enabled"`
+	Running bool             `json:"running"`
 	Items   []assistant.Item `json:"items"`
 }
 

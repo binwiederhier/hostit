@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -68,6 +69,40 @@ func eventTypes(events []Event) []string {
 	return out
 }
 
+// drainUntilDone reads events from a subscription until the turn ends
+func drainUntilDone(t *testing.T, ch <-chan Event) []Event {
+	t.Helper()
+	var events []Event
+	deadline := time.After(5 * time.Second)
+	for {
+		select {
+		case ev, ok := <-ch:
+			if !ok {
+				return events
+			}
+			events = append(events, ev)
+			if ev.Type == "done" || ev.Type == "error" {
+				return events
+			}
+		case <-deadline:
+			t.Fatal("timed out waiting for the turn to finish")
+			return events
+		}
+	}
+}
+
+// runTurn subscribes, sends a message, and returns the events of the whole turn,
+// waiting for the background run to fully finish.
+func runTurn(t *testing.T, m *Manager, app, text string) []Event {
+	t.Helper()
+	ch, cancel := m.Subscribe(app)
+	defer cancel()
+	require.NoError(t, m.Send(app, text))
+	events := drainUntilDone(t, ch)
+	require.Eventually(t, func() bool { return !m.Running(app) }, 2*time.Second, 5*time.Millisecond)
+	return events
+}
+
 func TestRunExecutesToolThenFinishes(t *testing.T) {
 	t.Parallel()
 	ops := newFakeOps()
@@ -81,16 +116,16 @@ func TestRunExecutesToolThenFinishes(t *testing.T) {
 	}}
 	m := NewManager(fc, ops, NewMemoryStore(), "test-model")
 
-	var events []Event
-	err := m.Run(context.Background(), "blog", "make a hello page", func(e Event) { events = append(events, e) })
-	require.NoError(t, err)
+	events := runTurn(t, m, "blog", "make a hello page")
 
 	// The tool actually ran against the app
 	assert.Equal(t, "<h1>hi</h1>", ops.files["public/index.html"])
 	assert.Equal(t, []string{"public/index.html"}, ops.writes)
 
-	// The client saw the loop unfold: thinking, text, the tool call, its result, done
+	// Subscribers saw the loop unfold: the echoed user message, thinking, text, the
+	// tool call, its result, done.
 	types := eventTypes(events)
+	assert.Equal(t, "user", types[0])
 	assert.Contains(t, types, "thinking")
 	assert.Contains(t, types, "text")
 	assert.Contains(t, types, "tool_use")
@@ -113,9 +148,7 @@ func TestToolErrorIsReportedButLoopContinues(t *testing.T) {
 	}}
 	m := NewManager(fc, ops, NewMemoryStore(), "test-model")
 
-	var events []Event
-	err := m.Run(context.Background(), "blog", "read missing.txt", func(e Event) { events = append(events, e) })
-	require.NoError(t, err, "a failing tool is the model's problem to handle, not a run failure")
+	events := runTurn(t, m, "blog", "read missing.txt")
 
 	var result *Event
 	for i := range events {
@@ -125,6 +158,7 @@ func TestToolErrorIsReportedButLoopContinues(t *testing.T) {
 	}
 	require.NotNil(t, result)
 	assert.True(t, result.IsError, "the tool result must be marked an error")
+	assert.Equal(t, "done", events[len(events)-1].Type, "a failing tool is the model's problem, not a run failure")
 	assert.True(t, toolResultIsError(fc.calls[1].Messages, "tu_1"), "the error must reach the model as is_error")
 }
 
@@ -134,10 +168,8 @@ func TestRunStopsAtStepLimit(t *testing.T) {
 	fc := &endlessToolCompleter{}
 	m := NewManager(fc, newFakeOps(), NewMemoryStore(), "test-model")
 
-	var last Event
-	err := m.Run(context.Background(), "blog", "go", func(e Event) { last = e })
-	require.ErrorIs(t, err, errMaxIterations)
-	assert.Equal(t, "error", last.Type)
+	events := runTurn(t, m, "blog", "go")
+	assert.Equal(t, "error", events[len(events)-1].Type)
 	assert.Equal(t, maxIterations, fc.calls)
 }
 
@@ -151,8 +183,8 @@ func TestTranscriptPersistsAcrossRuns(t *testing.T) {
 	}}
 	m := NewManager(fc, ops, NewMemoryStore(), "test-model")
 
-	require.NoError(t, m.Run(context.Background(), "blog", "hello", func(Event) {}))
-	require.NoError(t, m.Run(context.Background(), "blog", "again", func(Event) {}))
+	runTurn(t, m, "blog", "hello")
+	runTurn(t, m, "blog", "again")
 
 	// The second call must carry the whole prior exchange: user, assistant, user
 	msgs := fc.calls[1].Messages
@@ -162,8 +194,8 @@ func TestTranscriptPersistsAcrossRuns(t *testing.T) {
 	assert.Equal(t, "again", msgs[len(msgs)-1].Content[0].Text)
 
 	// Reset forgets it
-	m.Reset("blog")
-	require.NoError(t, m.Run(context.Background(), "blog", "fresh", func(Event) {}))
+	require.NoError(t, m.Reset("blog"))
+	runTurn(t, m, "blog", "fresh")
 	assert.Len(t, fc.calls[2].Messages, 1, "after reset only the new message remains")
 }
 
@@ -178,7 +210,7 @@ func TestTranscriptIsPersistedAndRendered(t *testing.T) {
 		}},
 		{StopReason: "end_turn", Content: []ContentBlock{{Type: "text", Text: "Done."}}},
 	}}
-	require.NoError(t, NewManager(fc, ops, store, "m").Run(context.Background(), "blog", "make a page", func(Event) {}))
+	runTurn(t, NewManager(fc, ops, store, "m"), "blog", "make a page")
 
 	// A different manager on the same store recovers the conversation as display
 	// items -- what a reload or another device sees.
@@ -210,11 +242,79 @@ func TestRunReportsAPIError(t *testing.T) {
 	fc := &fakeCompleter{} // no replies -> complete returns an error
 	m := NewManager(fc, newFakeOps(), NewMemoryStore(), "test-model")
 
-	var events []Event
-	err := m.Run(context.Background(), "blog", "hi", func(e Event) { events = append(events, e) })
-	require.Error(t, err)
+	events := runTurn(t, m, "blog", "hi")
 	require.NotEmpty(t, events)
 	assert.Equal(t, "error", events[len(events)-1].Type)
+}
+
+func TestBroadcastsToEverySubscriber(t *testing.T) {
+	t.Parallel()
+	fc := &fakeCompleter{replies: []response{
+		{StopReason: "end_turn", Content: []ContentBlock{{Type: "text", Text: "broadcast"}}},
+	}}
+	m := NewManager(fc, newFakeOps(), NewMemoryStore(), "test-model")
+
+	// Two devices watching the same app both see the same stream.
+	ch1, c1 := m.Subscribe("blog")
+	defer c1()
+	ch2, c2 := m.Subscribe("blog")
+	defer c2()
+	require.NoError(t, m.Send("blog", "hi"))
+
+	got1 := eventTypes(drainUntilDone(t, ch1))
+	got2 := eventTypes(drainUntilDone(t, ch2))
+	assert.Equal(t, got1, got2)
+	assert.Equal(t, []string{"user", "text", "done"}, got1)
+}
+
+func TestSecondSenderIsRejectedWhileBusy(t *testing.T) {
+	t.Parallel()
+	// A model call that blocks until released keeps the turn "running".
+	g := &gateCompleter{entered: make(chan struct{}, 1), release: make(chan struct{})}
+	m := NewManager(g, newFakeOps(), NewMemoryStore(), "test-model")
+
+	require.NoError(t, m.Send("blog", "one"))
+	<-g.entered // the run is now mid-call, so the app is busy
+	assert.True(t, m.Running("blog"))
+	assert.ErrorIs(t, m.Send("blog", "two"), ErrBusy, "a second sender must not clobber the first")
+
+	close(g.release)
+	require.Eventually(t, func() bool { return !m.Running("blog") }, 2*time.Second, 5*time.Millisecond)
+}
+
+func TestRunContinuesWithoutASubscriber(t *testing.T) {
+	t.Parallel()
+	// The run is server-owned: it finishes and persists even with nobody watching
+	// (i.e. the sender navigated away).
+	store := NewMemoryStore()
+	fc := &fakeCompleter{replies: []response{
+		{StopReason: "end_turn", Content: []ContentBlock{{Type: "text", Text: "done anyway"}}},
+	}}
+	m := NewManager(fc, newFakeOps(), store, "test-model")
+
+	require.NoError(t, m.Send("blog", "hello"))
+	require.Eventually(t, func() bool { return !m.Running("blog") }, 3*time.Second, 10*time.Millisecond)
+
+	items, err := m.Transcript("blog")
+	require.NoError(t, err)
+	require.Len(t, items, 2)
+	assert.Equal(t, "user", items[0].Kind)
+	assert.Equal(t, "hello", items[0].Text)
+	assert.Equal(t, "text", items[1].Kind)
+	assert.Equal(t, "done anyway", items[1].Text)
+}
+
+// gateCompleter blocks inside the model call until released, so a test can catch
+// the app while a turn is running
+type gateCompleter struct {
+	entered chan struct{}
+	release chan struct{}
+}
+
+func (g *gateCompleter) complete(_ context.Context, _ request) (*response, error) {
+	g.entered <- struct{}{}
+	<-g.release
+	return &response{StopReason: "end_turn", Content: []ContentBlock{{Type: "text", Text: "ok"}}}, nil
 }
 
 // endlessToolCompleter always asks for another tool, never ending the turn

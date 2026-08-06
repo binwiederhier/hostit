@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sync"
 )
 
 const (
@@ -29,28 +30,76 @@ var (
 	errMaxIterations = errors.New("assistant reached its step limit without finishing")
 )
 
-// Manager runs assistant sessions. One conversation is kept per app, persisted
-// through the Store so it survives reloads and restarts.
+// Manager runs assistant sessions. Each app's conversation is persisted through
+// the Store, and its live run is owned by the server (a background goroutine),
+// not by the request that started it -- so a run keeps going when the sender
+// leaves, and every subscriber (browser, phone) sees the same stream.
 type Manager struct {
-	client completer
-	ops    AppOps
-	store  Store
-	model  string
+	client   completer
+	ops      AppOps
+	store    Store
+	model    string
+	sessions map[string]*session
+	mu       sync.Mutex // Protects sessions
 }
 
 // NewManager wires the loop to a model client, the app operations it drives, and
 // the store that persists each app's conversation
 func NewManager(client completer, ops AppOps, store Store, model string) *Manager {
 	return &Manager{
-		client: client,
-		ops:    ops,
-		store:  store,
-		model:  model,
+		client:   client,
+		ops:      ops,
+		store:    store,
+		model:    model,
+		sessions: make(map[string]*session),
 	}
 }
 
-// Reset forgets an app's conversation, so the next message starts fresh
+// sessionFor returns the app's live session, creating it on first use
+func (m *Manager) sessionFor(app string) *session {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	s := m.sessions[app]
+	if s == nil {
+		s = newSession()
+		m.sessions[app] = s
+	}
+	return s
+}
+
+// Subscribe registers a watcher for an app's live events and returns a channel to
+// read them from plus a function to stop watching. Every subscriber sees the same
+// stream, so multiple devices stay in sync.
+func (m *Manager) Subscribe(app string) (<-chan Event, func()) {
+	s := m.sessionFor(app)
+	id, ch := s.subscribe()
+	return ch, func() { s.unsubscribe(id) }
+}
+
+// Running reports whether a turn is in progress for an app, so a page loading
+// fresh can show the working state and disable sending.
+func (m *Manager) Running(app string) bool {
+	return m.sessionFor(app).isRunning()
+}
+
+// Send starts a turn for an app in the background and returns at once. It refuses
+// (ErrBusy) if a turn is already running, so two senders cannot clobber the
+// transcript. The events flow to every subscriber, not to this caller.
+func (m *Manager) Send(app, userText string) error {
+	s := m.sessionFor(app)
+	if !s.begin() {
+		return ErrBusy
+	}
+	go m.runLoop(s, app, userText)
+	return nil
+}
+
+// Reset forgets an app's conversation, so the next message starts fresh. It
+// refuses while a turn is running.
 func (m *Manager) Reset(app string) error {
+	if m.sessionFor(app).isRunning() {
+		return ErrBusy
+	}
 	return m.store.Delete(app)
 }
 
@@ -64,15 +113,21 @@ func (m *Manager) Transcript(app string) ([]Item, error) {
 	return toItems(history), nil
 }
 
-// Run sends one user message for an app and drives the loop to completion,
-// emitting an Event for everything that happens along the way. It appends to the
-// app's transcript so a conversation builds up across calls. emit is called from
-// this goroutine, in order; it must not block for long.
-func (m *Manager) Run(ctx context.Context, app, userText string, emit func(Event)) error {
+// runLoop is one turn, run in a server-owned goroutine (not a request). It
+// publishes every step to the app's session so all subscribers see it, and saves
+// the transcript after each step so a reload mid-run recovers the progress. It is
+// bound to a background context, so the sender leaving does not cancel it.
+func (m *Manager) runLoop(s *session, app, userText string) {
+	defer s.end()
+	ctx, cancel := context.WithTimeout(context.Background(), runTimeout)
+	defer cancel()
+
 	history := append(m.load(app), Message{
 		Role:    "user",
 		Content: []ContentBlock{{Type: "text", Text: userText}},
 	})
+	m.save(app, history)
+	s.publish(Event{Type: "user", Text: userText})
 
 	for iter := 0; iter < maxIterations; iter++ {
 		resp, err := m.client.complete(ctx, request{
@@ -85,28 +140,27 @@ func (m *Manager) Run(ctx context.Context, app, userText string, emit func(Event
 			OutputConfig: &outputConfig{Effort: assistantEffort},
 		})
 		if err != nil {
-			emit(Event{Type: "error", Error: err.Error()})
-			return err
+			s.publish(Event{Type: "error", Error: err.Error()})
+			return
 		}
 
-		// Stream the reply to the client, then keep it in the transcript. Thinking
-		// blocks are shown but not stored: an adaptive thinking block carries
-		// internal fields we do not round-trip, and the model does not need its
-		// earlier thinking echoed back to keep going.
-		toolUses := m.emitReply(resp.Content, emit)
+		// Keep the reply in the transcript. Thinking blocks are shown but not
+		// stored: an adaptive thinking block carries internal fields we do not
+		// round-trip, and the model does not need its earlier thinking echoed back.
+		toolUses := m.publishReply(s, resp.Content)
 		history = append(history, Message{Role: "assistant", Content: withoutThinking(resp.Content)})
+		m.save(app, history)
 		if len(toolUses) == 0 {
 			// No tool calls: the model has said its piece and is done.
-			m.save(app, history)
-			emit(Event{Type: "done"})
-			return nil
+			s.publish(Event{Type: "done"})
+			return
 		}
 
 		// Run each requested tool and hand the results back as the next user turn.
 		results := make([]ContentBlock, 0, len(toolUses))
 		for _, tu := range toolUses {
 			out, isErr := m.dispatch(app, tu.Name, tu.Input)
-			emit(Event{Type: "tool_result", Tool: tu.Name, Output: out, IsError: isErr})
+			s.publish(Event{Type: "tool_result", Tool: tu.Name, Output: out, IsError: isErr})
 			results = append(results, ContentBlock{
 				Type:      "tool_result",
 				ToolUseID: tu.ID,
@@ -115,11 +169,10 @@ func (m *Manager) Run(ctx context.Context, app, userText string, emit func(Event
 			})
 		}
 		history = append(history, Message{Role: "user", Content: results})
+		m.save(app, history)
 	}
 
-	m.save(app, history)
-	emit(Event{Type: "error", Error: errMaxIterations.Error()})
-	return errMaxIterations
+	s.publish(Event{Type: "error", Error: errMaxIterations.Error()})
 }
 
 // withoutThinking drops thinking blocks so they are not echoed back to the API.
@@ -135,18 +188,18 @@ func withoutThinking(blocks []ContentBlock) []ContentBlock {
 	return out
 }
 
-// emitReply streams the model's text and thinking to the client and returns the
-// tool calls it wants run
-func (m *Manager) emitReply(content []ContentBlock, emit func(Event)) []ContentBlock {
+// publishReply streams the model's text and thinking to every subscriber and
+// returns the tool calls it wants run
+func (m *Manager) publishReply(s *session, content []ContentBlock) []ContentBlock {
 	var toolUses []ContentBlock
 	for _, b := range content {
 		switch b.Type {
 		case "text":
-			emit(Event{Type: "text", Text: b.Text})
+			s.publish(Event{Type: "text", Text: b.Text})
 		case "thinking":
-			emit(Event{Type: "thinking", Text: b.Thinking})
+			s.publish(Event{Type: "thinking", Text: b.Thinking})
 		case "tool_use":
-			emit(Event{Type: "tool_use", Tool: b.Name, Input: string(b.Input)})
+			s.publish(Event{Type: "tool_use", Tool: b.Name, Input: string(b.Input)})
 			toolUses = append(toolUses, b)
 		}
 	}
