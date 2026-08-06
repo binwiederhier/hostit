@@ -94,9 +94,10 @@ func loginBanner(self *appctl.SelfInfo) string {
 		"\n" +
 		"  Configure the app in hostit.yml (mode: static, or mode: app with run:), then:\n" +
 		"\n" +
-		"    hostit up          apply hostit.yml and (re)start the app\n" +
-		"    hostit down        stop the app\n" +
-		"    hostit restart     restart it\n" +
+		"    hostit deploy      apply hostit.yml and (re)start the app\n" +
+		"    hostit start/stop  start or stop the app (container stays up)\n" +
+		"    hostit restart     restart the app (fast)\n" +
+		"    hostit poweroff    stop the container; poweron/reboot to bring it back\n" +
 		"    hostit status      is it running?\n" +
 		"    hostit logs -f     watch its output\n" +
 		"\n" +

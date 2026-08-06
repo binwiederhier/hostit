@@ -59,19 +59,39 @@ func (c *Controller) Ensure() (string, error) {
 	return c.message("POST", "/v1/self/ensure")
 }
 
-// Up (re)deploys the app from its hostit.yml
-func (c *Controller) Up() (string, error) {
-	return c.message("POST", "/v1/self/up")
+// Deploy applies the app's hostit.yml and (re)starts it
+func (c *Controller) Deploy() (string, error) {
+	return c.message("POST", "/v1/self/deploy")
 }
 
-// Down stops the app and disables it at boot
-func (c *Controller) Down() (string, error) {
-	return c.message("POST", "/v1/self/down")
+// Start starts the app's run: command inside its (running) container
+func (c *Controller) Start() (string, error) {
+	return c.message("POST", "/v1/self/start")
 }
 
-// Restart restarts the app
+// Stop stops the run: command but leaves the container running
+func (c *Controller) Stop() (string, error) {
+	return c.message("POST", "/v1/self/stop")
+}
+
+// Restart restarts the run: command (fast; no container recreate)
 func (c *Controller) Restart() (string, error) {
 	return c.message("POST", "/v1/self/restart")
+}
+
+// PowerOn starts the app's container
+func (c *Controller) PowerOn() (string, error) {
+	return c.message("POST", "/v1/self/poweron")
+}
+
+// PowerOff stops the app's container and keeps it off across reboots
+func (c *Controller) PowerOff() (string, error) {
+	return c.message("POST", "/v1/self/poweroff")
+}
+
+// Reboot reboots the app's container
+func (c *Controller) Reboot() (string, error) {
+	return c.message("POST", "/v1/self/reboot")
 }
 
 // Status returns the app's service status output

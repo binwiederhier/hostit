@@ -56,9 +56,27 @@ func TestDispatchTools(t *testing.T) {
 		assert.True(t, isErr)
 	})
 
+	t.Run("refresh_preview confirms without touching the app", func(t *testing.T) {
+		// It is a UI signal, not an app operation: the owner's browser reloads the
+		// live preview when it sees the call on the stream. So it never errors and
+		// does not depend on ops.
+		out, isErr := m.dispatch("blog", "refresh_preview", json.RawMessage(`{}`))
+		assert.False(t, isErr)
+		assert.NotEmpty(t, out)
+	})
+
 	t.Run("unknown tool", func(t *testing.T) {
 		out, isErr := m.dispatch("blog", "delete_everything", json.RawMessage(`{}`))
 		assert.True(t, isErr)
 		assert.Contains(t, out, "unknown tool")
 	})
+}
+
+func TestToolDefsIncludeRefreshPreview(t *testing.T) {
+	t.Parallel()
+	var names []string
+	for _, d := range toolDefs() {
+		names = append(names, d.Name)
+	}
+	assert.Contains(t, names, "refresh_preview")
 }

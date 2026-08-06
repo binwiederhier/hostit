@@ -1,5 +1,5 @@
 // Package cmd wires up the hostit CLI: the daemon ("serve"), the app-side deploy
-// commands ("up", "down", ...) and the remote client ("apps ...").
+// commands ("deploy", "restart", ...) and the remote client ("apps ...").
 package cmd
 
 import (
@@ -24,7 +24,7 @@ func New() *cli.App {
 	commands := []*cli.Command{cmdServe, cmdApps, cmdShell, cmdEnter}
 	usage := "self-hosted mini-app platform: isolated apps with SSH access, subdomains and TLS"
 	if insideContainer() {
-		commands = []*cli.Command{cmdUp, cmdDown, cmdRestart, cmdStatus, cmdLogs, cmdInfo, cmdGuide, cmdStatic, cmdPlaceholder, cmdAgent}
+		commands = []*cli.Command{cmdDeploy, cmdStart, cmdStop, cmdRestart, cmdPowerOn, cmdPowerOff, cmdReboot, cmdStatus, cmdLogs, cmdInfo, cmdGuide, cmdStatic, cmdPlaceholder, cmdAgent}
 		usage = "manage this app: deploy it, restart it, read its logs"
 	}
 	return &cli.App{

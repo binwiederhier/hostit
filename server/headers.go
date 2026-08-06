@@ -10,12 +10,19 @@ const (
 	// hstsValue is two years with subdomains, the value the preload list wants.
 	// One base-domain HSTS covers every app subdomain too.
 	hstsValue = "max-age=63072000; includeSubDomains"
-	// webCSP locks the web app to its own origin. Inline styles are allowed
+	// webCSPBase locks the web app to its own origin. Inline styles are allowed
 	// because React sets style attributes; scripts and everything else must come
-	// from us, and frame-ancestors 'none' stops the dashboard being framed and
-	// its privileged actions clickjacked.
-	webCSP = "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+	// from us, and frame-ancestors 'none' stops the dashboard being framed and its
+	// privileged actions clickjacked. frame-src is appended per-server so the
+	// dashboard can preview the owner's own apps (see webCSP).
+	webCSPBase = "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
 )
+
+// webCSP is webCSPBase plus a frame-src that allows previewing the owner's own
+// apps (subdomains of the base domain) inside the dashboard, and nothing else.
+func (s *Server) webCSP() string {
+	return webCSPBase + "; frame-src 'self' https://*." + s.config.BaseDomain
+}
 
 // withBaseSecurityHeaders sets the headers safe for every public response,
 // tenant apps included: nosniff, a conservative Referrer-Policy, and (under TLS)
@@ -38,7 +45,7 @@ func (s *Server) withBaseSecurityHeaders(next http.Handler) http.Handler {
 func (s *Server) withWebSecurityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
-		h.Set("Content-Security-Policy", webCSP)
+		h.Set("Content-Security-Policy", s.webCSP())
 		h.Set("X-Frame-Options", "DENY")
 		next.ServeHTTP(w, r)
 	})

@@ -80,30 +80,40 @@ func TestParseAppConfigLenient(t *testing.T) {
 func TestControllerLifecycle(t *testing.T) {
 	t.Parallel()
 	ctl := newTestController(t, map[string]any{
-		"GET /v1/self":          &SelfInfo{Name: "blog", Port: 10000, URL: "https://blog.apps.example.com"},
-		"POST /v1/self/ensure":  map[string]string{"message": "workspace ready"},
-		"POST /v1/self/up":      map[string]string{"message": "deployed"},
-		"POST /v1/self/down":    map[string]string{"message": "stopped"},
-		"POST /v1/self/restart": map[string]string{"message": "restarted"},
-		"GET /v1/self/status":   map[string]string{"output": "active (running)"},
-		"GET /v1/self/logs":     map[string]string{"output": "log line\n"},
+		"GET /v1/self":           &SelfInfo{Name: "blog", Port: 10000, URL: "https://blog.apps.example.com"},
+		"POST /v1/self/ensure":   map[string]string{"message": "workspace ready"},
+		"POST /v1/self/deploy":   map[string]string{"message": "deployed"},
+		"POST /v1/self/start":    map[string]string{"message": "app started"},
+		"POST /v1/self/stop":     map[string]string{"message": "app stopped"},
+		"POST /v1/self/restart":  map[string]string{"message": "app restarted"},
+		"POST /v1/self/poweron":  map[string]string{"message": "workspace started"},
+		"POST /v1/self/poweroff": map[string]string{"message": "powered off"},
+		"POST /v1/self/reboot":   map[string]string{"message": "rebooting"},
+		"GET /v1/self/status":    map[string]string{"output": "active (running)"},
+		"GET /v1/self/logs":      map[string]string{"output": "log line\n"},
 	})
 	self, err := ctl.Self()
 	require.NoError(t, err)
 	assert.Equal(t, "blog", self.Name)
 	assert.Equal(t, 10000, self.Port)
-	msg, err := ctl.Ensure()
-	require.NoError(t, err)
-	assert.Equal(t, "workspace ready", msg)
-	msg, err = ctl.Up()
+	msg, err := ctl.Deploy()
 	require.NoError(t, err)
 	assert.Equal(t, "deployed", msg)
-	msg, err = ctl.Down()
-	require.NoError(t, err)
-	assert.Equal(t, "stopped", msg)
-	msg, err = ctl.Restart()
-	require.NoError(t, err)
-	assert.Equal(t, "restarted", msg)
+	for _, tc := range []struct {
+		call func() (string, error)
+		want string
+	}{
+		{ctl.Start, "app started"},
+		{ctl.Stop, "app stopped"},
+		{ctl.Restart, "app restarted"},
+		{ctl.PowerOn, "workspace started"},
+		{ctl.PowerOff, "powered off"},
+		{ctl.Reboot, "rebooting"},
+	} {
+		msg, err := tc.call()
+		require.NoError(t, err)
+		assert.Equal(t, tc.want, msg)
+	}
 	out, err := ctl.Status()
 	require.NoError(t, err)
 	assert.Contains(t, out, "active")
@@ -115,7 +125,7 @@ func TestControllerLifecycle(t *testing.T) {
 func TestControllerErrorPropagation(t *testing.T) {
 	t.Parallel()
 	ctl := newTestController(t, map[string]any{}) // No routes: everything 404s with an error body
-	_, err := ctl.Up()
+	_, err := ctl.Deploy()
 	require.Error(t, err)
 }
 

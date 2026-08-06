@@ -27,10 +27,16 @@ func (s *Server) socketHandler() http.Handler {
 func (s *Server) newSocketHandler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /v1/self", s.selfApp(s.handleSelf))
-	mux.HandleFunc("POST /v1/self/ensure", s.selfApp(s.handleSelfEnsure))
-	mux.HandleFunc("POST /v1/self/up", s.selfApp(s.handleSelfUp))
-	mux.HandleFunc("POST /v1/self/down", s.selfApp(s.handleSelfDown))
+	mux.HandleFunc("POST /v1/self/ensure", s.selfApp(s.handleSelfEnsure)) // SSH login provisions the workspace
+	// The same lifecycle verbs the web app and admin CLI use, split into the app
+	// process (start/stop/restart) and its container (poweron/poweroff/reboot).
+	mux.HandleFunc("POST /v1/self/deploy", s.selfApp(s.handleSelfDeploy))
+	mux.HandleFunc("POST /v1/self/start", s.selfApp(s.handleSelfStart))
+	mux.HandleFunc("POST /v1/self/stop", s.selfApp(s.handleSelfStop))
 	mux.HandleFunc("POST /v1/self/restart", s.selfApp(s.handleSelfRestart))
+	mux.HandleFunc("POST /v1/self/poweron", s.selfApp(s.handleSelfEnsure))
+	mux.HandleFunc("POST /v1/self/poweroff", s.selfApp(s.handleSelfPowerOff))
+	mux.HandleFunc("POST /v1/self/reboot", s.selfApp(s.handleSelfReboot))
 	mux.HandleFunc("GET /v1/self/status", s.selfApp(s.handleSelfStatus))
 	mux.HandleFunc("GET /v1/self/logs", s.selfApp(s.handleSelfLogs))
 	return mux
@@ -51,7 +57,8 @@ func (s *Server) handleSelfEnsure(w http.ResponseWriter, r *http.Request, a *sto
 	writeJSON(w, http.StatusOK, &apiMessageResponse{Message: msg})
 }
 
-func (s *Server) handleSelfUp(w http.ResponseWriter, r *http.Request, a *store.App) {
+// handleSelfDeploy applies hostit.yml and (re)starts the app
+func (s *Server) handleSelfDeploy(w http.ResponseWriter, r *http.Request, a *store.App) {
 	msg, err := s.apps.Up(a.Name)
 	if err != nil {
 		writeAppError(w, err)
@@ -60,20 +67,35 @@ func (s *Server) handleSelfUp(w http.ResponseWriter, r *http.Request, a *store.A
 	writeJSON(w, http.StatusOK, &apiMessageResponse{Message: msg})
 }
 
-func (s *Server) handleSelfDown(w http.ResponseWriter, r *http.Request, a *store.App) {
-	if err := s.apps.Down(a.Name); err != nil {
-		writeAppError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, &apiMessageResponse{Message: "stopped"})
+// The app-process verbs: they move the run: command, leaving the container up.
+func (s *Server) handleSelfStart(w http.ResponseWriter, r *http.Request, a *store.App) {
+	s.selfAction(w, s.apps.StartApp(a.Name), "app started")
+}
+
+func (s *Server) handleSelfStop(w http.ResponseWriter, r *http.Request, a *store.App) {
+	s.selfAction(w, s.apps.StopApp(a.Name), "app stopped")
 }
 
 func (s *Server) handleSelfRestart(w http.ResponseWriter, r *http.Request, a *store.App) {
-	if err := s.apps.Restart(a.Name); err != nil {
+	s.selfAction(w, s.apps.RestartApp(a.Name), "app restarted")
+}
+
+// The container verbs: they move the whole app container.
+func (s *Server) handleSelfPowerOff(w http.ResponseWriter, r *http.Request, a *store.App) {
+	s.selfAction(w, s.apps.Down(a.Name), "powered off")
+}
+
+func (s *Server) handleSelfReboot(w http.ResponseWriter, r *http.Request, a *store.App) {
+	s.selfAction(w, s.apps.Restart(a.Name), "rebooting")
+}
+
+// selfAction writes a lifecycle result: the error, or a success message
+func (s *Server) selfAction(w http.ResponseWriter, err error, ok string) {
+	if err != nil {
 		writeAppError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, &apiMessageResponse{Message: "restarted"})
+	writeJSON(w, http.StatusOK, &apiMessageResponse{Message: ok})
 }
 
 func (s *Server) handleSelfStatus(w http.ResponseWriter, r *http.Request, a *store.App) {

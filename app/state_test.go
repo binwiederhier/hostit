@@ -28,6 +28,25 @@ func TestParseMemMB(t *testing.T) {
 	}
 }
 
+func TestParseCPUPercent(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		in   string
+		want int
+	}{
+		{"0.00%", 0},
+		{"3.70%", 4},
+		{"12.4%", 12},
+		{"100.00%", 100},
+		{"250.5%", 251}, // multi-core containers can exceed 100
+		{"", 0},
+		{"garbage", 0},
+	}
+	for _, tt := range tests {
+		assert.Equal(t, tt.want, parseCPUPercent(tt.in), "input %q", tt.in)
+	}
+}
+
 func TestStatesReadsRunningAndMemory(t *testing.T) {
 	t.Parallel()
 	m, _, runner := newTestDeployManager(t)
@@ -36,14 +55,16 @@ func TestStatesReadsRunningAndMemory(t *testing.T) {
 	// systemctl prints one line per unit, in the order asked
 	runner.returns("systemctl is-active", "active\ninactive\n")
 	// Exactly the shape podman 4.9 prints
-	runner.returns("podman stats", `[{"id":"abc","name":"hostit-app-one","cpu_percent":"0.00%","mem_usage":"24.5MB / 536.9MB","pids":"11"},
+	runner.returns("podman stats", `[{"id":"abc","name":"hostit-app-one","cpu_percent":"3.70%","mem_usage":"24.5MB / 536.9MB","pids":"11"},
 	                                 {"id":"def","name":"not-ours","mem_usage":"99MB / 536.9MB"}]`)
 	states := m.States([]string{"one", "two"})
 	require.Len(t, states, 2)
 	assert.True(t, states["one"].Running)
 	assert.False(t, states["two"].Running, "the second unit was inactive")
 	assert.Equal(t, 24, states["one"].MemoryMB)
+	assert.Equal(t, 4, states["one"].CPUPercent, "cpu comes from the same stats line")
 	assert.Equal(t, 0, states["two"].MemoryMB, "no stats line means no usage")
+	assert.Equal(t, 0, states["two"].CPUPercent, "no stats line means no usage")
 }
 
 func TestStatesReportsAppProcessState(t *testing.T) {

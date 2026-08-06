@@ -36,6 +36,8 @@ type apiAppResponse struct {
 	DiskLimit    int    `json:"disk_limit_mb"`
 	MemoryMB     int    `json:"memory_mb"`
 	MemoryLimit  int    `json:"memory_limit_mb"`
+	CPUPercent   int    `json:"cpu_percent"` // Live container CPU use in whole percent
+
 	Running      bool   `json:"running"`        // The app's container is up
 	AppRunning   bool   `json:"app_running"`    // The run: command inside it is up
 	StartedAt    int64  `json:"started_at"`     // Unix seconds the container last started

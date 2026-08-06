@@ -38,7 +38,8 @@ const (
 type State struct {
 	Running      bool  `json:"running"`        // The container's systemd unit is active
 	AppRunning   bool  `json:"app_running"`    // The run: command inside it is up
-	MemoryMB     int   `json:"memory_mb"`      //
+	MemoryMB     int   `json:"memory_mb"`      // Current container memory use in MB
+	CPUPercent   int   `json:"cpu_percent"`    // Current container CPU use in whole percent (may exceed 100 on multiple cores)
 	StartedAt    int64 `json:"started_at"`     // Unix seconds the container last started (0 if down)
 	AppStartedAt int64 `json:"app_started_at"` // Unix millis the run: process last changed state (0 if never)
 }
@@ -173,12 +174,18 @@ func (m *Manager) States(names []string) map[string]State {
 			AppStartedAt: appStartedAt,
 		}
 	}
-	for name, memoryMB := range m.memoryUsage() {
+	for name, usage := range m.resourceUsage() {
 		state := states[name]
-		state.MemoryMB = memoryMB
+		state.MemoryMB, state.CPUPercent = usage.memoryMB, usage.cpuPercent
 		states[name] = state
 	}
 	return states
+}
+
+// usage is one container's live resource consumption, from a single stats call
+type usage struct {
+	memoryMB   int
+	cpuPercent int
 }
 
 // appProcessState reads the breadcrumb the agent leaves: whether the run: process
@@ -246,30 +253,42 @@ func (m *Manager) runningStates(names []string) map[string]bool {
 	return running
 }
 
-// memoryUsage reads current container memory from one podman stats call
-func (m *Manager) memoryUsage() map[string]int {
-	usage := make(map[string]int)
+// resourceUsage reads current container memory and CPU from one podman stats call
+func (m *Manager) resourceUsage() map[string]usage {
+	usages := make(map[string]usage)
 	out, err := m.runner.RunTimeout(stateTimeout, "podman", "stats", "--no-stream", "--format", "json")
 	if err != nil {
-		return usage
+		return usages
 	}
 	// podman prints lowercase snake_case keys, e.g.
-	//   {"name":"hostit-app-blog","mem_usage":"4.633MB / 536.9MB"}
+	//   {"name":"hostit-app-blog","cpu_percent":"3.70%","mem_usage":"4.633MB / 536.9MB"}
 	var stats []struct {
-		Name     string `json:"name"`
-		MemUsage string `json:"mem_usage"`
+		Name       string `json:"name"`
+		MemUsage   string `json:"mem_usage"`
+		CPUPercent string `json:"cpu_percent"`
 	}
 	if err := json.Unmarshal([]byte(out), &stats); err != nil {
-		return usage
+		return usages
 	}
 	for _, stat := range stats {
 		name := strings.TrimPrefix(stat.Name, containerPrefix)
 		if name == stat.Name {
 			continue // Not one of ours
 		}
-		usage[name] = parseMemMB(stat.MemUsage)
+		usages[name] = usage{memoryMB: parseMemMB(stat.MemUsage), cpuPercent: parseCPUPercent(stat.CPUPercent)}
 	}
-	return usage
+	return usages
+}
+
+// parseCPUPercent turns podman's "3.70%" into whole percent, rounded. It can be
+// over 100 for a container using more than one core, which is fine to report.
+func parseCPUPercent(cpu string) int {
+	value := strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(cpu), "%"))
+	parsed, err := strconv.ParseFloat(value, 64)
+	if err != nil {
+		return 0
+	}
+	return int(parsed + 0.5)
 }
 
 // parseMemMB turns podman's "12.3MB / 512MB" into whole megabytes

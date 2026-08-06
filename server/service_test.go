@@ -272,16 +272,17 @@ func TestSocketSelfLifecycle(t *testing.T) {
 	s.usernameForUID = func(uid int) (string, error) {
 		return "blog", nil
 	}
-	// ensure: with nop ops this provisions and starts the workspace
-	w := socketRequest(t, s, "POST", "/v1/self/ensure")
+	// poweron/ensure: with nop ops this provisions and starts the workspace
+	w := socketRequest(t, s, "POST", "/v1/self/poweron")
 	require.Equal(t, http.StatusOK, w.Code)
 	assert.Contains(t, w.Body.String(), "workspace")
-	// up: no hostit.yml in the (empty) app home -> 400
-	w = socketRequest(t, s, "POST", "/v1/self/up")
+	// deploy: no hostit.yml in the (empty) app home -> 400
+	w = socketRequest(t, s, "POST", "/v1/self/deploy")
 	require.Equal(t, http.StatusBadRequest, w.Code)
-	// down and restart succeed with nop runner
-	require.Equal(t, http.StatusOK, socketRequest(t, s, "POST", "/v1/self/down").Code)
-	require.Equal(t, http.StatusOK, socketRequest(t, s, "POST", "/v1/self/restart").Code)
+	// the app-process and container verbs succeed with the nop runner
+	for _, verb := range []string{"start", "stop", "restart", "poweroff", "reboot"} {
+		require.Equal(t, http.StatusOK, socketRequest(t, s, "POST", "/v1/self/"+verb).Code, verb)
+	}
 	// status returns output (empty from nop runner, but 200)
 	require.Equal(t, http.StatusOK, socketRequest(t, s, "GET", "/v1/self/status").Code)
 	// logs: nothing yet -> error status

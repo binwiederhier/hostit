@@ -21,7 +21,7 @@ func TestNewCommands(t *testing.T) {
 	for _, expected := range []string{"serve", "apps"} {
 		assert.Contains(t, names, expected)
 	}
-	for _, hidden := range []string{"up", "down", "status", "logs", "guide"} {
+	for _, hidden := range []string{"deploy", "start", "restart", "poweroff", "status", "logs", "guide"} {
 		assert.NotContains(t, names, hidden, "%q cannot work outside a container", hidden)
 	}
 	apps := app.Command("apps")
@@ -51,7 +51,7 @@ func TestLoginBanner(t *testing.T) {
 	// number the owner cannot usefully act on was just noise.
 	assert.NotContains(t, banner, "10001")
 	// What can I do here?
-	for _, want := range []string{"hostit up", "hostit logs", "hostit status", "hostit.yml"} {
+	for _, want := range []string{"hostit deploy", "hostit logs", "hostit status", "hostit.yml"} {
 		assert.Contains(t, banner, want, "the banner must mention %q", want)
 	}
 	assert.True(t, strings.HasSuffix(banner, "\n"))
@@ -73,7 +73,7 @@ func TestGuideText(t *testing.T) {
 	for _, want := range []string{
 		"blog", "https://blog.apps.example.com", "10001",
 		appctl.PublicDir + "/", appctl.BinDir + "/", appctl.LogDir + "/", appctl.SrcDir + "/",
-		"hostit up", "hostit logs", "apt-get install", "NEVER at this home directory",
+		"hostit deploy", "hostit logs", "apt-get install", "NEVER at this home directory",
 		"https://apps.example.com/docs",
 	} {
 		assert.Contains(t, guide, want)
@@ -101,7 +101,7 @@ func TestCommandsInsideAContainerAreTheAppsOwn(t *testing.T) {
 	}
 	// An app's owner manages their app; they do not run the platform, and being
 	// shown commands they cannot use only invites confusion
-	for _, expected := range []string{"up", "down", "restart", "status", "logs", "guide"} {
+	for _, expected := range []string{"deploy", "start", "stop", "restart", "poweron", "poweroff", "reboot", "status", "logs", "guide"} {
 		assert.Contains(t, names, expected)
 	}
 	for _, hidden := range []string{"serve", "admin", "shell", "enter"} {

@@ -91,3 +91,18 @@ at the limit (EDQUOT) instead.
 - **Long jobs.** `POST /api/apps/{app}/run` is bounded at five minutes, so a first
   `npm install` on a small box can outlast it. Anything longer has to become a
   `prepare:` step, which is fine but not obvious.
+- **Node.js in the workspace image + per-app image versioning.** Add `nodejs`
+  (and npm) to the workspace image so JS apps work out of the box. Image size does
+  NOT affect per-app start or reboot time: the image is built/pulled once and lives
+  on disk; containers are overlay copy-on-write off it, so creating/starting one is
+  a cheap layer, not a copy proportional to size. It only costs one-time build time
+  and some shared disk. The catch is existing apps: today every app shares the one
+  `hostit-workspace` image, so rebuilding it to add node would change the base under
+  apps that have apt-installed their own things -- and those live in the container's
+  writable layer, so a later recreate (deploy/reboot) already loses them regardless.
+  So the real work is two-fold: (1) version the workspace image (tag by content/date)
+  and pin each app to the image tag it was created with, so a new image only affects
+  new apps; (2) if we want apt-installed packages to survive recreate at all, they
+  need to persist (a per-app overlay/commit, or a documented `prepare:` step that
+  reinstalls them on build). Minimum viable: add node to a new image tag, default new
+  apps to it, leave existing apps pinned to their current tag.

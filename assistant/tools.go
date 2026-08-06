@@ -54,6 +54,11 @@ func toolDefs() []Tool {
 			Description: "Apply hostit.yml and (re)start the app: build if needed, recreate the container if its configuration (mode, run command, env) changed, and serve the latest files. Run this after you change hostit.yml or a run: app's code, so the change goes live. A static app already serving public/ does not need this for content edits.",
 			InputSchema: schema(`{"type":"object","properties":{}}`),
 		},
+		{
+			Name:        "refresh_preview",
+			Description: "Reload the live preview shown next to this chat in the owner's browser. Call this after a content change that does not need a deploy (e.g. editing a static file the app already serves) so the owner sees the result. A deploy reloads the preview on its own; use this only when nothing else would.",
+			InputSchema: schema(`{"type":"object","properties":{}}`),
+		},
 	}
 }
 
@@ -114,6 +119,10 @@ func (m *Manager) dispatch(app, name string, input json.RawMessage) (string, boo
 	case "deploy":
 		out, err := m.ops.Deploy(app)
 		return orError(out, err)
+	case "refresh_preview":
+		// A UI-only signal: the tool call itself, carried on the event stream, tells
+		// the owner's browser to reload the live preview. Nothing to do server-side.
+		return "the live preview has been reloaded in the owner's browser", false
 	default:
 		return "unknown tool: " + name, true
 	}

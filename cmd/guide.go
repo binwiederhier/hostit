@@ -52,7 +52,7 @@ func guideText(self *appctl.SelfInfo) string {
 		"  also holds hostit.yml and .ssh/, and serving it would publish them.\n" +
 		"\n" +
 		"HOW TO RUN SOMETHING\n" +
-		"  Say what this app is in hostit.yml, then run \"hostit up\":\n" +
+		"  Say what this app is in hostit.yml, then run \"hostit deploy\":\n" +
 		"\n" +
 		"    mode: static          hostit serves " + appctl.PublicDir + "/, nothing to run\n" +
 		"    mode: app             your command serves it, via:\n" +
@@ -77,9 +77,10 @@ func guideText(self *appctl.SelfInfo) string {
 		"  is only a binary and the next session has nothing to change.\n" +
 		"\n" +
 		"COMMANDS\n" +
-		"  hostit up          apply hostit.yml and (re)start the app\n" +
-		"  hostit down        stop the app\n" +
-		"  hostit restart     restart it\n" +
+		"  hostit deploy      apply hostit.yml and (re)start the app\n" +
+		"  hostit start/stop  start or stop the app (container stays up)\n" +
+		"  hostit restart     restart the app (fast)\n" +
+		"  hostit poweroff    stop the container; poweron/reboot to bring it back\n" +
 		"  hostit status      is it running?\n" +
 		"  hostit logs -f     watch its output\n" +
 		"\n" +
