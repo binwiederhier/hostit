@@ -88,6 +88,13 @@ still means SSH or an external agent. These bring that into the browser.
   back+name+controls bar -- which eats vertical space. On small screens put the
   back button and app name where the hostit logo sits (replacing it) so there is a
   single top bar; the avatar menu still gets you home.
+- **Dark mode.** styles.css already defines dark tokens under
+  `@media (prefers-color-scheme: dark)`, so the app half-follows the OS today.
+  Finish it: audit every surface for contrast (the terminal/preview panes, the
+  gradient avatar, the resource gauges, code/pre blocks), add an explicit
+  light/dark/system toggle (in the profile menu) that persists and stamps
+  `data-theme` on the root, and make sure published-artifact-style embeds and the
+  iframe preview do not clash.
 - **Semi-live app previews on the dashboard.** Thumbnails of each app in the list.
   Browser-side screenshotting is out (the app iframe is a different origin, so its
   pixels can't be read). Two workable options: (A) scaled-down live sandboxed
@@ -119,6 +126,17 @@ at the limit (EDQUOT) instead.
 
 ## Smaller things
 
+- **Rollback: source tracking or snapshots.** After the assistant (or the owner)
+  changes an app, there is no undo. Give people a way back, either:
+  (A) **automated source tracking** -- keep the app's home under git and auto-commit
+  on every deploy/assistant change (and maybe every write_file), so history is
+  visible and any point is restorable (`git revert`/checkout); cheap, diffable, and
+  natural for code, but not for large data/binaries; or
+  (B) **snapshots/backups** -- periodic (and pre-deploy) snapshots of the app's home
+  (btrfs/zfs subvolume snapshot, or a tarball to object storage) that can be
+  restored wholesale; covers data too, but coarser and heavier. A good first cut is
+  A for the source plus a pre-deploy snapshot as a safety net, surfaced in the UI as
+  "restore to <time>".
 - **Rename an app.** Let an owner rename an existing app. The name is the app's
   identity today -- subdomain, Unix user, home directory, container name, TLS cert,
   authorized_keys, the app-scoped token's `app_name`, the assistant session -- so a
