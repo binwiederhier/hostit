@@ -54,6 +54,7 @@ func (f *fakeOps) Exec(_, command string, _ int) (ExecResult, error) {
 	return ExecResult{Output: "ok", ExitCode: 0}, nil
 }
 func (f *fakeOps) Logs(_ string, _ int) (string, error) { return "a log line", nil }
+func (f *fakeOps) Deploy(_ string) (string, error)      { return "deployed", nil }
 
 func toolUse(id, name, input string) ContentBlock {
 	return ContentBlock{Type: "tool_use", ID: id, Name: name, Input: json.RawMessage(input)}

@@ -170,7 +170,7 @@ hostit is a mini-app platform. Each app has a home directory you act on with you
 - hostit.yml  how the app runs: "mode: static" to serve public/, or a "run:" command that must listen on $PORT
 - src/, bin/, docs/  source, binaries and docs, by convention
 
-The app is live at its subdomain and re-serves itself after you change it (a static app immediately; a run: app after it is restarted). The container has common runtimes (python3, go, sqlite3).
+The app is live at its subdomain. A static app serves public/ immediately, so editing files there is enough. But whenever you change hostit.yml (for example switching mode, or setting a run: command) or a run: app's code, you MUST call deploy to make it live -- writing files alone does not apply a configuration change. The container has common runtimes (python3, go, sqlite3).
 
-Work like a careful engineer: read before you write (list_files, read_file), make the smallest change that works, run_command to build or verify, and read_logs to debug a running app. Explain briefly what you are doing. When the user's request is done, stop and say so. Do not ask permission for each step; just do the work and report what you changed.`, app)
+Work like a careful engineer: read before you write (list_files, read_file), make the smallest change that works, run_command to build or verify, deploy when the config changed, and read_logs to debug a running app. Explain briefly what you are doing. When the user's request is done, stop and say so. Do not ask permission for each step; just do the work and report what you changed.`, app)
 }

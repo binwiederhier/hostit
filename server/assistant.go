@@ -81,6 +81,10 @@ func (o *appOps) Logs(name string, lines int) (string, error) {
 	return o.apps.Logs(name, lines)
 }
 
+func (o *appOps) Deploy(name string) (string, error) {
+	return o.apps.Up(name)
+}
+
 // handleAssistant runs one assistant turn for an owned app and streams the loop
 // -- thinking, text, each tool call and its result -- to the browser as SSE, so a
 // phone watching the build sees it happen live.

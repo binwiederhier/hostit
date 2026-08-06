@@ -16,6 +16,7 @@ type AppOps interface {
 	WriteFile(app, path, content string) error
 	Exec(app, command string, timeoutSeconds int) (ExecResult, error)
 	Logs(app string, lines int) (string, error)
+	Deploy(app string) (string, error)
 }
 
 // toolDefs describes the tools to the model. The schemas are deliberately small:
@@ -47,6 +48,11 @@ func toolDefs() []Tool {
 			Name:        "read_logs",
 			Description: "Read the tail of the app's runtime log (the output of its run: command). Use this to debug why a running app misbehaves.",
 			InputSchema: schema(`{"type":"object","properties":{"lines":{"type":"integer","description":"How many trailing lines; 0 for the default."}}}`),
+		},
+		{
+			Name:        "deploy",
+			Description: "Apply hostit.yml and (re)start the app: build if needed, recreate the container if its configuration (mode, run command, env) changed, and serve the latest files. Run this after you change hostit.yml or a run: app's code, so the change goes live. A static app already serving public/ does not need this for content edits.",
+			InputSchema: schema(`{"type":"object","properties":{}}`),
 		},
 	}
 }
@@ -104,6 +110,9 @@ func (m *Manager) dispatch(app, name string, input json.RawMessage) (string, boo
 		}
 		_ = json.Unmarshal(input, &in)
 		out, err := m.ops.Logs(app, in.Lines)
+		return orError(out, err)
+	case "deploy":
+		out, err := m.ops.Deploy(app)
 		return orError(out, err)
 	default:
 		return "unknown tool: " + name, true
