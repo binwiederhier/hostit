@@ -61,6 +61,20 @@ still means SSH or an external agent. These bring that into the browser.
   streamed items are folded into a group in `renderTranscript`/`ToolGroup`
   (AppAssistant.jsx) -- stabilise the group's key/identity so the count updates
   in place instead of the chip briefly disappearing.
+- **Rename "Dashboard" to "Apps", and make it an app switcher.** The nav link is
+  really the app list, so call it "Apps". Turn it into a dropdown that lists the
+  owner's apps (with status dots) so you can jump straight to any app -- especially
+  handy from an app detail page -- instead of going back to the list first. The
+  item still navigates to the list on click; the caret opens the switcher.
+- **Semi-live app previews on the dashboard.** Thumbnails of each app in the list.
+  Browser-side screenshotting is out (the app iframe is a different origin, so its
+  pixels can't be read). Two workable options: (A) scaled-down live sandboxed
+  iframes per card (`transform: scale`, `pointer-events: none`, lazy/visible-only)
+  -- client-only, no deps, but every listed app loads, so guard it for many apps;
+  (B) server-side headless-Chromium screenshots, cached and refreshed on deploy +
+  a timer, served as `/api/apps/{name}/thumbnail` -- scales better but Chromium is
+  a heavy dep that breaks the single-binary property, so it'd be an optional
+  sidecar. Start with A.
 
 ## Hard disk quotas
 
