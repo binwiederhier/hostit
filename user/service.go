@@ -197,6 +197,11 @@ func (m *Manager) User(id string) (*store.User, error) {
 	return m.store.User(id)
 }
 
+// UserByEmail looks up a user by their email address
+func (m *Manager) UserByEmail(email string) (*store.User, error) {
+	return m.store.UserByEmail(email)
+}
+
 // Users returns all users
 func (m *Manager) Users() ([]*store.User, error) {
 	return m.store.Users()

@@ -393,10 +393,14 @@ func TestBreakglassLogin(t *testing.T) {
 	// No/wrong token is refused, so enabling it does not open a hole.
 	assert.Equal(t, http.StatusForbidden, request(t, s.API(), "POST", "/auth/breakglass?email=phil@example.com", "", "").Code)
 	assert.Equal(t, http.StatusForbidden, request(t, s.API(), "POST", "/auth/breakglass?email=phil@example.com", "", "wrong").Code)
-	// A non-admin email is refused even with the admin token.
+	// An unknown, non-admin email is refused: breakglass will not conjure users.
 	assert.Equal(t, http.StatusForbidden, request(t, s.API(), "POST", "/auth/breakglass?email=stranger@example.com", "", testToken).Code)
 
-	// Admin token + admin email mints a working session cookie.
+	// An existing non-admin user can be signed in (viewing the app as them for e2e).
+	newActiveTestUser(t, s, "member@example.com")
+	assert.Equal(t, http.StatusOK, request(t, s.API(), "POST", "/auth/breakglass?email=member@example.com", "", testToken).Code)
+
+	// Admin token + admin email mints a working session cookie (created on the spot).
 	rr = request(t, s.API(), "POST", "/auth/breakglass?email=phil@example.com", "", testToken)
 	require.Equal(t, http.StatusOK, rr.Code)
 	cookies := rr.Result().Cookies()

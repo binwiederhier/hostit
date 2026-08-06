@@ -124,11 +124,13 @@ func (s *Server) handleGoogleCallback(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/", http.StatusFound)
 }
 
-// handleBreakglass mints a normal session cookie for a configured admin email,
-// authorized by the admin token alone -- no Google round-trip. It exists for e2e
-// testing and recovery, and grants nothing new: the admin token already carries
-// full admin rights over the REST API. It is off unless the "breakglass" config
-// flag is set, and the email must be one of admin-emails.
+// handleBreakglass mints a normal session cookie for a user, authorized by the
+// admin token alone -- no Google round-trip. It exists for e2e testing (viewing
+// the app as any real user) and recovery, and grants nothing new: the admin token
+// already carries full admin rights over the REST API. It is off unless the
+// "breakglass" config flag is set. It will only sign in an account that already
+// exists; a configured admin email is additionally allowed to be created on the
+// spot, exactly as a first Google login would.
 func (s *Server) handleBreakglass(w http.ResponseWriter, r *http.Request) {
 	if !s.config.Breakglass {
 		writeError(w, http.StatusNotFound, errors.New("breakglass login is not enabled"))
@@ -140,14 +142,18 @@ func (s *Server) handleBreakglass(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	email := r.URL.Query().Get("email")
-	if !s.config.IsAdminEmail(email) {
-		writeError(w, http.StatusForbidden, errors.New("email must be one of admin-emails"))
-		return
-	}
-	u, err := s.users.Login(email, email)
+	u, err := s.users.UserByEmail(email)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
+		// No such account: create one only for a configured admin email, the same
+		// way their first Google login would; refuse to conjure arbitrary users.
+		if !s.config.IsAdminEmail(email) {
+			writeError(w, http.StatusForbidden, errors.New("no account for that email"))
+			return
+		}
+		if u, err = s.users.Login(email, email); err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
 	}
 	value, err := s.sessions.encode(u.ID)
 	if err != nil {

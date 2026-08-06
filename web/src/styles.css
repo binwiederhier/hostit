@@ -125,6 +125,12 @@ p {
   animation: blink 2.4s steps(2, start) infinite;
 }
 
+/* On the big gate/empty-state mark the blink is distracting on an otherwise
+   static page; keep the cursor as a steady block there. */
+.wordmark-big .cursor {
+  animation: none;
+}
+
 @keyframes blink {
   to {
     visibility: hidden;

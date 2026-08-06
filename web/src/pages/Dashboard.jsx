@@ -33,7 +33,6 @@ const CreateForm = ({ name, setName, onSubmit, creating, atLimit, big = false, i
         </button>
       </form>
       {atLimit && <p className="hint">You have reached your app limit. Delete an app to create a new one.</p>}
-      {!atLimit && name !== "" && !valid && <p className="hint">{nameHint}</p>}
     </>
   );
 };
@@ -182,7 +181,7 @@ const Dashboard = ({ account, refreshAccount }) => {
         <h1>Apps</h1>
         <div className="header-actions">
           <span className="usage">
-            {account.usage.apps} of {account.limits.app_limit} apps used
+            {account.usage.apps} of {account.limits.app_limit} apps
           </span>
           {!empty && (
             <button type="button" className="btn btn-primary" onClick={() => setAdding(true)} disabled={atLimit}>
