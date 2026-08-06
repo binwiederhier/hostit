@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+	"time"
 )
 
 const (
@@ -22,12 +23,28 @@ const (
 	maxTokens = 16000
 	// assistantEffort tunes how hard the model works per turn
 	assistantEffort = "high"
+	// maxContextTurns bounds how many recent user-delimited turns are sent to the
+	// model. The full conversation is still persisted and shown; this only caps
+	// what each request carries, so cost and context size do not grow without end.
+	maxContextTurns = 12
+
+	// defaultMaxRunsPerUser caps how many turns one user may run at once across all
+	// their apps, and defaultMaxRunsPerHour caps how many they may start per hour.
+	// Every turn spends the operator's API budget, so these stop a runaway loop.
+	defaultMaxRunsPerUser = 3
+	defaultMaxRunsPerHour = 60
+	// runRateWindow is the window defaultMaxRunsPerHour is measured over
+	runRateWindow = time.Hour
 )
 
 var (
 	// errMaxIterations means the loop hit its step limit without the model
 	// deciding it was done
 	errMaxIterations = errors.New("assistant reached its step limit without finishing")
+	// ErrTooManyRuns means the user already has the most turns running they may
+	ErrTooManyRuns = errors.New("too many assistant turns running; finish one first")
+	// ErrRateLimited means the user has started too many turns recently
+	ErrRateLimited = errors.New("assistant rate limit reached; please try again later")
 )
 
 // Manager runs assistant sessions. Each app's conversation is persisted through
@@ -41,18 +58,79 @@ type Manager struct {
 	model    string
 	sessions map[string]*session
 	mu       sync.Mutex // Protects sessions
+
+	// Per-user run limits (across all of a user's apps), since every turn spends
+	// the operator's API budget. maxRunsPerUser/maxRunsPerHour are fields, not
+	// consts, so tests can dial them down.
+	maxRunsPerUser int
+	maxRunsPerHour int
+	userRuns       map[string]*userRuns
+	limitMu        sync.Mutex // Protects userRuns
+}
+
+// userRuns tracks one user's assistant usage for rate limiting
+type userRuns struct {
+	active int         // turns running right now
+	starts []time.Time // start times within the rate window
 }
 
 // NewManager wires the loop to a model client, the app operations it drives, and
 // the store that persists each app's conversation
 func NewManager(client completer, ops AppOps, store Store, model string) *Manager {
 	return &Manager{
-		client:   client,
-		ops:      ops,
-		store:    store,
-		model:    model,
-		sessions: make(map[string]*session),
+		client:         client,
+		ops:            ops,
+		store:          store,
+		model:          model,
+		sessions:       make(map[string]*session),
+		maxRunsPerUser: defaultMaxRunsPerUser,
+		maxRunsPerHour: defaultMaxRunsPerHour,
+		userRuns:       make(map[string]*userRuns),
 	}
+}
+
+// reserveRun claims a run slot for a user, enforcing the concurrency and rate
+// limits. The global-admin token has no user id and is not limited. On success
+// the caller must releaseRun when the turn ends.
+func (m *Manager) reserveRun(userID string) error {
+	if userID == "" {
+		return nil
+	}
+	m.limitMu.Lock()
+	defer m.limitMu.Unlock()
+	u := m.userRuns[userID]
+	if u == nil {
+		u = &userRuns{}
+		m.userRuns[userID] = u
+	}
+	cutoff := time.Now().Add(-runRateWindow)
+	kept := u.starts[:0]
+	for _, t := range u.starts {
+		if t.After(cutoff) {
+			kept = append(kept, t)
+		}
+	}
+	u.starts = kept
+	if u.active >= m.maxRunsPerUser {
+		return ErrTooManyRuns
+	}
+	if len(u.starts) >= m.maxRunsPerHour {
+		return ErrRateLimited
+	}
+	u.active++
+	u.starts = append(u.starts, time.Now())
+	return nil
+}
+
+func (m *Manager) releaseRun(userID string) {
+	if userID == "" {
+		return
+	}
+	m.limitMu.Lock()
+	if u := m.userRuns[userID]; u != nil && u.active > 0 {
+		u.active--
+	}
+	m.limitMu.Unlock()
 }
 
 // sessionFor returns the app's live session, creating it on first use
@@ -69,11 +147,15 @@ func (m *Manager) sessionFor(app string) *session {
 
 // Subscribe registers a watcher for an app's live events and returns a channel to
 // read them from plus a function to stop watching. Every subscriber sees the same
-// stream, so multiple devices stay in sync.
-func (m *Manager) Subscribe(app string) (<-chan Event, func()) {
+// stream, so multiple devices stay in sync. It refuses (ErrTooManySubscribers)
+// past a per-app cap, so a client cannot exhaust the server by opening streams.
+func (m *Manager) Subscribe(app string) (<-chan Event, func(), error) {
 	s := m.sessionFor(app)
-	id, ch := s.subscribe()
-	return ch, func() { s.unsubscribe(id) }
+	id, ch, ok := s.subscribe()
+	if !ok {
+		return nil, nil, ErrTooManySubscribers
+	}
+	return ch, func() { s.unsubscribe(id) }, nil
 }
 
 // Running reports whether a turn is in progress for an app, so a page loading
@@ -82,25 +164,42 @@ func (m *Manager) Running(app string) bool {
 	return m.sessionFor(app).isRunning()
 }
 
-// Send starts a turn for an app in the background and returns at once. It refuses
-// (ErrBusy) if a turn is already running, so two senders cannot clobber the
-// transcript. The events flow to every subscriber, not to this caller.
-func (m *Manager) Send(app, userText string) error {
+// Send starts a turn for an app in the background and returns at once. userID is
+// the caller (empty for the global admin token); it bounds the caller's usage. It
+// refuses ErrBusy if a turn is already running for this app, or a rate error if
+// the user is over their limits. Events flow to every subscriber, not this caller.
+func (m *Manager) Send(app, userID, userText string) error {
+	if err := m.reserveRun(userID); err != nil {
+		return err
+	}
+	s := m.sessionFor(app)
+	if !s.begin() {
+		m.releaseRun(userID)
+		return ErrBusy
+	}
+	go m.runLoop(s, app, userID, userText)
+	return nil
+}
+
+// Reset forgets an app's conversation, so the next message starts fresh. It claims
+// the run slot for the duration, so a Send cannot race the delete and leave the
+// transcript half-written; it refuses (ErrBusy) while a turn is running.
+func (m *Manager) Reset(app string) error {
 	s := m.sessionFor(app)
 	if !s.begin() {
 		return ErrBusy
 	}
-	go m.runLoop(s, app, userText)
-	return nil
+	defer s.end()
+	return m.store.Delete(app)
 }
 
-// Reset forgets an app's conversation, so the next message starts fresh. It
-// refuses while a turn is running.
-func (m *Manager) Reset(app string) error {
-	if m.sessionFor(app).isRunning() {
-		return ErrBusy
-	}
-	return m.store.Delete(app)
+// DropSession forgets an app's live session and deletes its transcript, called
+// when an app is deleted so nothing is left leaking in memory or the registry.
+func (m *Manager) DropSession(app string) {
+	m.mu.Lock()
+	delete(m.sessions, app)
+	m.mu.Unlock()
+	_ = m.store.Delete(app)
 }
 
 // Transcript returns the app's stored conversation as display items, for a page
@@ -117,8 +216,9 @@ func (m *Manager) Transcript(app string) ([]Item, error) {
 // publishes every step to the app's session so all subscribers see it, and saves
 // the transcript after each step so a reload mid-run recovers the progress. It is
 // bound to a background context, so the sender leaving does not cancel it.
-func (m *Manager) runLoop(s *session, app, userText string) {
+func (m *Manager) runLoop(s *session, app, userID, userText string) {
 	defer s.end()
+	defer m.releaseRun(userID)
 	ctx, cancel := context.WithTimeout(context.Background(), runTimeout)
 	defer cancel()
 
@@ -134,7 +234,7 @@ func (m *Manager) runLoop(s *session, app, userText string) {
 			Model:        m.model,
 			MaxTokens:    maxTokens,
 			System:       systemPrompt(app),
-			Messages:     history,
+			Messages:     recentHistory(history, maxContextTurns),
 			Tools:        toolDefs(),
 			Thinking:     &thinkingConfig{Type: "adaptive"},
 			OutputConfig: &outputConfig{Effort: assistantEffort},
@@ -173,6 +273,36 @@ func (m *Manager) runLoop(s *session, app, userText string) {
 	}
 
 	s.publish(Event{Type: "error", Error: errMaxIterations.Error()})
+}
+
+// recentHistory windows the conversation sent to the model to the last maxTurns
+// human turns (plus their assistant/tool messages), so cost and context size do
+// not grow without bound over a long-lived app conversation. It always cuts on a
+// human "user" message, keeping tool_use/tool_result pairs intact and the message
+// order valid. The full history is still persisted and shown; only the request is
+// trimmed.
+func recentHistory(history []Message, maxTurns int) []Message {
+	var starts []int
+	for i, msg := range history {
+		if msg.Role == "user" && hasTextBlock(msg) {
+			starts = append(starts, i)
+		}
+	}
+	if len(starts) <= maxTurns {
+		return history
+	}
+	return history[starts[len(starts)-maxTurns]:]
+}
+
+// hasTextBlock reports whether a message carries human text (a turn start), as
+// opposed to a user message that only carries tool results
+func hasTextBlock(msg Message) bool {
+	for _, b := range msg.Content {
+		if b.Type == "text" {
+			return true
+		}
+	}
+	return false
 }
 
 // withoutThinking drops thinking blocks so they are not echoed back to the API.

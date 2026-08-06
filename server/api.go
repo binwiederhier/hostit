@@ -204,6 +204,9 @@ func (s *Server) handleAppsDelete(w http.ResponseWriter, r *http.Request, c *cal
 		writeAppError(w, err)
 		return
 	}
+	if s.assistant != nil {
+		s.assistant.DropSession(a.Name) // forget the app's live session + transcript
+	}
 	slog.Info("App deleted", "app", a.Name, "by", c.userID())
 	writeJSON(w, http.StatusOK, &apiMessageResponse{Message: "app deleted"})
 }

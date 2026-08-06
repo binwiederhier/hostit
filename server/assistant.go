@@ -146,12 +146,15 @@ func (s *Server) handleAssistant(w http.ResponseWriter, r *http.Request, c *call
 		writeError(w, http.StatusBadRequest, errors.New("message is required"))
 		return
 	}
-	if err := s.assistant.Send(a.Name, req.Message); err != nil {
-		if errors.Is(err, assistant.ErrBusy) {
+	if err := s.assistant.Send(a.Name, c.userID(), req.Message); err != nil {
+		switch {
+		case errors.Is(err, assistant.ErrBusy):
 			writeError(w, http.StatusConflict, err)
-			return
+		case errors.Is(err, assistant.ErrTooManyRuns) || errors.Is(err, assistant.ErrRateLimited):
+			writeError(w, http.StatusTooManyRequests, err)
+		default:
+			writeError(w, http.StatusInternalServerError, err)
 		}
-		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
 	writeJSON(w, http.StatusAccepted, &apiMessageResponse{Message: "started"})
@@ -165,11 +168,24 @@ func (s *Server) handleAssistantStream(w http.ResponseWriter, r *http.Request, c
 		writeError(w, http.StatusNotImplemented, errors.New("the built-in assistant is not configured on this server"))
 		return
 	}
+	// Defense in depth: a same-origin gate on the stream too. It is already safe
+	// from cross-site reads (the browser blocks them without CORS, which we never
+	// send), but refusing a cross-site connection up front avoids even subscribing.
+	if site := r.Header.Get("Sec-Fetch-Site"); site != "" && site != "same-origin" && site != "none" {
+		writeError(w, http.StatusForbidden, errors.New("cross-site stream refused"))
+		return
+	}
 	a, err := s.ownedApp(c, r.PathValue("name"))
 	if err != nil {
 		writeAppError(w, err)
 		return
 	}
+	events, cancel, err := s.assistant.Subscribe(a.Name)
+	if err != nil {
+		writeError(w, http.StatusTooManyRequests, err)
+		return
+	}
+	defer cancel()
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		writeError(w, http.StatusInternalServerError, errors.New("streaming unsupported"))
@@ -180,9 +196,6 @@ func (s *Server) handleAssistantStream(w http.ResponseWriter, r *http.Request, c
 	w.Header().Set("Connection", "keep-alive")
 	w.WriteHeader(http.StatusOK)
 	flusher.Flush()
-
-	events, cancel := s.assistant.Subscribe(a.Name)
-	defer cancel()
 	keepalive := time.NewTicker(assistantKeepalive)
 	defer keepalive.Stop()
 	for {

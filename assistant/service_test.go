@@ -95,9 +95,10 @@ func drainUntilDone(t *testing.T, ch <-chan Event) []Event {
 // waiting for the background run to fully finish.
 func runTurn(t *testing.T, m *Manager, app, text string) []Event {
 	t.Helper()
-	ch, cancel := m.Subscribe(app)
+	ch, cancel, err := m.Subscribe(app)
+	require.NoError(t, err)
 	defer cancel()
-	require.NoError(t, m.Send(app, text))
+	require.NoError(t, m.Send(app, "", text))
 	events := drainUntilDone(t, ch)
 	require.Eventually(t, func() bool { return !m.Running(app) }, 2*time.Second, 5*time.Millisecond)
 	return events
@@ -255,11 +256,13 @@ func TestBroadcastsToEverySubscriber(t *testing.T) {
 	m := NewManager(fc, newFakeOps(), NewMemoryStore(), "test-model")
 
 	// Two devices watching the same app both see the same stream.
-	ch1, c1 := m.Subscribe("blog")
+	ch1, c1, err1 := m.Subscribe("blog")
+	require.NoError(t, err1)
 	defer c1()
-	ch2, c2 := m.Subscribe("blog")
+	ch2, c2, err2 := m.Subscribe("blog")
+	require.NoError(t, err2)
 	defer c2()
-	require.NoError(t, m.Send("blog", "hi"))
+	require.NoError(t, m.Send("blog", "", "hi"))
 
 	got1 := eventTypes(drainUntilDone(t, ch1))
 	got2 := eventTypes(drainUntilDone(t, ch2))
@@ -273,10 +276,10 @@ func TestSecondSenderIsRejectedWhileBusy(t *testing.T) {
 	g := &gateCompleter{entered: make(chan struct{}, 1), release: make(chan struct{})}
 	m := NewManager(g, newFakeOps(), NewMemoryStore(), "test-model")
 
-	require.NoError(t, m.Send("blog", "one"))
+	require.NoError(t, m.Send("blog", "", "one"))
 	<-g.entered // the run is now mid-call, so the app is busy
 	assert.True(t, m.Running("blog"))
-	assert.ErrorIs(t, m.Send("blog", "two"), ErrBusy, "a second sender must not clobber the first")
+	assert.ErrorIs(t, m.Send("blog", "", "two"), ErrBusy, "a second sender must not clobber the first")
 
 	close(g.release)
 	require.Eventually(t, func() bool { return !m.Running("blog") }, 2*time.Second, 5*time.Millisecond)
@@ -292,7 +295,7 @@ func TestRunContinuesWithoutASubscriber(t *testing.T) {
 	}}
 	m := NewManager(fc, newFakeOps(), store, "test-model")
 
-	require.NoError(t, m.Send("blog", "hello"))
+	require.NoError(t, m.Send("blog", "", "hello"))
 	require.Eventually(t, func() bool { return !m.Running("blog") }, 3*time.Second, 10*time.Millisecond)
 
 	items, err := m.Transcript("blog")
@@ -302,6 +305,108 @@ func TestRunContinuesWithoutASubscriber(t *testing.T) {
 	assert.Equal(t, "hello", items[0].Text)
 	assert.Equal(t, "text", items[1].Kind)
 	assert.Equal(t, "done anyway", items[1].Text)
+}
+
+func TestReserveRunCapsConcurrentTurnsPerUser(t *testing.T) {
+	t.Parallel()
+	g := &gateCompleter{entered: make(chan struct{}, 10), release: make(chan struct{})}
+	m := NewManager(g, newFakeOps(), NewMemoryStore(), "test-model") // maxRunsPerUser = 3
+
+	for i := 1; i <= 3; i++ {
+		require.NoError(t, m.Send(fmt.Sprintf("app%d", i), "u1", "go"))
+	}
+	for i := 0; i < 3; i++ {
+		<-g.entered // all three are now running
+	}
+	// A fourth concurrent turn for the same user is refused, across their apps.
+	assert.ErrorIs(t, m.Send("app4", "u1", "go"), ErrTooManyRuns)
+	// A different user is unaffected.
+	require.NoError(t, m.Send("app5", "u2", "go"))
+	// The global admin token (empty user) is never limited.
+	require.NoError(t, m.Send("app6", "", "go"))
+
+	close(g.release)
+	require.Eventually(t, func() bool { return !m.Running("app1") }, 2*time.Second, 5*time.Millisecond)
+}
+
+func TestReserveRunCapsTurnsPerHour(t *testing.T) {
+	t.Parallel()
+	fc := &fakeCompleter{replies: []response{
+		{StopReason: "end_turn", Content: []ContentBlock{{Type: "text", Text: "a"}}},
+		{StopReason: "end_turn", Content: []ContentBlock{{Type: "text", Text: "b"}}},
+	}}
+	m := NewManager(fc, newFakeOps(), NewMemoryStore(), "test-model")
+	m.maxRunsPerHour = 2
+
+	// Two turns finish, but their starts still count against the hourly window.
+	for i := 0; i < 2; i++ {
+		require.NoError(t, m.Send("blog", "u1", "go"))
+		require.Eventually(t, func() bool { return !m.Running("blog") }, 2*time.Second, 5*time.Millisecond)
+	}
+	assert.ErrorIs(t, m.Send("blog", "u1", "go"), ErrRateLimited)
+}
+
+func TestRecentHistoryWindowsToLastTurns(t *testing.T) {
+	t.Parallel()
+	// Build 5 human turns, each: user text, assistant tool_use, user tool_result.
+	var history []Message
+	for i := 0; i < 5; i++ {
+		history = append(history,
+			Message{Role: "user", Content: []ContentBlock{{Type: "text", Text: fmt.Sprintf("turn %d", i)}}},
+			Message{Role: "assistant", Content: []ContentBlock{toolUse("t", "list_files", `{}`)}},
+			Message{Role: "user", Content: []ContentBlock{{Type: "tool_result", ToolUseID: "t", Content: "ok"}}},
+		)
+	}
+	windowed := recentHistory(history, 2)
+
+	// Starts on a human message (valid ordering) and keeps exactly the last 2 turns.
+	require.Equal(t, "user", windowed[0].Role)
+	assert.Equal(t, "turn 3", windowed[0].Content[0].Text)
+	humanTurns := 0
+	for _, msg := range windowed {
+		if msg.Role == "user" && hasTextBlock(msg) {
+			humanTurns++
+		}
+	}
+	assert.Equal(t, 2, humanTurns)
+	// A short history is returned whole.
+	assert.Len(t, recentHistory(history, 99), len(history))
+}
+
+func TestSubscriberCap(t *testing.T) {
+	t.Parallel()
+	m := NewManager(&fakeCompleter{}, newFakeOps(), NewMemoryStore(), "test-model")
+	var cancels []func()
+	for i := 0; i < maxSubsPerApp; i++ {
+		_, cancel, err := m.Subscribe("blog")
+		require.NoError(t, err)
+		cancels = append(cancels, cancel)
+	}
+	_, _, err := m.Subscribe("blog")
+	assert.ErrorIs(t, err, ErrTooManySubscribers, "past the cap, new watchers are refused")
+
+	// Freeing one makes room again.
+	cancels[0]()
+	_, cancel, err := m.Subscribe("blog")
+	require.NoError(t, err)
+	cancel()
+	for _, c := range cancels[1:] {
+		c()
+	}
+}
+
+func TestResetRefusedWhileRunning(t *testing.T) {
+	t.Parallel()
+	g := &gateCompleter{entered: make(chan struct{}, 1), release: make(chan struct{})}
+	m := NewManager(g, newFakeOps(), NewMemoryStore(), "test-model")
+
+	require.NoError(t, m.Send("blog", "", "go"))
+	<-g.entered
+	assert.ErrorIs(t, m.Reset("blog"), ErrBusy, "Reset must not delete a transcript mid-run")
+
+	close(g.release)
+	require.Eventually(t, func() bool { return !m.Running("blog") }, 2*time.Second, 5*time.Millisecond)
+	assert.NoError(t, m.Reset("blog"), "once idle, Reset works")
 }
 
 // gateCompleter blocks inside the model call until released, so a test can catch

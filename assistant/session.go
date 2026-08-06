@@ -13,11 +13,18 @@ const (
 	// subChanBuffer is how many events a slow subscriber may fall behind before it
 	// is dropped (it recovers by reloading the transcript)
 	subChanBuffer = 256
+	// maxSubsPerApp caps concurrent watchers of one app's stream, so a client
+	// cannot exhaust the server by opening endless connections
+	maxSubsPerApp = 64
 )
 
 // ErrBusy is returned when a turn is already running for an app; only one runs at
 // a time, so a second sender must wait rather than clobber the transcript.
 var ErrBusy = errors.New("a turn is already in progress for this app")
+
+// ErrTooManySubscribers is returned when an app already has the most stream
+// watchers it allows
+var ErrTooManySubscribers = errors.New("too many watchers for this app's assistant")
 
 // session is one app's live conversation state: whether a run is in progress and
 // who is watching. The run itself lives in a server goroutine (not a request), so
@@ -49,14 +56,18 @@ func (s *session) publish(ev Event) {
 	}
 }
 
-func (s *session) subscribe() (int, chan Event) {
+// subscribe registers a watcher, or returns ok=false when the per-app cap is hit
+func (s *session) subscribe() (int, chan Event, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if len(s.subs) >= maxSubsPerApp {
+		return 0, nil, false
+	}
 	id := s.nextSub
 	s.nextSub++
 	ch := make(chan Event, subChanBuffer)
 	s.subs[id] = ch
-	return id, ch
+	return id, ch, true
 }
 
 func (s *session) unsubscribe(id int) {

@@ -319,8 +319,9 @@ const AppAssistant = ({ name, onClose }) => {
         return; // a turn is already running; it will stream in
       }
       if (!r.ok) {
-        const text = await r.text().catch(() => "");
-        handleEvent({ type: "error", error: text || `request failed (${r.status})` });
+        // The server sends {"error": "..."} (e.g. rate limited); show that, not raw JSON.
+        const body = await r.json().catch(() => null);
+        handleEvent({ type: "error", error: body?.error || `request failed (${r.status})` });
       }
     } catch (err) {
       handleEvent({ type: "error", error: err.message });
