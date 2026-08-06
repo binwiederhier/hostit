@@ -29,14 +29,14 @@ type apiSSHInfo struct {
 
 // apiAppResponse is returned for all app-related endpoints
 type apiAppResponse struct {
-	Name         string `json:"name"`
-	URL          string `json:"url"`
-	Port         int    `json:"port"`
-	DiskMB       int    `json:"disk_mb"`
-	DiskLimit    int    `json:"disk_limit_mb"`
-	MemoryMB     int    `json:"memory_mb"`
-	MemoryLimit  int    `json:"memory_limit_mb"`
-	CPUPercent   int    `json:"cpu_percent"` // Live container CPU use in whole percent
+	Name        string `json:"name"`
+	URL         string `json:"url"`
+	Port        int    `json:"port"`
+	DiskMB      int    `json:"disk_mb"`
+	DiskLimit   int    `json:"disk_limit_mb"`
+	MemoryMB    int    `json:"memory_mb"`
+	MemoryLimit int    `json:"memory_limit_mb"`
+	CPUPercent  int    `json:"cpu_percent"` // Live container CPU use in whole percent
 
 	Running      bool   `json:"running"`        // The app's container is up
 	AppRunning   bool   `json:"app_running"`    // The run: command inside it is up
