@@ -46,22 +46,28 @@ type Tool struct {
 	InputSchema json.RawMessage `json:"input_schema"`
 }
 
-// thinkingConfig turns on extended thinking with a token budget. The model
-// reasons before it answers or calls a tool, and returns that reasoning as
-// thinking blocks we stream to the UI and feed back on the next turn.
+// thinkingConfig turns on extended thinking. Current models use "adaptive" (the
+// model decides how much to think); it returns that reasoning as thinking blocks
+// we stream to the UI and feed back on the next turn.
 type thinkingConfig struct {
-	Type         string `json:"type"` // "enabled"
-	BudgetTokens int    `json:"budget_tokens"`
+	Type string `json:"type"` // "adaptive"
+}
+
+// outputConfig tunes how hard the model works; effort trades latency and tokens
+// for thoroughness
+type outputConfig struct {
+	Effort string `json:"effort,omitempty"` // "low" | "medium" | "high"
 }
 
 // request is the body of POST /v1/messages
 type request struct {
-	Model     string          `json:"model"`
-	MaxTokens int             `json:"max_tokens"`
-	System    string          `json:"system,omitempty"`
-	Messages  []Message       `json:"messages"`
-	Tools     []Tool          `json:"tools,omitempty"`
-	Thinking  *thinkingConfig `json:"thinking,omitempty"`
+	Model        string          `json:"model"`
+	MaxTokens    int             `json:"max_tokens"`
+	System       string          `json:"system,omitempty"`
+	Messages     []Message       `json:"messages"`
+	Tools        []Tool          `json:"tools,omitempty"`
+	Thinking     *thinkingConfig `json:"thinking,omitempty"`
+	OutputConfig *outputConfig   `json:"output_config,omitempty"`
 }
 
 // response is the model's reply. StopReason is "tool_use" when it wants us to run

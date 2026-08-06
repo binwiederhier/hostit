@@ -17,10 +17,10 @@ const (
 	// look at the results before we stop. A backstop against a loop that never
 	// decides it is finished, not a normal limit.
 	maxIterations = 40
-	// maxTokens caps a single reply. It must exceed the thinking budget.
+	// maxTokens caps a single reply (thinking plus output).
 	maxTokens = 16000
-	// thinkingBudget is how many tokens the model may spend reasoning per turn.
-	thinkingBudget = 4000
+	// assistantEffort tunes how hard the model works per turn
+	assistantEffort = "high"
 )
 
 var (
@@ -69,12 +69,13 @@ func (m *Manager) Run(ctx context.Context, app, userText string, emit func(Event
 
 	for iter := 0; iter < maxIterations; iter++ {
 		resp, err := m.client.complete(ctx, request{
-			Model:     m.model,
-			MaxTokens: maxTokens,
-			System:    systemPrompt(app),
-			Messages:  history,
-			Tools:     toolDefs(),
-			Thinking:  &thinkingConfig{Type: "enabled", BudgetTokens: thinkingBudget},
+			Model:        m.model,
+			MaxTokens:    maxTokens,
+			System:       systemPrompt(app),
+			Messages:     history,
+			Tools:        toolDefs(),
+			Thinking:     &thinkingConfig{Type: "adaptive"},
+			OutputConfig: &outputConfig{Effort: assistantEffort},
 		})
 		if err != nil {
 			emit(Event{Type: "error", Error: err.Error()})
