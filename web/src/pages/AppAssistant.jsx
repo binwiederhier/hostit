@@ -375,7 +375,7 @@ const AppAssistant = ({ name, onClose }) => {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={onKeyDown}
-            placeholder="Tell the assistant what to build or change..."
+            placeholder="Build or change your app..."
             rows={1}
             disabled={busy}
           />
