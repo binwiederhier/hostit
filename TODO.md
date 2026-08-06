@@ -3,6 +3,43 @@
 Things worth doing, with enough context to pick up cold. Not a backlog of
 everything imaginable -- if it is not written down here it is not planned.
 
+## Bugs
+
+### App-process dot flickers, and "Stop app" does not stop the app
+
+Reported after the app-process-state work (v0.2.9). Two problems, likely
+related:
+
+- **Dot flickers on action.** Clicking a menu item makes the dot jump
+  orange -> green -> orange. The optimistic flip in `lifecycle()` sets
+  `app_running` immediately, then `load()` reconciles against the state cache
+  (`CachedStates`), which is still serving the pre-action value for up to a
+  TTL, so the dot bounces back before the settle-poll (`scheduleCatchUp`)
+  catches up. Need to either not reconcile from a known-stale cache right after
+  an action, or hold the optimistic value until the settle poll confirms.
+- **"Stop app" does not actually stop the app.** The dot ends orange (so the
+  agent wrote `stopped` to `log/state`) but the app keeps serving. That points
+  at the breadcrumb and the real stop being decoupled: `Pause()` writes
+  `stopped` but the `run:` child is not being killed in prod. Suspect the
+  signal path -- daemon `StopApp` -> `podman kill --signal USR1` -> agent PID 1
+  -> `Pause()` -> kill child -- is not delivering or not killing (the unit test
+  `TestAgentPauseAndResume` passes, so it is environment-specific). Also "some
+  actions don't work" -- check whether the conditional menu is sending the verb
+  the daemon expects for each state.
+
+Repro: open an app, Stop app, watch the dot bounce, then confirm the app URL
+still responds.
+
+### Terminal pop-out flashes the app chrome on a white page
+
+The popped-out terminal (`/app/:name/terminal`, `TerminalRoute` rendering
+`AppTerminal` with `fullPage`) briefly shows the normal top menu bar on a white
+background before the terminal mounts. It should be a bare dark page from the
+first paint: no nav bar, dark background. Likely the app shell / router layout
+(or the Suspense fallback for the lazy `AppTerminal`) renders before the
+full-page terminal route takes over. Give the pop-out route its own chrome-less,
+dark layout and a matching Suspense fallback so there is nothing to flash.
+
 ## Multi-node: a proxy node and hosting nodes
 
 Today one machine is everything: it terminates TLS, proxies, holds the registry,

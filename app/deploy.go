@@ -73,6 +73,7 @@ func (m *Manager) StartApp(name string) error { return m.signalAgent(name, "USR2
 // signalAgent delivers a control signal to the app's agent (PID 1 in the
 // container); it needs the container running, since it acts on the process.
 func (m *Manager) signalAgent(name, signal string) error {
+	defer m.stateChanged(name) // The app process just moved; drop the cache and re-measure
 	if _, err := m.store.App(name); err != nil {
 		return err
 	}

@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useState } from "react";
-import { BrowserRouter, Link, Navigate, NavLink, Route, Routes, useParams } from "react-router-dom";
+import { BrowserRouter, Link, Navigate, NavLink, Route, Routes } from "react-router-dom";
 import { api, ApiError } from "./api";
 import { Loading, Wordmark } from "./components";
 import Dashboard from "./pages/Dashboard";
@@ -11,14 +11,6 @@ import Docs from "./pages/Docs";
 // The popped-out, full-window terminal (also reachable directly). xterm is heavy,
 // so it stays a lazy chunk, loaded only when a terminal is actually opened.
 const AppTerminal = lazy(() => import("./pages/AppTerminal"));
-const TerminalRoute = () => {
-  const { name } = useParams();
-  return (
-    <Suspense fallback={null}>
-      <AppTerminal name={name} fullPage />
-    </Suspense>
-  );
-};
 
 const logout = async () => {
   try {
@@ -122,6 +114,10 @@ const App = () => {
   // The docs describe the instance, not the account, so they open without one:
   // they are a link people share, and a tab they leave open next to the app
   const docsOnly = window.location.pathname === "/docs";
+  // The popped-out terminal is its own bare, dark window: no nav, no account gate
+  // (the WebSocket carries the same cookie). Rendering it before the gate keeps the
+  // app chrome from flashing on a white page while the account and xterm chunk load.
+  const termPopout = window.location.pathname.match(/^\/app\/([^/]+)\/terminal\/?$/);
 
   const refreshAccount = useCallback(async () => {
     try {
@@ -138,11 +134,20 @@ const App = () => {
   }, []);
 
   useEffect(() => {
-    if (!docsOnly) {
+    if (!docsOnly && !termPopout) {
       refreshAccount();
     }
-  }, [refreshAccount, docsOnly]);
+  }, [refreshAccount, docsOnly, termPopout]);
 
+  if (termPopout) {
+    // A dark, full-window fallback (same class the terminal itself uses) so the
+    // first paint is already the terminal's background, not a white page.
+    return (
+      <Suspense fallback={<div className="term-page" />}>
+        <AppTerminal name={decodeURIComponent(termPopout[1])} fullPage />
+      </Suspense>
+    );
+  }
   if (docsOnly) {
     return (
       <main className="container">
@@ -176,7 +181,6 @@ const App = () => {
         <Routes>
           <Route path="/" element={<Dashboard account={account} refreshAccount={refreshAccount} />} />
           <Route path="/app/:name" element={<AppDetail account={account} refreshAccount={refreshAccount} />} />
-          <Route path="/app/:name/terminal" element={<TerminalRoute />} />
           <Route path="/profile" element={<Profile />} />
           <Route path="/admin" element={<Admin account={account} />} />
           <Route path="*" element={<Navigate to="/" replace />} />

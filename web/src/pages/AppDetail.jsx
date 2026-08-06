@@ -319,19 +319,10 @@ const AppDetail = ({ account, refreshAccount }) => {
     }
     setBusy(true);
     setError("");
-    // Flip the dot now rather than after the request (teardown takes a couple of
-    // seconds, and waiting on it feels broken); the catch-up poll reconciles.
-    // Power verbs move the container (and with it the app process); app verbs
-    // (start/stop/restart the run: command) leave the container up and only move
-    // the app process.
-    const containerState = { poweron: true, reboot: true, poweroff: false };
-    const appState = { start: true, restart: true, stop: false };
-    if (action in containerState) {
-      const up = containerState[action];
-      setApp((prev) => (prev ? { ...prev, running: up, app_running: up } : prev));
-    } else if (action in appState) {
-      setApp((prev) => (prev ? { ...prev, app_running: appState[action] } : prev));
-    }
+    // No optimistic dot flip: the daemon drops its state cache on every action and
+    // re-measures a couple of seconds later (scheduleCatchUp polls for it), so the
+    // dot moves once, when the real state settles. Flipping it early only made it
+    // flap (orange -> green -> orange) when load() then read the still-stale cache.
     try {
       await api.post(`/api/apps/${encodeURIComponent(name)}/${action}`);
     } catch (err) {

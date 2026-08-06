@@ -127,6 +127,12 @@ func containerCreateArgs(conf *appctl.AppConfig, a *store.App, home, socketFile,
 	// apt-get and bind port 80, and the uid map already keeps those caps off the
 	// host, so an escape lands as an unprivileged user regardless.
 	args = append(args, "--security-opt", "no-new-privileges")
+	// podman's default AppArmor profile mediates signals by a per-container
+	// "//&crun" label, and the multithreaded Go agent straddles that label, so its
+	// SIGKILL to a child ("stop app", reload) is denied and the app never dies --
+	// leaving a duplicate fighting for the port. The uid map, no-new-privileges and
+	// per-app network already isolate the container, so run it unconfined.
+	args = append(args, "--security-opt", "apparmor=unconfined")
 	containerHome := containerHomeDir(a.Name)
 	args = append(args,
 		"--env", fmt.Sprintf("PORT=%d", containerPort),

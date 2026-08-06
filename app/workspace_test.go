@@ -123,6 +123,19 @@ func TestContainerRefusesPrivilegeEscalation(t *testing.T) {
 	assert.Contains(t, strings.Join(args, " "), "--security-opt no-new-privileges")
 }
 
+func TestContainerRunsUnconfinedByAppArmor(t *testing.T) {
+	t.Parallel()
+	conf := &appctl.AppConfig{Mode: appctl.ModeStatic}
+	a := &store.App{Name: "blog", Port: 10000}
+	args := containerCreateArgs(conf, a, "/var/lib/hostit/apps/blog", "/run/hostit/hostit.sock", "/usr/bin/hostit", 0, testIDs)
+	// podman's default AppArmor profile forbids signals across its per-container
+	// "//&crun" label, and the multithreaded Go agent ends up straddling that
+	// label -- so "stop app" (agent SIGKILLing its own child) is silently denied
+	// by AppArmor and the app never dies. The userns map, no-new-privileges and
+	// per-app network already isolate the container, so we run it unconfined.
+	assert.Contains(t, strings.Join(args, " "), "--security-opt apparmor=unconfined")
+}
+
 func TestContainerArgsChangeWithTheVersion(t *testing.T) {
 	t.Parallel()
 	conf := &appctl.AppConfig{Mode: appctl.ModeStatic}
