@@ -83,6 +83,11 @@ still means SSH or an external agent. These bring that into the browser.
   (not a 500), and the UI should hide or disable the chat surface (and default the
   app-detail view away from the split/chat layout) so a server without a key is
   still fully usable for hosting.
+- **Small screens: fold the app top bar into the nav.** On an app detail page,
+  phones currently show two stacked bars -- the hostit logo nav, then the app's own
+  back+name+controls bar -- which eats vertical space. On small screens put the
+  back button and app name where the hostit logo sits (replacing it) so there is a
+  single top bar; the avatar menu still gets you home.
 - **Semi-live app previews on the dashboard.** Thumbnails of each app in the list.
   Browser-side screenshotting is out (the app iframe is a different origin, so its
   pixels can't be read). Two workable options: (A) scaled-down live sandboxed
