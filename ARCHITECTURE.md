@@ -285,8 +285,8 @@ and exact:
 - **Snapshots** are copy-on-write: an instant, space-shared, atomic (crash-consistent)
   copy at `apps/.snapshots/<app>/<id>`, so it does not count against the app's quota.
   hostit snapshots before every deploy and assistant turn, and hourly; a restic-style
-  policy thins the automatic ones (see `applyRetention`, heavily unit-tested), while
-  labelled ones are kept. A `snapshot.pre`/`post` pair in `hostit.yml` runs in the
+  policy thins them all -- manual and automatic alike, so none lives forever (see
+  `applyRetention`, heavily unit-tested). A `snapshot.pre`/`post` pair in `hostit.yml` runs in the
   container to quiesce a database first (pre failing aborts the snapshot). Rollback
   takes a safety snapshot, stops the app, replaces the home subvolume with a writable
   copy of the chosen snapshot, restores ownership and quota, and starts it again.

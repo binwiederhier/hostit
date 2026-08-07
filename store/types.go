@@ -43,9 +43,9 @@ type App struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
-// Snapshot is one point-in-time btrfs snapshot of an app's home. Auto snapshots
-// (taken before a deploy/turn and hourly) are subject to retention; manual ones
-// (a deliberate, usually labelled save) are kept.
+// Snapshot is one point-in-time btrfs snapshot of an app's home. Auto records how
+// it was taken (automatically before a deploy/turn and hourly, or a manual labelled
+// save); retention thins all of them, so none lives forever.
 type Snapshot struct {
 	ID        string    `json:"id"`
 	AppName   string    `json:"app_name"`

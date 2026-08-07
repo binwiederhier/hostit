@@ -157,22 +157,19 @@ func TestRetentionWeeklyKeepsNewestPerWeek(t *testing.T) {
 	assert.Equal(t, []string{"aug7", "jul17", "jul24", "jul31"}, keptIDs(snaps, RetentionPolicy{Weekly: 4}))
 }
 
-func TestRetentionManualAlwaysKept(t *testing.T) {
+func TestRetentionPrunesManualSnapshotsToo(t *testing.T) {
 	t.Parallel()
-	base := time.Date(2026, 8, 7, 12, 0, 0, 0, time.UTC)
-	snaps := autoSeries(base, time.Minute, 60) // 60 auto in one day -> 10 pruned
-	// an old manual snapshot from a year ago must survive regardless
-	manual := Snapshot{ID: "keepme", CreatedAt: base.AddDate(-1, 0, 0), Auto: false, Label: "before the big rewrite"}
-	snaps = append(snaps, manual)
-	keep, prune := applyRetention(snaps, defaultRetention)
-	keptSet := map[string]bool{}
-	for _, k := range keep {
-		keptSet[k.ID] = true
+	// Manual snapshots are subject to retention like any other: three in one day with
+	// last=1 and daily=1 keep only the newest; the older manual ones are pruned.
+	day := time.Date(2026, 8, 7, 0, 0, 0, 0, time.UTC)
+	snaps := []Snapshot{
+		{ID: "m-morning", CreatedAt: day.Add(9 * time.Hour), Auto: false, Label: "a"},
+		{ID: "m-noon", CreatedAt: day.Add(12 * time.Hour), Auto: false, Label: "b"},
+		{ID: "m-evening", CreatedAt: day.Add(20 * time.Hour), Auto: false, Label: "c"},
 	}
-	assert.True(t, keptSet["keepme"], "manual snapshots are never pruned")
-	for _, p := range prune {
-		assert.True(t, p.Auto, "only auto snapshots are ever pruned")
-	}
+	keep, prune := applyRetention(snaps, RetentionPolicy{Last: 1, Daily: 1})
+	assert.Equal(t, []string{"m-evening"}, sortedIDs(keep))
+	assert.ElementsMatch(t, []string{"m-morning", "m-noon"}, sortedIDs(prune))
 }
 
 func TestRetentionZeroPolicyPrunesAllAuto(t *testing.T) {

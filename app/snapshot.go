@@ -126,8 +126,8 @@ func (m *Manager) Rollback(name, id string) error {
 	return err
 }
 
-// pruneSnapshots deletes the auto snapshots that fall outside the retention policy,
-// removing both the subvolume and the record. Manual snapshots are never pruned.
+// pruneSnapshots deletes the snapshots that fall outside the retention policy,
+// removing both the subvolume and the record.
 func (m *Manager) pruneSnapshots(name string) {
 	snaps, err := m.store.Snapshots(name)
 	if err != nil {
@@ -203,10 +203,9 @@ func randID() string {
 }
 
 // Snapshot is one point-in-time copy of an app's home (a read-only btrfs subvolume).
-// Auto snapshots are the ones taken automatically (before a deploy or an assistant
-// turn, and hourly); those are subject to retention. A manual snapshot -- one the
-// owner or agent took on purpose, usually labelled -- is never pruned, so important
-// work is preserved.
+// Auto records how it was taken -- automatically (before a deploy or assistant turn,
+// and hourly) or manually (a labelled save the owner/agent asked for). Retention
+// applies to all of them, so no snapshot lives forever.
 type Snapshot struct {
 	ID        string    // Unique, sortable; the subvolume's directory name
 	App       string    // The app it belongs to
@@ -229,38 +228,29 @@ type RetentionPolicy struct {
 var defaultRetention = RetentionPolicy{Last: 50, Daily: 7, Weekly: 4, Monthly: 3}
 
 // applyRetention partitions snapshots into those to keep and those to prune under
-// the policy. Manual snapshots are always kept; only automatic ones are thinned.
-// Input need not be sorted; the result is order-independent.
+// the policy. Every snapshot -- manual and automatic alike -- is subject to it, so
+// none lives forever. Input need not be sorted; the result is order-independent.
 func applyRetention(snaps []Snapshot, p RetentionPolicy) (keep, prune []Snapshot) {
-	// Manual snapshots are kept unconditionally and do not count toward the tiers.
-	auto := make([]Snapshot, 0, len(snaps))
-	for _, s := range snaps {
-		if s.Auto {
-			auto = append(auto, s)
-		} else {
-			keep = append(keep, s)
-		}
-	}
-
+	all := append([]Snapshot(nil), snaps...)
 	// Newest first, deterministic on ties so pruning is stable.
-	sort.Slice(auto, func(i, j int) bool {
-		if auto[i].CreatedAt.Equal(auto[j].CreatedAt) {
-			return auto[i].ID > auto[j].ID
+	sort.Slice(all, func(i, j int) bool {
+		if all[i].CreatedAt.Equal(all[j].CreatedAt) {
+			return all[i].ID > all[j].ID
 		}
-		return auto[i].CreatedAt.After(auto[j].CreatedAt)
+		return all[i].CreatedAt.After(all[j].CreatedAt)
 	})
 
-	kept := make(map[string]bool, len(auto))
+	kept := make(map[string]bool, len(all))
 	// keep-last: the newest N outright.
-	for i := 0; i < p.Last && i < len(auto); i++ {
-		kept[auto[i].ID] = true
+	for i := 0; i < p.Last && i < len(all); i++ {
+		kept[all[i].ID] = true
 	}
 	// keep-daily/weekly/monthly: the newest snapshot of each of the last N buckets.
-	markBuckets(auto, p.Daily, dayBucket, kept)
-	markBuckets(auto, p.Weekly, weekBucket, kept)
-	markBuckets(auto, p.Monthly, monthBucket, kept)
+	markBuckets(all, p.Daily, dayBucket, kept)
+	markBuckets(all, p.Weekly, weekBucket, kept)
+	markBuckets(all, p.Monthly, monthBucket, kept)
 
-	for _, s := range auto {
+	for _, s := range all {
 		if kept[s.ID] {
 			keep = append(keep, s)
 		} else {

@@ -413,9 +413,9 @@ subvolume, which unlocks two things:
   app's files. hostit takes one automatically before every deploy, before every
   assistant turn, and hourly; you (or an agent) can also take a labelled one on
   purpose. Rolling back restores the home to a snapshot -- and takes a safety
-  snapshot of the current state first, so a rollback is itself undoable. Automatic
+  snapshot of the current state first, so a rollback is itself undoable. All
   snapshots are thinned by a grandfather-father-son policy (the last 50, plus daily
-  for a week, weekly for a month, monthly for a quarter); labelled ones are kept.
+  for a week, weekly for a month, monthly for a quarter) -- none is kept forever.
 
   ```sh
   hostit apps snapshot myapp "before the rewrite"   # save a restorable point
