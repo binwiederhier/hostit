@@ -117,6 +117,13 @@ func (o *systemOps) DeleteUser(username string) error {
 		if err = run("userdel", "--remove", username); err == nil {
 			return nil
 		}
+		// userdel can remove the account yet still exit non-zero (e.g. it could not
+		// remove the home directory), and the next retry then reports "no such user".
+		// Once the account is gone the delete has succeeded, so stop treating the
+		// leftover error as failure -- otherwise a half-removed app is undeletable.
+		if !o.UserExists(username) {
+			return nil
+		}
 		if i == userdelKillAfter {
 			_ = run("pkill", "--signal", "KILL", "--uid", username)
 		}
