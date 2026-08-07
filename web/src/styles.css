@@ -2,7 +2,8 @@
    cursor, emerald "live" accent, dark terminal snippet panels. Light/dark via
    prefers-color-scheme; system font stacks only (no network fonts). */
 
-:root {
+:root,
+:root[data-theme="light"] {
   color-scheme: light dark;
   --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --mono: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
@@ -31,8 +32,34 @@
   --focus: #04785766;
 }
 
+/* Explicit dark choice, and (via the media query) "system" mode when no data-theme
+   is stamped. An explicit data-theme always wins because the media query below
+   only targets :root without the attribute. */
+:root[data-theme="dark"] {
+  --bg: #0f1216;
+  --surface: #171c22;
+  --surface-2: #1f252d;
+  --text: #e5e9ec;
+  --muted: #96a1ab;
+  --border: #2b333c;
+  --accent: #34d399;
+  --accent-strong: #6ee7b7;
+  --on-accent: #08130e;
+  --danger: #f08585;
+  --danger-bg: #3a1c1c;
+  --status-up: #4ade80;
+  --status-degraded: #fbbf24;
+  --status-down: #f87171;
+  --status-pending: #5b8def;
+  --warn-border: #8a7327;
+  --warn-bg: #2c2612;
+  --term-bg: #10141a;
+  --term-border: #2b333c;
+  --focus: #34d39966;
+}
+
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme]) {
     --bg: #0f1216;
     --surface: #171c22;
     --surface-2: #1f252d;
@@ -207,6 +234,23 @@ p {
   text-decoration: none;
 }
 
+/* On phones, an app page shows its back+name here instead of the logo (below). */
+.nav-appid { display: none; align-items: center; gap: 8px; min-width: 0; }
+.nav-appid-back {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  color: var(--text);
+  text-decoration: none;
+}
+.nav-appid-back:hover { background: var(--surface-2); color: var(--text); text-decoration: none; }
+.nav-appid-back svg { width: 16px; height: 16px; }
+.nav-appid-name { font-weight: 700; font-size: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
 /* The links and session sit inline on wide screens; the burger is hidden. */
 .nav-menu {
   display: flex;
@@ -238,6 +282,59 @@ p {
   color: var(--accent-strong);
   background: var(--surface-2);
 }
+
+/* "Apps" split control: label navigates, caret opens the app switcher */
+.nav-apps { position: relative; display: inline-flex; align-items: center; }
+.nav-apps-caret {
+  display: inline-flex;
+  align-items: center;
+  border: 0;
+  padding: 5px 5px;
+  margin-left: -2px;
+  border-radius: 6px;
+  background: none;
+  color: var(--muted);
+  font-size: 11px;
+  cursor: pointer;
+}
+.nav-apps-caret:hover { color: var(--text); background: var(--surface-2); }
+.nav-apps-pop {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 20;
+  min-width: 208px;
+  max-height: 60vh;
+  overflow-y: auto;
+  padding: 6px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.16);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.nav-apps-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px;
+  border-radius: 7px;
+  color: var(--text);
+  text-decoration: none;
+}
+.nav-apps-item:hover { background: var(--surface-2); text-decoration: none; }
+.nav-apps-note { padding: 8px; color: var(--muted); font-size: 13px; }
+.nav-apps-div { height: 1px; background: var(--border); margin: 4px 2px; }
+.nav-apps-all {
+  padding: 7px 8px;
+  border-radius: 7px;
+  color: var(--muted);
+  font-size: 13px;
+  text-decoration: none;
+}
+.nav-apps-all:hover { background: var(--surface-2); color: var(--text); text-decoration: none; }
 
 /* The right cluster: the burger (mobile only) and the account avatar */
 .nav-right {
@@ -317,6 +414,31 @@ p {
 .nav-profile-pop a:hover,
 .nav-profile-pop button:hover { background: var(--surface-2); text-decoration: none; }
 
+/* Light/dark/system segmented control in the profile menu */
+.nav-theme {
+  display: flex;
+  gap: 2px;
+  margin: 2px 4px 4px;
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--surface-2);
+}
+.nav-theme-opt {
+  flex: 1;
+  padding: 5px 6px !important;
+  border-radius: 6px !important;
+  font-size: 12px;
+  color: var(--muted) !important;
+  text-align: center !important;
+}
+.nav-theme-opt:hover { background: transparent !important; color: var(--text) !important; }
+.nav-theme-opt-on,
+.nav-theme-opt-on:hover {
+  background: var(--surface) !important;
+  color: var(--text) !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+}
+
 /* Narrow screens: the inline links move into the avatar menu, so hide them here
    and let the avatar (the only menu) sit at the right. */
 @media (max-width: 640px) {
@@ -329,6 +451,9 @@ p {
   .nav-right {
     margin-left: 0;
   }
+  /* On an app page: swap the logo for the app's back+name, so it is one bar. */
+  .nav-hasappid .nav-brand { display: none; }
+  .nav-hasappid .nav-appid { display: flex; }
 }
 
 /* Cards */
@@ -1842,6 +1967,14 @@ body.ws-resizing iframe { pointer-events: none; }
   .ws-resizer { display: none; }
   .ws-split { grid-template-columns: 1fr !important; height: calc(100dvh - 192px); min-height: 380px; }
   .ws-chat { height: 100%; }
+}
+
+/* Phones: the app's back+name live in the nav now (see .nav-appid), so drop them
+   from the page's own top bar and let the controls have the row. */
+@media (max-width: 640px) {
+  .ws-topbar > .ws-back,
+  .ws-idrow { display: none; }
+  .ws-split { height: calc(100dvh - 140px); }
 }
 
 /* Modal helpers shared by the SSH and bring-your-own-AI dialogs */

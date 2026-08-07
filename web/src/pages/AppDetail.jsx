@@ -2,6 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react"
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { api, ApiError } from "../api";
 import { CopyButton, ErrorBanner, Loading, Snippet, StatusDot } from "../components";
+import { useSetAppHeader } from "../appHeader";
 
 // xterm is heavy and only needed when a terminal is actually opened, so it is
 // split into its own chunk and loaded on demand.
@@ -551,6 +552,17 @@ const AppDetail = ({ account, refreshAccount }) => {
     setTermMin(false);
     setTermConnecting(false);
   }, []);
+
+  // Publish this app's identity to the nav, so on phones it can show the back
+  // button and name in place of the logo (a single top bar). Clear it on the way
+  // out.
+  const setAppHeader = useSetAppHeader();
+  useEffect(() => {
+    if (app) {
+      setAppHeader({ name: app.name, running: app.running, appRunning: app.app_running, pending: !!pending || refreshing });
+    }
+  }, [app, pending, refreshing, setAppHeader]);
+  useEffect(() => () => setAppHeader(null), [setAppHeader]);
 
   // The chat/preview divider position, remembered across reloads.
   const [chatFrac, setChatFrac] = useState(() => {

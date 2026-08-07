@@ -1,7 +1,9 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { BrowserRouter, Link, Navigate, NavLink, Route, Routes, useLocation } from "react-router-dom";
 import { api, ApiError } from "./api";
-import { Loading, Wordmark } from "./components";
+import { Loading, StatusDot, Wordmark } from "./components";
+import { getTheme, setTheme, THEMES } from "./theme";
+import { AppHeaderContext } from "./appHeader";
 import Dashboard from "./pages/Dashboard";
 import AppDetail from "./pages/AppDetail";
 import Profile from "./pages/Profile";
@@ -18,6 +20,88 @@ const logout = async () => {
   } finally {
     window.location.reload();
   }
+};
+
+// A small dropdown hook: closes on an outside click or Escape.
+const useNavDropdown = () => {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!open) {
+      return undefined;
+    }
+    const close = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) {
+        setOpen(false);
+      }
+    };
+    const onKey = (e) => e.key === "Escape" && setOpen(false);
+    document.addEventListener("mousedown", close);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", close);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+  return { open, setOpen, ref };
+};
+
+// The "Apps" nav item, a split control: the label goes to the app list; the caret
+// opens a switcher that lists the owner's apps so you can jump straight to any one
+// (handy from an app detail page). The list is fetched the first time it opens.
+const AppsMenu = () => {
+  const { open, setOpen, ref } = useNavDropdown();
+  const [apps, setApps] = useState(null); // null = not loaded yet
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    if (open && apps === null && !failed) {
+      api
+        .get("/api/apps")
+        .then(setApps)
+        .catch(() => setFailed(true));
+    }
+  }, [open, apps, failed]);
+  return (
+    <div className="nav-apps" ref={ref}>
+      <NavLink to="/" end className="nav-apps-link">
+        Apps
+      </NavLink>
+      <button
+        type="button"
+        className="nav-apps-caret"
+        onClick={() => setOpen((o) => !o)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label="Switch app"
+      >
+        <span aria-hidden="true">&#9662;</span>
+      </button>
+      {open && (
+        <div className="nav-apps-pop" role="menu">
+          {apps === null && !failed && <div className="nav-apps-note">Loading...</div>}
+          {failed && <div className="nav-apps-note">Couldn't load apps</div>}
+          {apps && apps.length === 0 && <div className="nav-apps-note">No apps yet</div>}
+          {apps &&
+            apps.map((a) => (
+              <Link
+                key={a.name}
+                to={`/app/${a.name}`}
+                role="menuitem"
+                className="nav-apps-item"
+                onClick={() => setOpen(false)}
+              >
+                <StatusDot running={a.running} appRunning={a.app_running} />
+                <span className="mono">{a.name}</span>
+              </Link>
+            ))}
+          {apps && apps.length > 0 && <div className="nav-apps-div" />}
+          <Link to="/" role="menuitem" className="nav-apps-all" onClick={() => setOpen(false)}>
+            All apps
+          </Link>
+        </div>
+      )}
+    </div>
+  );
 };
 
 const Login = () => (
@@ -79,24 +163,35 @@ const LoadFailed = ({ message, onRetry }) => (
   </div>
 );
 
-const Nav = ({ account }) => {
+const Nav = ({ account, appHeader }) => {
   // The app detail page runs full width; the nav widens to match, so the logo and
   // links slide out to the left edge and the avatar to the right.
   const { pathname } = useLocation();
   const wide = /^\/app\/[^/]+$/.test(pathname);
+  // On phones the app's back+name replaces the logo, so there is a single top bar.
+  const onApp = wide && appHeader;
   return (
-    <header className={"nav" + (wide ? " nav-wide" : "")}>
+    <header className={"nav" + (wide ? " nav-wide" : "") + (onApp ? " nav-hasappid" : "")}>
       <div className="nav-inner">
       <Link to="/" className="nav-brand">
         <Wordmark />
       </Link>
+      {onApp && (
+        <div className="nav-appid">
+          <Link to="/" className="nav-appid-back" aria-label="Back to apps" title="Back to apps">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M9.5 3.5 5 8l4.5 4.5" />
+            </svg>
+          </Link>
+          <StatusDot running={appHeader.running} appRunning={appHeader.appRunning} pending={appHeader.pending} />
+          <span className="nav-appid-name mono">{appHeader.name}</span>
+        </div>
+      )}
       {/* Inline on wide screens; on narrow ones these move into the profile menu,
           so there is a single menu (the avatar), not also a burger. */}
       <div className="nav-menu">
         <nav className="nav-links">
-          <NavLink to="/" end>
-            Dashboard
-          </NavLink>
+          <AppsMenu />
           <NavLink to="/profile">Profile</NavLink>
           {account.role === "admin" && <NavLink to="/admin">Admin</NavLink>}
           {/* A reference you read alongside the app, so: its own tab */}
@@ -118,6 +213,7 @@ const Nav = ({ account }) => {
 // narrow screens -- the nav links live inside it there, so there is no burger.
 const ProfileMenu = ({ account }) => {
   const [open, setOpen] = useState(false);
+  const [theme, setThemeState] = useState(getTheme());
   const ref = useRef(null);
   useEffect(() => {
     if (!open) {
@@ -169,7 +265,7 @@ const ProfileMenu = ({ account }) => {
           {/* Shown only on narrow screens, where the bar's inline nav is hidden */}
           <div className="nav-profile-nav">
             <NavLink to="/" end role="menuitem" onClick={close}>
-              Dashboard
+              Apps
             </NavLink>
             <NavLink to="/profile" role="menuitem" onClick={close}>
               Profile
@@ -184,6 +280,23 @@ const ProfileMenu = ({ account }) => {
             </a>
           </div>
           <div className="nav-profile-div nav-profile-navdiv" />
+          <div className="nav-theme" role="group" aria-label="Theme">
+            {THEMES.map((t) => (
+              <button
+                key={t}
+                type="button"
+                className={"nav-theme-opt" + (theme === t ? " nav-theme-opt-on" : "")}
+                aria-pressed={theme === t}
+                onClick={() => {
+                  setTheme(t);
+                  setThemeState(t);
+                }}
+              >
+                {t === "system" ? "System" : t === "light" ? "Light" : "Dark"}
+              </button>
+            ))}
+          </div>
+          <div className="nav-profile-div" />
           <button type="button" role="menuitem" onClick={logout}>
             Log out
           </button>
@@ -196,6 +309,7 @@ const ProfileMenu = ({ account }) => {
 const App = () => {
   const [account, setAccount] = useState(undefined); // undefined = loading, null = not logged in
   const [error, setError] = useState("");
+  const [appHeader, setAppHeader] = useState(null); // the app page's identity, for the mobile nav
   // The docs describe the instance, not the account, so they open without one:
   // they are a link people share, and a tab they leave open next to the app
   const docsOnly = window.location.pathname === "/docs";
@@ -261,16 +375,18 @@ const App = () => {
   }
   return (
     <BrowserRouter>
-      <Nav account={account} />
-      <main className="container">
-        <Routes>
-          <Route path="/" element={<Dashboard account={account} refreshAccount={refreshAccount} />} />
-          <Route path="/app/:name" element={<AppDetail account={account} refreshAccount={refreshAccount} />} />
-          <Route path="/profile" element={<Profile />} />
-          <Route path="/admin" element={<Admin account={account} />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </main>
+      <AppHeaderContext.Provider value={setAppHeader}>
+        <Nav account={account} appHeader={appHeader} />
+        <main className="container">
+          <Routes>
+            <Route path="/" element={<Dashboard account={account} refreshAccount={refreshAccount} />} />
+            <Route path="/app/:name" element={<AppDetail account={account} refreshAccount={refreshAccount} />} />
+            <Route path="/profile" element={<Profile />} />
+            <Route path="/admin" element={<Admin account={account} />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </main>
+      </AppHeaderContext.Provider>
     </BrowserRouter>
   );
 };

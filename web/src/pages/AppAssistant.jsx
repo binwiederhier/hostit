@@ -221,8 +221,6 @@ const AppAssistant = ({ name, onClose, embedded = false, onPreviewRefresh }) => 
   const [loaded, setLoaded] = useState(false);
   const scrollRef = useRef(null);
   const taRef = useRef(null);
-  const idRef = useRef(0);
-  const nextId = () => `i${idRef.current++}`;
 
   // Grow the input with its content, up to a few lines, then scroll. Only show a
   // scrollbar once it actually overflows the cap, not at rest.
@@ -241,7 +239,10 @@ const AppAssistant = ({ name, onClose, embedded = false, onPreviewRefresh }) => 
     try {
       const r = await fetch(`/api/apps/${encodeURIComponent(name)}/assistant`, { credentials: "same-origin" });
       const data = r.ok ? await r.json() : { items: [], running: false };
-      setItems((data.items || []).map((it) => ({ ...it, id: nextId() })));
+      // Stable, position-based ids: the transcript is append-only and never
+      // reorders, so keying by index means the done-reconcile reuses the existing
+      // DOM instead of remounting the whole list (which flickered).
+      setItems((data.items || []).map((it, idx) => ({ ...it, id: idx })));
       setBusy(!!data.running);
     } finally {
       setLoaded(true);
@@ -267,7 +268,7 @@ const AppAssistant = ({ name, onClose, embedded = false, onPreviewRefresh }) => 
     }
     if (ev.type === "error") {
       setBusy(false);
-      setItems((prev) => [...prev, { id: nextId(), kind: "error", text: ev.error }]);
+      setItems((prev) => [...prev, { id: prev.length, kind: "error", text: ev.error }]);
       return;
     }
     setBusy(true);
@@ -282,11 +283,11 @@ const AppAssistant = ({ name, onClose, embedded = false, onPreviewRefresh }) => 
         }
         return next;
       }
-      if (ev.type === "user") next.push({ id: nextId(), kind: "user", text: ev.text });
-      else if (ev.type === "thinking" && (ev.text || "").trim()) next.push({ id: nextId(), kind: "thinking", text: ev.text });
-      else if (ev.type === "text") next.push({ id: nextId(), kind: "text", text: ev.text });
+      if (ev.type === "user") next.push({ id: next.length, kind: "user", text: ev.text });
+      else if (ev.type === "thinking" && (ev.text || "").trim()) next.push({ id: next.length, kind: "thinking", text: ev.text });
+      else if (ev.type === "text") next.push({ id: next.length, kind: "text", text: ev.text });
       else if (ev.type === "tool_use") {
-        next.push({ id: nextId(), kind: "tool", tool: ev.tool, input: ev.input, output: null });
+        next.push({ id: next.length, kind: "tool", tool: ev.tool, input: ev.input, output: null });
         // A deploy or an explicit refresh means the live preview is now stale; ask
         // the page hosting us to reload it. (A deploy also bumps app_started_at, so
         // this is belt-and-suspenders; a static-file refresh has only this signal.)

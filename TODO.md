@@ -146,6 +146,21 @@ at the limit (EDQUOT) instead.
   restored wholesale; covers data too, but coarser and heavier. A good first cut is
   A for the source plus a pre-deploy snapshot as a safety net, surfaced in the UI as
   "restore to <time>".
+- **Dev/stage -> promote to prod (the "we work in prod" problem).** Right now the
+  only copy of an app is the live one, so every edit (and every assistant change) is
+  in production. Give each app an optional **staging** environment -- its own
+  container + subdomain (e.g. `stage.<app>.<base>` or `<app>-stage`) sharing nothing
+  live -- where changes and deploys land first, then a **Promote** action swaps it
+  into prod atomically (blue/green: build/verify on stage, then flip the proxy /
+  rename, keeping the old prod as instant rollback). Ties into rollback and fork
+  below. Big feature; likely a `hostit promote` verb + a store notion of two
+  environments per app.
+- **Fork an app / container.** Duplicate an existing app into a new one: copy its
+  home (files + hostit.yml, with a fresh subdomain, Unix user and container) so an
+  owner can branch off a template or experiment without touching the original.
+  Decide data handling (copy the home wholesale vs. code-only), and reuse the same
+  machinery a stage environment and rollback snapshots need (a consistent copy of an
+  app's home + config).
 - **Rename an app.** Let an owner rename an existing app. The name is the app's
   identity today -- subdomain, Unix user, home directory, container name, TLS cert,
   authorized_keys, the app-scoped token's `app_name`, the assistant session -- so a
