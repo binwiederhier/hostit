@@ -342,6 +342,19 @@ const AppAssistant = ({ name, onClose, embedded = false, onPreviewRefresh }) => 
     }
   };
 
+  // Stop the running turn. The server cancels it and publishes a done on the
+  // stream, which flips us out of the busy state -- so we do not touch state here.
+  const stop = async () => {
+    try {
+      await fetch(`/api/apps/${encodeURIComponent(name)}/assistant/stop`, {
+        method: "POST",
+        credentials: "same-origin",
+      });
+    } catch {
+      // If the request fails the run continues; the stream stays the source of truth.
+    }
+  };
+
   // Escape closes the modal, matching the terminal.
   useEffect(() => {
     if (!onClose) return undefined;
@@ -393,9 +406,26 @@ const AppAssistant = ({ name, onClose, embedded = false, onPreviewRefresh }) => 
           rows={1}
           disabled={busy}
         />
-        <button type="button" className="btn btn-primary asst-send" onClick={() => send()} disabled={busy || !input.trim()}>
-          Send
-        </button>
+        {busy ? (
+          <button type="button" className="btn asst-send asst-stop" onClick={stop} title="Stop" aria-label="Stop">
+            <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+              <rect x="4" y="4" width="8" height="8" rx="1.5" />
+            </svg>
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="btn btn-primary asst-send"
+            onClick={() => send()}
+            disabled={!input.trim()}
+            title="Send"
+            aria-label="Send"
+          >
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M8 13V3M4 7l4-4 4 4" />
+            </svg>
+          </button>
+        )}
       </div>
     </>
   );

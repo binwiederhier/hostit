@@ -160,6 +160,26 @@ func (s *Server) handleAssistant(w http.ResponseWriter, r *http.Request, c *call
 	writeJSON(w, http.StatusAccepted, &apiMessageResponse{Message: "started"})
 }
 
+// handleAssistantStop cancels the app's in-progress assistant turn. The run's
+// goroutine unwinds and publishes a done on the stream, so every watcher clears
+// its working state; the transcript keeps whatever steps it had saved.
+func (s *Server) handleAssistantStop(w http.ResponseWriter, r *http.Request, c *caller) {
+	if s.assistant == nil {
+		writeError(w, http.StatusNotImplemented, errors.New("the built-in assistant is not configured on this server"))
+		return
+	}
+	a, err := s.ownedApp(c, r.PathValue("name"))
+	if err != nil {
+		writeAppError(w, err)
+		return
+	}
+	msg := "nothing running"
+	if s.assistant.Stop(a.Name) {
+		msg = "stopping"
+	}
+	writeJSON(w, http.StatusOK, &apiMessageResponse{Message: msg})
+}
+
 // handleAssistantStream is the live event feed for an app's assistant, as SSE.
 // Every watcher (browser, phone) subscribes here and sees the same stream, so a
 // run started on one device shows up on all of them.

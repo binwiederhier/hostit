@@ -181,6 +181,14 @@ func (m *Manager) Send(app, userID, userText string) error {
 	return nil
 }
 
+// Stop cancels the app's in-progress turn (if any) and reports whether there was
+// one to stop. The run's goroutine unwinds on its own -- it publishes a done so
+// every watcher clears the working state -- and the transcript keeps the steps it
+// had already saved.
+func (m *Manager) Stop(app string) bool {
+	return m.sessionFor(app).stop()
+}
+
 // Reset forgets an app's conversation, so the next message starts fresh. It claims
 // the run slot for the duration, so a Send cannot race the delete and leave the
 // transcript half-written; it refuses (ErrBusy) while a turn is running.
@@ -221,6 +229,7 @@ func (m *Manager) runLoop(s *session, app, userID, userText string) {
 	defer m.releaseRun(userID)
 	ctx, cancel := context.WithTimeout(context.Background(), runTimeout)
 	defer cancel()
+	s.setCancel(cancel) // so Stop can cancel this run
 
 	history := append(m.load(app), Message{
 		Role:    "user",
@@ -240,6 +249,12 @@ func (m *Manager) runLoop(s *session, app, userID, userText string) {
 			OutputConfig: &outputConfig{Effort: assistantEffort},
 		})
 		if err != nil {
+			// A cancelled context is the owner pressing Stop (or the run timing out),
+			// not a failure: end the turn cleanly so watchers just stop working.
+			if ctx.Err() != nil {
+				s.publish(Event{Type: "done"})
+				return
+			}
 			s.publish(Event{Type: "error", Error: err.Error()})
 			return
 		}

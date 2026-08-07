@@ -1,6 +1,7 @@
 package assistant
 
 import (
+	"context"
 	"errors"
 	"sync"
 	"time"
@@ -32,6 +33,7 @@ var ErrTooManySubscribers = errors.New("too many watchers for this app's assista
 // every browser and phone watching the app sees the same stream.
 type session struct {
 	running bool
+	cancel  context.CancelFunc // Cancels the in-progress run, so Stop can end it
 	subs    map[int]chan Event
 	nextSub int
 	mu      sync.Mutex // Protects all of the above
@@ -93,6 +95,7 @@ func (s *session) begin() bool {
 func (s *session) end() {
 	s.mu.Lock()
 	s.running = false
+	s.cancel = nil
 	s.mu.Unlock()
 }
 
@@ -100,4 +103,22 @@ func (s *session) isRunning() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.running
+}
+
+// setCancel records how to cancel the in-progress run
+func (s *session) setCancel(cancel context.CancelFunc) {
+	s.mu.Lock()
+	s.cancel = cancel
+	s.mu.Unlock()
+}
+
+// stop cancels the in-progress run, if any; it reports whether there was one.
+func (s *session) stop() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.running && s.cancel != nil {
+		s.cancel()
+		return true
+	}
+	return false
 }

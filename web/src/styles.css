@@ -1748,9 +1748,24 @@ th:last-child {
 }
 
 /* Compact send button that does not stretch with the growing textarea. */
+/* Send / Stop is a square icon button: an up-arrow to send, a stop square while a
+   turn runs (click it to cancel). */
 .asst-send {
   flex: none;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
+.asst-send svg { width: 17px; height: 17px; }
+.asst-stop {
+  background: var(--surface-2);
+  border-color: var(--border);
+  color: var(--text);
+}
+.asst-stop:hover:not(:disabled) { background: var(--danger-bg); border-color: var(--danger); color: var(--danger); }
 
 /* On a phone, the terminal and assistant modals fill the whole screen. */
 @media (max-width: 640px) {

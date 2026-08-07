@@ -409,6 +409,39 @@ func TestResetRefusedWhileRunning(t *testing.T) {
 	assert.NoError(t, m.Reset("blog"), "once idle, Reset works")
 }
 
+func TestStopCancelsRunningTurn(t *testing.T) {
+	t.Parallel()
+	g := &ctxGateCompleter{entered: make(chan struct{}, 1)}
+	m := NewManager(g, newFakeOps(), NewMemoryStore(), "test-model")
+
+	ch, cancel, err := m.Subscribe("blog")
+	require.NoError(t, err)
+	defer cancel()
+	require.NoError(t, m.Send("blog", "", "go"))
+	<-g.entered // the run is now blocked inside the model call
+	require.True(t, m.Running("blog"))
+
+	require.True(t, m.Stop("blog"), "Stop reports it cancelled a running turn")
+
+	events := drainUntilDone(t, ch)
+	require.Eventually(t, func() bool { return !m.Running("blog") }, 2*time.Second, 5*time.Millisecond)
+	assert.Equal(t, "done", events[len(events)-1].Type, "a stopped turn ends cleanly, not as an error")
+	assert.False(t, m.Stop("blog"), "Stop on an idle app reports nothing to stop")
+}
+
+// ctxGateCompleter blocks inside the model call until its context is cancelled,
+// so a test can catch a running turn and then Stop it
+type ctxGateCompleter struct{ entered chan struct{} }
+
+func (g *ctxGateCompleter) complete(ctx context.Context, _ request) (*response, error) {
+	select {
+	case g.entered <- struct{}{}:
+	default:
+	}
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
+
 // gateCompleter blocks inside the model call until released, so a test can catch
 // the app while a turn is running
 type gateCompleter struct {
