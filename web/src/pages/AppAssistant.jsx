@@ -422,7 +422,7 @@ const AppAssistant = ({ name, onClose, embedded = false, onPreviewRefresh }) => 
             aria-label="Send"
           >
             <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M8 13V3M4 7l4-4 4 4" />
+              <path d="M3 8h10M9 4l4 4-4 4" />
             </svg>
           </button>
         )}
