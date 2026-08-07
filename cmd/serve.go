@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"syscall"
+	"time"
 
 	"github.com/urfave/cli/v2"
 	"heckel.io/hostit/app"
@@ -112,6 +113,8 @@ func execServe(c *cli.Context) error {
 	defer close(done)
 	go manager.QuotaLoop(conf.DiskCheckInterval.Duration(), done)
 	go manager.StateLoop(done)
+	// Hourly automatic snapshots (a no-op unless the apps filesystem is btrfs)
+	go manager.SnapshotLoop(time.Hour, done)
 
 	// Shut down gracefully on SIGINT/SIGTERM
 	sigs := make(chan os.Signal, 1)

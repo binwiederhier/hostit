@@ -1756,6 +1756,18 @@ th:last-child {
   }
 }
 
+/* A destructive action (rollback) the assistant proposed, awaiting the owner's OK */
+.asst-confirm {
+  margin: 0 12px 10px;
+  padding: 11px 13px;
+  border: 1px solid var(--warn-border);
+  background: var(--warn-bg);
+  border-radius: 10px;
+  font-size: 13px;
+}
+.asst-confirm-text { color: var(--text); line-height: 1.45; }
+.asst-confirm-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 10px; }
+
 .asst-input {
   display: flex;
   gap: 8px;

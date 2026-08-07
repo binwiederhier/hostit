@@ -103,6 +103,24 @@ var (
 				Action:    execRemoteAction("reboot"),
 			},
 			{
+				Name:      "snapshots",
+				Usage:     "List the app's snapshots (needs a btrfs host)",
+				ArgsUsage: "<name>",
+				Action:    execSnapshots,
+			},
+			{
+				Name:      "snapshot",
+				Usage:     "Take a snapshot of the app now, optionally labelled",
+				ArgsUsage: "<name> [label]",
+				Action:    execSnapshot,
+			},
+			{
+				Name:      "rollback",
+				Usage:     "Roll the app back to a snapshot (a safety snapshot is taken first)",
+				ArgsUsage: "<name> <snapshot-id>",
+				Action:    execRollback,
+			},
+			{
 				Name:      "logs",
 				Usage:     "Show the app's recent output",
 				ArgsUsage: "<name>",
@@ -209,6 +227,64 @@ func actionMessage(verb, name string) string {
 		return name + ": rebooted"
 	}
 	return name + ": " + verb
+}
+
+func execSnapshots(c *cli.Context) error {
+	cl, err := appsClient(c)
+	if err != nil {
+		return err
+	}
+	if c.NArg() != 1 {
+		return errors.New("usage: hostit apps snapshots <name>")
+	}
+	snaps, err := cl.Snapshots(c.Args().First())
+	if err != nil {
+		return err
+	}
+	if len(snaps) == 0 {
+		fmt.Println("No snapshots.")
+		return nil
+	}
+	for _, s := range snaps {
+		kind := "manual"
+		if s.Auto {
+			kind = "auto"
+		}
+		fmt.Printf("%-28s %s  %-6s %s\n", s.ID, s.CreatedAt.Format("2006-01-02 15:04"), kind, s.Label)
+	}
+	return nil
+}
+
+func execSnapshot(c *cli.Context) error {
+	cl, err := appsClient(c)
+	if err != nil {
+		return err
+	}
+	if c.NArg() < 1 {
+		return errors.New("usage: hostit apps snapshot <name> [label]")
+	}
+	label := strings.Join(c.Args().Slice()[1:], " ")
+	snap, err := cl.Snapshot(c.Args().First(), label)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Saved snapshot %s\n", snap.ID)
+	return nil
+}
+
+func execRollback(c *cli.Context) error {
+	cl, err := appsClient(c)
+	if err != nil {
+		return err
+	}
+	if c.NArg() != 2 {
+		return errors.New("usage: hostit apps rollback <name> <snapshot-id>")
+	}
+	if err := cl.Rollback(c.Args().First(), c.Args().Get(1)); err != nil {
+		return err
+	}
+	fmt.Printf("%s: rolled back to %s\n", c.Args().First(), c.Args().Get(1))
+	return nil
 }
 
 func execRemoteLogs(c *cli.Context) error {

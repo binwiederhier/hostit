@@ -114,6 +114,39 @@ func (c *Client) Reboot(name string) error {
 	return err
 }
 
+// SnapshotInfo is one snapshot as returned by the API
+type SnapshotInfo struct {
+	ID        string    `json:"id"`
+	Label     string    `json:"label"`
+	CreatedAt time.Time `json:"created_at"`
+	Auto      bool      `json:"auto"`
+}
+
+// Snapshots lists an app's snapshots, newest first
+func (c *Client) Snapshots(name string) ([]SnapshotInfo, error) {
+	var snaps []SnapshotInfo
+	if err := c.request("GET", "/api/apps/"+url.PathEscape(name)+"/snapshots", nil, &snaps); err != nil {
+		return nil, err
+	}
+	return snaps, nil
+}
+
+// Snapshot takes a manual snapshot of the app, optionally labelled
+func (c *Client) Snapshot(name, label string) (*SnapshotInfo, error) {
+	var snap SnapshotInfo
+	body := map[string]string{"label": label}
+	if err := c.request("POST", "/api/apps/"+url.PathEscape(name)+"/snapshots", body, &snap); err != nil {
+		return nil, err
+	}
+	return &snap, nil
+}
+
+// Rollback restores an app to the given snapshot
+func (c *Client) Rollback(name, id string) error {
+	path := "/api/apps/" + url.PathEscape(name) + "/snapshots/" + url.PathEscape(id) + "/restore"
+	return c.request("POST", path, nil, nil)
+}
+
 // Logs returns the app's recent output
 func (c *Client) Logs(name string, lines int) (string, error) {
 	var resp outputResponse

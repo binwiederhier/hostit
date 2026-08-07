@@ -274,6 +274,16 @@ func (m *Manager) runLoop(s *session, app, userID, userText string) {
 		// Run each requested tool and hand the results back as the next user turn.
 		results := make([]ContentBlock, 0, len(toolUses))
 		for _, tu := range toolUses {
+			// Rollback is destructive, so it is never run by the model: publish a
+			// confirm request the owner acts on in the chat, and tell the model it is
+			// waiting rather than done.
+			if tu.Name == "rollback" {
+				s.publish(Event{Type: "confirm", Tool: "rollback", Input: string(tu.Input)})
+				out := "Proposed a rollback. It is waiting for the owner to confirm it in the chat; do not retry."
+				s.publish(Event{Type: "tool_result", Tool: tu.Name, Output: out})
+				results = append(results, ContentBlock{Type: "tool_result", ToolUseID: tu.ID, Content: out})
+				continue
+			}
 			out, isErr := m.dispatch(app, tu.Name, tu.Input)
 			s.publish(Event{Type: "tool_result", Tool: tu.Name, Output: out, IsError: isErr})
 			results = append(results, ContentBlock{

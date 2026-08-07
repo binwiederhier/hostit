@@ -17,6 +17,8 @@ type AppOps interface {
 	Exec(app, command string, timeoutSeconds int) (ExecResult, error)
 	Logs(app string, lines int) (string, error)
 	Deploy(app string) (string, error)
+	Snapshot(app, label string) (string, error)
+	ListSnapshots(app string) (string, error)
 }
 
 // toolDefs describes the tools to the model. The schemas are deliberately small:
@@ -58,6 +60,21 @@ func toolDefs() []Tool {
 			Name:        "refresh_preview",
 			Description: "Reload the live preview shown next to this chat in the owner's browser. Call this after a content change that does not need a deploy (e.g. editing a static file the app already serves) so the owner sees the result. A deploy reloads the preview on its own; use this only when nothing else would.",
 			InputSchema: schema(`{"type":"object","properties":{}}`),
+		},
+		{
+			Name:        "snapshot",
+			Description: "Save a restorable snapshot of the app's files right now. Use this to preserve important work before a risky change, so it can be rolled back to. Optionally give it a short label. (Snapshots are also taken automatically before every deploy and hourly.)",
+			InputSchema: schema(`{"type":"object","properties":{"label":{"type":"string","description":"Optional short note, e.g. \"before rewrite\""}}}`),
+		},
+		{
+			Name:        "list_snapshots",
+			Description: "List the app's snapshots (id, time and label), newest first, so you can pick one to roll back to.",
+			InputSchema: schema(`{"type":"object","properties":{}}`),
+		},
+		{
+			Name:        "rollback",
+			Description: "Roll the app back to a snapshot, restoring its files to that point. This is destructive, so it does not run immediately: it asks the owner to confirm in the chat. Get the id from list_snapshots first.",
+			InputSchema: schema(`{"type":"object","properties":{"id":{"type":"string"}},"required":["id"]}`),
 		},
 	}
 }
@@ -123,6 +140,20 @@ func (m *Manager) dispatch(app, name string, input json.RawMessage) (string, boo
 		// A UI-only signal: the tool call itself, carried on the event stream, tells
 		// the owner's browser to reload the live preview. Nothing to do server-side.
 		return "the live preview has been reloaded in the owner's browser", false
+	case "snapshot":
+		var in struct {
+			Label string `json:"label"`
+		}
+		_ = json.Unmarshal(input, &in)
+		out, err := m.ops.Snapshot(app, in.Label)
+		return orError(out, err)
+	case "list_snapshots":
+		out, err := m.ops.ListSnapshots(app)
+		return orError(out, err)
+	case "rollback":
+		// A rollback needs owner confirmation, so the run loop handles it before it
+		// reaches dispatch; if it gets here, refuse rather than run it silently.
+		return "a rollback must be confirmed by the owner in the chat; it was not run", true
 	default:
 		return "unknown tool: " + name, true
 	}

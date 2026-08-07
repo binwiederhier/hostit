@@ -121,6 +121,37 @@ func (o *appOps) Deploy(name string) (string, error) {
 	return o.apps.Up(name)
 }
 
+func (o *appOps) Snapshot(name, label string) (string, error) {
+	snap, err := o.apps.TakeSnapshot(name, label, false)
+	if err != nil {
+		return "", err
+	}
+	return "saved snapshot " + snap.ID, nil
+}
+
+func (o *appOps) ListSnapshots(name string) (string, error) {
+	snaps, err := o.apps.ListSnapshots(name)
+	if err != nil {
+		return "", err
+	}
+	if len(snaps) == 0 {
+		return "no snapshots yet", nil
+	}
+	var b strings.Builder
+	for _, s := range snaps {
+		kind := "manual"
+		if s.Auto {
+			kind = "auto"
+		}
+		fmt.Fprintf(&b, "%s  %s  %s", s.ID, s.CreatedAt.Format("2006-01-02 15:04"), kind)
+		if s.Label != "" {
+			fmt.Fprintf(&b, "  %q", s.Label)
+		}
+		b.WriteString("\n")
+	}
+	return b.String(), nil
+}
+
 // handleAssistant starts a turn for an owned app. The run is owned by the server
 // (a background goroutine), not by this request, so it keeps going after the
 // sender leaves; its events go to every subscriber of the stream endpoint. This
