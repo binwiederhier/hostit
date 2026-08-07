@@ -20,6 +20,11 @@ type apiSetKeysRequest struct {
 	SSHKeys []string `json:"ssh_keys"`
 }
 
+// apiSetDescriptionRequest is the body of PUT /api/apps/{name}/description
+type apiSetDescriptionRequest struct {
+	Description string `json:"description"`
+}
+
 // apiForkAppRequest is the body of POST /api/apps/{name}/fork: the name of the new
 // app, and optionally a snapshot to seed it from (empty means the current home)
 type apiForkAppRequest struct {

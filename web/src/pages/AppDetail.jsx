@@ -494,14 +494,14 @@ const DeleteAppDialog = ({ name, onCancel, onDeleted }) => {
           This permanently removes <span className="mono">{name}</span>: its container, all its files and its Unix user.{" "}
           <strong>This cannot be undone.</strong>
         </p>
-        <p className="hint">Type the app name to confirm.</p>
         <ErrorBanner message={error} onDismiss={() => setError("")} />
         <input
           type="text"
+          className="modal-input-full"
           value={confirm}
           onChange={(e) => setConfirm(e.target.value)}
-          placeholder={name}
-          aria-label="Type the app name to confirm deletion"
+          placeholder={`Type '${name}' to confirm`}
+          aria-label={`Type '${name}' to confirm deletion`}
           autoFocus
         />
         <div className="btn-row">
@@ -849,13 +849,30 @@ const SnapshotsDialog = ({ name, onClose, showToast, onRolledBack, onFork }) => 
 // Each domain shows the two DNS records the owner must create (one to route
 // traffic, one to delegate the ACME challenge so a certificate issues even when the
 // box is not publicly reachable).
-const SettingsDialog = ({ name, hasToken, onCopyToken, onRegenerateToken, onClose, showToast }) => {
+const SettingsDialog = ({ name, description, hasToken, onCopyToken, onRegenerateToken, onSaved, onClose, showToast }) => {
   useEscape(onClose);
   const [domains, setDomains] = useState(null); // null until loaded
   const [input, setInput] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [confirmId, setConfirmId] = useState(null);
+  const [desc, setDesc] = useState(description || "");
+  const [savingDesc, setSavingDesc] = useState(false);
+
+  const saveDescription = async () => {
+    if (savingDesc) return;
+    setSavingDesc(true);
+    setError("");
+    try {
+      await api.put(`/api/apps/${encodeURIComponent(name)}/description`, { description: desc.trim() });
+      showToast("Description saved");
+      if (onSaved) onSaved();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSavingDesc(false);
+    }
+  };
 
   const load = useCallback(async () => {
     try {
@@ -921,7 +938,7 @@ const SettingsDialog = ({ name, hasToken, onCopyToken, onRegenerateToken, onClos
 
   return (
     <div className="modal-backdrop" role="dialog" aria-modal="true" onMouseDown={onClose}>
-      <div className="card modal modal-xwide" onMouseDown={(e) => e.stopPropagation()}>
+      <div className="card modal modal-wide" onMouseDown={(e) => e.stopPropagation()}>
         <div className="modal-head">
           <h2>Settings</h2>
           <button type="button" className="term-btn" onClick={onClose} title="Close" aria-label="Close">
@@ -930,6 +947,33 @@ const SettingsDialog = ({ name, hasToken, onCopyToken, onRegenerateToken, onClos
             </svg>
           </button>
         </div>
+        <ErrorBanner message={error} onDismiss={() => setError("")} />
+
+        <section className="settings-section">
+          <h3>Description</h3>
+          <p className="hint">
+            A one-line summary of the app -- shown on the dashboard and where the assistant starts from. Saved to{" "}
+            <span className="mono">hostit.yml</span>.
+          </p>
+          <textarea
+            className="settings-desc"
+            value={desc}
+            onChange={(e) => setDesc(e.target.value)}
+            rows={2}
+            maxLength={280}
+            placeholder="What this app is..."
+          />
+          <div className="btn-row" style={{ justifyContent: "flex-start" }}>
+            <button
+              type="button"
+              className="btn btn-small btn-primary"
+              onClick={saveDescription}
+              disabled={savingDesc || desc.trim() === (description || "").trim()}
+            >
+              {savingDesc ? "Saving..." : "Save description"}
+            </button>
+          </div>
+        </section>
 
         <section className="settings-section">
           <h3>API token</h3>
@@ -950,7 +994,6 @@ const SettingsDialog = ({ name, hasToken, onCopyToken, onRegenerateToken, onClos
             Serve <span className="mono">{name}</span> on your own hostname. Add it, then create the two DNS records
             shown; the certificate issues automatically (works even if this server is not publicly reachable).
           </p>
-          <ErrorBanner message={error} onDismiss={() => setError("")} />
           <form className="domain-add" onSubmit={add}>
           <input
             type="text"
@@ -1495,9 +1538,11 @@ const AppDetail = ({ account, refreshAccount }) => {
       {showSettings && (
         <SettingsDialog
           name={app.name}
+          description={app.description}
           hasToken={!!token}
           onCopyToken={copyToken}
           onRegenerateToken={regenerateToken}
+          onSaved={load}
           showToast={showToast}
           onClose={() => setShowSettings(false)}
         />

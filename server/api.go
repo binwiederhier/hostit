@@ -62,6 +62,7 @@ func (s *Server) newAPIHandler() http.Handler {
 	route(mux, "DELETE", "/apps/{name}", s.requireActive(s.handleAppsDelete))
 	route(mux, "PUT", "/apps/{name}/keys", s.requireActive(s.handleAppsSetKeys))
 	route(mux, "POST", "/apps/{name}/token", s.requireActive(s.handleAppsRotateToken))
+	route(mux, "PUT", "/apps/{name}/description", s.requireActive(s.handleAppsSetDescription))
 	route(mux, "POST", "/apps/{name}/fork", s.requireActive(s.handleAppsFork))
 	route(mux, "GET", "/apps/{name}/domains", s.requireActive(s.handleAppDomainsList))
 	route(mux, "POST", "/apps/{name}/domains", s.requireActive(s.handleAppDomainAdd))
@@ -196,6 +197,25 @@ func (s *Server) handleAppsFork(w http.ResponseWriter, r *http.Request, c *calle
 	resp := s.appResponse(a)
 	resp.AgentToken = s.agentToken(a)
 	writeJSON(w, http.StatusCreated, resp)
+}
+
+// handleAppsSetDescription updates the app's one-line description in its hostit.yml.
+func (s *Server) handleAppsSetDescription(w http.ResponseWriter, r *http.Request, c *caller) {
+	a, err := s.ownedApp(c, r.PathValue("name"))
+	if err != nil {
+		writeAppError(w, err)
+		return
+	}
+	var req apiSetDescriptionRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if err := s.apps.SetDescription(a.Name, req.Description); err != nil {
+		writeAppError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, s.appResponse(a)) // appResponse re-reads the description from the file
 }
 
 func (s *Server) handleAppsList(w http.ResponseWriter, r *http.Request, c *caller) {

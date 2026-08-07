@@ -2173,7 +2173,20 @@ body.ws-resizing iframe { pointer-events: none; }
 .confirm-body p { margin: 0 0 10px; }
 .confirm-body p:last-child { margin-bottom: 0; }
 
-/* Settings dialog sections (API token, custom domains) */
+/* Settings dialog sections (description, API token, custom domains) */
+.settings-desc {
+  width: 100%;
+  resize: vertical;
+  min-height: 46px;
+  font: inherit;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--text);
+  margin-bottom: 8px;
+}
+.modal-input-full { width: 100%; }
 .settings-section { margin-top: 18px; }
 .settings-section:first-of-type { margin-top: 8px; }
 .settings-section > h3 {
