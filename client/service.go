@@ -147,6 +147,12 @@ func (c *Client) Rollback(name, id string) error {
 	return c.request("POST", path, nil, nil)
 }
 
+// DeleteSnapshot removes a single snapshot by id
+func (c *Client) DeleteSnapshot(name, id string) error {
+	path := "/api/apps/" + url.PathEscape(name) + "/snapshots/" + url.PathEscape(id)
+	return c.request("DELETE", path, nil, nil)
+}
+
 // Logs returns the app's recent output
 func (c *Client) Logs(name string, lines int) (string, error) {
 	var resp outputResponse

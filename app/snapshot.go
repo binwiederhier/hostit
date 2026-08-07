@@ -78,6 +78,26 @@ func (m *Manager) ListSnapshots(name string) ([]*store.Snapshot, error) {
 	return m.store.Snapshots(name)
 }
 
+// DeleteSnapshot removes a single snapshot -- its subvolume and its record -- when
+// an owner or agent deletes one by hand. The record is dropped only after the
+// subvolume is gone, so a failed delete never orphans the subvolume.
+func (m *Manager) DeleteSnapshot(name, id string) error {
+	if !m.btrfsEnabled() {
+		return ErrSnapshotsUnavailable
+	}
+	snap, err := m.store.Snapshot(id)
+	if err != nil {
+		return err
+	}
+	if snap.AppName != name {
+		return store.ErrSnapshotNotFound
+	}
+	if err := m.deleteSubvolume(m.snapshotPath(name, id)); err != nil {
+		return fmt.Errorf("cannot delete the snapshot subvolume: %w", err)
+	}
+	return m.store.DeleteSnapshot(id)
+}
+
 // Rollback restores an app's home from a snapshot. It first takes a safety snapshot
 // of the current state (so a rollback is itself undoable), then stops the app,
 // replaces the home subvolume with a writable copy of the snapshot, restores its
@@ -99,7 +119,9 @@ func (m *Manager) Rollback(name, id string) error {
 	}
 	defer m.stateChanged(name)
 
-	if _, err := m.TakeSnapshot(name, "before rollback to "+id, false); err != nil {
+	// The safety snapshot is itself automatic (retention prunes it in time) and
+	// labelled so the owner can see what it captured.
+	if _, err := m.TakeSnapshot(name, "Before rolling back to snapshot "+id, true); err != nil {
 		return fmt.Errorf("cannot take a safety snapshot before rolling back: %w", err)
 	}
 

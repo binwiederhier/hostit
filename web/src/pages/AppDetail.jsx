@@ -242,6 +242,50 @@ const TerminalSplitButton = ({ active, connecting, onWebShell, onSsh }) => {
   );
 };
 
+// A split button for snapshots, mirroring the terminal one: the left half (the
+// icon) opens the snapshots list; the caret drops a menu whose second item, "New
+// snapshot...", opens a dialog to name and take one.
+const SnapshotSplitButton = ({ onList, onNew }) => {
+  const { open, setOpen, ref } = useDropdown();
+  const pick = (fn) => {
+    setOpen(false);
+    fn();
+  };
+  return (
+    <div className="menu split-btn" ref={ref}>
+      <button
+        type="button"
+        className="btn split-btn-main"
+        onClick={onList}
+        title="Snapshots"
+        aria-label="Snapshots"
+      >
+        <SnapshotIcon />
+      </button>
+      <button
+        type="button"
+        className="btn split-btn-caret"
+        onClick={() => setOpen(!open)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label="Snapshot options"
+      >
+        <span aria-hidden="true">&#9662;</span>
+      </button>
+      {open && (
+        <div className="menu-items" role="menu">
+          <button type="button" role="menuitem" onClick={() => pick(onList)}>
+            Snapshots
+          </button>
+          <button type="button" role="menuitem" onClick={() => pick(onNew)}>
+            New snapshot...
+          </button>
+        </div>
+      )}
+    </div>
+  );
+};
+
 // Everything rare about an app behind one button, grouped: app actions (the run:
 // command), container actions (power), the API token, and delete -- dividers
 // between the groups. Only one app verb is ever the sensible next move, and when
@@ -468,9 +512,65 @@ const useEscape = (onClose) => {
   }, [onClose]);
 };
 
-// SnapshotsDialog lists an app's point-in-time snapshots and rolls back to any of
-// them. A rollback is reversible (a safety snapshot of the live state is taken
-// first), so it runs on one click, no type-to-confirm gate.
+// NewSnapshotDialog names and takes a manual snapshot. Reached from the snapshot
+// split button's caret; the name is optional but helps the owner find it later.
+const NewSnapshotDialog = ({ name, onClose, onCreated, showToast }) => {
+  useEscape(onClose);
+  const [label, setLabel] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const create = async (e) => {
+    e.preventDefault();
+    if (busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      await api.post(`/api/apps/${encodeURIComponent(name)}/snapshots`, { label: label.trim() });
+      showToast("Snapshot saved");
+      onClose();
+      if (onCreated) onCreated();
+    } catch (err) {
+      setError(err.message);
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true" onMouseDown={onClose}>
+      <form className="card modal" onSubmit={create} onMouseDown={(e) => e.stopPropagation()}>
+        <h2>New snapshot</h2>
+        <p className="hint">
+          Save a point-in-time copy of <span className="mono">{name}</span>'s files you can roll back to. A name is
+          optional.
+        </p>
+        <ErrorBanner message={error} onDismiss={() => setError("")} />
+        <input
+          type="text"
+          value={label}
+          onChange={(e) => setLabel(e.target.value)}
+          placeholder="e.g. before the big refactor"
+          aria-label="Snapshot name"
+          maxLength={200}
+          autoFocus
+        />
+        <div className="btn-row">
+          <button type="button" className="btn" onClick={onClose} disabled={busy}>
+            Cancel
+          </button>
+          <button type="submit" className="btn btn-primary" disabled={busy}>
+            {busy ? "Saving..." : "Take snapshot"}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+};
+
+// SnapshotsDialog lists an app's point-in-time snapshots and rolls back to (or
+// deletes) any of them. A rollback is reversible (a safety snapshot of the live
+// state is taken first), so it runs on one click, no type-to-confirm gate. New
+// snapshots are taken from the split button's caret, not here.
 const SnapshotsDialog = ({ name, onClose, showToast, onRolledBack }) => {
   useEscape(onClose);
   const [snaps, setSnaps] = useState(null); // null until loaded
@@ -490,21 +590,6 @@ const SnapshotsDialog = ({ name, onClose, showToast, onRolledBack }) => {
     load();
   }, [load]);
 
-  const take = async () => {
-    if (busy) return;
-    setBusy(true);
-    setError("");
-    try {
-      await api.post(`/api/apps/${encodeURIComponent(name)}/snapshots`, {});
-      showToast("Snapshot saved");
-      await load();
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setBusy(false);
-    }
-  };
-
   const rollback = async (id) => {
     if (busy) return;
     setBusy(true);
@@ -516,6 +601,21 @@ const SnapshotsDialog = ({ name, onClose, showToast, onRolledBack }) => {
       if (onRolledBack) onRolledBack();
     } catch (err) {
       setError(err.message);
+      setBusy(false);
+    }
+  };
+
+  const remove = async (id) => {
+    if (busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      await api.del(`/api/apps/${encodeURIComponent(name)}/snapshots/${encodeURIComponent(id)}`);
+      showToast("Snapshot deleted");
+      await load();
+    } catch (err) {
+      setError(err.message);
+    } finally {
       setBusy(false);
     }
   };
@@ -536,11 +636,6 @@ const SnapshotsDialog = ({ name, onClose, showToast, onRolledBack }) => {
           reversible, since a snapshot of the current state is taken first.
         </p>
         <ErrorBanner message={error} onDismiss={() => setError("")} />
-        <div className="btn-row" style={{ justifyContent: "flex-start" }}>
-          <button type="button" className="btn btn-small" onClick={take} disabled={busy}>
-            Take snapshot now
-          </button>
-        </div>
         {snaps === null ? (
           <p className="hint">Loading...</p>
         ) : snaps.length === 0 ? (
@@ -554,9 +649,20 @@ const SnapshotsDialog = ({ name, onClose, showToast, onRolledBack }) => {
                   <span className={"snap-kind" + (s.auto ? "" : " snap-kind-manual")}>{s.auto ? "auto" : "manual"}</span>
                   {s.label && <span className="snap-label">{s.label}</span>}
                 </div>
-                <button type="button" className="btn btn-small" onClick={() => rollback(s.id)} disabled={busy}>
-                  Roll back
-                </button>
+                <div className="snap-actions">
+                  <button type="button" className="btn btn-small" onClick={() => rollback(s.id)} disabled={busy}>
+                    Roll back
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-small btn-danger"
+                    onClick={() => remove(s.id)}
+                    disabled={busy}
+                    title="Delete this snapshot"
+                  >
+                    Delete
+                  </button>
+                </div>
               </div>
             ))}
           </div>
@@ -582,6 +688,7 @@ const AppDetail = ({ account, refreshAccount }) => {
   const [showSsh, setShowSsh] = useState(false);
   const [showPrompt, setShowPrompt] = useState(false);
   const [showSnapshots, setShowSnapshots] = useState(false);
+  const [showNewSnapshot, setShowNewSnapshot] = useState(false);
   const [hasKeys, setHasKeys] = useState(null); // null until we know, so nothing flickers
   const [toast, setToast] = useState(""); // a 3s "Copied"/"Regenerated" snackbar
   const toastTimer = useRef(null);
@@ -927,15 +1034,7 @@ const AppDetail = ({ account, refreshAccount }) => {
                 <SparkleIcon />
               </button>
               {app.snapshots_enabled && (
-                <button
-                  type="button"
-                  className="btn btn-icon"
-                  onClick={() => setShowSnapshots(true)}
-                  title="Snapshots"
-                  aria-label="Snapshots"
-                >
-                  <SnapshotIcon />
-                </button>
+                <SnapshotSplitButton onList={() => setShowSnapshots(true)} onNew={() => setShowNewSnapshot(true)} />
               )}
               <ActionsMenu
                 running={app.running}
@@ -947,8 +1046,8 @@ const AppDetail = ({ account, refreshAccount }) => {
                 onRegenerateToken={regenerateToken}
                 onDelete={() => setConfirmDelete(true)}
               />
-              <a className="btn btn-primary" href={app.url} target="_blank" rel="noreferrer">
-                Open app &#8599;
+              <a className="btn btn-primary" href={app.url} target="_blank" rel="noreferrer" title="Open app">
+                <span className="ws-open-label">Open app</span> <span aria-hidden="true">&#8599;</span>
               </a>
             </div>
           </div>
@@ -1033,6 +1132,9 @@ const AppDetail = ({ account, refreshAccount }) => {
           showToast={showToast}
           onRolledBack={load}
         />
+      )}
+      {showNewSnapshot && (
+        <NewSnapshotDialog name={app.name} onClose={() => setShowNewSnapshot(false)} showToast={showToast} />
       )}
       {confirmDelete && (
         <DeleteAppDialog name={app.name} onCancel={() => setConfirmDelete(false)} onDeleted={deleted} />

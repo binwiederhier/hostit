@@ -52,6 +52,7 @@ func (s *Server) newAgentRoutes(mux *http.ServeMux) {
 	route(mux, "GET", "/apps/{app}/snapshots", s.requireApp(s.handleAgentSnapshotList))
 	route(mux, "POST", "/apps/{app}/snapshots", s.requireApp(s.handleAgentSnapshotTake))
 	route(mux, "POST", "/apps/{app}/snapshots/{id}/restore", s.requireApp(s.handleAgentRestore))
+	route(mux, "DELETE", "/apps/{app}/snapshots/{id}", s.requireApp(s.handleAgentSnapshotDelete))
 
 	// Actions are POST-only. Without these, a GET would fall through to the web
 	// app's catch-all and answer with HTML, which is confusing for an agent.

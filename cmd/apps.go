@@ -121,6 +121,12 @@ var (
 				Action:    execRollback,
 			},
 			{
+				Name:      "rmsnapshot",
+				Usage:     "Delete one of the app's snapshots",
+				ArgsUsage: "<name> <snapshot-id>",
+				Action:    execRemoveSnapshot,
+			},
+			{
 				Name:      "logs",
 				Usage:     "Show the app's recent output",
 				ArgsUsage: "<name>",
@@ -284,6 +290,21 @@ func execRollback(c *cli.Context) error {
 		return err
 	}
 	fmt.Printf("%s: rolled back to %s\n", c.Args().First(), c.Args().Get(1))
+	return nil
+}
+
+func execRemoveSnapshot(c *cli.Context) error {
+	cl, err := appsClient(c)
+	if err != nil {
+		return err
+	}
+	if c.NArg() != 2 {
+		return errors.New("usage: hostit apps rmsnapshot <name> <snapshot-id>")
+	}
+	if err := cl.DeleteSnapshot(c.Args().First(), c.Args().Get(1)); err != nil {
+		return err
+	}
+	fmt.Printf("%s: deleted snapshot %s\n", c.Args().First(), c.Args().Get(1))
 	return nil
 }
 

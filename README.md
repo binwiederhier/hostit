@@ -421,11 +421,13 @@ subvolume, which unlocks two things:
   hostit apps snapshot myapp "before the rewrite"   # save a restorable point
   hostit apps snapshots myapp                        # list them, newest first
   hostit apps rollback myapp <snapshot-id>           # restore (safety-snapshotted)
+  hostit apps rmsnapshot myapp <snapshot-id>         # delete one by hand
   ```
 
   The built-in assistant has the same abilities (it snapshots before risky work and
-  can roll back, which asks you to confirm in the chat), and so does the REST API
-  (`GET`/`POST /api/apps/{app}/snapshots`, `POST .../snapshots/{id}/restore`).
+  can roll back -- reversible, so it runs without a confirmation step), and so does
+  the REST API (`GET`/`POST /api/apps/{app}/snapshots`,
+  `POST .../snapshots/{id}/restore`, `DELETE .../snapshots/{id}`).
 
   Optionally quiesce a database around a snapshot with hooks in `hostit.yml`:
 

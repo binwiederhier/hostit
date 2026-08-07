@@ -1879,8 +1879,7 @@ main.container:has(.ws-page) {
 .btn-icon { gap: 5px; padding: 0 10px; }
 .btn-icon svg { width: 16px; height: 16px; }
 /* Slightly wider so it matches the terminal icon button (its icon half) */
-.btn-sparkle { color: var(--accent); padding: 0 12px; }
-.btn-sparkle:hover:not(:disabled) { color: var(--accent-strong); }
+.btn-sparkle { padding: 0 12px; }
 
 /* Terminal split button: [icon | caret]. The icon half opens the web shell; the
    caret half drops the menu. Goes dark while a session is running, and pulses
@@ -2033,6 +2032,9 @@ body.ws-resizing iframe { pointer-events: none; }
      the top margin that was doubling up with the container's top padding. */
   .ws-topright { margin-top: 0; }
   .ws-split { height: calc(100dvh - 130px); }
+  /* Tight on space: the Open app button shrinks to just its icon */
+  .ws-topacts .btn-primary .ws-open-label { display: none; }
+  .ws-topacts .btn-primary { padding: 0 11px; }
 }
 
 /* Modal helpers shared by the SSH and bring-your-own-AI dialogs */
@@ -2064,6 +2066,7 @@ body.ws-resizing iframe { pointer-events: none; }
   flex-wrap: wrap;
   font-size: 13px;
 }
+.snap-actions { display: flex; gap: 6px; flex: none; }
 .snap-when { color: var(--text); font-variant-numeric: tabular-nums; }
 .snap-kind {
   font-size: 10px;

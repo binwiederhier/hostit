@@ -67,6 +67,16 @@ func (s *Server) handleAgentRestore(w http.ResponseWriter, r *http.Request, _ *c
 	writeJSON(w, http.StatusOK, &apiMessageResponse{Message: "rolled back to " + id})
 }
 
+// handleAgentSnapshotDelete removes a single snapshot by id (subvolume and record).
+func (s *Server) handleAgentSnapshotDelete(w http.ResponseWriter, r *http.Request, _ *caller, a *store.App) {
+	id := r.PathValue("id")
+	if err := s.apps.DeleteSnapshot(a.Name, id); err != nil {
+		writeSnapshotError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, &apiMessageResponse{Message: "deleted snapshot " + id})
+}
+
 // writeSnapshotError maps snapshot errors to status codes: unavailable (not btrfs)
 // is 501, an unknown id is 404, the rest fall through.
 func writeSnapshotError(w http.ResponseWriter, err error) {
