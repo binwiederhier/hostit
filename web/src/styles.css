@@ -1237,7 +1237,7 @@ th:last-child {
   right: 0;
   top: calc(100% + 4px);
   z-index: 20;
-  min-width: 140px;
+  min-width: 172px;
   padding: 4px;
   background: var(--surface);
   border: 1px solid var(--border);
@@ -1246,6 +1246,7 @@ th:last-child {
 }
 
 .menu-items button {
+  white-space: nowrap;
   display: block;
   width: 100%;
   text-align: left;
