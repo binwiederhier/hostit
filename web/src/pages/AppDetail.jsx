@@ -119,27 +119,43 @@ const formatUptime = (startedAt) => {
   return `${s}s`;
 };
 
-// One resource readout: a label and its value, the value going red near a limit.
-const Res = ({ label, value, hot }) => (
-  <div className="res">
-    <span className="res-k">{label}</span>
-    <span className={"res-v" + (hot ? " res-v-hot" : "")}>{value}</span>
-  </div>
-);
+// resLevel maps a usage percent to a severity, which colours the dot and bar.
+const resLevel = (pct) => (pct >= 90 ? "hot" : pct >= 75 ? "warn" : "good");
 
-// CPU / RAM / Disk / Uptime in a compact 2x2 grid, sitting beside the controls.
-// Only meaningful while the container is up, so the caller shows it only then.
+// One compact inline stat: a level-coloured dot, label and value, with a thin bar
+// under it. `detail` is the hover tooltip (the exact used/total for RAM/disk).
+// The unmetered ones (uptime) skip the dot/bar but keep the height, so the row
+// stays aligned.
+const Stat = ({ label, pct = 0, value, detail, metered = true }) => {
+  const lvl = resLevel(pct);
+  return (
+    <div className={"res" + (metered ? " res-" + lvl : "")} title={detail}>
+      <span className="res-top">
+        {metered && <span className="res-dot" aria-hidden="true" />}
+        <span className="res-k">{label}</span>
+        <span className={"res-v" + (metered && lvl === "hot" ? " res-v-hot" : "")}>{value}</span>
+      </span>
+      <span className={"res-bar" + (metered ? "" : " res-bar-empty")}>
+        {metered && <span style={{ width: `${Math.min(100, pct)}%` }} />}
+      </span>
+    </div>
+  );
+};
+
+// CPU / RAM / Disk / Uptime as a compact inline row beside the controls. RAM and
+// disk read as percent; the exact used/total is in the hover tooltip. Only
+// meaningful while the container is up, so the caller shows it only then.
 const UsageGrid = ({ app }) => {
-  const cpuHot = (app.cpu_percent || 0) >= 90;
-  const memHot = app.memory_limit_mb && app.memory_mb / app.memory_limit_mb >= 0.9;
-  const diskHot = (app.disk_limit_mb && app.disk_mb / app.disk_limit_mb >= 0.9) || app.over_quota;
-  const mb = (used, limit) => (limit ? `${used}/${limit} MB` : `${used} MB`);
+  const cpuPct = app.cpu_percent || 0;
+  const memPct = app.memory_limit_mb ? Math.round((app.memory_mb / app.memory_limit_mb) * 100) : 0;
+  const diskPct = app.disk_limit_mb ? Math.round((app.disk_mb / app.disk_limit_mb) * 100) : 0;
+  const mb = (used, limit) => (limit ? `${used} / ${limit} MB` : `${used} MB`);
   return (
     <div className="ws-resources">
-      <Res label="CPU" value={`${app.cpu_percent || 0}%`} hot={cpuHot} />
-      <Res label="Disk" value={mb(app.disk_mb, app.disk_limit_mb)} hot={diskHot} />
-      <Res label="RAM" value={mb(app.memory_mb, app.memory_limit_mb)} hot={memHot} />
-      <Res label="Uptime" value={formatUptime(app.started_at)} />
+      <Stat label="CPU" pct={cpuPct} value={`${cpuPct}%`} detail={`CPU ${cpuPct}%`} />
+      <Stat label="RAM" pct={memPct} value={`${memPct}%`} detail={`RAM ${mb(app.memory_mb, app.memory_limit_mb)}`} />
+      <Stat label="Disk" pct={diskPct} value={`${diskPct}%`} detail={`Disk ${mb(app.disk_mb, app.disk_limit_mb)}`} />
+      <Stat label="Uptime" value={formatUptime(app.started_at)} detail={`Up ${formatUptime(app.started_at)}`} metered={false} />
     </div>
   );
 };

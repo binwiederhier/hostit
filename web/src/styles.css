@@ -1862,20 +1862,22 @@ main.container:has(.ws-page) {
 .split-btn-loading > .btn { animation: term-pulse 1.1s ease-in-out infinite; }
 @keyframes term-pulse { 0%, 100% { opacity: 0.45; } 50% { opacity: 0.95; } }
 
-/* Live resources: a compact 2x2 grid (CPU/Disk over RAM/Uptime) beside the buttons */
-.ws-resources {
-  display: grid;
-  grid-template-columns: auto auto;
-  gap: 3px 20px;
-  font-size: 12px;
-  line-height: 1.3;
-}
-.res { display: flex; align-items: baseline; gap: 6px; }
-/* Key and value share a size; the key is the muted label, the value the bright
-   number, so they read as a pair at a glance. */
-.res-k { min-width: 30px; color: var(--muted); font-weight: 600; letter-spacing: 0.02em; }
-.res-v { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* Live resources: a compact inline row of stats beside the buttons. Each has a
+   level-coloured dot + thin bar (green/amber/red by load); the value is the
+   percent, with the exact used/total in the hover tooltip. */
+.ws-resources { display: flex; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
+.res { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.res-good { color: var(--accent); }
+.res-warn { color: var(--status-degraded); }
+.res-hot { color: var(--danger); }
+.res-top { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+.res-dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; flex: none; }
+.res-k { color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; font-size: 10px; }
+.res-v { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; margin-left: 1px; }
 .res-v-hot { color: var(--danger); }
+.res-bar { height: 3px; width: 72px; max-width: 100%; border-radius: 3px; background: var(--surface-2); overflow: hidden; }
+.res-bar > span { display: block; height: 100%; background: currentColor; border-radius: 3px; transition: width 0.4s ease; }
+.res-bar-empty { background: transparent; }
 
 .ws-split {
   display: grid;
