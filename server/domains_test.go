@@ -32,7 +32,7 @@ func TestCustomDomainRoutesToApp(t *testing.T) {
 	t.Cleanup(backend.Close)
 	registerAppWithBackend(t, s, "blog", backend.URL)
 
-	_, err := s.AddAppDomain("blog", "blog.example.com")
+	_, err := s.addAppDomain("blog", "blog.example.com")
 	require.NoError(t, err)
 	waitDomainActive(t, s, "blog.example.com")
 
@@ -52,7 +52,7 @@ func TestCustomDomainValidation(t *testing.T) {
 		"not a domain",          // garbage
 		"example",               // bare label, no dot
 	} {
-		_, err := s.AddAppDomain("blog", bad)
+		_, err := s.addAppDomain("blog", bad)
 		assert.ErrorIs(t, err, ErrInvalidDomain, "should reject %q", bad)
 	}
 }
@@ -63,9 +63,9 @@ func TestCustomDomainUniqueAcrossApps(t *testing.T) {
 	require.NoError(t, s.apps.Store().AddApp(&store.App{Name: "blog", Port: 10000, Host: store.HostLocal}))
 	require.NoError(t, s.apps.Store().AddApp(&store.App{Name: "other", Port: 10001, Host: store.HostLocal}))
 
-	_, err := s.AddAppDomain("blog", "shared.example.com")
+	_, err := s.addAppDomain("blog", "shared.example.com")
 	require.NoError(t, err)
-	_, err = s.AddAppDomain("other", "shared.example.com")
+	_, err = s.addAppDomain("other", "shared.example.com")
 	assert.ErrorIs(t, err, store.ErrAppDomainExists)
 }
 
@@ -73,13 +73,13 @@ func TestRemoveCustomDomainStopsRouting(t *testing.T) {
 	t.Parallel()
 	s := newTestServer(t)
 	require.NoError(t, s.apps.Store().AddApp(&store.App{Name: "blog", Port: 10000, Host: store.HostLocal}))
-	_, err := s.AddAppDomain("blog", "blog.example.com")
+	_, err := s.addAppDomain("blog", "blog.example.com")
 	require.NoError(t, err)
 	waitDomainActive(t, s, "blog.example.com")
 	_, ok := s.appNameFromCustomDomain("blog.example.com")
 	require.True(t, ok)
 
-	require.NoError(t, s.RemoveAppDomain("blog", "blog.example.com"))
+	require.NoError(t, s.removeAppDomain("blog", "blog.example.com"))
 	_, ok = s.appNameFromCustomDomain("blog.example.com")
 	assert.False(t, ok, "a removed domain must stop routing")
 }
@@ -89,10 +89,10 @@ func TestRemoveCustomDomainWrongApp(t *testing.T) {
 	s := newTestServer(t)
 	require.NoError(t, s.apps.Store().AddApp(&store.App{Name: "blog", Port: 10000, Host: store.HostLocal}))
 	require.NoError(t, s.apps.Store().AddApp(&store.App{Name: "other", Port: 10001, Host: store.HostLocal}))
-	_, err := s.AddAppDomain("blog", "blog.example.com")
+	_, err := s.addAppDomain("blog", "blog.example.com")
 	require.NoError(t, err)
 
-	err = s.RemoveAppDomain("other", "blog.example.com")
+	err = s.removeAppDomain("other", "blog.example.com")
 	assert.ErrorIs(t, err, store.ErrAppDomainNotFound)
 }
 
@@ -101,7 +101,7 @@ func TestDomainDNSRecords(t *testing.T) {
 	s := newTestServer(t)
 	s.config.DNSProvider = "route53" // DNS-01 mode -> a delegation record is included
 
-	records := s.DomainDNSRecords("blog", "blog.example.com")
+	records := s.domainDNSRecords("blog", "blog.example.com")
 	require.Len(t, records, 2)
 	assert.Equal(t, "blog.example.com", records[0].Name)
 	assert.Equal(t, "blog.apps.example.com", records[0].Value)

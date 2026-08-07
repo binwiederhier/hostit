@@ -130,7 +130,7 @@ const Pending = ({ account }) => (
         apps. Check back later.
       </p>
       <button type="button" className="btn" onClick={logout}>
-        Logout
+        Log out
       </button>
     </div>
   </div>
@@ -146,7 +146,7 @@ const Denied = ({ account }) => (
         person running this hostit instance.
       </p>
       <button type="button" className="btn" onClick={logout}>
-        Logout
+        Log out
       </button>
     </div>
   </div>

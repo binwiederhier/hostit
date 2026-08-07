@@ -31,7 +31,7 @@ func (s *Server) domainView(appName string, d *store.Domain) *apiAppDomainRespon
 		LastError: d.LastError,
 		CreatedAt: d.CreatedAt,
 		ActiveAt:  d.ActiveAt,
-		DNS:       s.DomainDNSRecords(appName, d.Domain),
+		DNS:       s.domainDNSRecords(appName, d.Domain),
 	}
 }
 
@@ -42,7 +42,7 @@ func (s *Server) handleAppDomainsList(w http.ResponseWriter, r *http.Request, c 
 		writeAppError(w, err)
 		return
 	}
-	domains, err := s.AppDomains(a.Name)
+	domains, err := s.appDomains(a.Name)
 	if err != nil {
 		writeAppError(w, err)
 		return
@@ -66,7 +66,7 @@ func (s *Server) handleAppDomainAdd(w http.ResponseWriter, r *http.Request, c *c
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	d, err := s.AddAppDomain(a.Name, req.Domain)
+	d, err := s.addAppDomain(a.Name, req.Domain)
 	if err != nil {
 		writeAppError(w, err)
 		return
@@ -81,7 +81,7 @@ func (s *Server) handleAppDomainVerify(w http.ResponseWriter, r *http.Request, c
 		writeAppError(w, err)
 		return
 	}
-	if err := s.VerifyAppDomain(a.Name, r.PathValue("domain")); err != nil {
+	if err := s.verifyAppDomain(a.Name, r.PathValue("domain")); err != nil {
 		writeAppError(w, err)
 		return
 	}
@@ -95,7 +95,7 @@ func (s *Server) handleAppDomainDelete(w http.ResponseWriter, r *http.Request, c
 		writeAppError(w, err)
 		return
 	}
-	if err := s.RemoveAppDomain(a.Name, r.PathValue("domain")); err != nil {
+	if err := s.removeAppDomain(a.Name, r.PathValue("domain")); err != nil {
 		writeAppError(w, err)
 		return
 	}

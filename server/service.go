@@ -64,9 +64,10 @@ type Server struct {
 	// an in-flight certificate attempt, so the retry loop does not pile on.
 	domainCache map[string]string
 	issuing     map[string]bool
-	domainMu    sync.RWMutex // Protects domainCache and issuing
 
 	servers []*http.Server // Running HTTP servers, for Stop
+
+	domainMu sync.RWMutex // Protects domainCache and issuing
 }
 
 // New creates a Server; it does not start any listeners

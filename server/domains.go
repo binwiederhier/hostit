@@ -36,10 +36,10 @@ var (
 	hostnameRegex = regexp.MustCompile(`^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$`)
 )
 
-// AddAppDomain attaches a custom domain to an app: it records it as pending and
+// addAppDomain attaches a custom domain to an app: it records it as pending and
 // kicks off certificate issuance in the background. It returns the stored record;
-// the caller renders the DNS records the owner must create (see DomainDNSRecords).
-func (s *Server) AddAppDomain(appName, domain string) (*store.Domain, error) {
+// the caller renders the DNS records the owner must create (see domainDNSRecords).
+func (s *Server) addAppDomain(appName, domain string) (*store.Domain, error) {
 	domain = strings.ToLower(strings.TrimSpace(strings.TrimSuffix(domain, ".")))
 	if err := s.validateCustomDomain(domain); err != nil {
 		return nil, err
@@ -53,9 +53,9 @@ func (s *Server) AddAppDomain(appName, domain string) (*store.Domain, error) {
 	return d, nil
 }
 
-// VerifyAppDomain re-attempts issuance for a domain (after the owner has set up
+// verifyAppDomain re-attempts issuance for a domain (after the owner has set up
 // DNS): it checks the delegation is in place and, if so, tries to obtain the cert.
-func (s *Server) VerifyAppDomain(appName, domain string) error {
+func (s *Server) verifyAppDomain(appName, domain string) error {
 	d, err := s.ownedDomain(appName, domain)
 	if err != nil {
 		return err
@@ -64,9 +64,9 @@ func (s *Server) VerifyAppDomain(appName, domain string) error {
 	return nil
 }
 
-// RemoveAppDomain detaches a custom domain: it stops routing at once. The
+// removeAppDomain detaches a custom domain: it stops routing at once. The
 // certificate is left in certmagic storage to expire on its own (no revoke).
-func (s *Server) RemoveAppDomain(appName, domain string) error {
+func (s *Server) removeAppDomain(appName, domain string) error {
 	d, err := s.ownedDomain(appName, domain)
 	if err != nil {
 		return err
@@ -78,8 +78,8 @@ func (s *Server) RemoveAppDomain(appName, domain string) error {
 	return nil
 }
 
-// AppDomains lists an app's custom domains.
-func (s *Server) AppDomains(appName string) ([]*store.Domain, error) {
+// appDomains lists an app's custom domains.
+func (s *Server) appDomains(appName string) ([]*store.Domain, error) {
 	return s.apps.Store().Domains(appName)
 }
 
@@ -156,10 +156,10 @@ func (s *Server) delegationReady(domain string) bool {
 	return cname == s.domainChallengeName() || strings.HasSuffix(cname, ".acme."+strings.ToLower(s.config.BaseDomain))
 }
 
-// RetryDomains re-attempts issuance for every non-active custom domain. Safe to run
+// retryDomains re-attempts issuance for every non-active custom domain. Safe to run
 // on a short interval: a domain whose delegation CNAME is not yet in place is only
 // DNS-checked (no ACME order), and the in-flight guard prevents overlap.
-func (s *Server) RetryDomains() {
+func (s *Server) retryDomains() {
 	domains, err := s.apps.Store().AllDomains()
 	if err != nil {
 		return
@@ -182,7 +182,7 @@ func (s *Server) DomainRetryLoop(interval time.Duration, done <-chan struct{}) {
 		case <-done:
 			return
 		}
-		s.RetryDomains()
+		s.retryDomains()
 	}
 }
 
@@ -276,11 +276,11 @@ func (s *Server) domainChallengeName() string {
 	return "_acme-challenge.acme." + s.config.BaseDomain
 }
 
-// DomainDNSRecords returns the DNS records an owner must create for a custom domain:
+// domainDNSRecords returns the DNS records an owner must create for a custom domain:
 // one to route traffic at the app, and (in DNS-01 mode) one to delegate the ACME
 // challenge to the zone we control, so a certificate issues even when the box is not
 // publicly reachable. In on-demand HTTP-01 mode only the traffic record is needed.
-func (s *Server) DomainDNSRecords(appName, domain string) []dnsRecord {
+func (s *Server) domainDNSRecords(appName, domain string) []dnsRecord {
 	var traffic dnsRecord
 	if ip := s.serverIP(); ip != "" {
 		// An A record works everywhere, including a zone apex where CNAME is illegal.
@@ -301,7 +301,7 @@ func (s *Server) DomainDNSRecords(appName, domain string) []dnsRecord {
 }
 
 // serverIP is the server's public IPv4, found by resolving the base domain (which
-// points at this box). Empty if it cannot be resolved, in which case DomainDNSRecords
+// points at this box). Empty if it cannot be resolved, in which case domainDNSRecords
 // falls back to a CNAME suggestion.
 func (s *Server) serverIP() string {
 	ips, err := net.LookupIP(s.config.BaseDomain)
