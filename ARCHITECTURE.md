@@ -208,6 +208,34 @@ sequenceDiagram
 Every path in the file operations resolves through `os.OpenRoot` on the app's
 home, so a symlink the app planted cannot walk the daemon out of it.
 
+## The in-browser workspace
+
+The same deploy loop above can run without an external agent: each app's page is a
+workspace with a hosted assistant, a terminal, and a live preview.
+
+- **Hosted assistant (`assistant/`).** A chat drives an Anthropic Messages loop
+  whose tools -- list/read/write files, run a command, read logs, deploy, refresh
+  the preview -- are exactly one app's REST surface, so the model is confined the
+  same way an app-scoped token is. The turn is **server-owned**: `POST` starts it
+  as a background goroutine (not tied to the request), each step is persisted, and
+  every watcher subscribes over **SSE**, so the run survives a reload and shows up
+  on every device viewing the app. A per-app lock allows one turn at a time; the
+  transcript lives in SQLite (`assistant_session`). Rate limits, a context window,
+  a subscriber cap, and a same-origin gate keep it from being a lever for abuse.
+  It is inert without an Anthropic API key in the config.
+
+- **Browser terminal.** `GET /api/apps/{app}/terminal` upgrades to a WebSocket and
+  bridges it to a pty running the app's login shell (`runuser` into the container),
+  binary both ways with a text frame carrying the window size. It is the same shell
+  and isolation as an SSH session, owner-only, with an origin check on the upgrade
+  so a tenant's own app page cannot open one on a signed-in owner's behalf.
+
+- **Live preview + state.** The page iframes the app (owner-only, via a `frame-src`
+  the CSP allows for the base domain's subdomains) and reloads it, cache-busted,
+  whenever the app is redeployed -- picked up from the app process's start time
+  changing. Live CPU/RAM/disk come from one `podman stats` read behind the state
+  cache; lifecycle actions post the same verbs the CLI does.
+
 ## Data
 
 SQLite, one connection, WAL. Ordered migrations that record their version in the
@@ -260,6 +288,7 @@ Service packages at the root, thin `main.go`, no `internal/`:
 | `store` | SQLite: schema, migrations, queries |
 | `appctl` | the `hostit.yml` contract and the client for the app-side CLI |
 | `agent` | PID 1 inside a container: supervises the app, rotates its log |
+| `assistant` | the in-browser AI agent: an Anthropic Messages loop whose tools are one app's REST surface |
 | `cmd` | the CLI: `serve`, the app commands, `admin`, and the SSH plumbing |
 | `client` | Go client for the REST API, used by `hostit apps` |
 

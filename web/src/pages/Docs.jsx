@@ -57,10 +57,16 @@ const Docs = () => (
         Every app gets its own container. You are root inside it, other apps are invisible, and an app cannot reach another
         app's files, processes or ports.
       </p>
+      <p>
+        The app's page is a workspace: a built-in AI assistant that builds and deploys the app for you, a live preview beside
+        it, and a browser terminal &mdash; so you can do everything here, or over SSH and the API, or with your own agent
+        (next). The built-in assistant needs the server to be configured with an AI key; if it is not, use SSH or your own
+        agent.
+      </p>
     </section>
 
     <section id="claude">
-      <h2>Using it with Claude Code</h2>
+      <h2>Using it with Claude Code (or the built-in chat)</h2>
       <p>
         This is what hostit is for. Open your app's page and copy the prompt at the top. Paste it into Claude Code (or any
         assistant that can make HTTP requests) and it has everything it needs: the app's URL, a token scoped to that one app,
@@ -153,7 +159,7 @@ run: ./bin/myapp`}
     <section id="config">
       <h2>hostit.yml</h2>
       <p>
-        One file decides how the app runs. Pick a mode, then apply it with <span className="mono">hostit up</span>{" "}
+        One file decides how the app runs. Pick a mode, then apply it with <span className="mono">hostit deploy</span>{" "}
         over SSH or <span className="mono">POST /api/apps/&lt;app&gt;/deploy</span>. Keys hostit does not know are an error, so a
         typo is reported rather than ignored.
       </p>
@@ -221,11 +227,11 @@ rsync -av ./site/ <app>@${host.replace(/^[^.]*\./, "")}:public/`}
       </p>
       <p>Inside, these commands manage the app:</p>
       <Snippet
-        text={`hostit up          # apply hostit.yml and (re)start
-hostit down        # stop
-hostit restart     # restart
+        text={`hostit deploy      # apply hostit.yml and (re)start
 hostit status      # is it running?
-hostit logs -f     # watch the output`}
+hostit logs -f     # watch the output
+hostit start/stop/restart   # the run: command (container stays up)
+hostit poweron/poweroff/reboot   # the container itself`}
       />
     </section>
 

@@ -10,7 +10,7 @@
 - **SSH access** (normal ssh/scp/sftp/rsync via the host's sshd; keys via the API)
 - a **subdomain** (`myapp.apps.example.com`) with **automatic Let's Encrypt TLS**
 - two ways to run: `mode: static` (hostit serves `public/`) or `mode: app` (your
-  command, supervised by the hostit agent) -- deployed with a single `hostit up`
+  command, supervised by the hostit agent) -- deployed with a single `hostit deploy`
 - a lean workspace with **python3, go and sqlite3** preinstalled (and root, so
   `apt-get install` node, php or anything else you need)
 
@@ -22,7 +22,9 @@ user token is all an AI agent needs.
 
 The intended workflow: tell your agent "create an app on my host and deploy this"
 -- it calls the REST API to get an SSH login, pushes the code, writes `hostit.yml`,
-runs `hostit up`, and the app is live with a cert.
+runs `hostit deploy`, and the app is live with a cert. The same thing can happen
+entirely in the browser: each app's page is a workspace with a built-in AI
+assistant, a terminal, and a live preview (see [Building in the browser](#building-in-the-browser)).
 
 ## How it works
 
@@ -325,7 +327,7 @@ This is what hostit is for: a user creates an app in the web app, copies the
 prompt from its page, and pastes it into their own Claude Code (or any agent).
 An account token drives every app you own through these commands; an app token
 drives only its own app. The same commands run inside an app's container without
-`apps` and without a token (`hostit up`, `hostit logs -f`, `hostit guide`), where
+`apps` and without a token (`hostit deploy`, `hostit logs -f`, `hostit guide`), where
 the daemon knows which app you are from the uid asking.
 
 The token in that prompt is **scoped to that one app**, so it cannot touch the
@@ -370,8 +372,9 @@ app directory competes with the app's own README. Agents are also asked to keep 
 `hostit.yml`; the app's page puts it into the prompt, so the next agent starts
 from what the app already is instead of from "this is a placeholder".
 
-Actions are POST-only (`start`, `stop`, `restart`, `deploy`); a GET answers 405
-rather than doing anything. SSH still works for anyone who prefers scp/rsync:
+Actions are POST-only (app verbs `start`, `stop`, `restart`; container verbs
+`poweron`, `poweroff`, `reboot`; and `deploy`); a GET answers 405 rather than
+doing anything. SSH still works for anyone who prefers scp/rsync:
 profile keys are written into a `# BEGIN hostit-managed keys` block in each
 app's `authorized_keys`, so keys added there by hand are never clobbered.
 
@@ -379,6 +382,27 @@ Tokens come in two shapes. An **account token** (Profile -> API tokens) manages
 everything you own, including creating apps. An **app token** is created with
 each app, shown on its page, and can only touch that one app -- that is the one
 that goes into a chat window.
+
+## Building in the browser
+
+You do not need to leave the browser. Each app's page is a workspace:
+
+- a **built-in AI assistant** (a chat panel) that reads and writes the app's
+  files, runs commands in its container, and deploys -- the same REST surface an
+  external agent drives, but hosted. The turn runs server-side and streams back,
+  so it survives a reload and shows up on every device viewing the app; the
+  conversation is persisted per app. It needs an Anthropic API key in the server
+  config; without one, run apps over SSH/CLI as usual.
+- a **live preview** of the app beside the chat, on a draggable split, that
+  reloads itself whenever the app is (re)deployed (by anyone).
+- a **browser terminal** -- the same login shell an SSH session gets, over a
+  WebSocket -- as a floating, draggable window, so you can poke around without
+  leaving the page. "Connect via SSH" shows the `ssh`/`scp` command instead.
+- **live CPU / RAM / disk / uptime**, the app's address and token, and the
+  lifecycle actions (start/stop/restart, power on/off, reboot, delete).
+
+The sparkle button on the page hands you the same paste-into-your-own-agent
+prompt, so the browser assistant and an external Claude Code are interchangeable.
 
 ## Deploy an app
 
@@ -401,11 +425,20 @@ env:
 Then:
 
 ```sh
-hostit up          # apply changes and (re)start; survives reboots
-hostit status      # service status
+hostit deploy      # apply hostit.yml and (re)start; survives reboots
+hostit status      # is it running?
 hostit logs -f     # follow logs
-hostit restart     # restart
-hostit down        # stop + disable
+
+# App verbs act on the run: command; the container keeps running:
+hostit start       # start the run: command
+hostit stop        # stop it (container stays up, SSH still works)
+hostit restart     # restart it (fast; no container recreate)
+
+# Power verbs act on the container itself:
+hostit poweroff    # stop the container (stays off across reboots)
+hostit poweron     # start it again
+hostit reboot      # recreate/restart the container
+
 hostit info        # name, URL, port
 ```
 
@@ -441,5 +474,25 @@ HOSTIT_HOST=https://hostit.apps.example.com HOSTIT_TOKEN=... make e2e
 ```
 
 Layout follows the ntfy conventions: thin `main.go`, CLI wiring in `cmd/`, service
-packages at the root (`server/`, `app/`, `agent/`, `store/`, `user/`, `appctl/`,
-`client/`, `config/`), and the web app in `web/` (Vite + React, no UI framework).
+packages at the root (`server/`, `app/`, `agent/`, `assistant/`, `store/`, `user/`,
+`appctl/`, `client/`, `config/`), and the web app in `web/` (Vite + React, no UI
+framework). The `assistant/` package is the in-browser AI agent: a loop over the
+Anthropic Messages API whose tools are scoped to one app.
+
+### Releasing and environments
+
+The web assets are embedded at compile time (`go:embed server/site`), so a release
+is a single self-contained binary/`.deb`.
+
+```sh
+make release-snapshot   # local .deb in dist/ (for staging / a dev box)
+git tag vX.Y.Z && GITHUB_TOKEN=$(gh auth token) make release   # tag + publish a GitHub release
+```
+
+The reference deployment is driven by Ansible with two environments -- a **staging**
+host and a **prod** host, each its own machine and base domain. Staging installs a
+locally built snapshot `.deb`; prod pins a released version and pulls the `.deb`
+from the GitHub release. The usual flow is snapshot -> deploy to staging -> verify
+-> tag a release -> bump the prod version -> deploy to prod. (Per-app dev/stage
+environments -- building a change on a staging copy of one app and promoting it to
+that app's prod -- are on the roadmap; see [TODO.md](TODO.md).)
