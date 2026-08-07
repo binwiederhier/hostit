@@ -36,6 +36,26 @@ type ContentBlock struct {
 	ToolUseID string `json:"tool_use_id,omitempty"`
 	Content   any    `json:"content,omitempty"`
 	IsError   bool   `json:"is_error,omitempty"`
+
+	// type: image
+	Source *ImageSource `json:"source,omitempty"`
+}
+
+// ImageSource is an inline image the model can see (a chat attachment), sent as
+// base64 in the shape the Anthropic API expects.
+type ImageSource struct {
+	Type      string `json:"type"`       // "base64"
+	MediaType string `json:"media_type"` // e.g. "image/png"
+	Data      string `json:"data"`       // base64-encoded bytes
+}
+
+// Attachment is a file the user uploaded with a message: already saved in the
+// app's home at Path. For images, Data carries the base64 bytes so the model can
+// see it; other files are only referenced by Path.
+type Attachment struct {
+	Path      string `json:"path"`
+	MediaType string `json:"media_type"`
+	Data      string `json:"data,omitempty"`
 }
 
 // Tool is a function the model may call. InputSchema is a JSON Schema object

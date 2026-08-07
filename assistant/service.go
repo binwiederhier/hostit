@@ -168,7 +168,7 @@ func (m *Manager) Running(app string) bool {
 // the caller (empty for the global admin token); it bounds the caller's usage. It
 // refuses ErrBusy if a turn is already running for this app, or a rate error if
 // the user is over their limits. Events flow to every subscriber, not this caller.
-func (m *Manager) Send(app, userID, userText string) error {
+func (m *Manager) Send(app, userID, userText string, attachments ...Attachment) error {
 	if err := m.reserveRun(userID); err != nil {
 		return err
 	}
@@ -177,7 +177,7 @@ func (m *Manager) Send(app, userID, userText string) error {
 		m.releaseRun(userID)
 		return ErrBusy
 	}
-	go m.runLoop(s, app, userID, userText)
+	go m.runLoop(s, app, userID, userText, attachments)
 	return nil
 }
 
@@ -224,19 +224,17 @@ func (m *Manager) Transcript(app string) ([]Item, error) {
 // publishes every step to the app's session so all subscribers see it, and saves
 // the transcript after each step so a reload mid-run recovers the progress. It is
 // bound to a background context, so the sender leaving does not cancel it.
-func (m *Manager) runLoop(s *session, app, userID, userText string) {
+func (m *Manager) runLoop(s *session, app, userID, userText string, attachments []Attachment) {
 	defer s.end()
 	defer m.releaseRun(userID)
 	ctx, cancel := context.WithTimeout(context.Background(), runTimeout)
 	defer cancel()
 	s.setCancel(cancel) // so Stop can cancel this run
 
-	history := append(m.load(app), Message{
-		Role:    "user",
-		Content: []ContentBlock{{Type: "text", Text: userText}},
-	})
+	content, display := buildUserContent(userText, attachments)
+	history := append(m.load(app), Message{Role: "user", Content: content})
 	m.save(app, history)
-	s.publish(Event{Type: "user", Text: userText})
+	s.publish(Event{Type: "user", Text: display})
 
 	for iter := 0; iter < maxIterations; iter++ {
 		resp, err := m.client.complete(ctx, request{

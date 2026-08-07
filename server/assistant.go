@@ -1,10 +1,14 @@
 package server
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"mime"
 	"net/http"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -174,17 +178,30 @@ func (s *Server) handleAssistant(w http.ResponseWriter, r *http.Request, c *call
 		return
 	}
 	var req struct {
-		Message string `json:"message"`
+		Message     string          `json:"message"`
+		Attachments []apiAttachment `json:"attachments"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, assistantMaxMessage)).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	if strings.TrimSpace(req.Message) == "" {
-		writeError(w, http.StatusBadRequest, errors.New("message is required"))
+	if strings.TrimSpace(req.Message) == "" && len(req.Attachments) == 0 {
+		writeError(w, http.StatusBadRequest, errors.New("a message or an attachment is required"))
 		return
 	}
-	if err := s.assistant.Send(a.Name, c.userID(), req.Message); err != nil {
+	// Attachments are already saved in the app's home; load image bytes so the model
+	// can see them (other files are referenced by path only).
+	attachments := make([]assistant.Attachment, 0, len(req.Attachments))
+	for _, at := range req.Attachments {
+		att := assistant.Attachment{Path: at.Path, MediaType: at.MediaType}
+		if strings.HasPrefix(at.MediaType, "image/") {
+			if b, err := s.apps.ReadFile(a.Name, at.Path); err == nil {
+				att.Data = base64.StdEncoding.EncodeToString(b)
+			}
+		}
+		attachments = append(attachments, att)
+	}
+	if err := s.assistant.Send(a.Name, c.userID(), req.Message, attachments...); err != nil {
 		switch {
 		case errors.Is(err, assistant.ErrBusy):
 			writeError(w, http.StatusConflict, err)
@@ -196,6 +213,91 @@ func (s *Server) handleAssistant(w http.ResponseWriter, r *http.Request, c *call
 		return
 	}
 	writeJSON(w, http.StatusAccepted, &apiMessageResponse{Message: "started"})
+}
+
+// assistantUploadMax bounds one upload request (the whole multipart body)
+const assistantUploadMax = 10 << 20 // 10 MB
+
+// apiAttachment is one uploaded file: saved in the app at Path, with its media
+// type. The chat send echoes these back to attach them to a message.
+type apiAttachment struct {
+	Path      string `json:"path"`
+	MediaType string `json:"media_type"`
+	Name      string `json:"name,omitempty"`
+	IsImage   bool   `json:"is_image,omitempty"`
+}
+
+// handleAssistantUpload saves uploaded files into the app's uploads/ folder and
+// returns their in-app paths, so the next chat message can attach them. The files
+// land in the app's home where the assistant's tools can use them; images are also
+// shown to the model when attached (see handleAssistant).
+func (s *Server) handleAssistantUpload(w http.ResponseWriter, r *http.Request, c *caller) {
+	a, err := s.ownedApp(c, r.PathValue("name"))
+	if err != nil {
+		writeAppError(w, err)
+		return
+	}
+	if err := r.ParseMultipartForm(assistantUploadMax); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	files := r.MultipartForm.File["file"]
+	if len(files) == 0 {
+		writeError(w, http.StatusBadRequest, errors.New("no files uploaded"))
+		return
+	}
+	out := make([]apiAttachment, 0, len(files))
+	for _, fh := range files {
+		f, err := fh.Open()
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		data, err := io.ReadAll(io.LimitReader(f, assistantUploadMax))
+		_ = f.Close()
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		name := sanitizeUploadName(fh.Filename)
+		path := "uploads/" + name
+		if err := s.apps.WriteFile(a.Name, path, data, 0); err != nil {
+			writeAppError(w, err)
+			return
+		}
+		mediaType := fh.Header.Get("Content-Type")
+		if mediaType == "" {
+			mediaType = mime.TypeByExtension(filepath.Ext(name))
+		}
+		out = append(out, apiAttachment{
+			Path:      path,
+			MediaType: mediaType,
+			Name:      name,
+			IsImage:   strings.HasPrefix(mediaType, "image/"),
+		})
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// sanitizeUploadName reduces an uploaded filename to a safe basename (no path, only
+// simple characters), so it cannot escape the uploads/ folder.
+func sanitizeUploadName(name string) string {
+	base := filepath.Base(filepath.Clean("/" + name))
+	if base == "/" || base == "." || base == ".." || base == "" {
+		return "file"
+	}
+	base = strings.Map(func(r rune) rune {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '.', r == '-', r == '_':
+			return r
+		default:
+			return '-'
+		}
+	}, base)
+	if base == "" {
+		return "file"
+	}
+	return base
 }
 
 // handleAssistantStop cancels the app's in-progress assistant turn. The run's

@@ -286,8 +286,12 @@ const AppAssistant = ({ name, onClose, embedded = false, onPreviewRefresh }) => 
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [loaded, setLoaded] = useState(false);
+  const [attachments, setAttachments] = useState([]); // uploaded files pending on the next message
+  const [uploading, setUploading] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
   const scrollRef = useRef(null);
   const taRef = useRef(null);
+  const fileRef = useRef(null);
 
   // Grow the input with its content, up to a few lines, then scroll. Only show a
   // scrollbar once it actually overflows the cap, not at rest.
@@ -381,20 +385,70 @@ const AppAssistant = ({ name, onClose, embedded = false, onPreviewRefresh }) => 
     return () => es.close();
   }, [name, handleEvent]);
 
+  // Upload dropped/picked files into the app's uploads/ folder; the server returns
+  // their in-app paths, which we hold as pending attachments for the next message.
+  const uploadFiles = useCallback(
+    async (fileList) => {
+      const files = Array.from(fileList || []);
+      if (files.length === 0) return;
+      setUploading(true);
+      try {
+        const form = new FormData();
+        files.forEach((f) => form.append("file", f));
+        const r = await fetch(`/api/apps/${encodeURIComponent(name)}/assistant/upload`, {
+          method: "POST",
+          credentials: "same-origin",
+          body: form,
+        });
+        if (!r.ok) {
+          const body = await r.json().catch(() => null);
+          handleEvent({ type: "error", error: body?.error || `upload failed (${r.status})` });
+          return;
+        }
+        const added = await r.json();
+        setAttachments((prev) => [...prev, ...(added || [])]);
+      } catch (err) {
+        handleEvent({ type: "error", error: err.message });
+      } finally {
+        setUploading(false);
+      }
+    },
+    [name, handleEvent],
+  );
+
+  const onDrop = (e) => {
+    e.preventDefault();
+    setDragOver(false);
+    if (e.dataTransfer?.files?.length) uploadFiles(e.dataTransfer.files);
+  };
+  const onDragOver = (e) => {
+    if (e.dataTransfer?.types?.includes("Files")) {
+      e.preventDefault();
+      setDragOver(true);
+    }
+  };
+  const onDragLeave = () => setDragOver(false);
+  const removeAttachment = (i) => setAttachments((prev) => prev.filter((_, j) => j !== i));
+
   // Send a message: the server starts the turn in the background and everything
   // comes back on the stream. We do not render it optimistically -- the stream
   // echoes the message so every device shows it the same way.
   const send = async () => {
     const message = input.trim();
-    if (!message || busy) return;
+    if ((!message && attachments.length === 0) || busy) return;
     setInput("");
+    const atts = attachments;
+    setAttachments([]);
     setBusy(true);
     try {
       const r = await fetch(`/api/apps/${encodeURIComponent(name)}/assistant`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "same-origin",
-        body: JSON.stringify({ message }),
+        body: JSON.stringify({
+          message,
+          attachments: atts.map((a) => ({ path: a.path, media_type: a.media_type })),
+        }),
       });
       if (r.status === 409) {
         return; // a turn is already running; it will stream in
@@ -439,6 +493,11 @@ const AppAssistant = ({ name, onClose, embedded = false, onPreviewRefresh }) => 
 
   const inner = (
     <>
+      {dragOver && (
+        <div className="asst-drop" aria-hidden="true">
+          Drop files to attach
+        </div>
+      )}
       {!embedded && (
         <header className="asst-header">
           <span className="asst-title">
@@ -463,7 +522,49 @@ const AppAssistant = ({ name, onClose, embedded = false, onPreviewRefresh }) => 
         {busy && <WorkingIndicator />}
       </div>
 
+      {attachments.length > 0 && (
+        <div className="asst-attachments">
+          {attachments.map((a, i) => (
+            <span className={"asst-chip" + (a.is_image ? " asst-chip-img" : "")} key={a.path + i}>
+              <span className="asst-chip-name" title={a.path}>
+                {a.name || a.path}
+              </span>
+              <button type="button" className="asst-chip-x" onClick={() => removeAttachment(i)} aria-label="Remove attachment">
+                &times;
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
       <div className="asst-input">
+        <input
+          ref={fileRef}
+          type="file"
+          multiple
+          className="asst-file-input"
+          onChange={(e) => {
+            uploadFiles(e.target.files);
+            e.target.value = "";
+          }}
+          tabIndex={-1}
+          aria-hidden="true"
+        />
+        <button
+          type="button"
+          className="btn btn-icon asst-plus"
+          onClick={() => fileRef.current?.click()}
+          disabled={busy || uploading}
+          title="Attach files"
+          aria-label="Attach files"
+        >
+          {uploading ? (
+            <span className="asst-plus-spin" aria-hidden="true" />
+          ) : (
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
+              <path d="M8 3.5v9M3.5 8h9" />
+            </svg>
+          )}
+        </button>
         <textarea
           ref={taRef}
           value={input}
@@ -484,7 +585,7 @@ const AppAssistant = ({ name, onClose, embedded = false, onPreviewRefresh }) => 
             type="button"
             className="btn btn-primary asst-send"
             onClick={() => send()}
-            disabled={!input.trim()}
+            disabled={!input.trim() && attachments.length === 0}
             title="Send"
             aria-label="Send"
           >
@@ -499,11 +600,17 @@ const AppAssistant = ({ name, onClose, embedded = false, onPreviewRefresh }) => 
 
   // Embedded (Direction C): the chat is a panel on the app page, not a modal.
   if (embedded) {
-    return <div className="asst-window asst-embedded">{inner}</div>;
+    return (
+      <div className="asst-window asst-embedded" onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={onDrop}>
+        {inner}
+      </div>
+    );
   }
   return (
     <div className="modal-backdrop" role="dialog" aria-modal="true">
-      <div className="asst-window">{inner}</div>
+      <div className="asst-window" onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={onDrop}>
+        {inner}
+      </div>
     </div>
   );
 };

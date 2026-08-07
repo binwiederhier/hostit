@@ -1450,6 +1450,7 @@ th:last-child {
 
 /* Built-in AI assistant (PoC): a modal chat that streams the agent loop. */
 .asst-window {
+  position: relative;
   display: flex;
   flex-direction: column;
   width: min(92vw, 820px);
@@ -1781,6 +1782,78 @@ th:last-child {
   padding: 10px 12px;
   border-top: 1px solid var(--border);
   background: var(--surface);
+}
+
+/* Chat attachments: pending uploaded files shown above the input */
+.asst-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 12px 0;
+}
+.asst-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 220px;
+  padding: 3px 5px 3px 9px;
+  font-size: 12px;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background: var(--surface-2);
+}
+.asst-chip-img { border-color: var(--accent); }
+.asst-chip-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.asst-chip-x {
+  border: 0;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 15px;
+  line-height: 1;
+  padding: 0 2px;
+}
+.asst-chip-x:hover { color: var(--text); }
+
+/* The "+" attach button and its hidden native input */
+.asst-file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+.asst-plus {
+  flex: none;
+  height: 40px;
+  width: 40px;
+  padding: 0;
+  border-radius: 10px;
+}
+.asst-plus svg { width: 16px; height: 16px; }
+.asst-plus-spin {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--border);
+  border-top-color: var(--muted);
+  border-radius: 50%;
+  animation: asst-spin 0.7s linear infinite;
+}
+
+/* Drag-and-drop overlay covering the chat while a file is dragged over it */
+.asst-drop {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
+  border: 2px dashed var(--accent);
+  border-radius: 12px;
+  pointer-events: none;
 }
 
 .asst-input textarea {
