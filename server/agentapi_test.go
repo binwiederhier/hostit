@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"heckel.io/hostit/appctl"
+	"heckel.io/hostit/assistant"
 )
 
 func TestAgentInfoIsSelfExplanatory(t *testing.T) {
@@ -113,6 +114,82 @@ func TestAgentGuideTellsAnExistingAppApartFromAStub(t *testing.T) {
 	var guide apiAgentInfoResponse
 	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &guide))
 	assert.Contains(t, guide.Workflow[0], "stub")
+}
+
+func TestAgentAssistantTranscriptGivesContextToAnExternalAgent(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	token := newAppToken(t, s, "blog")
+
+	// Switch the assistant on with a store we can seed, as if the owner had already
+	// chatted with the built-in assistant before switching to an external agent.
+	sessions := assistant.NewMemoryStore()
+	s.assistant = assistant.NewManager(assistant.NewClient("test-key"), &appOps{apps: s.apps}, sessions, "test-model")
+	require.NoError(t, sessions.Save("blog", []assistant.Message{
+		{Role: "user", Content: []assistant.ContentBlock{{Type: "text", Text: "add a dark mode toggle"}}},
+		{Role: "assistant", Content: []assistant.ContentBlock{{Type: "text", Text: "Done, the toggle is in the header."}}},
+	}))
+
+	rr := request(t, s.API(), "GET", "/api/apps/blog/assistant/transcript", "", token)
+	require.Equal(t, http.StatusOK, rr.Code)
+	var resp apiAgentAssistantResponse
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &resp))
+	assert.True(t, resp.Enabled)
+	// The app-scoped agent sees the whole prior conversation as readable text.
+	assert.Contains(t, resp.Transcript, "add a dark mode toggle")
+	assert.Contains(t, resp.Transcript, "Done, the toggle is in the header.")
+}
+
+func TestAgentAssistantTranscriptDisabledWhenUnconfigured(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t) // no Anthropic key -> assistant is nil
+	token := newAppToken(t, s, "blog")
+	rr := request(t, s.API(), "GET", "/api/apps/blog/assistant/transcript", "", token)
+	require.Equal(t, http.StatusOK, rr.Code)
+	var resp apiAgentAssistantResponse
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &resp))
+	assert.False(t, resp.Enabled)
+}
+
+func TestAgentInfoAdvertisesTheAssistantTranscript(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	rr := request(t, s.API(), "GET", "/api/info", "", testToken)
+	require.Equal(t, http.StatusOK, rr.Code)
+	var resp apiAgentInfoResponse
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &resp))
+	paths := make([]string, 0, len(resp.Endpoints))
+	for _, e := range resp.Endpoints {
+		paths = append(paths, e.Method+" "+e.Path)
+	}
+	assert.Contains(t, paths, "GET /api/apps/{app}/assistant/transcript")
+	// The workflow tells the agent to read it first, so it continues prior work
+	// instead of starting cold.
+	joined := strings.Join(resp.Workflow, "\n")
+	assert.Contains(t, joined, "/assistant")
+}
+
+func TestAgentInfoInstructsPeriodicLabelledSnapshots(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	rr := request(t, s.API(), "GET", "/api/info", "", testToken)
+	require.Equal(t, http.StatusOK, rr.Code)
+	var resp apiAgentInfoResponse
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &resp))
+
+	// The snapshot endpoints are documented, so an agent knows how to take one.
+	paths := make([]string, 0, len(resp.Endpoints))
+	for _, e := range resp.Endpoints {
+		paths = append(paths, e.Method+" "+e.Path)
+	}
+	assert.Contains(t, paths, "POST /api/apps/{app}/snapshots")
+
+	// The guide tells the agent to snapshot at regular intervals, and to attach a
+	// short one-line description of why.
+	guide := strings.ToLower(strings.Join(append(append([]string{}, resp.Workflow...), resp.Notes...), "\n"))
+	assert.Contains(t, guide, "snapshot")
+	assert.Contains(t, guide, "regular")
+	assert.Contains(t, guide, "description")
 }
 
 func TestAgentTokenCannotTouchOtherApps(t *testing.T) {

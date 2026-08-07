@@ -240,6 +240,16 @@ type apiAgentAppResponse struct {
 	Guide *apiAgentInfoResponse `json:"guide"`
 }
 
+// apiAgentAssistantResponse is GET /api/apps/{app}/assistant/transcript: the
+// built-in assistant's session for the app, rendered as markdown so an external
+// agent can pick up with the full history of what was already tried
+type apiAgentAssistantResponse struct {
+	Enabled    bool   `json:"enabled"` // false when no assistant is configured on this server
+	Running    bool   `json:"running"` // a turn is in progress right now
+	Messages   int    `json:"messages"`
+	Transcript string `json:"transcript"`
+}
+
 // apiRunRequest is the body of POST /api/apps/{app}/run
 type apiRunRequest struct {
 	Command        string `json:"command"`

@@ -14,6 +14,7 @@ import (
 
 	"heckel.io/hostit/app"
 	"heckel.io/hostit/appctl"
+	"heckel.io/hostit/assistant"
 	"heckel.io/hostit/config"
 	"heckel.io/hostit/store"
 )
@@ -34,6 +35,7 @@ func (s *Server) newAgentRoutes(mux *http.ServeMux) {
 	route(mux, "GET", "/info", s.requireActive(s.handleAgentInfo))
 	route(mux, "GET", "/apps/{app}/info", s.requireApp(s.handleAgentAppInfo))
 	route(mux, "GET", "/apps/{app}/logs", s.requireApp(s.handleAgentLogs))
+	route(mux, "GET", "/apps/{app}/assistant/transcript", s.requireApp(s.handleAgentAssistant))
 	route(mux, "GET", "/apps/{app}/files", s.requireApp(s.handleAgentFileList))
 	route(mux, "PUT", "/apps/{app}/files/{path...}", s.requireApp(s.handleAgentFilePut))
 	route(mux, "GET", "/apps/{app}/files/{path...}", s.requireApp(s.handleAgentFileGet))
@@ -103,6 +105,13 @@ func (s *Server) agentGuide(appName, description string) *apiAgentInfoResponse {
 			description + ". Do not rebuild it from scratch. Read its README.md (the app's worklog) and its " +
 			"files first, then make only the changes you were asked for."
 	}
+	// The owner may have built this app with hostit's own assistant before switching
+	// to you. Reading that session first is the difference between continuing their
+	// work and starting over.
+	readSession := "Read the built-in assistant's session for this app first: GET " + appsPath(name) +
+		"/assistant/transcript. If the owner already worked on this app with hostit's assistant, that transcript " +
+		"is the history of what was asked, tried and decided -- pick up from it rather than starting cold. It is " +
+		"empty (or {\"enabled\":false}) if there is nothing to read; then rely on README.md and the files."
 	return &apiAgentInfoResponse{
 		Platform: "hostit",
 		BaseURL:  base + apiPrefix,
@@ -112,6 +121,7 @@ func (s *Server) agentGuide(appName, description string) *apiAgentInfoResponse {
 			"app unless it is an account token.",
 		Workflow: []string{
 			whereYouAre,
+			readSession,
 			"Upload files: PUT " + appsPath(name) + "/files/{path} with the file body, or POST " + appsPath(name) + "/files with a tar archive for many files at once. Put them where they belong (see layout below).",
 			"Write hostit.yml (upload it like any other file) to say how the app runs. See hostit_yml below.",
 			"POST " + appsPath(name) + "/deploy to apply hostit.yml and (re)start the app.",
@@ -120,6 +130,7 @@ func (s *Server) agentGuide(appName, description string) *apiAgentInfoResponse {
 			"Keep the app's own documentation in " + appctl.DocsDir + "/ -- how it works, why it is built the way it is, anything the next session would otherwise have to re-derive. Read it before you change anything, and update it after every change that matters. README.md is the summary and worklog; " + appctl.DocsDir + "/ is the detail.",
 			"Compiling or installing dependencies: POST " + appsPath(name) + "/run with a shell command. It runs in the app's container, where the toolchains are, and returns the output and exit code -- so you can iterate on a build error without SSH. It is bounded (a minute by default, five at most): make the build a \"prepare:\" step in hostit.yml once it works, so it also runs on every deploy.",
 			"Keep a one-line \"description:\" in hostit.yml saying what this app is. The owner's web page shows it, and the next session (or a different agent) starts from it instead of from a blank page.",
+			"Snapshot as you go: POST " + appsPath(name) + "/snapshots at regular intervals -- before any risky change and after each chunk of working progress -- so there is always a recent point to roll back to. Always include a short one-line description of why, e.g. {\"label\": \"before rewriting the router\"}. (hostit also snapshots automatically before every deploy and hourly, but those are coarse; your own labelled snapshots are what make a mistake easy to undo.)",
 		},
 		Layout: "The app's home directory has a place for each kind of thing:\n\n" +
 			"  " + appctl.PublicDir + "/   files served on the web -- static mode serves exactly this directory\n" +
@@ -154,6 +165,7 @@ func (s *Server) agentGuide(appName, description string) *apiAgentInfoResponse {
 		Auth: "Send the token as: Authorization: Bearer <token>",
 		Endpoints: []apiAgentEndpoint{
 			{Method: "GET", Path: "" + appsPath(name) + "/info", What: "This document plus the app's URL, state, README, file list and hostit.yml"},
+			{Method: "GET", Path: "" + appsPath(name) + "/assistant/transcript", What: "The built-in assistant's chat history for this app, rendered as markdown. Read it to continue prior work with full context; enabled:false if the server has no assistant"},
 			{Method: "GET", Path: "" + appsPath(name) + "/logs", What: "Recent output; ?lines=N"},
 			{Method: "GET", Path: "" + appsPath(name) + "/files", What: "List the app's files"},
 			{Method: "GET", Path: "" + appsPath(name) + "/files/{path}", What: "Read one file"},
@@ -163,6 +175,10 @@ func (s *Server) agentGuide(appName, description string) *apiAgentInfoResponse {
 			{Method: "PUT", Path: "" + appsPath(name) + "/readme", What: `Replace README.md: {"readme": "..."}`},
 			{Method: "POST", Path: "" + appsPath(name) + "/run", What: `Run one shell command in the app's container: {"command": "cd src && go build ./..."} -- returns its output and exit code`},
 			{Method: "POST", Path: "" + appsPath(name) + "/deploy", What: "Apply hostit.yml and (re)start"},
+			{Method: "GET", Path: "" + appsPath(name) + "/snapshots", What: "List restorable snapshots (id, time, label, auto), newest first"},
+			{Method: "POST", Path: "" + appsPath(name) + "/snapshots", What: `Take a snapshot now: {"label": "short reason"}. Take them at regular intervals with a one-line description of why`},
+			{Method: "POST", Path: "" + appsPath(name) + "/snapshots/{id}/restore", What: "Roll back to a snapshot (a safety snapshot of the current state is taken first)"},
+			{Method: "DELETE", Path: "" + appsPath(name) + "/snapshots/{id}", What: "Delete one snapshot"},
 			{Method: "POST", Path: "" + appsPath(name) + "/start|stop|restart", What: "The run: command: start, stop, or restart it (fast; container stays up)"},
 			{Method: "POST", Path: "" + appsPath(name) + "/poweron|poweroff|reboot", What: "The container: power it on, off, or reboot it"},
 		},
@@ -227,6 +243,28 @@ func (s *Server) handleAgentRun(w http.ResponseWriter, r *http.Request, c *calle
 		ExitCode:  res.ExitCode,
 		Truncated: res.Truncated,
 		TimedOut:  res.TimedOut,
+	})
+}
+
+// handleAgentAssistant hands an external agent the built-in assistant's session
+// for this app, rendered as markdown, so an agent the owner switches to picks up
+// with the full history of what was already tried instead of starting cold. It
+// answers cleanly (enabled: false) when the server has no assistant configured.
+func (s *Server) handleAgentAssistant(w http.ResponseWriter, _ *http.Request, c *caller, a *store.App) {
+	if s.assistant == nil {
+		writeJSON(w, http.StatusOK, &apiAgentAssistantResponse{Enabled: false})
+		return
+	}
+	items, err := s.assistant.Transcript(a.Name)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, &apiAgentAssistantResponse{
+		Enabled:    true,
+		Running:    s.assistant.Running(a.Name),
+		Messages:   len(items),
+		Transcript: assistant.RenderTranscript(items),
 	})
 }
 

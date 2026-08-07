@@ -50,6 +50,38 @@ func toItems(history []Message) []Item {
 	return items
 }
 
+// RenderTranscript turns a session's display items into a plain-markdown log an
+// external agent can read as context: who said what, and every tool the built-in
+// assistant ran with its result. It is the text form of what the chat UI shows,
+// so an agent the owner switches to continues the work instead of starting cold.
+func RenderTranscript(items []Item) string {
+	var b strings.Builder
+	for _, it := range items {
+		switch it.Kind {
+		case "user":
+			fmt.Fprintf(&b, "## User\n\n%s\n\n", strings.TrimSpace(it.Text))
+		case "text":
+			fmt.Fprintf(&b, "## Assistant\n\n%s\n\n", strings.TrimSpace(it.Text))
+		case "tool":
+			fmt.Fprintf(&b, "### Tool: %s\n", it.Tool)
+			// An empty input object is noise, not context, so leave it out.
+			if in := strings.TrimSpace(it.Input); in != "" && in != "{}" {
+				fmt.Fprintf(&b, "Input: %s\n", in)
+			}
+			out := strings.TrimSpace(it.Output)
+			if out == "" {
+				out = "(no output)"
+			}
+			label := "Output"
+			if it.IsError {
+				label = "Error"
+			}
+			fmt.Fprintf(&b, "%s: %s\n\n", label, out)
+		}
+	}
+	return strings.TrimSpace(b.String())
+}
+
 // contentString renders a tool_result's content, which is a string once it has
 // round-tripped through JSON
 func contentString(content any) string {
