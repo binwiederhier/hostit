@@ -478,7 +478,7 @@ provider works):
 1. **Traffic** -- `blog.example.com` -> `myapp.<base-domain>` (or an A record to the
    server at a zone apex, where CNAME is not allowed).
 2. **TLS challenge delegation** -- `_acme-challenge.blog.example.com` ->
-   `blog.example.com.acme.<base-domain>`.
+   `_acme-challenge.acme.<base-domain>` (the same fixed target for every domain).
 
 hostit then obtains a Let's Encrypt certificate over **DNS-01**, writing the
 challenge TXT into the operator's own zone (the same Route53 setup that issues the
