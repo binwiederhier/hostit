@@ -12,11 +12,18 @@ const (
 	bytesPerMB = 1024 * 1024
 )
 
-// SetDiskLimit records the disk quota for an app; 0 means unlimited
+// SetDiskLimit records the disk quota for an app; 0 means unlimited. On btrfs it
+// also sets the subvolume's qgroup limit, which hard-caps writes (EDQUOT) rather
+// than the soft measure-and-stop fallback used on other filesystems.
 func (m *Manager) SetDiskLimit(name string, diskMB int) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
 	m.diskMB[name] = diskMB
+	m.mu.Unlock()
+	if m.btrfsEnabled() {
+		if err := m.setQuota(m.appHome(name), diskMB); err != nil {
+			slog.Warn("Cannot set btrfs quota", "app", name, "limit_mb", diskMB, "error", err)
+		}
+	}
 }
 
 // diskLimit returns the recorded disk quota of an app
@@ -36,6 +43,7 @@ func (m *Manager) CheckQuotas() error {
 	if err != nil {
 		return err
 	}
+	btrfs := m.btrfsEnabled()
 	for _, a := range apps {
 		usage, err := m.measureDiskMB(a.Name)
 		if err != nil {
@@ -46,6 +54,12 @@ func (m *Manager) CheckQuotas() error {
 		overQuota := limit > 0 && usage > limit
 		if err := m.store.UpdateAppUsage(a.Name, usage, overQuota); err != nil {
 			slog.Warn("Cannot record disk usage", "app", a.Name, "error", err)
+			continue
+		}
+		// On btrfs the qgroup enforces the limit at write time (EDQUOT), so this loop
+		// is only reporting -- there is nothing to stop. The soft fallback below only
+		// applies on filesystems without hard quotas.
+		if btrfs {
 			continue
 		}
 		if overQuota && !a.OverQuota {
@@ -76,10 +90,12 @@ func (m *Manager) QuotaLoop(interval time.Duration, done <-chan struct{}) {
 	}
 }
 
-// measureDiskMB returns the app's disk usage in MB: its home directory, which
-// since the move to root-managed containers holds only the app's own files (the
-// image store is shared and lives with the daemon)
+// measureDiskMB returns the app's disk usage in MB. On btrfs it reads the
+// subvolume's qgroup (accurate and cheap); otherwise it walks the home directory.
 func (m *Manager) measureDiskMB(name string) (int, error) {
+	if m.btrfsEnabled() {
+		return m.subvolumeUsageMB(m.appHome(name)), nil
+	}
 	var total int64
 	err := filepath.WalkDir(m.appHome(name), func(path string, d fs.DirEntry, err error) error {
 		if err != nil {

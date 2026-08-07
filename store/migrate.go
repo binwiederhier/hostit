@@ -101,6 +101,20 @@ var migrations = []string{
 			updated_at INTEGER NOT NULL
 		);
 	`,
+	// Snapshots: one row per btrfs snapshot of an app's home. The subvolume holds
+	// the data; this row is the metadata used to list and thin them. auto=1 marks
+	// snapshots taken automatically (deploy/turn/hourly), which retention prunes;
+	// manual ones (auto=0) are kept.
+	`
+		CREATE TABLE snapshot (
+			id TEXT PRIMARY KEY,
+			app_name TEXT NOT NULL,
+			label TEXT NOT NULL DEFAULT '',
+			created_at INTEGER NOT NULL,
+			auto INTEGER NOT NULL DEFAULT 1
+		);
+		CREATE INDEX snapshot_app_idx ON snapshot(app_name, created_at);
+	`,
 }
 
 // migrate brings the database up to the current schema version, creating it if

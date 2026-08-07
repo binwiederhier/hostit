@@ -43,11 +43,19 @@ const (
 		ON CONFLICT(app_name) DO UPDATE SET transcript = excluded.transcript, updated_at = excluded.updated_at
 	`
 	deleteAssistantSessionQuery = `DELETE FROM assistant_session WHERE app_name = ?`
+
+	insertSnapshotQuery     = `INSERT INTO snapshot (id, app_name, label, created_at, auto) VALUES (?, ?, ?, ?, ?)`
+	selectSnapshotsQuery    = `SELECT id, app_name, label, created_at, auto FROM snapshot WHERE app_name = ? ORDER BY created_at DESC`
+	selectSnapshotQuery     = `SELECT id, app_name, label, created_at, auto FROM snapshot WHERE id = ?`
+	deleteSnapshotQuery     = `DELETE FROM snapshot WHERE id = ?`
+	deleteAppSnapshotsQuery = `DELETE FROM snapshot WHERE app_name = ?`
 )
 
 var (
 	// ErrAppNotFound is returned when an app does not exist in the registry
 	ErrAppNotFound = errors.New("app not found")
+	// ErrSnapshotNotFound is returned when a snapshot id does not exist
+	ErrSnapshotNotFound = errors.New("snapshot not found")
 )
 
 // Store is the SQLite-backed registry
@@ -180,6 +188,9 @@ func (s *Store) RemoveApp(name string) error {
 	if _, err := s.db.Exec(deleteAssistantSessionQuery, name); err != nil {
 		return err
 	}
+	if _, err := s.db.Exec(deleteAppSnapshotsQuery, name); err != nil {
+		return err
+	}
 	return s.RemoveTokensByApp(name)
 }
 
@@ -204,6 +215,69 @@ func (s *Store) SaveAssistantSession(appName, transcript string) error {
 func (s *Store) DeleteAssistantSession(appName string) error {
 	_, err := s.db.Exec(deleteAssistantSessionQuery, appName)
 	return err
+}
+
+// AddSnapshot records a new snapshot's metadata
+func (s *Store) AddSnapshot(snap *Snapshot) error {
+	_, err := s.db.Exec(insertSnapshotQuery, snap.ID, snap.AppName, snap.Label, snap.CreatedAt.Unix(), boolToInt(snap.Auto))
+	return err
+}
+
+// Snapshots lists an app's snapshots, newest first
+func (s *Store) Snapshots(appName string) ([]*Snapshot, error) {
+	rows, err := s.db.Query(selectSnapshotsQuery, appName)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var snaps []*Snapshot
+	for rows.Next() {
+		snap, err := scanSnapshot(rows)
+		if err != nil {
+			return nil, err
+		}
+		snaps = append(snaps, snap)
+	}
+	return snaps, rows.Err()
+}
+
+// Snapshot returns one snapshot by id, or ErrSnapshotNotFound
+func (s *Store) Snapshot(id string) (*Snapshot, error) {
+	snap, err := scanSnapshot(s.db.QueryRow(selectSnapshotQuery, id))
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrSnapshotNotFound
+	}
+	return snap, err
+}
+
+// DeleteSnapshot forgets one snapshot's metadata (the subvolume is removed by the
+// caller)
+func (s *Store) DeleteSnapshot(id string) error {
+	_, err := s.db.Exec(deleteSnapshotQuery, id)
+	return err
+}
+
+type scanner interface {
+	Scan(dest ...any) error
+}
+
+func scanSnapshot(row scanner) (*Snapshot, error) {
+	var snap Snapshot
+	var createdAt int64
+	var auto int
+	if err := row.Scan(&snap.ID, &snap.AppName, &snap.Label, &createdAt, &auto); err != nil {
+		return nil, err
+	}
+	snap.CreatedAt = time.Unix(createdAt, 0)
+	snap.Auto = auto != 0
+	return &snap, nil
+}
+
+func boolToInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
 }
 
 // Close closes the underlying database

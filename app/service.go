@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -118,6 +119,11 @@ type Manager struct {
 	stateFresh      time.Time
 	stateRefreshing bool
 
+	// btrfs detection is cached: whether AppsDir is btrfs decides if snapshots and
+	// hard qgroup quotas are available. On a plain ext4 host it stays false.
+	btrfsOnce sync.Once
+	btrfsOK   bool
+
 	mu      sync.Mutex // Protects memoryMB, diskMB
 	stateMu sync.Mutex // Protects stateCache, stateFresh, stateRefreshing
 	buildMu sync.Mutex // Serializes image builds; two at once OOM a small host
@@ -169,11 +175,24 @@ func (m *Manager) CreateApp(name string, opts *CreateOptions) (*store.App, error
 	// contiguous block derived from the (unique) port, so the container maps as a
 	// single offset and podman idmap-mounts the image instead of copying it.
 	home := filepath.Join(m.config.AppsDir, name)
+	// On btrfs the home is a subvolume (so it can be snapshotted and quota'd); the
+	// directory it creates is then adopted by useradd, whose own mkdir is a no-op.
+	if m.btrfsEnabled() {
+		if err := m.createSubvolume(home); err != nil {
+			return nil, fmt.Errorf("cannot create home subvolume for %s: %w", name, err)
+		}
+	}
 	if err := m.ops.CreateUser(name, home, m.uidFor(port)); err != nil {
+		if m.btrfsEnabled() {
+			_ = m.deleteSubvolume(home)
+		}
 		return nil, fmt.Errorf("cannot create user %s: %w", name, err)
 	}
 	cleanup := func() {
 		_ = m.ops.DeleteUser(name)
+		if m.btrfsEnabled() {
+			m.deleteAppSubvolumes(name)
+		}
 	}
 	if err := m.ops.WriteAuthorizedKeys(name, home, sshKeys); err != nil {
 		cleanup()
@@ -231,6 +250,12 @@ func (m *Manager) DeleteApp(name string) error {
 	// systemd still knows about keeps retrying a container that is gone
 	_, _ = m.runner.Run("systemctl", "reset-failed", unitName(name))
 	_, _ = m.runner.Run("podman", "rm", "--force", containerName(name))
+	// On btrfs the home and snapshots are subvolumes that userdel's rm -rf cannot
+	// remove, so delete them first and leave an empty plain directory for userdel.
+	if m.btrfsEnabled() {
+		m.deleteAppSubvolumes(name)
+		_ = os.MkdirAll(m.appHome(name), homeMode)
+	}
 	if err := m.ops.DeleteUser(name); err != nil {
 		return fmt.Errorf("cannot delete user %s: %w", name, err)
 	}

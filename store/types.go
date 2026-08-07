@@ -43,6 +43,17 @@ type App struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+// Snapshot is one point-in-time btrfs snapshot of an app's home. Auto snapshots
+// (taken before a deploy/turn and hourly) are subject to retention; manual ones
+// (a deliberate, usually labelled save) are kept.
+type Snapshot struct {
+	ID        string    `json:"id"`
+	AppName   string    `json:"app_name"`
+	Label     string    `json:"label,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+	Auto      bool      `json:"auto"`
+}
+
 // User is a person who logs in via Google; limits are nil when the global
 // default applies
 type User struct {

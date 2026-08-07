@@ -27,6 +27,15 @@ type AppConfig struct {
 	Mode        Mode              `yaml:"mode"`        // How the app runs: ModeStatic (hostit serves PublicDir) or ModeApp (Run)
 	Run         string            `yaml:"run"`         // App mode: shell command, must listen on $PORT
 	Env         map[string]string `yaml:"env"`         // Extra environment variables
+	Snapshot    SnapshotHooks     `yaml:"snapshot"`    // Optional commands to quiesce/sync around a snapshot
+}
+
+// SnapshotHooks run in the app's container around a snapshot: Pre before it (to
+// flush or .backup a database into a consistent file), Post after (to clean up).
+// If Pre fails the snapshot is aborted, so a torn state is never captured.
+type SnapshotHooks struct {
+	Pre  string `yaml:"pre"`
+	Post string `yaml:"post"`
 }
 
 // LoadAppConfig parses and validates an app's hostit.yml. It takes the raw bytes
