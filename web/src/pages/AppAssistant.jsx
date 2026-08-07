@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { marked } from "marked";
 import DOMPurify from "dompurify";
+import { reduceChatEvent } from "../chat";
 
 // The in-browser coding agent. It POSTs a message to the daemon's assistant
 // endpoint and reads the loop back as Server-Sent Events -- the model's thinking,
@@ -302,6 +303,10 @@ const AppAssistant = ({ name, onClose, embedded = false, onPreviewRefresh }) => 
   const scrollRef = useRef(null);
   const taRef = useRef(null);
   const fileRef = useRef(null);
+  const itemsRef = useRef(items); // mirrors items, so same-tick events chain correctly
+  useEffect(() => {
+    itemsRef.current = items;
+  }, [items]);
 
   // Grow the input with its content, up to a few lines, then scroll. Only show a
   // scrollbar once it actually overflows the cap, not at rest.
@@ -340,7 +345,8 @@ const AppAssistant = ({ name, onClose, embedded = false, onPreviewRefresh }) => 
   }, [items, busy]);
 
   // Apply one streamed event. The run is server-owned and broadcast, so these
-  // arrive for anyone's turn on this app, not just ours.
+  // arrive for anyone's turn on this app, not just ours. itemsRef mirrors items so
+  // several events in one tick chain correctly and the reducer sees fresh state.
   const handleEvent = useCallback((ev) => {
     if (ev.type === "done") {
       setBusy(false);
@@ -349,36 +355,20 @@ const AppAssistant = ({ name, onClose, embedded = false, onPreviewRefresh }) => 
     }
     if (ev.type === "error") {
       setBusy(false);
-      setItems((prev) => [...prev, { id: prev.length, kind: "error", text: ev.error }]);
+      const next = [...itemsRef.current, { id: itemsRef.current.length, kind: "error", text: ev.error }];
+      itemsRef.current = next;
+      setItems(next);
       return;
     }
     setBusy(true);
-    setItems((prev) => {
-      const next = [...prev];
-      if (ev.type === "tool_result") {
-        for (let i = next.length - 1; i >= 0; i--) {
-          if (next[i].kind === "tool" && next[i].output == null) {
-            next[i] = { ...next[i], output: ev.output ?? "", isError: ev.is_error };
-            return next;
-          }
-        }
-        return next;
-      }
-      if (ev.type === "user") next.push({ id: next.length, kind: "user", text: ev.text });
-      else if (ev.type === "thinking" && (ev.text || "").trim()) next.push({ id: next.length, kind: "thinking", text: ev.text });
-      else if (ev.type === "text") next.push({ id: next.length, kind: "text", text: ev.text });
-      else if (ev.type === "tool_use") {
-        next.push({ id: next.length, kind: "tool", tool: ev.tool, input: ev.input, output: null });
-        // A deploy or an explicit refresh means the live preview is now stale; ask
-        // the page hosting us to reload it. (A deploy also bumps app_started_at, so
-        // this is belt-and-suspenders; a static-file refresh has only this signal.)
-        if ((ev.tool === "deploy" || ev.tool === "refresh_preview") && onPreviewRefresh) {
-          onPreviewRefresh();
-        }
-      }
-      return next;
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const { items: next, refreshPreview } = reduceChatEvent(itemsRef.current, ev);
+    itemsRef.current = next;
+    setItems(next);
+    // Reload the live preview only once a deploy/refresh has finished (tool_result),
+    // so it shows the new content and not a mid-deploy snapshot.
+    if (refreshPreview && onPreviewRefresh) {
+      onPreviewRefresh();
+    }
   }, [loadTranscript, onPreviewRefresh]);
 
   // Live event stream (SSE). Every watcher subscribes, so a run started on any
