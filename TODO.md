@@ -45,19 +45,6 @@ The dashboard can create, manage and delete apps and drive them in the browser
   `/files/{path}` reads/writes one, so the API is there. A tree/list view with
   view-edit-upload-delete would make small changes (fix a line in `public/`,
   drop in a file) possible without SSH or an agent.
-- **Bug: assistant tool-group count flickers.** In the chat transcript, when a
-  collapsed tool group grows (e.g. "2 actions" -> "3 actions" as the next tool
-  streams in), the chip flickers. Likely the group re-renders/remounts as the
-  streamed items are folded into a group in `renderTranscript`/`ToolGroup`
-  (AppAssistant.jsx) -- stabilise the group's key/identity so the count updates
-  in place instead of the chip briefly disappearing.
-- **Finish the "Network error" recovery.** The app-detail page already heals a
-  transient banner on the next good read, but the broader fix is still open:
-  don't surface *background*-poll failures (dashboard app-list refresh,
-  refreshAccount) as a persistent banner at all (only user-initiated actions),
-  and auto-recover -- retry / clear the error on the `online` and
-  `visibilitychange` (visible) events, and back off instead of hammering while
-  offline.
 - **Ask host-vs-build in the new-app modal.** When creating an app, let the owner
   pick their intent: "just host my existing app" or "build one here". The choice
   picks the default app-detail view (below) -- host leans on details/deploy, build

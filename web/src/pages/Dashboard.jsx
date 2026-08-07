@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { api } from "../api";
+import { api, isNetworkError } from "../api";
+import { useReconnect } from "../hooks";
 import { ErrorBanner, Loading, StatusDot, Wordmark } from "../components";
 
 // Same rule the server enforces (app.AppNamePattern)
@@ -132,9 +133,14 @@ const Dashboard = ({ account, refreshAccount }) => {
   const nameValid = nameRe.test(name);
 
   const load = useCallback(async () => {
+    if (!navigator.onLine) return; // offline: don't hammer, wait for reconnect
     try {
       setApps(await api.get("/api/apps"));
+      setError("");
     } catch (err) {
+      // A background poll: a transient network blip keeps the last list rather
+      // than flashing a sticky banner; only real errors surface.
+      if (isNetworkError(err)) return;
       setError(err.message);
     }
   }, []);
@@ -151,6 +157,7 @@ const Dashboard = ({ account, refreshAccount }) => {
       clearInterval(ticker);
     };
   }, [load]);
+  useReconnect(load); // refresh the list when connectivity or visibility returns
 
   const create = async (e) => {
     e.preventDefault();

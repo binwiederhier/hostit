@@ -1,6 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { api, ApiError } from "../api";
+import { api, ApiError, isNetworkError } from "../api";
+import { useReconnect } from "../hooks";
 import { CopyButton, ErrorBanner, Loading, Snippet, StatusDot } from "../components";
 import { useSetAppHeader } from "../appHeader";
 
@@ -896,6 +897,7 @@ const AppDetail = ({ account, refreshAccount }) => {
   }, []);
 
   const load = useCallback(async () => {
+    if (!navigator.onLine) return; // offline: don't hammer, wait for reconnect
     try {
       const fresh = await api.get(`/api/apps/${encodeURIComponent(name)}`);
       setApp(fresh);
@@ -904,7 +906,7 @@ const AppDetail = ({ account, refreshAccount }) => {
     } catch (err) {
       if (err instanceof ApiError && err.status === 404) {
         setMissing(true);
-      } else if (err instanceof ApiError && err.status === 0) {
+      } else if (isNetworkError(err)) {
         // A transient network blip -- the app or daemon restarting, a wifi hiccup.
         // Keep showing the last known state and let the next poll recover, rather
         // than flashing a scary "Network error" banner on every restart.
@@ -933,6 +935,7 @@ const AppDetail = ({ account, refreshAccount }) => {
       clearTimeout(toastTimer.current);
     };
   }, [load, scheduleCatchUp]);
+  useReconnect(load); // refresh when connectivity or visibility returns
 
   // The app process restarting (a deploy, restart or reboot) is our signal to
   // reload the preview: whatever changed is now live. Skip the very first read,

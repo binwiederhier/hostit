@@ -1,6 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { BrowserRouter, Link, Navigate, NavLink, Route, Routes, useLocation } from "react-router-dom";
-import { api, ApiError } from "./api";
+import { api, ApiError, isNetworkError } from "./api";
+import { useReconnect } from "./hooks";
 import { Loading, StatusDot, Wordmark } from "./components";
 import { getTheme, setTheme, THEMES } from "./theme";
 import { AppHeaderContext } from "./appHeader";
@@ -329,13 +330,20 @@ const App = () => {
   // app chrome from flashing on a white page while the account and xterm chunk load.
   const termPopout = window.location.pathname.match(/^\/app\/([^/]+)\/terminal\/?$/);
 
+  const loadedOnce = useRef(false); // have we ever loaded the account?
+
   const refreshAccount = useCallback(async () => {
     try {
       setAccount(await api.get("/api/account"));
+      loadedOnce.current = true;
       setError("");
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         setAccount(null);
+      } else if (isNetworkError(err) && loadedOnce.current) {
+        // A transient blip (e.g. the laptop just woke) after we've loaded once:
+        // keep the current view rather than dropping to the failure screen. It
+        // heals on the next poll or on reconnect.
       } else {
         setError(err.message);
         setAccount(undefined);
@@ -348,6 +356,9 @@ const App = () => {
       refreshAccount();
     }
   }, [refreshAccount, docsOnly, termPopout]);
+
+  // Recover when connectivity returns or the tab is shown again.
+  useReconnect(refreshAccount);
 
   if (termPopout) {
     // A dark, full-window fallback (same class the terminal itself uses) so the

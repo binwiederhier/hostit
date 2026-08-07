@@ -179,6 +179,13 @@ const ToolCall = ({ item }) => {
 // progress is visible, collapsed once done to keep the history tidy. Each call
 // inside stays individually expandable.
 const ToolGroup = ({ tools }) => {
+  // A lone tool call renders on its own, no group chrome -- but it still comes
+  // through ToolGroup so that as more calls stream into the run the element type
+  // at this position never switches (ToolCall <-> ToolGroup), which would remount
+  // and make the summary chip flicker.
+  if (tools.length === 1) {
+    return <ToolCall item={tools[0]} />;
+  }
   const running = tools.some((t) => t.output == null);
   const anyError = tools.some((t) => t.isError);
   const [override, setOverride] = useState(null); // null = follow the running state
@@ -221,11 +228,10 @@ const renderTranscript = (items) => {
         group.push(items[i]);
         i++;
       }
-      if (group.length === 1) {
-        out.push(<ToolCall key={group[0].id} item={group[0]} />);
-      } else {
-        out.push(<ToolGroup key={group[0].id} tools={group} />);
-      }
+      // Always a ToolGroup (it renders a bare ToolCall for a run of one), so a run
+      // growing from one call to many keeps the same element type and key here and
+      // updates in place instead of remounting.
+      out.push(<ToolGroup key={group[0].id} tools={group} />);
     } else {
       out.push(<Turn key={items[i].id} item={items[i]} />);
       i++;

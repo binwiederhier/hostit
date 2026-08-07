@@ -9,6 +9,11 @@ export class ApiError extends Error {
   }
 }
 
+// isNetworkError reports a transient connectivity failure (fetch rejected, status
+// 0) rather than a real HTTP error. Background polls swallow these instead of
+// showing a sticky banner, since connectivity usually returns on its own.
+export const isNetworkError = (err) => err instanceof ApiError && err.status === 0;
+
 const request = async (method, path, body) => {
   let res;
   try {
