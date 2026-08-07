@@ -655,10 +655,14 @@ p {
   background: var(--surface-2);
 }
 
-/* Links styled as buttons (e.g. "Manage") should not pick up link underlines */
-a.btn,
-a.btn:hover {
+/* Links styled as buttons (e.g. "Manage") should not pick up link underlines.
+   Keep display off the :hover state so it never out-specifies a layout an
+   ancestor sets (e.g. the top bar's inline-flex), which would re-flow on hover. */
+a.btn {
   display: inline-block;
+  text-decoration: none;
+}
+a.btn:hover {
   text-decoration: none;
 }
 
