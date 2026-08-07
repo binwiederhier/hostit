@@ -61,6 +61,15 @@ still means SSH or an external agent. These bring that into the browser.
   streamed items are folded into a group in `renderTranscript`/`ToolGroup`
   (AppAssistant.jsx) -- stabilise the group's key/identity so the count updates
   in place instead of the chip briefly disappearing.
+- **Bug: sticky "Network error" after the laptop wakes.** On resume, a background
+  poll (the dashboard app-list refresh, the app-detail 8s poll, or refreshAccount)
+  fires before the network is back; `fetch` rejects, `api.js` throws the ApiError
+  "Network error, check your connection and try again", and it lands in a sticky
+  ErrorBanner even though connectivity returns a second later. Fix: don't surface
+  transient *background*-poll failures as a persistent banner (only show it for
+  user-initiated actions), and auto-recover -- retry / clear the error on the
+  `online` and `visibilitychange` (visible) events, and back off instead of
+  hammering while offline.
 - **Rename "Dashboard" to "Apps", and make it an app switcher.** The nav link is
   really the app list, so call it "Apps". Turn it into a dropdown that lists the
   owner's apps (with status dots) so you can jump straight to any app -- especially
