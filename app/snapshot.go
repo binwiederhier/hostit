@@ -18,6 +18,11 @@ const (
 	snapshotHookTimeout = 30 * time.Second
 	// snapshotDirMode is the mode of the .snapshots/<app> directory
 	snapshotDirMode = 0o700
+	// rollbackStagedSuffix names the writable copy of a rollback target, built
+	// beside the home before the home is touched; rollbackOldSuffix names the old
+	// home moved aside during the swap. Both are cleaned up as the rollback proceeds.
+	rollbackStagedSuffix = ".rollback-staged"
+	rollbackOldSuffix    = ".rollback-old"
 )
 
 // ErrSnapshotsUnavailable is returned when snapshots are asked for on a host whose
@@ -32,6 +37,13 @@ func (m *Manager) SnapshotsEnabled() bool { return m.btrfsEnabled() }
 // prune). The app's snapshot.pre hook runs first and aborts the snapshot if it
 // fails, so a torn state is never captured; snapshot.post runs after (best effort).
 func (m *Manager) TakeSnapshot(name, label string, auto bool) (*store.Snapshot, error) {
+	defer m.lockApp(name)()
+	return m.takeSnapshot(name, label, auto)
+}
+
+// takeSnapshot is TakeSnapshot without the per-app lock, for callers that already
+// hold it (up, rollback).
+func (m *Manager) takeSnapshot(name, label string, auto bool) (*store.Snapshot, error) {
 	if !m.btrfsEnabled() {
 		return nil, ErrSnapshotsUnavailable
 	}
@@ -85,6 +97,7 @@ func (m *Manager) DeleteSnapshot(name, id string) error {
 	if !m.btrfsEnabled() {
 		return ErrSnapshotsUnavailable
 	}
+	defer m.lockApp(name)()
 	snap, err := m.store.Snapshot(id)
 	if err != nil {
 		return err
@@ -98,14 +111,24 @@ func (m *Manager) DeleteSnapshot(name, id string) error {
 	return m.store.DeleteSnapshot(id)
 }
 
-// Rollback restores an app's home from a snapshot. It first takes a safety snapshot
-// of the current state (so a rollback is itself undoable), then stops the app,
-// replaces the home subvolume with a writable copy of the snapshot, restores its
-// ownership and quota, and brings the app back up.
+// Rollback restores an app's home from a snapshot. The replacement is built and
+// swapped in atomically so a failure never leaves the app without a home:
+//
+//  1. stage a writable copy of the target snapshot (before touching the home, and
+//     before the safety snapshot -- whose retention prune could otherwise delete
+//     the very target being restored);
+//  2. take a safety snapshot of the current state (so the rollback is itself undoable);
+//  3. stop the container, then swap: move the live home aside, move the staged copy
+//     in, and only then drop the old home;
+//  4. restore ownership and quota and bring the app back up.
+//
+// The per-app lock serializes this against concurrent deploys/snapshots on the app.
 func (m *Manager) Rollback(name, id string) error {
 	if !m.btrfsEnabled() {
 		return ErrSnapshotsUnavailable
 	}
+	defer m.lockApp(name)()
+
 	snap, err := m.store.Snapshot(id)
 	if err != nil {
 		return err
@@ -119,9 +142,22 @@ func (m *Manager) Rollback(name, id string) error {
 	}
 	defer m.stateChanged(name)
 
+	home := m.appHome(name)
+	staged := home + rollbackStagedSuffix
+	oldHome := home + rollbackOldSuffix
+
+	// Stage the restored home from the target first, so the live home stays intact
+	// until the replacement is ready, and the content is safely captured before the
+	// safety snapshot's retention prune (which could remove the target).
+	_ = m.deleteSubvolume(staged) // clear any leftover from an aborted rollback
+	if err := m.snapshotSubvolume(m.snapshotPath(name, id), staged, false); err != nil {
+		return fmt.Errorf("cannot stage the snapshot for rollback: %w", err)
+	}
+
 	// The safety snapshot is itself automatic (retention prunes it in time) and
 	// labelled so the owner can see what it captured.
-	if _, err := m.TakeSnapshot(name, "Before rolling back to snapshot "+id, true); err != nil {
+	if _, err := m.takeSnapshot(name, "Before rolling back to snapshot "+id, true); err != nil {
+		_ = m.deleteSubvolume(staged)
 		return fmt.Errorf("cannot take a safety snapshot before rolling back: %w", err)
 	}
 
@@ -130,13 +166,19 @@ func (m *Manager) Rollback(name, id string) error {
 	_, _ = m.runner.Run("systemctl", "reset-failed", unitName(name))
 	_, _ = m.runner.Run("podman", "rm", "--force", containerName(name))
 
-	home := m.appHome(name)
-	if err := m.deleteSubvolume(home); err != nil {
-		return fmt.Errorf("cannot clear the current home: %w", err)
+	// Swap the staged home in. Move the old home aside first so the home always
+	// exists (old or new): if putting the new one in place fails, restore the old.
+	_ = m.deleteSubvolume(oldHome)
+	if err := m.moveSubvolume(home, oldHome); err != nil {
+		_ = m.deleteSubvolume(staged)
+		return fmt.Errorf("cannot move the current home aside: %w", err)
 	}
-	if err := m.snapshotSubvolume(m.snapshotPath(name, id), home, false); err != nil {
-		return fmt.Errorf("cannot restore the snapshot: %w", err)
+	if err := m.moveSubvolume(staged, home); err != nil {
+		_ = m.moveSubvolume(oldHome, home) // put the original home back
+		return fmt.Errorf("cannot put the restored home in place: %w", err)
 	}
+	_ = m.deleteSubvolume(oldHome)
+
 	uid := m.uidFor(a.Port)
 	if _, err := m.runner.Run("chown", "-R", fmt.Sprintf("%d:%d", uid, uid), home); err != nil {
 		slog.Warn("Cannot restore home ownership after rollback", "app", name, "error", err)
@@ -144,7 +186,8 @@ func (m *Manager) Rollback(name, id string) error {
 	if err := m.setQuota(home, m.diskLimit(name)); err != nil {
 		slog.Warn("Cannot restore quota after rollback", "app", name, "error", err)
 	}
-	_, err = m.Up(name)
+	// No extra pre-deploy snapshot: we already took the safety snapshot above.
+	_, err = m.up(name, false)
 	return err
 }
 

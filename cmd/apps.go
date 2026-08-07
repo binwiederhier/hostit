@@ -127,6 +127,12 @@ var (
 				Action:    execRemoveSnapshot,
 			},
 			{
+				Name:      "fork",
+				Usage:     "Duplicate an app into a new one (seeds its home from the source; needs a btrfs host)",
+				ArgsUsage: "<source> <new-name>",
+				Action:    execFork,
+			},
+			{
 				Name:      "logs",
 				Usage:     "Show the app's recent output",
 				ArgsUsage: "<name>",
@@ -290,6 +296,22 @@ func execRollback(c *cli.Context) error {
 		return err
 	}
 	fmt.Printf("%s: rolled back to %s\n", c.Args().First(), c.Args().Get(1))
+	return nil
+}
+
+func execFork(c *cli.Context) error {
+	cl, err := appsClient(c)
+	if err != nil {
+		return err
+	}
+	if c.NArg() != 2 {
+		return errors.New("usage: hostit apps fork <source> <new-name>")
+	}
+	a, err := cl.Fork(c.Args().First(), c.Args().Get(1))
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Forked %s into %s (%s)\n", c.Args().First(), a.Name, a.URL)
 	return nil
 }
 

@@ -62,6 +62,7 @@ func (s *Server) newAPIHandler() http.Handler {
 	route(mux, "DELETE", "/apps/{name}", s.requireActive(s.handleAppsDelete))
 	route(mux, "PUT", "/apps/{name}/keys", s.requireActive(s.handleAppsSetKeys))
 	route(mux, "POST", "/apps/{name}/token", s.requireActive(s.handleAppsRotateToken))
+	route(mux, "POST", "/apps/{name}/fork", s.requireActive(s.handleAppsFork))
 	route(mux, "GET", "/apps/{name}/terminal", s.requireActive(s.handleTerminal))
 	route(mux, "GET", "/apps/{name}/assistant", s.requireActive(s.handleAssistantTranscript))
 	route(mux, "GET", "/apps/{name}/assistant/stream", s.requireActive(s.handleAssistantStream))
@@ -138,6 +139,45 @@ func (s *Server) handleAppsCreate(w http.ResponseWriter, r *http.Request, c *cal
 	slog.Info("App created", "app", a.Name, "port", a.Port, "owner", c.userID())
 	resp := s.appResponse(a)
 	resp.AgentToken = s.agentToken(a) // Created with the app, never a separate step
+	writeJSON(w, http.StatusCreated, resp)
+}
+
+// handleAppsFork duplicates an owned app into a new one, seeding its home from a
+// snapshot of the source's current home. Requires a btrfs host (501 otherwise).
+func (s *Server) handleAppsFork(w http.ResponseWriter, r *http.Request, c *caller) {
+	source, err := s.ownedApp(c, r.PathValue("name"))
+	if err != nil {
+		writeAppError(w, err)
+		return
+	}
+	var req apiForkAppRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if err := s.checkAppLimit(c); err != nil {
+		writeAppError(w, err)
+		return
+	}
+	profileKeys, err := s.users.KeyStrings(c.userID())
+	if err != nil {
+		writeAppError(w, err)
+		return
+	}
+	memoryMB, err := s.callerMemoryLimit(c)
+	if err != nil {
+		writeAppError(w, err)
+		return
+	}
+	opts := &app.CreateOptions{OwnerID: c.userID(), ProfileKeys: profileKeys, MemoryMB: memoryMB}
+	a, err := s.apps.Fork(source.Name, req.NewName, opts)
+	if err != nil {
+		writeSnapshotError(w, err) // ErrSnapshotsUnavailable -> 501; the rest fall through
+		return
+	}
+	slog.Info("App forked", "source", source.Name, "app", a.Name, "owner", c.userID())
+	resp := s.appResponse(a)
+	resp.AgentToken = s.agentToken(a)
 	writeJSON(w, http.StatusCreated, resp)
 }
 

@@ -54,6 +54,11 @@ type createAppRequest struct {
 	SSHKeys []string `json:"ssh_keys,omitempty"`
 }
 
+// forkAppRequest mirrors the server's POST /api/apps/{name}/fork body
+type forkAppRequest struct {
+	NewName string `json:"new_name"`
+}
+
 // setKeysRequest mirrors the server's PUT /api/apps/{name}/keys body
 type setKeysRequest struct {
 	SSHKeys []string `json:"ssh_keys"`

@@ -22,6 +22,14 @@ const (
 // Up deploys the app from its hostit.yml: builds images as needed, recreates the
 // container if its configuration changed, and (re)starts or reloads the service
 func (m *Manager) Up(name string) (string, error) {
+	defer m.lockApp(name)()
+	return m.up(name, true)
+}
+
+// up is Up without the per-app lock, for callers that already hold it (rollback).
+// snapshot controls the pre-deploy safety snapshot: rollback passes false, having
+// already taken its own safety snapshot of the pre-rollback state.
+func (m *Manager) up(name string, snapshot bool) (string, error) {
 	defer m.stateChanged(name)
 	a, err := m.store.App(name)
 	if err != nil {
@@ -33,8 +41,8 @@ func (m *Manager) Up(name string) (string, error) {
 	}
 	// Snapshot the current state before applying the new config, so a bad deploy is
 	// undoable. Best effort: a snapshot failure must not block the deploy.
-	if m.btrfsEnabled() {
-		if _, err := m.TakeSnapshot(name, "", true); err != nil {
+	if snapshot && m.btrfsEnabled() {
+		if _, err := m.takeSnapshot(name, "", true); err != nil {
 			slog.Warn("Pre-deploy snapshot failed", "app", name, "error", err)
 		}
 	}

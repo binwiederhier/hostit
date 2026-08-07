@@ -44,6 +44,16 @@ func (c *Client) CreateApp(name string, sshKeys []string) (*App, error) {
 	return &app, nil
 }
 
+// Fork duplicates an app into newName, seeding its home from the source's current home
+func (c *Client) Fork(source, newName string) (*App, error) {
+	var app App
+	err := c.request("POST", "/api/apps/"+url.PathEscape(source)+"/fork", &forkAppRequest{NewName: newName}, &app)
+	if err != nil {
+		return nil, err
+	}
+	return &app, nil
+}
+
 // Apps lists all apps
 func (c *Client) Apps() ([]*App, error) {
 	apps := make([]*App, 0)

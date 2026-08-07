@@ -1,0 +1,73 @@
+package app
+
+import (
+	"fmt"
+	"os"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"heckel.io/hostit/store"
+)
+
+func TestForkSeedsHomeFromSourceAndDeploys(t *testing.T) {
+	t.Parallel()
+	m, ops, r := newTestDeployManager(t)
+	r.returns("stat -f", "btrfs\n")
+	r.failOn("container inspect", assert.AnError) // no container yet -> Up creates one
+	require.NoError(t, m.store.AddApp(&store.App{Name: "blog", Port: 10000, Host: store.HostLocal}))
+	require.NoError(t, os.MkdirAll(m.appHome("blog"), 0o755))
+	// The fake runner never touches disk, so stand in for the snapshot's on-disk
+	// effect: the forked home exists with the source's files, so the deploy resolves.
+	require.NoError(t, os.MkdirAll(m.appHome("blog2"), 0o755))
+	writeAppFile(t, m, "blog2", "hostit.yml", "mode: app\nrun: ./server")
+
+	fork, err := m.Fork("blog", "blog2", &CreateOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, "blog2", fork.Name)
+
+	// The home is seeded from a WRITABLE snapshot of the source home, not read-only.
+	assert.Contains(t, r.ran(), "btrfs subvolume snapshot "+m.appHome("blog")+" "+m.appHome("blog2"))
+	assert.NotContains(t, r.ran(), "btrfs subvolume snapshot -r "+m.appHome("blog")+" "+m.appHome("blog2"))
+
+	// A user is created, but no demo scaffold is written (the fork keeps the source's files).
+	assert.Contains(t, ops.createdUsers, "blog2")
+	assert.Empty(t, ops.scaffolds["blog2"], "a fork keeps the source's files, no demo scaffold")
+
+	// The app is registered and deploys; its home is chowned to the new uid.
+	_, err = m.store.App("blog2")
+	require.NoError(t, err)
+	require.Eventually(t, func() bool {
+		return strings.Contains(r.ran(), "hostit-app@blog2")
+	}, 5*time.Second, 5*time.Millisecond, "the forked app did not deploy")
+	uid := m.uidFor(fork.Port)
+	assert.Contains(t, r.ran(), fmt.Sprintf("chown -R %d:%d %s", uid, uid, m.appHome("blog2")))
+}
+
+func TestForkRequiresBtrfs(t *testing.T) {
+	t.Parallel()
+	m, _, _ := newTestDeployManager(t)
+	require.NoError(t, m.store.AddApp(&store.App{Name: "blog", Port: 10000, Host: store.HostLocal}))
+	_, err := m.Fork("blog", "blog2", &CreateOptions{})
+	assert.ErrorIs(t, err, ErrSnapshotsUnavailable)
+}
+
+func TestForkUnknownSourceFails(t *testing.T) {
+	t.Parallel()
+	m, _, r := newTestDeployManager(t)
+	r.returns("stat -f", "btrfs\n")
+	_, err := m.Fork("nope", "blog2", &CreateOptions{})
+	assert.ErrorIs(t, err, store.ErrAppNotFound)
+}
+
+func TestForkRejectsExistingName(t *testing.T) {
+	t.Parallel()
+	m, _, r := newTestDeployManager(t)
+	r.returns("stat -f", "btrfs\n")
+	require.NoError(t, m.store.AddApp(&store.App{Name: "blog", Port: 10000, Host: store.HostLocal}))
+	require.NoError(t, m.store.AddApp(&store.App{Name: "blog2", Port: 10001, Host: store.HostLocal}))
+	_, err := m.Fork("blog", "blog2", &CreateOptions{})
+	assert.ErrorIs(t, err, ErrAppExists)
+}

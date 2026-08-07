@@ -38,43 +38,26 @@ The plan predating this file is `~/Code/plans/260804-hostit-multiuser.md`.
 
 ## Web app
 
-The dashboard can create, manage and delete apps, but working *inside* an app
-still means SSH or an external agent. These bring that into the browser.
+The dashboard can create, manage and delete apps and drive them in the browser
+(chat, terminal). These round out the in-browser experience.
 
-- **Terminal in the browser.** The app page shows an `ssh <app>@host` command;
-  a real terminal (xterm.js talking to a WebSocket the daemon bridges to
-  `podman exec -it` in the app's container) would give the owner a shell without
-  leaving the dashboard. Same isolation as `hostit-shell`: exec into the app's
-  own container as its uid, cookie-auth on our origin, scoped to an owned app.
 - **File browser.** `GET /api/apps/{app}/files` already lists a directory and
   `/files/{path}` reads/writes one, so the API is there. A tree/list view with
   view-edit-upload-delete would make small changes (fix a line in `public/`,
   drop in a file) possible without SSH or an agent.
-- **Optional built-in agent (claude-code-style).** A chat panel on the app page
-  that drives the app's own REST API with its app-scoped token -- the pasteable
-  prompt, but hosted -- so a non-technical owner can say "make me a landing page"
-  without wiring up an external agent. Needs an LLM backend + config; the app
-  token already confines it to one app, which is most of the scoping done.
 - **Bug: assistant tool-group count flickers.** In the chat transcript, when a
   collapsed tool group grows (e.g. "2 actions" -> "3 actions" as the next tool
   streams in), the chip flickers. Likely the group re-renders/remounts as the
   streamed items are folded into a group in `renderTranscript`/`ToolGroup`
   (AppAssistant.jsx) -- stabilise the group's key/identity so the count updates
   in place instead of the chip briefly disappearing.
-- **Bug: sticky "Network error" after the laptop wakes.** On resume, a background
-  poll (the dashboard app-list refresh, the app-detail 8s poll, or refreshAccount)
-  fires before the network is back; `fetch` rejects, `api.js` throws the ApiError
-  "Network error, check your connection and try again", and it lands in a sticky
-  ErrorBanner even though connectivity returns a second later. Fix: don't surface
-  transient *background*-poll failures as a persistent banner (only show it for
-  user-initiated actions), and auto-recover -- retry / clear the error on the
-  `online` and `visibilitychange` (visible) events, and back off instead of
-  hammering while offline.
-- **Rename "Dashboard" to "Apps", and make it an app switcher.** The nav link is
-  really the app list, so call it "Apps". Turn it into a dropdown that lists the
-  owner's apps (with status dots) so you can jump straight to any app -- especially
-  handy from an app detail page -- instead of going back to the list first. The
-  item still navigates to the list on click; the caret opens the switcher.
+- **Finish the "Network error" recovery.** The app-detail page already heals a
+  transient banner on the next good read, but the broader fix is still open:
+  don't surface *background*-poll failures (dashboard app-list refresh,
+  refreshAccount) as a persistent banner at all (only user-initiated actions),
+  and auto-recover -- retry / clear the error on the `online` and
+  `visibilitychange` (visible) events, and back off instead of hammering while
+  offline.
 - **Ask host-vs-build in the new-app modal.** When creating an app, let the owner
   pick their intent: "just host my existing app" or "build one here". The choice
   picks the default app-detail view (below) -- host leans on details/deploy, build
@@ -100,18 +83,6 @@ still means SSH or an external agent. These bring that into the browser.
   (not a 500), and the UI should hide or disable the chat surface (and default the
   app-detail view away from the split/chat layout) so a server without a key is
   still fully usable for hosting.
-- **Small screens: fold the app top bar into the nav.** On an app detail page,
-  phones currently show two stacked bars -- the hostit logo nav, then the app's own
-  back+name+controls bar -- which eats vertical space. On small screens put the
-  back button and app name where the hostit logo sits (replacing it) so there is a
-  single top bar; the avatar menu still gets you home.
-- **Dark mode.** styles.css already defines dark tokens under
-  `@media (prefers-color-scheme: dark)`, so the app half-follows the OS today.
-  Finish it: audit every surface for contrast (the terminal/preview panes, the
-  gradient avatar, the resource gauges, code/pre blocks), add an explicit
-  light/dark/system toggle (in the profile menu) that persists and stamps
-  `data-theme` on the root, and make sure published-artifact-style embeds and the
-  iframe preview do not clash.
 - **Semi-live app previews on the dashboard.** Thumbnails of each app in the list.
   Browser-side screenshotting is out (the app iframe is a different origin, so its
   pixels can't be read). Two workable options: (A) scaled-down live sandboxed
@@ -122,55 +93,17 @@ still means SSH or an external agent. These bring that into the browser.
   a heavy dep that breaks the single-binary property, so it'd be an optional
   sidecar. Start with A.
 
-## Hard disk quotas
-
-Today the quota is soft: a background walk measures each app's home
-periodically and stops the container once it is over. So an app can write
-several GB and only later get shut down -- the writes are not actually
-prevented, and the box can fill in between checks. It should refuse the write
-at the limit (EDQUOT) instead.
-
-- **ext4 project quotas** are the fit (the box is ext4): enable `prjquota`,
-  give each app home a project id and a block limit, and writes past it fail
-  immediately. Container root is the app's host uid, and writes land as that
-  uid in the bind-mounted home, so the quota follows the files correctly.
-- Alternatives if project quotas are awkward: a per-app fixed-size loopback
-  ext4 image mounted at the home (hard cap, heavier), or moving app data onto
-  XFS with project quotas.
-- Either way `disk_mb` becomes the enforced limit rather than the shut-down
-  threshold; the periodic walk stays only for *reporting* usage, and the
-  "stop when over quota" behaviour goes away.
-
 ## Smaller things
 
-- **Rollback: source tracking or snapshots.** After the assistant (or the owner)
-  changes an app, there is no undo. Give people a way back, either:
-  (A) **automated source tracking** -- keep the app's home under git and auto-commit
-  on every deploy/assistant change (and maybe every write_file), so history is
-  visible and any point is restorable (`git revert`/checkout); cheap, diffable, and
-  natural for code, but not for large data/binaries; or
-  (B) **snapshots/backups** -- periodic (and pre-deploy) snapshots of the app's home
-  (btrfs/zfs subvolume snapshot, or a tarball to object storage) that can be
-  restored wholesale; covers data too, but coarser and heavier. A good first cut is
-  A for the source plus a pre-deploy snapshot as a safety net, surfaced in the UI as
-  "restore to <time>".
 - **Dev/stage -> promote to prod (the "we work in prod" problem).** Right now the
   only copy of an app is the live one, so every edit (and every assistant change) is
   in production. Give each app an optional **staging** environment -- its own
   container + subdomain (e.g. `stage.<app>.<base>` or `<app>-stage`) sharing nothing
   live -- where changes and deploys land first, then a **Promote** action swaps it
   into prod atomically (blue/green: build/verify on stage, then flip the proxy /
-  rename, keeping the old prod as instant rollback). Ties into rollback and fork
-  below. Big feature; likely a `hostit promote` verb + a store notion of two
-  environments per app.
-- **Fork an app / container.** Duplicate an existing app into a new one: snapshot
-  its home and seed a new app (fresh subdomain, Unix user, container) from that copy.
-  The btrfs snapshot primitive this needs is now in place (see snapshots/rollback);
-  what's left is a no-scaffold create path (create the app but seed the home from a
-  snapshot instead of the stub, avoiding the create-time demo-deploy) plus the
-  `hostit fork` CLI, `POST /api/apps/{app}/fork`, and later a UI button. Decide data
-  handling (copy the home wholesale vs. code-only). This was deliberately deferred
-  out of the snapshots branch to keep that shippable.
+  rename, keeping the old prod as instant rollback). Ties into the fork primitive
+  (a stage is a fork that promotes back). Big feature; likely a `hostit promote`
+  verb + a store notion of two environments per app.
 - **Rename an app.** Let an owner rename an existing app. The name is the app's
   identity today -- subdomain, Unix user, home directory, container name, TLS cert,
   authorized_keys, the app-scoped token's `app_name`, the assistant session -- so a
@@ -207,3 +140,14 @@ at the limit (EDQUOT) instead.
   need to persist (a per-app overlay/commit, or a documented `prepare:` step that
   reinstalls them on build). Minimum viable: add node to a new image tag, default new
   apps to it, leave existing apps pinned to their current tag.
+
+## Done (recent)
+
+Kept briefly for context; prune when stale.
+
+- Btrfs storage model: per-app home subvolumes, snapshots (manual + auto), rollback
+  (atomic, safety-snapshotted), hard qgroup disk quotas (EDQUOT), GFS retention,
+  `hostit.yml` snapshot hooks, and **fork** (duplicate an app from a snapshot of its
+  home). API + CLI + assistant tools + snapshot dialog.
+- Web: in-browser terminal, built-in assistant, dark mode toggle, Apps switcher,
+  mobile top-bar fold.

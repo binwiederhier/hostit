@@ -437,6 +437,17 @@ subvolume, which unlocks two things:
     post: "rm -f data/app.snap.db"                              # clean up after
   ```
 
+- **Fork.** Duplicate an app into a new one, seeding its home from a snapshot of the
+  source's current files. The fork gets its own subdomain, Unix user and container,
+  and the two run independently from there. Reached from the snapshot menu on the app
+  page, the CLI, or the REST API:
+
+  ```sh
+  hostit apps fork myapp myapp-copy                  # seed a new app from myapp
+  ```
+
+  (`POST /api/apps/{app}/fork` with `{"new_name": "..."}`.)
+
 - **Hard disk quotas.** The app's `disk_mb` limit is enforced by a btrfs qgroup, so
   a write past it fails immediately (EDQUOT) instead of the app being stopped later
   by a periodic sweep. (On a non-btrfs host, snapshots are unavailable and the older

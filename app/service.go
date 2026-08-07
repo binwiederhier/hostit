@@ -124,10 +124,16 @@ type Manager struct {
 	btrfsOnce sync.Once
 	btrfsOK   bool
 
-	mu      sync.Mutex // Protects memoryMB, diskMB
-	stateMu sync.Mutex // Protects stateCache, stateFresh, stateRefreshing
-	buildMu sync.Mutex // Serializes image builds; two at once OOM a small host
-	execMu  sync.Mutex // Serializes /run commands; they are builds, and the box has one core
+	// appLocks serializes mutating lifecycle work per app (deploy, snapshot,
+	// rollback, delete), so operations on one app's home never interleave -- e.g. a
+	// rollback deleting the home while a deploy writes into it.
+	appLocks map[string]*sync.Mutex
+
+	mu         sync.Mutex // Protects memoryMB, diskMB
+	stateMu    sync.Mutex // Protects stateCache, stateFresh, stateRefreshing
+	buildMu    sync.Mutex // Serializes image builds; two at once OOM a small host
+	execMu     sync.Mutex // Serializes /run commands; they are builds, and the box has one core
+	appLocksMu sync.Mutex // Protects appLocks
 }
 
 // NewManager creates a Manager
@@ -140,7 +146,24 @@ func NewManager(conf *config.Config, s *store.Store, ops SystemOps, runner Runne
 		memoryMB:   make(map[string]int),
 		diskMB:     make(map[string]int),
 		stateCache: make(map[string]State),
+		appLocks:   make(map[string]*sync.Mutex),
 	}
+}
+
+// lockApp acquires the per-app lifecycle lock and returns its unlock func, so
+// deploy/snapshot/rollback/delete on one app run one at a time and never race on
+// its home subvolume. It is NOT reentrant: a method already holding the lock must
+// call the unlocked helpers (up, takeSnapshot), not the public locking ones.
+func (m *Manager) lockApp(name string) func() {
+	m.appLocksMu.Lock()
+	mu := m.appLocks[name]
+	if mu == nil {
+		mu = &sync.Mutex{}
+		m.appLocks[name] = mu
+	}
+	m.appLocksMu.Unlock()
+	mu.Lock()
+	return mu.Unlock
 }
 
 // CreateApp registers a new app: it allocates a port, creates the Unix user with
@@ -154,6 +177,34 @@ func (m *Manager) uidFor(port int) int {
 }
 
 func (m *Manager) CreateApp(name string, opts *CreateOptions) (*store.App, error) {
+	return m.create(name, opts, "")
+}
+
+// Fork duplicates an existing app into a new one: the new app's home is seeded
+// from a writable btrfs snapshot of the source's current home (its files, config
+// and data) rather than the demo scaffold. It gets its own port, Unix user,
+// subdomain and container. Requires btrfs (the snapshot primitive it relies on).
+func (m *Manager) Fork(source, newName string, opts *CreateOptions) (*store.App, error) {
+	if !m.btrfsEnabled() {
+		return nil, ErrSnapshotsUnavailable
+	}
+	if _, err := m.store.App(source); err != nil {
+		return nil, err
+	}
+	// Lock the source so its home is not rolled back or deleted mid-copy; the new
+	// app's own deploy runs under its own lock in the background.
+	defer m.lockApp(source)()
+	return m.create(newName, opts, source)
+}
+
+// create registers a new app. With source == "" it scaffolds the demo app; with
+// a source app name it forks -- seeding the home from a writable snapshot of that
+// app's home and skipping the scaffold. Either way it allocates a port, creates
+// the Unix user with SSH access, registers the app and starts it in the background.
+// The authorized_keys are the union of the request keys and the owner's profile
+// keys; an app with neither is fine, since apps are driven through the API and SSH
+// is opt-in.
+func (m *Manager) create(name string, opts *CreateOptions, source string) (*store.App, error) {
 	if opts == nil {
 		opts = &CreateOptions{}
 	}
@@ -170,14 +221,21 @@ func (m *Manager) CreateApp(name string, opts *CreateOptions) (*store.App, error
 
 	appKeys := opts.RequestKeys
 	sshKeys := append(append([]string{}, appKeys...), opts.ProfileKeys...)
+	forking := source != ""
 
-	// Create the user, install keys and scaffold the home directory. The uid is a
+	// Create the user, install keys and populate the home directory. The uid is a
 	// contiguous block derived from the (unique) port, so the container maps as a
 	// single offset and podman idmap-mounts the image instead of copying it.
 	home := filepath.Join(m.config.AppsDir, name)
-	// On btrfs the home is a subvolume (so it can be snapshotted and quota'd); the
-	// directory it creates is then adopted by useradd, whose own mkdir is a no-op.
-	if m.btrfsEnabled() {
+	// Seed the home. A fork is a writable snapshot of the source's home (an instant
+	// CoW copy of its files); a fresh app is an empty subvolume on btrfs that the
+	// scaffold then fills. Either directory is adopted by useradd, whose own mkdir
+	// is a no-op.
+	if forking {
+		if err := m.snapshotSubvolume(m.appHome(source), home, false); err != nil {
+			return nil, fmt.Errorf("cannot seed %s from %s: %w", name, source, err)
+		}
+	} else if m.btrfsEnabled() {
 		if err := m.createSubvolume(home); err != nil {
 			return nil, fmt.Errorf("cannot create home subvolume for %s: %w", name, err)
 		}
@@ -198,9 +256,12 @@ func (m *Manager) CreateApp(name string, opts *CreateOptions) (*store.App, error
 		cleanup()
 		return nil, fmt.Errorf("cannot write authorized keys for %s: %w", name, err)
 	}
-	if err := m.ops.WriteScaffold(name, home, m.scaffoldFiles(name, port)); err != nil {
-		cleanup()
-		return nil, fmt.Errorf("cannot write scaffold for %s: %w", name, err)
+	// A fork keeps the source's files; only a fresh app gets the demo scaffold.
+	if !forking {
+		if err := m.ops.WriteScaffold(name, home, m.scaffoldFiles(name, port)); err != nil {
+			cleanup()
+			return nil, fmt.Errorf("cannot write scaffold for %s: %w", name, err)
+		}
 	}
 
 	// Register the app; roll back the user if this fails
@@ -215,22 +276,33 @@ func (m *Manager) CreateApp(name string, opts *CreateOptions) (*store.App, error
 		return nil, err
 	}
 	m.SetMemoryLimit(name, opts.MemoryMB)
+	// The forked home is full of files owned by the source's uid; make them the new
+	// app's, and cap the copy at the new app's own quota.
+	if forking {
+		uid := m.uidFor(port)
+		if _, err := m.runner.Run("chown", "-R", fmt.Sprintf("%d:%d", uid, uid), home); err != nil {
+			slog.Warn("Cannot chown forked home", "app", name, "error", err)
+		}
+		if err := m.setQuota(home, m.diskLimit(name)); err != nil {
+			slog.Warn("Cannot set quota on forked home", "app", name, "error", err)
+		}
+	}
 	m.ReconcilePortRules()
 
-	// Start the scaffolded demo app in the background, so the URL serves
-	// something without the API call waiting for a container (and, on the app
-	// user's first app, an image build) to come up
+	// Start the app in the background, so the URL serves something without the API
+	// call waiting for a container (and, on the app user's first app, an image
+	// build) to come up
 	go func() {
 		// How long this took is the question asked whenever an app "would not
 		// start": the API returns at once, and the wait is podman's queue behind
 		// whatever else the host is doing
 		started := time.Now()
 		if _, err := m.Up(name); err != nil {
-			slog.Warn("Cannot start demo app; the app exists but serves nothing yet",
+			slog.Warn("Cannot start app; it exists but serves nothing yet",
 				"app", name, "took", time.Since(started).Round(time.Second), "error", err)
 			return
 		}
-		slog.Info("Demo app started", "app", name, "took", time.Since(started).Round(time.Second))
+		slog.Info("App started", "app", name, "forked", forking, "took", time.Since(started).Round(time.Second))
 	}()
 	return app, nil
 }
@@ -238,6 +310,7 @@ func (m *Manager) CreateApp(name string, opts *CreateOptions) (*store.App, error
 // DeleteApp stops the app's user session, deletes the Unix user including the home
 // directory, and removes the app from the registry
 func (m *Manager) DeleteApp(name string) error {
+	defer m.lockApp(name)() // serialize against a concurrent deploy/snapshot/rollback
 	if _, err := m.store.App(name); err != nil {
 		return err
 	}

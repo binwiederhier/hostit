@@ -53,6 +53,13 @@ func (m *Manager) deleteSubvolume(path string) error {
 	return err
 }
 
+// moveSubvolume renames a subvolume within the app-homes filesystem. Same-fs, so
+// it is a metadata rename (fast, atomic), used to swap a rollback's staged home in.
+func (m *Manager) moveSubvolume(src, dst string) error {
+	_, err := m.runner.Run("mv", src, dst)
+	return err
+}
+
 // snapshotSubvolume snapshots src to dst; readonly makes a stable, immutable
 // snapshot (what we keep) versus a writable copy (what a rollback or fork starts
 // from).

@@ -245,7 +245,7 @@ const TerminalSplitButton = ({ active, connecting, onWebShell, onSsh }) => {
 // A split button for snapshots, mirroring the terminal one: the left half (the
 // icon) opens the snapshots list; the caret drops a menu whose second item, "New
 // snapshot...", opens a dialog to name and take one.
-const SnapshotSplitButton = ({ onList, onNew }) => {
+const SnapshotSplitButton = ({ onList, onNew, onFork }) => {
   const { open, setOpen, ref } = useDropdown();
   const pick = (fn) => {
     setOpen(false);
@@ -279,6 +279,10 @@ const SnapshotSplitButton = ({ onList, onNew }) => {
           </button>
           <button type="button" role="menuitem" onClick={() => pick(onNew)}>
             New snapshot...
+          </button>
+          <div className="menu-sep" />
+          <button type="button" role="menuitem" onClick={() => pick(onFork)}>
+            Fork app...
           </button>
         </div>
       )}
@@ -567,6 +571,59 @@ const NewSnapshotDialog = ({ name, onClose, onCreated, showToast }) => {
   );
 };
 
+// ForkDialog duplicates the app into a new one, seeding its home from the source's
+// current files. Reached from the snapshot split button's caret.
+const ForkDialog = ({ name, onClose, onForked }) => {
+  useEscape(onClose);
+  const [newName, setNewName] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const fork = async (e) => {
+    e.preventDefault();
+    const target = newName.trim();
+    if (busy || !target) return;
+    setBusy(true);
+    setError("");
+    try {
+      const created = await api.post(`/api/apps/${encodeURIComponent(name)}/fork`, { new_name: target });
+      onForked(created);
+    } catch (err) {
+      setError(err.message);
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true" onMouseDown={onClose}>
+      <form className="card modal" onSubmit={fork} onMouseDown={(e) => e.stopPropagation()}>
+        <h2>Fork {name}</h2>
+        <p className="hint">
+          Create a new app seeded from a copy of <span className="mono">{name}</span>'s current files. It gets its own
+          subdomain, user and container; the two run independently from here on.
+        </p>
+        <ErrorBanner message={error} onDismiss={() => setError("")} />
+        <input
+          type="text"
+          value={newName}
+          onChange={(e) => setNewName(e.target.value)}
+          placeholder="new app name"
+          aria-label="New app name"
+          autoFocus
+        />
+        <div className="btn-row">
+          <button type="button" className="btn" onClick={onClose} disabled={busy}>
+            Cancel
+          </button>
+          <button type="submit" className="btn btn-primary" disabled={busy || !newName.trim()}>
+            {busy ? "Forking..." : "Fork app"}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+};
+
 // SnapshotsDialog lists an app's point-in-time snapshots and rolls back to (or
 // deletes) any of them. A rollback is reversible (a safety snapshot of the live
 // state is taken first), so it runs on one click, no type-to-confirm gate. New
@@ -590,23 +647,29 @@ const SnapshotsDialog = ({ name, onClose, showToast, onRolledBack }) => {
     load();
   }, [load]);
 
+  const [rollingId, setRollingId] = useState(null); // which snapshot is being restored
+  const [confirmId, setConfirmId] = useState(null); // a Delete armed for confirmation
+
   const rollback = async (id) => {
     if (busy) return;
     setBusy(true);
+    setRollingId(id);
     setError("");
+    showToast("Rolling back..."); // before the (synchronous, possibly slow) request
     try {
       await api.post(`/api/apps/${encodeURIComponent(name)}/snapshots/${encodeURIComponent(id)}/restore`, {});
-      showToast("Rolling back...");
       onClose();
       if (onRolledBack) onRolledBack();
     } catch (err) {
       setError(err.message);
       setBusy(false);
+      setRollingId(null);
     }
   };
 
   const remove = async (id) => {
     if (busy) return;
+    setConfirmId(null);
     setBusy(true);
     setError("");
     try {
@@ -651,17 +714,29 @@ const SnapshotsDialog = ({ name, onClose, showToast, onRolledBack }) => {
                 </div>
                 <div className="snap-actions">
                   <button type="button" className="btn btn-small" onClick={() => rollback(s.id)} disabled={busy}>
-                    Roll back
+                    {rollingId === s.id ? "Rolling back..." : "Roll back"}
                   </button>
-                  <button
-                    type="button"
-                    className="btn btn-small btn-danger"
-                    onClick={() => remove(s.id)}
-                    disabled={busy}
-                    title="Delete this snapshot"
-                  >
-                    Delete
-                  </button>
+                  {confirmId === s.id ? (
+                    <button
+                      type="button"
+                      className="btn btn-small btn-danger"
+                      onClick={() => remove(s.id)}
+                      disabled={busy}
+                      title="Deleting a snapshot cannot be undone"
+                    >
+                      Confirm delete
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      className="btn btn-small"
+                      onClick={() => setConfirmId(s.id)}
+                      disabled={busy}
+                      title="Delete this snapshot"
+                    >
+                      Delete
+                    </button>
+                  )}
                 </div>
               </div>
             ))}
@@ -689,6 +764,7 @@ const AppDetail = ({ account, refreshAccount }) => {
   const [showPrompt, setShowPrompt] = useState(false);
   const [showSnapshots, setShowSnapshots] = useState(false);
   const [showNewSnapshot, setShowNewSnapshot] = useState(false);
+  const [showFork, setShowFork] = useState(false);
   const [hasKeys, setHasKeys] = useState(null); // null until we know, so nothing flickers
   const [toast, setToast] = useState(""); // a 3s "Copied"/"Regenerated" snackbar
   const toastTimer = useRef(null);
@@ -1034,7 +1110,11 @@ const AppDetail = ({ account, refreshAccount }) => {
                 <SparkleIcon />
               </button>
               {app.snapshots_enabled && (
-                <SnapshotSplitButton onList={() => setShowSnapshots(true)} onNew={() => setShowNewSnapshot(true)} />
+                <SnapshotSplitButton
+                  onList={() => setShowSnapshots(true)}
+                  onNew={() => setShowNewSnapshot(true)}
+                  onFork={() => setShowFork(true)}
+                />
               )}
               <ActionsMenu
                 running={app.running}
@@ -1135,6 +1215,16 @@ const AppDetail = ({ account, refreshAccount }) => {
       )}
       {showNewSnapshot && (
         <NewSnapshotDialog name={app.name} onClose={() => setShowNewSnapshot(false)} showToast={showToast} />
+      )}
+      {showFork && (
+        <ForkDialog
+          name={app.name}
+          onClose={() => setShowFork(false)}
+          onForked={(created) => {
+            setShowFork(false);
+            navigate(`/app/${encodeURIComponent(created.name)}`);
+          }}
+        />
       )}
       {confirmDelete && (
         <DeleteAppDialog name={app.name} onCancel={() => setConfirmDelete(false)} onDeleted={deleted} />
