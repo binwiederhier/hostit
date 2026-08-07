@@ -276,6 +276,29 @@ erDiagram
 The registry is root-only (0600 in a 0700 directory): it holds every app's agent
 token in the clear, deliberately, so an app's page can show it again.
 
+## Snapshots and quotas (btrfs)
+
+When the app-homes path (`/var/lib/hostit/apps`) is a btrfs filesystem -- a loopback
+image mounted there -- each app home is a **subvolume**. That makes two things cheap
+and exact:
+
+- **Snapshots** are copy-on-write: an instant, space-shared, atomic (crash-consistent)
+  copy at `apps/.snapshots/<app>/<id>`, so it does not count against the app's quota.
+  hostit snapshots before every deploy and assistant turn, and hourly; a restic-style
+  policy thins the automatic ones (see `applyRetention`, heavily unit-tested), while
+  labelled ones are kept. A `snapshot.pre`/`post` pair in `hostit.yml` runs in the
+  container to quiesce a database first (pre failing aborts the snapshot). Rollback
+  takes a safety snapshot, stops the app, replaces the home subvolume with a writable
+  copy of the chosen snapshot, restores ownership and quota, and starts it again.
+- **Quotas** are a btrfs **qgroup** limit per subvolume equal to the app's `disk_mb`,
+  so a write past it fails with EDQUOT at write time -- a hard limit, not the periodic
+  measure-and-stop used on other filesystems. Usage is read from the qgroup.
+
+The daemon detects btrfs once and caches it; on any other filesystem the subvolume and
+qgroup paths are skipped and hostit keeps the plain-directory, soft-quota behavior, so
+it still runs anywhere. The btrfs work lives in the `app` package (`btrfs.go`,
+`snapshot.go`); snapshot metadata is a `snapshot` table in the registry.
+
 ## Where the code lives
 
 Service packages at the root, thin `main.go`, no `internal/`:

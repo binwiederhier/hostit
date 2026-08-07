@@ -203,6 +203,22 @@ env:
         The command must listen on <span className="mono">0.0.0.0:$PORT</span>. <span className="mono">$PORT</span> is provided;
         nothing else is reachable from outside. hostit restarts the command if it exits.
       </p>
+      <h3>snapshot: (optional)</h3>
+      <p>
+        hostit snapshots your app's files before every deploy and hourly, so you can roll back. If the app has a database,
+        add hooks so a snapshot captures a consistent copy: <span className="mono">pre</span> runs before the snapshot (flush
+        or <span className="mono">.backup</span> the database), <span className="mono">post</span> after. If{" "}
+        <span className="mono">pre</span> fails, the snapshot is skipped rather than saving a torn state.
+      </p>
+      <Snippet
+        text={`snapshot:
+  pre:  sqlite3 data/app.db ".backup data/app.snap.db"
+  post: rm -f data/app.snap.db`}
+      />
+      <p className="hint">
+        Snapshots and rollback need the server on a btrfs host; otherwise these hooks are simply unused. Roll back from the
+        chat, <span className="mono">hostit apps rollback</span>, or the API.
+      </p>
       <p className="hint">
         Keep <span className="mono">description:</span> current. The dashboard shows it, and it is what the next assistant
         session starts from.

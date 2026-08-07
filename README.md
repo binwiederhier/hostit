@@ -404,6 +404,45 @@ You do not need to leave the browser. Each app's page is a workspace:
 The sparkle button on the page hands you the same paste-into-your-own-agent
 prompt, so the browser assistant and an external Claude Code are interchangeable.
 
+## Snapshots, rollback and quotas
+
+When the app-homes filesystem is **btrfs**, each app's home is a copy-on-write
+subvolume, which unlocks two things:
+
+- **Snapshots and rollback.** A snapshot is an instant, space-shared copy of the
+  app's files. hostit takes one automatically before every deploy, before every
+  assistant turn, and hourly; you (or an agent) can also take a labelled one on
+  purpose. Rolling back restores the home to a snapshot -- and takes a safety
+  snapshot of the current state first, so a rollback is itself undoable. Automatic
+  snapshots are thinned by a grandfather-father-son policy (the last 50, plus daily
+  for a week, weekly for a month, monthly for a quarter); labelled ones are kept.
+
+  ```sh
+  hostit apps snapshot myapp "before the rewrite"   # save a restorable point
+  hostit apps snapshots myapp                        # list them, newest first
+  hostit apps rollback myapp <snapshot-id>           # restore (safety-snapshotted)
+  ```
+
+  The built-in assistant has the same abilities (it snapshots before risky work and
+  can roll back, which asks you to confirm in the chat), and so does the REST API
+  (`GET`/`POST /api/apps/{app}/snapshots`, `POST .../snapshots/{id}/restore`).
+
+  Optionally quiesce a database around a snapshot with hooks in `hostit.yml`:
+
+  ```yaml
+  snapshot:
+    pre:  "sqlite3 data/app.db \".backup data/app.snap.db\""   # flush before
+    post: "rm -f data/app.snap.db"                              # clean up after
+  ```
+
+- **Hard disk quotas.** The app's `disk_mb` limit is enforced by a btrfs qgroup, so
+  a write past it fails immediately (EDQUOT) instead of the app being stopped later
+  by a periodic sweep. (On a non-btrfs host, snapshots are unavailable and the older
+  soft "measure-and-stop" quota applies.)
+
+Setting this up is a one-off: a btrfs image on a loopback file, mounted at the
+app-homes path -- see [Development](#development). It needs no extra block device.
+
 ## Deploy an app
 
 SSH in as the app user, upload files, describe the app in `hostit.yml`:
@@ -488,6 +527,12 @@ is a single self-contained binary/`.deb`.
 make release-snapshot   # local .deb in dist/ (for staging / a dev box)
 git tag vX.Y.Z && GITHUB_TOKEN=$(gh auth token) make release   # tag + publish a GitHub release
 ```
+
+To enable **snapshots and hard quotas**, the app-homes path must be btrfs. The
+Ansible role does this behind `hostit_btrfs: true`: it creates a btrfs image on a
+loopback file (75% of free space), mounts it at `/var/lib/hostit/apps` via a
+systemd unit, and migrates existing homes into subvolumes once. No extra block
+device is needed; a non-btrfs host simply runs without snapshots.
 
 The reference deployment is driven by Ansible with two environments -- a **staging**
 host and a **prod** host, each its own machine and base domain. Staging installs a
