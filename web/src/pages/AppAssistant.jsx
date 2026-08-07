@@ -179,6 +179,11 @@ const ToolCall = ({ item }) => {
 // progress is visible, collapsed once done to keep the history tidy. Each call
 // inside stays individually expandable.
 const ToolGroup = ({ tools, active }) => {
+  // Hooks must run unconditionally and in the same order every render. This fiber
+  // is reused as a run grows from one call to many (renderTranscript keeps a stable
+  // key), so useState has to come BEFORE the length-1 early return -- otherwise the
+  // hook count jumps 0 -> 1 when the second call arrives and React crashes the tree.
+  const [override, setOverride] = useState(null); // null = follow the running state
   // A lone tool call renders on its own, no group chrome -- but it still comes
   // through ToolGroup so that as more calls stream into the run the element type
   // at this position never switches (ToolCall <-> ToolGroup), which would remount
@@ -188,7 +193,6 @@ const ToolGroup = ({ tools, active }) => {
   }
   const running = tools.some((t) => t.output == null);
   const anyError = tools.some((t) => t.isError);
-  const [override, setOverride] = useState(null); // null = follow the running state
   // `active` keeps the still-growing group (the last one while the turn runs) open
   // and labelled with the current action, so it does not flap collapsed->expanded in
   // the brief gap between one tool finishing and the next starting.
