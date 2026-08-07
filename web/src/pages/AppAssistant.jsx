@@ -287,7 +287,6 @@ const AppAssistant = ({ name, onClose, embedded = false, onPreviewRefresh }) => 
   const [busy, setBusy] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [attachments, setAttachments] = useState([]); // uploaded files pending on the next message
-  const [uploading, setUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const scrollRef = useRef(null);
   const taRef = useRef(null);
@@ -385,13 +384,22 @@ const AppAssistant = ({ name, onClose, embedded = false, onPreviewRefresh }) => 
     return () => es.close();
   }, [name, handleEvent]);
 
-  // Upload dropped/picked files into the app's uploads/ folder; the server returns
-  // their in-app paths, which we hold as pending attachments for the next message.
+  // Upload dropped/picked files into the app's uploads/ folder. Each file shows a
+  // placeholder chip with a spinner immediately, replaced by its real in-app path
+  // (from the server) once uploaded; on failure the placeholder is dropped.
   const uploadFiles = useCallback(
     async (fileList) => {
       const files = Array.from(fileList || []);
       if (files.length === 0) return;
-      setUploading(true);
+      const stamp = Date.now();
+      const temps = files.map((f, i) => ({
+        tempId: `${stamp}-${i}`,
+        name: f.name,
+        is_image: (f.type || "").startsWith("image/"),
+        uploading: true,
+      }));
+      setAttachments((prev) => [...prev, ...temps]);
+      const dropTemps = () => setAttachments((prev) => prev.filter((a) => !temps.some((t) => t.tempId === a.tempId)));
       try {
         const form = new FormData();
         files.forEach((f) => form.append("file", f));
@@ -403,14 +411,14 @@ const AppAssistant = ({ name, onClose, embedded = false, onPreviewRefresh }) => 
         if (!r.ok) {
           const body = await r.json().catch(() => null);
           handleEvent({ type: "error", error: body?.error || `upload failed (${r.status})` });
+          dropTemps();
           return;
         }
         const added = await r.json();
-        setAttachments((prev) => [...prev, ...(added || [])]);
+        setAttachments((prev) => [...prev.filter((a) => !temps.some((t) => t.tempId === a.tempId)), ...(added || [])]);
       } catch (err) {
         handleEvent({ type: "error", error: err.message });
-      } finally {
-        setUploading(false);
+        dropTemps();
       }
     },
     [name, handleEvent],
@@ -428,16 +436,30 @@ const AppAssistant = ({ name, onClose, embedded = false, onPreviewRefresh }) => 
     }
   };
   const onDragLeave = () => setDragOver(false);
-  const removeAttachment = (i) => setAttachments((prev) => prev.filter((_, j) => j !== i));
+
+  // Removing a not-yet-sent attachment also deletes the uploaded file, so an
+  // abandoned attachment does not orphan in uploads/. (Sent attachments stay: they
+  // are the app's files by design.)
+  const removeAttachment = (i) => {
+    const a = attachments[i];
+    setAttachments((prev) => prev.filter((_, j) => j !== i));
+    if (a?.path) {
+      fetch(`/api/apps/${encodeURIComponent(name)}/assistant/upload?path=${encodeURIComponent(a.path)}`, {
+        method: "DELETE",
+        credentials: "same-origin",
+      }).catch(() => {});
+    }
+  };
 
   // Send a message: the server starts the turn in the background and everything
   // comes back on the stream. We do not render it optimistically -- the stream
   // echoes the message so every device shows it the same way.
   const send = async () => {
     const message = input.trim();
-    if ((!message && attachments.length === 0) || busy) return;
+    const ready = attachments.filter((a) => a.path); // uploaded, not still-uploading
+    if (attachments.some((a) => a.uploading) || busy) return; // wait for uploads to finish
+    if (!message && ready.length === 0) return;
     setInput("");
-    const atts = attachments;
     setAttachments([]);
     setBusy(true);
     try {
@@ -447,7 +469,7 @@ const AppAssistant = ({ name, onClose, embedded = false, onPreviewRefresh }) => 
         credentials: "same-origin",
         body: JSON.stringify({
           message,
-          attachments: atts.map((a) => ({ path: a.path, media_type: a.media_type })),
+          attachments: ready.map((a) => ({ path: a.path, media_type: a.media_type })),
         }),
       });
       if (r.status === 409) {
@@ -525,8 +547,9 @@ const AppAssistant = ({ name, onClose, embedded = false, onPreviewRefresh }) => 
       {attachments.length > 0 && (
         <div className="asst-attachments">
           {attachments.map((a, i) => (
-            <span className={"asst-chip" + (a.is_image ? " asst-chip-img" : "")} key={a.path + i}>
-              <span className="asst-chip-name" title={a.path}>
+            <span className={"asst-chip" + (a.is_image ? " asst-chip-img" : "")} key={a.tempId || a.path}>
+              {a.uploading && <span className="asst-chip-spin" aria-hidden="true" />}
+              <span className="asst-chip-name" title={a.path || a.name}>
                 {a.name || a.path}
               </span>
               <button type="button" className="asst-chip-x" onClick={() => removeAttachment(i)} aria-label="Remove attachment">
@@ -553,17 +576,13 @@ const AppAssistant = ({ name, onClose, embedded = false, onPreviewRefresh }) => 
           type="button"
           className="btn btn-icon asst-plus"
           onClick={() => fileRef.current?.click()}
-          disabled={busy || uploading}
+          disabled={busy}
           title="Attach files"
           aria-label="Attach files"
         >
-          {uploading ? (
-            <span className="asst-plus-spin" aria-hidden="true" />
-          ) : (
-            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
-              <path d="M8 3.5v9M3.5 8h9" />
-            </svg>
-          )}
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
+            <path d="M8 3.5v9M3.5 8h9" />
+          </svg>
         </button>
         <textarea
           ref={taRef}
@@ -585,7 +604,9 @@ const AppAssistant = ({ name, onClose, embedded = false, onPreviewRefresh }) => 
             type="button"
             className="btn btn-primary asst-send"
             onClick={() => send()}
-            disabled={!input.trim() && attachments.length === 0}
+            disabled={
+              attachments.some((a) => a.uploading) || (!input.trim() && !attachments.some((a) => a.path))
+            }
             title="Send"
             aria-label="Send"
           >

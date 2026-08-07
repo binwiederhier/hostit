@@ -1,6 +1,9 @@
 package assistant
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // Item is one thing the chat shows: a user message, a line of the assistant's
 // reply, or a tool call with its result. It is what a page loading an existing
@@ -26,6 +29,9 @@ func toItems(history []Message) []Item {
 			switch b.Type {
 			case "text":
 				if msg.Role == "user" {
+					if strings.HasPrefix(b.Text, attachmentNotePrefix) {
+						continue // the attachment note is for the model, not the display
+					}
 					items = append(items, Item{Kind: "user", Text: b.Text})
 				} else {
 					items = append(items, Item{Kind: "text", Text: b.Text})

@@ -72,6 +72,7 @@ func (s *Server) newAPIHandler() http.Handler {
 	route(mux, "GET", "/apps/{name}/assistant/stream", s.requireActive(s.handleAssistantStream))
 	route(mux, "POST", "/apps/{name}/assistant", s.requireActive(s.handleAssistant))
 	route(mux, "POST", "/apps/{name}/assistant/upload", s.requireActive(s.handleAssistantUpload))
+	route(mux, "DELETE", "/apps/{name}/assistant/upload", s.requireActive(s.handleAssistantUploadDelete))
 	route(mux, "POST", "/apps/{name}/assistant/stop", s.requireActive(s.handleAssistantStop))
 
 	// Administration

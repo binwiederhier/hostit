@@ -279,6 +279,27 @@ func (s *Server) handleAssistantUpload(w http.ResponseWriter, r *http.Request, c
 	writeJSON(w, http.StatusOK, out)
 }
 
+// handleAssistantUploadDelete removes an uploaded file, used when the owner drops
+// an attachment before sending it (so it does not orphan in uploads/). Scoped to
+// the uploads/ folder; sent attachments are the app's files and are not touched here.
+func (s *Server) handleAssistantUploadDelete(w http.ResponseWriter, r *http.Request, c *caller) {
+	a, err := s.ownedApp(c, r.PathValue("name"))
+	if err != nil {
+		writeAppError(w, err)
+		return
+	}
+	path := r.URL.Query().Get("path")
+	if !strings.HasPrefix(path, "uploads/") {
+		writeError(w, http.StatusBadRequest, errors.New("only files under uploads/ can be removed here"))
+		return
+	}
+	if err := s.apps.DeleteFile(a.Name, path); err != nil {
+		writeAppError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, &apiMessageResponse{Message: "removed"})
+}
+
 // sanitizeUploadName reduces an uploaded filename to a safe basename (no path, only
 // simple characters), so it cannot escape the uploads/ folder.
 func sanitizeUploadName(name string) string {

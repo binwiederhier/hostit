@@ -394,13 +394,9 @@ p {
 .nav-profile-email { font-size: 13px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .nav-profile-div { height: 1px; background: var(--border); margin: 2px 4px 4px; }
 
-/* The nav links inside the popup are for narrow screens only; on wide screens the
-   top bar already shows them, so the popup is account-only. */
+/* The nav links (Apps, Profile, Admin, Docs) live inside the profile popup on all
+   screen sizes, so the avatar menu is a full navigation surface. */
 .nav-profile-nav { display: flex; flex-direction: column; gap: 2px; }
-@media (min-width: 641px) {
-  .nav-profile-nav,
-  .nav-profile-navdiv { display: none; }
-}
 .nav-profile-pop a,
 .nav-profile-pop button {
   text-align: left;
@@ -1808,6 +1804,15 @@ th:last-child {
 }
 .asst-chip-img { border-color: var(--accent); }
 .asst-chip-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.asst-chip-spin {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--border);
+  border-top-color: var(--muted);
+  border-radius: 50%;
+  animation: asst-spin 0.7s linear infinite;
+}
 .asst-chip-x {
   border: 0;
   background: none;

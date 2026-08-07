@@ -217,6 +217,7 @@ const ProfileMenu = ({ account }) => {
   const [open, setOpen] = useState(false);
   const [theme, setThemeState] = useState(getTheme());
   const ref = useRef(null);
+  const closeTimer = useRef(null);
   useEffect(() => {
     if (!open) {
       return undefined;
@@ -235,10 +236,20 @@ const ProfileMenu = ({ account }) => {
     };
   }, [open]);
   const close = () => setOpen(false);
+  // Hover opens it (a small close delay bridges the gap to the popup), matching the
+  // Apps menu; clicking the avatar still toggles it.
+  const openNow = () => {
+    clearTimeout(closeTimer.current);
+    setOpen(true);
+  };
+  const closeSoon = () => {
+    clearTimeout(closeTimer.current);
+    closeTimer.current = setTimeout(() => setOpen(false), 140);
+  };
   const name = (account.name || "").trim();
   const initial = (name || account.email || "?").charAt(0).toUpperCase();
   return (
-    <div className="nav-profile" ref={ref}>
+    <div className="nav-profile" ref={ref} onMouseEnter={openNow} onMouseLeave={closeSoon}>
       <button
         type="button"
         className="avatar"
