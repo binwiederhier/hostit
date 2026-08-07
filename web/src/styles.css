@@ -1756,18 +1756,6 @@ th:last-child {
   }
 }
 
-/* A destructive action (rollback) the assistant proposed, awaiting the owner's OK */
-.asst-confirm {
-  margin: 0 12px 10px;
-  padding: 11px 13px;
-  border: 1px solid var(--warn-border);
-  background: var(--warn-bg);
-  border-radius: 10px;
-  font-size: 13px;
-}
-.asst-confirm-text { color: var(--text); line-height: 1.45; }
-.asst-confirm-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 10px; }
-
 .asst-input {
   display: flex;
   gap: 8px;
@@ -2049,6 +2037,50 @@ body.ws-resizing iframe { pointer-events: none; }
 
 /* Modal helpers shared by the SSH and bring-your-own-AI dialogs */
 .modal-wide { max-width: 44rem; }
+
+/* Snapshot list inside the Snapshots dialog */
+.snap-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 14px 0 4px;
+  max-height: 46vh;
+  overflow-y: auto;
+}
+.snap-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+}
+.snap-meta {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex-wrap: wrap;
+  font-size: 13px;
+}
+.snap-when { color: var(--text); font-variant-numeric: tabular-nums; }
+.snap-kind {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 1px 5px;
+}
+.snap-kind-manual { color: var(--accent); border-color: var(--accent); }
+.snap-label {
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .modal-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .modal-head h2 { margin: 0; }
 .modal-sub { margin: 20px 0 8px; font-size: 15px; }

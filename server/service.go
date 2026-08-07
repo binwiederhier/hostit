@@ -270,12 +270,13 @@ func (s *Server) appLimits(name string) (memoryMB int, diskMB int) {
 // appResponse converts an app to its API form
 func (s *Server) appResponse(a *store.App) *apiAppResponse {
 	resp := &apiAppResponse{
-		Name:       a.Name,
-		URL:        s.apps.URL(a),
-		Port:       a.Port,
-		DiskMB:     a.DiskMB,
-		OverQuota:  a.OverQuota,
-		OwnerEmail: s.ownerEmail(a.OwnerID),
+		Name:             a.Name,
+		URL:              s.apps.URL(a),
+		Port:             a.Port,
+		DiskMB:           a.DiskMB,
+		OverQuota:        a.OverQuota,
+		OwnerEmail:       s.ownerEmail(a.OwnerID),
+		SnapshotsEnabled: s.apps.SnapshotsEnabled(),
 		// What the app says it is, straight from its hostit.yml; empty for a stub
 		Description: s.apps.Description(a.Name),
 		CreatedAt:   a.CreatedAt,

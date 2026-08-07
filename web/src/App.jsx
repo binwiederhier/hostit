@@ -106,8 +106,8 @@ const AppsMenu = () => {
               </Link>
             ))}
           {apps && apps.length > 0 && <div className="nav-apps-div" />}
-          <Link to="/" role="menuitem" className="nav-apps-all" onClick={() => setOpen(false)}>
-            All apps
+          <Link to="/?new=1" role="menuitem" className="nav-apps-all nav-apps-new" onClick={() => setOpen(false)}>
+            + New app
           </Link>
         </div>
       )}

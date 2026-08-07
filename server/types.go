@@ -38,12 +38,13 @@ type apiAppResponse struct {
 	MemoryLimit int    `json:"memory_limit_mb"`
 	CPUPercent  int    `json:"cpu_percent"` // Live container CPU use in whole percent
 
-	Running      bool   `json:"running"`        // The app's container is up
-	AppRunning   bool   `json:"app_running"`    // The run: command inside it is up
-	StartedAt    int64  `json:"started_at"`     // Unix seconds the container last started
-	AppStartedAt int64  `json:"app_started_at"` // Unix millis the run: process last changed state
-	OverQuota    bool   `json:"over_quota"`
-	OwnerEmail   string `json:"owner_email,omitempty"`
+	Running          bool   `json:"running"`        // The app's container is up
+	AppRunning       bool   `json:"app_running"`    // The run: command inside it is up
+	StartedAt        int64  `json:"started_at"`     // Unix seconds the container last started
+	AppStartedAt     int64  `json:"app_started_at"` // Unix millis the run: process last changed state
+	OverQuota        bool   `json:"over_quota"`
+	OwnerEmail       string `json:"owner_email,omitempty"`
+	SnapshotsEnabled bool   `json:"snapshots_enabled"` // true when the host supports snapshots (btrfs)
 	// Description is the app's own one-liner from hostit.yml, kept current by
 	// whoever builds it; empty means the app is still a stub
 	Description string     `json:"description"`

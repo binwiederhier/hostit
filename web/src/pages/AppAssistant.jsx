@@ -121,7 +121,7 @@ const summarize = (tool, input) => {
     case "list_snapshots":
       return "Listed snapshots";
     case "rollback":
-      return "Proposed a rollback";
+      return a.id ? `Rolled back to ${truncate(a.id, 40)}` : "Rolled back";
     default:
       return tool;
   }
@@ -280,7 +280,6 @@ const AppAssistant = ({ name, onClose, embedded = false, onPreviewRefresh }) => 
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [loaded, setLoaded] = useState(false);
-  const [confirm, setConfirm] = useState(null); // a pending action needing the owner's OK (rollback)
   const scrollRef = useRef(null);
   const taRef = useRef(null);
 
@@ -333,18 +332,6 @@ const AppAssistant = ({ name, onClose, embedded = false, onPreviewRefresh }) => 
       setItems((prev) => [...prev, { id: prev.length, kind: "error", text: ev.error }]);
       return;
     }
-    if (ev.type === "confirm") {
-      // A destructive action (rollback) the assistant proposed; the owner acts on it.
-      // Kept out of the transcript so it survives the done-reconcile.
-      let parsed = {};
-      try {
-        parsed = JSON.parse(ev.input || "{}");
-      } catch {
-        // no id
-      }
-      setConfirm({ tool: ev.tool, id: parsed.id || "" });
-      return;
-    }
     setBusy(true);
     setItems((prev) => {
       const next = [...prev];
@@ -391,25 +378,9 @@ const AppAssistant = ({ name, onClose, embedded = false, onPreviewRefresh }) => 
   // Send a message: the server starts the turn in the background and everything
   // comes back on the stream. We do not render it optimistically -- the stream
   // echoes the message so every device shows it the same way.
-  // Carry out a confirmed rollback (the only confirm-gated action so far).
-  const runConfirm = async () => {
-    const c = confirm;
-    setConfirm(null);
-    if (!c || c.tool !== "rollback" || !c.id) return;
-    try {
-      await fetch(`/api/apps/${encodeURIComponent(name)}/snapshots/${encodeURIComponent(c.id)}/restore`, {
-        method: "POST",
-        credentials: "same-origin",
-      });
-    } catch {
-      // The app's state (and the preview) will reflect whether it took.
-    }
-  };
-
   const send = async () => {
     const message = input.trim();
     if (!message || busy) return;
-    setConfirm(null); // a new message supersedes a pending confirmation
     setInput("");
     setBusy(true);
     try {
@@ -485,23 +456,6 @@ const AppAssistant = ({ name, onClose, embedded = false, onPreviewRefresh }) => 
         {renderTranscript(items)}
         {busy && <WorkingIndicator />}
       </div>
-
-      {confirm && confirm.tool === "rollback" && (
-        <div className="asst-confirm" role="alertdialog">
-          <div className="asst-confirm-text">
-            Roll back <strong>{name}</strong> to snapshot <span className="mono">{confirm.id}</span>? This restores its
-            files to that point (a safety snapshot of the current state is taken first).
-          </div>
-          <div className="asst-confirm-actions">
-            <button type="button" className="btn btn-small" onClick={() => setConfirm(null)}>
-              Cancel
-            </button>
-            <button type="button" className="btn btn-small btn-danger" onClick={runConfirm}>
-              Roll back
-            </button>
-          </div>
-        </div>
-      )}
 
       <div className="asst-input">
         <textarea

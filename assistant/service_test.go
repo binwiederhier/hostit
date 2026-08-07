@@ -60,6 +60,7 @@ func (f *fakeOps) Snapshot(_, _ string) (string, error) { return "saved snapshot
 func (f *fakeOps) ListSnapshots(_ string) (string, error) {
 	return "snap-1  2026-08-07 12:00  manual", nil
 }
+func (f *fakeOps) Rollback(_, id string) (string, error) { return "rolled back to " + id, nil }
 
 func toolUse(id, name, input string) ContentBlock {
 	return ContentBlock{Type: "tool_use", ID: id, Name: name, Input: json.RawMessage(input)}
@@ -144,25 +145,28 @@ func TestRunExecutesToolThenFinishes(t *testing.T) {
 	assert.True(t, hasToolResult(fc.calls[1].Messages, "tu_1"), "the tool result must be fed back")
 }
 
-func TestRollbackAsksForConfirmation(t *testing.T) {
+func TestRollbackRunsDirectly(t *testing.T) {
 	t.Parallel()
+	// Rollback is reversible (a safety snapshot is taken first), so it runs without
+	// a confirmation step.
 	fc := &fakeCompleter{replies: []response{
 		{StopReason: "tool_use", Content: []ContentBlock{toolUse("tu_1", "rollback", `{"id":"snap-1"}`)}},
-		{StopReason: "end_turn", Content: []ContentBlock{{Type: "text", Text: "Please confirm the rollback."}}},
+		{StopReason: "end_turn", Content: []ContentBlock{{Type: "text", Text: "Rolled back."}}},
 	}}
 	m := NewManager(fc, newFakeOps(), NewMemoryStore(), "test-model")
 
 	events := runTurn(t, m, "blog", "roll back to snap-1")
 
-	var confirm *Event
+	assert.NotContains(t, eventTypes(events), "confirm", "no confirmation step")
+	var result *Event
 	for i := range events {
-		if events[i].Type == "confirm" {
-			confirm = &events[i]
+		if events[i].Type == "tool_result" {
+			result = &events[i]
 		}
 	}
-	require.NotNil(t, confirm, "a rollback must publish a confirm request, not run")
-	assert.Equal(t, "rollback", confirm.Tool)
-	assert.Contains(t, confirm.Input, "snap-1")
+	require.NotNil(t, result)
+	assert.False(t, result.IsError)
+	assert.Contains(t, result.Output, "rolled back to snap-1")
 	assert.Equal(t, "done", events[len(events)-1].Type)
 }
 

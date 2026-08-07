@@ -19,6 +19,7 @@ type AppOps interface {
 	Deploy(app string) (string, error)
 	Snapshot(app, label string) (string, error)
 	ListSnapshots(app string) (string, error)
+	Rollback(app, id string) (string, error)
 }
 
 // toolDefs describes the tools to the model. The schemas are deliberately small:
@@ -73,7 +74,7 @@ func toolDefs() []Tool {
 		},
 		{
 			Name:        "rollback",
-			Description: "Roll the app back to a snapshot, restoring its files to that point. This is destructive, so it does not run immediately: it asks the owner to confirm in the chat. Get the id from list_snapshots first.",
+			Description: "Roll the app back to a snapshot, restoring its files to that point. A snapshot of the current state is taken first, so this is reversible (you can roll forward again). Get the id from list_snapshots first.",
 			InputSchema: schema(`{"type":"object","properties":{"id":{"type":"string"}},"required":["id"]}`),
 		},
 	}
@@ -151,9 +152,14 @@ func (m *Manager) dispatch(app, name string, input json.RawMessage) (string, boo
 		out, err := m.ops.ListSnapshots(app)
 		return orError(out, err)
 	case "rollback":
-		// A rollback needs owner confirmation, so the run loop handles it before it
-		// reaches dispatch; if it gets here, refuse rather than run it silently.
-		return "a rollback must be confirmed by the owner in the chat; it was not run", true
+		var in struct {
+			ID string `json:"id"`
+		}
+		if err := json.Unmarshal(input, &in); err != nil || in.ID == "" {
+			return "id is required", true
+		}
+		out, err := m.ops.Rollback(app, in.ID)
+		return orError(out, err)
 	default:
 		return "unknown tool: " + name, true
 	}

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../api";
 import { ErrorBanner, Loading, StatusDot, Wordmark } from "../components";
 
@@ -118,6 +118,15 @@ const Dashboard = ({ account, refreshAccount }) => {
   const [adding, setAdding] = useState(false);
   const inputRef = useRef(null);
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // Opened here with ?new (e.g. from the nav's "+ New app"): show the dialog.
+  useEffect(() => {
+    if (searchParams.get("new") !== null) {
+      setAdding(true);
+      setSearchParams({}, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
 
   const atLimit = account.usage.apps >= account.limits.app_limit;
   const nameValid = nameRe.test(name);

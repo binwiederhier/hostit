@@ -93,6 +93,13 @@ const BackIcon = () => (
     <path d="M9.5 3.5 5 8l4.5 4.5" />
   </svg>
 );
+const SnapshotIcon = () => (
+  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <circle cx="8" cy="8.4" r="5.4" />
+    <path d="M8 5.4v3l2.1 1.3" />
+    <path d="M8 1.6v1.4" />
+  </svg>
+);
 const SparkleIcon = () => (
   <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
     <path d="M8 0.8l1.5 4.2 4.2 1.5-4.2 1.5L8 12.2 6.5 8 2.3 6.5 6.5 5z" />
@@ -461,6 +468,102 @@ const useEscape = (onClose) => {
   }, [onClose]);
 };
 
+// SnapshotsDialog lists an app's point-in-time snapshots and rolls back to any of
+// them. A rollback is reversible (a safety snapshot of the live state is taken
+// first), so it runs on one click, no type-to-confirm gate.
+const SnapshotsDialog = ({ name, onClose, showToast, onRolledBack }) => {
+  useEscape(onClose);
+  const [snaps, setSnaps] = useState(null); // null until loaded
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      const list = await api.get(`/api/apps/${encodeURIComponent(name)}/snapshots`);
+      setSnaps(Array.isArray(list) ? list : []);
+    } catch (err) {
+      setError(err.message);
+      setSnaps([]);
+    }
+  }, [name]);
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const take = async () => {
+    if (busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      await api.post(`/api/apps/${encodeURIComponent(name)}/snapshots`, {});
+      showToast("Snapshot saved");
+      await load();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const rollback = async (id) => {
+    if (busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      await api.post(`/api/apps/${encodeURIComponent(name)}/snapshots/${encodeURIComponent(id)}/restore`, {});
+      showToast("Rolling back...");
+      onClose();
+      if (onRolledBack) onRolledBack();
+    } catch (err) {
+      setError(err.message);
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true" onMouseDown={onClose}>
+      <div className="card modal modal-wide" onMouseDown={(e) => e.stopPropagation()}>
+        <h2>Snapshots</h2>
+        <p className="hint">
+          Point-in-time copies of <span className="mono">{name}</span>'s files. Rolling back restores it to that point --
+          reversible, since a snapshot of the current state is taken first.
+        </p>
+        <ErrorBanner message={error} onDismiss={() => setError("")} />
+        <div className="btn-row" style={{ justifyContent: "flex-start" }}>
+          <button type="button" className="btn btn-small" onClick={take} disabled={busy}>
+            Take snapshot now
+          </button>
+        </div>
+        {snaps === null ? (
+          <p className="hint">Loading...</p>
+        ) : snaps.length === 0 ? (
+          <p className="hint">No snapshots yet.</p>
+        ) : (
+          <div className="snap-list">
+            {snaps.map((s) => (
+              <div className="snap-row" key={s.id}>
+                <div className="snap-meta">
+                  <span className="snap-when">{new Date(s.created_at).toLocaleString()}</span>
+                  <span className={"snap-kind" + (s.auto ? "" : " snap-kind-manual")}>{s.auto ? "auto" : "manual"}</span>
+                  {s.label && <span className="snap-label">{s.label}</span>}
+                </div>
+                <button type="button" className="btn btn-small" onClick={() => rollback(s.id)} disabled={busy}>
+                  Roll back
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+        <div className="btn-row">
+          <button type="button" className="btn" onClick={onClose} disabled={busy}>
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const AppDetail = ({ account, refreshAccount }) => {
   const { name } = useParams();
   const navigate = useNavigate();
@@ -476,6 +579,7 @@ const AppDetail = ({ account, refreshAccount }) => {
   termOpenRef.current = termOpen;
   const [showSsh, setShowSsh] = useState(false);
   const [showPrompt, setShowPrompt] = useState(false);
+  const [showSnapshots, setShowSnapshots] = useState(false);
   const [hasKeys, setHasKeys] = useState(null); // null until we know, so nothing flickers
   const [toast, setToast] = useState(""); // a 3s "Copied"/"Regenerated" snackbar
   const toastTimer = useRef(null);
@@ -607,12 +711,18 @@ const AppDetail = ({ account, refreshAccount }) => {
   }, []);
 
   const load = useCallback(async () => {
-    setMissing(false);
     try {
-      setApp(await api.get(`/api/apps/${encodeURIComponent(name)}`));
+      const fresh = await api.get(`/api/apps/${encodeURIComponent(name)}`);
+      setApp(fresh);
+      setMissing(false);
+      setError(""); // a good read heals any transient error banner
     } catch (err) {
       if (err instanceof ApiError && err.status === 404) {
         setMissing(true);
+      } else if (err instanceof ApiError && err.status === 0) {
+        // A transient network blip -- the app or daemon restarting, a wifi hiccup.
+        // Keep showing the last known state and let the next poll recover, rather
+        // than flashing a scary "Network error" banner on every restart.
       } else {
         setError(err.message);
       }
@@ -814,6 +924,17 @@ const AppDetail = ({ account, refreshAccount }) => {
               >
                 <SparkleIcon />
               </button>
+              {app.snapshots_enabled && (
+                <button
+                  type="button"
+                  className="btn btn-icon"
+                  onClick={() => setShowSnapshots(true)}
+                  title="Snapshots"
+                  aria-label="Snapshots"
+                >
+                  <SnapshotIcon />
+                </button>
+              )}
               <ActionsMenu
                 running={app.running}
                 appRunning={app.app_running}
@@ -903,6 +1024,14 @@ const AppDetail = ({ account, refreshAccount }) => {
       )}
       {showSsh && <SshDialog app={app} hasKeys={hasKeys} onClose={() => setShowSsh(false)} />}
       {showPrompt && <PromptDialog prompt={prompt} onClose={() => setShowPrompt(false)} />}
+      {showSnapshots && (
+        <SnapshotsDialog
+          name={app.name}
+          onClose={() => setShowSnapshots(false)}
+          showToast={showToast}
+          onRolledBack={load}
+        />
+      )}
       {confirmDelete && (
         <DeleteAppDialog name={app.name} onCancel={() => setConfirmDelete(false)} onDeleted={deleted} />
       )}

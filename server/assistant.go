@@ -129,6 +129,13 @@ func (o *appOps) Snapshot(name, label string) (string, error) {
 	return "saved snapshot " + snap.ID, nil
 }
 
+func (o *appOps) Rollback(name, id string) (string, error) {
+	if err := o.apps.Rollback(name, id); err != nil {
+		return "", err
+	}
+	return "rolled back to " + id, nil
+}
+
 func (o *appOps) ListSnapshots(name string) (string, error) {
 	snaps, err := o.apps.ListSnapshots(name)
 	if err != nil {
