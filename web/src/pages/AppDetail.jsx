@@ -523,7 +523,14 @@ const SnapshotsDialog = ({ name, onClose, showToast, onRolledBack }) => {
   return (
     <div className="modal-backdrop" role="dialog" aria-modal="true" onMouseDown={onClose}>
       <div className="card modal modal-wide" onMouseDown={(e) => e.stopPropagation()}>
-        <h2>Snapshots</h2>
+        <div className="modal-head">
+          <h2>Snapshots</h2>
+          <button type="button" className="term-btn" onClick={onClose} title="Close" aria-label="Close">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M4 4l8 8M12 4l-8 8" />
+            </svg>
+          </button>
+        </div>
         <p className="hint">
           Point-in-time copies of <span className="mono">{name}</span>'s files. Rolling back restores it to that point --
           reversible, since a snapshot of the current state is taken first.
@@ -554,11 +561,6 @@ const SnapshotsDialog = ({ name, onClose, showToast, onRolledBack }) => {
             ))}
           </div>
         )}
-        <div className="btn-row">
-          <button type="button" className="btn" onClick={onClose} disabled={busy}>
-            Close
-          </button>
-        </div>
       </div>
     </div>
   );
