@@ -115,6 +115,8 @@ func execServe(c *cli.Context) error {
 	go manager.StateLoop(done)
 	// Hourly automatic snapshots (a no-op unless the apps filesystem is btrfs)
 	go manager.SnapshotLoop(time.Hour, done)
+	// Retry pending/error custom domains so they verify once DNS is set up
+	go srv.DomainRetryLoop(time.Minute, done)
 
 	// Shut down gracefully on SIGINT/SIGTERM
 	sigs := make(chan os.Signal, 1)

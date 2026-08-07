@@ -60,9 +60,11 @@ type Server struct {
 	magic       *certmagic.Config
 	domainMagic *certmagic.Config
 	// domainCache maps an active custom domain to its app, for the proxy; rebuilt
-	// from the store on change. nil until first loaded.
+	// from the store on change. nil until first loaded. issuing tracks domains with
+	// an in-flight certificate attempt, so the retry loop does not pile on.
 	domainCache map[string]string
-	domainMu    sync.RWMutex // Protects domainCache
+	issuing     map[string]bool
+	domainMu    sync.RWMutex // Protects domainCache and issuing
 
 	servers []*http.Server // Running HTTP servers, for Stop
 }

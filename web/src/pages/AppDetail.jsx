@@ -126,6 +126,41 @@ const ForkIcon = mi(<><circle cx="4.5" cy="4" r="1.6" /><circle cx="11.5" cy="4"
 const KeyIcon = mi(<><circle cx="5" cy="11" r="2.3" /><path d="M6.7 9.3l5-5M10.7 5.3l1.4 1.4M12.4 3.6l1.4 1.4" /></>);
 const RollbackIcon = mi(<><path d="M4.4 5.2A4.7 4.7 0 1 1 3.4 8.2" /><path d="M1.9 2.9v2.7h2.7" /></>);
 
+// CopyMini is a small two-document copy icon that copies one value and briefly shows
+// a check. Used next to each DNS record field so an owner can copy just the name or
+// just the value into their DNS provider.
+const CopyMini = ({ text, label }) => {
+  const [done, setDone] = useState(false);
+  return (
+    <button
+      type="button"
+      className="copy-mini"
+      title={label || "Copy"}
+      aria-label={label || "Copy"}
+      onClick={async () => {
+        try {
+          await navigator.clipboard.writeText(text);
+          setDone(true);
+          setTimeout(() => setDone(false), 1200);
+        } catch {
+          /* clipboard unavailable */
+        }
+      }}
+    >
+      {done ? (
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M3.5 8.5l3 3 6-7" />
+        </svg>
+      ) : (
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <rect x="5.5" y="5.5" width="8" height="8.5" rx="1.3" />
+          <path d="M3.5 10.5V3.2a1 1 0 0 1 1-1H10" />
+        </svg>
+      )}
+    </button>
+  );
+};
+
 // formatUptime turns a container start time (Unix seconds) into a short duration
 // like "3d 4h", "2h 15m", "8m" or "42s"; a stopped container has no uptime.
 const formatUptime = (startedAt) => {
@@ -889,6 +924,15 @@ const SettingsDialog = ({ name, description, hasToken, onCopyToken, onRegenerate
     load();
   }, [load]);
 
+  // While any domain is not yet active, refresh the list periodically so its status
+  // updates on its own -- the server retries issuance every minute once DNS is set up.
+  const anyPending = domains && domains.some((d) => d.status !== "active");
+  useEffect(() => {
+    if (!anyPending) return undefined;
+    const id = setInterval(load, 20000);
+    return () => clearInterval(id);
+  }, [anyPending, load]);
+
   const add = async (e) => {
     e.preventDefault();
     const domain = input.trim().toLowerCase();
@@ -1042,9 +1086,10 @@ const SettingsDialog = ({ name, description, hasToken, onCopyToken, onRegenerate
                       <div className="dns-rec" key={r.name}>
                         <span className="dns-type">{r.type}</span>
                         <code className="dns-name">{r.name}</code>
+                        <CopyMini text={r.name} label="Copy record name" />
                         <span className="dns-arrow" aria-hidden="true">-&gt;</span>
                         <code className="dns-value">{r.value}</code>
-                        <CopyButton text={`${r.name} ${r.type} ${r.value}`} small />
+                        <CopyMini text={r.value} label="Copy record value" />
                       </div>
                     ))}
                   </div>

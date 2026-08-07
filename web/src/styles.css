@@ -2226,7 +2226,22 @@ body.ws-resizing iframe { pointer-events: none; }
 .dns-type { font-size: 10px; font-weight: 600; color: var(--muted); min-width: 42px; }
 .dns-name, .dns-value { font-family: var(--mono, monospace); overflow-wrap: anywhere; }
 .dns-arrow { color: var(--muted); }
-.dns-rec .btn { margin-left: auto; }
+.copy-mini {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--muted);
+  cursor: pointer;
+}
+.copy-mini:hover { color: var(--text); background: var(--surface-2); }
+.copy-mini svg { width: 13px; height: 13px; }
 .snap-count {
   font-size: 12px;
   font-weight: 600;
