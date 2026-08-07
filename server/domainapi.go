@@ -25,14 +25,13 @@ type apiAppDomainResponse struct {
 }
 
 func (s *Server) domainView(appName string, d *store.Domain) *apiAppDomainResponse {
-	traffic, delegation := s.DomainDNSRecords(appName, d.Domain)
 	return &apiAppDomainResponse{
 		Domain:    d.Domain,
 		Status:    string(d.Status),
 		LastError: d.LastError,
 		CreatedAt: d.CreatedAt,
 		ActiveAt:  d.ActiveAt,
-		DNS:       []dnsRecord{traffic, delegation},
+		DNS:       s.DomainDNSRecords(appName, d.Domain),
 	}
 }
 

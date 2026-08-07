@@ -89,13 +89,13 @@ func (s *Server) ownedDomain(appName, domain string) (*store.Domain, error) {
 // result. With TLS off there is no certificate to get, so the domain simply
 // becomes active and routes over plain HTTP.
 func (s *Server) issueDomainCert(domain string) {
-	if s.magic == nil {
+	if s.domainMagic == nil {
 		s.markDomain(domain, store.DomainActive, "")
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), domainIssueTimeout)
 	defer cancel()
-	if err := s.magic.ManageSync(ctx, []string{domain}); err != nil {
+	if err := s.domainMagic.ManageSync(ctx, []string{domain}); err != nil {
 		slog.Warn("Custom domain certificate failed", "domain", domain, "error", err)
 		s.markDomain(domain, store.DomainError, err.Error())
 		return
@@ -187,23 +187,33 @@ func (s *Server) validateCustomDomain(domain string) error {
 	return nil
 }
 
-// DomainDNSRecords returns the two DNS records an owner must create for a custom
-// domain: one to route traffic at the app, one to delegate the ACME challenge to
-// the zone we control (so DNS-01 works even when the box is not publicly reachable).
-func (s *Server) DomainDNSRecords(appName, domain string) (traffic, delegation dnsRecord) {
-	traffic = dnsRecord{
+// domainChallengeName is the fixed name in our own zone that every custom domain's
+// ACME challenge is delegated to (via OverrideDomain). Owners CNAME their
+// _acme-challenge record to it, so the TXT we write there validates all of them.
+func (s *Server) domainChallengeName() string {
+	return "_acme-challenge.acme." + s.config.BaseDomain
+}
+
+// DomainDNSRecords returns the DNS records an owner must create for a custom domain:
+// one to route traffic at the app, and (in DNS-01 mode) one to delegate the ACME
+// challenge to the zone we control, so a certificate issues even when the box is not
+// publicly reachable. In on-demand HTTP-01 mode only the traffic record is needed.
+func (s *Server) DomainDNSRecords(appName, domain string) []dnsRecord {
+	records := []dnsRecord{{
 		Type:  "CNAME",
 		Name:  domain,
 		Value: appName + "." + s.config.BaseDomain,
 		Note:  "Point traffic at the app (use an A/ALIAS record to the server IP at a zone apex, where CNAME is not allowed).",
+	}}
+	if s.config.WildcardTLS() {
+		records = append(records, dnsRecord{
+			Type:  "CNAME",
+			Name:  "_acme-challenge." + domain,
+			Value: s.domainChallengeName(),
+			Note:  "Delegate the TLS challenge so a certificate can be issued without the server being publicly reachable.",
+		})
 	}
-	delegation = dnsRecord{
-		Type:  "CNAME",
-		Name:  "_acme-challenge." + domain,
-		Value: domain + ".acme." + s.config.BaseDomain,
-		Note:  "Delegate the TLS challenge so a certificate can be issued without the server being publicly reachable.",
-	}
-	return traffic, delegation
+	return records
 }
 
 // dnsRecord is one DNS record the owner has to create, for the API and UI.

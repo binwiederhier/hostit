@@ -99,9 +99,13 @@ func TestRemoveCustomDomainWrongApp(t *testing.T) {
 func TestDomainDNSRecords(t *testing.T) {
 	t.Parallel()
 	s := newTestServer(t)
-	traffic, delegation := s.DomainDNSRecords("blog", "blog.example.com")
-	assert.Equal(t, "blog.example.com", traffic.Name)
-	assert.Equal(t, "blog.apps.example.com", traffic.Value)
-	assert.Equal(t, "_acme-challenge.blog.example.com", delegation.Name)
-	assert.Equal(t, "blog.example.com.acme.apps.example.com", delegation.Value)
+	s.config.DNSProvider = "route53" // DNS-01 mode -> a delegation record is included
+
+	records := s.DomainDNSRecords("blog", "blog.example.com")
+	require.Len(t, records, 2)
+	assert.Equal(t, "blog.example.com", records[0].Name)
+	assert.Equal(t, "blog.apps.example.com", records[0].Value)
+	// Every custom domain delegates to the same fixed challenge name in our zone.
+	assert.Equal(t, "_acme-challenge.blog.example.com", records[1].Name)
+	assert.Equal(t, "_acme-challenge.acme.apps.example.com", records[1].Value)
 }

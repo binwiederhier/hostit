@@ -45,6 +45,12 @@ The dashboard can create, manage and delete apps and drive them in the browser
   `/files/{path}` reads/writes one, so the API is there. A tree/list view with
   view-edit-upload-delete would make small changes (fix a line in `public/`,
   drop in a file) possible without SSH or an agent.
+- **Drag-and-drop image upload into the chat.** Let the owner drop an image onto the
+  assistant chat (a screenshot, a mockup, a logo) and have it sent to the model as
+  part of the message. Needs a drop target + paste handler in `AppAssistant.jsx`, an
+  upload path to the server, and the assistant passing the image to the model as an
+  image content block (the Messages API takes base64/URL image blocks). Decide storage
+  (inline base64 vs. the app's home) and a size cap.
 - **Ask host-vs-build in the new-app modal.** When creating an app, let the owner
   pick their intent: "just host my existing app" or "build one here". The choice
   picks the default app-detail view (below) -- host leans on details/deploy, build

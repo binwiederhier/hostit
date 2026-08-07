@@ -5,6 +5,7 @@ package server
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -50,9 +51,14 @@ type Server struct {
 	// exchangeGoogleCode trades an OAuth code for an identity; overridden in tests
 	exchangeGoogleCode func(code, host string) (*googleIdentity, error)
 
-	// magic is the certmagic config used to obtain custom-domain certificates on
-	// demand; nil when TLS is off, in which case custom domains route over plain HTTP
-	magic *certmagic.Config
+	// magic manages the wildcard / app-subdomain certificates. domainMagic manages
+	// custom-domain certificates: in wildcard (DNS-01) mode it is a separate config
+	// that delegates the ACME challenge to a name in our own zone (OverrideDomain),
+	// so a cert issues for a zone we do not control and even when the box is not
+	// publicly reachable; otherwise it is the same on-demand config as magic. Both
+	// are nil when TLS is off, in which case custom domains route over plain HTTP.
+	magic       *certmagic.Config
+	domainMagic *certmagic.Config
 	// domainCache maps an active custom domain to its app, for the proxy; rebuilt
 	// from the store on change. nil until first loaded.
 	domainCache map[string]string
@@ -163,7 +169,31 @@ func (s *Server) runTLSServers(g *errgroup.Group) error {
 	magic := certmagic.NewDefault()
 	issuer := certmagic.NewACMEIssuer(magic, certmagic.DefaultACME)
 	magic.Issuers = []certmagic.Issuer{issuer}
-	s.magic = magic // used to obtain custom-domain certificates later
+	s.magic = magic
+
+	// Custom domains. In wildcard/DNS-01 mode, build a separate config on its own
+	// cache whose solver delegates every challenge to a fixed name in our zone
+	// (OverrideDomain); the owner CNAMEs their _acme-challenge to it. Kept apart so
+	// the wildcard path above is untouched. Otherwise custom domains just reuse the
+	// on-demand (HTTP-01) config.
+	if s.config.WildcardTLS() {
+		domainSolver, err := dnsSolver(s.config)
+		if err != nil {
+			return err
+		}
+		domainSolver.OverrideDomain = s.domainChallengeName()
+		domainACME := certmagic.DefaultACME
+		domainACME.DNS01Solver = domainSolver
+		var domainMagic *certmagic.Config
+		domainCache := certmagic.NewCache(certmagic.CacheOptions{
+			GetConfigForCert: func(certmagic.Certificate) (*certmagic.Config, error) { return domainMagic, nil },
+		})
+		domainMagic = certmagic.New(domainCache, certmagic.Default)
+		domainMagic.Issuers = []certmagic.Issuer{certmagic.NewACMEIssuer(domainMagic, domainACME)}
+		s.domainMagic = domainMagic
+	} else {
+		s.domainMagic = magic
+	}
 
 	// Obtain certificates for existing active custom domains up front, so they
 	// serve immediately after a restart and renew in the background.
@@ -180,6 +210,18 @@ func (s *Server) runTLSServers(g *errgroup.Group) error {
 	}
 	tlsConfig := magic.TLSConfig()
 	tlsConfig.NextProtos = append([]string{"h2", "http/1.1"}, tlsConfig.NextProtos...)
+	// Serve custom-domain certificates (in a separate cache) by falling back to
+	// their config when the base cache has no match for the SNI name.
+	if s.domainMagic != nil && s.domainMagic != magic {
+		baseGetCert := tlsConfig.GetCertificate
+		domainGetCert := s.domainMagic.TLSConfig().GetCertificate
+		tlsConfig.GetCertificate = func(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
+			if cert, err := baseGetCert(hello); err == nil {
+				return cert, nil
+			}
+			return domainGetCert(hello)
+		}
+	}
 
 	// HTTP: ACME challenges + redirect everything else to HTTPS
 	httpServer := &http.Server{
