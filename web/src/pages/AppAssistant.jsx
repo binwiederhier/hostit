@@ -178,7 +178,7 @@ const ToolCall = ({ item }) => {
 // Consecutive tool calls collapse into one group -- expanded while they run so
 // progress is visible, collapsed once done to keep the history tidy. Each call
 // inside stays individually expandable.
-const ToolGroup = ({ tools }) => {
+const ToolGroup = ({ tools, active }) => {
   // A lone tool call renders on its own, no group chrome -- but it still comes
   // through ToolGroup so that as more calls stream into the run the element type
   // at this position never switches (ToolCall <-> ToolGroup), which would remount
@@ -189,7 +189,11 @@ const ToolGroup = ({ tools }) => {
   const running = tools.some((t) => t.output == null);
   const anyError = tools.some((t) => t.isError);
   const [override, setOverride] = useState(null); // null = follow the running state
-  const open = override ?? running;
+  // `active` keeps the still-growing group (the last one while the turn runs) open
+  // and labelled with the current action, so it does not flap collapsed->expanded in
+  // the brief gap between one tool finishing and the next starting.
+  const busyGroup = running || active;
+  const open = override ?? busyGroup;
   const current = tools.find((t) => t.output == null) || tools[tools.length - 1];
   return (
     <div className="asst-group">
@@ -198,10 +202,10 @@ const ToolGroup = ({ tools }) => {
           <GroupIcon />
         </span>
         <span className="asst-tool-summary">
-          {running ? summarize(current.tool, current.input) : `${tools.length} actions`}
+          {busyGroup ? summarize(current.tool, current.input) : `${tools.length} actions`}
         </span>
-        {running && <span className="asst-tool-spinner" aria-hidden="true" />}
-        {!running && anyError && <span className="asst-tool-badge">error</span>}
+        {busyGroup && <span className="asst-tool-spinner" aria-hidden="true" />}
+        {!busyGroup && anyError && <span className="asst-tool-badge">error</span>}
         <span className="asst-tool-chev" aria-hidden="true">
           {open ? "▾" : "▸"}
         </span>
@@ -217,8 +221,10 @@ const ToolGroup = ({ tools }) => {
   );
 };
 
-// renderTranscript walks the items, folding runs of tool calls into groups.
-const renderTranscript = (items) => {
+// renderTranscript walks the items, folding runs of tool calls into groups. busy
+// is the turn-running flag: the trailing group is still growing while it is true,
+// so it is marked active and stays open instead of flickering between tools.
+const renderTranscript = (items, busy) => {
   const out = [];
   let i = 0;
   while (i < items.length) {
@@ -230,8 +236,9 @@ const renderTranscript = (items) => {
       }
       // Always a ToolGroup (it renders a bare ToolCall for a run of one), so a run
       // growing from one call to many keeps the same element type and key here and
-      // updates in place instead of remounting.
-      out.push(<ToolGroup key={group[0].id} tools={group} />);
+      // updates in place instead of remounting. The trailing run while busy is the
+      // active one.
+      out.push(<ToolGroup key={group[0].id} tools={group} active={busy && i === items.length} />);
     } else {
       out.push(<Turn key={items[i].id} item={items[i]} />);
       i++;
@@ -540,7 +547,7 @@ const AppAssistant = ({ name, onClose, embedded = false, onPreviewRefresh }) => 
             and run commands in its container, then publish. Try: &ldquo;add a leaderboard&rdquo;.
           </p>
         )}
-        {renderTranscript(items)}
+        {renderTranscript(items, busy)}
         {busy && <WorkingIndicator />}
       </div>
 

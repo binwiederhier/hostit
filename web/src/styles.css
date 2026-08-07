@@ -2168,6 +2168,10 @@ body.ws-resizing iframe { pointer-events: none; }
   font-size: 13px;
 }
 .snap-actions { display: flex; gap: 6px; flex: none; }
+.snap-actions .btn-icon { padding: 0 8px; }
+.confirm-body { color: var(--text); line-height: 1.5; }
+.confirm-body p { margin: 0 0 10px; }
+.confirm-body p:last-child { margin-bottom: 0; }
 
 /* Settings dialog sections (API token, custom domains) */
 .settings-section { margin-top: 18px; }

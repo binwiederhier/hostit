@@ -124,6 +124,7 @@ const TrashIcon = mi(<><path d="M3 4.5h10" /><path d="M6.5 4.5V3h3v1.5" /><path 
 const PlusIcon = mi(<path d="M8 3.5v9M3.5 8h9" />);
 const ForkIcon = mi(<><circle cx="4.5" cy="4" r="1.6" /><circle cx="11.5" cy="4" r="1.6" /><circle cx="8" cy="12.5" r="1.6" /><path d="M4.5 5.6v1.4a2 2 0 0 0 2 2H8m3.5-3.4v1.4a2 2 0 0 1-2 2H8m0 0v1.9" /></>);
 const KeyIcon = mi(<><circle cx="5" cy="11" r="2.3" /><path d="M6.7 9.3l5-5M10.7 5.3l1.4 1.4M12.4 3.6l1.4 1.4" /></>);
+const RollbackIcon = mi(<><path d="M4.4 5.2A4.7 4.7 0 1 1 3.4 8.2" /><path d="M1.9 2.9v2.7h2.7" /></>);
 
 // formatUptime turns a container start time (Unix seconds) into a short duration
 // like "3d 4h", "2h 15m", "8m" or "42s"; a stopped container has no uptime.
@@ -526,6 +527,32 @@ const useEscape = (onClose) => {
   }, [onClose]);
 };
 
+// ConfirmDialog is a small yes/no modal that explains what an action will do.
+const ConfirmDialog = ({ title, children, confirmLabel, danger, busy, onConfirm, onCancel }) => {
+  useEscape(onCancel);
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true" onMouseDown={onCancel}>
+      <div className="card modal" onMouseDown={(e) => e.stopPropagation()}>
+        <h2>{title}</h2>
+        <div className="confirm-body">{children}</div>
+        <div className="btn-row">
+          <button type="button" className="btn" onClick={onCancel} disabled={busy}>
+            Cancel
+          </button>
+          <button
+            type="button"
+            className={"btn " + (danger ? "btn-danger" : "btn-primary")}
+            onClick={onConfirm}
+            disabled={busy}
+          >
+            {confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // NewSnapshotDialog names and takes a manual snapshot. Reached from the snapshot
 // split button's caret; the name is optional but helps the owner find it later.
 const NewSnapshotDialog = ({ name, onClose, onCreated, showToast }) => {
@@ -670,13 +697,12 @@ const SnapshotsDialog = ({ name, onClose, showToast, onRolledBack, onFork }) => 
     load();
   }, [load]);
 
-  const [rollingId, setRollingId] = useState(null); // which snapshot is being restored
-  const [confirmId, setConfirmId] = useState(null); // a Delete armed for confirmation
+  const [confirm, setConfirm] = useState(null); // { type: "rollback" | "delete", snap }
 
-  const rollback = async (id) => {
-    if (busy) return;
+  const doRollback = async () => {
+    const id = confirm?.snap?.id;
+    if (!id || busy) return;
     setBusy(true);
-    setRollingId(id);
     setError("");
     showToast("Rolling back..."); // before the (synchronous, possibly slow) request
     try {
@@ -686,27 +712,30 @@ const SnapshotsDialog = ({ name, onClose, showToast, onRolledBack, onFork }) => 
     } catch (err) {
       setError(err.message);
       setBusy(false);
-      setRollingId(null);
+      setConfirm(null);
     }
   };
 
-  const remove = async (id) => {
-    if (busy) return;
-    setConfirmId(null);
+  const doRemove = async () => {
+    const id = confirm?.snap?.id;
+    if (!id || busy) return;
     setBusy(true);
     setError("");
     try {
       await api.del(`/api/apps/${encodeURIComponent(name)}/snapshots/${encodeURIComponent(id)}`);
       showToast("Snapshot deleted");
+      setConfirm(null);
       await load();
     } catch (err) {
       setError(err.message);
-    } finally {
       setBusy(false);
     }
   };
 
+  const when = (snap) => new Date(snap.created_at).toLocaleString();
+
   return (
+    <>
     <div className="modal-backdrop" role="dialog" aria-modal="true" onMouseDown={onClose}>
       <div className="card modal modal-xwide" onMouseDown={(e) => e.stopPropagation()}>
         <div className="modal-head">
@@ -738,33 +767,36 @@ const SnapshotsDialog = ({ name, onClose, showToast, onRolledBack, onFork }) => 
                   {s.label && <span className="snap-label">{s.label}</span>}
                 </div>
                 <div className="snap-actions">
-                  <button type="button" className="btn btn-small" onClick={() => rollback(s.id)} disabled={busy}>
-                    {rollingId === s.id ? "Rolling back..." : "Roll back"}
+                  <button
+                    type="button"
+                    className="btn btn-small btn-icon"
+                    onClick={() => setConfirm({ type: "rollback", snap: s })}
+                    disabled={busy}
+                    title="Roll back to this snapshot"
+                    aria-label="Roll back to this snapshot"
+                  >
+                    <RollbackIcon />
                   </button>
-                  <button type="button" className="btn btn-small" onClick={() => onFork(s.id)} disabled={busy} title="Fork a new app from this snapshot">
-                    Fork
+                  <button
+                    type="button"
+                    className="btn btn-small btn-icon"
+                    onClick={() => onFork(s.id)}
+                    disabled={busy}
+                    title="Fork a new app from this snapshot"
+                    aria-label="Fork a new app from this snapshot"
+                  >
+                    <ForkIcon />
                   </button>
-                  {confirmId === s.id ? (
-                    <button
-                      type="button"
-                      className="btn btn-small btn-danger"
-                      onClick={() => remove(s.id)}
-                      disabled={busy}
-                      title="Deleting a snapshot cannot be undone"
-                    >
-                      Confirm delete
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      className="btn btn-small"
-                      onClick={() => setConfirmId(s.id)}
-                      disabled={busy}
-                      title="Delete this snapshot"
-                    >
-                      Delete
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    className="btn btn-small btn-icon menu-item-danger"
+                    onClick={() => setConfirm({ type: "delete", snap: s })}
+                    disabled={busy}
+                    title="Delete this snapshot"
+                    aria-label="Delete this snapshot"
+                  >
+                    <TrashIcon />
+                  </button>
                 </div>
               </div>
             ))}
@@ -772,6 +804,44 @@ const SnapshotsDialog = ({ name, onClose, showToast, onRolledBack, onFork }) => 
         )}
       </div>
     </div>
+
+    {confirm?.type === "rollback" && (
+      <ConfirmDialog
+        title="Roll back to this snapshot?"
+        confirmLabel={busy ? "Rolling back..." : "Roll back"}
+        busy={busy}
+        onCancel={() => setConfirm(null)}
+        onConfirm={doRollback}
+      >
+        <p>
+          Restore <span className="mono">{name}</span>'s files to <strong>{when(confirm.snap)}</strong>
+          {confirm.snap.label ? <> (&ldquo;{confirm.snap.label}&rdquo;)</> : null}.
+        </p>
+        <p>
+          A snapshot of the <strong>current</strong> state is taken first, so this is reversible -- you can roll back to
+          that if you change your mind.
+        </p>
+      </ConfirmDialog>
+    )}
+    {confirm?.type === "delete" && (
+      <ConfirmDialog
+        title="Delete this snapshot?"
+        confirmLabel="Delete"
+        danger
+        busy={busy}
+        onCancel={() => setConfirm(null)}
+        onConfirm={doRemove}
+      >
+        <p>
+          Permanently delete the snapshot from <strong>{when(confirm.snap)}</strong>
+          {confirm.snap.label ? <> (&ldquo;{confirm.snap.label}&rdquo;)</> : null}.
+        </p>
+        <p>
+          <strong>This cannot be undone.</strong>
+        </p>
+      </ConfirmDialog>
+    )}
+    </>
   );
 };
 
@@ -1414,9 +1484,8 @@ const AppDetail = ({ account, refreshAccount }) => {
           showToast={showToast}
           onRolledBack={load}
           onFork={(snapshotId) => {
-            setShowSnapshots(false);
             setForkSnapshotId(snapshotId);
-            setShowFork(true);
+            setShowFork(true); // opens the fork dialog on top; the snapshots list stays open
           }}
         />
       )}
