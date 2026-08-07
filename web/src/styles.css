@@ -1974,7 +1974,10 @@ body.ws-resizing iframe { pointer-events: none; }
 @media (max-width: 640px) {
   .ws-topbar > .ws-back,
   .ws-idrow { display: none; }
-  .ws-split { height: calc(100dvh - 140px); }
+  /* The identity row is gone, so the controls no longer need to clear it -- drop
+     the top margin that was doubling up with the container's top padding. */
+  .ws-topright { margin-top: 0; }
+  .ws-split { height: calc(100dvh - 130px); }
 }
 
 /* Modal helpers shared by the SSH and bring-your-own-AI dialogs */
