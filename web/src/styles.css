@@ -1976,8 +1976,8 @@ main.container:has(.ws-page) {
   align-items: center;
   justify-content: center;
 }
-.btn-icon { gap: 5px; padding: 0 10px; }
-.btn-icon svg { width: 16px; height: 16px; }
+.btn-icon { display: inline-flex; align-items: center; justify-content: center; gap: 5px; padding: 0 10px; }
+.btn-icon svg { width: 16px; height: 16px; display: block; }
 /* Slightly wider so it matches the terminal icon button (its icon half) */
 .btn-sparkle { padding: 0 12px; }
 
