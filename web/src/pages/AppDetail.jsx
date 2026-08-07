@@ -436,7 +436,7 @@ const NotFound = ({ name }) => (
 // Actions menu now.
 const PromptDialog = ({ prompt, token, onClose }) => {
   // Show the token masked on screen (shoulder-surfing), but copy the real prompt.
-  const shown = token ? prompt.split(token).join("*".repeat(Math.min(Math.max(token.length, 12), 40))) : prompt;
+  const shown = token ? prompt.split(token).join("*".repeat(8)) : prompt;
   useEscape(onClose);
   return (
     <div className="modal-backdrop" role="dialog" aria-modal="true" onMouseDown={onClose}>

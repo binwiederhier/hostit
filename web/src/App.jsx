@@ -310,7 +310,7 @@ const ProfileMenu = ({ account }) => {
             ))}
           </div>
           <div className="nav-profile-div" />
-          <button type="button" role="menuitem" onClick={logout}>
+          <button type="button" role="menuitem" className="nav-logout" onClick={logout}>
             Log out
           </button>
         </div>

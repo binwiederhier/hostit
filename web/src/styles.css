@@ -411,6 +411,8 @@ p {
 }
 .nav-profile-pop a:hover,
 .nav-profile-pop button:hover { background: var(--surface-2); text-decoration: none; }
+.nav-profile-pop button.nav-logout { color: var(--danger); }
+.nav-profile-pop button.nav-logout:hover { background: var(--danger-bg); }
 
 /* Light/dark/system segmented control in the profile menu */
 .nav-theme {
