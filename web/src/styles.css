@@ -283,14 +283,16 @@ p {
   background: var(--surface-2);
 }
 
-/* "Apps" split control: label navigates, caret opens the app switcher */
-.nav-apps { position: relative; display: inline-flex; align-items: center; }
+/* "Apps" split control: label navigates, caret (or hover) opens the switcher.
+   align-items: stretch makes the caret the same height as the "Apps" link. */
+.nav-apps { position: relative; display: inline-flex; align-items: stretch; }
+.nav-apps-link { display: inline-flex; align-items: center; }
 .nav-apps-caret {
   display: inline-flex;
   align-items: center;
   border: 0;
-  padding: 5px 5px;
-  margin-left: -2px;
+  padding: 0 9px;
+  margin-left: -3px;
   border-radius: 6px;
   background: none;
   color: var(--muted);
@@ -1256,24 +1258,53 @@ th:last-child {
   cursor: pointer;
 }
 
-.menu-items button:hover {
+.menu-items button:hover:not(:disabled) {
   background: var(--surface-2);
 }
-
-/* A divider before the container ("power") verbs, to set them off from the app
-   verbs above them. */
-.menu-item-sep {
-  margin-top: 4px;
-  border-top: 1px solid var(--border) !important;
+.menu-items button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
-/* Delete sits apart from the lifecycle actions: a divider above it and the
-   danger color, so it never gets clicked by reflex. */
+/* Grouped menu: a small header per section and a divider between sections. */
+.menu-label {
+  padding: 7px 11px 3px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+.menu-sep {
+  height: 1px;
+  background: var(--border);
+  margin: 5px 6px;
+}
+
+/* Delete carries the danger colour so it never gets clicked by reflex. */
 .menu-item-danger {
-  margin-top: 4px;
-  border-top: 1px solid var(--border) !important;
-  border-radius: 0 0 6px 6px !important;
   color: var(--danger) !important;
+}
+
+/* A brief "Copied" / "Regenerated and copied" toast. */
+.snackbar {
+  position: fixed;
+  left: 50%;
+  bottom: 26px;
+  transform: translateX(-50%);
+  z-index: 200;
+  padding: 10px 16px;
+  border-radius: 10px;
+  background: #14181d;
+  color: #e8ecf1;
+  font-size: 13.5px;
+  font-weight: 500;
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.34);
+  animation: snack-in 0.18s ease;
+}
+@keyframes snack-in {
+  from { opacity: 0; transform: translate(-50%, 8px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
 }
 
 /* Modal (asking what to do with someone's apps before deleting them) */
@@ -1830,7 +1861,7 @@ main.container:has(.ws-page) {
 
 /* Identity: dot, name and (only the notable) status, on one row */
 .ws-idrow { display: flex; align-items: center; gap: 10px; }
-.ws-name { font-family: var(--mono); font-weight: 700; font-size: 20px; line-height: 1; letter-spacing: -0.01em; }
+.ws-name { font-family: var(--mono); font-weight: 600; font-size: 20px; line-height: 24px; letter-spacing: -0.01em; }
 
 /* The right cluster: live resources next to the controls, vertically centred */
 .ws-topright { margin-left: auto; display: flex; align-items: center; gap: 18px; flex: none; }
@@ -1846,7 +1877,8 @@ main.container:has(.ws-page) {
 }
 .btn-icon { gap: 5px; padding: 0 10px; }
 .btn-icon svg { width: 16px; height: 16px; }
-.btn-sparkle { color: var(--accent); }
+/* Slightly wider so it matches the terminal icon button (its icon half) */
+.btn-sparkle { color: var(--accent); padding: 0 12px; }
 .btn-sparkle:hover:not(:disabled) { color: var(--accent-strong); }
 
 /* Terminal split button: [icon | caret]. The icon half opens the web shell; the

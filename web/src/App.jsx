@@ -53,6 +53,7 @@ const AppsMenu = () => {
   const { open, setOpen, ref } = useNavDropdown();
   const [apps, setApps] = useState(null); // null = not loaded yet
   const [failed, setFailed] = useState(false);
+  const closeTimer = useRef(null);
   useEffect(() => {
     if (open && apps === null && !failed) {
       api
@@ -61,9 +62,19 @@ const AppsMenu = () => {
         .catch(() => setFailed(true));
     }
   }, [open, apps, failed]);
+  // Hover opens it (a small close delay bridges the gap to the popup); clicking
+  // "Apps" still navigates to the list.
+  const openNow = () => {
+    clearTimeout(closeTimer.current);
+    setOpen(true);
+  };
+  const closeSoon = () => {
+    clearTimeout(closeTimer.current);
+    closeTimer.current = setTimeout(() => setOpen(false), 140);
+  };
   return (
-    <div className="nav-apps" ref={ref}>
-      <NavLink to="/" end className="nav-apps-link">
+    <div className="nav-apps" ref={ref} onMouseEnter={openNow} onMouseLeave={closeSoon}>
+      <NavLink to="/" end className="nav-apps-link" onClick={() => setOpen(false)}>
         Apps
       </NavLink>
       <button

@@ -235,34 +235,27 @@ const TerminalSplitButton = ({ active, connecting, onWebShell, onSsh }) => {
   );
 };
 
-// Start/stop/restart behind one button: only one of them is ever the sensible
-// next move. Delete lives here too, set apart at the bottom, so the whole
-// rare-actions surface is one menu.
-const ActionsMenu = ({ running, appRunning, busy, onAction, onDelete }) => {
+// Everything rare about an app behind one button, grouped: app actions (the run:
+// command), container actions (power), the API token, and delete -- dividers
+// between the groups. Only one app verb is ever the sensible next move, and when
+// the container is off there is no app to act on, so that group is dropped.
+const ActionsMenu = ({ running, appRunning, busy, hasToken, onAction, onCopyToken, onRegenerateToken, onDelete }) => {
   const { open, setOpen, ref } = useDropdown();
 
   const run = (action) => {
     setOpen(false);
     onAction(action);
   };
-  const remove = () => {
+  const pick = (fn) => () => {
     setOpen(false);
-    onDelete();
+    fn();
   };
-  // App verbs act on the run: command inside a running container; power verbs act
-  // on the container itself. When it is off, the only thing to do is power it on.
-  // Which app verbs make sense depends on whether the run: process is up: offer
-  // Stop/Restart to a running app, and only Start to a stopped one.
   const appVerbs = appRunning
     ? [
         { verb: "restart", label: "Restart app" },
         { verb: "stop", label: "Stop app" },
       ]
     : [{ verb: "start", label: "Start app" }];
-  const powerVerbs = [
-    { verb: "reboot", label: "Reboot" },
-    { verb: "poweroff", label: "Power off" },
-  ];
 
   return (
     <div className="menu" ref={ref}>
@@ -281,25 +274,45 @@ const ActionsMenu = ({ running, appRunning, busy, onAction, onDelete }) => {
       </button>
       {open && (
         <div className="menu-items" role="menu">
-          {running ? (
+          {running && (
             <>
+              <div className="menu-label">App</div>
               {appVerbs.map((a) => (
                 <button key={a.verb} type="button" role="menuitem" onClick={() => run(a.verb)}>
                   {a.label}
                 </button>
               ))}
-              {powerVerbs.map((a) => (
-                <button key={a.verb} type="button" role="menuitem" className="menu-item-sep" onClick={() => run(a.verb)}>
-                  {a.label}
-                </button>
-              ))}
+              <div className="menu-sep" />
+            </>
+          )}
+
+          <div className="menu-label">Container</div>
+          {running ? (
+            <>
+              <button type="button" role="menuitem" onClick={() => run("reboot")}>
+                Reboot
+              </button>
+              <button type="button" role="menuitem" onClick={() => run("poweroff")}>
+                Power off
+              </button>
             </>
           ) : (
             <button type="button" role="menuitem" onClick={() => run("poweron")}>
               Power on
             </button>
           )}
-          <button type="button" role="menuitem" className="menu-item-danger" onClick={remove}>
+          <div className="menu-sep" />
+
+          <div className="menu-label">API token</div>
+          <button type="button" role="menuitem" onClick={pick(onCopyToken)} disabled={!hasToken}>
+            Copy token
+          </button>
+          <button type="button" role="menuitem" onClick={pick(onRegenerateToken)}>
+            Regenerate token
+          </button>
+          <div className="menu-sep" />
+
+          <button type="button" role="menuitem" className="menu-item-danger" onClick={pick(onDelete)}>
             Delete app...
           </button>
         </div>
@@ -320,56 +333,10 @@ const NotFound = ({ name }) => (
   </div>
 );
 
-// The app-scoped token is created with the app and returned by the API on every
-// fetch, so it is always on display; rotating it mints a new one. Lives in the
-// "bring your own AI" dialog next to the copy-paste prompt.
-const ApiAccess = ({ name, token, onRotated }) => {
-  const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
-
-  const rotate = async () => {
-    if (busy || !window.confirm("This breaks any assistant session still using the old token. Continue?")) {
-      return;
-    }
-    setBusy(true);
-    setError("");
-    try {
-      onRotated(await api.post(`/api/apps/${encodeURIComponent(name)}/token`));
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <>
-      <ErrorBanner message={error} onDismiss={() => setError("")} />
-      {!token && <p className="empty">This app has no owner, so it has no API token.</p>}
-      {token && (
-        <>
-          <p className="hint">
-            Scoped to this one app. Anyone holding it can change or delete the app, so treat it like a password.
-          </p>
-          <pre className="key-block">{token}</pre>
-          <div className="btn-row">
-            <CopyButton text={token} small={false}>
-              Copy token
-            </CopyButton>
-            <button type="button" className="btn" onClick={rotate} disabled={busy}>
-              {busy ? "Regenerating..." : "Regenerate"}
-            </button>
-          </div>
-        </>
-      )}
-    </>
-  );
-};
-
-// "Bring your own Claude": the ready-to-paste prompt, the app address and the API
-// token, all in one modal reached from the sparkle button. This is where the
-// address/token/regenerate controls live now that the page itself is a workspace.
-const PromptDialog = ({ app, token, prompt, onRotated, onClose }) => {
+// "Bring your own Claude": just the ready-to-paste prompt (which already carries
+// the app's URL and token). The token's own copy/regenerate controls live in the
+// Actions menu now.
+const PromptDialog = ({ prompt, onClose }) => {
   useEscape(onClose);
   return (
     <div className="modal-backdrop" role="dialog" aria-modal="true" onMouseDown={onClose}>
@@ -394,19 +361,6 @@ const PromptDialog = ({ app, token, prompt, onRotated, onClose }) => {
             </CopyButton>
           </div>
         </div>
-
-        <div className="field-row">
-          <span className="field-k">Address</span>
-          <a className="field-v mono" href={app.url} target="_blank" rel="noreferrer">
-            {hostOf(app.url)}
-          </a>
-          <CopyButton text={app.url} small>
-            Copy
-          </CopyButton>
-        </div>
-
-        <h3 className="modal-sub">API token</h3>
-        <ApiAccess name={app.name} token={token} onRotated={onRotated} />
       </div>
     </div>
   );
@@ -526,7 +480,44 @@ const AppDetail = ({ account, refreshAccount }) => {
   const [showSsh, setShowSsh] = useState(false);
   const [showPrompt, setShowPrompt] = useState(false);
   const [hasKeys, setHasKeys] = useState(null); // null until we know, so nothing flickers
+  const [toast, setToast] = useState(""); // a 3s "Copied"/"Regenerated" snackbar
+  const toastTimer = useRef(null);
   const catchUpTimers = useRef([]);
+
+  // showToast flashes a message at the bottom for 3 seconds, then clears it.
+  const showToast = useCallback((message) => {
+    setToast(message);
+    clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(""), 3000);
+  }, []);
+
+  // Copy the current app token to the clipboard; regenerate mints a new one, points
+  // the page at it, and copies that. Both flash a snackbar.
+  const copyToken = useCallback(async () => {
+    const t = app?.agent_token;
+    if (!t) return;
+    try {
+      await navigator.clipboard.writeText(t);
+      showToast("Copied to clipboard");
+    } catch {
+      showToast("Copy failed");
+    }
+  }, [app, showToast]);
+
+  const regenerateToken = useCallback(async () => {
+    try {
+      const fresh = await api.post(`/api/apps/${encodeURIComponent(name)}/token`);
+      setApp(fresh);
+      try {
+        await navigator.clipboard.writeText(fresh.agent_token || "");
+      } catch {
+        // clipboard may be unavailable; the token still rotated
+      }
+      showToast("Regenerated and copied");
+    } catch (err) {
+      setError(err.message);
+    }
+  }, [name, showToast]);
 
   // The live preview reloads whenever the app is (re)deployed by anything -- the
   // chat's deploy tool, an external `hostit deploy`, a restart. We remount the
@@ -647,6 +638,7 @@ const AppDetail = ({ account, refreshAccount }) => {
       catchUpTimers.current.forEach(clearTimeout);
       clearInterval(ticker);
       clearTimeout(refreshTimer.current);
+      clearTimeout(toastTimer.current);
     };
   }, [load, scheduleCatchUp]);
 
@@ -829,7 +821,10 @@ const AppDetail = ({ account, refreshAccount }) => {
                 running={app.running}
                 appRunning={app.app_running}
                 busy={!!pending}
+                hasToken={!!token}
                 onAction={lifecycle}
+                onCopyToken={copyToken}
+                onRegenerateToken={regenerateToken}
                 onDelete={() => setConfirmDelete(true)}
               />
               <a className="btn btn-primary" href={app.url} target="_blank" rel="noreferrer">
@@ -910,23 +905,17 @@ const AppDetail = ({ account, refreshAccount }) => {
         </Suspense>
       )}
       {showSsh && <SshDialog app={app} hasKeys={hasKeys} onClose={() => setShowSsh(false)} />}
-      {showPrompt && (
-        <PromptDialog app={app} token={token} prompt={prompt} onRotated={setApp} onClose={() => setShowPrompt(false)} />
-      )}
+      {showPrompt && <PromptDialog prompt={prompt} onClose={() => setShowPrompt(false)} />}
       {confirmDelete && (
         <DeleteAppDialog name={app.name} onCancel={() => setConfirmDelete(false)} onDeleted={deleted} />
       )}
+      {toast && (
+        <div className="snackbar" role="status" aria-live="polite">
+          {toast}
+        </div>
+      )}
     </>
   );
-};
-
-// hostOf returns just the hostname of a URL, for a compact address display
-const hostOf = (url) => {
-  try {
-    return new URL(url).host;
-  } catch {
-    return url;
-  }
 };
 
 export default AppDetail;
