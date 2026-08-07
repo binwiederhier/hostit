@@ -220,6 +220,11 @@ env:
         chat, <span className="mono">hostit apps rollback</span>, or the API.
       </p>
       <p className="hint">
+        You can also <strong>fork</strong> an app -- a new app seeded from a copy of this one's files (its own subdomain,
+        user and container). Use the snapshot menu on the app page, <span className="mono">hostit apps fork</span>, or{" "}
+        <span className="mono">POST /api/apps/&#123;app&#125;/fork</span>. Fork the current state, or a specific snapshot.
+      </p>
+      <p className="hint">
         Keep <span className="mono">description:</span> current. The dashboard shows it, and it is what the next assistant
         session starts from.
       </p>

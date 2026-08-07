@@ -437,16 +437,19 @@ subvolume, which unlocks two things:
     post: "rm -f data/app.snap.db"                              # clean up after
   ```
 
-- **Fork.** Duplicate an app into a new one, seeding its home from a snapshot of the
-  source's current files. The fork gets its own subdomain, Unix user and container,
-  and the two run independently from there. Reached from the snapshot menu on the app
-  page, the CLI, or the REST API:
+- **Fork.** Duplicate an app into a new one, seeding its home from a copy of the
+  source's files -- either its current state or a specific snapshot. The fork gets its
+  own subdomain, Unix user and container, and the two run independently from there.
+  Reached from the snapshot menu on the app page (including a per-snapshot "Fork"),
+  the CLI, or the REST API:
 
   ```sh
-  hostit apps fork myapp myapp-copy                  # seed a new app from myapp
+  hostit apps fork myapp myapp-copy                  # seed from myapp's current files
+  hostit apps fork myapp myapp-copy <snapshot-id>    # seed from a specific snapshot
   ```
 
-  (`POST /api/apps/{app}/fork` with `{"new_name": "..."}`.)
+  (`POST /api/apps/{app}/fork` with `{"new_name": "...", "snapshot_id": "..."}`; the
+  snapshot id is optional.)
 
 - **Hard disk quotas.** The app's `disk_mb` limit is enforced by a btrfs qgroup, so
   a write past it fails immediately (EDQUOT) instead of the app being stopped later

@@ -2067,6 +2067,16 @@ body.ws-resizing iframe { pointer-events: none; }
   font-size: 13px;
 }
 .snap-actions { display: flex; gap: 6px; flex: none; }
+.snap-count {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 1px 8px;
+  margin-left: 6px;
+  vertical-align: middle;
+}
 .snap-when { color: var(--text); font-variant-numeric: tabular-nums; }
 .snap-kind {
   font-size: 10px;

@@ -24,7 +24,7 @@ func TestForkSeedsHomeFromSourceAndDeploys(t *testing.T) {
 	require.NoError(t, os.MkdirAll(m.appHome("blog2"), 0o755))
 	writeAppFile(t, m, "blog2", "hostit.yml", "mode: app\nrun: ./server")
 
-	fork, err := m.Fork("blog", "blog2", &CreateOptions{})
+	fork, err := m.Fork("blog", "blog2", "", &CreateOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, "blog2", fork.Name)
 
@@ -46,11 +46,54 @@ func TestForkSeedsHomeFromSourceAndDeploys(t *testing.T) {
 	assert.Contains(t, r.ran(), fmt.Sprintf("chown -R %d:%d %s", uid, uid, m.appHome("blog2")))
 }
 
+func TestForkFromSnapshotSeedsFromThatSnapshot(t *testing.T) {
+	t.Parallel()
+	m, _, r := newTestDeployManager(t)
+	r.returns("stat -f", "btrfs\n")
+	r.failOn("container inspect", assert.AnError)
+	require.NoError(t, m.store.AddApp(&store.App{Name: "blog", Port: 10000, Host: store.HostLocal}))
+	require.NoError(t, os.MkdirAll(m.appHome("blog"), 0o755))
+	require.NoError(t, os.MkdirAll(m.appHome("blog2"), 0o755))
+	writeAppFile(t, m, "blog2", "hostit.yml", "mode: app\nrun: ./server")
+
+	snap, err := m.TakeSnapshot("blog", "checkpoint", false)
+	require.NoError(t, err)
+	r.reset()
+	_, err = m.Fork("blog", "blog2", snap.ID, &CreateOptions{})
+	require.NoError(t, err)
+
+	// Seeded from the snapshot's subvolume, not the live home.
+	assert.Contains(t, r.ran(), "btrfs subvolume snapshot "+m.snapshotPath("blog", snap.ID)+" "+m.appHome("blog2"))
+	assert.NotContains(t, r.ran(), "btrfs subvolume snapshot "+m.appHome("blog")+" "+m.appHome("blog2"))
+}
+
+func TestForkFromUnknownSnapshotFails(t *testing.T) {
+	t.Parallel()
+	m, _, r := newTestDeployManager(t)
+	r.returns("stat -f", "btrfs\n")
+	require.NoError(t, m.store.AddApp(&store.App{Name: "blog", Port: 10000, Host: store.HostLocal}))
+	_, err := m.Fork("blog", "blog2", "nosuchsnap", &CreateOptions{})
+	assert.ErrorIs(t, err, store.ErrSnapshotNotFound)
+}
+
+func TestForkSetsDiskQuota(t *testing.T) {
+	t.Parallel()
+	m, _, r := newTestDeployManager(t)
+	r.returns("stat -f", "btrfs\n")
+	require.NoError(t, m.store.AddApp(&store.App{Name: "blog", Port: 10000, Host: store.HostLocal}))
+	require.NoError(t, os.MkdirAll(m.appHome("blog"), 0o755))
+
+	_, err := m.Fork("blog", "blog2", "", &CreateOptions{DiskMB: 256})
+	require.NoError(t, err)
+	// The fork's home gets its own hard qgroup cap, not the source's and not none.
+	assert.Contains(t, r.ran(), "btrfs qgroup limit 256M "+m.appHome("blog2"))
+}
+
 func TestForkRequiresBtrfs(t *testing.T) {
 	t.Parallel()
 	m, _, _ := newTestDeployManager(t)
 	require.NoError(t, m.store.AddApp(&store.App{Name: "blog", Port: 10000, Host: store.HostLocal}))
-	_, err := m.Fork("blog", "blog2", &CreateOptions{})
+	_, err := m.Fork("blog", "blog2", "", &CreateOptions{})
 	assert.ErrorIs(t, err, ErrSnapshotsUnavailable)
 }
 
@@ -58,7 +101,7 @@ func TestForkUnknownSourceFails(t *testing.T) {
 	t.Parallel()
 	m, _, r := newTestDeployManager(t)
 	r.returns("stat -f", "btrfs\n")
-	_, err := m.Fork("nope", "blog2", &CreateOptions{})
+	_, err := m.Fork("nope", "blog2", "", &CreateOptions{})
 	assert.ErrorIs(t, err, store.ErrAppNotFound)
 }
 
@@ -68,6 +111,6 @@ func TestForkRejectsExistingName(t *testing.T) {
 	r.returns("stat -f", "btrfs\n")
 	require.NoError(t, m.store.AddApp(&store.App{Name: "blog", Port: 10000, Host: store.HostLocal}))
 	require.NoError(t, m.store.AddApp(&store.App{Name: "blog2", Port: 10001, Host: store.HostLocal}))
-	_, err := m.Fork("blog", "blog2", &CreateOptions{})
+	_, err := m.Fork("blog", "blog2", "", &CreateOptions{})
 	assert.ErrorIs(t, err, ErrAppExists)
 }

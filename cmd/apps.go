@@ -48,7 +48,7 @@ var (
 				ArgsUsage: "<name>",
 				Action:    execAppsRemove,
 				Flags: []cli.Flag{
-					&cli.BoolFlag{Name: "force", Usage: "do not ask for confirmation"},
+					&cli.BoolFlag{Name: "force", Aliases: []string{"yes", "y"}, Usage: "do not ask for confirmation"},
 				},
 			},
 			{
@@ -128,8 +128,8 @@ var (
 			},
 			{
 				Name:      "fork",
-				Usage:     "Duplicate an app into a new one (seeds its home from the source; needs a btrfs host)",
-				ArgsUsage: "<source> <new-name>",
+				Usage:     "Duplicate an app into a new one (seeds from the source, or a snapshot; needs a btrfs host)",
+				ArgsUsage: "<source> <new-name> [snapshot-id]",
 				Action:    execFork,
 			},
 			{
@@ -304,10 +304,10 @@ func execFork(c *cli.Context) error {
 	if err != nil {
 		return err
 	}
-	if c.NArg() != 2 {
-		return errors.New("usage: hostit apps fork <source> <new-name>")
+	if c.NArg() < 2 || c.NArg() > 3 {
+		return errors.New("usage: hostit apps fork <source> <new-name> [snapshot-id]")
 	}
-	a, err := cl.Fork(c.Args().First(), c.Args().Get(1))
+	a, err := cl.Fork(c.Args().First(), c.Args().Get(1), c.Args().Get(2))
 	if err != nil {
 		return err
 	}

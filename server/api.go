@@ -125,11 +125,17 @@ func (s *Server) handleAppsCreate(w http.ResponseWriter, r *http.Request, c *cal
 		writeAppError(w, err)
 		return
 	}
+	diskMB, err := s.callerDiskLimit(c)
+	if err != nil {
+		writeAppError(w, err)
+		return
+	}
 	opts := &app.CreateOptions{
 		OwnerID:     c.userID(),
 		RequestKeys: req.SSHKeys,
 		ProfileKeys: profileKeys,
 		MemoryMB:    memoryMB,
+		DiskMB:      diskMB,
 	}
 	a, err := s.apps.CreateApp(req.Name, opts)
 	if err != nil {
@@ -169,8 +175,13 @@ func (s *Server) handleAppsFork(w http.ResponseWriter, r *http.Request, c *calle
 		writeAppError(w, err)
 		return
 	}
-	opts := &app.CreateOptions{OwnerID: c.userID(), ProfileKeys: profileKeys, MemoryMB: memoryMB}
-	a, err := s.apps.Fork(source.Name, req.NewName, opts)
+	diskMB, err := s.callerDiskLimit(c)
+	if err != nil {
+		writeAppError(w, err)
+		return
+	}
+	opts := &app.CreateOptions{OwnerID: c.userID(), ProfileKeys: profileKeys, MemoryMB: memoryMB, DiskMB: diskMB}
+	a, err := s.apps.Fork(source.Name, req.NewName, req.SnapshotID, opts)
 	if err != nil {
 		writeSnapshotError(w, err) // ErrSnapshotsUnavailable -> 501; the rest fall through
 		return
@@ -339,6 +350,23 @@ func (s *Server) callerMemoryLimit(c *caller) (int, error) {
 		return 0, err
 	}
 	return limits.MemoryMB, nil
+}
+
+// callerDiskLimit is the disk quota (MB) to apply to an app the caller creates:
+// the owner's limit, or the instance default for the global admin token.
+func (s *Server) callerDiskLimit(c *caller) (int, error) {
+	if c.user == nil {
+		defaults, err := s.users.Defaults()
+		if err != nil {
+			return 0, err
+		}
+		return defaults.DiskMB, nil
+	}
+	limits, err := s.users.Limits(c.user)
+	if err != nil {
+		return 0, err
+	}
+	return limits.DiskMB, nil
 }
 
 // writeAppError maps app, store and user errors to HTTP status codes

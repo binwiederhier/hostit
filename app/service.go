@@ -98,6 +98,7 @@ type CreateOptions struct {
 	RequestKeys []string // App-specific keys from the request
 	ProfileKeys []string // The owner's profile keys (apply to all their apps)
 	MemoryMB    int      // Container memory limit; 0 means unlimited
+	DiskMB      int      // Disk quota; 0 means unlimited. On btrfs a hard qgroup cap
 }
 
 // Manager creates and deletes apps and everything that belongs to them, and
@@ -181,30 +182,43 @@ func (m *Manager) CreateApp(name string, opts *CreateOptions) (*store.App, error
 }
 
 // Fork duplicates an existing app into a new one: the new app's home is seeded
-// from a writable btrfs snapshot of the source's current home (its files, config
-// and data) rather than the demo scaffold. It gets its own port, Unix user,
-// subdomain and container. Requires btrfs (the snapshot primitive it relies on).
-func (m *Manager) Fork(source, newName string, opts *CreateOptions) (*store.App, error) {
+// from a writable btrfs snapshot of the source (its files, config and data) rather
+// than the demo scaffold. snapshotID picks a specific snapshot to seed from; empty
+// means the source's current home. The fork gets its own port, Unix user, subdomain
+// and container. Requires btrfs (the snapshot primitive it relies on).
+func (m *Manager) Fork(source, newName, snapshotID string, opts *CreateOptions) (*store.App, error) {
 	if !m.btrfsEnabled() {
 		return nil, ErrSnapshotsUnavailable
 	}
 	if _, err := m.store.App(source); err != nil {
 		return nil, err
 	}
-	// Lock the source so its home is not rolled back or deleted mid-copy; the new
-	// app's own deploy runs under its own lock in the background.
+	// Seed from a specific snapshot if asked, else from the source's current home.
+	seedPath := m.appHome(source)
+	if snapshotID != "" {
+		snap, err := m.store.Snapshot(snapshotID)
+		if err != nil {
+			return nil, err
+		}
+		if snap.AppName != source {
+			return nil, store.ErrSnapshotNotFound
+		}
+		seedPath = m.snapshotPath(source, snapshotID)
+	}
+	// Lock the source so its home/snapshot is not rolled back or deleted mid-copy;
+	// the new app's own deploy runs under its own lock in the background.
 	defer m.lockApp(source)()
-	return m.create(newName, opts, source)
+	return m.create(newName, opts, seedPath)
 }
 
-// create registers a new app. With source == "" it scaffolds the demo app; with
-// a source app name it forks -- seeding the home from a writable snapshot of that
-// app's home and skipping the scaffold. Either way it allocates a port, creates
-// the Unix user with SSH access, registers the app and starts it in the background.
-// The authorized_keys are the union of the request keys and the owner's profile
-// keys; an app with neither is fine, since apps are driven through the API and SSH
-// is opt-in.
-func (m *Manager) create(name string, opts *CreateOptions, source string) (*store.App, error) {
+// create registers a new app. With seedPath == "" it scaffolds the demo app; with
+// a seedPath (a subvolume: an app's home or a snapshot) it forks -- seeding the home
+// from a writable snapshot of that path and skipping the scaffold. Either way it
+// allocates a port, creates the Unix user with SSH access, registers the app and
+// starts it in the background. The authorized_keys are the union of the request keys
+// and the owner's profile keys; an app with neither is fine, since apps are driven
+// through the API and SSH is opt-in.
+func (m *Manager) create(name string, opts *CreateOptions, seedPath string) (*store.App, error) {
 	if opts == nil {
 		opts = &CreateOptions{}
 	}
@@ -221,19 +235,19 @@ func (m *Manager) create(name string, opts *CreateOptions, source string) (*stor
 
 	appKeys := opts.RequestKeys
 	sshKeys := append(append([]string{}, appKeys...), opts.ProfileKeys...)
-	forking := source != ""
+	forking := seedPath != ""
 
 	// Create the user, install keys and populate the home directory. The uid is a
 	// contiguous block derived from the (unique) port, so the container maps as a
 	// single offset and podman idmap-mounts the image instead of copying it.
 	home := filepath.Join(m.config.AppsDir, name)
-	// Seed the home. A fork is a writable snapshot of the source's home (an instant
+	// Seed the home. A fork is a writable snapshot of the seed subvolume (an instant
 	// CoW copy of its files); a fresh app is an empty subvolume on btrfs that the
 	// scaffold then fills. Either directory is adopted by useradd, whose own mkdir
 	// is a no-op.
 	if forking {
-		if err := m.snapshotSubvolume(m.appHome(source), home, false); err != nil {
-			return nil, fmt.Errorf("cannot seed %s from %s: %w", name, source, err)
+		if err := m.snapshotSubvolume(seedPath, home, false); err != nil {
+			return nil, fmt.Errorf("cannot seed %s: %w", name, err)
 		}
 	} else if m.btrfsEnabled() {
 		if err := m.createSubvolume(home); err != nil {
@@ -276,15 +290,16 @@ func (m *Manager) create(name string, opts *CreateOptions, source string) (*stor
 		return nil, err
 	}
 	m.SetMemoryLimit(name, opts.MemoryMB)
+	// Apply the disk quota now (create and fork alike), so a new app is capped from
+	// the start rather than only after the next daemon restart. On btrfs this sets
+	// the hard qgroup limit on the home subvolume.
+	m.SetDiskLimit(name, opts.DiskMB)
 	// The forked home is full of files owned by the source's uid; make them the new
-	// app's, and cap the copy at the new app's own quota.
+	// app's.
 	if forking {
 		uid := m.uidFor(port)
 		if _, err := m.runner.Run("chown", "-R", fmt.Sprintf("%d:%d", uid, uid), home); err != nil {
 			slog.Warn("Cannot chown forked home", "app", name, "error", err)
-		}
-		if err := m.setQuota(home, m.diskLimit(name)); err != nil {
-			slog.Warn("Cannot set quota on forked home", "app", name, "error", err)
 		}
 	}
 	m.ReconcilePortRules()

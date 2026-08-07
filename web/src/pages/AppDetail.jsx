@@ -573,8 +573,9 @@ const NewSnapshotDialog = ({ name, onClose, onCreated, showToast }) => {
 };
 
 // ForkDialog duplicates the app into a new one, seeding its home from the source's
-// current files. Reached from the snapshot split button's caret.
-const ForkDialog = ({ name, onClose, onForked }) => {
+// current files -- or, when snapshotId is set, from that snapshot. Reached from the
+// snapshot split button's caret, or a snapshot row's Fork action.
+const ForkDialog = ({ name, snapshotId, onClose, onForked }) => {
   useEscape(onClose);
   const [newName, setNewName] = useState("");
   const [error, setError] = useState("");
@@ -587,7 +588,10 @@ const ForkDialog = ({ name, onClose, onForked }) => {
     setBusy(true);
     setError("");
     try {
-      const created = await api.post(`/api/apps/${encodeURIComponent(name)}/fork`, { new_name: target });
+      const created = await api.post(`/api/apps/${encodeURIComponent(name)}/fork`, {
+        new_name: target,
+        snapshot_id: snapshotId || undefined,
+      });
       onForked(created);
     } catch (err) {
       setError(err.message);
@@ -600,8 +604,17 @@ const ForkDialog = ({ name, onClose, onForked }) => {
       <form className="card modal" onSubmit={fork} onMouseDown={(e) => e.stopPropagation()}>
         <h2>Fork {name}</h2>
         <p className="hint">
-          Create a new app seeded from a copy of <span className="mono">{name}</span>'s current files. It gets its own
-          subdomain, user and container; the two run independently from here on.
+          {snapshotId ? (
+            <>
+              Create a new app seeded from snapshot <span className="mono">{snapshotId}</span> of{" "}
+              <span className="mono">{name}</span>.
+            </>
+          ) : (
+            <>
+              Create a new app seeded from a copy of <span className="mono">{name}</span>'s current files.
+            </>
+          )}{" "}
+          It gets its own subdomain, user and container; the two run independently from here on.
         </p>
         <ErrorBanner message={error} onDismiss={() => setError("")} />
         <input
@@ -629,7 +642,7 @@ const ForkDialog = ({ name, onClose, onForked }) => {
 // deletes) any of them. A rollback is reversible (a safety snapshot of the live
 // state is taken first), so it runs on one click, no type-to-confirm gate. New
 // snapshots are taken from the split button's caret, not here.
-const SnapshotsDialog = ({ name, onClose, showToast, onRolledBack }) => {
+const SnapshotsDialog = ({ name, onClose, showToast, onRolledBack, onFork }) => {
   useEscape(onClose);
   const [snaps, setSnaps] = useState(null); // null until loaded
   const [error, setError] = useState("");
@@ -688,7 +701,9 @@ const SnapshotsDialog = ({ name, onClose, showToast, onRolledBack }) => {
     <div className="modal-backdrop" role="dialog" aria-modal="true" onMouseDown={onClose}>
       <div className="card modal modal-wide" onMouseDown={(e) => e.stopPropagation()}>
         <div className="modal-head">
-          <h2>Snapshots</h2>
+          <h2>
+            Snapshots{snaps && snaps.length > 0 ? <span className="snap-count"> {snaps.length}</span> : ""}
+          </h2>
           <button type="button" className="term-btn" onClick={onClose} title="Close" aria-label="Close">
             <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M4 4l8 8M12 4l-8 8" />
@@ -716,6 +731,9 @@ const SnapshotsDialog = ({ name, onClose, showToast, onRolledBack }) => {
                 <div className="snap-actions">
                   <button type="button" className="btn btn-small" onClick={() => rollback(s.id)} disabled={busy}>
                     {rollingId === s.id ? "Rolling back..." : "Roll back"}
+                  </button>
+                  <button type="button" className="btn btn-small" onClick={() => onFork(s.id)} disabled={busy} title="Fork a new app from this snapshot">
+                    Fork
                   </button>
                   {confirmId === s.id ? (
                     <button
@@ -766,6 +784,7 @@ const AppDetail = ({ account, refreshAccount }) => {
   const [showSnapshots, setShowSnapshots] = useState(false);
   const [showNewSnapshot, setShowNewSnapshot] = useState(false);
   const [showFork, setShowFork] = useState(false);
+  const [forkSnapshotId, setForkSnapshotId] = useState(null); // null = fork from current state
   const [hasKeys, setHasKeys] = useState(null); // null until we know, so nothing flickers
   const [toast, setToast] = useState(""); // a 3s "Copied"/"Regenerated" snackbar
   const toastTimer = useRef(null);
@@ -1116,7 +1135,10 @@ const AppDetail = ({ account, refreshAccount }) => {
                 <SnapshotSplitButton
                   onList={() => setShowSnapshots(true)}
                   onNew={() => setShowNewSnapshot(true)}
-                  onFork={() => setShowFork(true)}
+                  onFork={() => {
+                    setForkSnapshotId(null);
+                    setShowFork(true);
+                  }}
                 />
               )}
               <ActionsMenu
@@ -1214,6 +1236,11 @@ const AppDetail = ({ account, refreshAccount }) => {
           onClose={() => setShowSnapshots(false)}
           showToast={showToast}
           onRolledBack={load}
+          onFork={(snapshotId) => {
+            setShowSnapshots(false);
+            setForkSnapshotId(snapshotId);
+            setShowFork(true);
+          }}
         />
       )}
       {showNewSnapshot && (
@@ -1222,6 +1249,7 @@ const AppDetail = ({ account, refreshAccount }) => {
       {showFork && (
         <ForkDialog
           name={app.name}
+          snapshotId={forkSnapshotId}
           onClose={() => setShowFork(false)}
           onForked={(created) => {
             setShowFork(false);

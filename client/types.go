@@ -56,7 +56,8 @@ type createAppRequest struct {
 
 // forkAppRequest mirrors the server's POST /api/apps/{name}/fork body
 type forkAppRequest struct {
-	NewName string `json:"new_name"`
+	NewName    string `json:"new_name"`
+	SnapshotID string `json:"snapshot_id,omitempty"`
 }
 
 // setKeysRequest mirrors the server's PUT /api/apps/{name}/keys body

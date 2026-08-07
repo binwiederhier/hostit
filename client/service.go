@@ -44,10 +44,12 @@ func (c *Client) CreateApp(name string, sshKeys []string) (*App, error) {
 	return &app, nil
 }
 
-// Fork duplicates an app into newName, seeding its home from the source's current home
-func (c *Client) Fork(source, newName string) (*App, error) {
+// Fork duplicates an app into newName. snapshotID seeds from a specific snapshot;
+// empty seeds from the source's current home.
+func (c *Client) Fork(source, newName, snapshotID string) (*App, error) {
 	var app App
-	err := c.request("POST", "/api/apps/"+url.PathEscape(source)+"/fork", &forkAppRequest{NewName: newName}, &app)
+	body := &forkAppRequest{NewName: newName, SnapshotID: snapshotID}
+	err := c.request("POST", "/api/apps/"+url.PathEscape(source)+"/fork", body, &app)
 	if err != nil {
 		return nil, err
 	}

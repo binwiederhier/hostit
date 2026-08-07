@@ -25,6 +25,16 @@ func TestMeasureDiskUsage(t *testing.T) {
 	assert.Less(t, usage, 10) // Sanity: not wildly off
 }
 
+func TestCreateAppSetsDiskQuotaOnBtrfs(t *testing.T) {
+	t.Parallel()
+	m, _, r := newTestDeployManager(t)
+	r.returns("stat -f", "btrfs\n")
+	_, err := m.CreateApp("blog", &CreateOptions{DiskMB: 512})
+	require.NoError(t, err)
+	// The hard qgroup cap is applied at create, not only at the next daemon restart.
+	assert.Contains(t, r.ran(), "btrfs qgroup limit 512M "+m.appHome("blog"))
+}
+
 func TestCheckQuotasStopsOverQuotaApp(t *testing.T) {
 	t.Parallel()
 	m, _, runner := newTestDeployManager(t)

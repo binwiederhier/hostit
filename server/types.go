@@ -21,9 +21,10 @@ type apiSetKeysRequest struct {
 }
 
 // apiForkAppRequest is the body of POST /api/apps/{name}/fork: the name of the new
-// app to seed from this one's current home
+// app, and optionally a snapshot to seed it from (empty means the current home)
 type apiForkAppRequest struct {
-	NewName string `json:"new_name"`
+	NewName    string `json:"new_name"`
+	SnapshotID string `json:"snapshot_id,omitempty"`
 }
 
 // apiSSHInfo describes how to SSH into an app
