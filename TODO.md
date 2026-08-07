@@ -86,6 +86,14 @@ still means SSH or an external agent. These bring that into the browser.
   commands, no chat); (3) a details-only view (address, SSH, token, resources);
   (4) a log view (tail of the app's output). Tabs across the top is the obvious
   shape; the new-app intent above sets the initial tab.
+- **Use a Claude Max subscription instead of the API (cost).** The built-in
+  assistant calls the Anthropic Messages API with the operator's API key, so every
+  turn is metered pay-per-token -- which adds up fast. Add an option to drive it
+  through the Claude Agent SDK / Claude Code auth so an operator can spend their
+  own Claude Max subscription instead of API credit. Would mean an alternate
+  `completer` backend (the loop already abstracts the model call behind an
+  interface), an auth/token flow for the subscription, and config to pick which
+  backend an install uses. Big lever on running cost.
 - **Defined behavior when no Anthropic key is set.** The built-in assistant needs
   an Anthropic API key in config; today it's assumed present. Decide and implement
   the no-key path: the assistant endpoints should report "not configured" cleanly

@@ -26,15 +26,57 @@ const WORKING_WORDS = [
   "Whirring",
 ];
 
-const TOOL_ICONS = {
-  list_files: "\u{1F4C1}",
-  read_file: "\u{1F4C4}",
-  write_file: "\u{270D}\u{FE0F}",
-  run_command: "\u{1F5A5}\u{FE0F}",
-  read_logs: "\u{1F4DC}",
-  deploy: "\u{1F680}",
-  refresh_preview: "\u{1F504}",
+// Bespoke, minimal outline icons per tool -- one shared 16x16 stroke style, drawn
+// in the accent colour (see .asst-tool-svg). Replaces the emoji.
+const TOOL_ICON_PATHS = {
+  list_files: <path d="M2.2 4.4c0-.5.4-.9.9-.9h2.4l1.3 1.4h6.1c.5 0 .9.4.9.9v5.9c0 .5-.4.9-.9.9H3.1a.9.9 0 0 1-.9-.9z" />,
+  read_file: (
+    <>
+      <path d="M9 2.6H5.1a.8.8 0 0 0-.8.8v9.2c0 .5.3.8.8.8h5.8a.8.8 0 0 0 .8-.8V5.5z" />
+      <path d="M9 2.6v3h3M6.3 8.6h3.4M6.3 10.6h3.4" />
+    </>
+  ),
+  write_file: (
+    <>
+      <path d="M10.6 3.1l2.3 2.3" />
+      <path d="M11.7 1.9l2.4 2.4-8 8-3.2.8.8-3.2z" />
+    </>
+  ),
+  run_command: (
+    <>
+      <rect x="2" y="3" width="12" height="10" rx="1.4" />
+      <path d="M4.6 6.6 6.4 8l-1.8 1.4M8.4 10h3" />
+    </>
+  ),
+  read_logs: <path d="M3.2 4.7h9.6M3.2 8h9.6M3.2 11.3h5.5" />,
+  deploy: (
+    <>
+      <path d="M3 12.6h10" />
+      <path d="M8 10V3.2M5.3 5.9 8 3.2l2.7 2.7" />
+    </>
+  ),
+  refresh_preview: (
+    <>
+      <path d="M12.8 8a4.8 4.8 0 1 1-1.4-3.4" />
+      <path d="M12.9 3.4V6H10.3" />
+    </>
+  ),
+  _default: <path d="M8 2.6l4.7 2.7v5.4L8 13.4 3.3 10.7V5.3z" />,
 };
+
+const ToolIcon = ({ tool }) => (
+  <svg className="asst-tool-svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    {TOOL_ICON_PATHS[tool] || TOOL_ICON_PATHS._default}
+  </svg>
+);
+
+// A run of tool calls gets a "layers" mark.
+const GroupIcon = () => (
+  <svg className="asst-tool-svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M8 2.4l5.6 3-5.6 3-5.6-3z" />
+    <path d="M2.6 8.6l5.4 2.9 5.4-2.9" />
+  </svg>
+);
 
 const truncate = (s, n) => (s && s.length > n ? s.slice(0, n) + "…" : s || "");
 
@@ -89,7 +131,7 @@ const ToolCall = ({ item }) => {
     <div className={cls}>
       <button type="button" className="asst-tool-head" onClick={() => setOpen((o) => !o)}>
         <span className="asst-tool-icon" aria-hidden="true">
-          {TOOL_ICONS[item.tool] || "\u{1F527}"}
+          <ToolIcon tool={item.tool} />
         </span>
         <span className="asst-tool-summary">{summarize(item.tool, item.input)}</span>
         {running && <span className="asst-tool-spinner" aria-hidden="true" />}
@@ -127,7 +169,7 @@ const ToolGroup = ({ tools }) => {
     <div className="asst-group">
       <button type="button" className="asst-group-head" onClick={() => setOverride(!open)}>
         <span className="asst-tool-icon" aria-hidden="true">
-          {"\u{1F527}"}
+          <GroupIcon />
         </span>
         <span className="asst-tool-summary">
           {running ? summarize(current.tool, current.input) : `${tools.length} actions`}

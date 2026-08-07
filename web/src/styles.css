@@ -1570,7 +1570,7 @@ th:last-child {
   max-width: 92%;
   min-width: 0;
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 8px;
   overflow: hidden;
   background: var(--surface);
 }
@@ -1581,23 +1581,29 @@ th:last-child {
 
 .asst-tool-head {
   display: flex;
-  gap: 9px;
+  gap: 7px;
   align-items: center;
   width: 100%;
-  padding: 8px 11px;
+  padding: 5px 9px;
   background: var(--surface-2);
   border: 0;
   cursor: pointer;
   text-align: left;
   color: var(--text);
   font: inherit;
-  font-size: 14px;
+  font-size: 12px;
   line-height: 1.3;
 }
 
 .asst-tool-icon {
   flex: none;
-  font-size: 14px;
+  display: inline-flex;
+  color: var(--accent);
+}
+.asst-tool-svg {
+  width: 14px;
+  height: 14px;
+  display: block;
 }
 
 .asst-tool-summary {
@@ -1606,8 +1612,7 @@ th:last-child {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-family: var(--mono);
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .asst-tool-badge {
@@ -1669,18 +1674,18 @@ th:last-child {
 
 .asst-group-head {
   display: flex;
-  gap: 9px;
+  gap: 7px;
   align-items: center;
   width: 100%;
-  padding: 8px 11px;
+  padding: 5px 9px;
   background: var(--surface-2);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 8px;
   cursor: pointer;
   text-align: left;
   color: var(--muted);
   font: inherit;
-  font-size: 14px;
+  font-size: 12px;
   line-height: 1.3;
 }
 
@@ -1825,7 +1830,7 @@ main.container:has(.ws-page) {
 
 /* Identity: dot, name and (only the notable) status, on one row */
 .ws-idrow { display: flex; align-items: center; gap: 10px; }
-.ws-name { font-family: var(--mono); font-weight: 700; font-size: 20px; letter-spacing: -0.01em; }
+.ws-name { font-family: var(--mono); font-weight: 700; font-size: 20px; line-height: 1; letter-spacing: -0.01em; }
 
 /* The right cluster: live resources next to the controls, vertically centred */
 .ws-topright { margin-left: auto; display: flex; align-items: center; gap: 18px; flex: none; }

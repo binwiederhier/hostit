@@ -771,8 +771,8 @@ const AppDetail = ({ account, refreshAccount }) => {
             <BackIcon />
           </Link>
           <div className="ws-idrow">
-            <StatusDot running={app.running} appRunning={app.app_running} pending={statusPending} />
             <span className="ws-name">{app.name}</span>
+            <StatusDot running={app.running} appRunning={app.app_running} pending={statusPending} />
             {pending ? (
               <span className="status-label status-label-pending">
                 {pending.label}
