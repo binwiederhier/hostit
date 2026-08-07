@@ -131,7 +131,14 @@ What each boundary is, so it is clear what hostit does and does not promise:
 
 An **app-scoped token** can only reach `/api/<its app>/`. An **account token**
 can do anything its owner can. The **admin token** in `server.yml` is unlimited
-and belongs to the operator.
+and belongs to the operator -- treat it like a root password.
+
+> **Self-hosting disclaimer.** hostit runs as root, terminates TLS, and hands
+> tenants root inside their own container. It is provided as-is, with no warranty
+> (see [LICENSE](LICENSE)); operators are responsible for their own hardening --
+> the `sshd_config` drop-in below, keeping podman/nftables current, and their host
+> baseline. The boundaries above are the model's promises, not a guarantee against
+> every container escape or misconfiguration.
 
 ## Users, roles and limits
 
@@ -539,13 +546,13 @@ quietly ignored.
 - The app CLI talks to the daemon via `/run/hostit/hostit.sock`, authenticated by
   the kernel (SO_PEERCRED); app users can only ever act on their own app.
 - The workspace image is built once for the whole host. The earlier rootless
-  model forced a per-app copy (~40s and ~230 MB each); the analysis behind the
-  change is in `plans/260804-hostit-image-sharing.md`.
+  model forced a per-app copy (~40s and ~230 MB each), which is why the image is
+  now shared across apps.
 - On small hosts, give the machine swap: an `apt`-based image build inside a
   container gets OOM-killed on a 512 MB box.
-- Scale-out to multiple runner hosts behind one proxy is sketched in
-  `plans/260803-hostit.md` (the registry has a `host` column for it), but only
-  single-host is implemented.
+- Scale-out to multiple runner hosts behind one proxy is on the roadmap (the
+  registry already has a `host` column for it; see [TODO.md](TODO.md)), but only
+  single-host is implemented today.
 
 ## Development
 
@@ -586,3 +593,22 @@ from the GitHub release. The usual flow is snapshot -> deploy to staging -> veri
 -> tag a release -> bump the prod version -> deploy to prod. (Per-app dev/stage
 environments -- building a change on a staging copy of one app and promoting it to
 that app's prod -- are on the roadmap; see [TODO.md](TODO.md).)
+
+## Contributing
+
+Contributions are welcome. To build and check locally:
+
+```sh
+make web            # build the React app into server/site (embedded at compile time)
+make test vet fmt   # Go tests, go vet, and gofmt
+cd web && npm test  # frontend unit tests (vitest)
+```
+
+Please run `make web` before committing any change under `web/`, since the built
+assets in `server/site` are tracked and embedded at compile time. Keep to the
+existing style (see the Go conventions in the package layout above; ASCII only,
+comments explain *why*). Open an issue to discuss larger changes before a PR.
+
+## License
+
+Licensed under the [Apache License 2.0](LICENSE).

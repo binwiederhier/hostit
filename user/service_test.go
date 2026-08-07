@@ -33,7 +33,7 @@ func TestLoginCreatesPendingUser(t *testing.T) {
 func TestLoginAdminEmailIsAutoApproved(t *testing.T) {
 	t.Parallel()
 	m := newTestManager(t)
-	u, err := m.Login("phil@heckel.io", "Phil")
+	u, err := m.Login("phil@example.com", "Phil")
 	require.NoError(t, err)
 	assert.Equal(t, store.RoleAdmin, u.Role)
 	assert.Equal(t, store.StatusActive, u.Status)
@@ -42,10 +42,10 @@ func TestLoginAdminEmailIsAutoApproved(t *testing.T) {
 func TestLoginAdminEmailCaseInsensitive(t *testing.T) {
 	t.Parallel()
 	m := newTestManager(t)
-	u, err := m.Login("PHIL@Heckel.IO", "Phil")
+	u, err := m.Login("PHIL@Example.COM", "Phil")
 	require.NoError(t, err)
 	assert.Equal(t, store.RoleAdmin, u.Role)
-	assert.Equal(t, "phil@heckel.io", u.Email) // Normalized
+	assert.Equal(t, "phil@example.com", u.Email) // Normalized
 }
 
 func TestLoginFromAnAllowedDomainSkipsApproval(t *testing.T) {
@@ -139,8 +139,8 @@ func TestInviteCreatesAnApprovedUser(t *testing.T) {
 func TestLoginPromotesExistingUserToAdmin(t *testing.T) {
 	t.Parallel()
 	m := newTestManager(t)
-	require.NoError(t, m.store.AddUser(&store.User{Email: "phil@heckel.io", Role: store.RoleUser, Status: store.StatusPending}))
-	u, err := m.Login("phil@heckel.io", "Phil")
+	require.NoError(t, m.store.AddUser(&store.User{Email: "phil@example.com", Role: store.RoleUser, Status: store.StatusPending}))
+	u, err := m.Login("phil@example.com", "Phil")
 	require.NoError(t, err)
 	assert.Equal(t, store.RoleAdmin, u.Role)
 	assert.Equal(t, store.StatusActive, u.Status)
@@ -312,7 +312,7 @@ func newTestManager(t *testing.T) *Manager {
 	conf := config.NewConfig()
 	conf.BaseDomain = "apps.example.com"
 	conf.AdminToken = "secr3t"
-	conf.AdminEmails = []string{"phil@heckel.io"}
+	conf.AdminEmails = []string{"phil@example.com"}
 	s, err := store.NewStore(filepath.Join(t.TempDir(), "hostit.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() {
@@ -345,7 +345,7 @@ func TestAllowDomainRefusesPublicMailProviders(t *testing.T) {
 		assert.Contains(t, err.Error(), "public email provider", "%q needs a reason the admin understands", domain)
 	}
 	// A company domain is the point of the feature
-	for _, domain := range []string{"allowed.example", "heckel.io", "mycompany.co.uk"} {
+	for _, domain := range []string{"allowed.example", "example.com", "mycompany.co.uk"} {
 		_, err := m.AllowDomain(domain)
 		assert.NoError(t, err, "%q must be allowed", domain)
 	}

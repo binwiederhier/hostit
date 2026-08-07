@@ -34,7 +34,7 @@ What has to exist before this works:
 - **State and quota collection** become cross-node: the state cache and the disk
   quota walk currently assume everything is on this box.
 
-The plan predating this file is `~/Code/plans/260804-hostit-multiuser.md`.
+A separate design note predates this multi-node section and goes into more depth.
 
 ## Web app
 
@@ -45,7 +45,7 @@ The dashboard can create, manage and delete apps and drive them in the browser
   `/files/{path}` reads/writes one, so the API is there. A tree/list view with
   view-edit-upload-delete would make small changes (fix a line in `public/`,
   drop in a file) possible without SSH or an agent.
-- **Installable PWA.** Make the dashboard (`apps.heckel.io`) installable to the home
+- **Installable PWA.** Make the dashboard (`apps.example.com`) installable to the home
   screen / dock. Add `web/public/manifest.webmanifest` (name, `display: standalone`,
   `theme_color`, `start_url: "/"`, icons) linked from `index.html`; 192/512px + a
   maskable icon generated from a hostit glyph; and a minimal service worker that

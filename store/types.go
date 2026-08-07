@@ -6,7 +6,7 @@ import (
 
 const (
 	// HostLocal is the runner host for apps on this machine; other values are
-	// reserved for the future multi-node setup (see plans/260804-hostit-multiuser.md)
+	// reserved for the future multi-node setup (see TODO.md)
 	HostLocal = "local"
 )
 
