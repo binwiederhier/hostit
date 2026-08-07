@@ -45,6 +45,13 @@ The dashboard can create, manage and delete apps and drive them in the browser
   `/files/{path}` reads/writes one, so the API is there. A tree/list view with
   view-edit-upload-delete would make small changes (fix a line in `public/`,
   drop in a file) possible without SSH or an agent.
+- **Installable PWA.** Make the dashboard (`apps.heckel.io`) installable to the home
+  screen / dock. Add `web/public/manifest.webmanifest` (name, `display: standalone`,
+  `theme_color`, `start_url: "/"`, icons) linked from `index.html`; 192/512px + a
+  maskable icon generated from a hostit glyph; and a minimal service worker that
+  caches the app shell (JS/CSS) but is **network-first** for `/api/*` and app previews
+  so it never serves stale data. HTTPS is already in place; everything drops into
+  `web/public/` and is embedded into the Go binary. No new runtime deps.
 - **Paste-to-upload in the chat.** Drag-and-drop and the "+" button now upload files
   into the app (images also go to the model as vision); add clipboard paste of an
   image as a natural extension.

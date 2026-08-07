@@ -176,6 +176,38 @@ func (m *Manager) ReadFile(name, relPath string) ([]byte, error) {
 	return root.ReadFile(rel)
 }
 
+// ReadFileMax reads a file up to max bytes, refusing (not truncating) anything
+// larger, so a caller reading an app-controlled file cannot blow up memory.
+func (m *Manager) ReadFileMax(name, relPath string, max int64) ([]byte, error) {
+	rel, err := m.safeRel(name, relPath)
+	if err != nil {
+		return nil, err
+	}
+	root, err := m.appRoot(name)
+	if err != nil {
+		return nil, err
+	}
+	defer root.Close()
+	return readCapped(root, rel, max)
+}
+
+// FileExists reports whether a file exists in the app's home directory.
+func (m *Manager) FileExists(name, relPath string) bool {
+	rel, err := m.safeRel(name, relPath)
+	if err != nil {
+		return false
+	}
+	root, err := m.appRoot(name)
+	if err != nil {
+		return false
+	}
+	defer root.Close()
+	if _, err := root.Stat(rel); err != nil {
+		return false
+	}
+	return true
+}
+
 // DeleteFile removes a file from the app's home directory
 func (m *Manager) DeleteFile(name, relPath string) error {
 	rel, err := m.safeRel(name, relPath)

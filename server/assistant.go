@@ -190,12 +190,17 @@ func (s *Server) handleAssistant(w http.ResponseWriter, r *http.Request, c *call
 		return
 	}
 	// Attachments are already saved in the app's home; load image bytes so the model
-	// can see them (other files are referenced by path only).
+	// can see them (other files are referenced by path only). Only chat-uploaded
+	// files (under uploads/) may be attached, and images are read with a size cap so
+	// a large file the owner staged cannot blow up memory on the shared daemon.
 	attachments := make([]assistant.Attachment, 0, len(req.Attachments))
 	for _, at := range req.Attachments {
+		if !strings.HasPrefix(at.Path, "uploads/") {
+			continue
+		}
 		att := assistant.Attachment{Path: at.Path, MediaType: at.MediaType}
 		if strings.HasPrefix(at.MediaType, "image/") {
-			if b, err := s.apps.ReadFile(a.Name, at.Path); err == nil {
+			if b, err := s.apps.ReadFileMax(a.Name, at.Path, maxAttachmentBytes); err == nil {
 				att.Data = base64.StdEncoding.EncodeToString(b)
 			}
 		}
@@ -215,8 +220,13 @@ func (s *Server) handleAssistant(w http.ResponseWriter, r *http.Request, c *call
 	writeJSON(w, http.StatusAccepted, &apiMessageResponse{Message: "started"})
 }
 
-// assistantUploadMax bounds one upload request (the whole multipart body)
-const assistantUploadMax = 10 << 20 // 10 MB
+const (
+	// assistantUploadMax bounds one upload request (the whole multipart body)
+	assistantUploadMax = 10 << 20 // 10 MB
+	// maxAttachmentBytes caps an image read back to attach to a chat message, so a
+	// large file an owner staged in their app cannot exhaust the shared daemon's RAM
+	maxAttachmentBytes = 6 << 20 // 6 MB (Anthropic's per-image limit is ~5 MB)
+)
 
 // apiAttachment is one uploaded file: saved in the app at Path, with its media
 // type. The chat send echoes these back to attach them to a message.
@@ -237,16 +247,25 @@ func (s *Server) handleAssistantUpload(w http.ResponseWriter, r *http.Request, c
 		writeAppError(w, err)
 		return
 	}
+	// Cap the whole body (ParseMultipartForm's argument is only the in-memory
+	// buffer; without this the rest spills to host temp files unbounded).
+	r.Body = http.MaxBytesReader(w, r.Body, assistantUploadMax)
 	if err := r.ParseMultipartForm(assistantUploadMax); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
+	defer func() {
+		if r.MultipartForm != nil {
+			_ = r.MultipartForm.RemoveAll() // clean up any spilled temp files
+		}
+	}()
 	files := r.MultipartForm.File["file"]
 	if len(files) == 0 {
 		writeError(w, http.StatusBadRequest, errors.New("no files uploaded"))
 		return
 	}
 	out := make([]apiAttachment, 0, len(files))
+	used := map[string]bool{} // names taken in this request, to avoid clobbering
 	for _, fh := range files {
 		f, err := fh.Open()
 		if err != nil {
@@ -259,7 +278,7 @@ func (s *Server) handleAssistantUpload(w http.ResponseWriter, r *http.Request, c
 			writeError(w, http.StatusBadRequest, err)
 			return
 		}
-		name := sanitizeUploadName(fh.Filename)
+		name := s.uniqueUploadName(a.Name, sanitizeUploadName(fh.Filename), used)
 		path := "uploads/" + name
 		if err := s.apps.WriteFile(a.Name, path, data, 0); err != nil {
 			writeAppError(w, err)
@@ -298,6 +317,28 @@ func (s *Server) handleAssistantUploadDelete(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	writeJSON(w, http.StatusOK, &apiMessageResponse{Message: "removed"})
+}
+
+// uniqueUploadName finds a free name under uploads/ for base, appending -1, -2, ...
+// before the extension when the name is already taken in this request or on disk, so
+// two files with the same name do not clobber each other (or an existing file).
+func (s *Server) uniqueUploadName(app, base string, used map[string]bool) string {
+	free := func(n string) bool { return !used[n] && !s.apps.FileExists(app, "uploads/"+n) }
+	if free(base) {
+		used[base] = true
+		return base
+	}
+	ext := filepath.Ext(base)
+	stem := strings.TrimSuffix(base, ext)
+	for i := 1; i < 1000; i++ {
+		cand := fmt.Sprintf("%s-%d%s", stem, i, ext)
+		if free(cand) {
+			used[cand] = true
+			return cand
+		}
+	}
+	used[base] = true
+	return base
 }
 
 // sanitizeUploadName reduces an uploaded filename to a safe basename (no path, only
