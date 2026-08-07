@@ -2187,10 +2187,13 @@ body.ws-resizing iframe { pointer-events: none; }
   margin-bottom: 8px;
 }
 .modal-input-full { width: 100%; }
-.settings-section { margin-top: 18px; }
-.settings-section:first-of-type { margin-top: 8px; }
+.settings-section { margin-top: 26px; }
+.settings-section:first-of-type { margin-top: 14px; }
+/* Buttons that sit under a field in a settings section hug it, rather than taking
+   the modal's default 18px footer gap. */
+.settings-section .btn-row { margin-top: 6px; }
 .settings-section > h3 {
-  margin: 0 0 4px;
+  margin: 0 0 5px;
   font-size: 13px;
   font-weight: 600;
   text-transform: uppercase;

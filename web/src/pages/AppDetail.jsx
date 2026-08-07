@@ -399,7 +399,9 @@ const NotFound = ({ name }) => (
 // "Bring your own Claude": just the ready-to-paste prompt (which already carries
 // the app's URL and token). The token's own copy/regenerate controls live in the
 // Actions menu now.
-const PromptDialog = ({ prompt, onClose }) => {
+const PromptDialog = ({ prompt, token, onClose }) => {
+  // Show the token masked on screen (shoulder-surfing), but copy the real prompt.
+  const shown = token ? prompt.split(token).join("*".repeat(Math.min(Math.max(token.length, 12), 40))) : prompt;
   useEscape(onClose);
   return (
     <div className="modal-backdrop" role="dialog" aria-modal="true" onMouseDown={onClose}>
@@ -417,7 +419,7 @@ const PromptDialog = ({ prompt, onClose }) => {
           API and wait for your instructions.
         </p>
         <div className="term prompt-block">
-          <pre>{prompt}</pre>
+          <pre>{shown}</pre>
           <div className="term-copy">
             <CopyButton text={prompt} small={false}>
               Copy prompt
@@ -1519,7 +1521,7 @@ const AppDetail = ({ account, refreshAccount }) => {
         </Suspense>
       )}
       {showSsh && <SshDialog app={app} hasKeys={hasKeys} onClose={() => setShowSsh(false)} />}
-      {showPrompt && <PromptDialog prompt={prompt} onClose={() => setShowPrompt(false)} />}
+      {showPrompt && <PromptDialog prompt={prompt} token={token} onClose={() => setShowPrompt(false)} />}
       {showSnapshots && (
         <SnapshotsDialog
           name={app.name}
