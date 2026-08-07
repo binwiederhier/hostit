@@ -64,8 +64,8 @@ func toolDefs() []Tool {
 		},
 		{
 			Name:        "snapshot",
-			Description: "Save a restorable snapshot of the app's files right now. Use this to preserve important work before a risky change, so it can be rolled back to. Optionally give it a short label. (Snapshots are also taken automatically before every deploy and hourly.)",
-			InputSchema: schema(`{"type":"object","properties":{"label":{"type":"string","description":"Optional short note, e.g. \"before rewrite\""}}}`),
+			Description: "Save a restorable snapshot of the app's files right now. Take one before any risky change, and periodically as you make progress, so there is always a recent point to roll back to. Always pass a short one-line label saying why you took it (what you are about to do, or what you just finished). (Snapshots are also taken automatically before every deploy and hourly.)",
+			InputSchema: schema(`{"type":"object","properties":{"label":{"type":"string","description":"Short one-line reason for this snapshot, e.g. \"before rewriting the router\" or \"finished the login page\""}},"required":["label"]}`),
 		},
 		{
 			Name:        "list_snapshots",

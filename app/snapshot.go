@@ -23,6 +23,11 @@ const (
 	// home moved aside during the swap. Both are cleaned up as the rollback proceeds.
 	rollbackStagedSuffix = ".rollback-staged"
 	rollbackOldSuffix    = ".rollback-old"
+	// autoSnapshotLabel labels the hourly automatic snapshots, and
+	// preDeploySnapshotLabel the one taken just before a deploy, so the owner sees
+	// why each unattended snapshot exists instead of a blank row.
+	autoSnapshotLabel      = "Automated snapshot"
+	preDeploySnapshotLabel = "Automated snapshot before deploy"
 )
 
 // ErrSnapshotsUnavailable is returned when snapshots are asked for on a host whose
@@ -239,7 +244,7 @@ func (m *Manager) SnapshotLoop(interval time.Duration, done <-chan struct{}) {
 			continue
 		}
 		for _, a := range apps {
-			if _, err := m.TakeSnapshot(a.Name, "", true); err != nil {
+			if _, err := m.TakeSnapshot(a.Name, autoSnapshotLabel, true); err != nil {
 				slog.Warn("Hourly snapshot failed", "app", a.Name, "error", err)
 			}
 		}
