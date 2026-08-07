@@ -165,6 +165,36 @@ func (c *Client) DeleteSnapshot(name, id string) error {
 	return c.request("DELETE", path, nil, nil)
 }
 
+// Domains lists an app's custom domains
+func (c *Client) Domains(name string) ([]DomainInfo, error) {
+	var domains []DomainInfo
+	if err := c.request("GET", "/api/apps/"+url.PathEscape(name)+"/domains", nil, &domains); err != nil {
+		return nil, err
+	}
+	return domains, nil
+}
+
+// AddDomain attaches a custom domain and returns the DNS records to create
+func (c *Client) AddDomain(name, domain string) (*DomainInfo, error) {
+	var d DomainInfo
+	if err := c.request("POST", "/api/apps/"+url.PathEscape(name)+"/domains", &addDomainRequest{Domain: domain}, &d); err != nil {
+		return nil, err
+	}
+	return &d, nil
+}
+
+// VerifyDomain re-attempts certificate issuance for a custom domain
+func (c *Client) VerifyDomain(name, domain string) error {
+	path := "/api/apps/" + url.PathEscape(name) + "/domains/" + url.PathEscape(domain) + "/verify"
+	return c.request("POST", path, nil, nil)
+}
+
+// DeleteDomain detaches a custom domain
+func (c *Client) DeleteDomain(name, domain string) error {
+	path := "/api/apps/" + url.PathEscape(name) + "/domains/" + url.PathEscape(domain)
+	return c.request("DELETE", path, nil, nil)
+}
+
 // Logs returns the app's recent output
 func (c *Client) Logs(name string, lines int) (string, error) {
 	var resp outputResponse

@@ -225,6 +225,11 @@ env:
         <span className="mono">POST /api/apps/&#123;app&#125;/fork</span>. Fork the current state, or a specific snapshot.
       </p>
       <p className="hint">
+        <strong>Custom domains:</strong> serve an app on your own hostname on top of its subdomain. Add it from the app
+        page's Actions menu (or <span className="mono">hostit apps domain add</span>); hostit shows the two DNS records to
+        create and obtains the certificate over DNS-01, which works even when the server is not publicly reachable.
+      </p>
+      <p className="hint">
         Keep <span className="mono">description:</span> current. The dashboard shows it, and it is what the next assistant
         session starts from.
       </p>

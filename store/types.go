@@ -90,6 +90,30 @@ type AllowedDomain struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+// DomainStatus is a custom domain's lifecycle state
+type DomainStatus string
+
+const (
+	// DomainPending: added, but no certificate yet, so it does not route
+	DomainPending = DomainStatus("pending")
+	// DomainActive: certificate obtained; the domain routes to its app
+	DomainActive = DomainStatus("active")
+	// DomainError: the last certificate attempt failed (see LastError)
+	DomainError = DomainStatus("error")
+)
+
+// Domain is a custom hostname that routes to an app, on top of the app's
+// <app>.<base-domain> subdomain. The primary key enforces that a domain maps to
+// exactly one app.
+type Domain struct {
+	Domain    string       `json:"domain"`
+	AppName   string       `json:"app_name"`
+	Status    DomainStatus `json:"status"`
+	LastError string       `json:"last_error,omitempty"`
+	CreatedAt time.Time    `json:"created_at"`
+	ActiveAt  *time.Time   `json:"active_at,omitempty"`
+}
+
 // UserKey is an SSH public key from a user's profile; it grants access to all
 // apps that user owns
 type UserKey struct {

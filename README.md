@@ -459,6 +459,35 @@ subvolume, which unlocks two things:
 Setting this up is a one-off: a btrfs image on a loopback file, mounted at the
 app-homes path -- see [Development](#development). It needs no extra block device.
 
+## Custom domains
+
+An app answers on its `<app>.<base-domain>` subdomain out of the box; attach the
+owner's own hostname on top of it. Reached from the app page's Actions menu, the
+CLI, or the REST API:
+
+```sh
+hostit apps domain add myapp blog.example.com   # prints the two DNS records to create
+hostit apps domain list myapp                    # status: pending / active / error
+hostit apps domain verify myapp blog.example.com # re-check DNS and (re)issue the cert
+hostit apps domain rm myapp blog.example.com
+```
+
+The owner creates two DNS records at **their** provider (both plain CNAMEs, so any
+provider works):
+
+1. **Traffic** -- `blog.example.com` -> `myapp.<base-domain>` (or an A record to the
+   server at a zone apex, where CNAME is not allowed).
+2. **TLS challenge delegation** -- `_acme-challenge.blog.example.com` ->
+   `blog.example.com.acme.<base-domain>`.
+
+hostit then obtains a Let's Encrypt certificate over **DNS-01**, writing the
+challenge TXT into the operator's own zone (the same Route53 setup that issues the
+wildcard). Because validation is via public DNS, **this works even when the server
+is not reachable from the internet** -- the CA never connects to the box. The owner
+never shares DNS credentials; the delegation CNAME is also the proof of control.
+(`GET`/`POST /api/apps/{app}/domains`, `POST .../domains/{domain}/verify`,
+`DELETE .../domains/{domain}`.)
+
 ## Deploy an app
 
 SSH in as the app user, upload files, describe the app in `hostit.yml`:

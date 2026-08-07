@@ -115,6 +115,20 @@ var migrations = []string{
 		);
 		CREATE INDEX snapshot_app_idx ON snapshot(app_name, created_at);
 	`,
+	// Custom domains: a hostname that routes to an app on top of its <app>.<base>
+	// subdomain. The primary key enforces one app per domain; status drives routing
+	// and TLS issuance (pending -> active/error).
+	`
+		CREATE TABLE app_domain (
+			domain TEXT PRIMARY KEY,
+			app_name TEXT NOT NULL,
+			status TEXT NOT NULL DEFAULT 'pending',
+			last_error TEXT NOT NULL DEFAULT '',
+			created_at INTEGER NOT NULL,
+			active_at INTEGER
+		);
+		CREATE INDEX app_domain_app_idx ON app_domain(app_name);
+	`,
 }
 
 // migrate brings the database up to the current schema version, creating it if

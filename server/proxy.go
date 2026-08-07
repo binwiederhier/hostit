@@ -25,6 +25,10 @@ func (s *Server) newProxyHandler() http.Handler {
 		}
 		name, ok := s.appNameFromHost(host)
 		if !ok {
+			// Not an <app>.<base> subdomain; maybe a custom domain the owner attached.
+			name, ok = s.appNameFromCustomDomain(host)
+		}
+		if !ok {
 			s.writeNothingHerePage(w)
 			return
 		}

@@ -63,6 +63,10 @@ func (s *Server) newAPIHandler() http.Handler {
 	route(mux, "PUT", "/apps/{name}/keys", s.requireActive(s.handleAppsSetKeys))
 	route(mux, "POST", "/apps/{name}/token", s.requireActive(s.handleAppsRotateToken))
 	route(mux, "POST", "/apps/{name}/fork", s.requireActive(s.handleAppsFork))
+	route(mux, "GET", "/apps/{name}/domains", s.requireActive(s.handleAppDomainsList))
+	route(mux, "POST", "/apps/{name}/domains", s.requireActive(s.handleAppDomainAdd))
+	route(mux, "POST", "/apps/{name}/domains/{domain}/verify", s.requireActive(s.handleAppDomainVerify))
+	route(mux, "DELETE", "/apps/{name}/domains/{domain}", s.requireActive(s.handleAppDomainDelete))
 	route(mux, "GET", "/apps/{name}/terminal", s.requireActive(s.handleTerminal))
 	route(mux, "GET", "/apps/{name}/assistant", s.requireActive(s.handleAssistantTranscript))
 	route(mux, "GET", "/apps/{name}/assistant/stream", s.requireActive(s.handleAssistantStream))
@@ -382,6 +386,12 @@ func writeAppError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusBadRequest, err)
 	case errors.Is(err, app.ErrLimitReached):
 		writeError(w, http.StatusForbidden, err)
+	case errors.Is(err, ErrInvalidDomain):
+		writeError(w, http.StatusBadRequest, err)
+	case errors.Is(err, store.ErrAppDomainExists):
+		writeError(w, http.StatusConflict, err)
+	case errors.Is(err, store.ErrAppDomainNotFound):
+		writeError(w, http.StatusNotFound, err)
 	default:
 		writeUserError(w, err)
 	}

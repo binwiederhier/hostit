@@ -98,11 +98,6 @@ The dashboard can create, manage and delete apps and drive them in the browser
   running). Simplest first cut: stop the app, rename user + home + container +
   store row + re-point DNS/cert on next request, restart. Consider keeping the old
   subdomain as a redirect for a while so links do not break.
-- **Custom domains for apps.** Let an app answer on the owner's own hostname
-  (e.g. `blog.example.com`) as well as its `<app>.<base-domain>` subdomain. Needs
-  a `domain` per app in the store, the proxy matching it (`appNameFromHost` only
-  knows the base domain today), on-demand TLS allowing it (`allowTLSHost`), and a
-  DNS/verification step so someone cannot claim a domain they do not control.
 - **Secrets.** `env:` values live in `hostit.yml`, which sits in the app's home
   and is served if someone points a web server at the wrong directory. A real
   secret store (or at least a separate file that is never in `public/`) would
@@ -138,3 +133,5 @@ Kept briefly for context; prune when stale.
   home). API + CLI + assistant tools + snapshot dialog.
 - Web: in-browser terminal, built-in assistant, dark mode toggle, Apps switcher,
   mobile top-bar fold.
+- Custom domains: attach an owner's hostname to an app, with DNS-01 (CNAME-delegated)
+  certificates that work even for an internally-deployed server.

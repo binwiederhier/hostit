@@ -14,6 +14,7 @@ import (
 	osuser "os/user"
 	"path/filepath"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/caddyserver/certmagic"
@@ -48,6 +49,14 @@ type Server struct {
 	usernameForUID func(uid int) (string, error)
 	// exchangeGoogleCode trades an OAuth code for an identity; overridden in tests
 	exchangeGoogleCode func(code, host string) (*googleIdentity, error)
+
+	// magic is the certmagic config used to obtain custom-domain certificates on
+	// demand; nil when TLS is off, in which case custom domains route over plain HTTP
+	magic *certmagic.Config
+	// domainCache maps an active custom domain to its app, for the proxy; rebuilt
+	// from the store on change. nil until first loaded.
+	domainCache map[string]string
+	domainMu    sync.RWMutex // Protects domainCache
 
 	servers []*http.Server // Running HTTP servers, for Stop
 }
@@ -154,6 +163,11 @@ func (s *Server) runTLSServers(g *errgroup.Group) error {
 	magic := certmagic.NewDefault()
 	issuer := certmagic.NewACMEIssuer(magic, certmagic.DefaultACME)
 	magic.Issuers = []certmagic.Issuer{issuer}
+	s.magic = magic // used to obtain custom-domain certificates later
+
+	// Obtain certificates for existing active custom domains up front, so they
+	// serve immediately after a restart and renew in the background.
+	s.manageExistingDomains()
 
 	// The wildcard certificate is managed up front (and renewed in the
 	// background); on-demand certificates need no such call
@@ -200,14 +214,17 @@ func (s *Server) allowTLSHost(name string) error {
 	if s.config.IsWebHostname(name) {
 		return nil
 	}
-	appName, ok := s.appNameFromHost(name)
-	if !ok {
-		return fmt.Errorf("host %s not below base domain", name)
+	if appName, ok := s.appNameFromHost(name); ok {
+		if _, err := s.apps.App(appName); err != nil {
+			return fmt.Errorf("no app for host %s", name)
+		}
+		return nil
 	}
-	if _, err := s.apps.App(appName); err != nil {
-		return fmt.Errorf("no app for host %s", name)
+	// A registered custom domain (pending or active) may also get a certificate.
+	if _, err := s.apps.Store().Domain(name); err == nil {
+		return nil
 	}
-	return nil
+	return fmt.Errorf("host %s is not a registered app or custom domain", name)
 }
 
 // listenSocket creates the CLI unix socket, replacing any stale socket file

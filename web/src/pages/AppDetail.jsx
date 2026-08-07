@@ -295,7 +295,7 @@ const SnapshotSplitButton = ({ onList, onNew, onFork }) => {
 // command), container actions (power), the API token, and delete -- dividers
 // between the groups. Only one app verb is ever the sensible next move, and when
 // the container is off there is no app to act on, so that group is dropped.
-const ActionsMenu = ({ running, appRunning, busy, hasToken, onAction, onCopyToken, onRegenerateToken, onDelete }) => {
+const ActionsMenu = ({ running, appRunning, busy, hasToken, onAction, onCopyToken, onRegenerateToken, onDomains, onDelete }) => {
   const { open, setOpen, ref } = useDropdown();
 
   const run = (action) => {
@@ -362,6 +362,11 @@ const ActionsMenu = ({ running, appRunning, busy, hasToken, onAction, onCopyToke
           </button>
           <button type="button" role="menuitem" onClick={pick(onRegenerateToken)}>
             Regenerate token
+          </button>
+          <div className="menu-sep" />
+
+          <button type="button" role="menuitem" onClick={pick(onDomains)}>
+            Custom domains...
           </button>
           <div className="menu-sep" />
 
@@ -766,6 +771,157 @@ const SnapshotsDialog = ({ name, onClose, showToast, onRolledBack, onFork }) => 
   );
 };
 
+// DomainsDialog attaches custom domains to the app. Each domain shows the two DNS
+// records the owner must create (one to route traffic, one to delegate the ACME
+// challenge so a certificate issues even when the box is not publicly reachable).
+const DomainsDialog = ({ name, onClose, showToast }) => {
+  useEscape(onClose);
+  const [domains, setDomains] = useState(null); // null until loaded
+  const [input, setInput] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [confirmId, setConfirmId] = useState(null);
+
+  const load = useCallback(async () => {
+    try {
+      const list = await api.get(`/api/apps/${encodeURIComponent(name)}/domains`);
+      setDomains(Array.isArray(list) ? list : []);
+    } catch (err) {
+      setError(err.message);
+      setDomains([]);
+    }
+  }, [name]);
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const add = async (e) => {
+    e.preventDefault();
+    const domain = input.trim().toLowerCase();
+    if (busy || !domain) return;
+    setBusy(true);
+    setError("");
+    try {
+      await api.post(`/api/apps/${encodeURIComponent(name)}/domains`, { domain });
+      setInput("");
+      showToast("Domain added; create the DNS records");
+      await load();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const verify = async (domain) => {
+    if (busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      await api.post(`/api/apps/${encodeURIComponent(name)}/domains/${encodeURIComponent(domain)}/verify`, {});
+      showToast("Checking DNS...");
+      setTimeout(load, 1500); // give issuance a moment, then refresh
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const remove = async (domain) => {
+    if (busy) return;
+    setConfirmId(null);
+    setBusy(true);
+    setError("");
+    try {
+      await api.del(`/api/apps/${encodeURIComponent(name)}/domains/${encodeURIComponent(domain)}`);
+      showToast("Domain removed");
+      await load();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true" onMouseDown={onClose}>
+      <div className="card modal modal-wide" onMouseDown={(e) => e.stopPropagation()}>
+        <div className="modal-head">
+          <h2>Custom domains</h2>
+          <button type="button" className="term-btn" onClick={onClose} title="Close" aria-label="Close">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M4 4l8 8M12 4l-8 8" />
+            </svg>
+          </button>
+        </div>
+        <p className="hint">
+          Serve <span className="mono">{name}</span> on your own hostname. Add it, then create the two DNS records shown;
+          the certificate issues automatically (works even if this server is not publicly reachable).
+        </p>
+        <ErrorBanner message={error} onDismiss={() => setError("")} />
+        <form className="domain-add" onSubmit={add}>
+          <input
+            type="text"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder="blog.example.com"
+            aria-label="Custom domain"
+            autoFocus
+          />
+          <button type="submit" className="btn btn-primary btn-small" disabled={busy || !input.trim()}>
+            Add domain
+          </button>
+        </form>
+        {domains === null ? (
+          <p className="hint">Loading...</p>
+        ) : domains.length === 0 ? (
+          <p className="hint">No custom domains yet.</p>
+        ) : (
+          <div className="domain-list">
+            {domains.map((d) => (
+              <div className="domain-row" key={d.domain}>
+                <div className="domain-head">
+                  <span className="domain-name">{d.domain}</span>
+                  <span className={"domain-status domain-" + d.status}>{d.status}</span>
+                  <span className="domain-actions">
+                    <button type="button" className="btn btn-small" onClick={() => verify(d.domain)} disabled={busy}>
+                      {d.status === "active" ? "Re-check" : "Verify"}
+                    </button>
+                    {confirmId === d.domain ? (
+                      <button type="button" className="btn btn-small btn-danger" onClick={() => remove(d.domain)} disabled={busy}>
+                        Confirm remove
+                      </button>
+                    ) : (
+                      <button type="button" className="btn btn-small" onClick={() => setConfirmId(d.domain)} disabled={busy}>
+                        Remove
+                      </button>
+                    )}
+                  </span>
+                </div>
+                {d.last_error && <div className="domain-error">{d.last_error}</div>}
+                {d.status !== "active" && d.dns && (
+                  <div className="domain-dns">
+                    {d.dns.map((r) => (
+                      <div className="dns-rec" key={r.name}>
+                        <span className="dns-type">{r.type}</span>
+                        <code className="dns-name">{r.name}</code>
+                        <span className="dns-arrow" aria-hidden="true">-&gt;</span>
+                        <code className="dns-value">{r.value}</code>
+                        <CopyButton text={`${r.name} ${r.type} ${r.value}`} small />
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
 const AppDetail = ({ account, refreshAccount }) => {
   const { name } = useParams();
   const navigate = useNavigate();
@@ -785,6 +941,7 @@ const AppDetail = ({ account, refreshAccount }) => {
   const [showNewSnapshot, setShowNewSnapshot] = useState(false);
   const [showFork, setShowFork] = useState(false);
   const [forkSnapshotId, setForkSnapshotId] = useState(null); // null = fork from current state
+  const [showDomains, setShowDomains] = useState(false);
   const [hasKeys, setHasKeys] = useState(null); // null until we know, so nothing flickers
   const [toast, setToast] = useState(""); // a 3s "Copied"/"Regenerated" snackbar
   const toastTimer = useRef(null);
@@ -1149,6 +1306,7 @@ const AppDetail = ({ account, refreshAccount }) => {
                 onAction={lifecycle}
                 onCopyToken={copyToken}
                 onRegenerateToken={regenerateToken}
+                onDomains={() => setShowDomains(true)}
                 onDelete={() => setConfirmDelete(true)}
               />
               <a className="btn btn-primary" href={app.url} target="_blank" rel="noreferrer" title="Open app">
@@ -1246,6 +1404,7 @@ const AppDetail = ({ account, refreshAccount }) => {
       {showNewSnapshot && (
         <NewSnapshotDialog name={app.name} onClose={() => setShowNewSnapshot(false)} showToast={showToast} />
       )}
+      {showDomains && <DomainsDialog name={app.name} onClose={() => setShowDomains(false)} showToast={showToast} />}
       {showFork && (
         <ForkDialog
           name={app.name}

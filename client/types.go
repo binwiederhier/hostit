@@ -60,6 +60,27 @@ type forkAppRequest struct {
 	SnapshotID string `json:"snapshot_id,omitempty"`
 }
 
+// addDomainRequest mirrors the server's POST /api/apps/{name}/domains body
+type addDomainRequest struct {
+	Domain string `json:"domain"`
+}
+
+// DNSRecord is one DNS record the owner must create for a custom domain
+type DNSRecord struct {
+	Type  string `json:"type"`
+	Name  string `json:"name"`
+	Value string `json:"value"`
+	Note  string `json:"note"`
+}
+
+// DomainInfo is a custom domain as returned by the API
+type DomainInfo struct {
+	Domain    string      `json:"domain"`
+	Status    string      `json:"status"`
+	LastError string      `json:"last_error,omitempty"`
+	DNS       []DNSRecord `json:"dns"`
+}
+
 // setKeysRequest mirrors the server's PUT /api/apps/{name}/keys body
 type setKeysRequest struct {
 	SSHKeys []string `json:"ssh_keys"`

@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite" // SQLite driver (pure Go, no cgo)
@@ -49,6 +50,15 @@ const (
 	selectSnapshotQuery     = `SELECT id, app_name, label, created_at, auto FROM snapshot WHERE id = ?`
 	deleteSnapshotQuery     = `DELETE FROM snapshot WHERE id = ?`
 	deleteAppSnapshotsQuery = `DELETE FROM snapshot WHERE app_name = ?`
+
+	domainCols              = `domain, app_name, status, last_error, created_at, active_at`
+	insertDomainQuery       = `INSERT INTO app_domain (domain, app_name, status, last_error, created_at) VALUES (?, ?, ?, '', ?)`
+	selectDomainsByAppQuery = `SELECT ` + domainCols + ` FROM app_domain WHERE app_name = ? ORDER BY created_at`
+	selectDomainQuery       = `SELECT ` + domainCols + ` FROM app_domain WHERE domain = ?`
+	selectAllDomainsQuery   = `SELECT ` + domainCols + ` FROM app_domain`
+	updateDomainStatusQuery = `UPDATE app_domain SET status = ?, last_error = ?, active_at = ? WHERE domain = ?`
+	deleteDomainQuery       = `DELETE FROM app_domain WHERE domain = ?`
+	deleteAppDomainsQuery   = `DELETE FROM app_domain WHERE app_name = ?`
 )
 
 var (
@@ -56,6 +66,10 @@ var (
 	ErrAppNotFound = errors.New("app not found")
 	// ErrSnapshotNotFound is returned when a snapshot id does not exist
 	ErrSnapshotNotFound = errors.New("snapshot not found")
+	// ErrAppDomainNotFound is returned when a custom app domain does not exist
+	ErrAppDomainNotFound = errors.New("domain not found")
+	// ErrAppDomainExists is returned when a domain is already registered to an app
+	ErrAppDomainExists = errors.New("domain already in use")
 )
 
 // Store is the SQLite-backed registry
@@ -191,6 +205,9 @@ func (s *Store) RemoveApp(name string) error {
 	if _, err := s.db.Exec(deleteAppSnapshotsQuery, name); err != nil {
 		return err
 	}
+	if _, err := s.db.Exec(deleteAppDomainsQuery, name); err != nil {
+		return err
+	}
 	return s.RemoveTokensByApp(name)
 }
 
@@ -255,6 +272,91 @@ func (s *Store) Snapshot(id string) (*Snapshot, error) {
 func (s *Store) DeleteSnapshot(id string) error {
 	_, err := s.db.Exec(deleteSnapshotQuery, id)
 	return err
+}
+
+// AddDomain registers a custom domain for an app, or ErrAppDomainExists if the
+// domain already belongs to some app
+func (s *Store) AddDomain(d *Domain) error {
+	_, err := s.db.Exec(insertDomainQuery, d.Domain, d.AppName, string(d.Status), d.CreatedAt.Unix())
+	if err != nil && strings.Contains(err.Error(), "UNIQUE") {
+		return ErrAppDomainExists
+	}
+	return err
+}
+
+// Domains lists an app's custom domains, oldest first
+func (s *Store) Domains(appName string) ([]*Domain, error) {
+	return s.queryDomains(selectDomainsByAppQuery, appName)
+}
+
+// AllDomains lists every custom domain, for building the routing cache and TLS
+// management at startup
+func (s *Store) AllDomains() ([]*Domain, error) {
+	return s.queryDomains(selectAllDomainsQuery)
+}
+
+// Domain returns one domain by hostname, or ErrAppDomainNotFound
+func (s *Store) Domain(domain string) (*Domain, error) {
+	d, err := scanDomain(s.db.QueryRow(selectDomainQuery, domain))
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrAppDomainNotFound
+	}
+	return d, err
+}
+
+// SetDomainStatus updates a domain's issuance state; activeAt is nil unless the
+// domain just became active
+func (s *Store) SetDomainStatus(domain string, status DomainStatus, lastErr string, activeAt *time.Time) error {
+	var active *int64
+	if activeAt != nil {
+		unix := activeAt.Unix()
+		active = &unix
+	}
+	res, err := s.db.Exec(updateDomainStatusQuery, string(status), lastErr, active, domain)
+	if err != nil {
+		return err
+	}
+	return checkAffected(res, ErrAppDomainNotFound)
+}
+
+// DeleteDomain forgets a custom domain (the caller drops its certificate)
+func (s *Store) DeleteDomain(domain string) error {
+	_, err := s.db.Exec(deleteDomainQuery, domain)
+	return err
+}
+
+func (s *Store) queryDomains(query string, args ...any) ([]*Domain, error) {
+	rows, err := s.db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var domains []*Domain
+	for rows.Next() {
+		d, err := scanDomain(rows)
+		if err != nil {
+			return nil, err
+		}
+		domains = append(domains, d)
+	}
+	return domains, rows.Err()
+}
+
+func scanDomain(row scanner) (*Domain, error) {
+	var d Domain
+	var status string
+	var createdAt int64
+	var activeAt *int64
+	if err := row.Scan(&d.Domain, &d.AppName, &status, &d.LastError, &createdAt, &activeAt); err != nil {
+		return nil, err
+	}
+	d.Status = DomainStatus(status)
+	d.CreatedAt = time.Unix(createdAt, 0)
+	if activeAt != nil {
+		t := time.Unix(*activeAt, 0)
+		d.ActiveAt = &t
+	}
+	return &d, nil
 }
 
 type scanner interface {
