@@ -276,7 +276,6 @@ const ActionsMenu = ({ running, appRunning, busy, hasToken, onAction, onCopyToke
         <div className="menu-items" role="menu">
           {running && (
             <>
-              <div className="menu-label">App</div>
               {appVerbs.map((a) => (
                 <button key={a.verb} type="button" role="menuitem" onClick={() => run(a.verb)}>
                   {a.label}
@@ -286,7 +285,6 @@ const ActionsMenu = ({ running, appRunning, busy, hasToken, onAction, onCopyToke
             </>
           )}
 
-          <div className="menu-label">Container</div>
           {running ? (
             <>
               <button type="button" role="menuitem" onClick={() => run("reboot")}>
@@ -303,7 +301,6 @@ const ActionsMenu = ({ running, appRunning, busy, hasToken, onAction, onCopyToke
           )}
           <div className="menu-sep" />
 
-          <div className="menu-label">API token</div>
           <button type="button" role="menuitem" onClick={pick(onCopyToken)} disabled={!hasToken}>
             Copy token
           </button>
