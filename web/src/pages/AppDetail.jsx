@@ -108,6 +108,23 @@ const SparkleIcon = () => (
   </svg>
 );
 
+// Small monochrome glyphs for the dropdown menu items.
+const mi = (paths) => () => (
+  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    {paths}
+  </svg>
+);
+const PlayIcon = mi(<path d="M5 3.5v9l7-4.5z" />);
+const StopIcon = mi(<rect x="4" y="4" width="8" height="8" rx="1" />);
+const RestartIcon = mi(<><path d="M13 8a5 5 0 1 1-1.5-3.5" /><path d="M13 3v2.2h-2.2" /></>);
+const RebootIcon = mi(<><path d="M3.2 8a4.8 4.8 0 1 0 1.4-3.4" /><path d="M4.6 2.3v2.3h2.3" /><path d="M8 5v3" /></>);
+const PowerIcon = mi(<><path d="M8 2.2v5" /><path d="M4.6 4.6a4.6 4.6 0 1 0 6.8 0" /></>);
+const GearIcon = mi(<><circle cx="8" cy="8" r="2.1" /><path d="M8 1.7v1.6M8 12.7v1.6M14.3 8h-1.6M3.3 8H1.7M12.4 3.6l-1.1 1.1M4.7 11.3l-1.1 1.1M12.4 12.4l-1.1-1.1M4.7 4.7 3.6 3.6" /></>);
+const TrashIcon = mi(<><path d="M3 4.5h10" /><path d="M6.5 4.5V3h3v1.5" /><path d="M4.5 4.5l.6 8.5a1 1 0 0 0 1 .9h3.8a1 1 0 0 0 1-.9l.6-8.5" /></>);
+const PlusIcon = mi(<path d="M8 3.5v9M3.5 8h9" />);
+const ForkIcon = mi(<><circle cx="4.5" cy="4" r="1.6" /><circle cx="11.5" cy="4" r="1.6" /><circle cx="8" cy="12.5" r="1.6" /><path d="M4.5 5.6v1.4a2 2 0 0 0 2 2H8m3.5-3.4v1.4a2 2 0 0 1-2 2H8m0 0v1.9" /></>);
+const KeyIcon = mi(<><circle cx="5" cy="11" r="2.3" /><path d="M6.7 9.3l5-5M10.7 5.3l1.4 1.4M12.4 3.6l1.4 1.4" /></>);
+
 // formatUptime turns a container start time (Unix seconds) into a short duration
 // like "3d 4h", "2h 15m", "8m" or "42s"; a stopped container has no uptime.
 const formatUptime = (startedAt) => {
@@ -231,12 +248,8 @@ const TerminalSplitButton = ({ active, connecting, onWebShell, onSsh }) => {
       </button>
       {open && (
         <div className="menu-items" role="menu">
-          <button type="button" role="menuitem" onClick={() => pick(onWebShell)}>
-            Web shell
-          </button>
-          <button type="button" role="menuitem" onClick={() => pick(onSsh)}>
-            Connect via SSH
-          </button>
+          <MenuItem icon={<TerminalIcon />} label="Web shell" onClick={() => pick(onWebShell)} />
+          <MenuItem icon={<KeyIcon />} label="Connect via SSH" onClick={() => pick(onSsh)} />
         </div>
       )}
     </div>
@@ -275,27 +288,38 @@ const SnapshotSplitButton = ({ onList, onNew, onFork }) => {
       </button>
       {open && (
         <div className="menu-items" role="menu">
-          <button type="button" role="menuitem" onClick={() => pick(onList)}>
-            Snapshots
-          </button>
-          <button type="button" role="menuitem" onClick={() => pick(onNew)}>
-            New snapshot...
-          </button>
+          <MenuItem icon={<SnapshotIcon />} label="Snapshots" onClick={() => pick(onList)} />
+          <MenuItem icon={<PlusIcon />} label="New snapshot" onClick={() => pick(onNew)} />
           <div className="menu-sep" />
-          <button type="button" role="menuitem" onClick={() => pick(onFork)}>
-            Fork app...
-          </button>
+          <MenuItem icon={<ForkIcon />} label="Fork app" onClick={() => pick(onFork)} />
         </div>
       )}
     </div>
   );
 };
 
+// MenuItem is one dropdown row: a small leading icon and a label.
+const MenuItem = ({ icon, label, onClick, disabled, danger }) => (
+  <button
+    type="button"
+    role="menuitem"
+    className={danger ? "menu-item-danger" : undefined}
+    onClick={onClick}
+    disabled={disabled}
+  >
+    <span className="menu-ico" aria-hidden="true">
+      {icon}
+    </span>
+    {label}
+  </button>
+);
+
 // Everything rare about an app behind one button, grouped: app actions (the run:
-// command), container actions (power), the API token, and delete -- dividers
-// between the groups. Only one app verb is ever the sensible next move, and when
-// the container is off there is no app to act on, so that group is dropped.
-const ActionsMenu = ({ running, appRunning, busy, hasToken, onAction, onCopyToken, onRegenerateToken, onDomains, onDelete }) => {
+// command), container actions (power), settings (token + custom domains), and
+// delete -- dividers between the groups. Only one app verb is ever the sensible
+// next move, and when the container is off there is no app to act on, so that
+// group is dropped.
+const ActionsMenu = ({ running, appRunning, busy, onAction, onSettings, onDelete }) => {
   const { open, setOpen, ref } = useDropdown();
 
   const run = (action) => {
@@ -308,10 +332,10 @@ const ActionsMenu = ({ running, appRunning, busy, hasToken, onAction, onCopyToke
   };
   const appVerbs = appRunning
     ? [
-        { verb: "restart", label: "Restart app" },
-        { verb: "stop", label: "Stop app" },
+        { verb: "restart", label: "Restart app", icon: <RestartIcon /> },
+        { verb: "stop", label: "Stop app", icon: <StopIcon /> },
       ]
-    : [{ verb: "start", label: "Start app" }];
+    : [{ verb: "start", label: "Start app", icon: <PlayIcon /> }];
 
   return (
     <div className="menu" ref={ref}>
@@ -333,9 +357,7 @@ const ActionsMenu = ({ running, appRunning, busy, hasToken, onAction, onCopyToke
           {running && (
             <>
               {appVerbs.map((a) => (
-                <button key={a.verb} type="button" role="menuitem" onClick={() => run(a.verb)}>
-                  {a.label}
-                </button>
+                <MenuItem key={a.verb} icon={a.icon} label={a.label} onClick={() => run(a.verb)} />
               ))}
               <div className="menu-sep" />
             </>
@@ -343,36 +365,18 @@ const ActionsMenu = ({ running, appRunning, busy, hasToken, onAction, onCopyToke
 
           {running ? (
             <>
-              <button type="button" role="menuitem" onClick={() => run("reboot")}>
-                Reboot
-              </button>
-              <button type="button" role="menuitem" onClick={() => run("poweroff")}>
-                Power off
-              </button>
+              <MenuItem icon={<RebootIcon />} label="Reboot" onClick={() => run("reboot")} />
+              <MenuItem icon={<PowerIcon />} label="Power off" onClick={() => run("poweroff")} />
             </>
           ) : (
-            <button type="button" role="menuitem" onClick={() => run("poweron")}>
-              Power on
-            </button>
+            <MenuItem icon={<PowerIcon />} label="Power on" onClick={() => run("poweron")} />
           )}
           <div className="menu-sep" />
 
-          <button type="button" role="menuitem" onClick={pick(onCopyToken)} disabled={!hasToken}>
-            Copy token
-          </button>
-          <button type="button" role="menuitem" onClick={pick(onRegenerateToken)}>
-            Regenerate token
-          </button>
+          <MenuItem icon={<GearIcon />} label="Settings" onClick={pick(onSettings)} />
           <div className="menu-sep" />
 
-          <button type="button" role="menuitem" onClick={pick(onDomains)}>
-            Custom domains...
-          </button>
-          <div className="menu-sep" />
-
-          <button type="button" role="menuitem" className="menu-item-danger" onClick={pick(onDelete)}>
-            Delete app...
-          </button>
+          <MenuItem icon={<TrashIcon />} label="Delete app" onClick={pick(onDelete)} danger />
         </div>
       )}
     </div>
@@ -771,10 +775,11 @@ const SnapshotsDialog = ({ name, onClose, showToast, onRolledBack, onFork }) => 
   );
 };
 
-// DomainsDialog attaches custom domains to the app. Each domain shows the two DNS
-// records the owner must create (one to route traffic, one to delegate the ACME
-// challenge so a certificate issues even when the box is not publicly reachable).
-const DomainsDialog = ({ name, onClose, showToast }) => {
+// SettingsDialog holds an app's settings: its API token and its custom domains.
+// Each domain shows the two DNS records the owner must create (one to route
+// traffic, one to delegate the ACME challenge so a certificate issues even when the
+// box is not publicly reachable).
+const SettingsDialog = ({ name, hasToken, onCopyToken, onRegenerateToken, onClose, showToast }) => {
   useEscape(onClose);
   const [domains, setDomains] = useState(null); // null until loaded
   const [input, setInput] = useState("");
@@ -846,21 +851,37 @@ const DomainsDialog = ({ name, onClose, showToast }) => {
 
   return (
     <div className="modal-backdrop" role="dialog" aria-modal="true" onMouseDown={onClose}>
-      <div className="card modal modal-wide" onMouseDown={(e) => e.stopPropagation()}>
+      <div className="card modal modal-xwide" onMouseDown={(e) => e.stopPropagation()}>
         <div className="modal-head">
-          <h2>Custom domains</h2>
+          <h2>Settings</h2>
           <button type="button" className="term-btn" onClick={onClose} title="Close" aria-label="Close">
             <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M4 4l8 8M12 4l-8 8" />
             </svg>
           </button>
         </div>
-        <p className="hint">
-          Serve <span className="mono">{name}</span> on your own hostname. Add it, then create the two DNS records shown;
-          the certificate issues automatically (works even if this server is not publicly reachable).
-        </p>
-        <ErrorBanner message={error} onDismiss={() => setError("")} />
-        <form className="domain-add" onSubmit={add}>
+
+        <section className="settings-section">
+          <h3>API token</h3>
+          <p className="hint">The app-scoped token an external agent (Claude Code, etc.) uses to work on this app.</p>
+          <div className="btn-row" style={{ justifyContent: "flex-start" }}>
+            <button type="button" className="btn btn-small" onClick={onCopyToken} disabled={!hasToken}>
+              Copy token
+            </button>
+            <button type="button" className="btn btn-small" onClick={onRegenerateToken}>
+              Regenerate token
+            </button>
+          </div>
+        </section>
+
+        <section className="settings-section">
+          <h3>Custom domains</h3>
+          <p className="hint">
+            Serve <span className="mono">{name}</span> on your own hostname. Add it, then create the two DNS records
+            shown; the certificate issues automatically (works even if this server is not publicly reachable).
+          </p>
+          <ErrorBanner message={error} onDismiss={() => setError("")} />
+          <form className="domain-add" onSubmit={add}>
           <input
             type="text"
             value={input}
@@ -917,6 +938,7 @@ const DomainsDialog = ({ name, onClose, showToast }) => {
             ))}
           </div>
         )}
+        </section>
       </div>
     </div>
   );
@@ -941,7 +963,7 @@ const AppDetail = ({ account, refreshAccount }) => {
   const [showNewSnapshot, setShowNewSnapshot] = useState(false);
   const [showFork, setShowFork] = useState(false);
   const [forkSnapshotId, setForkSnapshotId] = useState(null); // null = fork from current state
-  const [showDomains, setShowDomains] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const [hasKeys, setHasKeys] = useState(null); // null until we know, so nothing flickers
   const [toast, setToast] = useState(""); // a 3s "Copied"/"Regenerated" snackbar
   const toastTimer = useRef(null);
@@ -1302,11 +1324,8 @@ const AppDetail = ({ account, refreshAccount }) => {
                 running={app.running}
                 appRunning={app.app_running}
                 busy={!!pending}
-                hasToken={!!token}
                 onAction={lifecycle}
-                onCopyToken={copyToken}
-                onRegenerateToken={regenerateToken}
-                onDomains={() => setShowDomains(true)}
+                onSettings={() => setShowSettings(true)}
                 onDelete={() => setConfirmDelete(true)}
               />
               <a className="btn btn-primary" href={app.url} target="_blank" rel="noreferrer" title="Open app">
@@ -1404,7 +1423,16 @@ const AppDetail = ({ account, refreshAccount }) => {
       {showNewSnapshot && (
         <NewSnapshotDialog name={app.name} onClose={() => setShowNewSnapshot(false)} showToast={showToast} />
       )}
-      {showDomains && <DomainsDialog name={app.name} onClose={() => setShowDomains(false)} showToast={showToast} />}
+      {showSettings && (
+        <SettingsDialog
+          name={app.name}
+          hasToken={!!token}
+          onCopyToken={copyToken}
+          onRegenerateToken={regenerateToken}
+          showToast={showToast}
+          onClose={() => setShowSettings(false)}
+        />
+      )}
       {showFork && (
         <ForkDialog
           name={app.name}

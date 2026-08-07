@@ -47,9 +47,9 @@ const useNavDropdown = () => {
   return { open, setOpen, ref };
 };
 
-// The "Apps" nav item, a split control: the label goes to the app list; the caret
-// opens a switcher that lists the owner's apps so you can jump straight to any one
-// (handy from an app detail page). The list is fetched the first time it opens.
+// The "Apps" nav item: clicking goes to the app list, hovering opens a switcher
+// that lists the owner's apps so you can jump straight to any one (handy from an
+// app detail page). The list is fetched the first time it opens.
 const AppsMenu = () => {
   const { open, setOpen, ref } = useNavDropdown();
   const [apps, setApps] = useState(null); // null = not loaded yet
@@ -78,16 +78,6 @@ const AppsMenu = () => {
       <NavLink to="/" end className="nav-apps-link" onClick={() => setOpen(false)}>
         Apps
       </NavLink>
-      <button
-        type="button"
-        className="nav-apps-caret"
-        onClick={() => setOpen((o) => !o)}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        aria-label="Switch app"
-      >
-        <span aria-hidden="true">&#9662;</span>
-      </button>
       {open && (
         <div className="nav-apps-pop" role="menu">
           {apps === null && !failed && <div className="nav-apps-note">Loading...</div>}

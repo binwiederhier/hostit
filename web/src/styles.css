@@ -1247,7 +1247,9 @@ th:last-child {
 
 .menu-items button {
   white-space: nowrap;
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 9px;
   width: 100%;
   text-align: left;
   font: inherit;
@@ -1257,6 +1259,22 @@ th:last-child {
   border-radius: 6px;
   padding: 7px 10px;
   cursor: pointer;
+}
+/* Leading glyph on a menu row */
+.menu-ico {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  flex: none;
+  color: var(--muted);
+}
+.menu-ico svg {
+  width: 15px;
+  height: 15px;
+}
+.menu-item-danger .menu-ico {
+  color: var(--danger);
 }
 
 .menu-items button:hover:not(:disabled) {
@@ -2068,6 +2086,18 @@ body.ws-resizing iframe { pointer-events: none; }
   font-size: 13px;
 }
 .snap-actions { display: flex; gap: 6px; flex: none; }
+
+/* Settings dialog sections (API token, custom domains) */
+.settings-section { margin-top: 18px; }
+.settings-section:first-of-type { margin-top: 8px; }
+.settings-section > h3 {
+  margin: 0 0 4px;
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
 
 /* Custom domains dialog */
 .domain-add { display: flex; gap: 8px; margin: 12px 0 4px; }
