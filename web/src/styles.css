@@ -2039,6 +2039,7 @@ body.ws-resizing iframe { pointer-events: none; }
 
 /* Modal helpers shared by the SSH and bring-your-own-AI dialogs */
 .modal-wide { max-width: 44rem; }
+.modal-xwide { max-width: 54rem; }
 
 /* Snapshot list inside the Snapshots dialog */
 .snap-list {
@@ -2063,7 +2064,7 @@ body.ws-resizing iframe { pointer-events: none; }
   display: flex;
   align-items: center;
   gap: 9px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   font-size: 13px;
 }
 .snap-actions { display: flex; gap: 6px; flex: none; }

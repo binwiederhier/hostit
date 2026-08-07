@@ -704,7 +704,7 @@ const SnapshotsDialog = ({ name, onClose, showToast, onRolledBack, onFork }) => 
 
   return (
     <div className="modal-backdrop" role="dialog" aria-modal="true" onMouseDown={onClose}>
-      <div className="card modal modal-wide" onMouseDown={(e) => e.stopPropagation()}>
+      <div className="card modal modal-xwide" onMouseDown={(e) => e.stopPropagation()}>
         <div className="modal-head">
           <h2>
             Snapshots{snaps && snaps.length > 0 ? <span className="snap-count"> {snaps.length}</span> : ""}
