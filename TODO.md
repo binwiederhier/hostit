@@ -7,34 +7,43 @@ everything imaginable -- if it is not written down here it is not planned.
 
 Today one machine is everything: it terminates TLS, proxies, holds the registry,
 and runs every app. The next step is separating the two roles, so apps can spread
-across machines while keeping one front door and one dashboard.
+across machines while keeping one front door and one dashboard. The full design,
+with flow and sequence diagrams and a 4-phase rollout, is in
+`plans/260807-hostit-multinode.md`; this is the summary.
 
-- **Proxy node**: TLS, the web app, the REST API, the registry. Owns which app
-  lives where, and proxies to the node hosting it instead of to loopback.
-- **Hosting nodes**: create Unix users and containers, run apps, report state.
-  No public listener of their own.
+- **Proxy node**: TLS, the web app, the REST API, the registry, placement, and the
+  assistant. Owns which app lives where, and proxies to the node hosting it
+  instead of to loopback.
+- **Hosting nodes**: run a `hostit-agent` that creates Unix users and containers,
+  runs apps, and reports state. No public listener of their own.
 
-What has to exist before this works:
+The chosen shape and the decisions behind it:
 
-- **Node registry.** `store.App` already carries a `host` column, currently
-  always `"local"` (`store.HostLocal`). It becomes a node identifier, and a
-  `node` table records each node's address, capacity and health.
-- **Node-to-node authentication.** The proxy calls hosting nodes over the
-  network, so the unix-socket SO_PEERCRED trick does not carry: mutual TLS or a
-  shared token, and every current "run this locally" path grows a remote variant.
-- **Placement.** Which node gets a new app: free memory, free disk, app count.
-  Simple to start (least-loaded), but it needs somewhere to live.
-- **Lifecycle over the wire.** `app.Manager` runs podman and systemctl through a
-  `Runner`. That interface is the seam: a remote implementation that speaks to a
-  hosting node's agent would leave the rest of the manager untouched.
-- **SSH routing.** `hostit-shell` execs into a local container. With apps
-  elsewhere, an SSH session has to reach the right node -- either sshd on each
-  hosting node with the proxy handing out the address, or a jump through the
-  proxy.
+- **`NodeAgent` interface, local + remote.** The node-local half of `app.Manager`
+  (everything touching `Runner`, `SystemOps`, the `os.OpenRoot` file layer, and
+  btrfs) becomes a `NodeAgent` interface with two implementations: `localNodeAgent`
+  (today's in-process code) and `remoteNodeAgent` (RPC to another box). A single-box
+  install is proxy + one `local` node in the same process -- zero network, no
+  behavior change. This is why the split cannot just remote the `Runner`:
+  `os.OpenRoot` containment, btrfs reflinks and podman all require the operation to
+  happen where the app physically lives, so the whole node-local unit must move.
+- **Transport: dedicated internal RPC** (HTTP+JSON behind the `NodeAgent`
+  interface, per-node token or mTLS), NOT the public agent REST API -- the internal
+  surface is a superset that includes root-level verbs (create a user, rewrite
+  authorized_keys, delete a home) that must never be tenant-reachable.
+- **Node registry.** `store.App.Host` (today always `store.HostLocal`) becomes a
+  node identifier; a new `node` table records address, capacity and health via
+  heartbeats. Placement is least-loaded (free memory, disk, app count).
+- **Registry stays central; agents are stateless.** The proxy's SQLite store is the
+  single source of truth; at create time the hosting node allocates its own local
+  port/uid and returns them. Snapshot subvolumes are node-local but the metadata
+  lives in the central registry. A stable app **id** (see "Rename an app" below) is
+  the natural registry key: name -> id -> (node, port).
+- **SSH routing: single front door + ProxyJump.** One SSH endpoint on the proxy;
+  `hostit-shell` looks up the app's node and jumps into the right container.
 - **State and quota collection** become cross-node: the state cache and the disk
-  quota walk currently assume everything is on this box.
-
-A separate design note predates this multi-node section and goes into more depth.
+  quota walk currently assume everything is on this box; they move behind the
+  agent's heartbeat/report path.
 
 ## Web app
 
@@ -101,13 +110,19 @@ The dashboard can create, manage and delete apps and drive them in the browser
   rename, keeping the old prod as instant rollback). Ties into the fork primitive
   (a stage is a fork that promotes back). Big feature; likely a `hostit promote`
   verb + a store notion of two environments per app.
-- **Rename an app.** Let an owner rename an existing app. The name is the app's
-  identity today -- subdomain, Unix user, home directory, container name, TLS cert,
-  authorized_keys, the app-scoped token's `app_name`, the assistant session -- so a
-  rename has to move or reissue all of them atomically (or refuse if the app is
-  running). Simplest first cut: stop the app, rename user + home + container +
-  store row + re-point DNS/cert on next request, restart. Consider keeping the old
-  subdomain as a redirect for a while so links do not break.
+- **Rename an app (via a stable app id).** Let an owner rename an existing app.
+  The name is the app's identity in every layer today -- the `app` PK and five
+  `app_name` FKs, the Unix user, home directory, container/unit, subdomain and SSH
+  login -- so a name-based rename is a coordinated move across SQLite, the
+  filesystem and the OS, with torn-state risk. The better fix is to give each app a
+  stable opaque **id** (the uid/port is already a de-facto stable identity) and key
+  the durable resources on it, keeping the Unix user named by the (renamable) name
+  for SSH legibility. Rename then collapses to `usermod -l` + one DB UPDATE + a
+  cache refresh; app-scoped tokens survive it. Costs a one-off per-app migration
+  (like `MigrateToBlockUIDs`) and some home/container legibility (mitigated with a
+  `by-name` symlink + GECOS/label). Composes with multi-node, where a
+  node-independent id is the natural registry key. Full design, comparison and
+  phased rollout: `plans/260808-hostit-app-id-identity.md`.
 - **Secrets.** `env:` values live in `hostit.yml`, which sits in the app's home
   and is served if someone points a web server at the wrong directory. A real
   secret store (or at least a separate file that is never in `public/`) would
