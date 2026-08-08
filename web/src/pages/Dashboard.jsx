@@ -41,22 +41,47 @@ const CreateForm = ({ name, setName, onSubmit, creating, atLimit, big = false, i
 // New app behind a modal, reached from the "New app" button. A dialog asks for
 // the one thing needed -- the name -- instead of a field unfolding in place,
 // which read as an odd half-state next to the app list.
-const NewAppDialog = ({ name, setName, onSubmit, creating, atLimit, onCancel }) => {
+const NewAppDialog = ({ name, setName, intent, setIntent, onSubmit, creating, atLimit, onCancel }) => {
   const valid = nameRe.test(name);
+  const host = window.location.host;
+  const sub = (name || "").replace(/[^a-z0-9-]/g, "") || "app";
   return (
-    <div className="modal-backdrop" role="dialog" aria-modal="true">
-      <form className="card modal" onSubmit={onSubmit}>
-        <h2>New app</h2>
-        <p>Give it a name. It becomes the subdomain and the SSH login, and cannot be changed later.</p>
-        <input
-          type="text"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="app name, e.g. blog"
-          aria-label="New app name"
-          autoFocus
-          disabled={creating}
-        />
+    <div className="modal-backdrop" role="dialog" aria-modal="true" onMouseDown={onCancel}>
+      <form className="card modal newapp" onSubmit={onSubmit} onMouseDown={(e) => e.stopPropagation()}>
+        <div className="newapp-head">
+          <div className="newapp-avatar">{sub.slice(0, 2)}</div>
+          <div>
+            <h2>Create an app</h2>
+            <p className="newapp-sub">It gets its own container, subdomain and HTTPS certificate.</p>
+          </div>
+        </div>
+        <label className="newapp-label">App name</label>
+        <div className="newapp-input">
+          <span className="newapp-dollar mono">$</span>
+          <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. blog" aria-label="New app name" autoFocus disabled={creating} spellCheck="false" autoComplete="off" />
+        </div>
+        <div className="newapp-intent">
+          <button type="button" className={"newapp-opt" + (intent === "host" ? " on" : "")} onClick={() => setIntent("host")}>
+            <span className="t">{"\u{1F5C2}\u{FE0F}"} Host my files</span>
+            <span className="d">Opens the file editor</span>
+          </button>
+          <button type="button" className={"newapp-opt" + (intent === "build" ? " on" : "")} onClick={() => setIntent("build")}>
+            <span className="t">{"✨"} Build with AI</span>
+            <span className="d">Opens the assistant</span>
+          </button>
+        </div>
+        <div className="newapp-willbe">
+          <div className="row">
+            <span className="ico">{"\u{1F310}"}</span>
+            <span className="lab">URL</span>
+            <span className="val">https://<b>{sub}</b>.{host}</span>
+          </div>
+          <div className="row">
+            <span className="ico">{"⌨️"}</span>
+            <span className="lab">SSH</span>
+            <span className="val">ssh <b>{sub}</b>@{host}</span>
+          </div>
+        </div>
         <p className="hint">{nameHint}</p>
         <div className="btn-row">
           <button type="button" className="btn" onClick={onCancel} disabled={creating}>
@@ -117,6 +142,7 @@ const Dashboard = ({ account, refreshAccount }) => {
   const [name, setName] = useState("");
   const [creating, setCreating] = useState(false);
   const [adding, setAdding] = useState(false);
+  const [intent, setIntent] = useState("host"); // "host" -> editor, "build" -> assistant
   const inputRef = useRef(null);
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -168,6 +194,13 @@ const Dashboard = ({ account, refreshAccount }) => {
     setError("");
     try {
       const res = await api.post("/api/apps", { name });
+      // Remember the chosen intent as the app's first view (host -> editor,
+      // build -> assistant); AppDetail reads and then keeps this per app.
+      try {
+        localStorage.setItem("hostit.view." + res.name, intent === "build" ? "assistant" : "editor");
+      } catch {
+        /* ignore storage failures */
+      }
       setName("");
       setAdding(false);
       refreshAccount();
@@ -230,7 +263,7 @@ const Dashboard = ({ account, refreshAccount }) => {
         </div>
       )}
       {adding && (
-        <NewAppDialog name={name} setName={setName} onSubmit={create} creating={creating} atLimit={atLimit} onCancel={cancelAdding} />
+        <NewAppDialog name={name} setName={setName} intent={intent} setIntent={setIntent} onSubmit={create} creating={creating} atLimit={atLimit} onCancel={cancelAdding} />
       )}
     </>
   );

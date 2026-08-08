@@ -478,7 +478,7 @@ export default function AppEditor({ name, url, running, diskMB, diskLimitMB, onD
               )}
               <div className="ed-binary-name">{baseName(activeTab.path)}</div>
               <div className="ed-binary-meta">
-                {langForFile(activeTab.path)}
+                {isImage(activeTab.path) ? "Image" : (extOf(activeTab.path).toUpperCase() || "Binary") + " file"}
                 {activeTab.size != null ? " · " + humanSize(activeTab.size) : ""}
               </div>
               <a className="ed-binary-dl" href={fileUrl(name, activeTab.path)}>

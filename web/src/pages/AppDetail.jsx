@@ -1105,6 +1105,62 @@ const SettingsDialog = ({ name, description, hasToken, onCopyToken, onRegenerate
   );
 };
 
+// The Overview view: identity hero + two columns of address/access and
+// resources/meta. Everything comes from the app object the page already has.
+const AppOverview = ({ app, showToast, onSettings }) => {
+  const copy = (text, label) => {
+    if (!text) return;
+    navigator.clipboard?.writeText(text);
+    if (showToast) showToast(label + " copied");
+  };
+  const pct = (u, l) => (l ? Math.min(100, Math.round((u / l) * 100)) : 0);
+  const mb = (u, l) => (l ? `${u} / ${l} MB` : `${u} MB`);
+  const created = app.created_at ? new Date(app.created_at).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }) : "";
+  return (
+    <div className="ov">
+      <div className="ov-hero">
+        <div className="ov-avatar">{app.name.slice(0, 2)}</div>
+        <div className="ov-id">
+          <div className="ov-nm">{app.name}</div>
+          <div className="ov-subrow">
+            <a className="ov-url" href={app.url} target="_blank" rel="noreferrer">{app.url.replace(/^https?:\/\//, "")}</a>
+            <span className={"ov-pill" + (app.running ? "" : " ov-pill-off")}>
+              <span className="ov-dot" />
+              {app.running ? "running" : "powered off"}
+            </span>
+          </div>
+          {app.description && <div className="ov-desc">{app.description}</div>}
+        </div>
+        <div className="ov-quick">
+          <button type="button" className="btn" onClick={onSettings}>
+            Settings
+          </button>
+          <a className="btn btn-primary" href={app.url} target="_blank" rel="noreferrer">
+            Open app
+          </a>
+        </div>
+      </div>
+      <div className="ov-cols">
+        <div>
+          <h3>Address &amp; access</h3>
+          <div className="ov-line"><span className="ov-k">URL</span><span className="ov-v">{app.url.replace(/^https?:\/\//, "")}</span><button type="button" className="ov-copy" onClick={() => copy(app.url, "URL")}>copy</button></div>
+          <div className="ov-line"><span className="ov-k">SSH</span><span className="ov-v">{app.ssh && app.ssh.command}</span><button type="button" className="ov-copy" onClick={() => copy(app.ssh && app.ssh.command, "SSH command")}>copy</button></div>
+          {app.agent_token && (
+            <div className="ov-line"><span className="ov-k">Token</span><span className="ov-v ov-mask">{"•".repeat(12)}</span><button type="button" className="ov-copy" onClick={() => copy(app.agent_token, "Token")}>copy</button></div>
+          )}
+        </div>
+        <div>
+          <h3>Resources &amp; meta</h3>
+          <div className="ov-metric"><div className="ov-mt"><span>CPU</span><span className="mono">{app.cpu_percent || 0}%</span></div><div className="ov-bar"><i style={{ width: `${app.cpu_percent || 0}%` }} /></div></div>
+          <div className="ov-metric"><div className="ov-mt"><span>RAM</span><span className="mono">{mb(app.memory_mb, app.memory_limit_mb)}</span></div><div className="ov-bar"><i style={{ width: `${pct(app.memory_mb, app.memory_limit_mb)}%` }} /></div></div>
+          <div className="ov-metric"><div className="ov-mt"><span>Disk</span><span className="mono">{mb(app.disk_mb, app.disk_limit_mb)}</span></div><div className="ov-bar"><i style={{ width: `${pct(app.disk_mb, app.disk_limit_mb)}%` }} /></div></div>
+          <div className="ov-line"><span className="ov-k">Created</span><span className="ov-v">{created}</span></div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const AppDetail = ({ account, refreshAccount }) => {
   const { name } = useParams();
   const navigate = useNavigate();
@@ -1127,7 +1183,21 @@ const AppDetail = ({ account, refreshAccount }) => {
   const [showSettings, setShowSettings] = useState(false);
   const [hasKeys, setHasKeys] = useState(null); // null until we know, so nothing flickers
   const [toast, setToast] = useState(""); // a 3s "Copied"/"Regenerated" snackbar
-  const [view, setView] = useState("assistant"); // "assistant" (chat + preview) | "editor" (file tree)
+  // Remember the last view per app (also seeded by the new-app intent).
+  const [view, setView] = useState(() => {
+    try {
+      return localStorage.getItem("hostit.view." + name) || "assistant";
+    } catch {
+      return "assistant";
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem("hostit.view." + name, view);
+    } catch {
+      /* ignore */
+    }
+  }, [name, view]);
   // With no Anthropic key there is no assistant, so open straight into the editor.
   useEffect(() => {
     if (app && !app.assistant_enabled && view === "assistant") setView("editor");
@@ -1459,14 +1529,6 @@ const AppDetail = ({ account, refreshAccount }) => {
           <div className="ws-topright">
             {app.running && <UsageGrid app={app} />}
             <div className="ws-topacts">
-              {app.running && (
-                <TerminalSplitButton
-                  active={termOpen && !termConnecting}
-                  connecting={termConnecting}
-                  onWebShell={openWebShell}
-                  onSsh={() => setShowSsh(true)}
-                />
-              )}
               <button
                 type="button"
                 className="btn btn-icon btn-sparkle"
@@ -1505,6 +1567,19 @@ const AppDetail = ({ account, refreshAccount }) => {
         {/* View switcher: the chat + preview split is one view; the file editor is
             another. More can join as tabs (terminal, details) later. */}
         <div className="ws-viewtabs" role="tablist" aria-label="Workspace view">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={view === "overview"}
+            className={"ws-viewtab" + (view === "overview" ? " on" : "")}
+            onClick={() => setView("overview")}
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+              <circle cx="12" cy="12" r="9" />
+              <path d="M12 8h.01M11 12h1v4h1" />
+            </svg>
+            Overview
+          </button>
           {app.assistant_enabled && (
             <button
               type="button"
@@ -1546,9 +1621,12 @@ const AppDetail = ({ account, refreshAccount }) => {
           </button>
         </div>
 
-        {/* All three views stay mounted -- only the active one is shown -- so
-            switching is instant and the terminal keeps its live session (and the
-            assistant its scroll) instead of reconnecting on every tab click. */}
+        {/* Views stay mounted -- only the active one is shown -- so switching is
+            instant and the terminal keeps its live session (and the assistant its
+            scroll) instead of reconnecting on every tab click. */}
+        <div className={"ws-overviewwrap" + (view === "overview" ? "" : " ws-inactive")}>
+          <AppOverview app={app} showToast={showToast} onSettings={() => setShowSettings(true)} />
+        </div>
         <div className={"ws-editorwrap" + (view === "editor" ? "" : " ws-inactive")}>
           <Suspense fallback={<div className="ws-chat-loading">Loading editor...</div>}>
             <AppEditor name={app.name} url={app.url} running={app.running} diskMB={app.disk_mb} diskLimitMB={app.disk_limit_mb} onDeploy={reloadPreview} />
@@ -1618,18 +1696,6 @@ const AppDetail = ({ account, refreshAccount }) => {
         )}
       </div>
 
-      {termOpen && (
-        <Suspense fallback={null}>
-          <AppTerminal
-            name={app.name}
-            minimized={termMin}
-            onReady={() => setTermConnecting(false)}
-            onMinimize={() => setTermMin(true)}
-            onClose={closeTerminal}
-            onSessionEnd={closeTerminal}
-          />
-        </Suspense>
-      )}
       {showSsh && <SshDialog app={app} hasKeys={hasKeys} onClose={() => setShowSsh(false)} />}
       {showPrompt && <PromptDialog prompt={prompt} token={token} onClose={() => setShowPrompt(false)} />}
       {showSnapshots && (
