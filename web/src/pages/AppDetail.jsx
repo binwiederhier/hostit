@@ -10,6 +10,8 @@ import { useSetAppHeader } from "../appHeader";
 const AppTerminal = lazy(() => import("./AppTerminal"));
 // The assistant pulls in a markdown renderer, so it stays a lazy chunk too.
 const AppAssistant = lazy(() => import("./AppAssistant"));
+// The file-tree editor is its own view, loaded on demand when selected.
+const AppEditor = lazy(() => import("./AppEditor"));
 
 // The SPA is served by the hostit daemon itself, so the agent API lives on our
 // own origin under /api.
@@ -1126,6 +1128,7 @@ const AppDetail = ({ account, refreshAccount }) => {
   const [showSettings, setShowSettings] = useState(false);
   const [hasKeys, setHasKeys] = useState(null); // null until we know, so nothing flickers
   const [toast, setToast] = useState(""); // a 3s "Copied"/"Regenerated" snackbar
+  const [view, setView] = useState("assistant"); // "assistant" (chat + preview) | "editor" (file tree)
   const toastTimer = useRef(null);
   const catchUpTimers = useRef([]);
 
@@ -1496,13 +1499,49 @@ const AppDetail = ({ account, refreshAccount }) => {
         </div>
         <ErrorBanner message={error} onDismiss={() => setError("")} />
 
-        {/* The workspace: build on the left, watch it change on the right, with a
-            draggable divider between them. */}
-        <div
-          className="ws-split"
-          ref={splitRef}
-          style={{ gridTemplateColumns: `minmax(0, ${chatFrac}fr) 10px minmax(0, ${1 - chatFrac}fr)` }}
-        >
+        {/* View switcher: the chat + preview split is one view; the file editor is
+            another. More can join as tabs (terminal, details) later. */}
+        <div className="ws-viewtabs" role="tablist" aria-label="Workspace view">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={view === "assistant"}
+            className={"ws-viewtab" + (view === "assistant" ? " on" : "")}
+            onClick={() => setView("assistant")}
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+            </svg>
+            Assistant
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={view === "editor"}
+            className={"ws-viewtab" + (view === "editor" ? " on" : "")}
+            onClick={() => setView("editor")}
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+              <path d="m9 8-5 4 5 4M15 8l5 4-5 4" />
+            </svg>
+            Editor
+          </button>
+        </div>
+
+        {view === "editor" ? (
+          <div className="ws-editorwrap">
+            <Suspense fallback={<div className="ws-chat-loading">Loading editor...</div>}>
+              <AppEditor name={app.name} onDeploy={reloadPreview} />
+            </Suspense>
+          </div>
+        ) : (
+          /* The workspace: build on the left, watch it change on the right, with a
+             draggable divider between them. */
+          <div
+            className="ws-split"
+            ref={splitRef}
+            style={{ gridTemplateColumns: `minmax(0, ${chatFrac}fr) 10px minmax(0, ${1 - chatFrac}fr)` }}
+          >
           <div className="ws-chat">
             <Suspense fallback={<div className="ws-chat-loading">Loading assistant...</div>}>
               <AppAssistant name={app.name} embedded onPreviewRefresh={reloadPreview} />
@@ -1551,6 +1590,7 @@ const AppDetail = ({ account, refreshAccount }) => {
             )}
           </div>
         </div>
+        )}
       </div>
 
       {termOpen && (
