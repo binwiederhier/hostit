@@ -41,6 +41,7 @@ func (s *Server) newAgentRoutes(mux *http.ServeMux) {
 	route(mux, "GET", "/apps/{app}/files/{path...}", s.requireApp(s.handleAgentFileGet))
 	route(mux, "DELETE", "/apps/{app}/files/{path...}", s.requireApp(s.handleAgentFileDelete))
 	route(mux, "POST", "/apps/{app}/move", s.requireApp(s.handleAgentMove))
+	route(mux, "POST", "/apps/{app}/mkdir", s.requireApp(s.handleAgentMkdir))
 	route(mux, "POST", "/apps/{app}/files", s.requireApp(s.handleAgentFileUpload))
 	route(mux, "PUT", "/apps/{app}/readme", s.requireApp(s.handleAgentReadmePut))
 	route(mux, "POST", "/apps/{app}/deploy", s.requireApp(s.handleAgentDeploy))
@@ -291,6 +292,17 @@ func (s *Server) handleAgentFileList(w http.ResponseWriter, r *http.Request, c *
 }
 
 func (s *Server) handleAgentFileGet(w http.ResponseWriter, r *http.Request, c *caller, a *store.App) {
+	// ?stat=1 returns metadata (size, modtime, MIME) instead of the bytes, so the
+	// editor can tell text from binary without downloading the whole file.
+	if r.URL.Query().Has("stat") {
+		info, err := s.apps.StatFile(a.Name, r.PathValue("path"))
+		if err != nil {
+			writeAppError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, info)
+		return
+	}
 	b, err := s.apps.ReadFile(a.Name, r.PathValue("path"))
 	if err != nil {
 		writeAppError(w, err)
@@ -351,6 +363,25 @@ func (s *Server) handleAgentMove(w http.ResponseWriter, r *http.Request, c *call
 		return
 	}
 	writeJSON(w, http.StatusOK, &apiMessageResponse{Message: "moved " + req.From + " to " + req.To})
+}
+
+// handleAgentMkdir creates an empty directory in the app's home (used by the web
+// file browser's "new folder" button).
+func (s *Server) handleAgentMkdir(w http.ResponseWriter, r *http.Request, c *caller, a *store.App) {
+	var req apiMkdirRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8192)).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if req.Path == "" {
+		writeError(w, http.StatusBadRequest, errors.New("path is required"))
+		return
+	}
+	if err := s.apps.MakeDir(a.Name, req.Path); err != nil {
+		writeAppError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, &apiMessageResponse{Message: "created " + req.Path})
 }
 
 func (s *Server) handleAgentFileDelete(w http.ResponseWriter, r *http.Request, c *caller, a *store.App) {

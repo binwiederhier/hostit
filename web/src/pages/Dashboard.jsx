@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { api, isNetworkError } from "../api";
 import { useReconnect } from "../hooks";
-import { ErrorBanner, Loading, StatusDot, Wordmark } from "../components";
+import { ErrorBanner, Loading, Wordmark } from "../components";
 
 // Same rule the server enforces (app.AppNamePattern)
 const nameRe = /^[a-z]([a-z0-9-]{0,30}[a-z0-9])?$/;
@@ -41,7 +41,7 @@ const CreateForm = ({ name, setName, onSubmit, creating, atLimit, big = false, i
 // New app behind a modal, reached from the "New app" button. A dialog asks for
 // the one thing needed -- the name -- instead of a field unfolding in place,
 // which read as an odd half-state next to the app list.
-const NewAppDialog = ({ name, setName, intent, setIntent, onSubmit, creating, atLimit, onCancel }) => {
+const NewAppDialog = ({ name, setName, onSubmit, creating, atLimit, onCancel }) => {
   const valid = nameRe.test(name);
   const host = window.location.host;
   const sub = (name || "").replace(/[^a-z0-9-]/g, "") || "app";
@@ -59,16 +59,6 @@ const NewAppDialog = ({ name, setName, intent, setIntent, onSubmit, creating, at
         <div className="newapp-input">
           <span className="newapp-dollar mono">$</span>
           <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. blog" aria-label="New app name" autoFocus disabled={creating} spellCheck="false" autoComplete="off" />
-        </div>
-        <div className="newapp-intent">
-          <button type="button" className={"newapp-opt" + (intent === "host" ? " on" : "")} onClick={() => setIntent("host")}>
-            <span className="t">{"\u{1F5C2}\u{FE0F}"} Host my files</span>
-            <span className="d">Opens the file editor</span>
-          </button>
-          <button type="button" className={"newapp-opt" + (intent === "build" ? " on" : "")} onClick={() => setIntent("build")}>
-            <span className="t">{"✨"} Build with AI</span>
-            <span className="d">Opens the assistant</span>
-          </button>
         </div>
         <div className="newapp-willbe">
           <div className="row">
@@ -111,30 +101,54 @@ const EmptyState = (props) => (
   </div>
 );
 
-const AppRow = ({ app }) => (
-  <tr>
-    <td className="cell-name">
-      <StatusDot running={app.running} appRunning={app.app_running} />
-      <Link className="mono app-link" to={`/app/${app.name}`}>
-        {app.name}
-      </Link>
-      {app.over_quota && <span className="badge badge-danger">over quota</span>}
-    </td>
-    {/* What the app says it is, from its hostit.yml */}
-    <td className="cell-description">{app.description || <span className="cell-muted">no description yet</span>}</td>
-    <td className="cell-actions">
-      <div className="btn-row btn-row-end">
-        <Link className="btn btn-small" to={`/app/${app.name}`}>
-          Manage
-        </Link>
-        {/* Seeing the app is the common case, so it gets the accent and comes last */}
-        <a className="btn btn-small btn-primary" href={app.url} target="_blank" rel="noreferrer">
-          Open app
-        </a>
+const pctOf = (used, limit) => (limit ? Math.min(100, Math.round((used / limit) * 100)) : 0);
+const mbLabel = (used, limit) => (limit ? `${used} / ${limit} MB` : `${used} MB`);
+
+// One app as a card: identity, live status, description, resource bars, actions.
+const AppCard = ({ app }) => {
+  const running = app.running;
+  const status = app.over_quota ? "over quota" : running ? "running" : "powered off";
+  return (
+    <div className="appcard">
+      <div className="appcard-top">
+        <span className="appcard-avatar">{app.name.slice(0, 2)}</span>
+        <div className="appcard-id">
+          <Link className="appcard-nm" to={`/app/${app.name}`}>{app.name}</Link>
+          <a className="appcard-url" href={app.url} target="_blank" rel="noreferrer">{app.url.replace(/^https?:\/\//, "")}</a>
+        </div>
       </div>
-    </td>
-  </tr>
-);
+      <span className={"appcard-pill" + (running ? "" : " off") + (app.over_quota ? " warn" : "")}>
+        <span className="appcard-dot" />
+        {status}
+      </span>
+      <div className="appcard-desc">{app.description || <span className="appcard-nodesc">No description yet</span>}</div>
+      <div className="appcard-bars">
+        <div className="appcard-bar"><span className="k">CPU</span><span className="bar"><i style={{ width: `${running ? app.cpu_percent || 0 : 0}%` }} /></span><span className="v">{running ? `${app.cpu_percent || 0}%` : "--"}</span></div>
+        <div className="appcard-bar"><span className="k">RAM</span><span className="bar"><i style={{ width: `${running ? pctOf(app.memory_mb, app.memory_limit_mb) : 0}%` }} /></span><span className="v">{running ? mbLabel(app.memory_mb, app.memory_limit_mb) : "--"}</span></div>
+        <div className="appcard-bar"><span className="k">Disk</span><span className="bar"><i className={app.over_quota ? "over" : ""} style={{ width: `${pctOf(app.disk_mb, app.disk_limit_mb)}%` }} /></span><span className="v">{mbLabel(app.disk_mb, app.disk_limit_mb)}</span></div>
+      </div>
+      <div className="appcard-foot">
+        <Link className="btn btn-small" to={`/app/${app.name}`}>Manage</Link>
+        <a className="btn btn-small btn-primary" href={app.url} target="_blank" rel="noreferrer">Open</a>
+      </div>
+    </div>
+  );
+};
+
+// The stats strip above the grid: turns the list into an at-a-glance overview.
+const AppsSummary = ({ apps }) => {
+  const running = apps.filter((a) => a.running).length;
+  const attention = apps.filter((a) => a.over_quota).length;
+  const diskMB = apps.reduce((sum, a) => sum + (a.disk_mb || 0), 0);
+  const disk = diskMB >= 1024 ? `${(diskMB / 1024).toFixed(1)} GB` : `${diskMB} MB`;
+  return (
+    <div className="dash-summary">
+      <div className="dash-stat"><div className="k">Running</div><div className="v">{running}<small> / {apps.length}</small></div></div>
+      <div className="dash-stat"><div className="k">Disk used</div><div className="v">{disk}</div></div>
+      <div className="dash-stat"><div className="k">Needs attention</div><div className={"v" + (attention ? " alert" : "")}>{attention}</div></div>
+    </div>
+  );
+};
 
 const Dashboard = ({ account, refreshAccount }) => {
   const [apps, setApps] = useState(null);
@@ -142,7 +156,6 @@ const Dashboard = ({ account, refreshAccount }) => {
   const [name, setName] = useState("");
   const [creating, setCreating] = useState(false);
   const [adding, setAdding] = useState(false);
-  const [intent, setIntent] = useState("host"); // "host" -> editor, "build" -> assistant
   const inputRef = useRef(null);
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -194,13 +207,6 @@ const Dashboard = ({ account, refreshAccount }) => {
     setError("");
     try {
       const res = await api.post("/api/apps", { name });
-      // Remember the chosen intent as the app's first view (host -> editor,
-      // build -> assistant); AppDetail reads and then keeps this per app.
-      try {
-        localStorage.setItem("hostit.view." + res.name, intent === "build" ? "assistant" : "editor");
-      } catch {
-        /* ignore storage failures */
-      }
       setName("");
       setAdding(false);
       refreshAccount();
@@ -237,33 +243,23 @@ const Dashboard = ({ account, refreshAccount }) => {
       </div>
       <ErrorBanner message={error} onDismiss={() => setError("")} />
       {empty && <EmptyState {...formProps} />}
-      {!empty && (
+      {!empty && apps === null && !error && (
         <div className="card">
-          {apps === null && !error && <Loading label="Loading apps..." />}
-          {apps !== null && apps.length > 0 && (
-            <>
-              <div className="table-wrap">
-                <table className="table-rows">
-                  <thead>
-                    <tr>
-                      <th>Name</th>
-                      <th>Description</th>
-                      <th aria-label="Actions" />
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {apps.map((app) => (
-                      <AppRow key={app.name} app={app} />
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </>
-          )}
+          <Loading label="Loading apps..." />
         </div>
       )}
+      {!empty && apps !== null && apps.length > 0 && (
+        <>
+          <AppsSummary apps={apps} />
+          <div className="dash-grid">
+            {apps.map((app) => (
+              <AppCard key={app.name} app={app} />
+            ))}
+          </div>
+        </>
+      )}
       {adding && (
-        <NewAppDialog name={name} setName={setName} intent={intent} setIntent={setIntent} onSubmit={create} creating={creating} atLimit={atLimit} onCancel={cancelAdding} />
+        <NewAppDialog name={name} setName={setName} onSubmit={create} creating={creating} atLimit={atLimit} onCancel={cancelAdding} />
       )}
     </>
   );

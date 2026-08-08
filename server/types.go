@@ -257,6 +257,11 @@ type apiMoveRequest struct {
 	To   string `json:"to"`
 }
 
+// apiMkdirRequest is the body of POST /api/apps/{app}/mkdir: create an empty dir
+type apiMkdirRequest struct {
+	Path string `json:"path"`
+}
+
 // apiRunRequest is the body of POST /api/apps/{app}/run
 type apiRunRequest struct {
 	Command        string `json:"command"`

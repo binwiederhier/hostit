@@ -84,23 +84,9 @@ const TerminalIcon = () => (
     <path d="M4 6l2.2 2L4 10M8.5 10.5H11.5" />
   </svg>
 );
-const ControlsIcon = () => (
-  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <path d="M2 4.5h7M11.5 4.5h2.5M2 11.5h2.5M7 11.5h7" />
-    <circle cx="10" cy="4.5" r="1.6" />
-    <circle cx="6" cy="11.5" r="1.6" />
-  </svg>
-);
 const BackIcon = () => (
   <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
     <path d="M9.5 3.5 5 8l4.5 4.5" />
-  </svg>
-);
-const SnapshotIcon = () => (
-  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <circle cx="8" cy="8.4" r="5.4" />
-    <path d="M8 5.4v3l2.1 1.3" />
-    <path d="M8 1.6v1.4" />
   </svg>
 );
 const SparkleIcon = () => (
@@ -121,10 +107,15 @@ const StopIcon = mi(<rect x="4" y="4" width="8" height="8" rx="1" />);
 const RestartIcon = mi(<><path d="M13 8a5 5 0 1 1-1.5-3.5" /><path d="M13 3v2.2h-2.2" /></>);
 const RebootIcon = mi(<><path d="M3.2 8a4.8 4.8 0 1 0 1.4-3.4" /><path d="M4.6 2.3v2.3h2.3" /><path d="M8 5v3" /></>);
 const PowerIcon = mi(<><path d="M8 2.2v5" /><path d="M4.6 4.6a4.6 4.6 0 1 0 6.8 0" /></>);
-const GearIcon = mi(<><circle cx="8" cy="8" r="2.1" /><path d="M8 1.7v1.6M8 12.7v1.6M14.3 8h-1.6M3.3 8H1.7M12.4 3.6l-1.1 1.1M4.7 11.3l-1.1 1.1M12.4 12.4l-1.1-1.1M4.7 4.7 3.6 3.6" /></>);
 const TrashIcon = mi(<><path d="M3 4.5h10" /><path d="M6.5 4.5V3h3v1.5" /><path d="M4.5 4.5l.6 8.5a1 1 0 0 0 1 .9h3.8a1 1 0 0 0 1-.9l.6-8.5" /></>);
-const PlusIcon = mi(<path d="M8 3.5v9M3.5 8h9" />);
 const ForkIcon = mi(<><circle cx="4.5" cy="4" r="1.6" /><circle cx="11.5" cy="4" r="1.6" /><circle cx="8" cy="12.5" r="1.6" /><path d="M4.5 5.6v1.4a2 2 0 0 0 2 2H8m3.5-3.4v1.4a2 2 0 0 1-2 2H8m0 0v1.9" /></>);
+const DotsIcon = () => (
+  <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+    <circle cx="8" cy="3.1" r="1.35" />
+    <circle cx="8" cy="8" r="1.35" />
+    <circle cx="8" cy="12.9" r="1.35" />
+  </svg>
+);
 const KeyIcon = mi(<><circle cx="5" cy="11" r="2.3" /><path d="M6.7 9.3l5-5M10.7 5.3l1.4 1.4M12.4 3.6l1.4 1.4" /></>);
 const RollbackIcon = mi(<><path d="M4.4 5.2A4.7 4.7 0 1 1 3.4 8.2" /><path d="M1.9 2.9v2.7h2.7" /></>);
 
@@ -293,48 +284,6 @@ const TerminalSplitButton = ({ active, connecting, onWebShell, onSsh }) => {
   );
 };
 
-// A split button for snapshots, mirroring the terminal one: the left half (the
-// icon) opens the snapshots list; the caret drops a menu whose second item, "New
-// snapshot...", opens a dialog to name and take one.
-const SnapshotSplitButton = ({ onList, onNew, onFork }) => {
-  const { open, setOpen, ref } = useDropdown();
-  const pick = (fn) => {
-    setOpen(false);
-    fn();
-  };
-  return (
-    <div className="menu split-btn" ref={ref}>
-      <button
-        type="button"
-        className="btn split-btn-main"
-        onClick={onList}
-        title="Snapshots"
-        aria-label="Snapshots"
-      >
-        <SnapshotIcon />
-      </button>
-      <button
-        type="button"
-        className="btn split-btn-caret"
-        onClick={() => setOpen(!open)}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        aria-label="Snapshot options"
-      >
-        <span aria-hidden="true">&#9662;</span>
-      </button>
-      {open && (
-        <div className="menu-items" role="menu">
-          <MenuItem icon={<SnapshotIcon />} label="Snapshots" onClick={() => pick(onList)} />
-          <MenuItem icon={<PlusIcon />} label="New snapshot" onClick={() => pick(onNew)} />
-          <div className="menu-sep" />
-          <MenuItem icon={<ForkIcon />} label="Fork app" onClick={() => pick(onFork)} />
-        </div>
-      )}
-    </div>
-  );
-};
-
 // MenuItem is one dropdown row: a small leading icon and a label.
 const MenuItem = ({ icon, label, onClick, disabled, danger }) => (
   <button
@@ -356,7 +305,7 @@ const MenuItem = ({ icon, label, onClick, disabled, danger }) => (
 // delete -- dividers between the groups. Only one app verb is ever the sensible
 // next move, and when the container is off there is no app to act on, so that
 // group is dropped.
-const ActionsMenu = ({ running, appRunning, busy, onAction, onSettings, onDelete }) => {
+const ActionsMenu = ({ running, appRunning, busy, onAction, onDelete }) => {
   const { open, setOpen, ref } = useDropdown();
 
   const run = (action) => {
@@ -386,8 +335,7 @@ const ActionsMenu = ({ running, appRunning, busy, onAction, onSettings, onDelete
         title={busy ? "Working..." : "Actions"}
         aria-label="Actions"
       >
-        <ControlsIcon />
-        <span aria-hidden="true">&#9662;</span>
+        <DotsIcon />
       </button>
       {open && (
         <div className="menu-items" role="menu">
@@ -408,9 +356,6 @@ const ActionsMenu = ({ running, appRunning, busy, onAction, onSettings, onDelete
           ) : (
             <MenuItem icon={<PowerIcon />} label="Power on" onClick={() => run("poweron")} />
           )}
-          <div className="menu-sep" />
-
-          <MenuItem icon={<GearIcon />} label="Settings" onClick={pick(onSettings)} />
           <div className="menu-sep" />
 
           <MenuItem icon={<TrashIcon />} label="Delete app" onClick={pick(onDelete)} danger />
@@ -646,19 +591,24 @@ const NewSnapshotDialog = ({ name, onClose, onCreated, showToast }) => {
   );
 };
 
+// The new app's name must pass the same rule the server enforces (app.AppNamePattern).
+const forkNameRe = /^[a-z]([a-z0-9-]{0,30}[a-z0-9])?$/;
+const forkNameHint = "Up to 32 characters: lowercase letters, digits and dashes, starting with a letter.";
+
 // ForkDialog duplicates the app into a new one, seeding its home from the source's
 // current files -- or, when snapshotId is set, from that snapshot. Reached from the
-// snapshot split button's caret, or a snapshot row's Fork action.
+// Fork button in the workspace top bar, or a snapshot row's Fork action.
 const ForkDialog = ({ name, snapshotId, onClose, onForked }) => {
   useEscape(onClose);
   const [newName, setNewName] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const valid = forkNameRe.test(newName.trim());
 
   const fork = async (e) => {
     e.preventDefault();
     const target = newName.trim();
-    if (busy || !target) return;
+    if (busy || !valid) return;
     setBusy(true);
     setError("");
     try {
@@ -673,37 +623,61 @@ const ForkDialog = ({ name, snapshotId, onClose, onForked }) => {
     }
   };
 
+  const host = window.location.host;
+  const sub = (newName || "").replace(/[^a-z0-9-]/g, "") || "app";
   return (
     <div className="modal-backdrop" role="dialog" aria-modal="true" onMouseDown={onClose}>
       <form className="card modal" onSubmit={fork} onMouseDown={(e) => e.stopPropagation()}>
         <h2>Fork {name}</h2>
         <p className="hint">
-          {snapshotId ? (
-            <>
-              Create a new app seeded from snapshot <span className="mono">{snapshotId}</span> of{" "}
-              <span className="mono">{name}</span>.
-            </>
-          ) : (
-            <>
-              Create a new app seeded from a copy of <span className="mono">{name}</span>'s current files.
-            </>
-          )}{" "}
-          It gets its own subdomain, user and container; the two run independently from here on.
+          A new app seeded from {snapshotId ? "this snapshot" : "a copy of the current files"} -- its own subdomain, user and container. The two run independently from here on.
         </p>
         <ErrorBanner message={error} onDismiss={() => setError("")} />
-        <input
-          type="text"
-          value={newName}
-          onChange={(e) => setNewName(e.target.value)}
-          placeholder="new app name"
-          aria-label="New app name"
-          autoFocus
-        />
+        <div className="fork-flow">
+          <div className="fork-node">
+            <span className="fork-avatar">{name.slice(0, 2)}</span>
+            <div className="fork-nm">{name}</div>
+            <div className="fork-sub">{snapshotId ? "snapshot" : "current files"}</div>
+          </div>
+          <div className="fork-arrow" aria-hidden="true">&rarr;</div>
+          <div className="fork-node new">
+            <span className="fork-avatar">{newName.trim() ? sub.slice(0, 2) : "?"}</span>
+            <div className="fork-nm">{newName.trim() ? sub : "new app"}</div>
+            <div className="fork-sub">new app</div>
+          </div>
+        </div>
+        <div className="newapp-input">
+          <span className="newapp-dollar mono">$</span>
+          <input
+            type="text"
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            placeholder="new app name"
+            aria-label="New app name"
+            autoFocus
+            spellCheck="false"
+            autoComplete="off"
+            maxLength={32}
+          />
+        </div>
+        <p className="hint">{forkNameHint}</p>
+        <div className="newapp-willbe">
+          <div className="row">
+            <span className="ico">{"\u{1F310}"}</span>
+            <span className="lab">URL</span>
+            <span className="val">https://<b>{sub}</b>.{host}</span>
+          </div>
+          <div className="row">
+            <span className="ico">{"\u{2328}\u{FE0F}"}</span>
+            <span className="lab">SSH</span>
+            <span className="val"><b>{sub}</b>@{host}</span>
+          </div>
+        </div>
         <div className="btn-row">
           <button type="button" className="btn" onClick={onClose} disabled={busy}>
             Cancel
           </button>
-          <button type="submit" className="btn btn-primary" disabled={busy || !newName.trim()}>
+          <button type="submit" className="btn btn-primary" disabled={busy || !valid}>
             {busy ? "Forking..." : "Fork app"}
           </button>
         </div>
@@ -712,190 +686,26 @@ const ForkDialog = ({ name, snapshotId, onClose, onForked }) => {
   );
 };
 
-// SnapshotsDialog lists an app's point-in-time snapshots and rolls back to (or
-// deletes) any of them. A rollback is reversible (a safety snapshot of the live
-// state is taken first), so it runs on one click, no type-to-confirm gate. New
-// snapshots are taken from the split button's caret, not here.
-const SnapshotsDialog = ({ name, onClose, showToast, onRolledBack, onFork }) => {
-  useEscape(onClose);
-  const [snaps, setSnaps] = useState(null); // null until loaded
-  const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
-
-  const load = useCallback(async () => {
-    try {
-      const list = await api.get(`/api/apps/${encodeURIComponent(name)}/snapshots`);
-      setSnaps(Array.isArray(list) ? list : []);
-    } catch (err) {
-      setError(err.message);
-      setSnaps([]);
-    }
-  }, [name]);
-  useEffect(() => {
-    load();
-  }, [load]);
-
-  const [confirm, setConfirm] = useState(null); // { type: "rollback" | "delete", snap }
-
-  const doRollback = async () => {
-    const id = confirm?.snap?.id;
-    if (!id || busy) return;
-    setBusy(true);
-    setError("");
-    showToast("Rolling back..."); // before the (synchronous, possibly slow) request
-    try {
-      await api.post(`/api/apps/${encodeURIComponent(name)}/snapshots/${encodeURIComponent(id)}/restore`, {});
-      onClose();
-      if (onRolledBack) onRolledBack();
-    } catch (err) {
-      setError(err.message);
-      setBusy(false);
-      setConfirm(null);
-    }
-  };
-
-  const doRemove = async () => {
-    const id = confirm?.snap?.id;
-    if (!id || busy) return;
-    setBusy(true);
-    setError("");
-    try {
-      await api.del(`/api/apps/${encodeURIComponent(name)}/snapshots/${encodeURIComponent(id)}`);
-      showToast("Snapshot deleted");
-      setConfirm(null);
-      await load();
-    } catch (err) {
-      setError(err.message);
-      setBusy(false);
-    }
-  };
-
-  const when = (snap) => new Date(snap.created_at).toLocaleString();
-
-  return (
-    <>
-    <div className="modal-backdrop" role="dialog" aria-modal="true" onMouseDown={onClose}>
-      <div className="card modal modal-xwide" onMouseDown={(e) => e.stopPropagation()}>
-        <div className="modal-head">
-          <h2>
-            Snapshots{snaps && snaps.length > 0 ? <span className="snap-count"> {snaps.length}</span> : ""}
-          </h2>
-          <button type="button" className="term-btn" onClick={onClose} title="Close" aria-label="Close">
-            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M4 4l8 8M12 4l-8 8" />
-            </svg>
-          </button>
-        </div>
-        <p className="hint">
-          Point-in-time copies of <span className="mono">{name}</span>'s files. Rolling back restores it to that point --
-          reversible, since a snapshot of the current state is taken first.
-        </p>
-        <ErrorBanner message={error} onDismiss={() => setError("")} />
-        {snaps === null ? (
-          <p className="hint">Loading...</p>
-        ) : snaps.length === 0 ? (
-          <p className="hint">No snapshots yet.</p>
-        ) : (
-          <div className="snap-list">
-            {snaps.map((s) => (
-              <div className="snap-row" key={s.id}>
-                <div className="snap-meta">
-                  <span className="snap-when">{new Date(s.created_at).toLocaleString()}</span>
-                  <span className={"snap-kind" + (s.auto ? "" : " snap-kind-manual")}>{s.auto ? "auto" : "manual"}</span>
-                  {s.label && <span className="snap-label">{s.label}</span>}
-                </div>
-                <div className="snap-actions">
-                  <button
-                    type="button"
-                    className="btn btn-small btn-icon"
-                    onClick={() => setConfirm({ type: "rollback", snap: s })}
-                    disabled={busy}
-                    title="Roll back to this snapshot"
-                    aria-label="Roll back to this snapshot"
-                  >
-                    <RollbackIcon />
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-small btn-icon"
-                    onClick={() => onFork(s.id)}
-                    disabled={busy}
-                    title="Fork a new app from this snapshot"
-                    aria-label="Fork a new app from this snapshot"
-                  >
-                    <ForkIcon />
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-small btn-icon menu-item-danger"
-                    onClick={() => setConfirm({ type: "delete", snap: s })}
-                    disabled={busy}
-                    title="Delete this snapshot"
-                    aria-label="Delete this snapshot"
-                  >
-                    <TrashIcon />
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
-
-    {confirm?.type === "rollback" && (
-      <ConfirmDialog
-        title="Roll back to this snapshot?"
-        confirmLabel={busy ? "Rolling back..." : "Roll back"}
-        busy={busy}
-        onCancel={() => setConfirm(null)}
-        onConfirm={doRollback}
-      >
-        <p>
-          Restore <span className="mono">{name}</span>'s files to <strong>{when(confirm.snap)}</strong>
-          {confirm.snap.label ? <> (&ldquo;{confirm.snap.label}&rdquo;)</> : null}.
-        </p>
-        <p>
-          A snapshot of the <strong>current</strong> state is taken first, so this is reversible -- you can roll back to
-          that if you change your mind.
-        </p>
-      </ConfirmDialog>
-    )}
-    {confirm?.type === "delete" && (
-      <ConfirmDialog
-        title="Delete this snapshot?"
-        confirmLabel="Delete"
-        danger
-        busy={busy}
-        onCancel={() => setConfirm(null)}
-        onConfirm={doRemove}
-      >
-        <p>
-          Permanently delete the snapshot from <strong>{when(confirm.snap)}</strong>
-          {confirm.snap.label ? <> (&ldquo;{confirm.snap.label}&rdquo;)</> : null}.
-        </p>
-        <p>
-          <strong>This cannot be undone.</strong>
-        </p>
-      </ConfirmDialog>
-    )}
-    </>
-  );
-};
-
-// SettingsDialog holds an app's settings: its API token and its custom domains.
-// Each domain shows the two DNS records the owner must create (one to route
-// traffic, one to delegate the ACME challenge so a certificate issues even when the
-// box is not publicly reachable).
-const SettingsDialog = ({ name, description, hasToken, onCopyToken, onRegenerateToken, onSaved, onClose, showToast }) => {
-  useEscape(onClose);
-  const [domains, setDomains] = useState(null); // null until loaded
+// The Settings view: the app's identity + details (address, access, resources)
+// with the former Settings dialog folded in -- editable description, API token,
+// and custom domains -- all inline in one tab.
+const AppSettings = ({ app, showToast, onCopyToken, onRegenerateToken, hasToken, onSaved }) => {
+  const name = app.name;
+  const [desc, setDesc] = useState(app.description || "");
+  const [savingDesc, setSavingDesc] = useState(false);
+  const [domains, setDomains] = useState(null);
   const [input, setInput] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [confirmId, setConfirmId] = useState(null);
-  const [desc, setDesc] = useState(description || "");
-  const [savingDesc, setSavingDesc] = useState(false);
+
+  const pct = (u, l) => (l ? Math.min(100, Math.round((u / l) * 100)) : 0);
+  const mb = (u, l) => (l ? `${u} / ${l} MB` : `${u} MB`);
+  const created = app.created_at ? new Date(app.created_at).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }) : "";
+  // The app's own URL plus any verified custom domain, all as clickable links.
+  const urls = [app.url, ...(domains || []).filter((d) => d.status === "active").map((d) => "https://" + d.domain)];
+  // "user@host", from the ready-made ssh command without its leading "ssh ".
+  const sshTarget = (app.ssh && app.ssh.command ? app.ssh.command : "").replace(/^ssh\s+/, "");
 
   const saveDescription = async () => {
     if (savingDesc) return;
@@ -924,9 +734,6 @@ const SettingsDialog = ({ name, description, hasToken, onCopyToken, onRegenerate
   useEffect(() => {
     load();
   }, [load]);
-
-  // While any domain is not yet active, refresh the list periodically so its status
-  // updates on its own -- the server retries issuance every minute once DNS is set up.
   const anyPending = domains && domains.some((d) => d.status !== "active");
   useEffect(() => {
     if (!anyPending) return undefined;
@@ -934,7 +741,7 @@ const SettingsDialog = ({ name, description, hasToken, onCopyToken, onRegenerate
     return () => clearInterval(id);
   }, [anyPending, load]);
 
-  const add = async (e) => {
+  const addDomain = async (e) => {
     e.preventDefault();
     const domain = input.trim().toLowerCase();
     if (busy || !domain) return;
@@ -951,23 +758,21 @@ const SettingsDialog = ({ name, description, hasToken, onCopyToken, onRegenerate
       setBusy(false);
     }
   };
-
-  const verify = async (domain) => {
+  const verifyDomain = async (domain) => {
     if (busy) return;
     setBusy(true);
     setError("");
     try {
       await api.post(`/api/apps/${encodeURIComponent(name)}/domains/${encodeURIComponent(domain)}/verify`, {});
       showToast("Checking DNS...");
-      setTimeout(load, 1500); // give issuance a moment, then refresh
+      setTimeout(load, 1500);
     } catch (err) {
       setError(err.message);
     } finally {
       setBusy(false);
     }
   };
-
-  const remove = async (domain) => {
+  const removeDomain = async (domain) => {
     if (busy) return;
     setConfirmId(null);
     setBusy(true);
@@ -984,75 +789,67 @@ const SettingsDialog = ({ name, description, hasToken, onCopyToken, onRegenerate
   };
 
   return (
-    <div className="modal-backdrop" role="dialog" aria-modal="true" onMouseDown={onClose}>
-      <div className="card modal modal-wide" onMouseDown={(e) => e.stopPropagation()}>
-        <div className="modal-head">
-          <h2>Settings</h2>
-          <button type="button" className="term-btn" onClick={onClose} title="Close" aria-label="Close">
-            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M4 4l8 8M12 4l-8 8" />
-            </svg>
+    <div className="ov">
+      <ErrorBanner message={error} onDismiss={() => setError("")} />
+
+      <div className="ov-cols">
+        <div>
+          <h3>Address &amp; access</h3>
+          <div className="ov-line ov-line-top">
+            <span className="ov-k">{urls.length > 1 ? "URLs" : "URL"}</span>
+            <span className="ov-urls">
+              {urls.map((u) => (
+                <span className="ov-url-row" key={u}>
+                  <a href={u} target="_blank" rel="noreferrer">{u.replace(/^https?:\/\//, "")}</a>
+                  <CopyMini text={u} label="Copy URL" />
+                </span>
+              ))}
+            </span>
+          </div>
+          <div className="ov-line"><span className="ov-k">SSH</span><span className="ov-v">{sshTarget}</span><CopyMini text={sshTarget} label="Copy SSH command" /></div>
+          <div className="ov-line">
+            <span className="ov-k">Token</span>
+            <span className="ov-v ov-mask">{"•".repeat(12)}</span>
+            <button type="button" className="copy-mini" onClick={onCopyToken} disabled={!hasToken} title="Copy token" aria-label="Copy token">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <rect x="5.5" y="5.5" width="8" height="8.5" rx="1.3" />
+                <path d="M3.5 10.5V3.2a1 1 0 0 1 1-1H10" />
+              </svg>
+            </button>
+            <button type="button" className="copy-mini" onClick={onRegenerateToken} title="Regenerate token" aria-label="Regenerate token">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M13 8a5 5 0 1 1-1.5-3.5" />
+                <path d="M13 3v2.2h-2.2" />
+              </svg>
+            </button>
+          </div>
+        </div>
+        <div>
+          <h3>Resources &amp; meta</h3>
+          <div className="ov-metric"><div className="ov-mt"><span>CPU</span><span className="mono">{app.cpu_percent || 0}%</span></div><div className="ov-bar"><i style={{ width: `${app.cpu_percent || 0}%` }} /></div></div>
+          <div className="ov-metric"><div className="ov-mt"><span>RAM</span><span className="mono">{mb(app.memory_mb, app.memory_limit_mb)}</span></div><div className="ov-bar"><i style={{ width: `${pct(app.memory_mb, app.memory_limit_mb)}%` }} /></div></div>
+          <div className="ov-metric"><div className="ov-mt"><span>Disk</span><span className="mono">{mb(app.disk_mb, app.disk_limit_mb)}</span></div><div className="ov-bar"><i style={{ width: `${pct(app.disk_mb, app.disk_limit_mb)}%` }} /></div></div>
+          <div className="ov-meta"><span>Created</span><span className="mono">{created}</span></div>
+        </div>
+      </div>
+
+      <section className="ov-section">
+        <h3>Description</h3>
+        <p className="hint">A one-line summary of the app, shown on the dashboard and where the assistant starts from. Saved to <span className="mono">hostit.yml</span>.</p>
+        <textarea className="settings-desc" value={desc} onChange={(e) => setDesc(e.target.value)} rows={2} maxLength={280} placeholder="What this app is..." />
+        <div className="btn-row" style={{ justifyContent: "flex-start" }}>
+          <button type="button" className="btn btn-small btn-primary" onClick={saveDescription} disabled={savingDesc || desc.trim() === (app.description || "").trim()}>
+            {savingDesc ? "Saving..." : "Save description"}
           </button>
         </div>
-        <ErrorBanner message={error} onDismiss={() => setError("")} />
+      </section>
 
-        <section className="settings-section">
-          <h3>Description</h3>
-          <p className="hint">
-            A one-line summary of the app -- shown on the dashboard and where the assistant starts from. Saved to{" "}
-            <span className="mono">hostit.yml</span>.
-          </p>
-          <textarea
-            className="settings-desc"
-            value={desc}
-            onChange={(e) => setDesc(e.target.value)}
-            rows={2}
-            maxLength={280}
-            placeholder="What this app is..."
-          />
-          <div className="btn-row" style={{ justifyContent: "flex-start" }}>
-            <button
-              type="button"
-              className="btn btn-small btn-primary"
-              onClick={saveDescription}
-              disabled={savingDesc || desc.trim() === (description || "").trim()}
-            >
-              {savingDesc ? "Saving..." : "Save description"}
-            </button>
-          </div>
-        </section>
-
-        <section className="settings-section">
-          <h3>API token</h3>
-          <p className="hint">The app-scoped token an external agent (Claude Code, etc.) uses to work on this app.</p>
-          <div className="btn-row" style={{ justifyContent: "flex-start" }}>
-            <button type="button" className="btn btn-small" onClick={onCopyToken} disabled={!hasToken}>
-              Copy token
-            </button>
-            <button type="button" className="btn btn-small" onClick={onRegenerateToken}>
-              Regenerate token
-            </button>
-          </div>
-        </section>
-
-        <section className="settings-section">
-          <h3>Custom domains</h3>
-          <p className="hint">
-            Serve <span className="mono">{name}</span> on your own hostname. Add it, then create the two DNS records
-            shown; the certificate issues automatically (works even if this server is not publicly reachable).
-          </p>
-          <form className="domain-add" onSubmit={add}>
-          <input
-            type="text"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="blog.example.com"
-            aria-label="Custom domain"
-            autoFocus
-          />
-          <button type="submit" className="btn btn-primary btn-small" disabled={busy || !input.trim()}>
-            Add domain
-          </button>
+      <section className="ov-section">
+        <h3>Custom domains</h3>
+        <p className="hint">Serve <span className="mono">{name}</span> on your own hostname. Add it, then create the two DNS records shown; the certificate issues automatically.</p>
+        <form className="domain-add" onSubmit={addDomain}>
+          <input type="text" value={input} onChange={(e) => setInput(e.target.value)} placeholder="blog.example.com" aria-label="Custom domain" />
+          <button type="submit" className="btn btn-primary btn-small" disabled={busy || !input.trim()}>Add domain</button>
         </form>
         {domains === null ? (
           <p className="hint">Loading...</p>
@@ -1066,17 +863,11 @@ const SettingsDialog = ({ name, description, hasToken, onCopyToken, onRegenerate
                   <span className="domain-name">{d.domain}</span>
                   <span className={"domain-status domain-" + d.status}>{d.status}</span>
                   <span className="domain-actions">
-                    <button type="button" className="btn btn-small" onClick={() => verify(d.domain)} disabled={busy}>
-                      {d.status === "active" ? "Re-check" : "Verify"}
-                    </button>
+                    <button type="button" className="btn btn-small" onClick={() => verifyDomain(d.domain)} disabled={busy}>{d.status === "active" ? "Re-check" : "Verify"}</button>
                     {confirmId === d.domain ? (
-                      <button type="button" className="btn btn-small btn-danger" onClick={() => remove(d.domain)} disabled={busy}>
-                        Confirm remove
-                      </button>
+                      <button type="button" className="btn btn-small btn-danger" onClick={() => removeDomain(d.domain)} disabled={busy}>Confirm remove</button>
                     ) : (
-                      <button type="button" className="btn btn-small" onClick={() => setConfirmId(d.domain)} disabled={busy}>
-                        Remove
-                      </button>
+                      <button type="button" className="btn btn-small" onClick={() => setConfirmId(d.domain)} disabled={busy}>Remove</button>
                     )}
                   </span>
                 </div>
@@ -1099,64 +890,141 @@ const SettingsDialog = ({ name, description, hasToken, onCopyToken, onRegenerate
             ))}
           </div>
         )}
-        </section>
-      </div>
+      </section>
     </div>
   );
 };
 
-// The Overview view: identity hero + two columns of address/access and
-// resources/meta. Everything comes from the app object the page already has.
-const AppOverview = ({ app, showToast, onSettings }) => {
-  const copy = (text, label) => {
-    if (!text) return;
-    navigator.clipboard?.writeText(text);
-    if (showToast) showToast(label + " copied");
+// The Snapshots view: the snapshots list with rollback / fork / delete, and a
+// "Take snapshot" action -- the former dialog's contents, inline in a tab.
+const SnapshotsPane = ({ name, showToast, onRolledBack, onFork, onNew, reloadSignal }) => {
+  const [snaps, setSnaps] = useState(null);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [confirm, setConfirm] = useState(null);
+
+  const load = useCallback(async () => {
+    try {
+      const list = await api.get(`/api/apps/${encodeURIComponent(name)}/snapshots`);
+      setSnaps(Array.isArray(list) ? list : []);
+    } catch (err) {
+      setError(err.message);
+      setSnaps([]);
+    }
+  }, [name]);
+  useEffect(() => {
+    load();
+  }, [load, reloadSignal]);
+
+  const doRollback = async () => {
+    const id = confirm?.snap?.id;
+    if (!id || busy) return;
+    setBusy(true);
+    setError("");
+    showToast("Rolling back...");
+    try {
+      await api.post(`/api/apps/${encodeURIComponent(name)}/snapshots/${encodeURIComponent(id)}/restore`, {});
+      setConfirm(null);
+      setBusy(false);
+      if (onRolledBack) onRolledBack();
+    } catch (err) {
+      setError(err.message);
+      setBusy(false);
+      setConfirm(null);
+    }
   };
-  const pct = (u, l) => (l ? Math.min(100, Math.round((u / l) * 100)) : 0);
-  const mb = (u, l) => (l ? `${u} / ${l} MB` : `${u} MB`);
-  const created = app.created_at ? new Date(app.created_at).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }) : "";
+  const doRemove = async () => {
+    const id = confirm?.snap?.id;
+    if (!id || busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      await api.del(`/api/apps/${encodeURIComponent(name)}/snapshots/${encodeURIComponent(id)}`);
+      showToast("Snapshot deleted");
+      setConfirm(null);
+      await load();
+    } catch (err) {
+      setError(err.message);
+      setBusy(false);
+    }
+  };
+
+  // Group snapshots by calendar day (newest first) for the timeline, so the
+  // history reads "Today / Yesterday / earlier" down a single rail.
+  const dayLabel = (d) => {
+    const today = new Date();
+    const yesterday = new Date(today);
+    yesterday.setDate(today.getDate() - 1);
+    if (d.toDateString() === today.toDateString()) return "Today";
+    if (d.toDateString() === yesterday.toDateString()) return "Yesterday";
+    return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: d.getFullYear() === today.getFullYear() ? undefined : "numeric" });
+  };
+  const groups = [];
+  (snaps || []).forEach((s) => {
+    const key = new Date(s.created_at).toDateString();
+    let group = groups.length && groups[groups.length - 1].key === key ? groups[groups.length - 1] : null;
+    if (!group) {
+      group = { key, label: dayLabel(new Date(s.created_at)), items: [] };
+      groups.push(group);
+    }
+    group.items.push(s);
+  });
+
   return (
     <div className="ov">
-      <div className="ov-hero">
-        <div className="ov-avatar">{app.name.slice(0, 2)}</div>
+      <div className="ov-hero ov-hero-lite">
         <div className="ov-id">
-          <div className="ov-nm">{app.name}</div>
-          <div className="ov-subrow">
-            <a className="ov-url" href={app.url} target="_blank" rel="noreferrer">{app.url.replace(/^https?:\/\//, "")}</a>
-            <span className={"ov-pill" + (app.running ? "" : " ov-pill-off")}>
-              <span className="ov-dot" />
-              {app.running ? "running" : "powered off"}
-            </span>
-          </div>
-          {app.description && <div className="ov-desc">{app.description}</div>}
+          <div className="ov-nm">Snapshots{snaps && snaps.length > 0 ? <span className="snap-count">{snaps.length}</span> : ""}</div>
+          <div className="ov-desc">hostit snapshots {name} automatically on a schedule and before every deploy. Take one yourself anytime, roll back to any point (reversible -- the current state is snapshotted first), or fork a snapshot into a brand-new app.</div>
         </div>
         <div className="ov-quick">
-          <button type="button" className="btn" onClick={onSettings}>
-            Settings
-          </button>
-          <a className="btn btn-primary" href={app.url} target="_blank" rel="noreferrer">
-            Open app
-          </a>
+          <button type="button" className="btn btn-primary" onClick={() => onNew(load)}>Take snapshot</button>
         </div>
       </div>
-      <div className="ov-cols">
-        <div>
-          <h3>Address &amp; access</h3>
-          <div className="ov-line"><span className="ov-k">URL</span><span className="ov-v">{app.url.replace(/^https?:\/\//, "")}</span><button type="button" className="ov-copy" onClick={() => copy(app.url, "URL")}>copy</button></div>
-          <div className="ov-line"><span className="ov-k">SSH</span><span className="ov-v">{app.ssh && app.ssh.command}</span><button type="button" className="ov-copy" onClick={() => copy(app.ssh && app.ssh.command, "SSH command")}>copy</button></div>
-          {app.agent_token && (
-            <div className="ov-line"><span className="ov-k">Token</span><span className="ov-v ov-mask">{"•".repeat(12)}</span><button type="button" className="ov-copy" onClick={() => copy(app.agent_token, "Token")}>copy</button></div>
-          )}
+      <ErrorBanner message={error} onDismiss={() => setError("")} />
+      {snaps === null ? (
+        <p className="hint">Loading...</p>
+      ) : snaps.length === 0 ? (
+        <p className="hint">No snapshots yet.</p>
+      ) : (
+        <div className="snap-tl">
+          {groups.map((group) => (
+            <div className="snap-tl-group" key={group.key}>
+              <div className="snap-tl-day">{group.label}</div>
+              {group.items.map((s) => {
+                const when = new Date(s.created_at);
+                const isLatest = snaps[0] && snaps[0].id === s.id;
+                return (
+                  <div className={"snap-tl-item" + (s.auto ? "" : " manual") + (isLatest ? " latest" : "")} key={s.id}>
+                    <span className="snap-tl-node" />
+                    <span className="snap-tl-when">{when.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}</span>
+                    <span className="snap-tl-label">
+                      <span className={"snap-kind" + (s.auto ? "" : " snap-kind-manual")}>{s.auto ? "auto" : "manual"}</span>
+                      {s.label ? <span>{s.label}</span> : <span className="snap-tl-untitled">{s.auto ? "Automated snapshot" : "Manual snapshot"}</span>}
+                      {isLatest && <span className="snap-tl-latest">latest</span>}
+                    </span>
+                    <span className="snap-tl-actions">
+                      <button type="button" className="btn btn-small btn-icon" onClick={() => setConfirm({ type: "rollback", snap: s })} disabled={busy} title="Roll back to this snapshot" aria-label="Roll back to this snapshot"><RollbackIcon /></button>
+                      <button type="button" className="btn btn-small btn-icon" onClick={() => onFork(s.id)} disabled={busy} title="Fork a new app from this snapshot" aria-label="Fork a new app from this snapshot"><ForkIcon /></button>
+                      <button type="button" className="btn btn-small btn-icon menu-item-danger" onClick={() => setConfirm({ type: "delete", snap: s })} disabled={busy} title="Delete this snapshot" aria-label="Delete this snapshot"><TrashIcon /></button>
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          ))}
         </div>
-        <div>
-          <h3>Resources &amp; meta</h3>
-          <div className="ov-metric"><div className="ov-mt"><span>CPU</span><span className="mono">{app.cpu_percent || 0}%</span></div><div className="ov-bar"><i style={{ width: `${app.cpu_percent || 0}%` }} /></div></div>
-          <div className="ov-metric"><div className="ov-mt"><span>RAM</span><span className="mono">{mb(app.memory_mb, app.memory_limit_mb)}</span></div><div className="ov-bar"><i style={{ width: `${pct(app.memory_mb, app.memory_limit_mb)}%` }} /></div></div>
-          <div className="ov-metric"><div className="ov-mt"><span>Disk</span><span className="mono">{mb(app.disk_mb, app.disk_limit_mb)}</span></div><div className="ov-bar"><i style={{ width: `${pct(app.disk_mb, app.disk_limit_mb)}%` }} /></div></div>
-          <div className="ov-line"><span className="ov-k">Created</span><span className="ov-v">{created}</span></div>
-        </div>
-      </div>
+      )}
+      {confirm?.type === "rollback" && (
+        <ConfirmDialog title="Roll back to this snapshot?" confirmLabel="Roll back" busy={busy} onConfirm={doRollback} onCancel={() => setConfirm(null)}>
+          <span className="mono">{name}</span>'s files will be restored to {new Date(confirm.snap.created_at).toLocaleString()}. A snapshot of the current state is taken first, so this is reversible.
+        </ConfirmDialog>
+      )}
+      {confirm?.type === "delete" && (
+        <ConfirmDialog title="Delete this snapshot?" confirmLabel="Delete" danger busy={busy} onConfirm={doRemove} onCancel={() => setConfirm(null)}>
+          The snapshot from {new Date(confirm.snap.created_at).toLocaleString()} will be permanently deleted.
+        </ConfirmDialog>
+      )}
     </div>
   );
 };
@@ -1176,17 +1044,17 @@ const AppDetail = ({ account, refreshAccount }) => {
   termOpenRef.current = termOpen;
   const [showSsh, setShowSsh] = useState(false);
   const [showPrompt, setShowPrompt] = useState(false);
-  const [showSnapshots, setShowSnapshots] = useState(false);
   const [showNewSnapshot, setShowNewSnapshot] = useState(false);
   const [showFork, setShowFork] = useState(false);
   const [forkSnapshotId, setForkSnapshotId] = useState(null); // null = fork from current state
-  const [showSettings, setShowSettings] = useState(false);
+  const [snapReload, setSnapReload] = useState(0); // bump to refresh the Snapshots pane
   const [hasKeys, setHasKeys] = useState(null); // null until we know, so nothing flickers
   const [toast, setToast] = useState(""); // a 3s "Copied"/"Regenerated" snackbar
   // Remember the last view per app (also seeded by the new-app intent).
   const [view, setView] = useState(() => {
     try {
-      return localStorage.getItem("hostit.view." + name) || "assistant";
+      const v = localStorage.getItem("hostit.view." + name);
+      return v === "overview" ? "settings" : v || "assistant";
     } catch {
       return "assistant";
     }
@@ -1202,6 +1070,10 @@ const AppDetail = ({ account, refreshAccount }) => {
   useEffect(() => {
     if (app && !app.assistant_enabled && view === "assistant") setView("editor");
   }, [app, view]);
+  // Refresh the Snapshots pane every time it is opened, so it is never stale.
+  useEffect(() => {
+    if (view === "snapshots") setSnapReload((k) => k + 1);
+  }, [view]);
   const toastTimer = useRef(null);
   const catchUpTimers = useRef([]);
 
@@ -1251,6 +1123,8 @@ const AppDetail = ({ account, refreshAccount }) => {
   const reloadPreview = useCallback(() => {
     // Always freshen the URL so the preview is current whenever it is next shown.
     setPreviewKey((k) => k + 1);
+    // A (re)deploy takes an automatic snapshot, so refresh the Snapshots pane too.
+    setSnapReload((k) => k + 1);
     // On small screens the preview is hidden: there is no pane to spin over, and a
     // hidden lazy iframe never fires onLoad, so skip the "refreshing" status there.
     if (window.matchMedia("(max-width: 820px)").matches) {
@@ -1499,7 +1373,7 @@ const AppDetail = ({ account, refreshAccount }) => {
 
   return (
     <>
-      <div className="ws-page">
+      <div className={"ws-page" + (view === "settings" || view === "snapshots" ? " ws-doc" : "")}>
         {/* Top bar. Left: identity (the "Running" state is left unsaid -- only the
             notable states are named). Right: the live resources beside the
             controls, all vertically centred. */}
@@ -1538,26 +1412,32 @@ const AppDetail = ({ account, refreshAccount }) => {
               >
                 <SparkleIcon />
               </button>
-              {app.snapshots_enabled && (
-                <SnapshotSplitButton
-                  onList={() => setShowSnapshots(true)}
-                  onNew={() => setShowNewSnapshot(true)}
-                  onFork={() => {
-                    setForkSnapshotId(null);
-                    setShowFork(true);
-                  }}
-                />
-              )}
+              <button
+                type="button"
+                className="btn btn-icon"
+                onClick={() => {
+                  setForkSnapshotId(null);
+                  setShowFork(true);
+                }}
+                title="Fork app"
+                aria-label="Fork app"
+              >
+                <ForkIcon />
+              </button>
               <ActionsMenu
                 running={app.running}
                 appRunning={app.app_running}
                 busy={!!pending}
                 onAction={lifecycle}
-                onSettings={() => setShowSettings(true)}
                 onDelete={() => setConfirmDelete(true)}
               />
-              <a className="btn btn-primary" href={app.url} target="_blank" rel="noreferrer" title="Open app">
-                <span className="ws-open-label">Open app</span> <span aria-hidden="true">&#8599;</span>
+              <a className="btn btn-primary ws-open" href={app.url} target="_blank" rel="noreferrer" title="Open app">
+                <span className="ws-open-label">Open app</span>
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M6.5 3.5H3.5v9h9V9.5" />
+                  <path d="M9.5 3.5H12.5V6.5" />
+                  <path d="M12.5 3.5 7.5 8.5" />
+                </svg>
               </a>
             </div>
           </div>
@@ -1567,19 +1447,6 @@ const AppDetail = ({ account, refreshAccount }) => {
         {/* View switcher: the chat + preview split is one view; the file editor is
             another. More can join as tabs (terminal, details) later. */}
         <div className="ws-viewtabs" role="tablist" aria-label="Workspace view">
-          <button
-            type="button"
-            role="tab"
-            aria-selected={view === "overview"}
-            className={"ws-viewtab" + (view === "overview" ? " on" : "")}
-            onClick={() => setView("overview")}
-          >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
-              <circle cx="12" cy="12" r="9" />
-              <path d="M12 8h.01M11 12h1v4h1" />
-            </svg>
-            Overview
-          </button>
           {app.assistant_enabled && (
             <button
               type="button"
@@ -1602,9 +1469,9 @@ const AppDetail = ({ account, refreshAccount }) => {
             onClick={() => setView("editor")}
           >
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
-              <path d="m9 8-5 4 5 4M15 8l5 4-5 4" />
+              <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
             </svg>
-            Editor
+            Files
           </button>
           <button
             type="button"
@@ -1619,13 +1486,63 @@ const AppDetail = ({ account, refreshAccount }) => {
             </svg>
             Terminal
           </button>
+          {app.snapshots_enabled && (
+            <button
+              type="button"
+              role="tab"
+              aria-selected={view === "snapshots"}
+              className={"ws-viewtab" + (view === "snapshots" ? " on" : "")}
+              onClick={() => setView("snapshots")}
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+                <path d="M12 3a9 9 0 1 0 9 9" />
+                <path d="M21 3v6h-6M12 7v5l3 2" />
+              </svg>
+              Snapshots
+            </button>
+          )}
+          <button
+            type="button"
+            role="tab"
+            aria-selected={view === "settings"}
+            className={"ws-viewtab" + (view === "settings" ? " on" : "")}
+            onClick={() => setView("settings")}
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+              <circle cx="12" cy="12" r="3" />
+              <path d="M19 12a7 7 0 0 0-.1-1l2-1.5-2-3.5-2.3 1a7 7 0 0 0-1.7-1l-.3-2.5h-4l-.3 2.5a7 7 0 0 0-1.7 1l-2.3-1-2 3.5 2 1.5a7 7 0 0 0 0 2l-2 1.5 2 3.5 2.3-1a7 7 0 0 0 1.7 1l.3 2.5h4l.3-2.5a7 7 0 0 0 1.7-1l2.3 1 2-3.5-2-1.5a7 7 0 0 0 .1-1z" />
+            </svg>
+            Settings
+          </button>
         </div>
 
         {/* Views stay mounted -- only the active one is shown -- so switching is
             instant and the terminal keeps its live session (and the assistant its
             scroll) instead of reconnecting on every tab click. */}
-        <div className={"ws-overviewwrap" + (view === "overview" ? "" : " ws-inactive")}>
-          <AppOverview app={app} showToast={showToast} onSettings={() => setShowSettings(true)} />
+        {app.snapshots_enabled && (
+          <div className={"ws-snapshotswrap" + (view === "snapshots" ? "" : " ws-inactive")}>
+            <SnapshotsPane
+              name={app.name}
+              showToast={showToast}
+              reloadSignal={snapReload}
+              onRolledBack={load}
+              onNew={() => setShowNewSnapshot(true)}
+              onFork={(snapshotId) => {
+                setForkSnapshotId(snapshotId);
+                setShowFork(true);
+              }}
+            />
+          </div>
+        )}
+        <div className={"ws-settingswrap" + (view === "settings" ? "" : " ws-inactive")}>
+          <AppSettings
+            app={app}
+            showToast={showToast}
+            hasToken={!!token}
+            onCopyToken={copyToken}
+            onRegenerateToken={regenerateToken}
+            onSaved={load}
+          />
         </div>
         <div className={"ws-editorwrap" + (view === "editor" ? "" : " ws-inactive")}>
           <Suspense fallback={<div className="ws-chat-loading">Loading editor...</div>}>
@@ -1698,31 +1615,14 @@ const AppDetail = ({ account, refreshAccount }) => {
 
       {showSsh && <SshDialog app={app} hasKeys={hasKeys} onClose={() => setShowSsh(false)} />}
       {showPrompt && <PromptDialog prompt={prompt} token={token} onClose={() => setShowPrompt(false)} />}
-      {showSnapshots && (
-        <SnapshotsDialog
-          name={app.name}
-          onClose={() => setShowSnapshots(false)}
-          showToast={showToast}
-          onRolledBack={load}
-          onFork={(snapshotId) => {
-            setForkSnapshotId(snapshotId);
-            setShowFork(true); // opens the fork dialog on top; the snapshots list stays open
-          }}
-        />
-      )}
       {showNewSnapshot && (
-        <NewSnapshotDialog name={app.name} onClose={() => setShowNewSnapshot(false)} showToast={showToast} />
-      )}
-      {showSettings && (
-        <SettingsDialog
+        <NewSnapshotDialog
           name={app.name}
-          description={app.description}
-          hasToken={!!token}
-          onCopyToken={copyToken}
-          onRegenerateToken={regenerateToken}
-          onSaved={load}
+          onClose={() => {
+            setShowNewSnapshot(false);
+            setSnapReload((k) => k + 1); // refresh the Snapshots pane once the dialog closes
+          }}
           showToast={showToast}
-          onClose={() => setShowSettings(false)}
         />
       )}
       {showFork && (

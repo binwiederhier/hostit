@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"mime"
+	"net/http"
 	"os"
 	"path"
 	"path/filepath"
@@ -81,6 +83,7 @@ type FileInfo struct {
 	Type     FileType  `json:"type"`
 	Size     int64     `json:"size"`
 	Modified time.Time `json:"modified"`
+	Mime     string    `json:"mime,omitempty"` // set by StatFile only, not by directory listings
 }
 
 // Listing is one directory's worth of entries
@@ -249,6 +252,72 @@ func (m *Manager) MoveFile(name, fromRel, toRel string) error {
 		return err
 	}
 	return root.Rename(from, to)
+}
+
+// MakeDir creates a directory (and any missing parents) below the app's home and
+// gives it to the app user, so the file browser can add an empty folder. It
+// refuses a path that already exists rather than silently succeeding.
+func (m *Manager) MakeDir(name, relPath string) error {
+	rel, err := m.safeRel(name, relPath)
+	if err != nil {
+		return err
+	}
+	root, err := m.appRoot(name)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	if _, err := root.Stat(rel); err == nil {
+		return fmt.Errorf("%w: %s already exists", ErrInvalid, relPath)
+	}
+	if err := root.MkdirAll(rel, 0o755); err != nil {
+		return err
+	}
+	return m.chownToApp(name, rel)
+}
+
+// StatFile returns metadata for a single file (or directory) without reading its
+// whole contents: size, modtime, type, and a best-effort MIME type. The editor
+// uses it to tell a text file (worth opening in the editor) from a binary one
+// (show a details card) without downloading the file just to find out.
+func (m *Manager) StatFile(name, relPath string) (*FileInfo, error) {
+	rel, err := m.safeRel(name, relPath)
+	if err != nil {
+		return nil, err
+	}
+	root, err := m.appRoot(name)
+	if err != nil {
+		return nil, err
+	}
+	defer root.Close()
+	info, err := root.Stat(rel)
+	if err != nil {
+		return nil, err
+	}
+	file := &FileInfo{Path: rel, Type: FileTypeFile, Size: info.Size(), Modified: info.ModTime()}
+	if info.IsDir() {
+		file.Type, file.Size = FileTypeDir, 0
+		return file, nil
+	}
+	file.Mime = detectMime(root, rel)
+	return file, nil
+}
+
+// detectMime returns a best-effort MIME type for a file: by extension first,
+// then by sniffing the first 512 bytes when the extension is unknown, so a
+// no-extension binary still resolves to a non-text type.
+func detectMime(root *os.Root, rel string) string {
+	if t := mime.TypeByExtension(path.Ext(rel)); t != "" {
+		return t
+	}
+	f, err := root.Open(rel)
+	if err != nil {
+		return "application/octet-stream"
+	}
+	defer f.Close()
+	buf := make([]byte, 512)
+	n, _ := io.ReadFull(f, buf) // short files give ErrUnexpectedEOF with n set; that is fine
+	return http.DetectContentType(buf[:n])
 }
 
 // ListFiles returns the app's own files, skipping hostit's internal state

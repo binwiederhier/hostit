@@ -53,3 +53,52 @@ func TestMoveFile(t *testing.T) {
 	// Traversal out of the home is refused.
 	assert.Error(t, m.MoveFile("blog", "public/b.txt", "../escape.txt"))
 }
+
+func TestMakeDir(t *testing.T) {
+	t.Parallel()
+	m, _, _ := newTestDeployManager(t)
+	createTestApp(t, m, "blog")
+
+	require.NoError(t, m.MakeDir("blog", "assets/img"))
+	info, err := m.StatFile("blog", "assets/img")
+	require.NoError(t, err)
+	assert.Equal(t, FileTypeDir, info.Type)
+
+	// Refuse to create over an existing path, and refuse traversal.
+	assert.Error(t, m.MakeDir("blog", "assets/img"))
+	assert.Error(t, m.MakeDir("blog", "../escape"))
+}
+
+func TestStatFile(t *testing.T) {
+	t.Parallel()
+	m, _, _ := newTestDeployManager(t)
+	createTestApp(t, m, "blog")
+	writeAppFile(t, m, "blog", "notes.txt", "just some text")
+	writeAppFile(t, m, "blog", "public/logo.png", "\x89PNG\r\n\x1a\n") // PNG magic
+	writeAppFile(t, m, "blog", "data", "\x00\x01\x02binary\x00")       // no extension, binary content
+
+	// A text file: size + modtime from a stat, and a text/* MIME (no full read).
+	info, err := m.StatFile("blog", "notes.txt")
+	require.NoError(t, err)
+	assert.Equal(t, FileTypeFile, info.Type)
+	assert.Equal(t, int64(14), info.Size)
+	assert.False(t, info.Modified.IsZero())
+	assert.True(t, strings.HasPrefix(info.Mime, "text/"), "want text/* mime, got %q", info.Mime)
+
+	// A known-image extension: MIME by extension, no sniff needed.
+	info, err = m.StatFile("blog", "public/logo.png")
+	require.NoError(t, err)
+	assert.Equal(t, "image/png", info.Mime)
+
+	// No extension + binary bytes: sniffed as a non-text type.
+	info, err = m.StatFile("blog", "data")
+	require.NoError(t, err)
+	assert.False(t, strings.HasPrefix(info.Mime, "text/"), "want binary mime, got %q", info.Mime)
+
+	// A directory reports as a dir with no MIME, and traversal is refused.
+	info, err = m.StatFile("blog", "public")
+	require.NoError(t, err)
+	assert.Equal(t, FileTypeDir, info.Type)
+	_, err = m.StatFile("blog", "../../etc/passwd")
+	assert.Error(t, err)
+}

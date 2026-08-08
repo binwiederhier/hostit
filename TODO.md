@@ -101,6 +101,15 @@ The dashboard can create, manage and delete apps and drive them in the browser
 
 ## Smaller things
 
+- **Terminal auto-reconnect.** The in-browser terminal's WebSocket drops on any
+  blip (network change, laptop sleep, an app restart/redeploy recreating the
+  container) and today just dies, leaving a dead pane. Reconnect automatically on
+  an unexpected close with incremental backoff capped at 60s, show a countdown
+  timer in the pane while waiting ("reconnecting in Ns..."), and add a manual
+  "Reconnect" button in the terminal bar (top right, next to SSH/pop-out/fullscreen)
+  to retry immediately. Applies to both the embedded terminal tab and the
+  full-page pop-out.
+
 - **Does the hostit daemon actually need to run as root?** It drives podman,
   systemctl, useradd/usermod, nftables and btrfs -- audit which of those truly
   require root vs could run under a dedicated user with specific capabilities or a

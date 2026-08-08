@@ -2,9 +2,9 @@
 // authenticated via the session cookie; errors surface as ApiError with the
 // server's {"error": "..."} message when available.
 export class ApiError extends Error {
-  constructor(status, message) {
+  constructor(status, message, name) {
     super(message);
-    this.name = "ApiError";
+    this.name = name || "ApiError";
     this.status = status;
   }
 }
@@ -91,8 +91,14 @@ const putRaw = async (path, body) => {
 
 // putRawProgress uploads a file with progress callbacks -- fetch cannot report
 // upload progress, so this one uses XMLHttpRequest. onProgress gets a 0..1 fraction.
-const putRawProgress = (path, body, onProgress) =>
+// An optional AbortSignal cancels the upload; the promise then rejects with an
+// ApiError whose status is 0 and name is "AbortError".
+const putRawProgress = (path, body, onProgress, signal) =>
   new Promise((resolve, reject) => {
+    if (signal && signal.aborted) {
+      reject(new ApiError(0, "Upload canceled", "AbortError"));
+      return;
+    }
     const xhr = new XMLHttpRequest();
     xhr.open("PUT", path);
     xhr.withCredentials = true;
@@ -102,6 +108,10 @@ const putRawProgress = (path, body, onProgress) =>
         if (e.lengthComputable) onProgress(e.loaded / e.total);
       };
     }
+    if (signal) {
+      signal.addEventListener("abort", () => xhr.abort(), { once: true });
+    }
+    xhr.onabort = () => reject(new ApiError(0, "Upload canceled", "AbortError"));
     xhr.onload = () => {
       if (xhr.status >= 200 && xhr.status < 300) {
         resolve(null);

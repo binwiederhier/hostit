@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, isNetworkError } from "../api";
-import { extOf, langForFile, looksBinary, isImage, humanSize } from "../editorutil";
+import { extOf, langForFile, looksBinary, isImage, humanSize, knownTextExt, isTextMime } from "../editorutil";
 import { highlight } from "../highlight";
 
 // The IDE view: a lazily-loaded file tree on the left (collapsible, resizable,
@@ -47,6 +47,8 @@ export default function AppEditor({ name, url, running, diskMB, diskLimitMB, onD
   const taRef = useRef(null);
   const gutterRef = useRef(null);
   const preRef = useRef(null);
+  const modalInputRef = useRef(null);
+  const uploadAbort = useRef(null); // AbortController for the in-flight upload
 
   const loadDir = useCallback(
     async (dir) => {
@@ -95,20 +97,44 @@ export default function AppEditor({ name, url, running, diskMB, diskLimitMB, onD
       return n;
     });
 
-  const openFile = (path, size) => {
-    setActive(path);
-    setError("");
-    if (tabs.some((t) => t.path === path)) return;
-    setTabs((t) => [...t, { path, size, content: "", saved: "", loading: true, binary: false, imgFailed: false, error: "" }]);
-    if (looksBinary(path)) {
-      setTabs((t) => t.map((x) => (x.path === path ? { ...x, loading: false, binary: true } : x)));
-      return;
-    }
+  // loadText downloads a file's contents into its tab, for text/code files we
+  // actually intend to edit. A stray NUL byte still flips it to the binary card.
+  const loadText = (path) => {
     api
       .getText(fileUrl(name, path))
       .then((text) => {
         const binary = text.includes("\u0000");
         setTabs((t) => t.map((x) => (x.path === path ? { ...x, loading: false, content: text, saved: text, binary } : x)));
+      })
+      .catch((e) => setTabs((t) => t.map((x) => (x.path === path ? { ...x, loading: false, error: e.message } : x))));
+  };
+
+  const openFile = (path, size) => {
+    setActive(path);
+    setError("");
+    if (tabs.some((t) => t.path === path)) return;
+    setTabs((t) => [...t, { path, size, content: "", saved: "", loading: true, binary: false, imgFailed: false, error: "" }]);
+    // Known-binary extension: show the details card at once (size from the
+    // listing), no download.
+    if (looksBinary(path)) {
+      setTabs((t) => t.map((x) => (x.path === path ? { ...x, loading: false, binary: true } : x)));
+      return;
+    }
+    // Known text/code extension: it has to be downloaded to be edited anyway.
+    if (knownTextExt(path)) {
+      loadText(path);
+      return;
+    }
+    // Unknown extension: stat it (a cheap MIME sniff server-side) rather than
+    // downloading the whole file just to discover it is binary.
+    api
+      .get(fileUrl(name, path) + "?stat=1")
+      .then((info) => {
+        if (isTextMime(info.mime)) {
+          loadText(path);
+          return;
+        }
+        setTabs((t) => t.map((x) => (x.path === path ? { ...x, loading: false, binary: true, size: info.size, mime: info.mime } : x)));
       })
       .catch((e) => setTabs((t) => t.map((x) => (x.path === path ? { ...x, loading: false, error: e.message } : x))));
   };
@@ -175,24 +201,40 @@ export default function AppEditor({ name, url, running, diskMB, diskLimitMB, onD
         return;
       }
     }
+    const controller = new AbortController();
+    uploadAbort.current = controller;
     setBusy("uploading");
     setUploadPct(0);
     try {
       let done = 0;
       for (const f of files) {
-        await api.putRawProgress(fileUrl(name, (targetDir ? targetDir + "/" : "") + f.name), f, (p) =>
-          setUploadPct(Math.round(((done + p) / files.length) * 100))
+        await api.putRawProgress(
+          fileUrl(name, (targetDir ? targetDir + "/" : "") + f.name),
+          f,
+          (p) => setUploadPct(Math.round(((done + p) / files.length) * 100)),
+          controller.signal
         );
         done += 1;
       }
       await loadDir(targetDir);
       if (targetDir) setExpanded((s) => new Set(s).add(targetDir));
     } catch (e) {
-      setError("Upload failed: " + e.message);
+      // A user-initiated cancel is not an error: just reload whatever landed.
+      if (e && e.name === "AbortError") {
+        await loadDir(targetDir);
+      } else {
+        setError("Upload failed: " + e.message);
+      }
     } finally {
+      uploadAbort.current = null;
       setBusy("");
       setUploadPct(null);
     }
+  };
+
+  // Cancel an in-flight upload; the current file's XHR aborts and the loop stops.
+  const cancelUpload = () => {
+    if (uploadAbort.current) uploadAbort.current.abort();
   };
 
   const moveEntry = async (from, targetDir) => {
@@ -210,12 +252,41 @@ export default function AppEditor({ name, url, running, diskMB, diskLimitMB, onD
     }
   };
 
-  // Perform a rename/delete confirmed in the dialog.
+  // On a rename, preselect the base name (not the extension), so typing replaces
+  // "thisfile" in "thisfile.txt" and keeps the ".txt". Keyed on the opened path
+  // so it does not re-select while the user types.
+  useEffect(() => {
+    if (dialog?.type !== "rename" || !modalInputRef.current) return;
+    const el = modalInputRef.current;
+    const dot = el.value.lastIndexOf(".");
+    el.focus();
+    el.setSelectionRange(0, dot > 0 ? dot : el.value.length);
+  }, [dialog?.type, dialog?.path]);
+
+  // Perform a rename/delete/create confirmed in the dialog.
   const runDialog = async () => {
     if (!dialog) return;
     const { type, path, value } = dialog;
     setError("");
     try {
+      if (type === "newfile" || type === "newfolder") {
+        const nm = (value || "").trim();
+        if (!nm) {
+          setDialog(null);
+          return;
+        }
+        const full = (dialog.dir ? dialog.dir + "/" : "") + nm;
+        if (type === "newfile") {
+          await api.putRaw(fileUrl(name, full), "");
+        } else {
+          await api.post(`/api/apps/${encodeURIComponent(name)}/mkdir`, { path: full });
+        }
+        if (dialog.dir) setExpanded((s) => new Set(s).add(dialog.dir));
+        await loadDir(dialog.dir || "");
+        setDialog(null);
+        if (type === "newfile") openFile(full, 0);
+        return;
+      }
       if (type === "rename") {
         const next = (value || "").trim();
         if (!next || next === baseName(path)) {
@@ -234,7 +305,8 @@ export default function AppEditor({ name, url, running, diskMB, diskLimitMB, onD
       await loadDir(parentDir(path));
       setDialog(null);
     } catch (e) {
-      setError((type === "rename" ? "Rename" : "Delete") + " failed: " + e.message);
+      const verb = { rename: "Rename", delete: "Delete", newfile: "Create file", newfolder: "Create folder" }[type] || "Action";
+      setError(verb + " failed: " + e.message);
       setDialog(null);
     }
   };
@@ -336,6 +408,24 @@ export default function AppEditor({ name, url, running, diskMB, diskLimitMB, onD
 
   const rowActions = (path, isDir, nm) => (
     <span className="ed-row-actions">
+      {isDir && (
+        <>
+          <button type="button" className="ed-row-act" title="New file" aria-label={"New file in " + nm} onClick={(e) => { e.stopPropagation(); setDialog({ type: "newfile", dir: path, value: "" }); }}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h6" />
+              <path d="M14 3v5h5" />
+              <path d="M18 14v6M15 17h6" />
+            </svg>
+          </button>
+          <button type="button" className="ed-row-act" title="New folder" aria-label={"New folder in " + nm} onClick={(e) => { e.stopPropagation(); setDialog({ type: "newfolder", dir: path, value: "" }); }}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v3" />
+              <path d="M3 7v11a2 2 0 0 0 2 2h6" />
+              <path d="M18 14v6M15 17h6" />
+            </svg>
+          </button>
+        </>
+      )}
       <button type="button" className="ed-row-act" title="Rename" aria-label={"Rename " + nm} onClick={(e) => { e.stopPropagation(); setDialog({ type: "rename", path, isDir, value: nm }); }}>
         ✎
       </button>
@@ -347,9 +437,13 @@ export default function AppEditor({ name, url, running, diskMB, diskLimitMB, onD
 
   const renderChildren = (dir, depth) => {
     if (loadingDirs.has(dir) && !dirs[dir]) {
+      // A subfolder shows its spinner on its own row (below); only the root, which
+      // has no row of its own, gets a spinner here. Returning nothing for a
+      // subfolder avoids the "Loading..." -> empty flicker on empty folders.
+      if (dir !== "") return null;
       return (
         <div className="ed-row ed-loading" style={{ paddingLeft: 8 + depth * 14 }}>
-          Loading...
+          <span className="ed-spinner" aria-label="Loading" />
         </div>
       );
     }
@@ -374,6 +468,7 @@ export default function AppEditor({ name, url, running, diskMB, diskLimitMB, onD
               <span className="ed-tw">{open ? "▾" : "▸"}</span>
               <span className="ed-ico">{open ? "\u{1F4C2}" : "\u{1F4C1}"}</span>
               <span className="ed-nm">{nm}</span>
+              {open && loadingDirs.has(entry.path) && !dirs[entry.path] && <span className="ed-spinner" aria-label="Loading" />}
               {rowActions(entry.path, true, nm)}
             </div>
             {open && renderChildren(entry.path, depth + 1)}
@@ -414,7 +509,21 @@ export default function AppEditor({ name, url, running, diskMB, diskLimitMB, onD
               <button type="button" className="ed-refresh" title="Collapse files" aria-label="Collapse files" onClick={() => setTreeCollapsed(true)}>
                 {"«"}
               </button>
-              <span className="ed-tree-name">{name}</span>
+              <span className="ed-tree-spacer" />
+              <button type="button" className="ed-refresh" title="New file" aria-label="New file" onClick={() => setDialog({ type: "newfile", dir: "", value: "" })}>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+                  <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h6" />
+                  <path d="M14 3v5h5" />
+                  <path d="M18 14v6M15 17h6" />
+                </svg>
+              </button>
+              <button type="button" className="ed-refresh" title="New folder" aria-label="New folder" onClick={() => setDialog({ type: "newfolder", dir: "", value: "" })}>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+                  <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v3" />
+                  <path d="M3 7v11a2 2 0 0 0 2 2h6" />
+                  <path d="M18 14v6M15 17h6" />
+                </svg>
+              </button>
               <button type="button" className="ed-refresh" title="Refresh" aria-label="Refresh tree" onClick={refreshTree}>
                 {"↻"}
               </button>
@@ -505,10 +614,12 @@ export default function AppEditor({ name, url, running, diskMB, diskLimitMB, onD
         <div className="ed-status">
           {uploadPct != null ? (
             <span className="ed-status-upload">
-              Uploading {uploadPct}%
+              <span className="ed-spinner" aria-hidden="true" />
+              <span className="ed-upload-label">Uploading {uploadPct}%</span>
               <span className="ed-progress">
                 <span className="ed-progress-bar" style={{ width: `${uploadPct}%` }} />
               </span>
+              <button type="button" className="ed-upload-cancel" onClick={cancelUpload}>Cancel</button>
             </span>
           ) : error ? (
             <span className="ed-status-err">{error}</span>
@@ -551,29 +662,7 @@ export default function AppEditor({ name, url, running, diskMB, diskLimitMB, onD
       {dialog && (
         <div className="modal-backdrop" role="dialog" aria-modal="true" onMouseDown={() => setDialog(null)}>
           <div className="card modal ed-modal" onMouseDown={(e) => e.stopPropagation()}>
-            {dialog.type === "rename" ? (
-              <>
-                <h3>Rename {dialog.isDir ? "folder" : "file"}</h3>
-                <input
-                  className="ed-modal-input"
-                  autoFocus
-                  value={dialog.value}
-                  onChange={(e) => setDialog((d) => ({ ...d, value: e.target.value }))}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") runDialog();
-                    if (e.key === "Escape") setDialog(null);
-                  }}
-                />
-                <div className="ed-modal-actions">
-                  <button type="button" className="ed-btn" onClick={() => setDialog(null)}>
-                    Cancel
-                  </button>
-                  <button type="button" className="ed-btn ed-btn-primary" onClick={runDialog}>
-                    Rename
-                  </button>
-                </div>
-              </>
-            ) : (
+            {dialog.type === "delete" ? (
               <>
                 <h3>Delete {dialog.isDir ? "folder" : "file"}?</h3>
                 <p className="ed-modal-text">
@@ -586,6 +675,33 @@ export default function AppEditor({ name, url, running, diskMB, diskLimitMB, onD
                   </button>
                   <button type="button" className="ed-btn ed-btn-danger" onClick={runDialog}>
                     Delete
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <h3>
+                  {dialog.type === "rename" ? "Rename " + (dialog.isDir ? "folder" : "file") : dialog.type === "newfolder" ? "New folder" : "New file"}
+                  {dialog.dir ? <span className="ed-modal-in"> in {dialog.dir}/</span> : null}
+                </h3>
+                <input
+                  ref={modalInputRef}
+                  className="ed-modal-input"
+                  autoFocus
+                  placeholder={dialog.type === "newfolder" ? "folder name" : "file name"}
+                  value={dialog.value}
+                  onChange={(e) => setDialog((d) => ({ ...d, value: e.target.value }))}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") runDialog();
+                    if (e.key === "Escape") setDialog(null);
+                  }}
+                />
+                <div className="ed-modal-actions">
+                  <button type="button" className="ed-btn" onClick={() => setDialog(null)}>
+                    Cancel
+                  </button>
+                  <button type="button" className="ed-btn ed-btn-primary" onClick={runDialog}>
+                    {dialog.type === "rename" ? "Rename" : "Create"}
                   </button>
                 </div>
               </>

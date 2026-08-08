@@ -156,7 +156,7 @@ const AppTerminal = ({ name, onClose, onMinimize, onReady, onSessionEnd, onSsh, 
       }
     >
       <div className={fixed ? "term-bar" : "term-bar term-bar-drag"} onPointerDown={startDrag}>
-        <span className="mono">{name} &mdash; terminal</span>
+        {!embedded && <span className="mono">{name} &mdash; terminal</span>}
         <span className="term-bar-actions">
           {!fixed && onMinimize && (
             <button type="button" className="term-btn" onClick={onMinimize} title="Minimize" aria-label="Minimize">

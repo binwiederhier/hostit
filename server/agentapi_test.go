@@ -473,6 +473,144 @@ func TestGuideExplainsTheLayoutAndTheBuildChoice(t *testing.T) {
 	assert.Contains(t, guide.Runtimes, "go")
 }
 
+// fileInfoJSON mirrors the app.FileInfo shape returned by the stat endpoint.
+type fileInfoJSON struct {
+	Path string `json:"path"`
+	Type string `json:"type"`
+	Size int64  `json:"size"`
+	Mime string `json:"mime"`
+}
+
+func TestAgentFileStat(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	token := newAppToken(t, s, "blog")
+	require.NoError(t, s.apps.WriteFile("blog", "notes.txt", []byte("hello text"), 0))
+	require.NoError(t, s.apps.WriteFile("blog", "public/logo.png", []byte("\x89PNG\r\n\x1a\n"), 0))
+	require.NoError(t, s.apps.WriteFile("blog", "data", []byte("\x00\x01\x02bin\x00"), 0)) // no extension, binary
+
+	// A text file: metadata only, a text/* MIME, and NOT the file's bytes -- the
+	// editor uses this to avoid downloading a file just to learn what it is.
+	rr := request(t, s.API(), "GET", "/api/apps/blog/files/notes.txt?stat=1", "", token)
+	require.Equal(t, http.StatusOK, rr.Code)
+	assert.Contains(t, rr.Header().Get("Content-Type"), "application/json")
+	assert.NotContains(t, rr.Body.String(), "hello text", "stat returns metadata, not the file body")
+	var info fileInfoJSON
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &info))
+	assert.Equal(t, "file", info.Type)
+	assert.Equal(t, int64(10), info.Size)
+	assert.True(t, strings.HasPrefix(info.Mime, "text/"), "want text/* mime, got %q", info.Mime)
+
+	// A known image extension resolves by extension.
+	rr = request(t, s.API(), "GET", "/api/apps/blog/files/public/logo.png?stat=1", "", token)
+	require.Equal(t, http.StatusOK, rr.Code)
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &info))
+	assert.Equal(t, "image/png", info.Mime)
+
+	// A no-extension binary is sniffed as a non-text type.
+	rr = request(t, s.API(), "GET", "/api/apps/blog/files/data?stat=1", "", token)
+	require.Equal(t, http.StatusOK, rr.Code)
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &info))
+	assert.False(t, strings.HasPrefix(info.Mime, "text/"), "want binary mime, got %q", info.Mime)
+
+	// A directory reports as a dir; without ?stat the endpoint still returns bytes.
+	require.NoError(t, s.apps.WriteFile("blog", "sub/keep.txt", []byte("x"), 0))
+	rr = request(t, s.API(), "GET", "/api/apps/blog/files/sub?stat=1", "", token)
+	require.Equal(t, http.StatusOK, rr.Code)
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &info))
+	assert.Equal(t, "dir", info.Type)
+	rr = request(t, s.API(), "GET", "/api/apps/blog/files/notes.txt", "", token)
+	require.Equal(t, http.StatusOK, rr.Code)
+	assert.Equal(t, "hello text", rr.Body.String())
+
+	// Scoped like everything else on the agent API.
+	other := newAppToken(t, s, "other")
+	rr = request(t, s.API(), "GET", "/api/apps/blog/files/notes.txt?stat=1", "", other)
+	assert.Equal(t, http.StatusForbidden, rr.Code)
+}
+
+func TestAgentMkdir(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	token := newAppToken(t, s, "blog")
+
+	// Create an empty folder (the file browser's "new folder").
+	rr := request(t, s.API(), "POST", "/api/apps/blog/mkdir", `{"path":"assets/img"}`, token)
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+	info, err := s.apps.StatFile("blog", "assets/img")
+	require.NoError(t, err)
+	assert.Equal(t, "dir", string(info.Type))
+
+	// An empty path is a mistake; a repeat over an existing path is refused.
+	rr = request(t, s.API(), "POST", "/api/apps/blog/mkdir", `{"path":""}`, token)
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+	rr = request(t, s.API(), "POST", "/api/apps/blog/mkdir", `{"path":"assets/img"}`, token)
+	assert.GreaterOrEqual(t, rr.Code, 400)
+
+	// Traversal out of the home is refused and writes nothing above it.
+	rr = request(t, s.API(), "POST", "/api/apps/blog/mkdir", `{"path":"../escape"}`, token)
+	assert.GreaterOrEqual(t, rr.Code, 400)
+	_, statErr := os.Stat(filepath.Join(s.config.AppsDir, "escape"))
+	assert.True(t, os.IsNotExist(statErr))
+
+	// Scoped to the app.
+	other := newAppToken(t, s, "other")
+	rr = request(t, s.API(), "POST", "/api/apps/blog/mkdir", `{"path":"x"}`, other)
+	assert.Equal(t, http.StatusForbidden, rr.Code)
+}
+
+func TestAgentMove(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	token := newAppToken(t, s, "blog")
+	require.NoError(t, s.apps.WriteFile("blog", "a.txt", []byte("hi"), 0))
+
+	// Rename/move a file within the home (the file browser's drag + rename).
+	rr := request(t, s.API(), "POST", "/api/apps/blog/move", `{"from":"a.txt","to":"public/b.txt"}`, token)
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+	assert.False(t, s.apps.FileExists("blog", "a.txt"))
+	b, err := s.apps.ReadFile("blog", "public/b.txt")
+	require.NoError(t, err)
+	assert.Equal(t, "hi", string(b))
+
+	// from and to are both required; an existing destination is not clobbered.
+	rr = request(t, s.API(), "POST", "/api/apps/blog/move", `{"from":"public/b.txt"}`, token)
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+	require.NoError(t, s.apps.WriteFile("blog", "c.txt", []byte("x"), 0))
+	rr = request(t, s.API(), "POST", "/api/apps/blog/move", `{"from":"c.txt","to":"public/b.txt"}`, token)
+	assert.GreaterOrEqual(t, rr.Code, 400)
+	assert.Equal(t, "hi", string(b)) // destination unchanged
+
+	// Scoped to the app.
+	other := newAppToken(t, s, "other")
+	rr = request(t, s.API(), "POST", "/api/apps/blog/move", `{"from":"public/b.txt","to":"d.txt"}`, other)
+	assert.Equal(t, http.StatusForbidden, rr.Code)
+}
+
+func TestAppResponseReportsAssistantAvailability(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t) // no Anthropic key -> assistant is nil
+	u := newActiveTestUser(t, s, "owner@example.com")
+	userToken, _, err := s.users.CreateToken(u.ID, "setup")
+	require.NoError(t, err)
+	rr := request(t, s.API(), "POST", "/api/apps", `{"name":"blog"}`, userToken)
+	require.Equal(t, http.StatusCreated, rr.Code)
+
+	// No key configured: the web app hides the Assistant tab and opens on the editor.
+	rr = request(t, s.API(), "GET", "/api/apps/blog", "", userToken)
+	require.Equal(t, http.StatusOK, rr.Code)
+	var resp apiAppResponse
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &resp))
+	assert.False(t, resp.AssistantEnabled)
+
+	// With the assistant configured, the field flips true and the tab appears.
+	s.assistant = assistant.NewManager(assistant.NewClient("test-key"), &appOps{apps: s.apps}, assistant.NewMemoryStore(), "test-model")
+	rr = request(t, s.API(), "GET", "/api/apps/blog", "", userToken)
+	require.Equal(t, http.StatusOK, rr.Code)
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &resp))
+	assert.True(t, resp.AssistantEnabled)
+}
+
 func TestAgentRunEndpoint(t *testing.T) {
 	t.Parallel()
 	s := newTestServer(t)

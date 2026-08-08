@@ -55,6 +55,25 @@ export const langForFile = (path) => LANGS[extOf(path)] || "Text";
 
 export const looksBinary = (path) => BINARY_EXT.has(extOf(path));
 
+// knownTextExt reports whether the extension is one we already know is text/code,
+// so the editor can open it directly. Unknown or extensionless files fall through
+// to a server stat (a MIME sniff) instead of being downloaded just to find out.
+export const knownTextExt = (path) => extOf(path) in LANGS;
+
+const TEXT_APP_MIME = new Set([
+  "application/json", "application/javascript", "application/x-javascript",
+  "application/xml", "application/x-sh", "application/x-yaml", "application/yaml",
+  "application/toml", "application/x-httpd-php",
+]);
+
+// isTextMime reports whether a MIME type names text we can open in the editor:
+// any text/*, plus the common application/* text formats.
+export const isTextMime = (mimeType) => {
+  if (!mimeType) return false;
+  const base = mimeType.split(";")[0].trim().toLowerCase();
+  return base.startsWith("text/") || TEXT_APP_MIME.has(base);
+};
+
 const IMAGE_EXT = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg", "ico", "bmp", "avif"]);
 export const isImage = (path) => IMAGE_EXT.has(extOf(path));
 
