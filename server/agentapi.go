@@ -40,6 +40,7 @@ func (s *Server) newAgentRoutes(mux *http.ServeMux) {
 	route(mux, "PUT", "/apps/{app}/files/{path...}", s.requireApp(s.handleAgentFilePut))
 	route(mux, "GET", "/apps/{app}/files/{path...}", s.requireApp(s.handleAgentFileGet))
 	route(mux, "DELETE", "/apps/{app}/files/{path...}", s.requireApp(s.handleAgentFileDelete))
+	route(mux, "POST", "/apps/{app}/move", s.requireApp(s.handleAgentMove))
 	route(mux, "POST", "/apps/{app}/files", s.requireApp(s.handleAgentFileUpload))
 	route(mux, "PUT", "/apps/{app}/readme", s.requireApp(s.handleAgentReadmePut))
 	route(mux, "POST", "/apps/{app}/deploy", s.requireApp(s.handleAgentDeploy))
@@ -331,6 +332,25 @@ func uploadMode(raw string) (os.FileMode, error) {
 		return 0, fmt.Errorf("invalid mode %q: use octal permissions such as 644 or 755", raw)
 	}
 	return os.FileMode(parsed), nil
+}
+
+// handleAgentMove renames or moves a file within the app's home (used by the web
+// file browser to drag a file into a folder or rename it).
+func (s *Server) handleAgentMove(w http.ResponseWriter, r *http.Request, c *caller, a *store.App) {
+	var req apiMoveRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8192)).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if req.From == "" || req.To == "" {
+		writeError(w, http.StatusBadRequest, errors.New("both from and to are required"))
+		return
+	}
+	if err := s.apps.MoveFile(a.Name, req.From, req.To); err != nil {
+		writeAppError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, &apiMessageResponse{Message: "moved " + req.From + " to " + req.To})
 }
 
 func (s *Server) handleAgentFileDelete(w http.ResponseWriter, r *http.Request, c *caller, a *store.App) {

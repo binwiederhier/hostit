@@ -38,7 +38,7 @@ func TestLoadAppConfigStaticMode(t *testing.T) {
 	c := writeAndLoadConfig(t, "mode: static\n")
 	assert.Equal(t, ModeStatic, c.Mode)
 	// There is nothing else to say: a static app serves public/
-	assert.Contains(t, c.Command("/usr/bin/hostit"), `--dir "public"`)
+	assert.Equal(t, "/usr/bin/hostit static", c.Command("/usr/bin/hostit"))
 }
 
 func TestAppConfigValidate(t *testing.T) {
@@ -175,7 +175,7 @@ func TestStaticModeAlwaysServesPublic(t *testing.T) {
 	// A static app serves exactly public/, so there is no directory to configure
 	c := &AppConfig{Mode: ModeStatic}
 	require.NoError(t, c.Validate())
-	assert.Contains(t, c.Command("/usr/bin/hostit"), `--dir "public"`)
+	assert.Equal(t, "/usr/bin/hostit static", c.Command("/usr/bin/hostit"))
 
 	// The old "static: <dir>" spelling carried a directory value; it is now an
 	// unknown key whatever it points at, so a stale config is reported rather
@@ -211,7 +211,7 @@ func TestModeIsExplicit(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, c.Validate())
 	assert.Equal(t, ModeStatic, c.Mode)
-	assert.Contains(t, c.Command("/usr/bin/hostit"), `--dir "public"`)
+	assert.Equal(t, "/usr/bin/hostit static", c.Command("/usr/bin/hostit"))
 
 	c, err = ParseAppConfigStrict([]byte("mode: app\nrun: ./bin/server\n"))
 	require.NoError(t, err)

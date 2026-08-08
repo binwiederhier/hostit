@@ -1,20 +1,21 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, isNetworkError } from "../api";
-import { extOf, langForFile, looksBinary } from "../editorutil";
+import { extOf, langForFile, looksBinary, isImage, humanSize } from "../editorutil";
 import { highlight } from "../highlight";
 
 // The IDE view: a lazily-loaded file tree on the left (collapsible, resizable,
-// drop files onto it to upload), a tabbed text editor in the middle with syntax
-// highlighting, and an optional live-preview pane on the right. It drives the
-// same file endpoints the agent API exposes -- listing is per-directory, reads
-// and writes are raw bytes -- with the owner's session cookie.
+// drop OS files to upload, drag tree files between folders, rename/delete), a
+// tabbed text editor in the middle with syntax highlighting (and image/binary
+// previews), and an optional resizable live-preview pane on the right.
 
 const filesBase = (name) => `/api/apps/${encodeURIComponent(name)}/files`;
 const encPath = (rel) => rel.split("/").map(encodeURIComponent).join("/");
 const fileUrl = (name, rel) => `${filesBase(name)}/${encPath(rel)}`;
 const baseName = (path) => path.split("/").pop() || path;
+const parentDir = (path) => (path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "");
+const DRAG_TYPE = "application/x-hostit-path";
 
-const ICONS = { go: "\u{1F439}", md: "\u{1F4D8}", yml: "⚙️", yaml: "⚙️", html: "\u{1F310}", htm: "\u{1F310}", css: "\u{1F3A8}", js: "\u{1F4C4}", json: "\u{1F4CB}" };
+const ICONS = { go: "\u{1F439}", md: "\u{1F4D8}", yml: "⚙️", yaml: "⚙️", html: "\u{1F310}", htm: "\u{1F310}", css: "\u{1F3A8}", js: "\u{1F4C4}", json: "\u{1F4CB}", png: "\u{1F5BC}\u{FE0F}", jpg: "\u{1F5BC}\u{FE0F}", jpeg: "\u{1F5BC}\u{FE0F}", gif: "\u{1F5BC}\u{FE0F}", svg: "\u{1F5BC}\u{FE0F}", webp: "\u{1F5BC}\u{FE0F}" };
 const fileIcon = (path) => ICONS[extOf(path)] || "\u{1F4C4}";
 
 const sortEntries = (entries) =>
@@ -35,8 +36,10 @@ export default function AppEditor({ name, url, running, onDeploy }) {
   const [treeCollapsed, setTreeCollapsed] = useState(false);
   const [treeWidth, setTreeWidth] = useState(240);
   const [previewOn, setPreviewOn] = useState(false);
+  const [previewWidth, setPreviewWidth] = useState(440);
   const [previewKey, setPreviewKey] = useState(0);
-  const [dragTarget, setDragTarget] = useState(null); // "" = home, "src" = a folder, null = not dragging
+  const [dragTarget, setDragTarget] = useState(null);
+  const [isStatic, setIsStatic] = useState(false);
 
   const viewRef = useRef(null);
   const taRef = useRef(null);
@@ -65,7 +68,13 @@ export default function AppEditor({ name, url, running, onDeploy }) {
 
   useEffect(() => {
     loadDir("");
-  }, [loadDir]);
+    // Detect static mode so a plain Save can live-refresh the preview: a static
+    // app serves public/ directly, so a saved file there is immediately live.
+    api
+      .getText(fileUrl(name, "hostit.yml"))
+      .then((yml) => setIsStatic(/^\s*mode:\s*["']?static["']?\s*$/m.test(yml)))
+      .catch(() => {});
+  }, [loadDir, name]);
 
   const toggleFolder = (dir) =>
     setExpanded((s) => {
@@ -79,11 +88,11 @@ export default function AppEditor({ name, url, running, onDeploy }) {
       return n;
     });
 
-  const openFile = (path) => {
+  const openFile = (path, size) => {
     setActive(path);
     setError("");
     if (tabs.some((t) => t.path === path)) return;
-    setTabs((t) => [...t, { path, content: "", saved: "", loading: true, binary: false, error: "" }]);
+    setTabs((t) => [...t, { path, size, content: "", saved: "", loading: true, binary: false, imgFailed: false, error: "" }]);
     if (looksBinary(path)) {
       setTabs((t) => t.map((x) => (x.path === path ? { ...x, loading: false, binary: true } : x)));
       return;
@@ -91,7 +100,7 @@ export default function AppEditor({ name, url, running, onDeploy }) {
     api
       .getText(fileUrl(name, path))
       .then((text) => {
-        const binary = text.includes("\u0000"); // a NUL byte means it is not text
+        const binary = text.includes("\u0000");
         setTabs((t) => t.map((x) => (x.path === path ? { ...x, loading: false, content: text, saved: text, binary } : x)));
       })
       .catch((e) => setTabs((t) => t.map((x) => (x.path === path ? { ...x, loading: false, error: e.message } : x))));
@@ -120,6 +129,8 @@ export default function AppEditor({ name, url, running, onDeploy }) {
     try {
       await api.putRaw(fileUrl(name, cur.path), cur.content);
       setTabs((t) => t.map((x) => (x.path === cur.path ? { ...x, saved: cur.content } : x)));
+      // A static app serves public/ live, so a save there is enough to refresh.
+      if (isStatic && cur.path.startsWith("public/")) setPreviewKey((k) => k + 1);
       return true;
     } catch (e) {
       setError(e.message);
@@ -127,7 +138,7 @@ export default function AppEditor({ name, url, running, onDeploy }) {
     } finally {
       setBusy("");
     }
-  }, [tabs, active, name]);
+  }, [tabs, active, name, isStatic]);
 
   const saveAndDeploy = async () => {
     if ((await save()) === false) return;
@@ -135,7 +146,7 @@ export default function AppEditor({ name, url, running, onDeploy }) {
     setError("");
     try {
       await api.post(`/api/apps/${encodeURIComponent(name)}/deploy`);
-      setPreviewKey((k) => k + 1); // reload the preview once the new content is live
+      setPreviewKey((k) => k + 1);
       if (onDeploy) onDeploy();
     } catch (e) {
       setError(e.message);
@@ -144,7 +155,7 @@ export default function AppEditor({ name, url, running, onDeploy }) {
     }
   };
 
-  // Drop files onto the tree (background -> home, or onto a folder) to upload.
+  // --- uploads (OS files) and moves (tree files) ---
   const uploadTo = async (targetDir, fileList) => {
     const files = Array.from(fileList || []);
     if (!files.length) return;
@@ -152,8 +163,7 @@ export default function AppEditor({ name, url, running, onDeploy }) {
     setBusy("uploading");
     try {
       for (const f of files) {
-        const rel = (targetDir ? targetDir + "/" : "") + f.name;
-        await api.putRaw(fileUrl(name, rel), f);
+        await api.putRaw(fileUrl(name, (targetDir ? targetDir + "/" : "") + f.name), f);
       }
       await loadDir(targetDir);
       if (targetDir) setExpanded((s) => new Set(s).add(targetDir));
@@ -164,14 +174,68 @@ export default function AppEditor({ name, url, running, onDeploy }) {
     }
   };
 
-  const hasFiles = (e) => e.dataTransfer && Array.from(e.dataTransfer.types || []).includes("Files");
+  const moveEntry = async (from, targetDir) => {
+    if (parentDir(from) === targetDir) return; // already there
+    const to = (targetDir ? targetDir + "/" : "") + baseName(from);
+    setError("");
+    try {
+      await api.post(`/api/apps/${encodeURIComponent(name)}/move`, { from, to });
+      await Promise.all([loadDir(parentDir(from)), loadDir(targetDir)]);
+      if (targetDir) setExpanded((s) => new Set(s).add(targetDir));
+      setTabs((t) => t.map((x) => (x.path === from ? { ...x, path: to } : x)));
+      setActive((a) => (a === from ? to : a));
+    } catch (e) {
+      setError("Move failed: " + e.message);
+    }
+  };
+
+  const renameEntry = async (path) => {
+    const cur = baseName(path);
+    const next = window.prompt("Rename to", cur);
+    if (!next || next === cur) return;
+    const to = (parentDir(path) ? parentDir(path) + "/" : "") + next;
+    setError("");
+    try {
+      await api.post(`/api/apps/${encodeURIComponent(name)}/move`, { from: path, to });
+      await loadDir(parentDir(path));
+      setTabs((t) => t.map((x) => (x.path === path ? { ...x, path: to } : x)));
+      setActive((a) => (a === path ? to : a));
+    } catch (e) {
+      setError("Rename failed: " + e.message);
+    }
+  };
+
+  const deleteEntry = async (path) => {
+    if (!window.confirm(`Delete ${baseName(path)}? This can't be undone.`)) return;
+    setError("");
+    try {
+      await api.del(fileUrl(name, path));
+      await loadDir(parentDir(path));
+      closeTab(path);
+    } catch (e) {
+      setError("Delete failed: " + e.message);
+    }
+  };
+
+  const canDrop = (e) => {
+    const types = Array.from(e.dataTransfer?.types || []);
+    return types.includes("Files") || types.includes(DRAG_TYPE);
+  };
+  const doDrop = (e, target) => {
+    const files = e.dataTransfer.files;
+    if (files && files.length) uploadTo(target, files);
+    else {
+      const from = e.dataTransfer.getData(DRAG_TYPE);
+      if (from) moveEntry(from, target);
+    }
+  };
   const onTreeDragOver = (e) => {
-    if (!hasFiles(e)) return;
+    if (!canDrop(e)) return;
     e.preventDefault();
     setDragTarget((cur) => (cur && cur !== "" ? cur : ""));
   };
   const onFolderDragOver = (e, folder) => {
-    if (!hasFiles(e)) return;
+    if (!canDrop(e)) return;
     e.preventDefault();
     e.stopPropagation();
     setDragTarget(folder);
@@ -183,16 +247,15 @@ export default function AppEditor({ name, url, running, onDeploy }) {
     e.preventDefault();
     const target = dragTarget || "";
     setDragTarget(null);
-    uploadTo(target, e.dataTransfer.files);
+    doDrop(e, target);
   };
   const onFolderDrop = (e, folder) => {
     e.preventDefault();
     e.stopPropagation();
     setDragTarget(null);
-    uploadTo(folder, e.dataTransfer.files);
+    doDrop(e, folder);
   };
 
-  // Cmd/Ctrl+S saves the active file.
   useEffect(() => {
     const onKey = (e) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") {
@@ -226,14 +289,13 @@ export default function AppEditor({ name, url, running, onDeploy }) {
     if (gutterRef.current) gutterRef.current.scrollTop = ta.scrollTop;
   };
 
-  // Drag the divider between the tree and the editor to resize the tree.
-  const startTreeResize = (e) => {
+  // Drag a divider to resize the tree (from the left) or the preview (from the right).
+  const dragResize = (e, setter, fromRight) => {
     e.preventDefault();
     const move = (ev) => {
-      const x = ev.clientX;
-      if (x == null || !viewRef.current) return;
-      const left = viewRef.current.getBoundingClientRect().left;
-      setTreeWidth(Math.min(Math.max(x - left, 150), 480));
+      if (ev.clientX == null || !viewRef.current) return;
+      const r = viewRef.current.getBoundingClientRect();
+      setter(fromRight ? Math.min(Math.max(r.right - ev.clientX, 240), 900) : Math.min(Math.max(ev.clientX - r.left, 150), 480));
     };
     const up = () => {
       window.removeEventListener("pointermove", move);
@@ -282,16 +344,31 @@ export default function AppEditor({ name, url, running, onDeploy }) {
         );
       }
       return (
-        <button
+        <div
           key={entry.path}
-          type="button"
+          role="button"
+          tabIndex={0}
+          draggable
           className={"ed-row ed-file" + (active === entry.path ? " sel" : "")}
           style={{ paddingLeft: 8 + depth * 14 + 16 }}
-          onClick={() => openFile(entry.path)}
+          onClick={() => openFile(entry.path, entry.size)}
+          onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && openFile(entry.path, entry.size)}
+          onDragStart={(e) => {
+            e.dataTransfer.setData(DRAG_TYPE, entry.path);
+            e.dataTransfer.effectAllowed = "move";
+          }}
         >
           <span className="ed-ico">{fileIcon(entry.path)}</span>
           <span className="ed-nm">{nm}</span>
-        </button>
+          <span className="ed-row-actions">
+            <button type="button" className="ed-row-act" title="Rename" aria-label={"Rename " + nm} onClick={(e) => { e.stopPropagation(); renameEntry(entry.path); }}>
+              ✎
+            </button>
+            <button type="button" className="ed-row-act" title="Delete" aria-label={"Delete " + nm} onClick={(e) => { e.stopPropagation(); deleteEntry(entry.path); }}>
+              🗑
+            </button>
+          </span>
+        </div>
       );
     });
   };
@@ -322,13 +399,11 @@ export default function AppEditor({ name, url, running, onDeploy }) {
               onDrop={onTreeDrop}
             >
               {renderChildren("", 0)}
-              {dragTarget !== null && (
-                <div className="ed-drophint">Drop to upload to {dragTarget ? dragTarget + "/" : "the app home"}</div>
-              )}
+              {dragTarget !== null && <div className="ed-drophint">Drop into {dragTarget ? dragTarget + "/" : "the app home"}</div>}
             </div>
           </aside>
-          <div className="ed-resizer" role="separator" aria-orientation="vertical" aria-label="Resize file tree" onPointerDown={startTreeResize}>
-            <span className="ed-resizer-grip" aria-hidden="true" />
+          <div className="ws-resizer" role="separator" aria-orientation="vertical" aria-label="Resize file tree" onPointerDown={(e) => dragResize(e, setTreeWidth, false)}>
+            <span className="ws-resizer-grip" aria-hidden="true" />
           </div>
         </>
       )}
@@ -353,12 +428,7 @@ export default function AppEditor({ name, url, running, onDeploy }) {
               </div>
             ))}
           </div>
-          <button
-            type="button"
-            className={"ed-ctl" + (previewOn ? " on" : "")}
-            onClick={() => setPreviewOn((v) => !v)}
-            title={previewOn ? "Hide preview" : "Show live preview"}
-          >
+          <button type="button" className={"ed-ctl" + (previewOn ? " on" : "")} onClick={() => setPreviewOn((v) => !v)} title={previewOn ? "Hide preview" : "Show live preview"}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
               <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z" />
               <circle cx="12" cy="12" r="3" />
@@ -371,18 +441,34 @@ export default function AppEditor({ name, url, running, onDeploy }) {
           {!activeTab ? (
             <div className="ed-empty">
               <p>Pick a file from the tree to edit it.</p>
-              <p className="ed-empty-sub">Drag files onto the tree to upload. Changes save to the app; deploy to apply them.</p>
+              <p className="ed-empty-sub">Drop files to upload, drag files between folders, rename or delete on hover.</p>
             </div>
           ) : activeTab.loading ? (
             <div className="ed-empty">Loading {baseName(activeTab.path)}...</div>
           ) : activeTab.error ? (
             <div className="ed-empty ed-err">{activeTab.error}</div>
           ) : activeTab.binary ? (
-            <div className="ed-empty">
-              <p>{baseName(activeTab.path)} is a binary file and can't be edited here.</p>
-              <p className="ed-empty-sub">
-                <a href={fileUrl(name, activeTab.path)}>Download it</a> instead.
-              </p>
+            <div className="ed-binary">
+              {isImage(activeTab.path) && !activeTab.imgFailed ? (
+                <img
+                  className="ed-img"
+                  src={fileUrl(name, activeTab.path)}
+                  alt={baseName(activeTab.path)}
+                  onError={() => setTabs((t) => t.map((x) => (x.path === activeTab.path ? { ...x, imgFailed: true } : x)))}
+                />
+              ) : (
+                <div className="ed-doc" aria-hidden="true">
+                  {"\u{1F4C4}"}
+                </div>
+              )}
+              <div className="ed-binary-name">{baseName(activeTab.path)}</div>
+              <div className="ed-binary-meta">
+                {langForFile(activeTab.path)}
+                {activeTab.size != null ? " · " + humanSize(activeTab.size) : ""}
+              </div>
+              <a className="ed-binary-dl" href={fileUrl(name, activeTab.path)}>
+                Download
+              </a>
             </div>
           ) : (
             <div className="ed-code">
@@ -427,11 +513,12 @@ export default function AppEditor({ name, url, running, onDeploy }) {
             <>
               <span className="ed-status-meta">{langForFile(activeTab.path)}</span>
               <span className="ed-status-meta">{dirty ? "Unsaved" : "Saved"}</span>
-              <button type="button" className="ed-btn" disabled={!dirty || !!busy} onClick={save}>
-                {busy === "saving" ? "Saving..." : "Save"}
-              </button>
-              <button type="button" className="ed-btn ed-btn-primary" disabled={!!busy} onClick={saveAndDeploy}>
+              {/* Save & deploy is the safe secondary; Save (primary) is the common act. */}
+              <button type="button" className="ed-btn" disabled={!!busy} onClick={saveAndDeploy}>
                 {busy === "deploying" ? "Deploying..." : "Save & deploy"}
+              </button>
+              <button type="button" className="ed-btn ed-btn-primary" disabled={!dirty || !!busy} onClick={save}>
+                {busy === "saving" ? "Saving..." : "Save"}
               </button>
             </>
           )}
@@ -439,24 +526,18 @@ export default function AppEditor({ name, url, running, onDeploy }) {
       </div>
 
       {previewOn && (
-        <div className="ed-preview">
-          <div className="ed-preview-bar">
-            <span className="ed-preview-url">{name} · live</span>
-            <button type="button" className="ed-refresh" title="Reload preview" aria-label="Reload preview" onClick={() => setPreviewKey((k) => k + 1)}>
-              {"↻"}
-            </button>
+        <>
+          <div className="ws-resizer" role="separator" aria-orientation="vertical" aria-label="Resize preview" onPointerDown={(e) => dragResize(e, setPreviewWidth, true)}>
+            <span className="ws-resizer-grip" aria-hidden="true" />
           </div>
-          {running ? (
-            <iframe
-              key={previewKey}
-              title={`Live preview of ${name}`}
-              src={`${url}${url && url.includes("?") ? "&" : "?"}_hostitprev=${previewKey}`}
-              sandbox="allow-scripts allow-same-origin allow-forms"
-            />
-          ) : (
-            <div className="ed-empty">The app is powered off.</div>
-          )}
-        </div>
+          <div className="ed-preview" style={{ flex: `0 0 ${previewWidth}px` }}>
+            {running ? (
+              <iframe key={previewKey} title={`Live preview of ${name}`} src={`${url}${url && url.includes("?") ? "&" : "?"}_hostitprev=${previewKey}`} sandbox="allow-scripts allow-same-origin allow-forms" />
+            ) : (
+              <div className="ed-empty">The app is powered off.</div>
+            )}
+          </div>
+        </>
       )}
     </div>
   );

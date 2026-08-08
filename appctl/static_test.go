@@ -80,7 +80,7 @@ func TestStaticCommandInConfig(t *testing.T) {
 	t.Parallel()
 	c := &AppConfig{Mode: ModeStatic}
 	require.NoError(t, c.Validate())
-	assert.Equal(t, `/usr/bin/hostit static --dir "public"`, c.Command("/usr/bin/hostit"))
+	assert.Equal(t, `/usr/bin/hostit static`, c.Command("/usr/bin/hostit"))
 	// Other modes keep their own command
 	c = &AppConfig{Mode: ModeApp, Run: "./server"}
 	require.NoError(t, c.Validate())

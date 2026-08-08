@@ -218,7 +218,6 @@ const UsageGrid = ({ app }) => {
       <Stat label="CPU" pct={cpuPct} value={`${cpuPct}%`} detail={`CPU ${cpuPct}%`} />
       <Stat label="RAM" pct={memPct} value={`${memPct}%`} detail={`RAM ${mb(app.memory_mb, app.memory_limit_mb)}`} />
       <Stat label="Disk" pct={diskPct} value={`${diskPct}%`} detail={`Disk ${mb(app.disk_mb, app.disk_limit_mb)}`} />
-      <Stat label="Uptime" value={formatUptime(app.started_at)} detail={`Up ${formatUptime(app.started_at)}`} metered={false} />
     </div>
   );
 };
@@ -1551,7 +1550,7 @@ const AppDetail = ({ account, refreshAccount }) => {
         </div>
         <div className={"ws-termwrap" + (view === "terminal" ? "" : " ws-inactive")}>
           <Suspense fallback={<div className="ws-chat-loading">Loading terminal...</div>}>
-            <AppTerminal name={app.name} embedded />
+            <AppTerminal name={app.name} embedded onSsh={() => setShowSsh(true)} />
           </Suspense>
         </div>
         {/* The workspace: build on the left, watch it change on the right, with a

@@ -97,4 +97,15 @@ export const api = {
   del: (path) => request("DELETE", path),
   getText,
   putRaw,
+  // getBlob reads a file as raw bytes (for previewing/moving binary files).
+  getBlob: async (path) => {
+    let res;
+    try {
+      res = await fetch(path, { credentials: "same-origin" });
+    } catch {
+      throw new ApiError(0, "Network error, check your connection and try again");
+    }
+    if (!res.ok) throw new ApiError(res.status, `Request failed (HTTP ${res.status})`);
+    return res.blob();
+  },
 };

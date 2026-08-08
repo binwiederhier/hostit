@@ -103,7 +103,7 @@ func (c *AppConfig) Validate() error {
 // get wrong.
 func (c *AppConfig) Command(hostitBin string) string {
 	if c.Mode == ModeStatic {
-		return fmt.Sprintf("%s static --dir %q", hostitBin, PublicDir)
+		return fmt.Sprintf("%s static", hostitBin)
 	}
 	return c.Run
 }

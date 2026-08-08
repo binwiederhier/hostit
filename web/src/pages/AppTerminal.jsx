@@ -13,7 +13,7 @@ import "@xterm/xterm/css/xterm.css";
 // deliberately not dimming the page behind it so the live preview stays visible),
 // and a full-window page reached by the pop-out (and directly at
 // /app/<name>/terminal).
-const AppTerminal = ({ name, onClose, onMinimize, onReady, onSessionEnd, minimized = false, fullPage = false, embedded = false }) => {
+const AppTerminal = ({ name, onClose, onMinimize, onReady, onSessionEnd, onSsh, minimized = false, fullPage = false, embedded = false }) => {
   // embedded fills its container inline (a workspace view); fullPage is the fixed
   // full-window overlay. Both drop the floating panel's drag/minimize chrome.
   const fixed = fullPage || embedded;
@@ -165,7 +165,14 @@ const AppTerminal = ({ name, onClose, onMinimize, onReady, onSessionEnd, minimiz
               </svg>
             </button>
           )}
-          {!fixed && (
+          {onSsh && (
+            <button type="button" className="term-btn" onClick={onSsh} title="Connect via SSH" aria-label="Connect via SSH">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M2 4h12v8H2zM4 6.5 6.5 8 4 9.5M8 10h4" />
+              </svg>
+            </button>
+          )}
+          {!fullPage && (
             <button type="button" className="term-btn" onClick={popOut} title="Open in a new window" aria-label="Pop out">
               <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M6 3H3v10h10v-3M9.5 2H14v4.5M14 2 7.5 8.5" />

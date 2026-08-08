@@ -71,9 +71,8 @@ var (
 	}
 	cmdStatic = &cli.Command{
 		Name:  "static",
-		Usage: "Serve a directory over HTTP (used by \"mode: static\" apps)",
+		Usage: "Serve the app's public/ directory over HTTP (used by \"mode: static\" apps)",
 		Flags: []cli.Flag{
-			&cli.StringFlag{Name: "dir", Aliases: []string{"d"}, Value: ".", Usage: "directory to serve"},
 			&cli.IntFlag{Name: "port", Aliases: []string{"p"}, Usage: "port to listen on; defaults to $PORT"},
 		},
 		Action: execStatic,
@@ -166,7 +165,13 @@ func execStatic(c *cli.Context) error {
 	if port == 0 {
 		return errors.New("no port: pass --port or set $PORT")
 	}
-	dir := c.String("dir")
+	// Always serve ~/public: a static app has exactly one place for its web
+	// files, so there is nothing to point at and nothing to get wrong.
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("cannot resolve home directory: %w", err)
+	}
+	dir := filepath.Join(home, appctl.PublicDir)
 	if _, err := os.Stat(dir); err != nil {
 		return fmt.Errorf("cannot serve %s: %w", dir, err)
 	}

@@ -250,6 +250,12 @@ type apiAgentAssistantResponse struct {
 	Transcript string `json:"transcript"`
 }
 
+// apiMoveRequest is the body of POST /api/apps/{app}/move: rename/move a file
+type apiMoveRequest struct {
+	From string `json:"from"`
+	To   string `json:"to"`
+}
+
 // apiRunRequest is the body of POST /api/apps/{app}/run
 type apiRunRequest struct {
 	Command        string `json:"command"`

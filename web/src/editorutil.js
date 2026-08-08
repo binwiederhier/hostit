@@ -54,3 +54,13 @@ export const extOf = (path) => {
 export const langForFile = (path) => LANGS[extOf(path)] || "Text";
 
 export const looksBinary = (path) => BINARY_EXT.has(extOf(path));
+
+const IMAGE_EXT = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg", "ico", "bmp", "avif"]);
+export const isImage = (path) => IMAGE_EXT.has(extOf(path));
+
+export const humanSize = (bytes) => {
+  if (bytes == null) return "";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+};

@@ -222,6 +222,33 @@ func (m *Manager) DeleteFile(name, relPath string) error {
 	return root.Remove(rel)
 }
 
+// MoveFile renames or moves a file within the app's home -- dragging it into
+// another folder, or renaming it in place. Both paths stay inside the home
+// (safeRel), the destination's parent is created if needed, and an existing
+// destination is refused rather than silently clobbered.
+func (m *Manager) MoveFile(name, fromRel, toRel string) error {
+	from, err := m.safeRel(name, fromRel)
+	if err != nil {
+		return err
+	}
+	to, err := m.safeRel(name, toRel)
+	if err != nil {
+		return err
+	}
+	root, err := m.appRoot(name)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	if _, err := root.Stat(to); err == nil {
+		return fmt.Errorf("cannot move to %s: a file already exists there", toRel)
+	}
+	if err := root.MkdirAll(path.Dir(to), 0o755); err != nil {
+		return err
+	}
+	return root.Rename(from, to)
+}
+
 // ListFiles returns the app's own files, skipping hostit's internal state
 // ListFiles returns one directory of the app, not the whole tree. An app with a
 // node_modules would otherwise answer with tens of thousands of entries, built

@@ -34,3 +34,22 @@ func TestFileExists(t *testing.T) {
 	assert.False(t, m.FileExists("blog", "uploads/missing.png"))
 	assert.False(t, m.FileExists("blog", "../../etc/passwd")) // traversal refused
 }
+
+func TestMoveFile(t *testing.T) {
+	t.Parallel()
+	m, _, _ := newTestDeployManager(t)
+	createTestApp(t, m, "blog")
+	writeAppFile(t, m, "blog", "a.txt", "hi")
+
+	require.NoError(t, m.MoveFile("blog", "a.txt", "public/b.txt"))
+	assert.False(t, m.FileExists("blog", "a.txt"))
+	b, err := m.ReadFile("blog", "public/b.txt")
+	require.NoError(t, err)
+	assert.Equal(t, "hi", string(b))
+
+	// Refuse to clobber an existing destination.
+	writeAppFile(t, m, "blog", "c.txt", "x")
+	assert.Error(t, m.MoveFile("blog", "c.txt", "public/b.txt"))
+	// Traversal out of the home is refused.
+	assert.Error(t, m.MoveFile("blog", "public/b.txt", "../escape.txt"))
+}

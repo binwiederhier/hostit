@@ -13,8 +13,8 @@
   --text: #191d21;
   --muted: #5d6b76;
   --border: #d8dee4;
-  --accent: #047857;
-  --accent-strong: #065f46;
+  --accent: #128294;
+  --accent-strong: #0d6b7a;
   --on-accent: #ffffff;
   --danger: #b42323;
   --danger-bg: #fbe9e9;
@@ -29,7 +29,7 @@
   --term-text: #d7dfe6;
   --term-green: #4ade80;
   --term-muted: #7e8b97;
-  --focus: #04785766;
+  --focus: #12829466;
 }
 
 /* Explicit dark choice, and (via the media query) "system" mode when no data-theme
@@ -42,9 +42,9 @@
   --text: #e5e9ec;
   --muted: #96a1ab;
   --border: #2b333c;
-  --accent: #34d399;
-  --accent-strong: #6ee7b7;
-  --on-accent: #08130e;
+  --accent: #128294;
+  --accent-strong: #3bb0c4;
+  --on-accent: #ffffff;
   --danger: #f08585;
   --danger-bg: #3a1c1c;
   --status-up: #4ade80;
@@ -55,7 +55,7 @@
   --warn-bg: #2c2612;
   --term-bg: #10141a;
   --term-border: #2b333c;
-  --focus: #34d39966;
+  --focus: #12829466;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -66,9 +66,9 @@
     --text: #e5e9ec;
     --muted: #96a1ab;
     --border: #2b333c;
-    --accent: #34d399;
-    --accent-strong: #6ee7b7;
-    --on-accent: #08130e;
+    --accent: #128294;
+    --accent-strong: #3bb0c4;
+    --on-accent: #ffffff;
     --danger: #f08585;
     --danger-bg: #3a1c1c;
     --status-up: #4ade80;
@@ -79,7 +79,7 @@
     --warn-bg: #2c2612;
     --term-bg: #10141a;
     --term-border: #2b333c;
-    --focus: #34d39966;
+    --focus: #12829466;
   }
 }
 
@@ -2494,3 +2494,30 @@ body.ws-resizing iframe { pointer-events: none; }
 /* Keep all three workspace views mounted; hide the inactive ones. !important
    beats each view's explicit display (grid/flex). */
 .ws-inactive { display: none !important; }
+
+/* ---- Editor view v3: resizers, row actions, image/binary preview ---- */
+/* Editor resizers reuse the assistant resizer look; size them as flex items. */
+.ed-view .ws-resizer { flex: none; width: 10px; }
+
+/* File-row hover actions (rename / delete). */
+.ed-row { position: relative; }
+.ed-row-actions { margin-left: auto; display: inline-flex; gap: 1px; opacity: 0; transition: opacity 0.1s ease; }
+.ed-row:hover .ed-row-actions,
+.ed-row:focus-within .ed-row-actions { opacity: 1; }
+.ed-row-act { border: 0; background: none; color: var(--muted); cursor: pointer; font-size: 12px; line-height: 1; padding: 2px 4px; border-radius: 4px; }
+.ed-row-act:hover { color: var(--text); background: var(--surface-2); }
+.ed-file[draggable="true"] { cursor: default; }
+
+/* Image and binary previews in the editor body. */
+.ed-binary { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 24px; text-align: center; color: var(--muted); background: var(--surface); overflow: auto; }
+.ed-img { max-width: 100%; max-height: 72%; object-fit: contain; border-radius: 8px; box-shadow: 0 4px 18px rgba(0, 0, 0, 0.18); background: repeating-conic-gradient(#0000 0% 25%, rgba(127, 127, 127, 0.12) 0% 50%) 50% / 20px 20px; }
+.ed-doc { font-size: 56px; line-height: 1; }
+.ed-binary-name { color: var(--text); font-family: var(--mono); font-size: 14px; word-break: break-all; }
+.ed-binary-meta { font-size: 12px; }
+.ed-binary-dl { font-size: 13px; }
+
+/* Preview pane has no header row now. */
+.ed-preview { flex-direction: column; }
+
+/* Top bar: keep the status text close to the status dot. */
+.ws-idrow { gap: 8px; }
