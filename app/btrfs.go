@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"log/slog"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -26,6 +27,10 @@ func (m *Manager) btrfsEnabled() bool {
 	m.btrfsOnce.Do(func() {
 		out, err := m.runner.RunTimeout(btrfsTimeout, "stat", "-f", "-c", "%T", m.config.AppsDir)
 		m.btrfsOK = err == nil && strings.TrimSpace(out) == "btrfs"
+		// Logged once: if this is wrongly false, every app created this daemon
+		// lifetime gets a plain-directory home instead of a subvolume (no
+		// snapshots/quotas/rollback/fork), which is otherwise silent.
+		slog.Info("Detected app-homes filesystem", "path", m.config.AppsDir, "btrfs", m.btrfsOK, "fstype", strings.TrimSpace(out), "stat_err", err)
 	})
 	return m.btrfsOK
 }

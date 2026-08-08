@@ -254,6 +254,9 @@ func (m *Manager) create(name string, opts *CreateOptions, seedPath string) (*st
 			return nil, fmt.Errorf("cannot create home subvolume for %s: %w", name, err)
 		}
 	}
+	// Record whether this home is a btrfs subvolume: a plain-directory home (btrfs
+	// off) silently lacks snapshots/quotas/rollback/fork, so make the choice visible.
+	slog.Info("Creating app", "app", name, "port", port, "subvolume", forking || m.btrfsEnabled(), "forked", forking)
 	if err := m.ops.CreateUser(name, home, m.uidFor(port)); err != nil {
 		if m.btrfsEnabled() {
 			_ = m.deleteSubvolume(home)
@@ -339,13 +342,18 @@ func (m *Manager) DeleteApp(name string) error {
 	_, _ = m.runner.Run("systemctl", "reset-failed", unitName(name))
 	_, _ = m.runner.Run("podman", "rm", "--force", containerName(name))
 	// On btrfs the home and snapshots are subvolumes that userdel's rm -rf cannot
-	// remove, so delete them first and leave an empty plain directory for userdel.
+	// remove, so delete them first.
 	if m.btrfsEnabled() {
 		m.deleteAppSubvolumes(name)
-		_ = os.MkdirAll(m.appHome(name), homeMode)
 	}
 	if err := m.ops.DeleteUser(name); err != nil {
 		return fmt.Errorf("cannot delete user %s: %w", name, err)
+	}
+	// userdel --remove will not delete a home directory it does not own -- on btrfs
+	// the home was a subvolume removed above, and any recreated stub is root-owned --
+	// so remove whatever is left, or an empty home dir is orphaned under AppsDir.
+	if err := os.RemoveAll(m.appHome(name)); err != nil {
+		slog.Warn("Could not remove leftover home directory after deleting app", "app", name, "path", m.appHome(name), "error", err)
 	}
 	if err := m.store.RemoveApp(name); err != nil {
 		return err

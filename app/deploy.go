@@ -3,6 +3,7 @@ package app
 import (
 	"fmt"
 	"log/slog"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -190,8 +191,46 @@ func (m *Manager) ReconcileOrphans() []string {
 		removed = append(removed, name)
 	}
 	removed = append(removed, m.reconcileContainers(known)...)
+	removed = append(removed, m.reconcileHomes(known)...)
 	if len(removed) > 0 {
 		slog.Info("Removed leftovers of deleted apps", "apps", removed)
+	}
+	return removed
+}
+
+// reconcileHomes sweeps empty home directories left under AppsDir for apps no
+// longer in the registry -- e.g. the root-owned stub userdel can leave behind on
+// btrfs (see DeleteApp). A non-empty orphan is logged but kept, so a surprise is
+// surfaced for a human rather than silently deleted; hidden entries (.snapshots,
+// .backup, dotfiles) are never touched.
+func (m *Manager) reconcileHomes(known map[string]bool) []string {
+	entries, err := os.ReadDir(m.config.AppsDir)
+	if err != nil {
+		slog.Warn("Cannot list app homes to reconcile", "error", err)
+		return nil
+	}
+	removed := make([]string, 0)
+	for _, e := range entries {
+		name := e.Name()
+		if !e.IsDir() || strings.HasPrefix(name, ".") || known[name] {
+			continue
+		}
+		home := filepath.Join(m.config.AppsDir, name)
+		inner, err := os.ReadDir(home)
+		if err != nil {
+			slog.Warn("Cannot inspect orphaned app home", "app", name, "path", home, "error", err)
+			continue
+		}
+		if len(inner) > 0 {
+			slog.Warn("Orphaned app home is not empty; leaving it in place", "app", name, "path", home, "entries", len(inner))
+			continue
+		}
+		if err := os.Remove(home); err != nil {
+			slog.Warn("Cannot remove empty orphaned app home", "app", name, "path", home, "error", err)
+			continue
+		}
+		slog.Info("Removed empty orphaned app home", "app", name, "path", home)
+		removed = append(removed, name)
 	}
 	return removed
 }
