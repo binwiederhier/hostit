@@ -4,9 +4,9 @@ import { extOf, langForFile, looksBinary, isImage, humanSize } from "../editorut
 import { highlight } from "../highlight";
 
 // The IDE view: a lazily-loaded file tree on the left (collapsible, resizable,
-// drop OS files to upload, drag tree files between folders, rename/delete), a
-// tabbed text editor in the middle with syntax highlighting (and image/binary
-// previews), and an optional resizable live-preview pane on the right.
+// drop OS files to upload with progress, drag tree files between folders,
+// rename/delete files and folders), a tabbed editor in the middle with syntax
+// highlighting and image/binary previews, and an optional resizable preview pane.
 
 const filesBase = (name) => `/api/apps/${encodeURIComponent(name)}/files`;
 const encPath = (rel) => rel.split("/").map(encodeURIComponent).join("/");
@@ -24,7 +24,7 @@ const sortEntries = (entries) =>
     return baseName(a.path).localeCompare(baseName(b.path));
   });
 
-export default function AppEditor({ name, url, running, onDeploy }) {
+export default function AppEditor({ name, url, running, diskMB, diskLimitMB, onDeploy }) {
   const [dirs, setDirs] = useState({});
   const [expanded, setExpanded] = useState(() => new Set([""]));
   const [loadingDirs, setLoadingDirs] = useState(() => new Set());
@@ -32,6 +32,8 @@ export default function AppEditor({ name, url, running, onDeploy }) {
   const [active, setActive] = useState(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState("");
+  const [uploadPct, setUploadPct] = useState(null);
+  const [dialog, setDialog] = useState(null); // {type:'rename'|'delete', path, isDir, value}
 
   const [treeCollapsed, setTreeCollapsed] = useState(false);
   const [treeWidth, setTreeWidth] = useState(240);
@@ -66,10 +68,15 @@ export default function AppEditor({ name, url, running, onDeploy }) {
     [name]
   );
 
+  // Refresh reloads every open folder, not just the root -- a file written into a
+  // subfolder (or by the assistant) would otherwise stay invisible.
+  const refreshTree = useCallback(() => {
+    loadDir("");
+    expanded.forEach((d) => d && loadDir(d));
+  }, [loadDir, expanded]);
+
   useEffect(() => {
     loadDir("");
-    // Detect static mode so a plain Save can live-refresh the preview: a static
-    // app serves public/ directly, so a saved file there is immediately live.
     api
       .getText(fileUrl(name, "hostit.yml"))
       .then((yml) => setIsStatic(/^\s*mode:\s*["']?static["']?\s*$/m.test(yml)))
@@ -129,7 +136,6 @@ export default function AppEditor({ name, url, running, onDeploy }) {
     try {
       await api.putRaw(fileUrl(name, cur.path), cur.content);
       setTabs((t) => t.map((x) => (x.path === cur.path ? { ...x, saved: cur.content } : x)));
-      // A static app serves public/ live, so a save there is enough to refresh.
       if (isStatic && cur.path.startsWith("public/")) setPreviewKey((k) => k + 1);
       return true;
     } catch (e) {
@@ -155,15 +161,29 @@ export default function AppEditor({ name, url, running, onDeploy }) {
     }
   };
 
-  // --- uploads (OS files) and moves (tree files) ---
+  // --- uploads (OS files, with progress + quota check) and moves (tree files) ---
   const uploadTo = async (targetDir, fileList) => {
     const files = Array.from(fileList || []);
     if (!files.length) return;
     setError("");
+    // Reject up front anything that would breach the disk quota.
+    if (diskLimitMB) {
+      const totalMB = files.reduce((s, f) => s + f.size, 0) / (1024 * 1024);
+      const leftMB = diskLimitMB - (diskMB || 0);
+      if (totalMB > leftMB) {
+        setError(`That upload is ${totalMB.toFixed(1)} MB but only ${Math.max(0, leftMB).toFixed(1)} MB of quota is left.`);
+        return;
+      }
+    }
     setBusy("uploading");
+    setUploadPct(0);
     try {
+      let done = 0;
       for (const f of files) {
-        await api.putRaw(fileUrl(name, (targetDir ? targetDir + "/" : "") + f.name), f);
+        await api.putRawProgress(fileUrl(name, (targetDir ? targetDir + "/" : "") + f.name), f, (p) =>
+          setUploadPct(Math.round(((done + p) / files.length) * 100))
+        );
+        done += 1;
       }
       await loadDir(targetDir);
       if (targetDir) setExpanded((s) => new Set(s).add(targetDir));
@@ -171,49 +191,51 @@ export default function AppEditor({ name, url, running, onDeploy }) {
       setError("Upload failed: " + e.message);
     } finally {
       setBusy("");
+      setUploadPct(null);
     }
   };
 
   const moveEntry = async (from, targetDir) => {
-    if (parentDir(from) === targetDir) return; // already there
+    if (parentDir(from) === targetDir) return;
     const to = (targetDir ? targetDir + "/" : "") + baseName(from);
     setError("");
     try {
       await api.post(`/api/apps/${encodeURIComponent(name)}/move`, { from, to });
       await Promise.all([loadDir(parentDir(from)), loadDir(targetDir)]);
       if (targetDir) setExpanded((s) => new Set(s).add(targetDir));
-      setTabs((t) => t.map((x) => (x.path === from ? { ...x, path: to } : x)));
+      setTabs((t) => t.map((x) => (x.path === from || x.path.startsWith(from + "/") ? { ...x, path: to + x.path.slice(from.length) } : x)));
       setActive((a) => (a === from ? to : a));
     } catch (e) {
       setError("Move failed: " + e.message);
     }
   };
 
-  const renameEntry = async (path) => {
-    const cur = baseName(path);
-    const next = window.prompt("Rename to", cur);
-    if (!next || next === cur) return;
-    const to = (parentDir(path) ? parentDir(path) + "/" : "") + next;
+  // Perform a rename/delete confirmed in the dialog.
+  const runDialog = async () => {
+    if (!dialog) return;
+    const { type, path, value } = dialog;
     setError("");
     try {
-      await api.post(`/api/apps/${encodeURIComponent(name)}/move`, { from: path, to });
+      if (type === "rename") {
+        const next = (value || "").trim();
+        if (!next || next === baseName(path)) {
+          setDialog(null);
+          return;
+        }
+        const to = (parentDir(path) ? parentDir(path) + "/" : "") + next;
+        await api.post(`/api/apps/${encodeURIComponent(name)}/move`, { from: path, to });
+        setTabs((t) => t.map((x) => (x.path === path || x.path.startsWith(path + "/") ? { ...x, path: to + x.path.slice(path.length) } : x)));
+        setActive((a) => (a === path ? to : a));
+      } else {
+        await api.del(fileUrl(name, path));
+        setTabs((t) => t.filter((x) => x.path !== path && !x.path.startsWith(path + "/")));
+        if (active === path || active?.startsWith(path + "/")) setActive(null);
+      }
       await loadDir(parentDir(path));
-      setTabs((t) => t.map((x) => (x.path === path ? { ...x, path: to } : x)));
-      setActive((a) => (a === path ? to : a));
+      setDialog(null);
     } catch (e) {
-      setError("Rename failed: " + e.message);
-    }
-  };
-
-  const deleteEntry = async (path) => {
-    if (!window.confirm(`Delete ${baseName(path)}? This can't be undone.`)) return;
-    setError("");
-    try {
-      await api.del(fileUrl(name, path));
-      await loadDir(parentDir(path));
-      closeTab(path);
-    } catch (e) {
-      setError("Delete failed: " + e.message);
+      setError((type === "rename" ? "Rename" : "Delete") + " failed: " + e.message);
+      setDialog(null);
     }
   };
 
@@ -289,7 +311,6 @@ export default function AppEditor({ name, url, running, onDeploy }) {
     if (gutterRef.current) gutterRef.current.scrollTop = ta.scrollTop;
   };
 
-  // Drag a divider to resize the tree (from the left) or the preview (from the right).
   const dragResize = (e, setter, fromRight) => {
     e.preventDefault();
     const move = (ev) => {
@@ -313,6 +334,17 @@ export default function AppEditor({ name, url, running, onDeploy }) {
     [activeTab]
   );
 
+  const rowActions = (path, isDir, nm) => (
+    <span className="ed-row-actions">
+      <button type="button" className="ed-row-act" title="Rename" aria-label={"Rename " + nm} onClick={(e) => { e.stopPropagation(); setDialog({ type: "rename", path, isDir, value: nm }); }}>
+        ✎
+      </button>
+      <button type="button" className="ed-row-act" title="Delete" aria-label={"Delete " + nm} onClick={(e) => { e.stopPropagation(); setDialog({ type: "delete", path, isDir }); }}>
+        🗑
+      </button>
+    </span>
+  );
+
   const renderChildren = (dir, depth) => {
     if (loadingDirs.has(dir) && !dirs[dir]) {
       return (
@@ -327,18 +359,23 @@ export default function AppEditor({ name, url, running, onDeploy }) {
         const open = expanded.has(entry.path);
         return (
           <div key={entry.path}>
-            <button
-              type="button"
+            <div
+              role="button"
+              tabIndex={0}
+              draggable
               className={"ed-row ed-dir" + (dragTarget === entry.path ? " dropinto" : "")}
               style={{ paddingLeft: 8 + depth * 14 }}
               onClick={() => toggleFolder(entry.path)}
+              onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && toggleFolder(entry.path)}
+              onDragStart={(e) => { e.dataTransfer.setData(DRAG_TYPE, entry.path); e.dataTransfer.effectAllowed = "move"; }}
               onDragOver={(e) => onFolderDragOver(e, entry.path)}
               onDrop={(e) => onFolderDrop(e, entry.path)}
             >
               <span className="ed-tw">{open ? "▾" : "▸"}</span>
               <span className="ed-ico">{open ? "\u{1F4C2}" : "\u{1F4C1}"}</span>
               <span className="ed-nm">{nm}</span>
-            </button>
+              {rowActions(entry.path, true, nm)}
+            </div>
             {open && renderChildren(entry.path, depth + 1)}
           </div>
         );
@@ -353,21 +390,11 @@ export default function AppEditor({ name, url, running, onDeploy }) {
           style={{ paddingLeft: 8 + depth * 14 + 16 }}
           onClick={() => openFile(entry.path, entry.size)}
           onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && openFile(entry.path, entry.size)}
-          onDragStart={(e) => {
-            e.dataTransfer.setData(DRAG_TYPE, entry.path);
-            e.dataTransfer.effectAllowed = "move";
-          }}
+          onDragStart={(e) => { e.dataTransfer.setData(DRAG_TYPE, entry.path); e.dataTransfer.effectAllowed = "move"; }}
         >
           <span className="ed-ico">{fileIcon(entry.path)}</span>
           <span className="ed-nm">{nm}</span>
-          <span className="ed-row-actions">
-            <button type="button" className="ed-row-act" title="Rename" aria-label={"Rename " + nm} onClick={(e) => { e.stopPropagation(); renameEntry(entry.path); }}>
-              ✎
-            </button>
-            <button type="button" className="ed-row-act" title="Delete" aria-label={"Delete " + nm} onClick={(e) => { e.stopPropagation(); deleteEntry(entry.path); }}>
-              🗑
-            </button>
-          </span>
+          {rowActions(entry.path, false, nm)}
         </div>
       );
     });
@@ -388,7 +415,7 @@ export default function AppEditor({ name, url, running, onDeploy }) {
                 {"«"}
               </button>
               <span className="ed-tree-name">{name}</span>
-              <button type="button" className="ed-refresh" title="Refresh" aria-label="Refresh tree" onClick={() => loadDir("")}>
+              <button type="button" className="ed-refresh" title="Refresh" aria-label="Refresh tree" onClick={refreshTree}>
                 {"↻"}
               </button>
             </div>
@@ -412,14 +439,7 @@ export default function AppEditor({ name, url, running, onDeploy }) {
         <div className="ed-tabbar">
           <div className="ed-tabs" role="tablist">
             {tabs.map((t) => (
-              <div
-                key={t.path}
-                role="tab"
-                aria-selected={t.path === active}
-                className={"ed-tab" + (t.path === active ? " on" : "")}
-                title={t.path}
-                onClick={() => setActive(t.path)}
-              >
+              <div key={t.path} role="tab" aria-selected={t.path === active} className={"ed-tab" + (t.path === active ? " on" : "")} title={t.path} onClick={() => setActive(t.path)}>
                 <span className="ed-tab-name">{baseName(t.path)}</span>
                 {!t.binary && !t.loading && t.content !== t.saved ? <span className="ed-tab-dot" aria-hidden="true" /> : null}
                 <button type="button" className="ed-tab-x" aria-label={"Close " + baseName(t.path)} onClick={(e) => closeTab(t.path, e)}>
@@ -450,12 +470,7 @@ export default function AppEditor({ name, url, running, onDeploy }) {
           ) : activeTab.binary ? (
             <div className="ed-binary">
               {isImage(activeTab.path) && !activeTab.imgFailed ? (
-                <img
-                  className="ed-img"
-                  src={fileUrl(name, activeTab.path)}
-                  alt={baseName(activeTab.path)}
-                  onError={() => setTabs((t) => t.map((x) => (x.path === activeTab.path ? { ...x, imgFailed: true } : x)))}
-                />
+                <img className="ed-img" src={fileUrl(name, activeTab.path)} alt={baseName(activeTab.path)} onError={() => setTabs((t) => t.map((x) => (x.path === activeTab.path ? { ...x, imgFailed: true } : x)))} />
               ) : (
                 <div className="ed-doc" aria-hidden="true">
                   {"\u{1F4C4}"}
@@ -481,28 +496,22 @@ export default function AppEditor({ name, url, running, onDeploy }) {
                 <pre className="ed-hl" ref={preRef} aria-hidden="true">
                   <code dangerouslySetInnerHTML={{ __html: highlighted + "\n" }} />
                 </pre>
-                <textarea
-                  ref={taRef}
-                  className="ed-textarea"
-                  value={activeTab.content}
-                  onChange={(e) => onEdit(e.target.value)}
-                  onScroll={syncScroll}
-                  onKeyDown={onTextKeyDown}
-                  spellCheck={false}
-                  autoCapitalize="off"
-                  autoCorrect="off"
-                  wrap="off"
-                />
+                <textarea ref={taRef} className="ed-textarea" value={activeTab.content} onChange={(e) => onEdit(e.target.value)} onScroll={syncScroll} onKeyDown={onTextKeyDown} spellCheck={false} autoCapitalize="off" autoCorrect="off" wrap="off" />
               </div>
             </div>
           )}
         </div>
 
         <div className="ed-status">
-          {error ? (
+          {uploadPct != null ? (
+            <span className="ed-status-upload">
+              Uploading {uploadPct}%
+              <span className="ed-progress">
+                <span className="ed-progress-bar" style={{ width: `${uploadPct}%` }} />
+              </span>
+            </span>
+          ) : error ? (
             <span className="ed-status-err">{error}</span>
-          ) : busy === "uploading" ? (
-            <span className="ed-status-path">Uploading...</span>
           ) : activeTab && !activeTab.binary && !activeTab.loading ? (
             <span className="ed-status-path">{activeTab.path}</span>
           ) : (
@@ -513,7 +522,6 @@ export default function AppEditor({ name, url, running, onDeploy }) {
             <>
               <span className="ed-status-meta">{langForFile(activeTab.path)}</span>
               <span className="ed-status-meta">{dirty ? "Unsaved" : "Saved"}</span>
-              {/* Save & deploy is the safe secondary; Save (primary) is the common act. */}
               <button type="button" className="ed-btn" disabled={!!busy} onClick={saveAndDeploy}>
                 {busy === "deploying" ? "Deploying..." : "Save & deploy"}
               </button>
@@ -538,6 +546,52 @@ export default function AppEditor({ name, url, running, onDeploy }) {
             )}
           </div>
         </>
+      )}
+
+      {dialog && (
+        <div className="modal-backdrop" role="dialog" aria-modal="true" onMouseDown={() => setDialog(null)}>
+          <div className="card modal ed-modal" onMouseDown={(e) => e.stopPropagation()}>
+            {dialog.type === "rename" ? (
+              <>
+                <h3>Rename {dialog.isDir ? "folder" : "file"}</h3>
+                <input
+                  className="ed-modal-input"
+                  autoFocus
+                  value={dialog.value}
+                  onChange={(e) => setDialog((d) => ({ ...d, value: e.target.value }))}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") runDialog();
+                    if (e.key === "Escape") setDialog(null);
+                  }}
+                />
+                <div className="ed-modal-actions">
+                  <button type="button" className="ed-btn" onClick={() => setDialog(null)}>
+                    Cancel
+                  </button>
+                  <button type="button" className="ed-btn ed-btn-primary" onClick={runDialog}>
+                    Rename
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <h3>Delete {dialog.isDir ? "folder" : "file"}?</h3>
+                <p className="ed-modal-text">
+                  <span className="mono">{baseName(dialog.path)}</span>
+                  {dialog.isDir ? " and everything in it" : ""} will be permanently deleted.
+                </p>
+                <div className="ed-modal-actions">
+                  <button type="button" className="ed-btn" onClick={() => setDialog(null)}>
+                    Cancel
+                  </button>
+                  <button type="button" className="ed-btn ed-btn-danger" onClick={runDialog}>
+                    Delete
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
       )}
     </div>
   );

@@ -57,6 +57,7 @@ type apiAppResponse struct {
 	OverQuota        bool   `json:"over_quota"`
 	OwnerEmail       string `json:"owner_email,omitempty"`
 	SnapshotsEnabled bool   `json:"snapshots_enabled"` // true when the host supports snapshots (btrfs)
+	AssistantEnabled bool   `json:"assistant_enabled"` // true when an Anthropic API key is configured
 	// Description is the app's own one-liner from hostit.yml, kept current by
 	// whoever builds it; empty means the app is still a stub
 	Description string     `json:"description"`

@@ -208,7 +208,9 @@ func (m *Manager) FileExists(name, relPath string) bool {
 	return true
 }
 
-// DeleteFile removes a file from the app's home directory
+// DeleteFile removes a file (or a directory and its contents) from the app's
+// home directory. RemoveAll so deleting a folder from the file browser works and
+// so a repeated delete is idempotent.
 func (m *Manager) DeleteFile(name, relPath string) error {
 	rel, err := m.safeRel(name, relPath)
 	if err != nil {
@@ -219,7 +221,7 @@ func (m *Manager) DeleteFile(name, relPath string) error {
 		return err
 	}
 	defer root.Close()
-	return root.Remove(rel)
+	return root.RemoveAll(rel)
 }
 
 // MoveFile renames or moves a file within the app's home -- dragging it into

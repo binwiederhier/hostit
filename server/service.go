@@ -339,6 +339,7 @@ func (s *Server) appResponse(a *store.App) *apiAppResponse {
 		OverQuota:        a.OverQuota,
 		OwnerEmail:       s.ownerEmail(a.OwnerID),
 		SnapshotsEnabled: s.apps.SnapshotsEnabled(),
+		AssistantEnabled: s.assistant != nil,
 		// What the app says it is, straight from its hostit.yml; empty for a stub
 		Description: s.apps.Description(a.Name),
 		CreatedAt:   a.CreatedAt,

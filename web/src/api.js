@@ -89,6 +89,37 @@ const putRaw = async (path, body) => {
   return data;
 };
 
+// putRawProgress uploads a file with progress callbacks -- fetch cannot report
+// upload progress, so this one uses XMLHttpRequest. onProgress gets a 0..1 fraction.
+const putRawProgress = (path, body, onProgress) =>
+  new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("PUT", path);
+    xhr.withCredentials = true;
+    xhr.setRequestHeader("Content-Type", "application/octet-stream");
+    if (xhr.upload && onProgress) {
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable) onProgress(e.loaded / e.total);
+      };
+    }
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve(null);
+        return;
+      }
+      let message = `Request failed (HTTP ${xhr.status})`;
+      try {
+        const data = JSON.parse(xhr.responseText);
+        if (data && data.error) message = data.error;
+      } catch {
+        /* not JSON */
+      }
+      reject(new ApiError(xhr.status, message));
+    };
+    xhr.onerror = () => reject(new ApiError(0, "Network error, check your connection and try again"));
+    xhr.send(body);
+  });
+
 export const api = {
   get: (path) => request("GET", path),
   post: (path, body) => request("POST", path, body),
@@ -97,6 +128,7 @@ export const api = {
   del: (path) => request("DELETE", path),
   getText,
   putRaw,
+  putRawProgress,
   // getBlob reads a file as raw bytes (for previewing/moving binary files).
   getBlob: async (path) => {
     let res;

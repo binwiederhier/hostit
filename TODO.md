@@ -101,6 +101,11 @@ The dashboard can create, manage and delete apps and drive them in the browser
 
 ## Smaller things
 
+- **Does the hostit daemon actually need to run as root?** It drives podman,
+  systemctl, useradd/usermod, nftables and btrfs -- audit which of those truly
+  require root vs could run under a dedicated user with specific capabilities or a
+  narrow sudoers grant, and whether the attack surface of a root daemon can be cut.
+
 - **Dev/stage -> promote to prod (the "we work in prod" problem).** Right now the
   only copy of an app is the live one, so every edit (and every assistant change) is
   in production. Give each app an optional **staging** environment -- its own

@@ -1128,6 +1128,10 @@ const AppDetail = ({ account, refreshAccount }) => {
   const [hasKeys, setHasKeys] = useState(null); // null until we know, so nothing flickers
   const [toast, setToast] = useState(""); // a 3s "Copied"/"Regenerated" snackbar
   const [view, setView] = useState("assistant"); // "assistant" (chat + preview) | "editor" (file tree)
+  // With no Anthropic key there is no assistant, so open straight into the editor.
+  useEffect(() => {
+    if (app && !app.assistant_enabled && view === "assistant") setView("editor");
+  }, [app, view]);
   const toastTimer = useRef(null);
   const catchUpTimers = useRef([]);
 
@@ -1501,18 +1505,20 @@ const AppDetail = ({ account, refreshAccount }) => {
         {/* View switcher: the chat + preview split is one view; the file editor is
             another. More can join as tabs (terminal, details) later. */}
         <div className="ws-viewtabs" role="tablist" aria-label="Workspace view">
-          <button
-            type="button"
-            role="tab"
-            aria-selected={view === "assistant"}
-            className={"ws-viewtab" + (view === "assistant" ? " on" : "")}
-            onClick={() => setView("assistant")}
-          >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
-              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-            </svg>
-            Assistant
-          </button>
+          {app.assistant_enabled && (
+            <button
+              type="button"
+              role="tab"
+              aria-selected={view === "assistant"}
+              className={"ws-viewtab" + (view === "assistant" ? " on" : "")}
+              onClick={() => setView("assistant")}
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+              </svg>
+              Assistant
+            </button>
+          )}
           <button
             type="button"
             role="tab"
@@ -1545,7 +1551,7 @@ const AppDetail = ({ account, refreshAccount }) => {
             assistant its scroll) instead of reconnecting on every tab click. */}
         <div className={"ws-editorwrap" + (view === "editor" ? "" : " ws-inactive")}>
           <Suspense fallback={<div className="ws-chat-loading">Loading editor...</div>}>
-            <AppEditor name={app.name} url={app.url} running={app.running} onDeploy={reloadPreview} />
+            <AppEditor name={app.name} url={app.url} running={app.running} diskMB={app.disk_mb} diskLimitMB={app.disk_limit_mb} onDeploy={reloadPreview} />
           </Suspense>
         </div>
         <div className={"ws-termwrap" + (view === "terminal" ? "" : " ws-inactive")}>
@@ -1553,13 +1559,14 @@ const AppDetail = ({ account, refreshAccount }) => {
             <AppTerminal name={app.name} embedded onSsh={() => setShowSsh(true)} />
           </Suspense>
         </div>
-        {/* The workspace: build on the left, watch it change on the right, with a
-            draggable divider between them. */}
-        <div
-          className={"ws-split" + (view === "assistant" ? "" : " ws-inactive")}
-          ref={splitRef}
-          style={{ gridTemplateColumns: `minmax(0, ${chatFrac}fr) 10px minmax(0, ${1 - chatFrac}fr)` }}
-        >
+        {/* The assistant view (chat + preview) exists only when an Anthropic key
+            is configured; otherwise the workspace opens straight into the editor. */}
+        {app.assistant_enabled && (
+          <div
+            className={"ws-split" + (view === "assistant" ? "" : " ws-inactive")}
+            ref={splitRef}
+            style={{ gridTemplateColumns: `minmax(0, ${chatFrac}fr) 10px minmax(0, ${1 - chatFrac}fr)` }}
+          >
           <div className="ws-chat">
             <Suspense fallback={<div className="ws-chat-loading">Loading assistant...</div>}>
               <AppAssistant name={app.name} embedded onPreviewRefresh={reloadPreview} />
@@ -1608,6 +1615,7 @@ const AppDetail = ({ account, refreshAccount }) => {
             )}
           </div>
         </div>
+        )}
       </div>
 
       {termOpen && (
