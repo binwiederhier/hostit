@@ -1936,7 +1936,25 @@ th:last-child {
    or negative margins, so fixed overlays still position against the viewport. */
 main.container:has(.ws-page) {
   max-width: none;
-  padding: 16px 20px 10px;
+  padding: 16px 20px 12px;
+  /* Fill the viewport below the sticky nav and let the workspace flex to the
+     bottom, so no view leaves a gap of dead space beneath it. */
+  height: calc(100dvh - 54px);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.ws-page {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.ws-split,
+.ws-editorwrap,
+.ws-termwrap {
+  flex: 1;
+  min-height: 0;
 }
 
 .ws-topbar {
@@ -2016,10 +2034,8 @@ main.container:has(.ws-page) {
 .ws-split {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 10px minmax(0, 1fr);
-  /* Fill the space below the nav, container padding, the two-row top bar and the
-     view-tab strip, so the panes reach the bottom without leaving a gap. */
-  height: calc(100dvh - 204px);
-  min-height: 460px;
+  /* Height comes from the flex fill above; min-height:0 lets it shrink. */
+  min-height: 0;
 }
 
 /* Draggable divider between chat and preview */
@@ -2121,7 +2137,7 @@ body.ws-resizing iframe { pointer-events: none; }
   .ws-resources { display: none; }
   .ws-right { display: none; }
   .ws-resizer { display: none; }
-  .ws-split { grid-template-columns: 1fr !important; height: calc(100dvh - 238px); min-height: 380px; }
+  .ws-split { grid-template-columns: 1fr !important; }
   .ws-chat { height: 100%; }
 }
 
@@ -2133,7 +2149,7 @@ body.ws-resizing iframe { pointer-events: none; }
   /* The identity row is gone, so the controls no longer need to clear it -- drop
      the top margin that was doubling up with the container's top padding. */
   .ws-topright { margin-top: 0; }
-  .ws-split { height: calc(100dvh - 176px); }
+
   /* Tight on space: the Open app button shrinks to just its icon */
   .ws-topacts .btn-primary .ws-open-label { display: none; }
   .ws-topacts .btn-primary { padding: 0 11px; }
@@ -2335,7 +2351,7 @@ body.ws-resizing iframe { pointer-events: none; }
 .ws-viewtab.on svg { opacity: 1; color: var(--accent); }
 
 /* ---- Editor view: file tree + tabbed text editor ---- */
-.ws-editorwrap { height: calc(100dvh - 204px); min-height: 460px; }
+.ws-editorwrap, .ws-termwrap { min-height: 0; }
 .ed-view {
   display: grid;
   grid-template-columns: 240px 1fr;
@@ -2402,3 +2418,75 @@ body.ws-resizing iframe { pointer-events: none; }
 @media (max-width: 720px) {
   .ed-view { grid-template-columns: 160px 1fr; }
 }
+
+/* ---- Editor view v2: flex layout, collapse/resize, preview, highlighting ---- */
+.ed-view { display: flex; height: 100%; }
+.ed-tree { flex: none; }
+.ed-main { flex: 1; }
+
+/* Collapsed tree becomes a slim rail with a vertical "Files" label. */
+.ed-rail {
+  flex: none; width: 40px; display: flex; flex-direction: column; align-items: center; gap: 12px;
+  padding: 12px 0; background: var(--surface-2); border: 0; border-right: 1px solid var(--border);
+  cursor: pointer; color: var(--muted);
+}
+.ed-rail:hover { color: var(--text); }
+.ed-rail-txt { writing-mode: vertical-rl; font-size: 12px; letter-spacing: 0.04em; }
+
+/* Draggable divider between the tree and the editor. */
+.ed-resizer { flex: none; width: 8px; cursor: col-resize; display: flex; align-items: center; justify-content: center; background: var(--surface); touch-action: none; }
+.ed-resizer-grip { width: 3px; height: 34px; border-radius: 3px; background: var(--border); }
+.ed-resizer:hover .ed-resizer-grip { background: var(--accent); }
+
+/* Drag-and-drop upload targets. */
+.ed-tree-body.dropinto { outline: 2px dashed var(--accent); outline-offset: -4px; background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.ed-row.dropinto { background: color-mix(in srgb, var(--accent) 22%, transparent); box-shadow: inset 0 0 0 1px var(--accent); }
+.ed-drophint { margin: 8px 6px 2px; padding: 8px; text-align: center; font-size: 11px; color: var(--accent); border: 1px dashed var(--border); border-radius: 8px; }
+
+/* Tab strip with the preview toggle on the right. */
+.ed-tabbar { display: flex; align-items: stretch; background: var(--surface-2); border-bottom: 1px solid var(--border); }
+.ed-tabs { flex: 1; min-width: 0; border-bottom: 0; }
+.ed-ctl { flex: none; display: inline-flex; align-items: center; gap: 6px; font: inherit; font-size: 12px; color: var(--muted); background: none; border: 0; border-left: 1px solid var(--border); padding: 0 12px; cursor: pointer; }
+.ed-ctl svg { width: 15px; height: 15px; }
+.ed-ctl:hover { color: var(--text); }
+.ed-ctl.on { color: var(--accent); }
+
+/* Syntax highlighting: a coloured <pre> under a transparent <textarea>. */
+.ed-code { display: grid; grid-template-columns: auto 1fr; min-height: 0; }
+.ed-scroll { position: relative; overflow: hidden; min-width: 0; }
+.ed-hl,
+.ed-scroll .ed-textarea {
+  margin: 0; border: 0; padding: 10px 14px;
+  font-family: var(--mono); font-size: 12.5px; line-height: 1.6;
+  white-space: pre; tab-size: 2; letter-spacing: 0; overflow: auto;
+}
+.ed-hl { position: absolute; inset: 0; pointer-events: none; color: var(--text); overflow: hidden; }
+.ed-hl code { font: inherit; }
+.ed-scroll .ed-textarea { position: absolute; inset: 0; resize: none; outline: none; color: transparent; background: transparent; caret-color: var(--text); }
+
+.ed-code { --hl-key: #6d28d9; --hl-str: #0e7a4b; --hl-num: #b45309; }
+:root[data-theme="dark"] .ed-code { --hl-key: #b794f6; --hl-str: #6ee7a8; --hl-num: #f0a35e; }
+:root[data-theme="light"] .ed-code { --hl-key: #6d28d9; --hl-str: #0e7a4b; --hl-num: #b45309; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) .ed-code { --hl-key: #b794f6; --hl-str: #6ee7a8; --hl-num: #f0a35e; }
+}
+.hl-com { color: var(--muted); font-style: italic; }
+.hl-str { color: var(--hl-str); }
+.hl-num { color: var(--hl-num); }
+.hl-key { color: var(--hl-key); }
+
+/* Optional live-preview pane. */
+.ed-preview { flex: 0 0 42%; min-width: 260px; display: flex; flex-direction: column; border-left: 1px solid var(--border); background: #0e1116; }
+.ed-preview-bar { display: flex; align-items: center; gap: 8px; padding: 5px 10px; font-family: var(--mono); font-size: 11px; color: var(--muted); background: var(--surface-2); border-bottom: 1px solid var(--border); }
+.ed-preview-url { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ed-preview iframe { flex: 1; width: 100%; border: 0; background: #fff; }
+
+/* Terminal as a workspace view (embedded, not the floating panel). */
+.term-embed { position: relative; height: 100%; width: 100%; display: flex; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+.term-embed .term-window-full { border-radius: 0; }
+
+/* Compact the resources row in the app top bar. */
+.ws-resources { gap: 10px; }
+.ws-resources .res { gap: 3px; }
+.ws-resources .res-top { font-size: 11px; }
+.ws-resources .res-bar { width: 52px; }

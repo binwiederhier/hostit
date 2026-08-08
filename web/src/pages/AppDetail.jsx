@@ -1526,12 +1526,31 @@ const AppDetail = ({ account, refreshAccount }) => {
             </svg>
             Editor
           </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={view === "terminal"}
+            className={"ws-viewtab" + (view === "terminal" ? " on" : "")}
+            onClick={() => setView("terminal")}
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+              <path d="M4 5h16v14H4z" />
+              <path d="m8 10 3 2-3 2M13 16h4" />
+            </svg>
+            Terminal
+          </button>
         </div>
 
         {view === "editor" ? (
           <div className="ws-editorwrap">
             <Suspense fallback={<div className="ws-chat-loading">Loading editor...</div>}>
-              <AppEditor name={app.name} onDeploy={reloadPreview} />
+              <AppEditor name={app.name} url={app.url} running={app.running} onDeploy={reloadPreview} />
+            </Suspense>
+          </div>
+        ) : view === "terminal" ? (
+          <div className="ws-termwrap">
+            <Suspense fallback={<div className="ws-chat-loading">Loading terminal...</div>}>
+              <AppTerminal name={app.name} embedded />
             </Suspense>
           </div>
         ) : (

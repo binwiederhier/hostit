@@ -13,7 +13,10 @@ import "@xterm/xterm/css/xterm.css";
 // deliberately not dimming the page behind it so the live preview stays visible),
 // and a full-window page reached by the pop-out (and directly at
 // /app/<name>/terminal).
-const AppTerminal = ({ name, onClose, onMinimize, onReady, onSessionEnd, minimized = false, fullPage = false }) => {
+const AppTerminal = ({ name, onClose, onMinimize, onReady, onSessionEnd, minimized = false, fullPage = false, embedded = false }) => {
+  // embedded fills its container inline (a workspace view); fullPage is the fixed
+  // full-window overlay. Both drop the floating panel's drag/minimize chrome.
+  const fixed = fullPage || embedded;
   const hostRef = useRef(null);
   const frameRef = useRef(null);
   const fitRef = useRef(null);
@@ -119,7 +122,7 @@ const AppTerminal = ({ name, onClose, onMinimize, onReady, onSessionEnd, minimiz
   // Drag the panel by its title bar. We track the pointer's offset from the
   // window's top-left and keep the whole bar on screen.
   const startDrag = (e) => {
-    if (fullPage) return;
+    if (fixed) return;
     const rect = frameRef.current?.getBoundingClientRect();
     if (!rect) return;
     const offX = e.clientX - rect.left;
@@ -142,27 +145,27 @@ const AppTerminal = ({ name, onClose, onMinimize, onReady, onSessionEnd, minimiz
   const frame = (
     <div
       className={
-        (fullPage ? "term-window term-window-full" : "term-window term-window-float") +
-        (!fullPage && minimized ? " term-window-hidden" : "")
+        (fixed ? "term-window term-window-full" : "term-window term-window-float") +
+        (!fixed && minimized ? " term-window-hidden" : "")
       }
       ref={frameRef}
       style={
-        !fullPage && pos
+        !fixed && pos
           ? { left: `${pos.left}px`, top: `${pos.top}px`, right: "auto", bottom: "auto", transform: "none" }
           : undefined
       }
     >
-      <div className={fullPage ? "term-bar" : "term-bar term-bar-drag"} onPointerDown={startDrag}>
+      <div className={fixed ? "term-bar" : "term-bar term-bar-drag"} onPointerDown={startDrag}>
         <span className="mono">{name} &mdash; terminal</span>
         <span className="term-bar-actions">
-          {!fullPage && onMinimize && (
+          {!fixed && onMinimize && (
             <button type="button" className="term-btn" onClick={onMinimize} title="Minimize" aria-label="Minimize">
               <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M3 12h10" />
               </svg>
             </button>
           )}
-          {!fullPage && (
+          {!fixed && (
             <button type="button" className="term-btn" onClick={popOut} title="Open in a new window" aria-label="Pop out">
               <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M6 3H3v10h10v-3M9.5 2H14v4.5M14 2 7.5 8.5" />
@@ -188,6 +191,9 @@ const AppTerminal = ({ name, onClose, onMinimize, onReady, onSessionEnd, minimiz
     </div>
   );
 
+  if (embedded) {
+    return <div className="term-embed">{frame}</div>;
+  }
   if (fullPage) {
     return <div className="term-page">{frame}</div>;
   }
