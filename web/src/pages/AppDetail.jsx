@@ -1541,26 +1541,26 @@ const AppDetail = ({ account, refreshAccount }) => {
           </button>
         </div>
 
-        {view === "editor" ? (
-          <div className="ws-editorwrap">
-            <Suspense fallback={<div className="ws-chat-loading">Loading editor...</div>}>
-              <AppEditor name={app.name} url={app.url} running={app.running} onDeploy={reloadPreview} />
-            </Suspense>
-          </div>
-        ) : view === "terminal" ? (
-          <div className="ws-termwrap">
-            <Suspense fallback={<div className="ws-chat-loading">Loading terminal...</div>}>
-              <AppTerminal name={app.name} embedded />
-            </Suspense>
-          </div>
-        ) : (
-          /* The workspace: build on the left, watch it change on the right, with a
-             draggable divider between them. */
-          <div
-            className="ws-split"
-            ref={splitRef}
-            style={{ gridTemplateColumns: `minmax(0, ${chatFrac}fr) 10px minmax(0, ${1 - chatFrac}fr)` }}
-          >
+        {/* All three views stay mounted -- only the active one is shown -- so
+            switching is instant and the terminal keeps its live session (and the
+            assistant its scroll) instead of reconnecting on every tab click. */}
+        <div className={"ws-editorwrap" + (view === "editor" ? "" : " ws-inactive")}>
+          <Suspense fallback={<div className="ws-chat-loading">Loading editor...</div>}>
+            <AppEditor name={app.name} url={app.url} running={app.running} onDeploy={reloadPreview} />
+          </Suspense>
+        </div>
+        <div className={"ws-termwrap" + (view === "terminal" ? "" : " ws-inactive")}>
+          <Suspense fallback={<div className="ws-chat-loading">Loading terminal...</div>}>
+            <AppTerminal name={app.name} embedded />
+          </Suspense>
+        </div>
+        {/* The workspace: build on the left, watch it change on the right, with a
+            draggable divider between them. */}
+        <div
+          className={"ws-split" + (view === "assistant" ? "" : " ws-inactive")}
+          ref={splitRef}
+          style={{ gridTemplateColumns: `minmax(0, ${chatFrac}fr) 10px minmax(0, ${1 - chatFrac}fr)` }}
+        >
           <div className="ws-chat">
             <Suspense fallback={<div className="ws-chat-loading">Loading assistant...</div>}>
               <AppAssistant name={app.name} embedded onPreviewRefresh={reloadPreview} />
@@ -1609,7 +1609,6 @@ const AppDetail = ({ account, refreshAccount }) => {
             )}
           </div>
         </div>
-        )}
       </div>
 
       {termOpen && (

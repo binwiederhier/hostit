@@ -2490,3 +2490,7 @@ body.ws-resizing iframe { pointer-events: none; }
 .ws-resources .res { gap: 3px; }
 .ws-resources .res-top { font-size: 11px; }
 .ws-resources .res-bar { width: 52px; }
+
+/* Keep all three workspace views mounted; hide the inactive ones. !important
+   beats each view's explicit display (grid/flex). */
+.ws-inactive { display: none !important; }
