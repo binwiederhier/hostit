@@ -11,11 +11,13 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"heckel.io/hostit/appctl"
 	"heckel.io/hostit/assistant"
+	"heckel.io/hostit/store"
 )
 
 func TestAgentInfoIsSelfExplanatory(t *testing.T) {
@@ -585,6 +587,34 @@ func TestAgentMove(t *testing.T) {
 	other := newAppToken(t, s, "other")
 	rr = request(t, s.API(), "POST", "/api/apps/blog/move", `{"from":"public/b.txt","to":"d.txt"}`, other)
 	assert.Equal(t, http.StatusForbidden, rr.Code)
+}
+
+func TestAppResponseUsesVerifiedCustomDomain(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	u := newActiveTestUser(t, s, "owner@example.com")
+	userToken, _, err := s.users.CreateToken(u.ID, "setup")
+	require.NoError(t, err)
+	rr := request(t, s.API(), "POST", "/api/apps", `{"name":"blog"}`, userToken)
+	require.Equal(t, http.StatusCreated, rr.Code)
+
+	get := func() apiAppResponse {
+		rr := request(t, s.API(), "GET", "/api/apps/blog", "", userToken)
+		require.Equal(t, http.StatusOK, rr.Code)
+		var resp apiAppResponse
+		require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &resp))
+		return resp
+	}
+
+	// No custom domain, and a merely pending one, are not the app's primary URL.
+	assert.Empty(t, get().CustomDomain)
+	require.NoError(t, s.apps.Store().AddDomain(&store.Domain{Domain: "blog.example.com", AppName: "blog", Status: store.DomainPending}))
+	assert.Empty(t, get().CustomDomain, "a pending domain is not used")
+
+	// Once verified, it becomes the custom domain the web app links to.
+	now := time.Now()
+	require.NoError(t, s.apps.Store().SetDomainStatus("blog.example.com", store.DomainActive, "", &now))
+	assert.Equal(t, "blog.example.com", get().CustomDomain)
 }
 
 func TestAppResponseReportsAssistantAvailability(t *testing.T) {

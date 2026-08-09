@@ -349,6 +349,15 @@ func (s *Server) appResponse(a *store.App) *apiAppResponse {
 			Command: fmt.Sprintf("ssh %s@%s", a.Name, s.config.SSHHostname()),
 		},
 	}
+	// The first verified custom domain becomes the app's primary public URL.
+	if domains, err := s.apps.Store().Domains(a.Name); err == nil {
+		for _, d := range domains {
+			if d.Status == store.DomainActive {
+				resp.CustomDomain = d.Domain
+				break
+			}
+		}
+	}
 	return resp
 }
 

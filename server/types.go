@@ -63,7 +63,10 @@ type apiAppResponse struct {
 	Description string     `json:"description"`
 	CreatedAt   time.Time  `json:"created_at"`
 	SSH         apiSSHInfo `json:"ssh"`
-	AgentToken  string     `json:"agent_token,omitempty"` // App-scoped; shown to the owner so the page can always render the prompt
+	// CustomDomain is the first verified (active) custom domain, empty if none; the
+	// web app prefers it over the default subdomain for links and previews.
+	CustomDomain string `json:"custom_domain,omitempty"`
+	AgentToken   string `json:"agent_token,omitempty"` // App-scoped; shown to the owner so the page can always render the prompt
 }
 
 // apiHealthResponse is returned by GET /api/health

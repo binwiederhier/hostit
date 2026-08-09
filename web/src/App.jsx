@@ -74,7 +74,7 @@ const AppsMenu = () => {
     closeTimer.current = setTimeout(() => setOpen(false), 140);
   };
   return (
-    <div className="nav-apps" ref={ref} onMouseEnter={openNow} onMouseLeave={closeSoon}>
+    <div className="nav-apps" ref={ref} onPointerEnter={(e) => e.pointerType === "mouse" && openNow()} onPointerLeave={(e) => e.pointerType === "mouse" && closeSoon()}>
       <NavLink to="/" end className="nav-apps-link" onClick={() => setOpen(false)}>
         Apps
       </NavLink>
@@ -249,7 +249,7 @@ const ProfileMenu = ({ account }) => {
   const name = (account.name || "").trim();
   const initial = (name || account.email || "?").charAt(0).toUpperCase();
   return (
-    <div className="nav-profile" ref={ref} onMouseEnter={openNow} onMouseLeave={closeSoon}>
+    <div className="nav-profile" ref={ref} onPointerEnter={(e) => e.pointerType === "mouse" && openNow()} onPointerLeave={(e) => e.pointerType === "mouse" && closeSoon()}>
       <button
         type="button"
         className="avatar"

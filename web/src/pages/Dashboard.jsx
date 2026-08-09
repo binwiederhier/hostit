@@ -111,13 +111,17 @@ const mbLabel = (used, limit) => (limit ? `${used} / ${limit} MB` : `${used} MB`
 const AppCard = ({ app }) => {
   const running = app.running;
   const status = app.over_quota ? "over quota" : running ? "running" : "powered off";
+  // Prefer a verified custom domain over the default subdomain for the link.
+  const publicUrl = app.custom_domain ? `https://${app.custom_domain}` : app.url;
+  const publicHost = app.custom_domain || app.url.replace(/^https?:\/\//, "");
   return (
     <div className="appcard">
       <div className="appcard-top">
         <span className="appcard-avatar">{app.name.slice(0, 2)}</span>
         <div className="appcard-id">
-          <Link className="appcard-nm" to={`/app/${app.name}`}>{app.name}</Link>
-          <a className="appcard-url" href={app.url} target="_blank" rel="noreferrer">{app.url.replace(/^https?:\/\//, "")}</a>
+          {/* Stretched link: covers the whole card so the entire card opens the app. */}
+          <Link className="appcard-nm appcard-link" to={`/app/${app.name}`}>{app.name}</Link>
+          <a className="appcard-url" href={publicUrl} target="_blank" rel="noreferrer">{publicHost}</a>
         </div>
       </div>
       <span className={"appcard-pill" + (running ? "" : " off") + (app.over_quota ? " warn" : "")}>
@@ -131,8 +135,7 @@ const AppCard = ({ app }) => {
         <div className="appcard-bar"><span className="k">Disk</span><span className="bar"><i className={app.over_quota ? "over" : ""} style={{ width: `${pctOf(app.disk_mb, app.disk_limit_mb)}%` }} /></span><span className="v">{mbLabel(app.disk_mb, app.disk_limit_mb)}</span></div>
       </div>
       <div className="appcard-foot">
-        <Link className="btn btn-small" to={`/app/${app.name}`}>Manage</Link>
-        <a className="btn btn-small btn-primary" href={app.url} target="_blank" rel="noreferrer">Open</a>
+        <a className="btn btn-small btn-primary" href={publicUrl} target="_blank" rel="noreferrer">Open app</a>
       </div>
     </div>
   );
@@ -238,8 +241,9 @@ const Dashboard = ({ account, refreshAccount }) => {
             {account.usage.apps} of {account.limits.app_limit} apps
           </span>
           {!empty && (
-            <button type="button" className="btn btn-primary" onClick={() => setAdding(true)} disabled={atLimit}>
+            <button type="button" className="btn btn-primary btn-withicon" onClick={() => setAdding(true)} disabled={atLimit}>
               New app
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true"><path d="M8 3.5v9M3.5 8h9" /></svg>
             </button>
           )}
         </div>

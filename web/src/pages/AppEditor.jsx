@@ -52,6 +52,7 @@ export default function AppEditor({ name, url, running, diskMB, diskLimitMB, onD
   const preRef = useRef(null);
   const modalInputRef = useRef(null);
   const uploadAbort = useRef(null); // AbortController for the in-flight upload
+  const restoredRef = useRef(false); // guards persistence until last-session tabs are restored
 
   const loadDir = useCallback(
     async (dir) => {
@@ -87,6 +88,57 @@ export default function AppEditor({ name, url, running, diskMB, diskLimitMB, onD
       .then((yml) => setIsStatic(/^\s*mode:\s*["']?static["']?\s*$/m.test(yml)))
       .catch(() => {});
   }, [loadDir, name]);
+
+  // Restore the files open in the last session (dropping any that no longer
+  // exist); on the very first visit, open README.md if it is there.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      let saved = null;
+      try {
+        saved = JSON.parse(localStorage.getItem("hostit.editor." + name) || "null");
+      } catch {
+        /* ignore bad storage */
+      }
+      const paths = saved && Array.isArray(saved.tabs) ? saved.tabs : [];
+      if (paths.length) {
+        const checked = await Promise.all(
+          paths.map((p) => api.get(fileUrl(name, p) + "?stat=1").then(() => p).catch(() => null))
+        );
+        if (cancelled) return;
+        const live = checked.filter(Boolean);
+        live.forEach((p) => openFile(p, 0));
+        const act = saved.active && live.includes(saved.active) ? saved.active : live[live.length - 1];
+        if (act) setActive(act);
+      } else if (saved === null) {
+        try {
+          await api.get(fileUrl(name, "README.md") + "?stat=1");
+          if (!cancelled) openFile("README.md", 0);
+        } catch {
+          /* no README to open */
+        }
+      }
+      restoredRef.current = true;
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // openFile is intentionally not a dep: this runs once per app.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [name]);
+
+  // Persist which files are open + the active one, per app (paths only, so an
+  // edit does not churn storage). Waits until restore has run so it never clobbers
+  // the saved set with the initial empty state.
+  const openKey = tabs.map((t) => t.path).join("\n");
+  useEffect(() => {
+    if (!restoredRef.current) return;
+    try {
+      localStorage.setItem("hostit.editor." + name, JSON.stringify({ tabs: openKey ? openKey.split("\n") : [], active }));
+    } catch {
+      /* ignore storage failures */
+    }
+  }, [name, openKey, active]);
 
   const toggleFolder = (dir) =>
     setExpanded((s) => {

@@ -1035,6 +1035,8 @@ th:last-child {
 }
 
 /* ---- Dashboard: stats strip + app card grid ---- */
+.btn-withicon { display: inline-flex; align-items: center; gap: 8px; }
+.btn-withicon svg { width: 14px; height: 14px; flex: none; }
 .dash-summary { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
 .dash-stat { flex: 1; min-width: 130px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); padding: 13px 16px; }
 .dash-stat .k { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--faint); }
@@ -1043,8 +1045,11 @@ th:last-child {
 .dash-stat .v.alert { color: var(--status-degraded); }
 
 .dash-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 14px; }
-.appcard { border: 1px solid var(--border); border-radius: 13px; background: var(--surface); padding: 16px; display: flex; flex-direction: column; gap: 13px; transition: border-color 0.12s ease, transform 0.12s ease; }
+.appcard { position: relative; border: 1px solid var(--border); border-radius: 13px; background: var(--surface); padding: 16px; display: flex; flex-direction: column; gap: 13px; cursor: pointer; transition: border-color 0.12s ease, transform 0.12s ease; }
 .appcard:hover { border-color: var(--accent); transform: translateY(-2px); }
+/* Stretched link makes the whole card open the app; real controls sit above it. */
+.appcard-link::after { content: ""; position: absolute; inset: 0; }
+.appcard-url, .appcard-foot { position: relative; z-index: 1; }
 .appcard-top { display: flex; align-items: center; gap: 11px; min-width: 0; }
 .appcard-avatar { width: 40px; height: 40px; flex: none; border-radius: 10px; display: grid; place-items: center; font-family: var(--mono); font-weight: 700; font-size: 15px; color: var(--on-accent); background: linear-gradient(135deg, var(--accent), var(--accent-strong)); text-transform: lowercase; }
 .appcard-id { min-width: 0; }
@@ -2679,7 +2684,8 @@ body.ws-resizing iframe { pointer-events: none; }
 .newapp-head h2 { margin: 0; }
 .newapp-sub { color: var(--muted); font-size: 13px; margin: 2px 0 0; }
 .newapp-label { display: block; font-size: 12px; color: var(--muted); margin: 16px 0 6px; }
-.newapp-input { display: flex; align-items: center; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-2); overflow: hidden; }
+.newapp-input { display: flex; align-items: center; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-2); overflow: hidden; margin-bottom: 10px; }
+.fork-hint { margin-bottom: 5px; }
 .newapp-input:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--focus); }
 .newapp-dollar { padding: 0 6px 0 11px; color: var(--faint); }
 .newapp-input input { flex: 1; border: 0; background: none; color: var(--text); font: inherit; font-size: 15px; padding: 11px 11px 11px 2px; outline: none; }

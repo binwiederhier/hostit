@@ -672,7 +672,7 @@ const ForkDialog = ({ name, snapshotId, onClose, onForked }) => {
             maxLength={32}
           />
         </div>
-        <p className="hint">{forkNameHint}</p>
+        <p className="hint fork-hint">{forkNameHint}</p>
         <div className="newapp-willbe">
           <div className="row">
             <span className="ico">{"\u{1F310}"}</span>
@@ -1109,6 +1109,13 @@ const AppDetail = ({ account, refreshAccount }) => {
       /* ignore */
     }
   }, [name, view]);
+  // Mount a view's (lazily-loaded) chunk the first time it is opened, not all up
+  // front, so opening an app loads only the active tab; each tab shows its own
+  // spinner. Visited tabs stay mounted, so switching back to them is instant.
+  const [visited, setVisited] = useState(() => new Set([view]));
+  useEffect(() => {
+    setVisited((s) => (s.has(view) ? s : new Set(s).add(view)));
+  }, [view]);
   // With no Anthropic key there is no assistant, so open straight into the editor.
   useEffect(() => {
     if (app && !app.assistant_enabled && view === "assistant") setView("editor");
@@ -1474,7 +1481,7 @@ const AppDetail = ({ account, refreshAccount }) => {
                 onAction={lifecycle}
                 onDelete={() => setConfirmDelete(true)}
               />
-              <a className="btn btn-primary ws-open" href={app.url} target="_blank" rel="noreferrer" title="Open app">
+              <a className="btn btn-primary ws-open" href={app.custom_domain ? `https://${app.custom_domain}` : app.url} target="_blank" rel="noreferrer" title="Open app">
                 <span className="ws-open-label">Open app</span>
                 <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                   <path d="M6.5 3.5H3.5v9h9V9.5" />
@@ -1588,14 +1595,18 @@ const AppDetail = ({ account, refreshAccount }) => {
           />
         </div>
         <div className={"ws-editorwrap" + (view === "editor" ? "" : " ws-inactive")}>
-          <Suspense fallback={<div className="ws-chat-loading">Loading editor...</div>}>
-            <AppEditor name={app.name} url={app.url} running={app.running} diskMB={app.disk_mb} diskLimitMB={app.disk_limit_mb} onDeploy={reloadPreview} />
-          </Suspense>
+          {visited.has("editor") && (
+            <Suspense fallback={<div className="ws-chat-loading">Loading editor...</div>}>
+              <AppEditor name={app.name} url={app.url} running={app.running} diskMB={app.disk_mb} diskLimitMB={app.disk_limit_mb} onDeploy={reloadPreview} />
+            </Suspense>
+          )}
         </div>
         <div className={"ws-termwrap" + (view === "terminal" ? "" : " ws-inactive")}>
-          <Suspense fallback={<div className="ws-chat-loading">Loading terminal...</div>}>
-            <AppTerminal name={app.name} embedded active={view === "terminal"} onSsh={() => setShowSsh(true)} />
-          </Suspense>
+          {visited.has("terminal") && (
+            <Suspense fallback={<div className="ws-chat-loading">Loading terminal...</div>}>
+              <AppTerminal name={app.name} embedded active={view === "terminal"} onSsh={() => setShowSsh(true)} />
+            </Suspense>
+          )}
         </div>
         {/* The assistant view (chat + preview) exists only when an Anthropic key
             is configured; otherwise the workspace opens straight into the editor. */}
@@ -1606,9 +1617,11 @@ const AppDetail = ({ account, refreshAccount }) => {
             style={{ gridTemplateColumns: `minmax(0, ${chatFrac}fr) 10px minmax(0, ${1 - chatFrac}fr)` }}
           >
           <div className="ws-chat">
-            <Suspense fallback={<div className="ws-chat-loading">Loading assistant...</div>}>
-              <AppAssistant name={app.name} embedded onPreviewRefresh={reloadPreview} />
-            </Suspense>
+            {visited.has("assistant") && (
+              <Suspense fallback={<div className="ws-chat-loading">Loading assistant...</div>}>
+                <AppAssistant name={app.name} embedded onPreviewRefresh={reloadPreview} />
+              </Suspense>
+            )}
           </div>
 
           <div
