@@ -19,3 +19,33 @@ export const useReconnect = (onReconnect) => {
     };
   }, [onReconnect]);
 };
+
+// useAppViewportHeight publishes the *visual* viewport height as the --app-vh CSS
+// variable. On a phone the on-screen keyboard shrinks the visual viewport but not
+// the layout viewport, so full-height views measured in dvh sit behind the
+// keyboard. Driving their height from --app-vh instead keeps the composer right
+// above the keyboard, like a chat app. Falls back to 100dvh when the var is unset.
+export const useAppViewportHeight = () => {
+  useEffect(() => {
+    const vv = window.visualViewport;
+    const apply = () => {
+      const h = vv ? vv.height : window.innerHeight;
+      document.documentElement.style.setProperty("--app-vh", `${Math.round(h)}px`);
+    };
+    apply();
+    if (vv) {
+      vv.addEventListener("resize", apply);
+      vv.addEventListener("scroll", apply);
+    }
+    window.addEventListener("resize", apply);
+    window.addEventListener("orientationchange", apply);
+    return () => {
+      if (vv) {
+        vv.removeEventListener("resize", apply);
+        vv.removeEventListener("scroll", apply);
+      }
+      window.removeEventListener("resize", apply);
+      window.removeEventListener("orientationchange", apply);
+    };
+  }, []);
+};

@@ -47,7 +47,10 @@ const NewAppDialog = ({ name, setName, onSubmit, creating, atLimit, onCancel }) 
   const sub = (name || "").replace(/[^a-z0-9-]/g, "") || "app";
   return (
     <div className="modal-backdrop" role="dialog" aria-modal="true" onMouseDown={onCancel}>
-      <form className="card modal newapp" onSubmit={onSubmit} onMouseDown={(e) => e.stopPropagation()}>
+      <form className="card modal newapp modal-sheet" onSubmit={onSubmit} onMouseDown={(e) => e.stopPropagation()}>
+        <button type="button" className="modal-x" onClick={onCancel} title="Close" aria-label="Close">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
+        </button>
         <div className="newapp-head">
           <div className="newapp-avatar">{sub.slice(0, 2)}</div>
           <div>

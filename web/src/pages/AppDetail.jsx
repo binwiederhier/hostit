@@ -386,7 +386,10 @@ const PromptDialog = ({ prompt, token, onClose }) => {
   useEscape(onClose);
   return (
     <div className="modal-backdrop" role="dialog" aria-modal="true" onMouseDown={onClose}>
-      <div className="card modal modal-wide" onMouseDown={(e) => e.stopPropagation()}>
+      <div className="card modal modal-wide modal-sheet" onMouseDown={(e) => e.stopPropagation()}>
+        <button type="button" className="modal-x" onClick={onClose} title="Close" aria-label="Close">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
+        </button>
         <div className="modal-head">
           <h2>Use your own AI agent</h2>
           <button type="button" className="term-btn" onClick={onClose} title="Close" aria-label="Close">
@@ -418,7 +421,10 @@ const SshDialog = ({ app, hasKeys, onClose }) => {
   useEscape(onClose);
   return (
     <div className="modal-backdrop" role="dialog" aria-modal="true" onMouseDown={onClose}>
-      <div className="card modal" onMouseDown={(e) => e.stopPropagation()}>
+      <div className="card modal modal-sheet" onMouseDown={(e) => e.stopPropagation()}>
+        <button type="button" className="modal-x" onClick={onClose} title="Close" aria-label="Close">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
+        </button>
         <div className="modal-head">
           <h2>Connect via SSH</h2>
           <button type="button" className="term-btn" onClick={onClose} title="Close" aria-label="Close">
@@ -562,7 +568,10 @@ const NewSnapshotDialog = ({ name, onClose, onCreated, showToast }) => {
 
   return (
     <div className="modal-backdrop" role="dialog" aria-modal="true" onMouseDown={onClose}>
-      <form className="card modal" onSubmit={create} onMouseDown={(e) => e.stopPropagation()}>
+      <form className="card modal modal-sheet" onSubmit={create} onMouseDown={(e) => e.stopPropagation()}>
+        <button type="button" className="modal-x" onClick={onClose} title="Close" aria-label="Close">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
+        </button>
         <h2>New snapshot</h2>
         <p className="hint">
           Save a point-in-time copy of <span className="mono">{name}</span>'s files you can roll back to. A name is
@@ -627,7 +636,10 @@ const ForkDialog = ({ name, snapshotId, onClose, onForked }) => {
   const sub = (newName || "").replace(/[^a-z0-9-]/g, "") || "app";
   return (
     <div className="modal-backdrop" role="dialog" aria-modal="true" onMouseDown={onClose}>
-      <form className="card modal" onSubmit={fork} onMouseDown={(e) => e.stopPropagation()}>
+      <form className="card modal modal-sheet" onSubmit={fork} onMouseDown={(e) => e.stopPropagation()}>
+        <button type="button" className="modal-x" onClick={onClose} title="Close" aria-label="Close">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
+        </button>
         <h2>Fork {name}</h2>
         <p className="hint">
           A new app seeded from {snapshotId ? "this snapshot" : "a copy of the current files"} -- its own subdomain, user and container. The two run independently from here on.
@@ -895,6 +907,36 @@ const AppSettings = ({ app, showToast, onCopyToken, onRegenerateToken, hasToken,
   );
 };
 
+// One snapshot row's actions: three inline icons on a wide screen, collapsed into
+// a single kebab menu on a phone (CSS swaps which one shows).
+const SnapRowActions = ({ busy, onRollback, onFork, onDelete }) => {
+  const { open, setOpen, ref } = useDropdown();
+  const pick = (fn) => () => {
+    setOpen(false);
+    fn();
+  };
+  return (
+    <span className="snap-tl-actions">
+      <span className="snap-actions-inline">
+        <button type="button" className="btn btn-small btn-icon" onClick={onRollback} disabled={busy} title="Roll back to this snapshot" aria-label="Roll back to this snapshot"><RollbackIcon /></button>
+        <button type="button" className="btn btn-small btn-icon" onClick={onFork} disabled={busy} title="Fork a new app from this snapshot" aria-label="Fork a new app from this snapshot"><ForkIcon /></button>
+        <button type="button" className="btn btn-small btn-icon menu-item-danger" onClick={onDelete} disabled={busy} title="Delete this snapshot" aria-label="Delete this snapshot"><TrashIcon /></button>
+      </span>
+      <span className="menu snap-actions-menu" ref={ref}>
+        <button type="button" className="btn btn-small btn-icon" onClick={() => setOpen(!open)} disabled={busy} aria-haspopup="menu" aria-expanded={open} aria-label="Snapshot actions"><DotsIcon /></button>
+        {open && (
+          <div className="menu-items" role="menu">
+            <MenuItem icon={<RollbackIcon />} label="Roll back" onClick={pick(onRollback)} />
+            <MenuItem icon={<ForkIcon />} label="Fork app" onClick={pick(onFork)} />
+            <div className="menu-sep" />
+            <MenuItem icon={<TrashIcon />} label="Delete" onClick={pick(onDelete)} danger />
+          </div>
+        )}
+      </span>
+    </span>
+  );
+};
+
 // The Snapshots view: the snapshots list with rollback / fork / delete, and a
 // "Take snapshot" action -- the former dialog's contents, inline in a tab.
 const SnapshotsPane = ({ name, showToast, onRolledBack, onFork, onNew, reloadSignal }) => {
@@ -1003,11 +1045,12 @@ const SnapshotsPane = ({ name, showToast, onRolledBack, onFork, onNew, reloadSig
                       {s.label ? <span>{s.label}</span> : <span className="snap-tl-untitled">{s.auto ? "Automated snapshot" : "Manual snapshot"}</span>}
                       {isLatest && <span className="snap-tl-latest">latest</span>}
                     </span>
-                    <span className="snap-tl-actions">
-                      <button type="button" className="btn btn-small btn-icon" onClick={() => setConfirm({ type: "rollback", snap: s })} disabled={busy} title="Roll back to this snapshot" aria-label="Roll back to this snapshot"><RollbackIcon /></button>
-                      <button type="button" className="btn btn-small btn-icon" onClick={() => onFork(s.id)} disabled={busy} title="Fork a new app from this snapshot" aria-label="Fork a new app from this snapshot"><ForkIcon /></button>
-                      <button type="button" className="btn btn-small btn-icon menu-item-danger" onClick={() => setConfirm({ type: "delete", snap: s })} disabled={busy} title="Delete this snapshot" aria-label="Delete this snapshot"><TrashIcon /></button>
-                    </span>
+                    <SnapRowActions
+                      busy={busy}
+                      onRollback={() => setConfirm({ type: "rollback", snap: s })}
+                      onFork={() => onFork(s.id)}
+                      onDelete={() => setConfirm({ type: "delete", snap: s })}
+                    />
                   </div>
                 );
               })}
@@ -1551,7 +1594,7 @@ const AppDetail = ({ account, refreshAccount }) => {
         </div>
         <div className={"ws-termwrap" + (view === "terminal" ? "" : " ws-inactive")}>
           <Suspense fallback={<div className="ws-chat-loading">Loading terminal...</div>}>
-            <AppTerminal name={app.name} embedded onSsh={() => setShowSsh(true)} />
+            <AppTerminal name={app.name} embedded active={view === "terminal"} onSsh={() => setShowSsh(true)} />
           </Suspense>
         </div>
         {/* The assistant view (chat + preview) exists only when an Anthropic key

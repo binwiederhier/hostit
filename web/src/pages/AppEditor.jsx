@@ -35,7 +35,10 @@ export default function AppEditor({ name, url, running, diskMB, diskLimitMB, onD
   const [uploadPct, setUploadPct] = useState(null);
   const [dialog, setDialog] = useState(null); // {type:'rename'|'delete', path, isDir, value}
 
-  const [treeCollapsed, setTreeCollapsed] = useState(false);
+  // On a phone the tree is a drawer over the editor, so start it closed to give
+  // the editor the whole (narrow) screen.
+  const isNarrow = () => typeof window !== "undefined" && window.matchMedia("(max-width: 640px)").matches;
+  const [treeCollapsed, setTreeCollapsed] = useState(isNarrow);
   const [treeWidth, setTreeWidth] = useState(240);
   const [previewOn, setPreviewOn] = useState(false);
   const [previewWidth, setPreviewWidth] = useState(440);
@@ -112,6 +115,7 @@ export default function AppEditor({ name, url, running, diskMB, diskLimitMB, onD
   const openFile = (path, size) => {
     setActive(path);
     setError("");
+    if (isNarrow()) setTreeCollapsed(true); // close the drawer so the editor shows
     if (tabs.some((t) => t.path === path)) return;
     setTabs((t) => [...t, { path, size, content: "", saved: "", loading: true, binary: false, imgFailed: false, error: "" }]);
     // Known-binary extension: show the details card at once (size from the
@@ -504,6 +508,8 @@ export default function AppEditor({ name, url, running, diskMB, diskLimitMB, onD
         </button>
       ) : (
         <>
+          {/* Tapping outside the drawer closes it (mobile only; hidden on desktop). */}
+          <div className="ed-tree-backdrop" onClick={() => setTreeCollapsed(true)} aria-hidden="true" />
           <aside className="ed-tree" style={{ width: treeWidth }}>
             <div className="ed-tree-hd">
               <button type="button" className="ed-refresh" title="Collapse files" aria-label="Collapse files" onClick={() => setTreeCollapsed(true)}>

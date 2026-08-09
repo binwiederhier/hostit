@@ -1379,12 +1379,33 @@ th:last-child {
 }
 
 .modal {
+  position: relative;
   max-width: 32rem;
   width: 100%;
   margin: 0;
   max-height: 90vh;
   overflow-y: auto;
 }
+/* Corner close affordance for the larger form dialogs (essential once they go
+   full-screen on a phone, where the Cancel button may be scrolled off). */
+.modal-x {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 2;
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  border-radius: 8px;
+  cursor: pointer;
+}
+.modal-x:hover { color: var(--text); background: var(--surface-2); }
+.modal-x svg { width: 18px; height: 18px; }
 
 /* Browser terminal (xterm) */
 .term-window {
@@ -1950,7 +1971,7 @@ th:last-child {
   .term-window,
   .asst-window {
     width: 100%;
-    height: 100dvh;
+    height: var(--app-vh, 100dvh);
     max-height: none;
     border: 0;
     border-radius: 0;
@@ -1959,10 +1980,23 @@ th:last-child {
   .modal-backdrop {
     padding: 0;
   }
-  /* Keep small dialogs off the very edges even with no backdrop padding. */
+  /* Keep small dialogs (confirms, rename) off the very edges even with no
+     backdrop padding. */
   .modal {
     margin: 12px;
     max-height: calc(100dvh - 24px);
+  }
+  /* Form-heavy dialogs become full-screen sheets on a phone; --app-vh keeps them
+     above the keyboard. */
+  .modal.modal-sheet {
+    width: 100%;
+    height: var(--app-vh, 100dvh);
+    max-width: none;
+    max-height: none;
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+    overflow-y: auto;
   }
 }
 
@@ -1977,8 +2011,10 @@ main.container:has(.ws-page) {
   max-width: none;
   padding: 16px 20px 12px;
   /* App-like views (editor, terminal) need a definite height so their inner
-     panes fill to the bottom; document views override this below. */
-  height: calc(100dvh - 54px);
+     panes fill to the bottom; document views override this below. --app-vh
+     tracks the visual viewport (shrinks for the mobile keyboard), so the chat
+     composer stays above the keyboard; it falls back to 100dvh on desktop. */
+  height: calc(var(--app-vh, 100dvh) - 54px);
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -1987,7 +2023,7 @@ main.container:has(.ws-page) {
    page scroll, instead of trapping a scrollbar inside a fixed-height box. */
 main.container:has(.ws-page.ws-doc) {
   height: auto;
-  min-height: calc(100dvh - 54px);
+  min-height: calc(var(--app-vh, 100dvh) - 54px);
 }
 .ws-page {
   display: flex;
@@ -2209,6 +2245,12 @@ body.ws-resizing iframe { pointer-events: none; }
   /* Tight on space: the Open app button shrinks to just its icon */
   .ws-topacts .btn-primary .ws-open-label { display: none; }
   .ws-topacts .btn-primary { padding: 0 11px; }
+
+  /* The kebab sits mid-row (Open app is pushed right), so anchor its menu to the
+     right edge of the controls row instead of the button, or it drifts left. */
+  .ws-topacts { position: relative; }
+  .ws-topacts .menu { position: static; }
+  .ws-topacts .menu-items { right: 0; top: 100%; }
 }
 
 /* Modal helpers shared by the SSH and bring-your-own-AI dialogs */
@@ -2236,6 +2278,8 @@ body.ws-resizing iframe { pointer-events: none; }
 .snap-tl-item:focus-within .snap-tl-actions { opacity: 1; }
 .snap-tl-actions .btn-icon { padding: 5px 8px; }
 .snap-tl-actions .btn-icon svg { width: 17px; height: 17px; }
+.snap-actions-inline { display: inline-flex; gap: 6px; }
+.snap-actions-menu { display: none; }
 .confirm-body { color: var(--text); line-height: 1.5; }
 .confirm-body p { margin: 0 0 10px; }
 .confirm-body p:last-child { margin-bottom: 0; }
@@ -2407,7 +2451,16 @@ body.ws-resizing iframe { pointer-events: none; }
 .ws-viewtab.on { color: var(--text); border-bottom-color: var(--accent); }
 .ws-viewtab.on svg { opacity: 1; color: var(--accent); }
 /* On small screens the Snapshots pane's intro paragraph is just noise. */
-@media (max-width: 640px) { .ws-snapshotswrap .ov-desc { display: none; } }
+@media (max-width: 640px) {
+  .ws-snapshotswrap .ov-desc { display: none; }
+  /* No hover on touch: the auto/manual badges just crowd the row, and the
+     rollback/fork/delete icons must always be visible (not hover-revealed). */
+  .snap-tl-label .snap-kind { display: none; }
+  .snap-tl-actions { opacity: 1; }
+  /* Collapse the three row icons into a single kebab menu. */
+  .snap-actions-inline { display: none; }
+  .snap-actions-menu { display: inline-block; }
+}
 
 /* ---- Editor view: file tree + tabbed text editor ---- */
 .ws-editorwrap, .ws-termwrap { min-height: 0; }
@@ -2479,6 +2532,24 @@ body.ws-resizing iframe { pointer-events: none; }
 
 @media (max-width: 720px) {
   .ed-view { grid-template-columns: 160px 1fr; }
+}
+
+/* Phones: the file tree is a drawer that slides over the editor (which keeps the
+   full width), with a tap-away backdrop. No side-by-side tree, resizers or
+   preview -- there is no room for them. */
+.ed-tree-backdrop { display: none; }
+@media (max-width: 640px) {
+  .ed-view { position: relative; }
+  .ed-tree {
+    position: absolute; left: 0; top: 0; bottom: 0; z-index: 30;
+    width: min(82vw, 300px) !important;
+    box-shadow: 6px 0 26px rgba(0, 0, 0, 0.45);
+  }
+  .ed-tree-backdrop { display: block; position: absolute; inset: 0; z-index: 25; background: rgba(0, 0, 0, 0.45); }
+  .ed-view .ws-resizer { display: none; }
+  .ed-preview { display: none; }
+  .ed-ctl { display: none; } /* the preview toggle is pointless with no preview pane */
+  .ed-rail { width: 44px; }
 }
 
 /* ---- Editor view v2: flex layout, collapse/resize, preview, highlighting ---- */

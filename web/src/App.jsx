@@ -1,7 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { BrowserRouter, Link, Navigate, NavLink, Route, Routes, useLocation } from "react-router-dom";
 import { api, ApiError, isNetworkError } from "./api";
-import { useReconnect } from "./hooks";
+import { useReconnect, useAppViewportHeight } from "./hooks";
 import { Loading, StatusDot, Wordmark } from "./components";
 import { getTheme, setTheme, THEMES } from "./theme";
 import { AppHeaderContext } from "./appHeader";
@@ -360,6 +360,8 @@ const App = () => {
 
   // Recover when connectivity returns or the tab is shown again.
   useReconnect(refreshAccount);
+  // Keep full-height views above the mobile keyboard (see --app-vh).
+  useAppViewportHeight();
 
   if (termPopout) {
     // A dark, full-window fallback (same class the terminal itself uses) so the

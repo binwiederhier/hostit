@@ -13,13 +13,14 @@ import "@xterm/xterm/css/xterm.css";
 // deliberately not dimming the page behind it so the live preview stays visible),
 // and a full-window page reached by the pop-out (and directly at
 // /app/<name>/terminal).
-const AppTerminal = ({ name, onClose, onMinimize, onReady, onSessionEnd, onSsh, minimized = false, fullPage = false, embedded = false }) => {
+const AppTerminal = ({ name, onClose, onMinimize, onReady, onSessionEnd, onSsh, minimized = false, fullPage = false, embedded = false, active = true }) => {
   // embedded fills its container inline (a workspace view); fullPage is the fixed
   // full-window overlay. Both drop the floating panel's drag/minimize chrome.
   const fixed = fullPage || embedded;
   const hostRef = useRef(null);
   const frameRef = useRef(null);
   const fitRef = useRef(null);
+  const termRef = useRef(null);
   const sendSizeRef = useRef(() => {});
   // Set just before we tear the socket down ourselves, so onclose can tell an
   // intentional close (unmount) from the server ending the session (e.g. a reboot).
@@ -34,6 +35,7 @@ const AppTerminal = ({ name, onClose, onMinimize, onReady, onSessionEnd, onSsh, 
       cursorBlink: true,
       theme: { background: "#14181d", foreground: "#e8ecf1", cursor: "#10b981" },
     });
+    termRef.current = term;
     const fit = new FitAddon();
     fitRef.current = fit;
     term.loadAddon(fit);
@@ -104,6 +106,18 @@ const AppTerminal = ({ name, onClose, onMinimize, onReady, onSessionEnd, onSsh, 
       requestAnimationFrame(() => requestAnimationFrame(() => sendSizeRef.current()));
     }
   }, [minimized]);
+
+  // Switching to the terminal tab: it was display:none, so re-measure and put the
+  // cursor in it -- you can start typing without clicking first.
+  useEffect(() => {
+    if (!active) return;
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        sendSizeRef.current();
+        termRef.current?.focus();
+      })
+    );
+  }, [active]);
 
   const toggleFullscreen = () => {
     if (document.fullscreenElement) {
