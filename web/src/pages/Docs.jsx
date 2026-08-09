@@ -58,10 +58,20 @@ const Docs = () => (
         app's files, processes or ports.
       </p>
       <p>
+        Each container comes with the common runtimes already installed: Python 3 (with venv and pip), the Go toolchain,
+        Node.js with npm, PHP, and sqlite3 for persistent data, plus git, curl, rsync, htop, vim and nano. Anything else you
+        need installs with <span className="mono">apt-get</span>.
+      </p>
+      <p>
         The app's page is a workspace: a built-in AI assistant that builds and deploys the app for you, a live preview beside
         it, and a browser terminal &mdash; so you can do everything here, or over SSH and the API, or with your own agent
         (next). The built-in assistant needs the server to be configured with an AI key; if it is not, use SSH or your own
         agent.
+      </p>
+      <p>
+        The same page has tabs for the app's <strong>Files</strong> (a browser editor), its <strong>Logs</strong> (a feed of
+        actions taken on the app, alongside its live, timestamped output), its <strong>Snapshots</strong>, and{" "}
+        <strong>Settings</strong> (custom domains, rename, the API token and SSH keys).
       </p>
     </section>
 
@@ -230,6 +240,11 @@ env:
         create and obtains the certificate over DNS-01, which works even when the server is not publicly reachable.
       </p>
       <p className="hint">
+        <strong>Rename:</strong> change an app's name from the app page's Settings tab. The app keeps running and nothing
+        moves, so its files, container and custom domains all follow it; only the <span className="mono">&lt;name&gt;.
+        {host.replace(/^[^.]*\./, "")}</span> subdomain and the SSH login change. Links to the old subdomain stop working.
+      </p>
+      <p className="hint">
         Keep <span className="mono">description:</span> current. The dashboard shows it, and it is what the next assistant
         session starts from.
       </p>
@@ -279,10 +294,13 @@ hostit poweron/poweroff/reboot   # the container itself`}
           <tbody>
             <Endpoint method="GET" path="/api/apps/{app}/info" what="State, README, file list, config, and the guide" />
             <Endpoint method="GET" path="/api/apps/{app}/logs?lines=N" what="Recent output" />
+            <Endpoint method="GET" path="/api/apps/{app}/assistant/transcript" what="The built-in assistant's chat history for this app, as markdown" />
             <Endpoint method="GET" path="/api/apps/{app}/files?path=" what="List one directory (type file|dir) of the app's files" />
             <Endpoint method="GET" path="/api/apps/{app}/files/{path}" what="Read one file" />
             <Endpoint method="PUT" path="/api/apps/{app}/files/{path}?mode=755" what="Write one file; mode makes it executable" />
             <Endpoint method="DELETE" path="/api/apps/{app}/files/{path}" what="Delete one file" />
+            <Endpoint method="POST" path="/api/apps/{app}/move" what={`Rename or move a file: {"from": "src/old.go", "to": "src/new.go"}`} />
+            <Endpoint method="POST" path="/api/apps/{app}/mkdir" what={`Create a directory: {"path": "src/handlers"}`} />
             <Endpoint method="POST" path="/api/apps/{app}/files" what="Upload a tar archive (Content-Type: application/x-tar)" />
             <Endpoint method="PUT" path="/api/apps/{app}/readme" what={`Replace README.md: {"readme": "..."}`} />
             <Endpoint
@@ -291,6 +309,9 @@ hostit poweron/poweroff/reboot   # the container itself`}
               what={`Run one command in the container: {"command": "cd src && go build ./..."}`}
             />
             <Endpoint method="POST" path="/api/apps/{app}/deploy" what="Apply hostit.yml and (re)start" />
+            <Endpoint method="GET|POST" path="/api/apps/{app}/snapshots" what={`List snapshots, or take one now: {"label": "short reason"}`} />
+            <Endpoint method="POST" path="/api/apps/{app}/snapshots/{id}/restore" what="Roll back to a snapshot (a safety snapshot is taken first)" />
+            <Endpoint method="DELETE" path="/api/apps/{app}/snapshots/{id}" what="Delete one snapshot" />
             <Endpoint method="POST" path="/api/apps/{app}/start|stop|restart" what="The run: command: start / stop / restart it (container stays up)" />
             <Endpoint method="POST" path="/api/apps/{app}/poweron|poweroff|reboot" what="The container: power on / off / reboot" />
           </tbody>
@@ -303,6 +324,9 @@ hostit poweron/poweroff/reboot   # the container itself`}
             <Endpoint method="GET" path="/api/account" what="Who you are, your limits and usage" />
             <Endpoint method="GET|POST" path="/api/apps" what="List your apps, or create one" />
             <Endpoint method="GET|DELETE" path="/api/apps/{name}" what="One app, or delete it" />
+            <Endpoint method="POST" path="/api/apps/{name}/rename" what={`Rename an app: {"new_name": "..."} (nothing moves; the app keeps running)`} />
+            <Endpoint method="POST" path="/api/apps/{name}/fork" what={`Duplicate an app: {"new_name": "...", "snapshot_id": "optional"}`} />
+            <Endpoint method="GET|POST|DELETE" path="/api/apps/{name}/domains" what="List, attach, or remove a custom domain" />
             <Endpoint method="POST" path="/api/apps/{name}/token" what="Rotate the app's agent token" />
             <Endpoint method="GET|POST" path="/api/account/keys" what="Your SSH keys" />
             <Endpoint method="GET|POST" path="/api/account/tokens" what="Your account tokens" />

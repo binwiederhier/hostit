@@ -7,6 +7,10 @@ import { ErrorBanner, formatDate, formatUsage, Loading, StatusDot } from "../com
 const numOrNull = (v) => (v === "" ? null : Number(v));
 const numOrEmpty = (v) => (v === null || v === undefined ? "" : String(v));
 
+// Built-in assistant spend, formatted compactly for the user table.
+const formatUSD = (n) => (!n ? "$0.00" : n < 0.01 ? "<$0.01" : "$" + n.toFixed(2));
+const formatTokens = (n) => (n >= 1e6 ? (n / 1e6).toFixed(1) + "M" : n >= 1e3 ? Math.round(n / 1e3) + "k" : String(n || 0));
+
 // One user row with locally edited limit fields; Save appears once dirty.
 const UserRow = ({ user, defaults, onPatch, onDelete }) => {
   const [appLimit, setAppLimit] = useState(numOrEmpty(user.app_limit));
@@ -54,6 +58,16 @@ const UserRow = ({ user, defaults, onPatch, onDelete }) => {
         </span>
       </td>
       <td>{user.app_count}</td>
+      <td title="Built-in assistant usage across this user's apps (does not include their own agent)">
+        {user.assistant_tokens ? (
+          <>
+            <div className="item-label">{formatUSD(user.assistant_cost_usd)}</div>
+            <div className="cell-muted">{formatTokens(user.assistant_tokens)} tokens</div>
+          </>
+        ) : (
+          <span className="cell-muted">--</span>
+        )}
+      </td>
       <td>
         <div className="limits-inputs">
           <input
@@ -131,10 +145,7 @@ const AppRow = ({ app }) => (
     </td>
     <td className="cell-muted">{app.owner_email || "--"}</td>
     <td>{formatUsage(app.memory_mb, app.memory_limit_mb)}</td>
-    <td>
-      {formatUsage(app.disk_mb, app.disk_limit_mb)}
-      {app.over_quota && <span className="badge badge-danger">over quota</span>}
-    </td>
+    <td>{formatUsage(app.disk_mb, app.disk_limit_mb)}</td>
     <td className="cell-muted">{formatDate(app.created_at)}</td>
     <td className="cell-actions">
       <div className="btn-row btn-row-end">
@@ -512,6 +523,7 @@ const AdminInner = () => {
                   <th>Role</th>
                   <th>Status</th>
                   <th>Apps</th>
+                  <th>Assistant</th>
                   <th>Limits (apps / mem MB / disk MB)</th>
                   <th aria-label="Actions" />
                 </tr>

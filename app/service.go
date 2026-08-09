@@ -66,10 +66,20 @@ type SystemOps interface {
 	LookupIDs(username string) (IDs, error)
 	CreateUser(username, home string, uid int) error
 	RemapUser(username, home string, uid int) error
+	// SetUserHome points a user at a new home path without moving files (the home
+	// was already moved); used by the one-off migration to id-keyed homes.
+	SetUserHome(username, home string) error
+	// RenameUser changes a user's login name in place (uid and home unchanged);
+	// this is the only OS mutation a rename needs.
+	RenameUser(oldName, newName string) error
+	// KillUserProcesses force-kills every process owned by the user, so usermod is
+	// not blocked by a leftover terminal/SSH session. Used only after the app's unit
+	// is stopped, so this reaps session wrappers, not the running app.
+	KillUserProcesses(username string) error
 	DeleteUser(username string) error
 	WriteAuthorizedKeys(username, home string, keys []string) error
 	WriteScaffold(username, home string, files map[string]string) error
-	ChownToUser(username, path string) error
+	ChownToUserIn(root *os.Root, username, rel string) error
 	ApplyPortRules(rules []PortRule) error
 	ImageExists(tag string) bool
 	BuildImage(contextDir, tag string) error
@@ -171,12 +181,6 @@ func (m *Manager) lockApp(name string) func() {
 // SSH access and scaffolds the home directory. Its authorized_keys are the union
 // of the request keys and the owner's profile keys; an app with neither is fine,
 // since apps are driven through the API and SSH is opt-in.
-// uidFor is an app's base uid: a contiguous uidBlockSize-wide block, one per
-// app, spaced by port so blocks never overlap. Container uid 0 maps here.
-func (m *Manager) uidFor(port int) int {
-	return uidBlockStart + (port-m.config.PortMin)*uidBlockSize
-}
-
 func (m *Manager) CreateApp(name string, opts *CreateOptions) (*store.App, error) {
 	return m.create(name, opts, "")
 }
@@ -237,10 +241,15 @@ func (m *Manager) create(name string, opts *CreateOptions, seedPath string) (*st
 	sshKeys := append(append([]string{}, appKeys...), opts.ProfileKeys...)
 	forking := seedPath != ""
 
+	// Mint the app's stable id up front: the home directory (and its snapshots) are
+	// keyed on the id, not the name, so a later rename never moves them. The id is
+	// on the App struct that gets inserted below.
+	app := &store.App{ID: store.NewAppID(), Name: name, Port: port, Host: store.HostLocal, OwnerID: opts.OwnerID, ImageTag: workspaceImageTag()}
+
 	// Create the user, install keys and populate the home directory. The uid is a
 	// contiguous block derived from the (unique) port, so the container maps as a
 	// single offset and podman idmap-mounts the image instead of copying it.
-	home := filepath.Join(m.config.AppsDir, name)
+	home := m.appHomeByID(app.ID)
 	// Seed the home. A fork is a writable snapshot of the seed subvolume (an instant
 	// CoW copy of its files); a fresh app is an empty subvolume on btrfs that the
 	// scaffold then fills. Either directory is adopted by useradd, whose own mkdir
@@ -265,8 +274,11 @@ func (m *Manager) create(name string, opts *CreateOptions, seedPath string) (*st
 	}
 	cleanup := func() {
 		_ = m.ops.DeleteUser(name)
+		// Remove the id-keyed home we just created. The app is not in the store on
+		// the early failures, so this deletes the concrete path rather than resolving
+		// it by name; a brand-new app has no snapshots to clean up.
 		if m.btrfsEnabled() {
-			m.deleteAppSubvolumes(name)
+			_ = m.deleteSubvolume(home)
 		}
 	}
 	if err := m.ops.WriteAuthorizedKeys(name, home, sshKeys); err != nil {
@@ -281,8 +293,10 @@ func (m *Manager) create(name string, opts *CreateOptions, seedPath string) (*st
 		}
 	}
 
-	// Register the app; roll back the user if this fails
-	app := &store.App{Name: name, Port: port, Host: store.HostLocal, OwnerID: opts.OwnerID}
+	// Register the app; roll back the user if this fails. The app was built above
+	// (id minted so the home could be created id-named); it is pinned to the
+	// workspace image it is built with, so a later Containerfile change (e.g. adding
+	// a runtime) only affects new apps, never this one.
 	if err := m.store.AddApp(app); err != nil {
 		cleanup()
 		return nil, err
@@ -334,13 +348,13 @@ func (m *Manager) DeleteApp(name string) error {
 	}
 	// Stop the app first: a running container keeps processes alive, and
 	// userdel refuses to remove a user that still has any
-	if _, err := m.runner.Run("systemctl", "disable", "--now", unitName(name)); err != nil {
+	if _, err := m.runner.Run("systemctl", "disable", "--now", m.unitName(name)); err != nil {
 		slog.Warn("Cannot disable the app's unit; reconciling at next start", "app", name, "error", err)
 	}
 	// The unit lingers in "failed" otherwise, and a Restart=always unit that
 	// systemd still knows about keeps retrying a container that is gone
-	_, _ = m.runner.Run("systemctl", "reset-failed", unitName(name))
-	_, _ = m.runner.Run("podman", "rm", "--force", containerName(name))
+	_, _ = m.runner.Run("systemctl", "reset-failed", m.unitName(name))
+	_, _ = m.runner.Run("podman", "rm", "--force", m.containerName(name))
 	// On btrfs the home and snapshots are subvolumes that userdel's rm -rf cannot
 	// remove, so delete them first.
 	if m.btrfsEnabled() {
@@ -469,4 +483,10 @@ func (m *Manager) allocatePort() (int, error) {
 		}
 	}
 	return 0, ErrNoPortsAvailable
+}
+
+// uidFor is an app's base uid: a contiguous uidBlockSize-wide block, one per
+// app, spaced by port so blocks never overlap. Container uid 0 maps here.
+func (m *Manager) uidFor(port int) int {
+	return uidBlockStart + (port-m.config.PortMin)*uidBlockSize
 }

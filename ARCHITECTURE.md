@@ -288,7 +288,9 @@ workspace with a hosted assistant, a terminal, and a live preview.
   Rate limits are **per-user across all their apps** (concurrent runs + hourly, admin
   token exempt); a context window, a subscriber cap, and a same-origin gate on the SSE
   connection keep it from being a lever for abuse. It is inert without an Anthropic API
-  key in the config.
+  key in the config. Requests carry **prompt-cache breakpoints** (`cache_control`) on
+  the system prompt, the tools block, and the tail of the conversation, so Anthropic
+  reuses the large stable prefix across turns instead of re-reading it every message.
 
   An external agent can pick up where the hosted one left off:
   `GET /api/apps/{app}/assistant/transcript` renders the stored session as markdown
@@ -309,6 +311,13 @@ workspace with a hosted assistant, a terminal, and a live preview.
   changing. Live CPU/RAM/disk come from one `podman stats` read behind the state
   cache; lifecycle actions post the same verbs the CLI does.
 
+- **Activity log (Logs tab).** User-initiated actions (create, fork, snapshot,
+  rollback, domain add/remove, description, token, lifecycle) are recorded to an
+  `app_event` row, attributed to the caller's email, via `s.logAction` in the
+  handlers. `GET /api/apps/{app}/events` returns the last 100 for the Logs tab,
+  which shows them above a live tail of the app's own container output
+  (`GET .../logs`). The log is trimmed to the newest `maxAppEvents` per app.
+
 ## Data
 
 SQLite, one connection, WAL. Ordered migrations that record their version in the
@@ -324,6 +333,7 @@ erDiagram
     app ||--o{ snapshot : has
     app ||--o{ app_domain : "custom domains"
     app ||--o| assistant_session : "chat transcript"
+    app ||--o{ app_event : "activity log"
 
     user {
         text id PK
@@ -428,6 +438,13 @@ Service packages at the root, thin `main.go`, no `internal/`:
 
 The same binary is all of these; which commands it offers depends on where it
 runs. Inside a container it presents only the app's own commands.
+
+Within a package, code is split per concern into small files rather than a few
+grab-bags: `store` has one file per entity (`app.go`, `snapshot.go`, `domain.go`,
+`event.go`, `token.go`, `setting.go`, ...), `app` separates deploy from
+`reconcile.go`, `migrate.go` and the pure `retention.go` engine, and `server`
+keeps the agent guide (`agentguide.go`), the assistant adapters (`assistantops.go`)
+and each feature's handlers in their own file.
 
 The SPA is a separate React 19 / Vite app under `web/`; `make web` builds it and copies
 the output into `server/site/`, which `server/web.go` bakes into the binary via

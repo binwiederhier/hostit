@@ -106,6 +106,30 @@ func (o *systemOps) RemapUser(username, home string, uid int) error {
 	return run("chown", "-R", id+":"+id, home)
 }
 
+// SetUserHome repoints a user at an already-moved home. No --move-home: the
+// migration renamed the directory itself, so usermod must only update the record.
+func (o *systemOps) SetUserHome(username, home string) error {
+	return run("usermod", "--home", home, username)
+}
+
+// RenameUser changes a user's login name; uid, home and files are untouched, so
+// this is cheap and safe to do while the app keeps running.
+func (o *systemOps) RenameUser(oldName, newName string) error {
+	return run("usermod", "--login", newName, oldName)
+}
+
+// KillUserProcesses SIGKILLs every process owned by the user. pkill exits 1 when
+// there was nothing to kill, which is success here, so only a worse code is an
+// error.
+func (o *systemOps) KillUserProcesses(username string) error {
+	err := run("pkill", "-KILL", "-u", username)
+	var exit *exec.ExitError
+	if errors.As(err, &exit) && exit.ExitCode() == 1 {
+		return nil // no matching processes
+	}
+	return err
+}
+
 // DeleteUser stops everything the user runs and removes the account including
 // home. Processes can linger (container runtimes reparent, sessions close
 // asynchronously), so escalate: ask systemd first, then kill what remains, and
@@ -231,15 +255,17 @@ func (o *systemOps) WriteScaffold(username, home string, files map[string]string
 	return nil
 }
 
-// ChownToUser gives a path to the app user. Lchown, not Chown: the app user
-// owns the directory this runs in, and chown(2) would follow a symlink they
-// planted and hand its target away.
-func (o *systemOps) ChownToUser(username, path string) error {
+// ChownToUserIn gives a path (relative to the app's home) to the app user,
+// chowning *through the app's os.Root* so an app owner cannot swap an
+// intermediate directory for a symlink and redirect the root daemon's chown onto
+// a host path. Lchown, not Chown, so the final component's symlink is not
+// followed either.
+func (o *systemOps) ChownToUserIn(root *os.Root, username, rel string) error {
 	uid, gid, err := lookupIDs(username)
 	if err != nil {
 		return err
 	}
-	return os.Lchown(path, uid, gid)
+	return root.Lchown(rel, uid, gid)
 }
 
 // ApplyPortRules atomically replaces the hostit nftables table: for each app

@@ -78,6 +78,15 @@ func execServe(c *cli.Context) error {
 	if err := applyStoredLimits(s, manager, users); err != nil {
 		return err
 	}
+	// Assign ids to any pre-id apps (and their per-app rows) before serving, so
+	// every request resolves an app by its stable id rather than racing a
+	// background backfill. Fast: a few UPDATEs.
+	manager.BackfillAppIDs()
+	// Move any pre-id app's home (and snapshots) onto its id-keyed path before
+	// serving, so requests never resolve a home that has not moved yet. One-off:
+	// a no-op once every app is id-keyed. This recreates each moved app's container
+	// once (the bind-mount source changes); no rename ever does so again.
+	manager.MigrateToIDKeyedHomes()
 	// Build the workspace image once. This runs in the background: it takes
 	// about a minute on a small host, and the proxy must not wait for it.
 	go func() {
@@ -86,6 +95,7 @@ func execServe(c *cli.Context) error {
 		}
 		// One-off: move any app still on the old split-uid scheme onto its
 		// contiguous block, so it becomes idmapped like new apps. No-op once done.
+		manager.PinUnpinnedApps()
 		manager.MigrateToBlockUIDs()
 		// Agents keep the behaviour of the binary they were exec'd from, so an
 		// upgrade only reaches them on a restart. In the background: this costs

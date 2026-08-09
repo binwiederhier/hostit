@@ -3,7 +3,6 @@ package app
 import (
 	"fmt"
 	"log/slog"
-	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -63,11 +62,11 @@ func (m *Manager) Ensure(name string) (string, error) {
 	if err != nil {
 		conf = nil // Fall back to an idle workspace
 	}
-	if _, err := m.runner.Run("podman", "container", "inspect", containerName(name), "--format", inspectHashFormat); err == nil {
+	if _, err := m.runner.Run("podman", "container", "inspect", m.containerName(name), "--format", inspectHashFormat); err == nil {
 		if m.isActive(name) {
 			return "workspace ready", nil
 		}
-		if _, err := m.runner.Run("systemctl", "enable", "--now", unitName(name)); err != nil {
+		if _, err := m.runner.Run("systemctl", "enable", "--now", m.unitName(name)); err != nil {
 			return "", err
 		}
 		return "workspace started", nil
@@ -93,7 +92,7 @@ func (m *Manager) signalAgent(name, signal string) error {
 	if _, err := m.store.App(name); err != nil {
 		return err
 	}
-	if _, err := m.runner.Run("podman", "kill", "--signal", signal, containerName(name)); err != nil {
+	if _, err := m.runner.Run("podman", "kill", "--signal", signal, m.containerName(name)); err != nil {
 		return fmt.Errorf("%w: the container is not running (power it on first)", ErrInvalid)
 	}
 	return nil
@@ -105,7 +104,7 @@ func (m *Manager) Down(name string) error {
 	if _, err := m.store.App(name); err != nil {
 		return err
 	}
-	_, err := m.runner.Run("systemctl", "disable", "--now", unitName(name))
+	_, err := m.runner.Run("systemctl", "disable", "--now", m.unitName(name))
 	return err
 }
 
@@ -115,7 +114,7 @@ func (m *Manager) Restart(name string) error {
 	if _, err := m.store.App(name); err != nil {
 		return err
 	}
-	_, err := m.runner.Run("systemctl", "restart", unitName(name))
+	_, err := m.runner.Run("systemctl", "restart", m.unitName(name))
 	return err
 }
 
@@ -124,7 +123,7 @@ func (m *Manager) Status(name string) (string, error) {
 	if _, err := m.store.App(name); err != nil {
 		return "", err
 	}
-	out, err := m.runner.Run("systemctl", "status", "--no-pager", unitName(name))
+	out, err := m.runner.Run("systemctl", "status", "--no-pager", m.unitName(name))
 	if out != "" {
 		return out, nil // systemctl status exits non-zero for stopped units; still useful
 	}
@@ -151,208 +150,6 @@ func (m *Manager) Logs(name string, lines int) (string, error) {
 	return tailLines(string(b), lines), nil
 }
 
-// ReconcileOrphans removes the host state of apps that no longer exist -- their
-// systemd units and their containers -- and returns the names it cleaned up.
-//
-// The registry is the source of truth, as it is for port rules. A unit left
-// behind by a deleted app is not inert: hostit-app@.service is Restart=always,
-// so systemd retries it forever against a container that is gone, and its
-// enable symlink starts it again after a reboot.
-func (m *Manager) ReconcileOrphans() []string {
-	out, err := m.runner.Run("systemctl", "list-units", unitTemplate+"*", "--all", "--no-legend", "--plain")
-	if err != nil {
-		slog.Warn("Cannot list app units to reconcile", "error", err)
-		return nil
-	}
-	apps, err := m.store.Apps()
-	if err != nil {
-		slog.Warn("Cannot list apps to reconcile units", "error", err)
-		return nil
-	}
-	known := make(map[string]bool, len(apps))
-	for _, a := range apps {
-		known[a.Name] = true
-	}
-	removed := make([]string, 0)
-	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
-		name, ok := appNameFromUnit(strings.Fields(strings.TrimSpace(line)))
-		if !ok || known[name] {
-			continue
-		}
-		unit := unitName(name)
-		if _, err := m.runner.Run("systemctl", "disable", "--now", unit); err != nil {
-			slog.Warn("Cannot disable the unit of a deleted app", "app", name, "error", err)
-		}
-		// Without this the unit lingers in "failed" forever, which is how these
-		// are noticed in the first place
-		if _, err := m.runner.Run("systemctl", "reset-failed", unit); err != nil {
-			slog.Debug("Cannot reset the unit of a deleted app", "app", name, "error", err)
-		}
-		removed = append(removed, name)
-	}
-	removed = append(removed, m.reconcileContainers(known)...)
-	removed = append(removed, m.reconcileHomes(known)...)
-	if len(removed) > 0 {
-		slog.Info("Removed leftovers of deleted apps", "apps", removed)
-	}
-	return removed
-}
-
-// reconcileHomes sweeps empty home directories left under AppsDir for apps no
-// longer in the registry -- e.g. the root-owned stub userdel can leave behind on
-// btrfs (see DeleteApp). A non-empty orphan is logged but kept, so a surprise is
-// surfaced for a human rather than silently deleted; hidden entries (.snapshots,
-// .backup, dotfiles) are never touched.
-func (m *Manager) reconcileHomes(known map[string]bool) []string {
-	entries, err := os.ReadDir(m.config.AppsDir)
-	if err != nil {
-		slog.Warn("Cannot list app homes to reconcile", "error", err)
-		return nil
-	}
-	removed := make([]string, 0)
-	for _, e := range entries {
-		name := e.Name()
-		if !e.IsDir() || strings.HasPrefix(name, ".") || known[name] {
-			continue
-		}
-		home := filepath.Join(m.config.AppsDir, name)
-		inner, err := os.ReadDir(home)
-		if err != nil {
-			slog.Warn("Cannot inspect orphaned app home", "app", name, "path", home, "error", err)
-			continue
-		}
-		if len(inner) > 0 {
-			slog.Warn("Orphaned app home is not empty; leaving it in place", "app", name, "path", home, "entries", len(inner))
-			continue
-		}
-		if err := os.Remove(home); err != nil {
-			slog.Warn("Cannot remove empty orphaned app home", "app", name, "path", home, "error", err)
-			continue
-		}
-		slog.Info("Removed empty orphaned app home", "app", name, "path", home)
-		removed = append(removed, name)
-	}
-	return removed
-}
-
-// reconcileContainers removes containers whose app is gone. Deleting an app
-// races the background start that follows creating one: if the start wins, it
-// leaves a container behind that nothing will ever run.
-func (m *Manager) reconcileContainers(known map[string]bool) []string {
-	out, err := m.runner.Run("podman", "ps", "--all", "--format", "{{.Names}}")
-	if err != nil {
-		slog.Warn("Cannot list containers to reconcile", "error", err)
-		return nil
-	}
-	removed := make([]string, 0)
-	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
-		name, ok := strings.CutPrefix(strings.TrimSpace(line), containerPrefix)
-		if !ok || name == "" || known[name] {
-			continue
-		}
-		if _, err := m.runner.Run("podman", "rm", "--force", containerName(name)); err != nil {
-			slog.Warn("Cannot remove the container of a deleted app", "app", name, "error", err)
-			continue
-		}
-		removed = append(removed, name)
-	}
-	return removed
-}
-
-// appNameFromUnit picks the app name out of a "systemctl list-units" line
-func appNameFromUnit(fields []string) (string, bool) {
-	if len(fields) == 0 {
-		return "", false
-	}
-	unit := strings.TrimSuffix(strings.TrimPrefix(fields[0], "\u25cf "), ".service")
-	name, ok := strings.CutPrefix(unit, unitTemplate)
-	if !ok || name == "" || strings.Contains(name, "@") {
-		return "", false
-	}
-	return name, true
-}
-
-// RestartStaleAgents restarts every running app whose agent predates this build
-// and returns the names it restarted.
-//
-// The agent is PID 1 in an app's container, exec'd from the hostit binary as it
-// was at the time. The binary on disk is bind-mounted, so an upgrade replaces
-// the file, but a running agent keeps the behaviour it started with -- and it
-// is the agent that decides what the app's run command actually is. A static
-// app once kept serving its old directory through an upgrade that way, with the
-// app's whole home on the internet. Restarting costs each app a moment of
-// downtime, so it only happens when the version actually changed.
-// MigrateToBlockUIDs is a one-off that moves any app still on the old split-uid
-// scheme onto its contiguous uid block, so it too creates instantly (podman
-// idmap-mounts the image) and stops holding a private chowned copy of it. New
-// apps are born on their block, so this only ever touches pre-migration apps.
-// Idempotent (an app already on its block is skipped) and best-effort (a per-app
-// failure is logged, never fatal).
-func (m *Manager) MigrateToBlockUIDs() {
-	apps, err := m.store.Apps()
-	if err != nil {
-		slog.Warn("uid migration: cannot list apps", "error", err)
-		return
-	}
-	migrated := false
-	for _, a := range apps {
-		want := m.uidFor(a.Port)
-		have, err := m.ops.LookupUID(a.Name)
-		if err != nil {
-			slog.Warn("uid migration: cannot read app uid, skipping", "app", a.Name, "error", err)
-			continue
-		}
-		if have == want {
-			continue // already on its block
-		}
-		started := time.Now()
-		// Stop the app first: usermod refuses a uid change while the user has live
-		// processes, and removing the container frees its old chowned image copy.
-		_, _ = m.runner.Run("systemctl", "stop", unitName(a.Name))
-		_, _ = m.runner.Run("podman", "rm", "--force", containerName(a.Name))
-		if err := m.ops.RemapUser(a.Name, m.appHome(a.Name), want); err != nil {
-			slog.Error("uid migration: cannot remap app, left as-is", "app", a.Name, "from", have, "to", want, "error", err)
-			continue
-		}
-		if _, err := m.Ensure(a.Name); err != nil {
-			slog.Error("uid migration: remapped but could not restart", "app", a.Name, "error", err)
-			continue
-		}
-		migrated = true
-		slog.Info("uid migration: moved app to its uid block", "app", a.Name, "from", have, "to", want, "took", time.Since(started).Round(time.Second))
-	}
-	// The nftables rules key off the uid, so rebuild them once the uids have moved
-	if migrated {
-		m.ReconcilePortRules()
-	}
-}
-
-func (m *Manager) RestartStaleAgents(version string) ([]string, error) {
-	settings, err := m.store.Settings()
-	if err != nil {
-		return nil, err
-	}
-	if settings[settingAgentVersion] == version {
-		return nil, nil
-	}
-	apps, err := m.store.Apps()
-	if err != nil {
-		return nil, err
-	}
-	restarted := make([]string, 0, len(apps))
-	for _, a := range apps {
-		// Up, not just a restart: a new binary may also want the container built
-		// differently (different mounts, different arguments), and only apply
-		// notices that
-		if _, err := m.Up(a.Name); err != nil {
-			slog.Warn("Cannot bring app up after upgrade", "app", a.Name, "error", err)
-			continue
-		}
-		restarted = append(restarted, a.Name)
-	}
-	return restarted, m.store.SetSetting(settingAgentVersion, version)
-}
-
 // apply converges the app container to the desired config: recreate it when the
 // configuration changed, start it, or (allowReload) signal the agent to restart
 // just the run command
@@ -372,7 +169,7 @@ func (m *Manager) apply(a *store.App, conf *appctl.AppConfig, allowReload bool) 
 	started := time.Now()
 	desired := containerCreateArgs(conf, a, m.appHome(name), m.config.SocketFile, hostitBinFile, m.memoryLimit(name), ids)
 	hash := containerConfigHash(desired)
-	current, err := m.runner.Run("podman", "container", "inspect", containerName(name), "--format", inspectHashFormat)
+	current, err := m.runner.Run("podman", "container", "inspect", m.containerName(name), "--format", inspectHashFormat)
 	recreated := false
 	if err != nil || strings.TrimSpace(current) != hash {
 		// Creating an app starts it in the background, and the owner may delete it
@@ -382,8 +179,8 @@ func (m *Manager) apply(a *store.App, conf *appctl.AppConfig, allowReload bool) 
 		if _, err := m.store.App(name); err != nil {
 			return "", err
 		}
-		_, _ = m.runner.Run("systemctl", "stop", unitName(name))
-		_, _ = m.runner.Run("podman", "rm", "--force", containerName(name))
+		_, _ = m.runner.Run("systemctl", "stop", m.unitName(name))
+		_, _ = m.runner.Run("podman", "rm", "--force", m.containerName(name))
 		createArgs := append([]string{"podman"}, withConfigLabel(desired, hash)...)
 		if _, err := m.runner.Run(createArgs...); err != nil {
 			return "", fmt.Errorf("cannot create container: %w", err)
@@ -394,18 +191,18 @@ func (m *Manager) apply(a *store.App, conf *appctl.AppConfig, allowReload bool) 
 
 	// Start if needed; otherwise a changed run: command only needs an agent reload
 	if recreated || !m.isActive(name) {
-		if _, err := m.runner.Run("systemctl", "enable", "--now", unitName(name)); err != nil {
+		if _, err := m.runner.Run("systemctl", "enable", "--now", m.unitName(name)); err != nil {
 			return "", err
 		}
 		if recreated {
-			if _, err := m.runner.Run("systemctl", "restart", unitName(name)); err != nil {
+			if _, err := m.runner.Run("systemctl", "restart", m.unitName(name)); err != nil {
 				return "", err
 			}
 		}
 		return "deployed (container created and started)", nil
 	}
 	if allowReload && conf != nil {
-		if _, err := m.runner.Run("podman", "kill", "--signal", "HUP", containerName(name)); err != nil {
+		if _, err := m.runner.Run("podman", "kill", "--signal", "HUP", m.containerName(name)); err != nil {
 			return "", err
 		}
 		return "reloaded (agent restarted the run command)", nil
@@ -414,12 +211,31 @@ func (m *Manager) apply(a *store.App, conf *appctl.AppConfig, allowReload bool) 
 }
 
 func (m *Manager) isActive(name string) bool {
-	out, err := m.runner.Run("systemctl", "is-active", unitName(name))
+	out, err := m.runner.Run("systemctl", "is-active", m.unitName(name))
 	return err == nil && strings.TrimSpace(out) == "active"
 }
 
+// appID resolves an app's stable id from its current name. The home directory and
+// its snapshots are keyed on the id so a rename never moves them; callers still
+// address apps by name and this is the single translation point. An unknown name
+// falls back to itself, so a stray lookup fails on a missing path rather than here.
+func (m *Manager) appID(name string) string {
+	a, err := m.store.App(name)
+	if err != nil {
+		return name
+	}
+	return a.ID
+}
+
+// appHome is an app's home directory, keyed on its id (see appID).
 func (m *Manager) appHome(name string) string {
-	return filepath.Join(m.config.AppsDir, name)
+	return m.appHomeByID(m.appID(name))
+}
+
+// appHomeByID builds a home path straight from an id, for the create path where
+// the app is not yet in the store to resolve a name through.
+func (m *Manager) appHomeByID(id string) string {
+	return filepath.Join(m.config.AppsDir, id)
 }
 
 // loadConfig reads and validates an app's hostit.yml through its os.Root, so a

@@ -330,13 +330,28 @@ func (s *Server) appLimits(name string) (memoryMB int, diskMB int) {
 }
 
 // appResponse converts an app to its API form
-func (s *Server) appResponse(a *store.App) *apiAppResponse {
+// firstActiveDomain returns an app's first verified custom domain, or "". Used by
+// the single-app endpoints; the list endpoint batches this via store.ActiveDomains.
+func (s *Server) firstActiveDomain(name string) string {
+	domains, err := s.apps.Store().Domains(name)
+	if err != nil {
+		return ""
+	}
+	for _, d := range domains {
+		if d.Status == store.DomainActive {
+			return d.Domain
+		}
+	}
+	return ""
+}
+
+func (s *Server) appResponse(a *store.App, customDomain string) *apiAppResponse {
 	resp := &apiAppResponse{
+		ID:               a.ID,
 		Name:             a.Name,
 		URL:              s.apps.URL(a),
 		Port:             a.Port,
 		DiskMB:           a.DiskMB,
-		OverQuota:        a.OverQuota,
 		OwnerEmail:       s.ownerEmail(a.OwnerID),
 		SnapshotsEnabled: s.apps.SnapshotsEnabled(),
 		AssistantEnabled: s.assistant != nil,
@@ -349,15 +364,9 @@ func (s *Server) appResponse(a *store.App) *apiAppResponse {
 			Command: fmt.Sprintf("ssh %s@%s", a.Name, s.config.SSHHostname()),
 		},
 	}
-	// The first verified custom domain becomes the app's primary public URL.
-	if domains, err := s.apps.Store().Domains(a.Name); err == nil {
-		for _, d := range domains {
-			if d.Status == store.DomainActive {
-				resp.CustomDomain = d.Domain
-				break
-			}
-		}
-	}
+	// The first verified custom domain becomes the app's primary public URL. The
+	// caller looks it up (one query for a single app, batched for the list).
+	resp.CustomDomain = customDomain
 	return resp
 }
 

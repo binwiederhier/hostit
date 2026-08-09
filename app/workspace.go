@@ -15,10 +15,14 @@ import (
 
 const (
 	// containerPrefix names an app's container; the daemon runs containers as
-	// root, so names share one namespace and must carry the app name
+	// root, so names share one namespace and must carry the app's (stable) id
 	containerPrefix = "hostit-app-"
 	// unitTemplate is the systemd template unit instantiated per app
 	unitTemplate = "hostit-app@"
+	// containerHome is the app's home as seen from inside its container. It is a
+	// fixed path (not the app name) so a rename never has to recreate the container
+	// to fix it: the id-keyed host home is bind-mounted here and stays put.
+	containerHome = "/home/app"
 	// containerPort is what an app listens on inside its own network namespace.
 	// Every app has the whole namespace to itself, so they can all use the same
 	// obvious number and never see the loopback port hostit picked outside.
@@ -48,6 +52,8 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-ins
       sqlite3 \
       python3 python3-venv python3-pip \
       golang-go \
+      nodejs npm \
+      php-cli \
     && rm -rf /var/lib/apt/lists/*
 # System-wide shell niceties so every login shell (SSH and the web terminal)
 # gets the usual colours and ll/la aliases, without a dotfile in the app's home.
@@ -63,7 +69,7 @@ CMD ["/bin/bash"]
 	// users and agents so nobody has to guess what is available. It is kept lean
 	// on purpose (a big image makes every per-app container slower to create and
 	// heavier on disk); anything else installs with apt-get.
-	WorkspaceRuntimes = "python3 (with venv and pip), the go toolchain (go build works in here), sqlite3 for persistent data, plus git, curl, rsync, htop, vim and nano (install anything else, e.g. node or php, with apt-get)"
+	WorkspaceRuntimes = "python3 (with venv and pip), the go toolchain (go build works in here), Node.js with npm, PHP (php-cli), sqlite3 for persistent data, plus git, curl, rsync, htop, vim and nano (install anything else with apt-get)"
 )
 
 // IDs is the app's contiguous host uid/gid block. Container uid 0 maps to UID on
@@ -88,14 +94,24 @@ func imageTagFor(containerfile string) string {
 	return workspaceImagePrefix + ":" + hex.EncodeToString(sum[:6])
 }
 
-// containerName returns the container name of an app
-func containerName(appName string) string {
-	return containerPrefix + appName
+// containerName and unitName are keyed on the app's stable id, not its name, so a
+// rename never recreates the (stateful) container or its unit. Callers holding
+// only a name go through the method, which resolves the id; callers holding the
+// app use the ForID form directly.
+func containerNameForID(id string) string {
+	return containerPrefix + id
 }
 
-// unitName returns the systemd unit instance of an app
-func unitName(appName string) string {
-	return unitTemplate + appName
+func unitNameForID(id string) string {
+	return unitTemplate + id
+}
+
+func (m *Manager) containerName(name string) string {
+	return containerNameForID(m.appID(name))
+}
+
+func (m *Manager) unitName(name string) string {
+	return unitNameForID(m.appID(name))
 }
 
 // containerCreateArgs returns the "podman create ..." arguments (without the
@@ -107,7 +123,7 @@ func unitName(appName string) string {
 // than on root. Each app gets its own network stack (slirp4netns), so containers
 // cannot reach each other, and ports are published on loopback only.
 func containerCreateArgs(conf *appctl.AppConfig, a *store.App, home, socketFile, hostitBin string, memoryMB int, ids IDs) []string {
-	args := []string{"create", "--name", containerName(a.Name), "--hostname", a.Name}
+	args := []string{"create", "--name", containerNameForID(a.ID), "--hostname", a.Name}
 	// Part of the container's identity, so an upgrade makes it stale and apply
 	// recreates it: the bind-mounted binary is a file, and a running container
 	// keeps the inode it started with
@@ -133,7 +149,6 @@ func containerCreateArgs(conf *appctl.AppConfig, a *store.App, home, socketFile,
 	// leaving a duplicate fighting for the port. The uid map, no-new-privileges and
 	// per-app network already isolate the container, so run it unconfined.
 	args = append(args, "--security-opt", "apparmor=unconfined")
-	containerHome := containerHomeDir(a.Name)
 	args = append(args,
 		"--env", fmt.Sprintf("PORT=%d", containerPort),
 		"--env", "HOME="+containerHome,
@@ -150,7 +165,13 @@ func containerCreateArgs(conf *appctl.AppConfig, a *store.App, home, socketFile,
 	args = appendCommonMounts(args, socketFile, hostitBin)
 	// The trailer: image, then the command podman runs in it. Everything before it
 	// is a flag, so a late-added label (withConfigLabel) goes in just ahead of it.
-	args = append(args, workspaceImageTag(), hostitBin, "agent")
+	// The app is pinned to the image tag it was built with; an app from before
+	// pinning (empty tag) falls back to the current image.
+	image := a.ImageTag
+	if image == "" {
+		image = workspaceImageTag()
+	}
+	args = append(args, image, hostitBin, "agent")
 	return args
 }
 
@@ -160,8 +181,21 @@ const containerArgsTrailer = 3
 
 // containerConfigHash returns a short hash of the container configuration; it is
 // stored as a label so the daemon can decide whether a recreate is needed
+// containerConfigHash fingerprints the container's configuration, so apply
+// recreates it only when something load-bearing changed. The --hostname is
+// deliberately excluded: it is cosmetic and derived from the app's mutable name,
+// and a rename must never recreate the (stateful) container. Everything else in
+// the create args keys on stable things -- the app id, its port, its uid.
 func containerConfigHash(args []string) string {
-	sum := sha256.Sum256([]byte(strings.Join(args, "\x00")))
+	hashable := make([]string, 0, len(args))
+	for i := 0; i < len(args); i++ {
+		if args[i] == "--hostname" && i+1 < len(args) {
+			i++ // skip the flag and its (name-derived) value
+			continue
+		}
+		hashable = append(hashable, args[i])
+	}
+	sum := sha256.Sum256([]byte(strings.Join(hashable, "\x00")))
 	return hex.EncodeToString(sum[:8])
 }
 

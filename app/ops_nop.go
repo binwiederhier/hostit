@@ -1,6 +1,7 @@
 package app
 
 import (
+	"os"
 	"time"
 )
 
@@ -41,6 +42,18 @@ func (o *NopSystemOps) CreateUser(username, home string, uid int) error {
 	return nil
 }
 
+func (o *NopSystemOps) SetUserHome(username, home string) error {
+	return nil
+}
+
+func (o *NopSystemOps) RenameUser(oldName, newName string) error {
+	return nil
+}
+
+func (o *NopSystemOps) KillUserProcesses(username string) error {
+	return nil
+}
+
 func (o *NopSystemOps) RemapUser(username, home string, uid int) error {
 	return nil
 }
@@ -57,7 +70,7 @@ func (o *NopSystemOps) WriteScaffold(username, home string, files map[string]str
 	return nil
 }
 
-func (o *NopSystemOps) ChownToUser(username, path string) error {
+func (o *NopSystemOps) ChownToUserIn(root *os.Root, username, rel string) error {
 	return nil
 }
 

@@ -15,9 +15,10 @@ import (
 const (
 	// enterFile is the sudo-able wrapper that enters the caller's container
 	enterFile = "/usr/bin/hostit-enter"
-	// cursor is the wordmark's blinking block, drawn as a reverse-video space so
-	// the source stays ASCII: green foreground reversed renders as a green block
-	cursor = "\x1b[32m\x1b[7m \x1b[0m"
+	// cursor is the wordmark's block, a space on a 24-bit background set to the web
+	// app's accent (#159cb0), so the login banner's cursor matches the logo cursor
+	// in the dashboard rather than a plain terminal green.
+	cursor = "\x1b[48;2;21;156;176m \x1b[0m"
 )
 
 var (
@@ -76,8 +77,8 @@ func execShell(c *cli.Context) error {
 }
 
 // loginBanner is what an interactive SSH session sees first: the wordmark (with
-// the same green cursor as the web app's logo), which app this is, and the
-// handful of commands that do anything here.
+// the same accent-coloured cursor as the web app's logo), which app this is, and
+// the handful of commands that do anything here.
 func loginBanner(self *appctl.SelfInfo) string {
 	return "\n" +
 		"  _               _   _ _   \n" +

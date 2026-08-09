@@ -19,6 +19,11 @@ func (s *Server) handleUsersList(w http.ResponseWriter, _ *http.Request, _ *call
 		writeAppError(w, err)
 		return
 	}
+	// One query for every owner's assistant usage, rather than one per user.
+	usageByOwner, err := s.apps.Store().UsageByOwner()
+	if err != nil {
+		usageByOwner = nil // show zero usage rather than failing the whole list
+	}
 	resp := make([]*apiUserResponse, 0, len(users))
 	for _, u := range users {
 		count, err := s.apps.Store().AppCountByOwner(u.ID)
@@ -26,7 +31,12 @@ func (s *Server) handleUsersList(w http.ResponseWriter, _ *http.Request, _ *call
 			writeAppError(w, err)
 			return
 		}
-		resp = append(resp, newUserResponse(u, count))
+		r := newUserResponse(u, count)
+		if usage, ok := usageByOwner[u.ID]; ok {
+			r.AssistantTokens = usage.InputTokens + usage.OutputTokens + usage.CacheWriteTokens + usage.CacheReadTokens
+			r.AssistantCostUSD = assistantCostUSD(usage, s.config.AssistantModel)
+		}
+		resp = append(resp, r)
 	}
 	writeJSON(w, http.StatusOK, resp)
 }

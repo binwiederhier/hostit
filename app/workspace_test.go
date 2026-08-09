@@ -18,21 +18,23 @@ func TestContainerCreateArgsWorkspaceMode(t *testing.T) {
 	t.Parallel()
 	conf := &appctl.AppConfig{Mode: appctl.ModeApp, Run: "python3 -m http.server $PORT"}
 	require.NoError(t, conf.Validate())
-	a := &store.App{Name: "blog", Port: 10000}
-	args := containerCreateArgs(conf, a, "/srv/hostit/apps/blog", "/run/hostit/hostit.sock", "/usr/bin/hostit", 0, testIDs)
+	a := &store.App{ID: "appid123", Name: "blog", Port: 10000}
+	args := containerCreateArgs(conf, a, "/srv/hostit/apps/appid123", "/run/hostit/hostit.sock", "/usr/bin/hostit", 0, testIDs)
 	cmd := strings.Join(args, " ")
-	assert.Contains(t, cmd, "create --name hostit-app-blog")
+	// The container is named by the app's stable id, not its name, so a rename never
+	// has to recreate it. The in-container home is a fixed path for the same reason.
+	assert.Contains(t, cmd, "create --name hostit-app-appid123")
 	assert.Contains(t, cmd, "--hostname blog")
 	assert.Contains(t, cmd, "--env PORT=80")
-	assert.Contains(t, cmd, "--env HOME=/home/blog")
-	assert.Contains(t, cmd, "--workdir /home/blog")
+	assert.Contains(t, cmd, "--env HOME=/home/app")
+	assert.Contains(t, cmd, "--workdir /home/app")
 	assert.Contains(t, cmd, "--publish 127.0.0.1:10000:80")
 	// A single contiguous id block, container 0 -> host 1001, so podman idmaps the
 	// image (no per-app copy) rather than chowning it. Not the old split map.
 	assert.Contains(t, cmd, "--uidmap 0:1001:65536")
 	assert.Contains(t, cmd, "--gidmap 0:1001:65536")
 	assert.NotContains(t, cmd, "--uidmap 0:1001:1")
-	assert.Contains(t, cmd, "--volume /srv/hostit/apps/blog:/home/blog")
+	assert.Contains(t, cmd, "--volume /srv/hostit/apps/appid123:/home/app")
 	assert.Contains(t, cmd, "--volume /usr/bin/hostit:/usr/bin/hostit:ro")
 	assert.Contains(t, cmd, "--volume /run/hostit:/run/hostit")
 	assert.Contains(t, cmd, workspaceImageTag())
@@ -65,18 +67,31 @@ func TestWorkspaceContainerfile(t *testing.T) {
 	assert.Contains(t, workspaceContainerfile, "openssh-sftp-server")
 	assert.Contains(t, workspaceContainerfile, "rsync")
 	assert.Contains(t, workspaceContainerfile, "FROM docker.io/library/debian")
-	// Kept: the flagship Go toolchain, python for quick apps, and sqlite3 so an
-	// owner can inspect a persistent app's database over SSH
+	// The runtimes an app can build against out of the box: Go, Python, Node.js,
+	// PHP, and sqlite3 so an owner can inspect a persistent app's database over SSH
 	assert.Contains(t, workspaceContainerfile, "golang-go")
 	assert.Contains(t, workspaceContainerfile, "python3")
+	assert.Contains(t, workspaceContainerfile, "nodejs npm")
+	assert.Contains(t, workspaceContainerfile, "php-cli")
 	assert.Contains(t, workspaceContainerfile, "sqlite3")
 	// Shell niceties (ll/colors) written into a system-wide profile.d script
 	assert.Contains(t, workspaceContainerfile, "/etc/profile.d/hostit.sh")
 	assert.Contains(t, workspaceContainerfile, "base64 -d")
-	// Dropped to keep the image small (they inflate every per-app container and
-	// the disk); an app that needs them installs them with apt-get
-	assert.NotContains(t, workspaceContainerfile, "nodejs")
-	assert.NotContains(t, workspaceContainerfile, "php")
+}
+
+func TestContainerUsesPinnedImage(t *testing.T) {
+	t.Parallel()
+	conf := &appctl.AppConfig{Mode: appctl.ModeStatic}
+	// A pinned app runs its own image tag, not whatever the current one is.
+	a := &store.App{Name: "blog", Port: 10000, ImageTag: "localhost/hostit-workspace:pinned123"}
+	joined := strings.Join(containerCreateArgs(conf, a, "/home", "/run/hostit/x.sock", "/usr/bin/hostit", 0, IDs{UID: 1001, GID: 1001}), " ")
+	assert.Contains(t, joined, "localhost/hostit-workspace:pinned123")
+	assert.NotContains(t, joined, workspaceImageTag())
+
+	// An app from before pinning (no tag) falls back to the current image.
+	old := &store.App{Name: "old", Port: 10001}
+	joinedOld := strings.Join(containerCreateArgs(conf, old, "/home", "/run/hostit/x.sock", "/usr/bin/hostit", 0, IDs{UID: 1001, GID: 1001}), " ")
+	assert.Contains(t, joinedOld, workspaceImageTag())
 }
 
 func TestContainerMountsTheSocketDirectory(t *testing.T) {

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -247,4 +248,32 @@ func TestAgentDoesNotStartWhenPrepareFails(t *testing.T) {
 	time.Sleep(300 * time.Millisecond)
 	_, err := os.Stat(filepath.Join(home, "started.txt"))
 	assert.True(t, os.IsNotExist(err), "the app must not start when its build failed")
+}
+
+func TestTimestampWriterPrefixesEachLine(t *testing.T) {
+	var buf bytes.Buffer
+	w := newTimestampWriter(&buf)
+
+	// A line split across two writes is stamped once, when its newline arrives.
+	_, err := w.Write([]byte("hello "))
+	require.NoError(t, err)
+	assert.Empty(t, buf.String(), "a partial line is held until its newline")
+	_, err = w.Write([]byte("world\nsecond line\n"))
+	require.NoError(t, err)
+
+	lines := strings.Split(strings.TrimRight(buf.String(), "\n"), "\n")
+	require.Len(t, lines, 2)
+	stamp := regexp.MustCompile(`^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} `)
+	assert.Regexp(t, stamp, lines[0])
+	assert.True(t, strings.HasSuffix(lines[0], "hello world"))
+	assert.Regexp(t, stamp, lines[1])
+	assert.True(t, strings.HasSuffix(lines[1], "second line"))
+}
+
+func TestTimestampWriterFlushesAnOverLongLine(t *testing.T) {
+	var buf bytes.Buffer
+	w := newTimestampWriter(&buf)
+	_, err := w.Write(bytes.Repeat([]byte("x"), maxLineBuffer+1))
+	require.NoError(t, err)
+	assert.NotEmpty(t, buf.String(), "a line past the cap is flushed rather than pinned in memory")
 }

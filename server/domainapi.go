@@ -71,6 +71,7 @@ func (s *Server) handleAppDomainAdd(w http.ResponseWriter, r *http.Request, c *c
 		writeAppError(w, err)
 		return
 	}
+	s.logAction(c, a.Name, "domain", "Added custom domain "+req.Domain)
 	writeJSON(w, http.StatusCreated, s.domainView(a.Name, d))
 }
 
@@ -99,5 +100,6 @@ func (s *Server) handleAppDomainDelete(w http.ResponseWriter, r *http.Request, c
 		writeAppError(w, err)
 		return
 	}
+	s.logAction(c, a.Name, "domain", "Removed custom domain "+r.PathValue("domain"))
 	writeJSON(w, http.StatusOK, &apiMessageResponse{Message: "removed"})
 }

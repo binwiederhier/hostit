@@ -167,9 +167,12 @@ type fakeSystemOps struct {
 	existingUsers  []string
 	createdUsers   []string
 	deletedUsers   []string
+	renamedUsers   []string
+	killedUsers    []string
 	authorizedKeys map[string][]string
 	scaffolds      map[string][]string
 	uids           map[string]int
+	userHomes      map[string]string
 	portRules      [][]PortRule
 	images         map[string]bool
 	builds         []imageBuild
@@ -191,6 +194,7 @@ func newFakeSystemOps() *fakeSystemOps {
 		authorizedKeys: make(map[string][]string),
 		scaffolds:      make(map[string][]string),
 		uids:           make(map[string]int),
+		userHomes:      make(map[string]string),
 		images:         make(map[string]bool),
 	}
 }
@@ -252,6 +256,38 @@ func (f *fakeSystemOps) RemapUser(username, home string, uid int) error {
 	return nil
 }
 
+func (f *fakeSystemOps) SetUserHome(username, home string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.userHomes[username] = home
+	return nil
+}
+
+func (f *fakeSystemOps) KillUserProcesses(username string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.killedUsers = append(f.killedUsers, username)
+	return nil
+}
+
+// RenameUser moves all the fake's per-user state from the old login name to the
+// new one, so lookups keep working after a rename just as the real usermod -l does.
+func (f *fakeSystemOps) RenameUser(oldName, newName string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.renamedUsers = append(f.renamedUsers, oldName+"->"+newName)
+	if uid, ok := f.uids[oldName]; ok {
+		f.uids[newName] = uid
+		delete(f.uids, oldName)
+	}
+	for i, u := range f.createdUsers {
+		if u == oldName {
+			f.createdUsers[i] = newName
+		}
+	}
+	return nil
+}
+
 // setUID forces a user's uid, to simulate an app created before the block scheme
 func (f *fakeSystemOps) setUID(username string, uid int) {
 	f.mu.Lock()
@@ -292,7 +328,7 @@ func (f *fakeSystemOps) WriteScaffold(username, home string, files map[string]st
 	return nil
 }
 
-func (f *fakeSystemOps) ChownToUser(username, path string) error {
+func (f *fakeSystemOps) ChownToUserIn(root *os.Root, username, rel string) error {
 	return nil
 }
 

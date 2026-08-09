@@ -25,6 +25,11 @@ type apiSetDescriptionRequest struct {
 	Description string `json:"description"`
 }
 
+// apiRenameAppRequest is the body of POST /api/apps/{name}/rename
+type apiRenameAppRequest struct {
+	NewName string `json:"new_name"`
+}
+
 // apiForkAppRequest is the body of POST /api/apps/{name}/fork: the name of the new
 // app, and optionally a snapshot to seed it from (empty means the current home)
 type apiForkAppRequest struct {
@@ -41,6 +46,7 @@ type apiSSHInfo struct {
 
 // apiAppResponse is returned for all app-related endpoints
 type apiAppResponse struct {
+	ID          string `json:"id"` // Stable opaque id; the UI derives an app's avatar colour from it
 	Name        string `json:"name"`
 	URL         string `json:"url"`
 	Port        int    `json:"port"`
@@ -54,7 +60,6 @@ type apiAppResponse struct {
 	AppRunning       bool   `json:"app_running"`    // The run: command inside it is up
 	StartedAt        int64  `json:"started_at"`     // Unix seconds the container last started
 	AppStartedAt     int64  `json:"app_started_at"` // Unix millis the run: process last changed state
-	OverQuota        bool   `json:"over_quota"`
 	OwnerEmail       string `json:"owner_email,omitempty"`
 	SnapshotsEnabled bool   `json:"snapshots_enabled"` // true when the host supports snapshots (btrfs)
 	AssistantEnabled bool   `json:"assistant_enabled"` // true when an Anthropic API key is configured
@@ -72,6 +77,15 @@ type apiAppResponse struct {
 // apiHealthResponse is returned by GET /api/health
 type apiHealthResponse struct {
 	Healthy bool `json:"healthy"`
+}
+
+// apiEventResponse is one activity-log entry in GET /api/apps/{name}/events
+type apiEventResponse struct {
+	Time   time.Time `json:"time"`
+	Actor  string    `json:"actor,omitempty"` // email that did it; empty for the system
+	Level  string    `json:"level"`           // "info" | "error"
+	Action string    `json:"action"`
+	Detail string    `json:"detail"`
 }
 
 // apiErrorResponse is returned for all error conditions
@@ -140,6 +154,10 @@ type apiUserResponse struct {
 	DiskMB    *int         `json:"disk_mb"`
 	AppCount  int          `json:"app_count"`
 	CreatedAt time.Time    `json:"created_at"`
+	// Built-in assistant usage summed across the user's apps: total tokens and the
+	// dollar cost. Only the built-in assistant, never a tenant's own agent.
+	AssistantTokens  int64   `json:"assistant_tokens"`
+	AssistantCostUSD float64 `json:"assistant_cost_usd"`
 }
 
 // apiInviteUserRequest is the body of POST /api/users: an admin handing out
@@ -233,7 +251,6 @@ type apiAgentAppResponse struct {
 	URL       string       `json:"url"`
 	Running   bool         `json:"running"`
 	DiskMB    int          `json:"disk_mb"`
-	OverQuota bool         `json:"over_quota"`
 	Readme    string       `json:"readme"`
 	HostitYml string       `json:"hostit_yml"`
 	Files     *app.Listing `json:"files"`

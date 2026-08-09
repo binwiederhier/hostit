@@ -107,24 +107,34 @@ const EmptyState = (props) => (
 const pctOf = (used, limit) => (limit ? Math.min(100, Math.round((used / limit) * 100)) : 0);
 const mbLabel = (used, limit) => (limit ? `${used} / ${limit} MB` : `${used} MB`);
 
+// A stable, distinct avatar colour per app, derived from its id (not its name) so
+// it never changes on a rename. Hash the id to a hue; a fixed saturation and
+// lightness keep white text legible on it in both themes.
+const avatarStyle = (id) => {
+  let h = 0;
+  const s = id || "";
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  return { background: `hsl(${h % 360} 52% 45%)`, color: "#fff" };
+};
+
 // One app as a card: identity, live status, description, resource bars, actions.
 const AppCard = ({ app }) => {
   const running = app.running;
-  const status = app.over_quota ? "over quota" : running ? "running" : "powered off";
+  const status = running ? "running" : "powered off";
   // Prefer a verified custom domain over the default subdomain for the link.
   const publicUrl = app.custom_domain ? `https://${app.custom_domain}` : app.url;
   const publicHost = app.custom_domain || app.url.replace(/^https?:\/\//, "");
   return (
     <div className="appcard">
       <div className="appcard-top">
-        <span className="appcard-avatar">{app.name.slice(0, 2)}</span>
+        <span className="appcard-avatar" style={avatarStyle(app.id)}>{app.name.slice(0, 2)}</span>
         <div className="appcard-id">
           {/* Stretched link: covers the whole card so the entire card opens the app. */}
           <Link className="appcard-nm appcard-link" to={`/app/${app.name}`}>{app.name}</Link>
           <a className="appcard-url" href={publicUrl} target="_blank" rel="noreferrer">{publicHost}</a>
         </div>
       </div>
-      <span className={"appcard-pill" + (running ? "" : " off") + (app.over_quota ? " warn" : "")}>
+      <span className={"appcard-pill" + (running ? "" : " off")}>
         <span className="appcard-dot" />
         {status}
       </span>
@@ -132,7 +142,7 @@ const AppCard = ({ app }) => {
       <div className="appcard-bars">
         <div className="appcard-bar"><span className="k">CPU</span><span className="bar"><i style={{ width: `${running ? app.cpu_percent || 0 : 0}%` }} /></span><span className="v">{running ? `${app.cpu_percent || 0}%` : "--"}</span></div>
         <div className="appcard-bar"><span className="k">RAM</span><span className="bar"><i style={{ width: `${running ? pctOf(app.memory_mb, app.memory_limit_mb) : 0}%` }} /></span><span className="v">{running ? mbLabel(app.memory_mb, app.memory_limit_mb) : "--"}</span></div>
-        <div className="appcard-bar"><span className="k">Disk</span><span className="bar"><i className={app.over_quota ? "over" : ""} style={{ width: `${pctOf(app.disk_mb, app.disk_limit_mb)}%` }} /></span><span className="v">{mbLabel(app.disk_mb, app.disk_limit_mb)}</span></div>
+        <div className="appcard-bar"><span className="k">Disk</span><span className="bar"><i style={{ width: `${pctOf(app.disk_mb, app.disk_limit_mb)}%` }} /></span><span className="v">{mbLabel(app.disk_mb, app.disk_limit_mb)}</span></div>
       </div>
       <div className="appcard-foot">
         <a className="btn btn-small btn-primary" href={publicUrl} target="_blank" rel="noreferrer">Open app</a>
@@ -144,14 +154,15 @@ const AppCard = ({ app }) => {
 // The stats strip above the grid: turns the list into an at-a-glance overview.
 const AppsSummary = ({ apps }) => {
   const running = apps.filter((a) => a.running).length;
-  const attention = apps.filter((a) => a.over_quota).length;
   const diskMB = apps.reduce((sum, a) => sum + (a.disk_mb || 0), 0);
   const disk = diskMB >= 1024 ? `${(diskMB / 1024).toFixed(1)} GB` : `${diskMB} MB`;
+  const ramMB = apps.reduce((sum, a) => sum + (a.running ? a.memory_mb || 0 : 0), 0);
+  const ram = ramMB >= 1024 ? `${(ramMB / 1024).toFixed(1)} GB` : `${ramMB} MB`;
   return (
     <div className="dash-summary">
       <div className="dash-stat"><div className="k">Running</div><div className="v">{running}<small> / {apps.length}</small></div></div>
+      <div className="dash-stat"><div className="k">Memory used</div><div className="v">{ram}</div></div>
       <div className="dash-stat"><div className="k">Disk used</div><div className="v">{disk}</div></div>
-      <div className="dash-stat"><div className="k">Needs attention</div><div className={"v" + (attention ? " alert" : "")}>{attention}</div></div>
     </div>
   );
 };

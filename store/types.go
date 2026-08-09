@@ -34,6 +34,10 @@ const (
 
 // App is a registered app: one Unix user, one container, one loopback port, one subdomain
 type App struct {
+	// ID is the app's stable, opaque identity: durable resources (home dir,
+	// container, snapshots, FKs) key on it, so a rename touches only Name. Empty
+	// until the daemon backfills it (apps created before app ids).
+	ID        string    `json:"id"`
 	Name      string    `json:"name"`
 	Port      int       `json:"port"`
 	Host      string    `json:"host"`
@@ -41,6 +45,9 @@ type App struct {
 	DiskMB    int       `json:"disk_mb"`
 	OverQuota bool      `json:"over_quota"`
 	CreatedAt time.Time `json:"created_at"`
+	// ImageTag pins the app to the workspace image it was built with; empty until
+	// the daemon backfills it (apps created before image pinning).
+	ImageTag string `json:"image_tag"`
 }
 
 // Snapshot is one point-in-time btrfs snapshot of an app's home. Auto records how

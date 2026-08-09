@@ -458,7 +458,7 @@ export default function AppEditor({ name, url, running, diskMB, diskLimitMB, onD
 
   const lineCount = useMemo(() => (activeTab ? activeTab.content.split("\n").length : 1), [activeTab]);
   const highlighted = useMemo(
-    () => (activeTab && !activeTab.binary && !activeTab.loading ? highlight(activeTab.content) : ""),
+    () => (activeTab && !activeTab.binary && !activeTab.loading ? highlight(activeTab.content, extOf(activeTab.path)) : ""),
     [activeTab]
   );
 

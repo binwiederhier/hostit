@@ -1059,17 +1059,14 @@ th:last-child {
 .appcard-url:hover { text-decoration: underline; }
 .appcard-pill { display: inline-flex; align-items: center; gap: 6px; align-self: flex-start; font-size: 11.5px; font-weight: 500; color: var(--muted); border: 1px solid var(--border); border-radius: 20px; padding: 2px 9px; }
 .appcard-pill.off { color: var(--faint); }
-.appcard-pill.warn { color: var(--status-degraded); border-color: color-mix(in srgb, var(--status-degraded) 45%, var(--border)); }
 .appcard-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--accent); box-shadow: 0 0 0 3px var(--focus); }
 .appcard-pill.off .appcard-dot { background: var(--faint); box-shadow: none; }
-.appcard-pill.warn .appcard-dot { background: var(--status-degraded); box-shadow: none; }
 .appcard-desc { font-size: 12.5px; color: var(--muted); min-height: 34px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .appcard-nodesc { color: var(--faint); }
 .appcard-bars { display: grid; gap: 6px; }
 .appcard-bar { display: grid; grid-template-columns: 30px 1fr auto; align-items: center; gap: 8px; font-size: 11px; color: var(--muted); }
 .appcard-bar .bar { height: 5px; border-radius: 3px; background: var(--surface-2); overflow: hidden; }
 .appcard-bar .bar > i { display: block; height: 100%; background: var(--accent); border-radius: 3px; }
-.appcard-bar .bar > i.over { background: var(--status-degraded); }
 .appcard-bar .v { font-family: var(--mono); font-size: 10.5px; color: var(--faint); font-variant-numeric: tabular-nums; }
 .appcard-foot { display: flex; gap: 8px; padding-top: 12px; border-top: 1px solid var(--border); }
 .appcard-foot .btn { flex: 1; text-align: center; }
@@ -2045,7 +2042,8 @@ main.container:has(.ws-page.ws-doc) {
 /* Document views fill when short but grow with content when long, so the page
    scrolls instead of trapping a scrollbar inside a fixed-height box. */
 .ws-snapshotswrap,
-.ws-settingswrap {
+.ws-settingswrap,
+.ws-logswrap {
   flex: 1 0 auto;
 }
 
@@ -2100,9 +2098,12 @@ a.ws-open { display: inline-flex; align-items: center; gap: 9px; }
    while it is still connecting. */
 .split-btn { display: inline-flex; }
 .split-btn > .btn { border-radius: 0; }
-.split-btn-main { padding: 0 11px; border-top-left-radius: 7px; border-bottom-left-radius: 7px; }
+.split-btn-main { padding: 0 11px; border-top-left-radius: 8px; border-bottom-left-radius: 8px; }
 .split-btn-main svg { width: 16px; height: 16px; }
-.split-btn-caret { padding: 0 7px; border-left: 0; border-top-right-radius: 7px; border-bottom-right-radius: 7px; font-size: 11px; }
+.split-btn-caret { padding: 0 13px; border-left: 0; border-top-right-radius: 8px; border-bottom-right-radius: 8px; font-size: 15px; }
+/* A text (not icon) split-button main half, e.g. "Take snapshot". */
+.split-btn-text { padding: 8px 16px; font-weight: 500; }
+.split-btn .split-btn-caret.btn-primary { box-shadow: inset 1px 0 0 rgba(255, 255, 255, 0.22); }
 .split-btn-active > .btn { background: #14181d; border-color: #14181d; color: #e8ecf1; }
 .split-btn-active > .btn:hover:not(:disabled) { background: #20262e; border-color: #20262e; }
 .split-btn-loading > .btn { animation: term-pulse 1.1s ease-in-out infinite; }
@@ -2452,7 +2453,7 @@ body.ws-resizing iframe { pointer-events: none; }
   cursor: pointer;
 }
 .ws-viewtab svg { width: 15px; height: 15px; opacity: 0.85; }
-.ws-viewtab:hover { color: var(--text); }
+.ws-viewtab:hover { color: var(--text); background: var(--surface-2); border-radius: 6px 6px 0 0; }
 .ws-viewtab.on { color: var(--text); border-bottom-color: var(--accent); }
 .ws-viewtab.on svg { opacity: 1; color: var(--accent); }
 /* On small screens the Snapshots pane's intro paragraph is just noise. */
@@ -2509,6 +2510,7 @@ body.ws-resizing iframe { pointer-events: none; }
   padding: 7px 10px; border-right: 1px solid var(--border);
   cursor: pointer; white-space: nowrap; max-width: 200px;
 }
+.ed-tab:hover:not(.on) { color: var(--text); background: color-mix(in srgb, var(--surface) 55%, transparent); }
 .ed-tab.on { color: var(--text); background: var(--surface); }
 .ed-tab-name { overflow: hidden; text-overflow: ellipsis; }
 .ed-tab-dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
@@ -2602,16 +2604,22 @@ body.ws-resizing iframe { pointer-events: none; }
 .ed-hl code { font: inherit; }
 .ed-scroll .ed-textarea { position: absolute; inset: 0; resize: none; outline: none; color: transparent; background: transparent; caret-color: var(--text); }
 
-.ed-code { --hl-key: #6d28d9; --hl-str: #0e7a4b; --hl-num: #b45309; }
-:root[data-theme="dark"] .ed-code { --hl-key: #b794f6; --hl-str: #6ee7a8; --hl-num: #f0a35e; }
-:root[data-theme="light"] .ed-code { --hl-key: #6d28d9; --hl-str: #0e7a4b; --hl-num: #b45309; }
+.ed-code { --hl-key: #6d28d9; --hl-str: #0e7a4b; --hl-num: #b45309; --hl-attr: #0369a1; }
+:root[data-theme="dark"] .ed-code { --hl-key: #b794f6; --hl-str: #6ee7a8; --hl-num: #f0a35e; --hl-attr: #7dd3fc; }
+:root[data-theme="light"] .ed-code { --hl-key: #6d28d9; --hl-str: #0e7a4b; --hl-num: #b45309; --hl-attr: #0369a1; }
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme]) .ed-code { --hl-key: #b794f6; --hl-str: #6ee7a8; --hl-num: #f0a35e; }
+  :root:not([data-theme]) .ed-code { --hl-key: #b794f6; --hl-str: #6ee7a8; --hl-num: #f0a35e; --hl-attr: #7dd3fc; }
 }
-.hl-com { color: var(--muted); font-style: italic; }
-.hl-str { color: var(--hl-str); }
-.hl-num { color: var(--hl-num); }
-.hl-key { color: var(--hl-key); }
+/* Prism token theme, mapped onto the editor's palette. */
+.ed-hl .token.comment, .ed-hl .token.prolog, .ed-hl .token.doctype, .ed-hl .token.cdata { color: var(--muted); font-style: italic; }
+.ed-hl .token.punctuation, .ed-hl .token.operator, .ed-hl .token.entity { color: var(--muted); }
+.ed-hl .token.keyword, .ed-hl .token.boolean, .ed-hl .token.tag, .ed-hl .token.selector, .ed-hl .token.atrule, .ed-hl .token.important, .ed-hl .token.builtin, .ed-hl .token.rule { color: var(--hl-key); }
+.ed-hl .token.string, .ed-hl .token.char, .ed-hl .token.attr-value, .ed-hl .token.url, .ed-hl .token.inserted, .ed-hl .token.regex { color: var(--hl-str); }
+.ed-hl .token.number, .ed-hl .token.constant, .ed-hl .token.symbol, .ed-hl .token.hexcode { color: var(--hl-num); }
+.ed-hl .token.property, .ed-hl .token.attr-name, .ed-hl .token.class-name, .ed-hl .token.function, .ed-hl .token.title, .ed-hl .token.key { color: var(--hl-attr); }
+.ed-hl .token.bold, .ed-hl .token.title { font-weight: 600; }
+.ed-hl .token.italic { font-style: italic; }
+.ed-hl .token.namespace { opacity: 0.7; }
 
 /* Optional live-preview pane. */
 .ed-preview { flex: 0 0 42%; min-width: 260px; display: flex; flex-direction: column; border-left: 1px solid var(--border); background: #0e1116; }
@@ -2657,8 +2665,10 @@ body.ws-resizing iframe { pointer-events: none; }
 /* Preview pane has no header row now. */
 .ed-preview { flex-direction: column; }
 
-/* Top bar: keep the status text close to the status dot. */
+/* Top bar: keep the status text ~10px from the status dot (the dot carries an
+   8px margin for its other uses; trim it here so gap + margin lands near 10px). */
 .ws-idrow { gap: 8px; }
+.ws-idrow .status-dot { margin-right: 2px; }
 
 /* ---- Editor v4: upload progress + rename/delete modal ---- */
 .ed-status-upload { display: inline-flex; align-items: center; gap: 8px; color: var(--accent); font-size: 12px; font-family: var(--sans); }
@@ -2708,7 +2718,24 @@ body.ws-resizing iframe { pointer-events: none; }
 .fork-arrow { color: var(--accent); font-size: 22px; }
 
 /* ---- App overview view (variant B): hero + two columns ---- */
-.ws-snapshotswrap, .ws-settingswrap { overflow: visible; }
+.ws-snapshotswrap, .ws-settingswrap, .ws-logswrap { overflow: visible; }
+
+/* Logs view: activity feed + a tail of the app's own output. */
+.logs-view { display: flex; flex-direction: column; gap: 22px; }
+.logs-section h3 { margin: 0 0 4px; font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--faint); }
+.logs-section .hint { margin: 0 0 12px; }
+.logs-head { display: flex; align-items: center; gap: 12px; margin-bottom: 6px; }
+.logs-head h3 { margin: 0; }
+.logs-head .btn-small { margin-left: auto; }
+.logs-follow { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--muted); cursor: pointer; }
+.logs-events { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+.logs-event { display: flex; align-items: baseline; gap: 12px; padding: 8px 12px; border-bottom: 1px solid var(--border); font-size: 13px; }
+.logs-event:last-child { border-bottom: 0; }
+.logs-event.err { color: var(--danger); }
+.logs-when { font-family: var(--mono); font-size: 11.5px; color: var(--faint); flex: none; white-space: nowrap; }
+.logs-detail { flex: 1; min-width: 0; }
+.logs-actor { font-size: 11.5px; color: var(--faint); flex: none; }
+.logs-output { margin: 0; max-height: 46vh; overflow: auto; padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--term-bg); color: var(--term-text); font-family: var(--mono); font-size: 12.5px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
 .ov { border: 1px solid var(--border); border-radius: 14px; background: var(--surface); padding: 24px; max-width: 900px; margin: 0 auto; }
 .ov-hero { display: flex; gap: 16px; align-items: center; margin-bottom: 22px; flex-wrap: wrap; }
 .ov-avatar { width: 60px; height: 60px; border-radius: 15px; display: grid; place-items: center; font-family: var(--mono); font-weight: 700; font-size: 25px; color: var(--on-accent); background: linear-gradient(135deg, var(--accent), var(--accent-strong)); flex: none; text-transform: lowercase; }
@@ -2732,11 +2759,11 @@ body.ws-resizing iframe { pointer-events: none; }
 .ov-url-row a:hover { text-decoration: underline; }
 .ov-k { color: var(--muted); width: 52px; flex: none; }
 /* Value hugs its content so the copy/regenerate buttons sit right next to it. */
-.ov-v { font-family: var(--mono); flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ov-v { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ov-mask { letter-spacing: 2px; color: var(--muted); }
 /* Copy/regenerate on the settings page are borderless text-height icons, so rows
    stay compact and top-align with their key. */
-.ov .copy-mini { border: 0; background: none; width: auto; height: auto; padding: 2px 4px; color: var(--faint); }
+.ov .copy-mini { border: 0; background: none; width: auto; height: auto; padding: 2px 0; color: var(--faint); }
 .ov .copy-mini:hover { color: var(--accent); background: var(--surface-2); }
 /* Copy + regenerate sit as a pair: cancel the row gap between them. */
 .ov .copy-mini + .copy-mini { margin-left: -6px; }

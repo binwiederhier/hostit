@@ -35,9 +35,10 @@ func (m *Manager) btrfsEnabled() bool {
 	return m.btrfsOK
 }
 
-// snapshotsRoot is where an app's snapshots live: <apps>/.snapshots/<app>/.
+// snapshotsRoot is where an app's snapshots live: <apps>/.snapshots/<id>/. Keyed
+// on the app's id (like the home) so a rename does not move them.
 func (m *Manager) snapshotsRoot(app string) string {
-	return filepath.Join(m.config.AppsDir, snapshotsDirName, app)
+	return filepath.Join(m.config.AppsDir, snapshotsDirName, m.appID(app))
 }
 
 // snapshotPath is one snapshot's subvolume path.

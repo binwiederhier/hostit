@@ -5,6 +5,7 @@
 package agent
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"log/slog"
@@ -274,8 +275,10 @@ func (a *Agent) prepare(conf *appctl.AppConfig) error {
 	cmd := exec.Command("/bin/sh", "-lc", conf.Prepare)
 	cmd.Dir = a.home
 	cmd.Env = os.Environ()
-	cmd.Stdout = io.MultiWriter(os.Stdout, out)
-	cmd.Stderr = io.MultiWriter(os.Stderr, out)
+	// Timestamp the app log; leave the podman-logs stream (os.Stdout) raw.
+	ts := newTimestampWriter(out)
+	cmd.Stdout = io.MultiWriter(os.Stdout, ts)
+	cmd.Stderr = io.MultiWriter(os.Stderr, ts)
 	return cmd.Run()
 }
 
@@ -289,8 +292,10 @@ func (a *Agent) startChild(conf *appctl.AppConfig) (*exec.Cmd, error) {
 	cmd := exec.Command("/bin/sh", "-lc", conf.Command(hostitBinFile))
 	cmd.Dir = a.home
 	cmd.Env = os.Environ()
-	cmd.Stdout = io.MultiWriter(os.Stdout, out)
-	cmd.Stderr = io.MultiWriter(os.Stderr, out)
+	// Timestamp the app log; leave the podman-logs stream (os.Stdout) raw.
+	ts := newTimestampWriter(out)
+	cmd.Stdout = io.MultiWriter(os.Stdout, ts)
+	cmd.Stderr = io.MultiWriter(os.Stderr, ts)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := cmd.Start(); err != nil {
 		return nil, err
@@ -371,6 +376,63 @@ func (a *Agent) openLog() (*appLog, error) {
 	}
 	a.logFile = log
 	return log, nil
+}
+
+// logTimeFormat stamps each app-log line. Space-separated, no brackets, so it
+// stays readable and is trivial to strip; the container clock is UTC.
+const logTimeFormat = "2006-01-02 15:04:05"
+
+// maxLineBuffer bounds how much a single unterminated line may buffer before it is
+// flushed anyway, so an app that never prints a newline cannot grow memory without
+// bound.
+const maxLineBuffer = 64 * 1024
+
+// timestampWriter prefixes each complete line with a wall-clock timestamp before
+// writing it to the log, so the app's output is readable after the fact rather
+// than a bare undated stream. Partial lines are held until their newline arrives.
+// The stdout and stderr copiers share one writer, so it guards its buffer.
+type timestampWriter struct {
+	w   io.Writer
+	mu  sync.Mutex
+	buf []byte
+}
+
+func newTimestampWriter(w io.Writer) *timestampWriter {
+	return &timestampWriter{w: w}
+}
+
+func (t *timestampWriter) Write(p []byte) (int, error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.buf = append(t.buf, p...)
+	for {
+		i := bytes.IndexByte(t.buf, '\n')
+		if i < 0 {
+			break
+		}
+		if err := t.emit(t.buf[:i+1]); err != nil {
+			return len(p), err
+		}
+		t.buf = t.buf[i+1:]
+	}
+	// An over-long line with no newline yet is flushed so it cannot pin memory.
+	if len(t.buf) > maxLineBuffer {
+		if err := t.emit(t.buf); err != nil {
+			return len(p), err
+		}
+		t.buf = t.buf[:0]
+	}
+	return len(p), nil
+}
+
+// emit writes one line prefixed with the current time. Called with the mutex held.
+func (t *timestampWriter) emit(line []byte) error {
+	stamp := time.Now().Format(logTimeFormat) + " "
+	out := make([]byte, 0, len(stamp)+len(line))
+	out = append(out, stamp...)
+	out = append(out, line...)
+	_, err := t.w.Write(out)
+	return err
 }
 
 // appLog is the app's log file, rotated to .old once it passes logMaxSize

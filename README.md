@@ -11,8 +11,8 @@
 - a **subdomain** (`myapp.apps.example.com`) with **automatic Let's Encrypt TLS**
 - two ways to run: `mode: static` (hostit serves `public/`) or `mode: app` (your
   command, supervised by the hostit agent) -- deployed with a single `hostit deploy`
-- a lean workspace with **python3, go and sqlite3** preinstalled (and root, so
-  `apt-get install` node, php or anything else you need)
+- a workspace with **python3, go, Node.js (with npm), PHP and sqlite3**
+  preinstalled (and root, so `apt-get install` anything else you need)
 
 Multi-user: people sign in with Google, an admin approves them from a small web
 app, and each user gets their own apps within admin-adjustable limits (app count,
@@ -23,8 +23,9 @@ user token is all an AI agent needs.
 The intended workflow: tell your agent "create an app on my host and deploy this"
 -- it calls the REST API to get an SSH login, pushes the code, writes `hostit.yml`,
 runs `hostit deploy`, and the app is live with a cert. The same thing can happen
-entirely in the browser: each app's page is a workspace with a built-in AI
-assistant, a terminal, and a live preview (see [Building in the browser](#building-in-the-browser)).
+entirely in the browser: each app's page is a workspace with tabbed views -- a
+built-in AI assistant, a file editor with a live preview, a terminal, snapshots,
+an activity/output log, and settings (see [Building in the browser](#building-in-the-browser)).
 
 ## How it works
 
@@ -353,13 +354,20 @@ export T=hostit_...        # created with the app, shown on the app's page
 curl -H "Authorization: Bearer $T" $H/info              # how this all works
 curl -H "Authorization: Bearer $T" $H/apps/myapp/info    # README, files, config, state
 curl -H "Authorization: Bearer $T" "$H/apps/myapp/files?path=public"  # one directory
+curl -H "Authorization: Bearer $T" "$H/apps/myapp/files/README.md?stat=1"  # size/mtime/MIME, no body
 
 curl -X PUT -H "Authorization: Bearer $T" --data-binary @index.html \
      $H/apps/myapp/files/public/index.html                    # upload one file
 curl -X PUT -H "Authorization: Bearer $T" --data-binary @myapp \
      "$H/apps/myapp/files/myapp?mode=755"                    # ...executable, for run: mode
 tar cf - . | curl -X POST -H "Authorization: Bearer $T" \
-     -H "Content-Type: application/x-tar" --data-binary @- $H/apps/myapp/files
+     -H "Content-Type: application/x-tar" --data-binary @- $H/apps/myapp/files  # upload a tree
+curl -X POST -H "Authorization: Bearer $T" -H "Content-Type: application/json" \
+     -d '{"path":"assets"}' $H/apps/myapp/mkdir                # make a directory
+curl -X POST -H "Authorization: Bearer $T" -H "Content-Type: application/json" \
+     -d '{"from":"a.txt","to":"public/a.txt"}' $H/apps/myapp/move   # move/rename
+
+curl -H "Authorization: Bearer $T" $H/apps/myapp/events   # activity log (create, deploy, snapshot, ...)
 
 curl -X POST -H "Authorization: Bearer $T" -H "Content-Type: application/json" \
      -d '{"command":"cd src && go build -o ../bin/myapp ."}' $H/apps/myapp/run
@@ -392,21 +400,29 @@ that goes into a chat window.
 
 ## Building in the browser
 
-You do not need to leave the browser. Each app's page is a workspace:
+You do not need to leave the browser. Each app's page is a workspace with tabs:
 
-- a **built-in AI assistant** (a chat panel) that reads and writes the app's
-  files, runs commands in its container, and deploys -- the same REST surface an
-  external agent drives, but hosted. The turn runs server-side and streams back,
-  so it survives a reload and shows up on every device viewing the app; the
-  conversation is persisted per app. It needs an Anthropic API key in the server
-  config; without one, run apps over SSH/CLI as usual.
-- a **live preview** of the app beside the chat, on a draggable split, that
-  reloads itself whenever the app is (re)deployed (by anyone).
-- a **browser terminal** -- the same login shell an SSH session gets, over a
-  WebSocket -- as a floating, draggable window, so you can poke around without
-  leaving the page. "Connect via SSH" shows the `ssh`/`scp` command instead.
-- **live CPU / RAM / disk / uptime**, the app's address and token, and the
-  lifecycle actions (start/stop/restart, power on/off, reboot, delete).
+- **Assistant** -- a built-in AI chat that reads and writes the app's files, runs
+  commands in its container, and deploys, beside a **live preview** on a draggable
+  split. It is the same REST surface an external agent drives, but hosted: the turn
+  runs server-side and streams back, so it survives a reload and shows up on every
+  device viewing the app; the conversation is persisted per app. It needs an
+  Anthropic API key in the server config; without one, the tab is hidden and apps
+  run over SSH/CLI as usual.
+- **Files** -- an in-browser editor with a file tree (upload, rename, move, delete,
+  new file/folder), syntax highlighting, and an optional live preview pane. It
+  reuses the file REST endpoints, so no SSH is needed for a quick change.
+- **Terminal** -- the same login shell an SSH session gets, over a WebSocket, inline
+  (with pop-out and fullscreen). "Connect via SSH" shows the `ssh`/`scp` command.
+- **Snapshots** -- a timeline of point-in-time snapshots with rollback, fork and
+  delete, and a "Take snapshot" action.
+- **Logs** -- an activity log of who did what to the app (create, snapshot,
+  rollback, domain, lifecycle) above a live tail of the app's own output.
+- **Settings** -- the app's URLs (including any verified custom domain), SSH, API
+  token, description and custom domains.
+
+The top bar shows **live CPU / RAM / disk**, the app's address, and the lifecycle
+actions (start/stop/restart, power on/off, reboot, fork, delete).
 
 The sparkle button on the page hands you the same paste-into-your-own-agent
 prompt, so the browser assistant and an external Claude Code are interchangeable.

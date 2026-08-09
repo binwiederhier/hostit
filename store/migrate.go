@@ -129,6 +129,73 @@ var migrations = []string{
 		);
 		CREATE INDEX app_domain_app_idx ON app_domain(app_name);
 	`,
+	// The activity log shown in the app's Logs tab: one row per user-initiated
+	// action (create, deploy, lifecycle, snapshot, rollback, fork, domain, token).
+	// actor is the email that did it (empty for the system/admin token); level is
+	// "info" or "error"; detail is a short human sentence.
+	`
+		CREATE TABLE app_event (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			app_name TEXT NOT NULL,
+			created_at INTEGER NOT NULL,
+			actor TEXT NOT NULL DEFAULT '',
+			level TEXT NOT NULL DEFAULT 'info',
+			action TEXT NOT NULL,
+			detail TEXT NOT NULL DEFAULT ''
+		);
+		CREATE INDEX app_event_app_idx ON app_event(app_name, created_at);
+	`,
+	// image_tag pins each app to the workspace image tag it was built with, so
+	// changing the base Containerfile only affects new apps and never recreates an
+	// existing app's container onto a different image. Empty means "not yet pinned"
+	// (an app from before this column); the daemon backfills those on startup.
+	`
+		ALTER TABLE app ADD COLUMN image_tag TEXT NOT NULL DEFAULT '';
+	`,
+	// app.id is the app's stable, opaque identity (see the app-id design). name
+	// stays the mutable, human-facing label (subdomain, SSH login, display); id is
+	// what durable resources key on so a rename is a metadata update, not a move.
+	// The index is partial so the existing (empty-id) rows are legal until the
+	// daemon backfills them on startup, after which ids are unique.
+	`
+		ALTER TABLE app ADD COLUMN id TEXT NOT NULL DEFAULT '';
+		CREATE UNIQUE INDEX app_id_idx ON app(id) WHERE id != '';
+	`,
+	// Point every per-app table at app.id instead of the app's name, so an app's
+	// keys, tokens, assistant transcript, snapshots, domains and activity log stay
+	// attached across a rename (the name is looked up from app.id, never stored as
+	// the join key). app_name stays as a denormalized mirror for one release as a
+	// rollback safety net; the daemon backfills app_id on startup (SQL can't, since
+	// the ids themselves are generated in Go). Empty app_id means "not an app row"
+	// (account-wide tokens) or "not yet backfilled".
+	`
+		ALTER TABLE app_key ADD COLUMN app_id TEXT NOT NULL DEFAULT '';
+		ALTER TABLE token ADD COLUMN app_id TEXT NOT NULL DEFAULT '';
+		ALTER TABLE assistant_session ADD COLUMN app_id TEXT NOT NULL DEFAULT '';
+		ALTER TABLE snapshot ADD COLUMN app_id TEXT NOT NULL DEFAULT '';
+		ALTER TABLE app_domain ADD COLUMN app_id TEXT NOT NULL DEFAULT '';
+		ALTER TABLE app_event ADD COLUMN app_id TEXT NOT NULL DEFAULT '';
+		CREATE INDEX idx_app_key_appid ON app_key(app_id);
+		CREATE INDEX idx_token_appid ON token(app_id);
+		CREATE UNIQUE INDEX assistant_session_appid_idx ON assistant_session(app_id) WHERE app_id != '';
+		CREATE INDEX snapshot_appid_idx ON snapshot(app_id);
+		CREATE INDEX app_domain_appid_idx ON app_domain(app_id);
+		CREATE INDEX app_event_appid_idx ON app_event(app_id);
+	`,
+	// Built-in assistant token usage, accumulated per app (keyed on app_id, so it
+	// survives a rename). Cache tokens are tracked separately because they are
+	// priced differently. Summed per owner for the admin view; this is only the
+	// built-in assistant, never a tenant's own agent (that bills their account).
+	`
+		CREATE TABLE app_usage (
+			app_id TEXT PRIMARY KEY,
+			input_tokens INTEGER NOT NULL DEFAULT 0,
+			output_tokens INTEGER NOT NULL DEFAULT 0,
+			cache_write_tokens INTEGER NOT NULL DEFAULT 0,
+			cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+			updated_at INTEGER NOT NULL DEFAULT 0
+		);
+	`,
 }
 
 // migrate brings the database up to the current schema version, creating it if

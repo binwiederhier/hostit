@@ -240,9 +240,9 @@ func (m *Manager) runLoop(s *session, app, userID, userText string, attachments 
 		resp, err := m.client.complete(ctx, request{
 			Model:        m.model,
 			MaxTokens:    maxTokens,
-			System:       systemPrompt(app),
-			Messages:     recentHistory(history, maxContextTurns),
-			Tools:        toolDefs(),
+			System:       cachedSystem(systemPrompt(app)),
+			Messages:     cacheConversation(recentHistory(history, maxContextTurns)),
+			Tools:        cachedToolDefs(),
 			Thinking:     &thinkingConfig{Type: "adaptive"},
 			OutputConfig: &outputConfig{Effort: assistantEffort},
 		})
@@ -255,6 +255,16 @@ func (m *Manager) runLoop(s *session, app, userID, userText string, attachments 
 			}
 			s.publish(Event{Type: "error", Error: err.Error()})
 			return
+		}
+		// Record this turn's token usage against the app (best effort; a failure to
+		// account must never interrupt the run).
+		if err := m.store.RecordUsage(app, Usage{
+			InputTokens:      resp.Usage.InputTokens,
+			OutputTokens:     resp.Usage.OutputTokens,
+			CacheWriteTokens: resp.Usage.CacheCreationInputTokens,
+			CacheReadTokens:  resp.Usage.CacheReadInputTokens,
+		}); err != nil {
+			slog.Warn("Cannot record assistant usage", "app", app, "error", err)
 		}
 
 		// Keep the reply in the transcript. Thinking blocks are shown but not
@@ -305,6 +315,40 @@ func recentHistory(history []Message, maxTurns int) []Message {
 		return history
 	}
 	return history[starts[len(starts)-maxTurns]:]
+}
+
+// cachedSystem returns the system prompt as a single cache-marked block, so the
+// large, stable instructions are read once and reused across the conversation.
+func cachedSystem(text string) []systemBlock {
+	return []systemBlock{{Type: "text", Text: text, CacheControl: ephemeralCache}}
+}
+
+// cachedToolDefs marks the tools block as cacheable (it never changes within a
+// version), so the whole tool schema is reused instead of re-sent each turn.
+func cachedToolDefs() []Tool {
+	tools := toolDefs()
+	if n := len(tools); n > 0 {
+		tools[n-1].CacheControl = ephemeralCache
+	}
+	return tools
+}
+
+// cacheConversation puts a cache breakpoint on the last block of the last message
+// so each turn reuses the prior turns as a cached prefix. It copies the tail it
+// touches rather than mutating the stored history.
+func cacheConversation(msgs []Message) []Message {
+	if len(msgs) == 0 {
+		return msgs
+	}
+	out := append([]Message(nil), msgs...)
+	last := &out[len(out)-1]
+	if len(last.Content) == 0 {
+		return out
+	}
+	blocks := append([]ContentBlock(nil), last.Content...)
+	blocks[len(blocks)-1].CacheControl = ephemeralCache
+	last.Content = blocks
+	return out
 }
 
 // hasTextBlock reports whether a message carries human text (a turn start), as

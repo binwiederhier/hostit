@@ -13,7 +13,6 @@ import (
 	"net/http"
 	"os"
 	"path"
-	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -139,7 +138,7 @@ func (m *Manager) WriteFileFrom(name, relPath string, r io.Reader, mode os.FileM
 	if err := root.Chmod(tmpRel, fileMode(mode)); err != nil {
 		return err
 	}
-	if err := m.chownToApp(name, tmpRel); err != nil {
+	if err := m.chownToApp(root, name, tmpRel); err != nil {
 		return err
 	}
 	return root.Rename(tmpRel, rel)
@@ -273,7 +272,7 @@ func (m *Manager) MakeDir(name, relPath string) error {
 	if err := root.MkdirAll(rel, 0o755); err != nil {
 		return err
 	}
-	return m.chownToApp(name, rel)
+	return m.chownToApp(root, name, rel)
 }
 
 // StatFile returns metadata for a single file (or directory) without reading its
@@ -320,7 +319,6 @@ func detectMime(root *os.Root, rel string) string {
 	return http.DetectContentType(buf[:n])
 }
 
-// ListFiles returns the app's own files, skipping hostit's internal state
 // ListFiles returns one directory of the app, not the whole tree. An app with a
 // node_modules would otherwise answer with tens of thousands of entries, built
 // in memory, on the endpoint an agent calls first. Directories come back as
@@ -425,7 +423,7 @@ func (m *Manager) ExtractTar(name string, r io.Reader) ([]string, error) {
 			if err := root.Chmod(rel, mode); err != nil {
 				return nil, err
 			}
-			if err := m.chownToApp(name, rel); err != nil {
+			if err := m.chownToApp(root, name, rel); err != nil {
 				return nil, err
 			}
 			written = append(written, rel)
@@ -572,12 +570,12 @@ func (m *Manager) safeRel(name, relPath string) (string, error) {
 	return cleaned, nil
 }
 
-// chownToApp gives a written file to the app user, so it is theirs inside the
-// container (where their uid is root) and over SSH. The path was just created
-// through the app's root, and ChownToUser does not follow symlinks, so losing a
-// race here means chowning a link the app user planted, not its target.
-func (m *Manager) chownToApp(name, rel string) error {
-	return m.ops.ChownToUser(name, filepath.Join(m.appHome(name), filepath.FromSlash(rel)))
+// chownToApp gives a just-created path to the app user, so it is theirs inside
+// the container (where their uid is root) and over SSH. The chown goes through
+// the same os.Root the write used, so an app owner cannot swap an intermediate
+// directory for a symlink and redirect it onto a host path.
+func (m *Manager) chownToApp(root *os.Root, name, rel string) error {
+	return m.ops.ChownToUserIn(root, name, rel)
 }
 
 // isProtected reports paths hostit manages on the app's behalf

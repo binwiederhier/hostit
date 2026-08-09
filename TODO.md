@@ -37,8 +37,8 @@ The chosen shape and the decisions behind it:
 - **Registry stays central; agents are stateless.** The proxy's SQLite store is the
   single source of truth; at create time the hosting node allocates its own local
   port/uid and returns them. Snapshot subvolumes are node-local but the metadata
-  lives in the central registry. A stable app **id** (see "Rename an app" below) is
-  the natural registry key: name -> id -> (node, port).
+  lives in the central registry. The app's stable **id** (already built; see Done
+  below) is the natural registry key: name -> id -> (node, port).
 - **SSH routing: single front door + ProxyJump.** One SSH endpoint on the proxy;
   `hostit-shell` looks up the app's node and jumps into the right container.
 - **State and quota collection** become cross-node: the state cache and the disk
@@ -50,10 +50,6 @@ The chosen shape and the decisions behind it:
 The dashboard can create, manage and delete apps and drive them in the browser
 (chat, terminal). These round out the in-browser experience.
 
-- **File browser.** `GET /api/apps/{app}/files` already lists a directory and
-  `/files/{path}` reads/writes one, so the API is there. A tree/list view with
-  view-edit-upload-delete would make small changes (fix a line in `public/`,
-  drop in a file) possible without SSH or an agent.
 - **Installable PWA.** Make the dashboard (`apps.example.com`) installable to the home
   screen / dock. Add `web/public/manifest.webmanifest` (name, `display: standalone`,
   `theme_color`, `start_url: "/"`, icons) linked from `index.html`; 192/512px + a
@@ -66,23 +62,16 @@ The dashboard can create, manage and delete apps and drive them in the browser
   image as a natural extension.
 - **Ask host-vs-build in the new-app modal.** When creating an app, let the owner
   pick their intent: "just host my existing app" or "build one here". The choice
-  picks the default app-detail view (below) -- host leans on details/deploy, build
-  opens the split chat+preview workspace -- so each person lands in the surface
-  that fits what they came to do.
-- **Multiple app-detail views, likely as tabs.** The page is one fixed layout
-  today (the split chat + preview). Offer a few and let the owner switch: (1) the
-  split view (now); (2) a file browser + embedded terminal (edit files, run
-  commands, no chat); (3) a details-only view (address, SSH, token, resources);
-  (4) a log view (tail of the app's output). Tabs across the top is the obvious
-  shape; the new-app intent above sets the initial tab.
-- **Use a Claude Max subscription instead of the API (cost).** The built-in
-  assistant calls the Anthropic Messages API with the operator's API key, so every
-  turn is metered pay-per-token -- which adds up fast. Add an option to drive it
-  through the Claude Agent SDK / Claude Code auth so an operator can spend their
-  own Claude Max subscription instead of API credit. Would mean an alternate
-  `completer` backend (the loop already abstracts the model call behind an
-  interface), an auth/token flow for the subscription, and config to pick which
-  backend an install uses. Big lever on running cost.
+  sets the initial app-detail tab -- host leans on details/deploy, build opens the
+  split chat+preview workspace -- so each person lands in the surface that fits what
+  they came to do.
+- **Redesign the public error page and the placeholder app (both are weak).** The
+  "nothing here" 404 page (`server/errorpage.go`, currently a card with a little
+  jump game) and the placeholder page a new app serves (`cmd/placeholder.go`,
+  currently a guestbook) both look poor and need a proper redesign, ideally sharing
+  one visual language with the dashboard. Keep the 404's free-vs-stopped pages
+  identical and keep the placeholder a real running backend (it proves an app can
+  execute code).
 - **Defined behavior when no Anthropic key is set.** The built-in assistant needs
   an Anthropic API key in config; today it's assumed present. Decide and implement
   the no-key path: the assistant endpoints should report "not configured" cleanly
@@ -98,6 +87,36 @@ The dashboard can create, manage and delete apps and drive them in the browser
   a timer, served as `/api/apps/{name}/thumbnail` -- scales better but Chromium is
   a heavy dep that breaks the single-binary property, so it'd be an optional
   sidecar. Start with A.
+
+## Assistant (AI chat) cost
+
+The built-in assistant calls the Anthropic Messages API with the operator's API
+key, so every turn is metered pay-per-token and adds up fast. Per-user/per-app
+token and dollar usage is now tracked (admin user list), which is the visibility
+these levers act on. Prompt caching is already in place: the system prompt, tool
+definitions and the conversation prefix are cache-marked, so repeat turns pay the
+~10x-cheaper cache-read rate. The remaining levers, roughly by impact:
+
+- **Claude Max / subscription backend (biggest lever).** Add an option to drive the
+  assistant through the Claude Agent SDK / Claude Code auth so an operator spends
+  their own Claude Max subscription instead of API credit. An alternate `completer`
+  backend (the loop already abstracts the model call behind an interface), an
+  auth/token flow for the subscription, and config to pick the backend per install.
+- **Model routing.** Default is `claude-sonnet-5` ($3/$15 per M in/out). Route
+  simple turns (small edits, questions) to Haiku (~10x cheaper) and escalate to
+  Sonnet only for hard work. Even a crude heuristic (cheap model unless the last
+  turn used tools heavily / the ask is large) saves a lot.
+- **Longer cache TTL for the stable prefix.** The default ephemeral cache is ~5 min;
+  after a pause the next turn re-pays full input on the large, stable system prompt +
+  tools. Use the 1-hour cache for that prefix so it stays warm across a real session.
+- **Tune the thinking / effort budget.** Adaptive thinking bills at the output rate
+  ($15/M). Dial effort down for routine turns; reserve high effort for hard ones.
+- **Compact the transcript.** Context is capped at recent turns, but long sessions
+  still grow the cached prefix (cache writes cost 1.25x). Summarize old turns into a
+  short recap to keep the prefix small.
+- **Spend caps.** Now that usage is tracked, add a per-user or per-app budget that
+  warns (or soft-stops the built-in chat) at a threshold, turning the usage data
+  into cost control, not just visibility.
 
 ## Smaller things
 
@@ -124,19 +143,6 @@ The dashboard can create, manage and delete apps and drive them in the browser
   rename, keeping the old prod as instant rollback). Ties into the fork primitive
   (a stage is a fork that promotes back). Big feature; likely a `hostit promote`
   verb + a store notion of two environments per app.
-- **Rename an app (via a stable app id).** Let an owner rename an existing app.
-  The name is the app's identity in every layer today -- the `app` PK and five
-  `app_name` FKs, the Unix user, home directory, container/unit, subdomain and SSH
-  login -- so a name-based rename is a coordinated move across SQLite, the
-  filesystem and the OS, with torn-state risk. The better fix is to give each app a
-  stable opaque **id** (the uid/port is already a de-facto stable identity) and key
-  the durable resources on it, keeping the Unix user named by the (renamable) name
-  for SSH legibility. Rename then collapses to `usermod -l` + one DB UPDATE + a
-  cache refresh; app-scoped tokens survive it. Costs a one-off per-app migration
-  (like `MigrateToBlockUIDs`) and some home/container legibility (mitigated with a
-  `by-name` symlink + GECOS/label). Composes with multi-node, where a
-  node-independent id is the natural registry key. Full design, comparison and
-  phased rollout: `plans/260808-hostit-app-id-identity.md`.
 - **Secrets.** `env:` values live in `hostit.yml`, which sits in the app's home
   and is served if someone points a web server at the wrong directory. A real
   secret store (or at least a separate file that is never in `public/`) would
@@ -146,25 +152,31 @@ The dashboard can create, manage and delete apps and drive them in the browser
 - **Long jobs.** `POST /api/apps/{app}/run` is bounded at five minutes, so a first
   `npm install` on a small box can outlast it. Anything longer has to become a
   `prepare:` step, which is fine but not obvious.
-- **Node.js in the workspace image + per-app image versioning.** Add `nodejs`
-  (and npm) to the workspace image so JS apps work out of the box. Image size does
-  NOT affect per-app start or reboot time: the image is built/pulled once and lives
-  on disk; containers are overlay copy-on-write off it, so creating/starting one is
-  a cheap layer, not a copy proportional to size. It only costs one-time build time
-  and some shared disk. The catch is existing apps: today every app shares the one
-  `hostit-workspace` image, so rebuilding it to add node would change the base under
-  apps that have apt-installed their own things -- and those live in the container's
-  writable layer, so a later recreate (deploy/reboot) already loses them regardless.
-  So the real work is two-fold: (1) version the workspace image (tag by content/date)
-  and pin each app to the image tag it was created with, so a new image only affects
-  new apps; (2) if we want apt-installed packages to survive recreate at all, they
-  need to persist (a per-app overlay/commit, or a documented `prepare:` step that
-  reinstalls them on build). Minimum viable: add node to a new image tag, default new
-  apps to it, leave existing apps pinned to their current tag.
+- **Persist apt-installed packages across a container recreate.** Packages a tenant
+  `apt-get install`s live in the container's writable layer, so a deploy/reboot that
+  recreates the container loses them. Options: a per-app overlay/commit, or a
+  documented `prepare:` step that reinstalls them on every build. (The image-version
+  half of this -- pinning each app to the image tag it was built with -- is done; see
+  Done below.)
 
 ## Done (recent)
 
 Kept briefly for context; prune when stale.
+
+- **App id + cheap rename.** Every app has a stable opaque id; durable resources
+  (home `apps/<id>`, snapshots, container `hostit-app-<id>`, unit, the per-app FK
+  tables) key on it, so a rename is `usermod -l` + one DB update with no data move
+  and no container recreate. One-off startup migration for existing apps. Custom
+  domains and tokens follow the rename. `plans/260808-hostit-app-id-identity.md`.
+- **Workspace image versioning + Node.js/PHP.** Node.js (npm) and PHP added to the
+  image; each app is pinned to the image tag it was built with, so a Containerfile
+  change only affects new apps and never recreates an existing one for that reason.
+- **App-detail tabs + file browser.** The app page is tabbed: split chat+preview
+  (assistant), a file browser/editor, an embedded terminal, a Logs tab (activity
+  feed + live timestamped output), Snapshots, and Settings.
+- **Assistant token/$ usage.** Every built-in-assistant turn's token usage is
+  recorded per app (keyed by app id) and summed per user with a dollar cost in the
+  admin user list. Only the built-in assistant, not a tenant's own agent.
 
 - Btrfs storage model: per-app home subvolumes, snapshots (manual + auto), rollback
   (atomic, safety-snapshotted), hard qgroup disk quotas (EDQUOT), GFS retention,

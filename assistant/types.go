@@ -39,6 +39,10 @@ type ContentBlock struct {
 
 	// type: image
 	Source *ImageSource `json:"source,omitempty"`
+
+	// A prompt-cache breakpoint on this block (set on the tail of the conversation
+	// so the prior turns are reused rather than re-read each message).
+	CacheControl *cacheControl `json:"cache_control,omitempty"`
 }
 
 // ImageSource is an inline image the model can see (a chat attachment), sent as
@@ -61,9 +65,10 @@ type Attachment struct {
 // Tool is a function the model may call. InputSchema is a JSON Schema object
 // describing the arguments; the model fills it in and we dispatch on Name.
 type Tool struct {
-	Name        string          `json:"name"`
-	Description string          `json:"description"`
-	InputSchema json.RawMessage `json:"input_schema"`
+	Name         string          `json:"name"`
+	Description  string          `json:"description"`
+	InputSchema  json.RawMessage `json:"input_schema"`
+	CacheControl *cacheControl   `json:"cache_control,omitempty"`
 }
 
 // thinkingConfig turns on extended thinking. Current models use "adaptive" (the
@@ -79,11 +84,29 @@ type outputConfig struct {
 	Effort string `json:"effort,omitempty"` // "low" | "medium" | "high"
 }
 
+// cacheControl marks a block as a prompt-cache breakpoint: Anthropic reuses the
+// prefix up to it across requests instead of re-reading it, cutting the cost of
+// the large, stable system prompt + tools and the growing conversation.
+type cacheControl struct {
+	Type string `json:"type"` // "ephemeral"
+}
+
+// ephemeralCache is the standard (5-minute) cache breakpoint.
+var ephemeralCache = &cacheControl{Type: "ephemeral"}
+
+// systemBlock is one block of the system prompt; sent as an array (not a bare
+// string) so it can carry a cache_control breakpoint.
+type systemBlock struct {
+	Type         string        `json:"type"` // "text"
+	Text         string        `json:"text"`
+	CacheControl *cacheControl `json:"cache_control,omitempty"`
+}
+
 // request is the body of POST /v1/messages
 type request struct {
 	Model        string          `json:"model"`
 	MaxTokens    int             `json:"max_tokens"`
-	System       string          `json:"system,omitempty"`
+	System       []systemBlock   `json:"system,omitempty"`
 	Messages     []Message       `json:"messages"`
 	Tools        []Tool          `json:"tools,omitempty"`
 	Thinking     *thinkingConfig `json:"thinking,omitempty"`
@@ -101,8 +124,10 @@ type response struct {
 }
 
 type usage struct {
-	InputTokens  int `json:"input_tokens"`
-	OutputTokens int `json:"output_tokens"`
+	InputTokens              int `json:"input_tokens"`
+	OutputTokens             int `json:"output_tokens"`
+	CacheCreationInputTokens int `json:"cache_creation_input_tokens"`
+	CacheReadInputTokens     int `json:"cache_read_input_tokens"`
 }
 
 // apiError is the body the API returns on a non-2xx response

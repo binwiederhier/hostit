@@ -134,7 +134,7 @@ func (s *Server) issueDomainCert(domain string) {
 		slog.Warn("Custom domain certificate failed", "domain", domain, "error", err)
 		// Do not de-route a domain that is already serving because of a transient
 		// re-issue/renewal failure; its existing certificate still works.
-		if cur, e := s.apps.Store().Domain(domain); e == nil && cur.Status == store.DomainActive {
+		if cur, err := s.apps.Store().Domain(domain); err == nil && cur.Status == store.DomainActive {
 			return
 		}
 		s.markDomain(domain, store.DomainError, err.Error())

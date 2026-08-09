@@ -63,8 +63,8 @@ func (m *Manager) Exec(name, command string, timeout time.Duration) (*ExecResult
 	// exec" out here would leave the command running in there, burning the app's
 	// memory and CPU with nobody left to notice. The outer bound is a backstop
 	// for podman itself hanging, so it has to be the looser of the two.
-	out, err := m.runner.RunTimeout(limit+execGraceTimeout, "podman", "exec", "--workdir", containerHomeDir(name),
-		containerName(name), "timeout", "--kill-after", "5s", strconv.Itoa(int(limit.Seconds())),
+	out, err := m.runner.RunTimeout(limit+execGraceTimeout, "podman", "exec", "--workdir", containerHome,
+		m.containerName(name), "timeout", "--kill-after", "5s", strconv.Itoa(int(limit.Seconds())),
 		"/bin/sh", "-lc", command)
 	res := &ExecResult{ExitCode: exitCode(err)}
 	res.Output, res.Truncated = capOutput(out)
@@ -116,9 +116,4 @@ func exitCode(err error) int {
 		return exitErr.ExitCode()
 	}
 	return -1
-}
-
-// containerHomeDir is the app's home as seen from inside its container
-func containerHomeDir(name string) string {
-	return "/home/" + name
 }

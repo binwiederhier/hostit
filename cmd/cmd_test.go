@@ -40,9 +40,9 @@ func TestNewCommands(t *testing.T) {
 func TestLoginBanner(t *testing.T) {
 	t.Parallel()
 	banner := loginBanner(&appctl.SelfInfo{Name: "blog", URL: "https://blog.apps.example.com", Port: 10001})
-	// The wordmark, with the same green cursor as the web app's logo
+	// The wordmark, with the same accent-coloured cursor as the web app's logo
 	assert.Contains(t, banner, `|_||_|`)
-	assert.Contains(t, banner, "\x1b[32m")
+	assert.Contains(t, banner, "\x1b[48;2;21;156;176m") // accent (#159cb0) background block
 	assert.Contains(t, banner, "\x1b[0m")
 	// Where am I, and what is this?
 	assert.Contains(t, banner, "blog")

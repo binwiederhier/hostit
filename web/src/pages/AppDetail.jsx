@@ -6,12 +6,39 @@ import { CopyButton, ErrorBanner, Loading, Snippet, StatusDot } from "../compone
 import { useSetAppHeader } from "../appHeader";
 
 // xterm is heavy and only needed when a terminal is actually opened, so it is
-// split into its own chunk and loaded on demand.
-const AppTerminal = lazy(() => import("./AppTerminal"));
+// split into its own chunk. The loaders are named so the page can prefetch every
+// tab's chunk eagerly (see prefetchTabs), while lazy() still handles rendering.
+const importTerminal = () => import("./AppTerminal");
+const importAssistant = () => import("./AppAssistant");
+const importEditor = () => import("./AppEditor");
+const importLogs = () => import("./AppLogs");
+const AppTerminal = lazy(importTerminal);
 // The assistant pulls in a markdown renderer, so it stays a lazy chunk too.
-const AppAssistant = lazy(() => import("./AppAssistant"));
+const AppAssistant = lazy(importAssistant);
 // The file-tree editor is its own view, loaded on demand when selected.
-const AppEditor = lazy(() => import("./AppEditor"));
+const AppEditor = lazy(importEditor);
+const AppLogs = lazy(importLogs);
+
+// tabChunkLoaders maps a view to its code-chunk loader, for eager prefetching.
+const tabChunkLoaders = {
+  terminal: importTerminal,
+  assistant: importAssistant,
+  editor: importEditor,
+  logs: importLogs,
+};
+
+// prefetchTabs warms every tab's code chunk so switching tabs is instant, loading
+// the given (active) tab first and the rest right after. It fetches code only; a
+// tab still mounts and does its own data loading when actually opened, so eager
+// prefetching never opens a terminal session or starts polling on its own.
+const prefetchTabs = (active) => {
+  const load = (v) => tabChunkLoaders[v] && tabChunkLoaders[v]();
+  Promise.resolve(load(active)).finally(() => {
+    Object.keys(tabChunkLoaders)
+      .filter((v) => v !== active)
+      .forEach(load);
+  });
+};
 
 // The SPA is served by the hostit daemon itself, so the agent API lives on our
 // own origin under /api.
@@ -698,13 +725,107 @@ const ForkDialog = ({ name, snapshotId, onClose, onForked }) => {
   );
 };
 
+// RenameDialog changes an app's name in place. The app keeps running and nothing
+// moves: its home, container, snapshots and custom domains all follow it. Only the
+// built-in <name>.<base> subdomain and the SSH login change. Reached from the
+// Rename icon next to "App name" in the Settings view.
+const RenameDialog = ({ name, onClose, onRenamed }) => {
+  useEscape(onClose);
+  const [newName, setNewName] = useState(name);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const target = newName.trim();
+  const valid = forkNameRe.test(target) && target !== name;
+
+  const rename = async (e) => {
+    e.preventDefault();
+    if (busy || !valid) return;
+    setBusy(true);
+    setError("");
+    try {
+      const updated = await api.post(`/api/apps/${encodeURIComponent(name)}/rename`, { new_name: target });
+      onRenamed(updated);
+    } catch (err) {
+      setError(err.message);
+      setBusy(false);
+    }
+  };
+
+  const host = window.location.host;
+  const sub = target.replace(/[^a-z0-9-]/g, "") || "app";
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true" onMouseDown={onClose}>
+      <form className="card modal modal-sheet" onSubmit={rename} onMouseDown={(e) => e.stopPropagation()}>
+        <button type="button" className="modal-x" onClick={onClose} title="Close" aria-label="Close">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
+        </button>
+        <h2>Rename {name}</h2>
+        <p className="hint" style={{ marginBottom: "5px" }}>
+          The app keeps running, and its files, container and custom domains all follow it. Only the <b>{name}.{host}</b> subdomain and the SSH login change. Links to the old subdomain stop working.
+        </p>
+        <ErrorBanner message={error} onDismiss={() => setError("")} />
+        <div className="fork-flow">
+          <div className="fork-node">
+            <span className="fork-avatar">{name.slice(0, 2)}</span>
+            <div className="fork-nm">{name}</div>
+            <div className="fork-sub">now</div>
+          </div>
+          <div className="fork-arrow" aria-hidden="true">&rarr;</div>
+          <div className="fork-node new">
+            <span className="fork-avatar">{target ? sub.slice(0, 2) : "?"}</span>
+            <div className="fork-nm">{target ? sub : "new name"}</div>
+            <div className="fork-sub">same app</div>
+          </div>
+        </div>
+        <div className="newapp-input">
+          <span className="newapp-dollar mono">$</span>
+          <input
+            type="text"
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            placeholder="new name"
+            aria-label="New app name"
+            autoFocus
+            spellCheck="false"
+            autoComplete="off"
+            maxLength={32}
+          />
+        </div>
+        <p className="hint fork-hint">{forkNameHint}</p>
+        <div className="newapp-willbe">
+          <div className="row">
+            <span className="ico">{"\u{1F310}"}</span>
+            <span className="lab">URL</span>
+            <span className="val">https://<b>{sub}</b>.{host}</span>
+          </div>
+          <div className="row">
+            <span className="ico">{"\u{2328}\u{FE0F}"}</span>
+            <span className="lab">SSH</span>
+            <span className="val"><b>{sub}</b>@{host}</span>
+          </div>
+        </div>
+        <div className="btn-row">
+          <button type="button" className="btn" onClick={onClose} disabled={busy}>
+            Cancel
+          </button>
+          <button type="submit" className="btn btn-primary" disabled={busy || !valid}>
+            {busy ? "Renaming..." : "Rename app"}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+};
+
 // The Settings view: the app's identity + details (address, access, resources)
 // with the former Settings dialog folded in -- editable description, API token,
 // and custom domains -- all inline in one tab.
-const AppSettings = ({ app, showToast, onCopyToken, onRegenerateToken, hasToken, onSaved }) => {
+const AppSettings = ({ app, showToast, onCopyToken, onRegenerateToken, hasToken, onSaved, onConfigureKeys }) => {
   const name = app.name;
+  const navigate = useNavigate();
   const [desc, setDesc] = useState(app.description || "");
   const [savingDesc, setSavingDesc] = useState(false);
+  const [showRename, setShowRename] = useState(false);
   const [domains, setDomains] = useState(null);
   const [input, setInput] = useState("");
   const [error, setError] = useState("");
@@ -732,6 +853,14 @@ const AppSettings = ({ app, showToast, onCopyToken, onRegenerateToken, hasToken,
     } finally {
       setSavingDesc(false);
     }
+  };
+
+  const onRenamed = (updated) => {
+    // Close the dialog explicitly: navigating to the new name keeps this component
+    // mounted (same route, changed param), so showRename would otherwise stay open.
+    setShowRename(false);
+    showToast("App renamed");
+    navigate(`/app/${encodeURIComponent(updated.name)}`, { replace: true });
   };
 
   const load = useCallback(async () => {
@@ -806,8 +935,19 @@ const AppSettings = ({ app, showToast, onCopyToken, onRegenerateToken, hasToken,
 
       <div className="ov-cols">
         <div>
-          <h3>Address &amp; access</h3>
+          <h3>App details</h3>
           <div className="ov-line ov-line-top">
+            <span className="ov-k">Name</span>
+            <span className="ov-v">{name}</span>
+            <CopyMini text={name} label="Copy app name" />
+            <button type="button" className="copy-mini" onClick={() => setShowRename(true)} title="Rename app" aria-label="Rename app">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M11.5 2.5l2 2L6 12l-2.6.6L4 10z" />
+                <path d="M10.5 3.5l2 2" />
+              </svg>
+            </button>
+          </div>
+          <div className="ov-line">
             <span className="ov-k">{urls.length > 1 ? "URLs" : "URL"}</span>
             <span className="ov-urls">
               {urls.map((u) => (
@@ -818,7 +958,17 @@ const AppSettings = ({ app, showToast, onCopyToken, onRegenerateToken, hasToken,
               ))}
             </span>
           </div>
-          <div className="ov-line"><span className="ov-k">SSH</span><span className="ov-v">{sshTarget}</span><CopyMini text={sshTarget} label="Copy SSH command" /></div>
+          <div className="ov-line">
+            <span className="ov-k">SSH</span>
+            <span className="ov-v">{sshTarget}</span>
+            <CopyMini text={sshTarget} label="Copy SSH command" />
+            <button type="button" className="copy-mini" onClick={onConfigureKeys} title="Configure SSH keys" aria-label="Configure SSH keys">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <circle cx="5.5" cy="10.5" r="2.5" />
+                <path d="M7.3 8.7 13 3M11 5l1.5 1.5M9.5 6.5 11 8" />
+              </svg>
+            </button>
+          </div>
           <div className="ov-line">
             <span className="ov-k">Token</span>
             <span className="ov-v ov-mask">{"•".repeat(12)}</span>
@@ -903,6 +1053,8 @@ const AppSettings = ({ app, showToast, onCopyToken, onRegenerateToken, hasToken,
           </div>
         )}
       </section>
+
+      {showRename && <RenameDialog name={name} onClose={() => setShowRename(false)} onRenamed={onRenamed} />}
     </div>
   );
 };
@@ -934,6 +1086,34 @@ const SnapRowActions = ({ busy, onRollback, onFork, onDelete }) => {
         )}
       </span>
     </span>
+  );
+};
+
+// The Snapshots header's primary action: a split button -- take a snapshot, or
+// (via the caret) fork the app from its current state.
+const SnapTakeButton = ({ onNew, onForkApp }) => {
+  const { open, setOpen, ref } = useDropdown();
+  return (
+    <div className="menu split-btn" ref={ref}>
+      <button type="button" className="btn btn-primary split-btn-main split-btn-text" onClick={onNew}>
+        Take snapshot
+      </button>
+      <button
+        type="button"
+        className="btn btn-primary split-btn-caret"
+        onClick={() => setOpen(!open)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label="More snapshot actions"
+      >
+        <span aria-hidden="true">&#9662;</span>
+      </button>
+      {open && (
+        <div className="menu-items" role="menu">
+          <MenuItem icon={<ForkIcon />} label="Fork app" onClick={() => { setOpen(false); onForkApp(); }} />
+        </div>
+      )}
+    </div>
   );
 };
 
@@ -1020,7 +1200,7 @@ const SnapshotsPane = ({ name, showToast, onRolledBack, onFork, onNew, reloadSig
           <div className="ov-desc">hostit snapshots {name} automatically on a schedule and before every deploy. Take one yourself anytime, roll back to any point (reversible -- the current state is snapshotted first), or fork a snapshot into a brand-new app.</div>
         </div>
         <div className="ov-quick">
-          <button type="button" className="btn btn-primary" onClick={() => onNew(load)}>Take snapshot</button>
+          <SnapTakeButton onNew={() => onNew(load)} onForkApp={() => onFork()} />
         </div>
       </div>
       <ErrorBanner message={error} onDismiss={() => setError("")} />
@@ -1109,13 +1289,16 @@ const AppDetail = ({ account, refreshAccount }) => {
       /* ignore */
     }
   }, [name, view]);
-  // Mount a view's (lazily-loaded) chunk the first time it is opened, not all up
-  // front, so opening an app loads only the active tab; each tab shows its own
-  // spinner. Visited tabs stay mounted, so switching back to them is instant.
-  const [visited, setVisited] = useState(() => new Set([view]));
+  // Every tab is mounted on page load, not on first visit, so the editor,
+  // terminal, logs and assistant all start rendering and loading their data
+  // immediately and switching to any of them is instant. Inactive panes are
+  // hidden with CSS (display:none); the terminal refits itself (ResizeObserver)
+  // when its pane becomes visible. The active tab is fetched first (prefetchTabs)
+  // so its chunk is not queued behind the others.
+  const initialView = useRef(view);
   useEffect(() => {
-    setVisited((s) => (s.has(view) ? s : new Set(s).add(view)));
-  }, [view]);
+    prefetchTabs(initialView.current);
+  }, []);
   // With no Anthropic key there is no assistant, so open straight into the editor.
   useEffect(() => {
     if (app && !app.assistant_enabled && view === "assistant") setView("editor");
@@ -1423,7 +1606,7 @@ const AppDetail = ({ account, refreshAccount }) => {
 
   return (
     <>
-      <div className={"ws-page" + (view === "settings" || view === "snapshots" ? " ws-doc" : "")}>
+      <div className={"ws-page" + (view === "settings" || view === "snapshots" || view === "logs" ? " ws-doc" : "")}>
         {/* Top bar. Left: identity (the "Running" state is left unsaid -- only the
             notable states are named). Right: the live resources beside the
             controls, all vertically centred. */}
@@ -1554,6 +1737,19 @@ const AppDetail = ({ account, refreshAccount }) => {
           <button
             type="button"
             role="tab"
+            aria-selected={view === "logs"}
+            className={"ws-viewtab" + (view === "logs" ? " on" : "")}
+            onClick={() => setView("logs")}
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+              <path d="M5 3h14v18l-3-2-2 2-2-2-2 2-2-2-3 2z" />
+              <path d="M8 8h8M8 12h8M8 16h5" />
+            </svg>
+            Logs
+          </button>
+          <button
+            type="button"
+            role="tab"
             aria-selected={view === "settings"}
             className={"ws-viewtab" + (view === "settings" ? " on" : "")}
             onClick={() => setView("settings")}
@@ -1584,6 +1780,11 @@ const AppDetail = ({ account, refreshAccount }) => {
             />
           </div>
         )}
+        <div className={"ws-logswrap" + (view === "logs" ? "" : " ws-inactive")}>
+          <Suspense fallback={<div className="ws-chat-loading">Loading logs...</div>}>
+            <AppLogs name={app.name} active={view === "logs"} />
+          </Suspense>
+        </div>
         <div className={"ws-settingswrap" + (view === "settings" ? "" : " ws-inactive")}>
           <AppSettings
             app={app}
@@ -1592,21 +1793,18 @@ const AppDetail = ({ account, refreshAccount }) => {
             onCopyToken={copyToken}
             onRegenerateToken={regenerateToken}
             onSaved={load}
+            onConfigureKeys={() => setShowSsh(true)}
           />
         </div>
         <div className={"ws-editorwrap" + (view === "editor" ? "" : " ws-inactive")}>
-          {visited.has("editor") && (
-            <Suspense fallback={<div className="ws-chat-loading">Loading editor...</div>}>
-              <AppEditor name={app.name} url={app.url} running={app.running} diskMB={app.disk_mb} diskLimitMB={app.disk_limit_mb} onDeploy={reloadPreview} />
-            </Suspense>
-          )}
+          <Suspense fallback={<div className="ws-chat-loading">Loading editor...</div>}>
+            <AppEditor name={app.name} url={app.url} running={app.running} diskMB={app.disk_mb} diskLimitMB={app.disk_limit_mb} onDeploy={reloadPreview} />
+          </Suspense>
         </div>
         <div className={"ws-termwrap" + (view === "terminal" ? "" : " ws-inactive")}>
-          {visited.has("terminal") && (
-            <Suspense fallback={<div className="ws-chat-loading">Loading terminal...</div>}>
-              <AppTerminal name={app.name} embedded active={view === "terminal"} onSsh={() => setShowSsh(true)} />
-            </Suspense>
-          )}
+          <Suspense fallback={<div className="ws-chat-loading">Loading terminal...</div>}>
+            <AppTerminal name={app.name} embedded active={view === "terminal"} onSsh={() => setShowSsh(true)} />
+          </Suspense>
         </div>
         {/* The assistant view (chat + preview) exists only when an Anthropic key
             is configured; otherwise the workspace opens straight into the editor. */}
@@ -1617,11 +1815,9 @@ const AppDetail = ({ account, refreshAccount }) => {
             style={{ gridTemplateColumns: `minmax(0, ${chatFrac}fr) 10px minmax(0, ${1 - chatFrac}fr)` }}
           >
           <div className="ws-chat">
-            {visited.has("assistant") && (
-              <Suspense fallback={<div className="ws-chat-loading">Loading assistant...</div>}>
-                <AppAssistant name={app.name} embedded onPreviewRefresh={reloadPreview} />
-              </Suspense>
-            )}
+            <Suspense fallback={<div className="ws-chat-loading">Loading assistant...</div>}>
+              <AppAssistant name={app.name} embedded onPreviewRefresh={reloadPreview} />
+            </Suspense>
           </div>
 
           <div

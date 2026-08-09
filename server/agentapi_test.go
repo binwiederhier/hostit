@@ -34,9 +34,9 @@ func TestAgentInfoIsSelfExplanatory(t *testing.T) {
 	assert.NotEmpty(t, resp.HostitYml)
 	// An agent must learn what it can build with, and what we recommend
 	assert.Contains(t, resp.Runtimes, "python3")
-	assert.Contains(t, resp.Runtimes, "node")
+	assert.Contains(t, resp.Runtimes, "Node.js")
 	assert.Contains(t, resp.Runtimes, "go")
-	assert.Contains(t, resp.Runtimes, "php")
+	assert.Contains(t, resp.Runtimes, "PHP")
 	assert.Contains(t, resp.SuggestedStack, "Go binary")
 	assert.Contains(t, resp.HostitYml, "mode: static")
 	assert.Equal(t, "https://apps.example.com/api", resp.BaseURL) // The base domain is the front door

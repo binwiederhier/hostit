@@ -58,10 +58,18 @@ func (m *Manager) PruneOldWorkspaceImages() {
 		slog.Warn("Cannot list images to prune", "error", err)
 		return
 	}
+	// Apps are pinned to the tag they were built with, so an old tag is not garbage
+	// just because it is no longer current: it cannot be rebuilt (its Containerfile
+	// is gone), so never remove a tag an app is still pinned to.
+	inUse, err := m.store.ImageTagsInUse()
+	if err != nil {
+		slog.Warn("Cannot read pinned image tags; skipping image prune to be safe", "error", err)
+		return
+	}
 	current := workspaceImageTag()
 	for _, image := range strings.Split(strings.TrimSpace(out), "\n") {
 		image = strings.TrimSpace(image)
-		if !strings.HasPrefix(image, workspaceImagePrefix+":") || image == current {
+		if !strings.HasPrefix(image, workspaceImagePrefix+":") || image == current || inUse[image] {
 			continue
 		}
 		if _, err := m.runner.Run("podman", "rmi", image); err != nil {
@@ -69,5 +77,15 @@ func (m *Manager) PruneOldWorkspaceImages() {
 			continue
 		}
 		slog.Info("Removed an old workspace image", "image", image)
+	}
+}
+
+// PinUnpinnedApps backfills any app with no pinned workspace image tag (apps from
+// before image pinning) with the current tag, so a later base-image change leaves
+// them on the image they are already running instead of recreating them onto a new
+// one. Idempotent; a no-op once every app is pinned.
+func (m *Manager) PinUnpinnedApps() {
+	if err := m.store.PinImageTags(workspaceImageTag()); err != nil {
+		slog.Warn("Cannot pin apps to the current workspace image", "error", err)
 	}
 }

@@ -35,7 +35,7 @@ func TestDeployReusesTheOneWorkspaceImage(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, ops.builds, "the workspace image is shared, never rebuilt per app")
 	joined := runner.ran()
-	assert.Contains(t, joined, "podman create --name hostit-app-blog")
+	assert.Contains(t, joined, "podman create --name "+m.containerName("blog"))
 }
 
 func TestContainerRunsUnderTheAppsOwnIdentity(t *testing.T) {

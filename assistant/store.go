@@ -4,6 +4,16 @@ import (
 	"sync"
 )
 
+// Usage is one turn's token counts, recorded per app so the platform can report
+// what the built-in assistant has spent. Cache tokens are separate: they are
+// priced differently from fresh input.
+type Usage struct {
+	InputTokens      int
+	OutputTokens     int
+	CacheWriteTokens int
+	CacheReadTokens  int
+}
+
 // Store persists one conversation per app, so it survives a reload, a restart, or
 // picking up from another device. The server backs this with SQLite; tests use
 // the in-memory one.
@@ -11,6 +21,8 @@ type Store interface {
 	Load(app string) ([]Message, error)
 	Save(app string, messages []Message) error
 	Delete(app string) error
+	// RecordUsage adds one turn's token usage to the app's running totals.
+	RecordUsage(app string, u Usage) error
 }
 
 // MemoryStore keeps transcripts in memory. It is the default and is all the tests
@@ -46,3 +58,6 @@ func (s *MemoryStore) Delete(app string) error {
 	s.mu.Unlock()
 	return nil
 }
+
+// RecordUsage is a no-op for the in-memory store; usage is only worth persisting.
+func (s *MemoryStore) RecordUsage(app string, u Usage) error { return nil }

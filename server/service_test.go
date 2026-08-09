@@ -247,14 +247,13 @@ func TestAppResponseIncludesUsageAndOwner(t *testing.T) {
 	require.Equal(t, http.StatusCreated, rr.Code)
 	require.NoError(t, s.apps.Store().UpdateAppUsage("blog", 42, true))
 
-	// The owner sees usage and quota state on their own app
+	// The owner sees measured disk usage on their own app
 	rr = request(t, s.API(), "GET", "/api/apps", "", token)
 	require.Equal(t, http.StatusOK, rr.Code)
 	var apps []*apiAppResponse
 	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &apps))
 	require.Len(t, apps, 1)
 	assert.Equal(t, 42, apps[0].DiskMB)
-	assert.True(t, apps[0].OverQuota)
 
 	// Admins additionally see who owns each app
 	rr = request(t, s.API(), "GET", "/api/apps", "", testToken)
@@ -333,7 +332,8 @@ func TestProxyUnknownApp(t *testing.T) {
 	require.Equal(t, http.StatusNotFound, rr.Code)
 	assert.Contains(t, rr.Header().Get("Content-Type"), "text/html")
 	body := rr.Body.String()
-	assert.Contains(t, body, "nothing here")
+	assert.Contains(t, body, "Error 404")
+	assert.Contains(t, body, "No app answers at this address")
 	// A casual visitor must not learn whether the name is taken, nor how the
 	// platform is wired up
 	assert.NotContains(t, body, "hostit up")

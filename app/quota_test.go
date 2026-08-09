@@ -47,7 +47,7 @@ func TestCheckQuotasStopsOverQuotaApp(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, a.OverQuota)
 	assert.GreaterOrEqual(t, a.DiskMB, 3)
-	assert.Contains(t, runner.ran(), "systemctl stop hostit-app@blog")
+	assert.Contains(t, runner.ran(), "systemctl stop "+m.unitName("blog"))
 }
 
 func TestCheckQuotasLeavesCompliantAppRunning(t *testing.T) {

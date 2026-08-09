@@ -27,9 +27,9 @@ func TestUpWorkspaceModeCreatesContainer(t *testing.T) {
 	require.Len(t, ops.builds, 1)
 	assert.Equal(t, workspaceImageTag(), ops.builds[0].tag)
 	joined := runner.ran()
-	assert.Contains(t, joined, "podman create --name hostit-app-blog")
-	assert.Contains(t, joined, "systemctl enable --now hostit-app@blog")
-	assert.Contains(t, joined, "systemctl restart hostit-app@blog")
+	assert.Contains(t, joined, "podman create --name "+m.containerName("blog"))
+	assert.Contains(t, joined, "systemctl enable --now "+m.unitName("blog"))
+	assert.Contains(t, joined, "systemctl restart "+m.unitName("blog"))
 }
 
 func TestUpWorkspaceModeUnchangedOnlyReloadsAgent(t *testing.T) {
@@ -51,7 +51,7 @@ func TestUpWorkspaceModeUnchangedOnlyReloadsAgent(t *testing.T) {
 	joined := runner.ran()
 	assert.NotContains(t, joined, "podman create")
 	assert.NotContains(t, joined, "podman rm")
-	assert.Contains(t, joined, "podman kill --signal HUP hostit-app-blog")
+	assert.Contains(t, joined, "podman kill --signal HUP "+m.containerName("blog"))
 }
 
 func TestUpRejectsTheRemovedContainerMode(t *testing.T) {
@@ -94,13 +94,13 @@ func TestMigrateToBlockUIDsRemapsOldApps(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, want, got)
 	joined := runner.ran()
-	assert.Contains(t, joined, "systemctl stop hostit-app@blog")
-	assert.Contains(t, joined, "podman rm --force hostit-app-blog")
+	assert.Contains(t, joined, "systemctl stop "+m.unitName("blog"))
+	assert.Contains(t, joined, "podman rm --force "+m.containerName("blog"))
 
 	// Idempotent: an app already on its block is left untouched
 	runner.reset()
 	m.MigrateToBlockUIDs()
-	assert.NotContains(t, runner.ran(), "podman rm --force hostit-app-blog")
+	assert.NotContains(t, runner.ran(), "podman rm --force "+m.containerName("blog"))
 }
 
 func TestUpRefusesASymlinkedConfig(t *testing.T) {
@@ -129,9 +129,9 @@ func TestEnsureWithoutConfigCreatesIdleWorkspace(t *testing.T) {
 	_, err := m.Ensure("blog")
 	require.NoError(t, err)
 	joined := runner.ran()
-	assert.Contains(t, joined, "podman create --name hostit-app-blog")
+	assert.Contains(t, joined, "podman create --name "+m.containerName("blog"))
 	assert.Contains(t, joined, workspaceImageTag())
-	assert.Contains(t, joined, "systemctl restart hostit-app@blog")
+	assert.Contains(t, joined, "systemctl restart "+m.unitName("blog"))
 }
 
 func TestEnsureRunningContainerIsNoOp(t *testing.T) {
@@ -153,12 +153,15 @@ func TestDeleteAppStopsAppBeforeRemovingUser(t *testing.T) {
 	t.Parallel()
 	m, ops, runner := newTestDeployManager(t)
 	createTestApp(t, m, "blog")
+	// Capture the id-keyed names before the delete removes the app (afterwards the
+	// name no longer resolves to its id).
+	unit, container := m.unitName("blog"), m.containerName("blog")
 	runner.reset()
 	require.NoError(t, m.DeleteApp("blog"))
 	joined := runner.ran()
 	// A running container keeps processes alive, which makes userdel fail
-	assert.Contains(t, joined, "systemctl disable --now hostit-app@blog")
-	assert.Contains(t, joined, "podman rm --force hostit-app-blog")
+	assert.Contains(t, joined, "systemctl disable --now "+unit)
+	assert.Contains(t, joined, "podman rm --force "+container)
 	assert.Equal(t, []string{"blog"}, ops.deletedUsers)
 }
 
@@ -174,8 +177,8 @@ func TestDownRestartStatus(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, out, "some status output")
 	joined := runner.ran()
-	assert.Contains(t, joined, "systemctl disable --now hostit-app@blog")
-	assert.Contains(t, joined, "systemctl restart hostit-app@blog")
+	assert.Contains(t, joined, "systemctl disable --now "+m.unitName("blog"))
+	assert.Contains(t, joined, "systemctl restart "+m.unitName("blog"))
 }
 
 func TestLogsWorkspaceModeReadsFile(t *testing.T) {
@@ -257,8 +260,11 @@ func createTestApp(t *testing.T, m *Manager, name string) *store.App {
 	if !ok {
 		return a
 	}
+	// Wait for the deploy's last command (the agent restart), not just the first
+	// time the unit is mentioned: otherwise the goroutine's trailing commands leak
+	// past a reset() the test does next.
 	require.Eventually(t, func() bool {
-		return strings.Contains(runner.ran(), "hostit-app@"+name)
+		return strings.Contains(runner.ran(), "restart "+m.unitName(name))
 	}, 5*time.Second, 5*time.Millisecond, "background demo deploy did not settle")
 	return a
 }
@@ -351,7 +357,7 @@ func TestRestartStaleAgents(t *testing.T) {
 	restarted, err := m.RestartStaleAgents("v0.3.0")
 	require.NoError(t, err)
 	assert.Equal(t, []string{"blog"}, restarted)
-	assert.Contains(t, runner.ran(), "systemctl restart hostit-app@blog")
+	assert.Contains(t, runner.ran(), "systemctl restart "+m.unitName("blog"))
 
 	// Same version again is a no-op: restarts interrupt apps, so they only
 	// happen when the binary behind the agents actually changed
@@ -378,7 +384,7 @@ func TestExecInApp(t *testing.T) {
 	res, err := m.Exec("blog", "go version", 0)
 	require.NoError(t, err)
 	assert.Contains(t, runner.ran(), "podman exec")
-	assert.Contains(t, runner.ran(), containerName("blog"))
+	assert.Contains(t, runner.ran(), m.containerName("blog"))
 	assert.Contains(t, runner.ran(), "go version")
 	assert.Equal(t, 0, res.ExitCode)
 
@@ -421,9 +427,11 @@ func TestReconcileUnitsRemovesUnitsOfDeletedApps(t *testing.T) {
 	m, _, runner := newTestDeployManager(t)
 	createTestApp(t, m, "blog")
 	runner.reset()
-	runner.returns("systemctl list-units", "hostit-app@blog.service loaded active running\nhostit-app@gone.service loaded failed failed\nhostit-app@e2e-old.service loaded activating auto-restart\n")
+	// Units and containers are keyed by app id, so the live app's are named by its
+	// id; "gone"/"e2e-old"/"ghost" are orphan ids with no app behind them.
+	runner.returns("systemctl list-units", m.unitName("blog")+".service loaded active running\nhostit-app@gone.service loaded failed failed\nhostit-app@e2e-old.service loaded activating auto-restart\n")
 
-	runner.returns("podman ps", "hostit-app-blog\nhostit-app-ghost\nsomething-else\n")
+	runner.returns("podman ps", m.containerName("blog")+"\nhostit-app-ghost\nsomething-else\n")
 
 	// A unit whose app is gone is not harmless: Restart=always keeps systemd
 	// retrying it forever, and its enable symlink brings it back after a reboot
@@ -433,13 +441,13 @@ func TestReconcileUnitsRemovesUnitsOfDeletedApps(t *testing.T) {
 	assert.Contains(t, ran, "systemctl disable --now hostit-app@gone")
 	assert.Contains(t, ran, "systemctl reset-failed hostit-app@gone")
 	assert.Contains(t, ran, "systemctl disable --now hostit-app@e2e-old")
-	assert.NotContains(t, ran, "disable --now hostit-app@blog", "a live app must be left alone")
+	assert.NotContains(t, ran, "disable --now "+m.unitName("blog"), "a live app must be left alone")
 
 	// Containers outlive their app the same way: deleting an app races the
 	// background start that follows creating one, and the loser is a container
 	// nothing will ever start
 	assert.Contains(t, ran, "podman rm --force hostit-app-ghost")
-	assert.NotContains(t, ran, "podman rm --force hostit-app-blog")
+	assert.NotContains(t, ran, "podman rm --force "+m.containerName("blog"))
 	assert.NotContains(t, ran, "something-else", "only hostit's own containers are ours to remove")
 }
 

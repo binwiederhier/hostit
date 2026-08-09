@@ -63,7 +63,9 @@ func (s *Server) newAPIHandler() http.Handler {
 	route(mux, "PUT", "/apps/{name}/keys", s.requireActive(s.handleAppsSetKeys))
 	route(mux, "POST", "/apps/{name}/token", s.requireActive(s.handleAppsRotateToken))
 	route(mux, "PUT", "/apps/{name}/description", s.requireActive(s.handleAppsSetDescription))
+	route(mux, "POST", "/apps/{name}/rename", s.requireActive(s.handleAppsRename))
 	route(mux, "POST", "/apps/{name}/fork", s.requireActive(s.handleAppsFork))
+	route(mux, "GET", "/apps/{name}/events", s.requireActive(s.handleAppEvents))
 	route(mux, "GET", "/apps/{name}/domains", s.requireActive(s.handleAppDomainsList))
 	route(mux, "POST", "/apps/{name}/domains", s.requireActive(s.handleAppDomainAdd))
 	route(mux, "POST", "/apps/{name}/domains/{domain}/verify", s.requireActive(s.handleAppDomainVerify))
@@ -150,7 +152,8 @@ func (s *Server) handleAppsCreate(w http.ResponseWriter, r *http.Request, c *cal
 		return
 	}
 	slog.Info("App created", "app", a.Name, "port", a.Port, "owner", c.userID())
-	resp := s.appResponse(a)
+	s.logAction(c, a.Name, "created", "App created")
+	resp := s.appResponse(a, s.firstActiveDomain(a.Name))
 	resp.AgentToken = s.agentToken(a) // Created with the app, never a separate step
 	writeJSON(w, http.StatusCreated, resp)
 }
@@ -194,7 +197,8 @@ func (s *Server) handleAppsFork(w http.ResponseWriter, r *http.Request, c *calle
 		return
 	}
 	slog.Info("App forked", "source", source.Name, "app", a.Name, "owner", c.userID())
-	resp := s.appResponse(a)
+	s.logAction(c, a.Name, "created", "Forked from "+source.Name)
+	resp := s.appResponse(a, s.firstActiveDomain(a.Name))
 	resp.AgentToken = s.agentToken(a)
 	writeJSON(w, http.StatusCreated, resp)
 }
@@ -215,7 +219,34 @@ func (s *Server) handleAppsSetDescription(w http.ResponseWriter, r *http.Request
 		writeAppError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, s.appResponse(a)) // appResponse re-reads the description from the file
+	s.logAction(c, a.Name, "description", "Updated the description")
+	writeJSON(w, http.StatusOK, s.appResponse(a, s.firstActiveDomain(a.Name))) // appResponse re-reads the description from the file
+}
+
+// handleAppsRename changes an app's name. Everything durable keys on the app id,
+// so this is cheap: the Unix login is renamed and the store row updated, and
+// nothing (home, snapshots, container) moves. The custom-domain routing cache is
+// refreshed so a domain follows the app to its new name.
+func (s *Server) handleAppsRename(w http.ResponseWriter, r *http.Request, c *caller) {
+	a, err := s.ownedApp(c, r.PathValue("name"))
+	if err != nil {
+		writeAppError(w, err)
+		return
+	}
+	var req apiRenameAppRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	renamed, err := s.apps.RenameApp(a.Name, req.NewName)
+	if err != nil {
+		writeAppError(w, err)
+		return
+	}
+	s.reloadDomains() // a custom domain's routing keys on the name; follow it
+	s.logAction(c, renamed.Name, "rename", "Renamed from "+a.Name)
+	resp := s.appResponse(renamed, s.firstActiveDomain(renamed.Name))
+	writeJSON(w, http.StatusOK, s.withState([]*apiAppResponse{resp})[0])
 }
 
 func (s *Server) handleAppsList(w http.ResponseWriter, r *http.Request, c *caller) {
@@ -224,9 +255,14 @@ func (s *Server) handleAppsList(w http.ResponseWriter, r *http.Request, c *calle
 		writeAppError(w, err)
 		return
 	}
+	// One query for every app's active custom domain, not one lookup per app.
+	activeDomains, err := s.apps.Store().ActiveDomains()
+	if err != nil {
+		activeDomains = nil // fall back to no custom domains rather than failing the list
+	}
 	resp := make([]*apiAppResponse, 0, len(apps))
 	for _, a := range apps {
-		resp = append(resp, s.appResponse(a))
+		resp = append(resp, s.appResponse(a, activeDomains[a.Name]))
 	}
 	writeJSON(w, http.StatusOK, s.withState(resp))
 }
@@ -237,7 +273,7 @@ func (s *Server) handleAppsGet(w http.ResponseWriter, r *http.Request, c *caller
 		writeAppError(w, err)
 		return
 	}
-	resp := s.appResponse(a)
+	resp := s.appResponse(a, s.firstActiveDomain(a.Name))
 	resp.AgentToken = s.agentToken(a)
 	writeJSON(w, http.StatusOK, s.withState([]*apiAppResponse{resp})[0])
 }
@@ -254,7 +290,8 @@ func (s *Server) handleAppsRotateToken(w http.ResponseWriter, r *http.Request, c
 		writeAppError(w, err)
 		return
 	}
-	resp := s.appResponse(a)
+	s.logAction(c, a.Name, "token", "Regenerated the API token")
+	resp := s.appResponse(a, s.firstActiveDomain(a.Name))
 	resp.AgentToken = token
 	// Through withState like every other app response, or rotating a token would
 	// hand the web app an app with no live state and flip its status dot to stopped.
@@ -309,7 +346,7 @@ func (s *Server) handleAppsSetKeys(w http.ResponseWriter, r *http.Request, c *ca
 		writeAppError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, s.withState([]*apiAppResponse{s.appResponse(a)})[0])
+	writeJSON(w, http.StatusOK, s.withState([]*apiAppResponse{s.appResponse(a, s.firstActiveDomain(a.Name))})[0])
 }
 
 // listedApps returns the caller's own apps, or every app when an admin asks for

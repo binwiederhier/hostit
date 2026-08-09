@@ -40,7 +40,7 @@ func TestForkSeedsHomeFromSourceAndDeploys(t *testing.T) {
 	_, err = m.store.App("blog2")
 	require.NoError(t, err)
 	require.Eventually(t, func() bool {
-		return strings.Contains(r.ran(), "hostit-app@blog2")
+		return strings.Contains(r.ran(), m.unitName("blog2"))
 	}, 5*time.Second, 5*time.Millisecond, "the forked app did not deploy")
 	uid := m.uidFor(fork.Port)
 	assert.Contains(t, r.ran(), fmt.Sprintf("chown -R %d:%d %s", uid, uid, m.appHome("blog2")))

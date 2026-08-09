@@ -43,7 +43,7 @@ func (s *Server) handleAgentSnapshotList(w http.ResponseWriter, _ *http.Request,
 
 // handleAgentSnapshotTake takes a manual snapshot (optionally labelled), so an
 // agent can preserve important work before a risky change.
-func (s *Server) handleAgentSnapshotTake(w http.ResponseWriter, r *http.Request, _ *caller, a *store.App) {
+func (s *Server) handleAgentSnapshotTake(w http.ResponseWriter, r *http.Request, c *caller, a *store.App) {
 	var req apiTakeSnapshotRequest
 	if r.Body != nil {
 		_ = json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req)
@@ -53,17 +53,23 @@ func (s *Server) handleAgentSnapshotTake(w http.ResponseWriter, r *http.Request,
 		writeSnapshotError(w, err)
 		return
 	}
+	detail := "Took a snapshot"
+	if req.Label != "" {
+		detail = "Took a snapshot: " + req.Label
+	}
+	s.logAction(c, a.Name, "snapshot", detail)
 	writeJSON(w, http.StatusOK, snapshotView(snap))
 }
 
 // handleAgentRestore rolls an app back to a snapshot (taking a safety snapshot of
 // the current state first).
-func (s *Server) handleAgentRestore(w http.ResponseWriter, r *http.Request, _ *caller, a *store.App) {
+func (s *Server) handleAgentRestore(w http.ResponseWriter, r *http.Request, c *caller, a *store.App) {
 	id := r.PathValue("id")
 	if err := s.apps.Rollback(a.Name, id); err != nil {
 		writeSnapshotError(w, err)
 		return
 	}
+	s.logAction(c, a.Name, "rollback", "Rolled back to an earlier snapshot")
 	writeJSON(w, http.StatusOK, &apiMessageResponse{Message: "rolled back to " + id})
 }
 

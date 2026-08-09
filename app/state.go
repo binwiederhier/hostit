@@ -221,14 +221,19 @@ func (m *Manager) containerStartTimes(names []string) map[string]int64 {
 	if err != nil {
 		return starts
 	}
+	nameByID := m.nameByID() // containers are id-named; map back to the app name callers key on
 	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
 		fields := strings.SplitN(strings.TrimSpace(line), "|", 2)
 		if len(fields) != 2 {
 			continue
 		}
-		name := strings.TrimPrefix(fields[0], containerPrefix)
-		if name == fields[0] {
+		id := strings.TrimPrefix(fields[0], containerPrefix)
+		if id == fields[0] {
 			continue // Not one of ours
+		}
+		name, ok := nameByID[id]
+		if !ok {
+			continue
 		}
 		if ts, err := strconv.ParseInt(strings.TrimSpace(fields[1]), 10, 64); err == nil {
 			starts[name] = ts
@@ -242,7 +247,7 @@ func (m *Manager) containerStartTimes(names []string) map[string]int64 {
 func (m *Manager) runningStates(names []string) map[string]bool {
 	args := []string{"systemctl", "is-active"}
 	for _, name := range names {
-		args = append(args, unitName(name))
+		args = append(args, m.unitName(name))
 	}
 	out, _ := m.runner.RunTimeout(stateTimeout, args...) // Non-zero exit just means "something is inactive"
 	lines := strings.Split(strings.TrimSpace(out), "\n")
@@ -270,14 +275,34 @@ func (m *Manager) resourceUsage() map[string]usage {
 	if err := json.Unmarshal([]byte(out), &stats); err != nil {
 		return usages
 	}
+	nameByID := m.nameByID() // containers are id-named; map back to the app name
 	for _, stat := range stats {
-		name := strings.TrimPrefix(stat.Name, containerPrefix)
-		if name == stat.Name {
+		id := strings.TrimPrefix(stat.Name, containerPrefix)
+		if id == stat.Name {
 			continue // Not one of ours
+		}
+		name, ok := nameByID[id]
+		if !ok {
+			continue
 		}
 		usages[name] = usage{memoryMB: parseMemMB(stat.MemUsage), cpuPercent: parseCPUPercent(stat.CPUPercent)}
 	}
 	return usages
+}
+
+// nameByID maps every app's id to its current name, for turning id-keyed host
+// state (container names) back into the names callers use.
+func (m *Manager) nameByID() map[string]string {
+	apps, err := m.store.Apps()
+	if err != nil {
+		slog.Warn("Cannot list apps to map ids to names", "error", err)
+		return map[string]string{}
+	}
+	byID := make(map[string]string, len(apps))
+	for _, a := range apps {
+		byID[a.ID] = a.Name
+	}
+	return byID
 }
 
 // parseCPUPercent turns podman's "3.70%" into whole percent, rounded. It can be
