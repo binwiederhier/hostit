@@ -128,7 +128,7 @@ func (s *AssistantSandbox) RunTurn(ctx context.Context, appName, prompt, systemP
 	if err != nil {
 		return fmt.Errorf("cannot prepare the sandbox image: %w", err)
 	}
-	name := "hostit-assistant-" + appID + "-" + randHex(4)
+	name := containerName(appID)
 	// Guarantee the container (and claude inside) is gone when the turn ends. A
 	// normal exit --rm's it, but if the turn is cancelled (the owner pressed Stop, or
 	// it timed out) the podman client is killed and can orphan the container -- which
@@ -195,7 +195,7 @@ func (s *AssistantSandbox) Shell(appName string) error {
 	if err != nil {
 		return err
 	}
-	name := "hostit-assistant-" + appID + "-" + randHex(4)
+	name := containerName(appID)
 	args := append(s.baseArgs(name, uid, gid), "-it", image, "/bin/bash")
 	fmt.Fprintf(os.Stderr, "==> shell in sandbox %s (app=%s uid=%d). Try: claude --version; hostit mcp --socket %s\n", name, appName, uid, s.conf.SocketFile)
 	cmd := exec.Command("podman", args...)
@@ -320,6 +320,13 @@ func appIdentity(appName string) (uid, gid int, appID string, err error) {
 	uid, _ = strconv.Atoi(u.Uid)
 	gid, _ = strconv.Atoi(u.Gid)
 	return uid, gid, filepath.Base(u.HomeDir), nil
+}
+
+// containerName is the ephemeral sandbox container name for one turn, keyed on the
+// app id (not its name -- a rename would orphan it) plus a random suffix so
+// concurrent turns for the same app never collide.
+func containerName(appID string) string {
+	return "hostit-assistant-" + appID + "-" + randHex(4)
 }
 
 func randHex(n int) string {
