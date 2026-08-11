@@ -159,9 +159,12 @@ func (m *Manager) apply(a *store.App, conf *appctl.AppConfig, allowReload bool) 
 	if err != nil {
 		return "", err
 	}
-	// The daemon builds this at startup, but an app created while that is still
-	// running must not fail; EnsureWorkspaceImage is a no-op once it exists
-	if err := m.EnsureWorkspaceImage(); err != nil {
+	// Make sure the image THIS app uses is present -- its pinned tag, not
+	// necessarily the current one. An app pinned to an image that already exists
+	// needs no build, so recreating it (e.g. during the id-keying migration) never
+	// blocks on building a new image; only an app that actually needs the current
+	// image pays for building it.
+	if err := m.ensureAppImage(a); err != nil {
 		return "", err
 	}
 

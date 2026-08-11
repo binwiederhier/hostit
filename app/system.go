@@ -63,6 +63,14 @@ func (o *systemOps) CreateUser(username, home string, uid int) error {
 	if err := os.MkdirAll(filepath.Dir(home), 0o755); err != nil {
 		return err
 	}
+	// A prior app in this uid block can leave an orphan group at this gid: an app
+	// that was renamed (usermod --login does not rename its group) and then deleted,
+	// since userdel only auto-removes a group that still shares the user's name.
+	// Remove any such group first, or groupadd collides ("GID already exists") the
+	// moment the freed port is reused.
+	if name := groupNameForGID(uid); name != "" && name != AppsGroup {
+		_ = run("groupdel", name)
+	}
 	// A group at the same id as the user, so the container's uid and gid blocks
 	// are the one contiguous host range that lets podman idmap-mount the image.
 	if err := run("groupadd", "--gid", strconv.Itoa(uid), username); err != nil {
@@ -113,9 +121,18 @@ func (o *systemOps) SetUserHome(username, home string) error {
 }
 
 // RenameUser changes a user's login name; uid, home and files are untouched, so
-// this is cheap and safe to do while the app keeps running.
+// this is cheap and safe to do while the app keeps running. It also renames the
+// user's primary group to match, so a later delete (which removes the group by the
+// user's name) does not leave an orphan gid behind that would block reusing the
+// freed port.
 func (o *systemOps) RenameUser(oldName, newName string) error {
-	return run("usermod", "--login", newName, oldName)
+	if err := run("usermod", "--login", newName, oldName); err != nil {
+		return err
+	}
+	if group := primaryGroupName(newName); group != "" && group != newName && group != AppsGroup {
+		_ = run("groupmod", "--new-name", newName, group) // best-effort; cosmetic if it fails
+	}
+	return nil
 }
 
 // KillUserProcesses SIGKILLs every process owned by the user. pkill exits 1 when
@@ -135,10 +152,16 @@ func (o *systemOps) KillUserProcesses(username string) error {
 // asynchronously), so escalate: ask systemd first, then kill what remains, and
 // retry userdel while the stragglers die.
 func (o *systemOps) DeleteUser(username string) error {
+	// Resolve the primary group now, before the account is gone, so it can be
+	// removed too. userdel only auto-removes a group named like the user; a rename
+	// (usermod --login) leaves the group under its old name, so without this it
+	// becomes an orphan gid that blocks reusing the freed port.
+	group := primaryGroupName(username)
 	_ = run("pkill", "--signal", "TERM", "--uid", username)
 	var err error
 	for i := 0; i < userdelRetries; i++ {
 		if err = run("userdel", "--remove", username); err == nil {
+			o.removeGroup(group)
 			return nil
 		}
 		// userdel can remove the account yet still exit non-zero (e.g. it could not
@@ -146,6 +169,7 @@ func (o *systemOps) DeleteUser(username string) error {
 		// Once the account is gone the delete has succeeded, so stop treating the
 		// leftover error as failure -- otherwise a half-removed app is undeletable.
 		if !o.UserExists(username) {
+			o.removeGroup(group)
 			return nil
 		}
 		if i == userdelKillAfter {
@@ -154,6 +178,39 @@ func (o *systemOps) DeleteUser(username string) error {
 		time.Sleep(userdelDelay)
 	}
 	return err
+}
+
+// removeGroup deletes an app's primary group, best-effort: userdel may already
+// have removed it (when its name still matched the user's), and the shared apps
+// group is never an app's primary group, but guard it anyway.
+func (o *systemOps) removeGroup(name string) {
+	if name != "" && name != AppsGroup {
+		_ = run("groupdel", name)
+	}
+}
+
+// primaryGroupName returns a user's primary group name, or "" if it cannot be
+// resolved. It reads the group by the user's gid, so it is correct even when a
+// rename left the group under a name that differs from the user's.
+func primaryGroupName(username string) string {
+	u, err := user.Lookup(username)
+	if err != nil {
+		return ""
+	}
+	g, err := user.LookupGroupId(u.Gid)
+	if err != nil {
+		return ""
+	}
+	return g.Name
+}
+
+// groupNameForGID returns the name of the group at gid, or "" if there is none.
+func groupNameForGID(gid int) string {
+	g, err := user.LookupGroupId(strconv.Itoa(gid))
+	if err != nil {
+		return ""
+	}
+	return g.Name
 }
 
 // LookupIDs returns the app's contiguous id block: its uid/gid (which become

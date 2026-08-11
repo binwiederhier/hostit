@@ -1619,6 +1619,204 @@ th:last-child {
   color: var(--danger);
 }
 
+/* A system note (e.g. External Claude fell back to the API): quiet, centered,
+   distinct from both the user's and the assistant's turns. */
+.asst-notice {
+  align-self: center;
+  color: var(--muted);
+  font-size: 12.5px;
+  font-style: italic;
+  text-align: center;
+  padding: 2px 12px;
+}
+
+/* Hover-revealed caption after an assistant reply's last line ("11:43 pm, Claude.ai").
+   The markdown is made inline, its children restored to block so lists/code still
+   render, and only a trailing paragraph goes inline -- so the caption trails the last
+   sentence rather than dropping to its own line. */
+.asst-text-body > .asst-md {
+  display: inline;
+}
+
+.asst-text-body > .asst-md > * {
+  display: block;
+}
+
+.asst-text-body > .asst-md > p:last-child {
+  display: inline;
+}
+
+.asst-response-meta {
+  display: inline;
+  font-size: 11.5px;
+  color: var(--muted);
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+.asst-text:hover .asst-response-meta {
+  opacity: 0.75;
+}
+
+/* Subtle model dropdown inside the input row (right-aligned, ChatGPT style): a
+   borderless grey text pill with a caret, aligned to the input's baseline. */
+.asst-modeldd {
+  position: relative;
+  flex: 0 0 auto;
+  align-self: flex-end; /* bottom-align with the send button when the input grows */
+}
+
+.asst-modeldd-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 40px; /* same height as the send/plus buttons */
+  padding: 0 10px;
+  border: none;
+  border-radius: 999px;
+  background: none;
+  color: var(--muted);
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.asst-modeldd-btn:hover:not(:disabled) {
+  background: var(--bg);
+  color: var(--text);
+}
+
+.asst-modeldd-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.asst-modeldd-caret {
+  width: 9px;
+  height: 6px;
+  flex: 0 0 auto;
+}
+
+/* Phone-only kebab: hidden until the input row gets tight, then it replaces the
+   label + caret so the picker is just a thin vertical dots button. */
+.asst-modeldd-kebab {
+  display: none;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+}
+
+@media (max-width: 640px) {
+  .asst-modeldd-btn { gap: 0; padding: 0 6px; }
+  .asst-modeldd-label,
+  .asst-modeldd-caret { display: none; }
+  .asst-modeldd-kebab { display: inline-block; }
+}
+
+.asst-modeldd-menu {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  right: 0;
+  min-width: 200px;
+  padding: 5px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.2);
+  z-index: 40;
+}
+
+.asst-modeldd-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 7px 10px;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  color: var(--text);
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.asst-modeldd-item:hover {
+  background: var(--bg);
+}
+
+.asst-modeldd-item.active {
+  font-weight: 600;
+}
+
+.asst-modeldd-check {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
+  color: var(--accent, #10b981);
+}
+
+/* Admin: per-user assistant access disclosure + the global defaults section. */
+.asst-access summary {
+  cursor: pointer;
+  font-size: 13px;
+  white-space: nowrap;
+  color: var(--muted);
+}
+
+.asst-access-body {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-top: 8px;
+  font-size: 13px;
+}
+
+.asst-access-body label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.defaults-assistant {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.defaults-assistant h3 {
+  margin: 0 0 4px;
+  font-size: 14px;
+}
+
+.asst-defaults {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.asst-defaults > label,
+.asst-defaults-mode {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.asst-defaults-models {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  align-items: center;
+}
+
+.asst-defaults-models label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 /* Markdown inside an assistant bubble: keep it tight, not document-spaced. The
    bubble sets white-space: pre-wrap for plain user text; reset it here or the
    newlines between markdown block tags render as big blank gaps. */
@@ -2078,7 +2276,12 @@ a.ws-open { display: inline-flex; align-items: center; gap: 9px; }
 
 /* The right cluster: live resources next to the controls, vertically centred */
 .ws-topright { margin-left: auto; display: flex; align-items: center; gap: 18px; flex: none; }
-.ws-topacts { display: flex; gap: 8px; align-items: center; }
+.ws-topacts { display: flex; gap: 8px; align-items: center; position: relative; }
+
+/* The Actions kebab sits mid-row (Open app is to its right), so anchor its menu to
+   the right edge of the controls row instead of the button, or it drifts left. */
+.ws-topacts .menu { position: static; }
+.ws-topacts .menu-items { right: 0; top: calc(100% + 4px); }
 
 /* Every top-bar button is the same height, whatever its contents */
 .ws-topacts .btn,
@@ -2251,12 +2454,6 @@ body.ws-resizing iframe { pointer-events: none; }
   /* Tight on space: the Open app button shrinks to just its icon */
   .ws-topacts .btn-primary .ws-open-label { display: none; }
   .ws-topacts .btn-primary { padding: 0 11px; }
-
-  /* The kebab sits mid-row (Open app is pushed right), so anchor its menu to the
-     right edge of the controls row instead of the button, or it drifts left. */
-  .ws-topacts { position: relative; }
-  .ws-topacts .menu { position: static; }
-  .ws-topacts .menu-items { right: 0; top: 100%; }
 }
 
 /* Modal helpers shared by the SSH and bring-your-own-AI dialogs */

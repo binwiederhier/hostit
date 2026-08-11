@@ -56,3 +56,10 @@ type outputResponse struct {
 type errorResponse struct {
 	Error string `json:"error"`
 }
+
+// toolResponse mirrors the daemon's /v1/self/tool result: one tool call's
+// model-facing output and whether the tool reported an error
+type toolResponse struct {
+	Output  string `json:"output"`
+	IsError bool   `json:"is_error"`
+}

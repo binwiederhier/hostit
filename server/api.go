@@ -83,6 +83,8 @@ func (s *Server) newAPIHandler() http.Handler {
 	route(mux, "POST", "/users", s.requireAdmin(s.handleUsersInvite))
 	route(mux, "PATCH", "/users/{id}", s.requireAdmin(s.handleUsersUpdate))
 	route(mux, "DELETE", "/users/{id}", s.requireAdmin(s.handleUsersDelete))
+	route(mux, "GET", "/assistant-defaults", s.requireAdmin(s.handleAssistantDefaults))
+	route(mux, "PUT", "/assistant-defaults", s.requireAdmin(s.handleAssistantDefaultsUpdate))
 	route(mux, "GET", "/domains", s.requireAdmin(s.handleDomainsList))
 	route(mux, "POST", "/domains", s.requireAdmin(s.handleDomainsAdd))
 	route(mux, "DELETE", "/domains/{domain}", s.requireAdmin(s.handleDomainsDelete))

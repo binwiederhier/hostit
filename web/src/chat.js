@@ -5,7 +5,7 @@
 //
 // It handles the item-producing events (user/thinking/text/tool_use/tool_result);
 // the caller handles the control events (done/error) which have side effects.
-export function reduceChatEvent(items, ev) {
+export function reduceChatEvent(items, ev, model) {
   const next = [...items];
   let refreshPreview = false;
 
@@ -28,10 +28,13 @@ export function reduceChatEvent(items, ev) {
 
   if (ev.type === "user") {
     next.push({ id: next.length, kind: "user", text: ev.text });
+  } else if (ev.type === "notice" && (ev.text || "").trim()) {
+    // A system note (e.g. External Claude fell back to the API), shown inline.
+    next.push({ id: next.length, kind: "notice", text: ev.text });
   } else if (ev.type === "thinking" && (ev.text || "").trim()) {
     next.push({ id: next.length, kind: "thinking", text: ev.text });
   } else if (ev.type === "text") {
-    next.push({ id: next.length, kind: "text", text: ev.text });
+    next.push({ id: next.length, kind: "text", text: ev.text, model });
   } else if (ev.type === "tool_use") {
     next.push({ id: next.length, kind: "tool", tool: ev.tool, input: ev.input, output: null });
   }

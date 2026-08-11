@@ -45,6 +45,7 @@ func (s *Server) handleAssistant(w http.ResponseWriter, r *http.Request, c *call
 	}
 	var req struct {
 		Message     string          `json:"message"`
+		Mode        string          `json:"mode"`
 		Attachments []apiAttachment `json:"attachments"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, assistantMaxMessage)).Decode(&req); err != nil {
@@ -72,7 +73,12 @@ func (s *Server) handleAssistant(w http.ResponseWriter, r *http.Request, c *call
 		}
 		attachments = append(attachments, att)
 	}
-	if err := s.assistant.Send(a.Name, c.userID(), req.Message, attachments...); err != nil {
+	// Resolve the mode the turn runs on: the requested option if this user may use
+	// it, else the app's remembered mode / the global default. Persist it (best
+	// effort) so the app remembers the choice.
+	mode := s.resolveMode(c.userID(), req.Mode, a.Name)
+	_ = s.apps.Store().SetAppAssistantMode(a.Name, mode)
+	if err := s.assistant.Send(a.Name, c.userID(), req.Message, mode, attachments...); err != nil {
 		switch {
 		case errors.Is(err, assistant.ErrBusy):
 			writeError(w, http.StatusConflict, err)
@@ -317,12 +323,23 @@ func (s *Server) handleAssistantTranscript(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, &apiAssistantTranscript{Enabled: true, Items: items, Running: s.assistant.Running(a.Name)})
+	// The mode dropdown: the options this user may pick, and the one the app will
+	// use next (its remembered choice, resolved against the current permissions).
+	modes := s.assistantOptions(c.userID())
+	writeJSON(w, http.StatusOK, &apiAssistantTranscript{
+		Enabled: true,
+		Items:   items,
+		Running: s.assistant.Running(a.Name),
+		Modes:   modes,
+		Mode:    s.resolveMode(c.userID(), "", a.Name),
+	})
 }
 
 // apiAssistantTranscript is GET /api/apps/{name}/assistant
 type apiAssistantTranscript struct {
-	Enabled bool             `json:"enabled"`
-	Running bool             `json:"running"`
-	Items   []assistant.Item `json:"items"`
+	Enabled bool               `json:"enabled"`
+	Running bool               `json:"running"`
+	Items   []assistant.Item   `json:"items"`
+	Modes   []apiAssistantMode `json:"modes"` // the options this user may pick
+	Mode    string             `json:"mode"`  // the one the app will use next
 }

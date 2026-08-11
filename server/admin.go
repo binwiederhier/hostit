@@ -36,6 +36,7 @@ func (s *Server) handleUsersList(w http.ResponseWriter, _ *http.Request, _ *call
 			r.AssistantTokens = usage.InputTokens + usage.OutputTokens + usage.CacheWriteTokens + usage.CacheReadTokens
 			r.AssistantCostUSD = assistantCostUSD(usage, s.config.AssistantModel)
 		}
+		s.fillUserAssistant(r, u.ID)
 		resp = append(resp, r)
 	}
 	writeJSON(w, http.StatusOK, resp)
@@ -146,12 +147,18 @@ func (s *Server) handleUsersUpdate(w http.ResponseWriter, r *http.Request, c *ca
 		writeAppError(w, err)
 		return
 	}
+	if err := s.applyUserAssistant(u.ID, &req); err != nil {
+		writeAppError(w, err)
+		return
+	}
 	count, err := s.apps.Store().AppCountByOwner(u.ID)
 	if err != nil {
 		writeAppError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, newUserResponse(u, count))
+	resp := newUserResponse(u, count)
+	s.fillUserAssistant(resp, u.ID)
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // handleUsersDelete removes a user and all of their apps (including the Unix

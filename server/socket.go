@@ -3,17 +3,23 @@ package server
 import (
 	"context"
 	"errors"
+	"io"
 	"net"
 	"net/http"
 	"strconv"
 
 	"golang.org/x/sys/unix"
+	"heckel.io/hostit/assistant"
 	"heckel.io/hostit/store"
 )
 
 const (
 	// defaultLogLines is returned by /v1/self/logs unless ?lines= is given
 	defaultLogLines = 100
+	// maxSelfToolBody caps a tool call's JSON arguments. write_file carries file
+	// content, so it is generous, but a caller must not turn this into an
+	// unbounded allocation on the daemon that shares a box with every app.
+	maxSelfToolBody = 16 * 1024 * 1024
 )
 
 // peerUIDContextKey is the context key under which a connection's peer UID is stored
@@ -39,7 +45,29 @@ func (s *Server) newSocketHandler() http.Handler {
 	mux.HandleFunc("POST /v1/self/reboot", s.selfApp(s.handleSelfReboot))
 	mux.HandleFunc("GET /v1/self/status", s.selfApp(s.handleSelfStatus))
 	mux.HandleFunc("GET /v1/self/logs", s.selfApp(s.handleSelfLogs))
+	// One app-scoped tool call (the sandboxed Claude Max backend reaches its tools
+	// through here, over the same peercred-authenticated socket the app CLI uses).
+	mux.HandleFunc("POST /v1/self/tool/{name}", s.selfApp(s.handleSelfTool))
 	return mux
+}
+
+// handleSelfTool executes one assistant tool call against the calling app and
+// returns its model-facing output. It shares DispatchTool with the built-in API
+// loop, so a tool behaves identically whichever backend drives it; the socket's
+// peer UID (SO_PEERCRED) is what scopes the call to this one app. This is the
+// mediation boundary for the Claude Max backend: the sandbox container holds no
+// app home and no podman -- every change it makes flows through here.
+func (s *Server) handleSelfTool(w http.ResponseWriter, r *http.Request, a *store.App) {
+	body, err := io.ReadAll(io.LimitReader(r.Body, maxSelfToolBody))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if len(body) == 0 {
+		body = []byte("{}") // a no-argument tool (deploy, list_snapshots) sends nothing
+	}
+	output, isErr := assistant.DispatchTool(&appOps{apps: s.apps}, a.Name, r.PathValue("name"), body)
+	writeJSON(w, http.StatusOK, &apiToolResponse{Output: output, IsError: isErr})
 }
 
 // handleSelf tells the calling app who it is; this is how the CLI learns its

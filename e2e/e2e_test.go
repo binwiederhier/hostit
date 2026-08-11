@@ -10,6 +10,7 @@ package e2e
 
 import (
 	"archive/tar"
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"fmt"
@@ -330,4 +331,176 @@ func truncate(s string, n int) string {
 		return s
 	}
 	return s[:n] + "..."
+}
+
+// --- Assistant mode selection: External Claude + API models ---
+
+func TestAssistantCatalogAndPerAppModes(t *testing.T) {
+	e := newEnv(t)
+	d := e.assistantDefaults()
+	require.NotEmpty(t, asSlice(d["models"]), "the API model catalog is offered")
+
+	name := uniqueName("e2e-mode")
+	e.createApp(name)
+	t.Cleanup(func() { e.deleteApp(name) })
+
+	var tr map[string]any
+	e.get("/api/apps/"+name+"/assistant", e.token, &tr)
+	ids := modeIDs(tr)
+	require.NotEmpty(t, ids, "the app offers assistant modes")
+	assert.NotEmpty(t, tr["mode"], "a default mode is resolved for the app")
+	if contains(ids, "external-claude") {
+		assert.Equal(t, true, d["external_configured"], "external offered only when the subscription is configured")
+	}
+}
+
+func TestAssistantGlobalDefaultsFilterModes(t *testing.T) {
+	e := newEnv(t)
+	orig := e.assistantDefaults()
+	t.Cleanup(func() {
+		e.doJSON("PUT", "/api/assistant-defaults", e.token, map[string]any{
+			"external_allowed": orig["external_allowed"],
+			"allowed_models":   orig["allowed_models"],
+			"default_mode":     orig["default_mode"],
+		}, nil, http.StatusOK)
+	})
+	first := fmt.Sprint(asSlice(orig["models"])[0].(map[string]any)["id"])
+
+	// Restrict the catalog to one model and disallow External Claude.
+	e.doJSON("PUT", "/api/assistant-defaults", e.token, map[string]any{
+		"external_allowed": false,
+		"allowed_models":   []string{first},
+	}, nil, http.StatusOK)
+
+	name := uniqueName("e2e-filter")
+	e.createApp(name)
+	t.Cleanup(func() { e.deleteApp(name) })
+	var tr map[string]any
+	e.get("/api/apps/"+name+"/assistant", e.token, &tr)
+	ids := modeIDs(tr)
+	assert.NotContains(t, ids, "external-claude", "external is filtered out when disallowed")
+	assert.Equal(t, []string{first}, ids, "only the allowed model is offered")
+}
+
+func TestAssistantPerUserOverride(t *testing.T) {
+	e := newEnv(t)
+	email := uniqueName("e2e-user") + "@example.com"
+	var u map[string]any
+	e.doJSON("POST", "/api/users", e.token, map[string]string{"email": email, "role": "user"}, &u, http.StatusCreated)
+	uid := fmt.Sprint(u["id"])
+	t.Cleanup(func() { e.status("DELETE", "/api/users/"+uid+"?apps=delete", e.token) })
+
+	assert.Equal(t, false, u["assistant_has_override"], "a new user inherits the global default")
+
+	e.doJSON("PATCH", "/api/users/"+uid, e.token, map[string]any{
+		"assistant_external_allowed": false,
+		"assistant_allowed_models":   []string{"claude-sonnet-5"},
+	}, &u, http.StatusOK)
+	assert.Equal(t, false, u["assistant_external_allowed"])
+	assert.Equal(t, true, u["assistant_has_override"])
+
+	e.doJSON("PATCH", "/api/users/"+uid, e.token, map[string]any{"assistant_clear_override": true}, &u, http.StatusOK)
+	assert.Equal(t, false, u["assistant_has_override"], "clearing the override reverts to the default")
+}
+
+// TestAssistantEveryModelRunsATurn drives one real turn per configured model --
+// what surfaced the Haiku "adaptive thinking not supported" bug -- and, when the
+// subscription backend is configured, an External Claude turn followed by a model
+// turn: the cross-backend switch the tool-id repair guards (it had 400'd on
+// duplicate tool_result ids).
+func TestAssistantEveryModelRunsATurn(t *testing.T) {
+	e := newEnv(t)
+	d := e.assistantDefaults()
+
+	name := uniqueName("e2e-turn")
+	e.createApp(name)
+	t.Cleanup(func() { e.deleteApp(name) })
+
+	const ask = "Reply with the single word: ok. Do not use any tools."
+	for _, m := range asSlice(d["models"]) {
+		id := fmt.Sprint(m.(map[string]any)["id"])
+		types, turnErr := e.assistantTurn(name, id, ask)
+		assert.Emptyf(t, turnErr, "model %s turn errored: %s", id, turnErr)
+		assert.Containsf(t, types, "done", "model %s turn completed", id)
+	}
+
+	if d["external_configured"] == true {
+		_, extErr := e.assistantTurn(name, "external-claude", "List the files, then say ok.")
+		assert.Empty(t, extErr, "external turn should succeed")
+		first := fmt.Sprint(asSlice(d["models"])[0].(map[string]any)["id"])
+		_, apiErr := e.assistantTurn(name, first, ask)
+		assert.Empty(t, apiErr, "switching to a model after External Claude must not fail on duplicate tool ids")
+	}
+}
+
+func (e *env) assistantDefaults() map[string]any {
+	var d map[string]any
+	e.get("/api/assistant-defaults", e.token, &d)
+	return d
+}
+
+// assistantTurn starts a turn on the given mode and reads the event stream until
+// the turn ends, returning the event types seen and the error it reported (empty
+// on success).
+func (e *env) assistantTurn(name, mode, message string) (types []string, turnErr string) {
+	e.t.Helper()
+	client := &http.Client{Timeout: 4 * time.Minute}
+	req, err := http.NewRequest("GET", e.host+"/api/apps/"+name+"/assistant/stream", nil)
+	require.NoError(e.t, err)
+	req.Header.Set("Authorization", "Bearer "+e.token)
+	resp, err := client.Do(req)
+	require.NoError(e.t, err)
+	defer resp.Body.Close()
+	time.Sleep(500 * time.Millisecond) // let the subscription register before starting
+
+	e.doJSON("POST", "/api/apps/"+name+"/assistant", e.token,
+		map[string]string{"message": message, "mode": mode}, nil, http.StatusAccepted)
+
+	sc := bufio.NewScanner(resp.Body)
+	sc.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
+	for sc.Scan() {
+		line := strings.TrimPrefix(sc.Text(), "data: ")
+		if line == sc.Text() { // keepalive comment, not a data frame
+			continue
+		}
+		var ev struct {
+			Type  string `json:"type"`
+			Error string `json:"error"`
+		}
+		if json.Unmarshal([]byte(line), &ev) != nil || ev.Type == "" {
+			continue
+		}
+		types = append(types, ev.Type)
+		switch ev.Type {
+		case "error":
+			return types, ev.Error
+		case "done":
+			return types, ""
+		}
+	}
+	return types, "stream ended without a done event"
+}
+
+func modeIDs(tr map[string]any) []string {
+	var ids []string
+	for _, m := range asSlice(tr["modes"]) {
+		if mm, ok := m.(map[string]any); ok {
+			ids = append(ids, fmt.Sprint(mm["id"]))
+		}
+	}
+	return ids
+}
+
+func asSlice(v any) []any {
+	s, _ := v.([]any)
+	return s
+}
+
+func contains(ss []string, s string) bool {
+	for _, x := range ss {
+		if x == s {
+			return true
+		}
+	}
+	return false
 }

@@ -1,10 +1,9 @@
 package cmd
 
 import (
-	"encoding/json"
+	"context"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 	"time"
 
@@ -12,87 +11,64 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestChatRoomKeepsOnlyTheLastMessages(t *testing.T) {
+func TestFormatUptime(t *testing.T) {
 	t.Parallel()
-	room := newChatRoom()
-	for i := 0; i < maxChatMessages+50; i++ {
-		room.post("u", "msg")
-	}
-	msgs := room.list()
-	assert.Len(t, msgs, maxChatMessages)
+	assert.Equal(t, "9s", formatUptime(9*time.Second))
+	assert.Equal(t, "3m 12s", formatUptime(3*time.Minute+12*time.Second))
+	assert.Equal(t, "1h 03m", formatUptime(time.Hour+3*time.Minute+40*time.Second))
 }
 
-func TestChatRoomTruncatesAndRejectsEmpty(t *testing.T) {
+func TestPlaceholderSnapshotCounts(t *testing.T) {
 	t.Parallel()
-	room := newChatRoom()
-	_, ok := room.post("someone", "   ")
-	assert.False(t, ok, "a blank message is refused")
-
-	msg, ok := room.post(strings.Repeat("n", 200), strings.Repeat("t", 999))
-	require.True(t, ok)
-	assert.Len(t, []rune(msg.Name), maxChatName)
-	assert.Len(t, []rune(msg.Text), maxChatText)
-
-	blank, ok := room.post("", "hi")
-	require.True(t, ok)
-	assert.Equal(t, "anon", blank.Name, "a missing name defaults to anon")
+	s := &placeholderStats{started: time.Now().Add(-90 * time.Second)}
+	s.visits.Add(2)
+	s.viewers.Add(1)
+	snap := s.snapshot()
+	assert.Equal(t, int64(2), snap.Visits)
+	assert.Equal(t, int64(1), snap.Viewers)
+	assert.Equal(t, "1m 30s", snap.Uptime)
+	assert.NotEmpty(t, snap.Time)
 }
 
-func TestChatRoomBroadcastsToSubscribers(t *testing.T) {
-	t.Parallel()
-	room := newChatRoom()
-	room.post("a", "already here")
-
-	// subscribe hands back the backlog and a live channel, atomically
-	ch, backlog, unsub := room.subscribe()
-	require.Len(t, backlog, 1)
-	assert.Equal(t, "already here", backlog[0].Text)
-
-	room.post("b", "live one")
-	select {
-	case m := <-ch:
-		assert.Equal(t, "live one", m.Text)
-	case <-time.After(time.Second):
-		t.Fatal("subscriber never received the live message")
-	}
-
-	// after unsubscribing, no more messages are delivered
-	unsub()
-	room.post("c", "after unsub")
-	select {
-	case m := <-ch:
-		t.Fatalf("received %q after unsubscribing", m.Text)
-	case <-time.After(50 * time.Millisecond):
-	}
-}
-
-func TestPlaceholderHandlerServesPageAndChat(t *testing.T) {
+func TestPlaceholderPageServerRendersVisitorNumber(t *testing.T) {
 	t.Parallel()
 	h := placeholderHandler()
 
-	// The page is served at the root
+	// Each page load increments the visitor number, rendered into the HTML server
+	// side -- proof a real backend handled the request, not a static file.
+	first := getBody(t, h, "/")
+	require.Equal(t, http.StatusOK, first.Code)
+	assert.Contains(t, first.Header().Get("Content-Type"), "text/html")
+	assert.Contains(t, first.Body.String(), "placeholder app")
+	assert.Contains(t, first.Body.String(), "#1</b>", "first visitor is #1")
+	assert.NotContains(t, first.Body.String(), "__VISITOR__", "the token is replaced")
+
+	second := getBody(t, h, "/")
+	assert.Contains(t, second.Body.String(), "#2</b>", "second load is visitor #2")
+}
+
+func TestPlaceholderLiveStreamPushesStats(t *testing.T) {
+	t.Parallel()
+	h := placeholderHandler()
+	_ = getBody(t, h, "/") // one visit, so visits >= 1
+
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+	req := httptest.NewRequest(http.MethodGet, "/live", nil).WithContext(ctx)
 	rr := httptest.NewRecorder()
-	h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/", nil))
-	require.Equal(t, http.StatusOK, rr.Code)
-	assert.Contains(t, rr.Header().Get("Content-Type"), "text/html")
-	assert.Contains(t, rr.Body.String(), "placeholder app")
+	h.ServeHTTP(rr, req)
 
-	// Posting a message, then reading it back
-	rr = httptest.NewRecorder()
-	h.ServeHTTP(rr, httptest.NewRequest(http.MethodPost, "/chat", strings.NewReader(`{"name":"ann","text":"hello"}`)))
-	require.Equal(t, http.StatusOK, rr.Code)
+	body := rr.Body.String()
+	assert.Contains(t, rr.Header().Get("Content-Type"), "text/event-stream")
+	assert.Contains(t, body, "data: ")
+	assert.Contains(t, body, `"visits":1`)
+	assert.Contains(t, body, `"uptime"`)
+	assert.Contains(t, body, `"time"`)
+}
 
-	rr = httptest.NewRecorder()
-	h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/chat", nil))
-	require.Equal(t, http.StatusOK, rr.Code)
-	var msgs []chatMessage
-	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &msgs))
-	require.Len(t, msgs, 1)
-	assert.Equal(t, "ann", msgs[0].Name)
-	assert.Equal(t, "hello", msgs[0].Text)
-
-	// An empty message is a bad request, not a stored blank
-	rr = httptest.NewRecorder()
-	h.ServeHTTP(rr, httptest.NewRequest(http.MethodPost, "/chat", strings.NewReader(`{"name":"x","text":""}`)))
-	assert.Equal(t, http.StatusBadRequest, rr.Code)
+func getBody(t *testing.T, h http.Handler, path string) *httptest.ResponseRecorder {
+	t.Helper()
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, path, nil))
+	return rr
 }

@@ -10,6 +10,13 @@ import (
 type Message struct {
 	Role    string         `json:"role"` // "user" or "assistant"
 	Content []ContentBlock `json:"content"`
+	// Model is the mode/model that produced an assistant message (External Claude or
+	// a model id). It is our own metadata for the UI, stripped before a message is
+	// sent to the API (which rejects unknown fields); empty on user messages.
+	Model string `json:"model,omitempty"`
+	// Time is when an assistant message was produced (unix seconds), shown in the
+	// reply's info popover. Our own metadata, likewise stripped before the API.
+	Time int64 `json:"time,omitempty"`
 }
 
 // ContentBlock is one piece of a message. The Anthropic API uses a tagged union

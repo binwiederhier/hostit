@@ -196,6 +196,26 @@ var migrations = []string{
 			updated_at INTEGER NOT NULL DEFAULT 0
 		);
 	`,
+	// Per-user assistant permissions: whether the user may pick the External
+	// Claude (subscription) mode, and which API models they may use (a
+	// comma-separated allowlist; empty means all configured models). A missing row
+	// means "the global defaults apply". Kept in its own table so it can be added
+	// without touching the user row's column list.
+	`
+		CREATE TABLE user_assistant (
+			user_id TEXT PRIMARY KEY,
+			external_allowed INTEGER NOT NULL DEFAULT 0,
+			allowed_models TEXT NOT NULL DEFAULT ''
+		);
+	`,
+	// The assistant mode each app last used (External Claude or a model id), keyed
+	// on app_id so it survives a rename. Empty/missing means the global default.
+	`
+		CREATE TABLE app_assistant (
+			app_id TEXT PRIMARY KEY,
+			mode TEXT NOT NULL DEFAULT ''
+		);
+	`,
 }
 
 // migrate brings the database up to the current schema version, creating it if

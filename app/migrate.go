@@ -84,6 +84,9 @@ func (m *Manager) MigrateToIDKeyedHomes() {
 				slog.Warn("home migration: cannot move snapshots dir", "app", a.Name, "from", oldSnaps, "to", newSnaps, "error", err)
 			}
 		}
+		// Re-apply the disk quota: applyStoredLimits ran before the home moved, so its
+		// btrfs qgroup attempt hit the not-yet-existent id path. Now the home is here.
+		m.SetDiskLimit(a.Name, m.diskLimit(a.Name))
 		// Bring the app back up on its new home.
 		if _, err := m.Ensure(a.Name); err != nil {
 			slog.Error("home migration: moved but could not restart", "app", a.Name, "error", err)

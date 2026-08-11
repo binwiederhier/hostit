@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"heckel.io/hostit/store"
 )
 
 const (
@@ -80,12 +82,62 @@ func (m *Manager) PruneOldWorkspaceImages() {
 	}
 }
 
-// PinUnpinnedApps backfills any app with no pinned workspace image tag (apps from
-// before image pinning) with the current tag, so a later base-image change leaves
-// them on the image they are already running instead of recreating them onto a new
-// one. Idempotent; a no-op once every app is pinned.
-func (m *Manager) PinUnpinnedApps() {
-	if err := m.store.PinImageTags(workspaceImageTag()); err != nil {
-		slog.Warn("Cannot pin apps to the current workspace image", "error", err)
+// ensureAppImage makes sure the image an app will actually run is present. That is
+// its pinned tag, not necessarily the current one: an app pinned to an image that
+// already exists needs nothing built, so recreating it never blocks on a build. A
+// missing image is built as the current one (the only Containerfile we have), which
+// is the path a new or unpinned app takes.
+func (m *Manager) ensureAppImage(a *store.App) error {
+	image := a.ImageTag
+	if image == "" {
+		image = workspaceImageTag()
 	}
+	if m.ops.ImageExists(image) {
+		return nil
+	}
+	return m.EnsureWorkspaceImage()
+}
+
+// PinUnpinnedApps backfills any app with no pinned workspace image tag (apps from
+// before image pinning) with the image it is CURRENTLY running, so a base-image
+// change in this very release leaves them on the image they already run rather than
+// recreating them onto a new (unbuilt) one -- which would block startup on a build.
+// Falls back to the current tag only when the running image cannot be read.
+// Idempotent; a no-op once every app is pinned. Must run before the id-keying
+// migration so it recreates apps onto their pinned image.
+func (m *Manager) PinUnpinnedApps() {
+	apps, err := m.store.Apps()
+	if err != nil {
+		slog.Warn("Cannot list apps to pin workspace images", "error", err)
+		return
+	}
+	for _, a := range apps {
+		if a.ImageTag != "" {
+			continue // already pinned
+		}
+		image := m.runningImage(a)
+		if image == "" {
+			image = workspaceImageTag()
+		}
+		if err := m.store.SetAppImageTag(a.Name, image); err != nil {
+			slog.Warn("Cannot pin app to its workspace image", "app", a.Name, "error", err)
+		}
+	}
+}
+
+// runningImage reports the workspace image an app's container is running, or "" if
+// it cannot be read. The container may still be name-keyed (this runs before the
+// id-keying migration) or already id-keyed, so both names are tried.
+func (m *Manager) runningImage(a *store.App) string {
+	for _, name := range []string{containerNameForID(a.ID), containerPrefix + a.Name} {
+		out, err := m.runner.Run("podman", "inspect", name, "--format", "{{.ImageName}}")
+		if err != nil {
+			continue
+		}
+		image := strings.TrimSpace(out)
+		if strings.HasPrefix(image, workspaceImagePrefix+":") {
+			return image
+		}
+	}
+	return ""
 }

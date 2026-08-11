@@ -82,6 +82,12 @@ func execServe(c *cli.Context) error {
 	// every request resolves an app by its stable id rather than racing a
 	// background backfill. Fast: a few UPDATEs.
 	manager.BackfillAppIDs()
+	// Pin every not-yet-pinned app to the image it is CURRENTLY running, BEFORE the
+	// migration recreates it. Otherwise a release that changes the workspace image
+	// would recreate existing apps onto the new (unbuilt) image, and building it
+	// would block startup -- a proxy outage for the whole build. Pinned to their
+	// running image, the migration recreates them onto an image that already exists.
+	manager.PinUnpinnedApps()
 	// Move any pre-id app's home (and snapshots) onto its id-keyed path before
 	// serving, so requests never resolve a home that has not moved yet. One-off:
 	// a no-op once every app is id-keyed. This recreates each moved app's container
@@ -95,7 +101,6 @@ func execServe(c *cli.Context) error {
 		}
 		// One-off: move any app still on the old split-uid scheme onto its
 		// contiguous block, so it becomes idmapped like new apps. No-op once done.
-		manager.PinUnpinnedApps()
 		manager.MigrateToBlockUIDs()
 		// Agents keep the behaviour of the binary they were exec'd from, so an
 		// upgrade only reaches them on a restart. In the background: this costs

@@ -3,6 +3,33 @@
 Things worth doing, with enough context to pick up cold. Not a backlog of
 everything imaginable -- if it is not written down here it is not planned.
 
+## Phil notes
+
+Refactor:
+
+I'd like you to refactor and restructure to make the app more modular. Do this carefully, and add tests where needed.
+
+The app/ package is huge. It mixes the responsibilities of many different layers. It may be worth having a container package, a package that does all the container/podman ops. 
+
+The general approach is: Make service classes scoped for a specific took or API and then compose them in the other packages. 
+
+Possible other packages/services could be:
+- btrfs/
+- unix/user
+- systemd/
+- podman/ or container/
+- ssh/ service.go + keys.go
+
+The over-quota management (shut down when over quota) can be entirely removed, since that is done by the btrfs quotas, right?
+
+Test files should usually mirror the go file, e.g. terminal.go+terminal_test.go. Remember this and apply here: I don't like random test files that don't map to original files, e.g. upload_test.go is just floating.
+
+Remember this and apply here: Server handlers should be in server/server_handler_<topic>.go, and they should almost all be tested. Handlers should use service packages such as the assistant package/service, or the container package, or the systemd package. Handlers should be simple and simply orchestrate the other packages. That makes them easy to mock and test with mocks.
+
+Remember this and apply: We should use go embed where applicable. The error page and container files and other large blobs of text are just raw strings.
+
+Remember this and apply: Unless there is a very good reason, we should not repeat raw strings that are identifiers or keys, e.g. "tool_use", "claude-sonnet-5", 
+
 ## Multi-node: a proxy node and hosting nodes
 
 Today one machine is everything: it terminates TLS, proxies, holds the registry,

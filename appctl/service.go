@@ -5,6 +5,7 @@
 package appctl
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -112,6 +113,19 @@ func (c *Controller) Logs(lines int) (string, error) {
 	return resp.Output, nil
 }
 
+// Tool runs one app-scoped assistant tool call over the socket and returns its
+// model-facing output plus whether the tool itself reported an error (as opposed
+// to a transport failure, which is the error return). This is what the sandboxed
+// Claude Max backend's MCP server calls for each tool; the socket's peer UID
+// scopes the call to this app.
+func (c *Controller) Tool(name string, args []byte) (string, bool, error) {
+	var resp toolResponse
+	if err := c.requestBody("POST", "/v1/self/tool/"+name, args, &resp); err != nil {
+		return "", false, err
+	}
+	return resp.Output, resp.IsError, nil
+}
+
 // DefaultSocketFile returns the daemon socket path from the default config
 func DefaultSocketFile() string {
 	return config.NewConfig().SocketFile
@@ -126,28 +140,39 @@ func (c *Controller) message(method, path string) (string, error) {
 }
 
 func (c *Controller) request(method, path string, response any) error {
-	req, err := http.NewRequest(method, "http://hostit"+path, nil)
+	return c.requestBody(method, path, nil, response)
+}
+
+func (c *Controller) requestBody(method, path string, body []byte, response any) error {
+	var reader io.Reader
+	if body != nil {
+		reader = bytes.NewReader(body)
+	}
+	req, err := http.NewRequest(method, "http://hostit"+path, reader)
 	if err != nil {
 		return err
+	}
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
 	}
 	resp, err := c.client.Do(req)
 	if err != nil {
 		return fmt.Errorf("cannot reach hostit daemon at %s: %w", c.socketFile, err)
 	}
 	defer resp.Body.Close()
-	body, err := io.ReadAll(resp.Body)
+	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		var errResp errorResponse
-		if err := json.Unmarshal(body, &errResp); err == nil && errResp.Error != "" {
+		if err := json.Unmarshal(respBody, &errResp); err == nil && errResp.Error != "" {
 			return fmt.Errorf("%s", errResp.Error)
 		}
 		return fmt.Errorf("daemon request failed with HTTP %d", resp.StatusCode)
 	}
 	if response != nil {
-		return json.Unmarshal(body, response)
+		return json.Unmarshal(respBody, response)
 	}
 	return nil
 }

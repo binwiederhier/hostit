@@ -10,8 +10,11 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
+
+	"heckel.io/hostit/config"
 )
 
 const (
@@ -56,6 +59,7 @@ type Manager struct {
 	ops      AppOps
 	store    Store
 	model    string
+	claude   ClaudeRunner // non-nil switches turns to the Claude Max sandbox backend
 	sessions map[string]*session
 	mu       sync.Mutex // Protects sessions
 
@@ -168,7 +172,7 @@ func (m *Manager) Running(app string) bool {
 // the caller (empty for the global admin token); it bounds the caller's usage. It
 // refuses ErrBusy if a turn is already running for this app, or a rate error if
 // the user is over their limits. Events flow to every subscriber, not this caller.
-func (m *Manager) Send(app, userID, userText string, attachments ...Attachment) error {
+func (m *Manager) Send(app, userID, userText, mode string, attachments ...Attachment) error {
 	if err := m.reserveRun(userID); err != nil {
 		return err
 	}
@@ -177,7 +181,7 @@ func (m *Manager) Send(app, userID, userText string, attachments ...Attachment) 
 		m.releaseRun(userID)
 		return ErrBusy
 	}
-	go m.runLoop(s, app, userID, userText, attachments)
+	go m.runLoop(s, app, userID, userText, mode, attachments)
 	return nil
 }
 
@@ -224,27 +228,94 @@ func (m *Manager) Transcript(app string) ([]Item, error) {
 // publishes every step to the app's session so all subscribers see it, and saves
 // the transcript after each step so a reload mid-run recovers the progress. It is
 // bound to a background context, so the sender leaving does not cancel it.
-func (m *Manager) runLoop(s *session, app, userID, userText string, attachments []Attachment) {
+func (m *Manager) runLoop(s *session, app, userID, userText, mode string, attachments []Attachment) {
 	defer s.end()
 	defer m.releaseRun(userID)
 	ctx, cancel := context.WithTimeout(context.Background(), runTimeout)
 	defer cancel()
 	s.setCancel(cancel) // so Stop can cancel this run
 
+	// An empty mode means "the sensible default": External Claude when configured,
+	// else the API model. The server usually resolves a concrete mode first.
+	if mode == "" {
+		if m.claude != nil {
+			mode = config.ExternalClaudeMode
+		} else {
+			mode = m.model
+		}
+	}
+
+	// Store and show the user's message once, up front, so a fallback from the
+	// External Claude backend to the API does not duplicate it in the transcript.
 	content, display := buildUserContent(userText, attachments)
 	history := append(m.load(app), Message{Role: "user", Content: content})
 	m.save(app, history)
 	s.publish(Event{Type: "user", Text: display})
 
+	// External Claude mode: run the subscription-backed agent in its sandbox. If the
+	// subscription is unavailable, tell the user and fall back to the API backend so
+	// a lapsed/expired subscription never leaves the assistant dead.
+	if mode == config.ExternalClaudeMode && m.claude != nil {
+		if err := m.runClaudeTurn(ctx, s, app, history, userText); err == nil {
+			return // handled the turn (published done) or was cancelled
+		} else {
+			s.publish(Event{Type: "notice", Text: fmt.Sprintf("External Claude is unavailable (%s). Falling back to %s.", err.Error(), m.model)})
+			mode = m.model
+		}
+	}
+
+	m.runAPILoop(ctx, s, app, apiModel(mode, m.model), history)
+}
+
+// thinkingFor returns the extended-thinking config for a model, or nil for models
+// that do not support adaptive thinking. Sonnet/Opus support it; Haiku does not
+// (the API rejects it), so a lighter model can still be offered in the dropdown.
+func thinkingFor(model string) *thinkingConfig {
+	if strings.Contains(strings.ToLower(model), "haiku") {
+		return nil
+	}
+	return &thinkingConfig{Type: "adaptive"}
+}
+
+// outputConfigFor returns the effort config, likewise omitted for Haiku, which
+// does not take the extended output controls.
+func outputConfigFor(model string) *outputConfig {
+	if strings.Contains(strings.ToLower(model), "haiku") {
+		return nil
+	}
+	return &outputConfig{Effort: assistantEffort}
+}
+
+// apiModel resolves the API model id for a turn: the selected mode when it names a
+// model, or the fallback (External Claude and empty resolve to the fallback).
+func apiModel(mode, fallback string) string {
+	if mode == "" || mode == config.ExternalClaudeMode {
+		return fallback
+	}
+	return mode
+}
+
+// runAPILoop is the metered-API turn: the model-call-and-tools loop, driven with
+// the given model. history already carries the user's message and has been shown
+// and saved by the caller.
+func (m *Manager) runAPILoop(ctx context.Context, s *session, app, model string, history []Message) {
+	// Repair any duplicate tool ids first: a transcript with External Claude turns
+	// can carry tool_use ids that repeat across turns, which the Messages API
+	// rejects. This re-mints them uniquely (and persists the repair when the turn
+	// saves), so switching to an API model after using External Claude just works.
+	history = dedupeToolIDs(history)
+	// Tell watchers which model is answering this turn (so the chat can badge the
+	// reply, and show the fallback model truthfully when External Claude failed).
+	s.publish(Event{Type: "model", Text: model})
 	for iter := 0; iter < maxIterations; iter++ {
 		resp, err := m.client.complete(ctx, request{
-			Model:        m.model,
+			Model:        model,
 			MaxTokens:    maxTokens,
 			System:       cachedSystem(systemPrompt(app)),
-			Messages:     cacheConversation(recentHistory(history, maxContextTurns)),
+			Messages:     apiRequestMessages(history),
 			Tools:        cachedToolDefs(),
-			Thinking:     &thinkingConfig{Type: "adaptive"},
-			OutputConfig: &outputConfig{Effort: assistantEffort},
+			Thinking:     thinkingFor(model),
+			OutputConfig: outputConfigFor(model),
 		})
 		if err != nil {
 			// A cancelled context is the owner pressing Stop (or the run timing out),
@@ -271,7 +342,7 @@ func (m *Manager) runLoop(s *session, app, userID, userText string, attachments 
 		// stored: an adaptive thinking block carries internal fields we do not
 		// round-trip, and the model does not need its earlier thinking echoed back.
 		toolUses := m.publishReply(s, resp.Content)
-		history = append(history, Message{Role: "assistant", Content: withoutThinking(resp.Content)})
+		history = append(history, Message{Role: "assistant", Content: withoutThinking(resp.Content), Model: model, Time: time.Now().Unix()})
 		m.save(app, history)
 		if len(toolUses) == 0 {
 			// No tool calls: the model has said its piece and is done.
@@ -296,6 +367,20 @@ func (m *Manager) runLoop(s *session, app, userID, userText string, attachments 
 	}
 
 	s.publish(Event{Type: "error", Error: errMaxIterations.Error()})
+}
+
+// apiRequestMessages builds the message list for one API request: the recent
+// window with a cache breakpoint on the tail, and our own per-message Model
+// metadata stripped (the Messages API rejects unknown fields). It copies, so
+// stored history keeps its Model tags for the UI.
+func apiRequestMessages(history []Message) []Message {
+	msgs := recentHistory(history, maxContextTurns)
+	clean := make([]Message, len(msgs))
+	for i, msg := range msgs {
+		msg.Model, msg.Time = "", 0 // our metadata, not part of the API message
+		clean[i] = msg
+	}
+	return cacheConversation(clean)
 }
 
 // recentHistory windows the conversation sent to the model to the last maxTurns

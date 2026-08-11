@@ -15,6 +15,8 @@ type Item struct {
 	Input   string `json:"input,omitempty"`
 	Output  string `json:"output,omitempty"`
 	IsError bool   `json:"is_error,omitempty"`
+	Model   string `json:"model,omitempty"` // on an assistant reply: which model produced it
+	Time    int64  `json:"time,omitempty"`  // on an assistant reply: when (unix seconds)
 }
 
 // toItems rebuilds the display transcript from the stored API messages: user text
@@ -34,7 +36,7 @@ func toItems(history []Message) []Item {
 					}
 					items = append(items, Item{Kind: "user", Text: b.Text})
 				} else {
-					items = append(items, Item{Kind: "text", Text: b.Text})
+					items = append(items, Item{Kind: "text", Text: b.Text, Model: msg.Model, Time: msg.Time})
 				}
 			case "tool_use":
 				items = append(items, Item{Kind: "tool", Tool: b.Name, Input: string(b.Input)})

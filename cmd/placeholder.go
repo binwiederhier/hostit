@@ -9,22 +9,19 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/urfave/cli/v2"
 )
 
 const (
-	// A placeholder is ephemeral -- replaced the moment the owner builds something
-	// -- so its chat is small, bounded and in-memory, never persisted.
-	maxChatName     = 40
-	maxChatText     = 280
-	maxChatMessages = 100
-	maxChatBody     = 4096
-	// sseKeepalive is how often the stream sends a comment to keep the connection
-	// (and any proxy in between) from timing the idle stream out
-	sseKeepalive = 25 * time.Second
+	// liveTick is how often the placeholder pushes fresh stats to a viewer. Every
+	// tick doubles as the SSE keepalive, so an idle stream never times out.
+	liveTick = 1 * time.Second
+	// visitorToken is replaced per request with the loading visitor's number, so the
+	// page is server-rendered proof that a real backend handled the request.
+	visitorToken = "__VISITOR__"
 )
 
 var cmdPlaceholder = &cli.Command{
@@ -36,97 +33,57 @@ var cmdPlaceholder = &cli.Command{
 	Action: execPlaceholder,
 }
 
-// chatMessage is one line in the placeholder's chat
-type chatMessage struct {
-	Name string `json:"name"`
-	Text string `json:"text"`
+// liveStat is one snapshot the placeholder pushes to viewers, showing the page is
+// backed by a running process rather than a static file.
+type liveStat struct {
+	Time    string `json:"time"`    // server clock, HH:MM:SS
+	Uptime  string `json:"uptime"`  // how long this server has been running
+	Visits  int64  `json:"visits"`  // page loads since it started
+	Viewers int64  `json:"viewers"` // how many are watching the live stream right now
 }
 
-// chatRoom is a bounded in-memory message log with live subscribers. It exists
-// only to make the placeholder feel alive and to show a real backend is running;
-// nothing here survives a restart, and it holds at most maxChatMessages.
-type chatRoom struct {
-	msgs []chatMessage
-	subs map[chan chatMessage]struct{} // Live SSE listeners; a post fans out to each
-	mu   sync.Mutex                    // Protects msgs and subs
+// placeholderStats is the placeholder's only state: a start time and two counters.
+// Everything is in memory and resets on restart, which is fine -- a placeholder is
+// replaced the moment its owner builds something.
+type placeholderStats struct {
+	started time.Time
+	visits  atomic.Int64
+	viewers atomic.Int64
 }
 
-func newChatRoom() *chatRoom {
-	return &chatRoom{subs: make(map[chan chatMessage]struct{})}
-}
-
-// post validates and appends a message, returning false for an empty one. Name
-// and text are trimmed to their limits so one visitor cannot flood memory. Each
-// new message is fanned out to the live subscribers (dropped for any that is not
-// keeping up, so one stuck client cannot block a post).
-func (r *chatRoom) post(name, text string) (chatMessage, bool) {
-	name, text = strings.TrimSpace(name), strings.TrimSpace(text)
-	if text == "" {
-		return chatMessage{}, false
-	}
-	if name == "" {
-		name = "anon"
-	}
-	msg := chatMessage{Name: truncate(name, maxChatName), Text: truncate(text, maxChatText)}
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.msgs = append(r.msgs, msg)
-	if len(r.msgs) > maxChatMessages {
-		r.msgs = r.msgs[len(r.msgs)-maxChatMessages:]
-	}
-	for ch := range r.subs {
-		select {
-		case ch <- msg:
-		default:
-		}
-	}
-	return msg, true
-}
-
-func (r *chatRoom) list() []chatMessage {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	out := make([]chatMessage, len(r.msgs))
-	copy(out, r.msgs)
-	return out
-}
-
-// subscribe returns a channel of future messages plus the current backlog, taken
-// under the same lock so a listener sees every message exactly once, and an
-// unsubscribe to call when the listener goes away.
-func (r *chatRoom) subscribe() (<-chan chatMessage, []chatMessage, func()) {
-	ch := make(chan chatMessage, 32)
-	r.mu.Lock()
-	backlog := make([]chatMessage, len(r.msgs))
-	copy(backlog, r.msgs)
-	r.subs[ch] = struct{}{}
-	r.mu.Unlock()
-	return ch, backlog, func() {
-		r.mu.Lock()
-		delete(r.subs, ch)
-		r.mu.Unlock()
+func (s *placeholderStats) snapshot() liveStat {
+	return liveStat{
+		Time:    time.Now().Format("15:04:05"),
+		Uptime:  formatUptime(time.Since(s.started)),
+		Visits:  s.visits.Load(),
+		Viewers: s.viewers.Load(),
 	}
 }
 
-// truncate caps a string to n runes (not bytes, so it never splits a character)
-func truncate(s string, n int) string {
-	r := []rune(s)
-	if len(r) > n {
-		return string(r[:n])
+// formatUptime renders a duration compactly, e.g. "12s", "3m 12s", "1h 03m".
+func formatUptime(d time.Duration) string {
+	s := int(d.Seconds())
+	switch {
+	case s < 60:
+		return fmt.Sprintf("%ds", s)
+	case s < 3600:
+		return fmt.Sprintf("%dm %02ds", s/60, s%60)
+	default:
+		return fmt.Sprintf("%dh %02dm", s/3600, (s%3600)/60)
 	}
-	return s
 }
 
-// placeholderHandler serves the placeholder page and its chat. The page renders
-// messages client-side with textContent, so a message is never interpreted as
-// HTML: the chat is public and unauthenticated, and this is what keeps it safe.
+// placeholderHandler serves the placeholder page plus a live stats stream. The page
+// is a running Go server: it renders the loading visitor's number server-side and
+// pushes a ticking clock, uptime and counters over SSE, so a brand-new app visibly
+// proves it can execute code.
 func placeholderHandler() http.Handler {
-	room := newChatRoom()
+	stats := &placeholderStats{started: time.Now()}
 	mux := http.NewServeMux()
-	// Server-sent events: the browser opens this once and the backend pushes each
-	// new message, so there is no polling. The backlog is sent first, then live
-	// messages, with a periodic comment to keep the connection open through proxies.
-	mux.HandleFunc("/chat/stream", func(w http.ResponseWriter, r *http.Request) {
+	// Server-sent events: the browser opens this once and the backend pushes a fresh
+	// snapshot every tick (which doubles as the keepalive), so the clock ticks and
+	// the counters move without polling.
+	mux.HandleFunc("/live", func(w http.ResponseWriter, r *http.Request) {
 		flusher, ok := w.(http.Flusher)
 		if !ok {
 			http.Error(w, "streaming unsupported", http.StatusInternalServerError)
@@ -135,45 +92,20 @@ func placeholderHandler() http.Handler {
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.Header().Set("Cache-Control", "no-cache")
 		w.Header().Set("Connection", "keep-alive")
-		ch, backlog, unsubscribe := room.subscribe()
-		defer unsubscribe()
-		for _, m := range backlog {
-			writeChatEvent(w, m)
-		}
+		stats.viewers.Add(1)
+		defer stats.viewers.Add(-1)
+		writeStatEvent(w, stats.snapshot()) // fill the page at once
 		flusher.Flush()
-		keepalive := time.NewTicker(sseKeepalive)
-		defer keepalive.Stop()
+		ticker := time.NewTicker(liveTick)
+		defer ticker.Stop()
 		for {
 			select {
 			case <-r.Context().Done():
 				return
-			case m := <-ch:
-				writeChatEvent(w, m)
-				flusher.Flush()
-			case <-keepalive.C:
-				_, _ = io.WriteString(w, ": keepalive\n\n")
+			case <-ticker.C:
+				writeStatEvent(w, stats.snapshot())
 				flusher.Flush()
 			}
-		}
-	})
-	mux.HandleFunc("/chat", func(w http.ResponseWriter, r *http.Request) {
-		switch r.Method {
-		case http.MethodGet:
-			writeChatJSON(w, room.list())
-		case http.MethodPost:
-			var m chatMessage
-			if err := json.NewDecoder(io.LimitReader(r.Body, maxChatBody)).Decode(&m); err != nil {
-				http.Error(w, "bad request", http.StatusBadRequest)
-				return
-			}
-			msg, ok := room.post(m.Name, m.Text)
-			if !ok {
-				http.Error(w, "message cannot be empty", http.StatusBadRequest)
-				return
-			}
-			writeChatJSON(w, msg)
-		default:
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		}
 	})
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -181,20 +113,17 @@ func placeholderHandler() http.Handler {
 			http.NotFound(w, r)
 			return
 		}
+		n := stats.visits.Add(1)
+		page := strings.Replace(placeholderPage, visitorToken, strconv.FormatInt(n, 10), 1)
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		_, _ = io.WriteString(w, placeholderPage)
+		_, _ = io.WriteString(w, page)
 	})
 	return mux
 }
 
-func writeChatJSON(w http.ResponseWriter, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(v)
-}
-
-// writeChatEvent writes one message as an SSE "data:" frame
-func writeChatEvent(w http.ResponseWriter, m chatMessage) {
-	b, err := json.Marshal(m)
+// writeStatEvent writes one stats snapshot as an SSE "data:" frame
+func writeStatEvent(w http.ResponseWriter, s liveStat) {
+	b, err := json.Marshal(s)
 	if err != nil {
 		return
 	}
@@ -241,55 +170,43 @@ const placeholderPage = `<!doctype html>
   h1 .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%;
             background: var(--accent); margin-right: 9px; vertical-align: middle; }
   p { margin: 10px 0 0; color: var(--muted); font-size: 14px; }
-  .log { margin: 18px 0 0; height: 200px; overflow-y: auto; padding: 12px; background: var(--bg);
-         border: 1px solid var(--line); border-radius: 10px; font-size: 14px; }
-  .msg { margin: 0 0 6px; overflow-wrap: anywhere; }
-  .name { font-weight: 600; }
-  .empty { color: var(--muted); }
-  form { display: flex; gap: 8px; margin-top: 10px; }
-  input { font: inherit; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px;
-          background: var(--bg); color: var(--fg); min-width: 0; }
-  #name { width: 92px; flex: none; }
-  #text { flex: 1; }
-  button { font: inherit; font-weight: 500; padding: 8px 14px; border: 0; border-radius: 8px;
-           background: var(--accent); color: #fff; cursor: pointer; }
+  .clock { margin: 20px 0 4px; text-align: center; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+           font-size: 42px; font-weight: 700; letter-spacing: 0.02em; font-variant-numeric: tabular-nums; color: var(--accent); }
+  .clock small { display: block; font-size: 11px; font-weight: 600; letter-spacing: 0.09em;
+                 text-transform: uppercase; color: var(--muted); margin-top: 2px; }
+  .stats { display: flex; gap: 10px; margin-top: 16px; }
+  .stat { flex: 1; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 10px 6px; text-align: center; }
+  .stat .k { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+  .stat .v { font-size: 21px; font-weight: 700; font-variant-numeric: tabular-nums; margin-top: 2px; }
+  .you { margin-top: 14px; font-size: 13px; }
+  .you b { font-variant-numeric: tabular-nums; }
   .foot { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); font-size: 12px; color: var(--muted); }
 </style>
 <div class="card">
   <h1><span class="dot"></span>This is a placeholder app</h1>
-  <p>Nothing has been built here yet. The owner will replace it with a real app.</p>
-  <p>In the meantime, say hi to whoever else is passing through:</p>
-  <div id="log" class="log"><span class="empty">No messages yet. Be the first.</span></div>
-  <form id="f">
-    <input id="name" placeholder="name" maxlength="40" autocomplete="off">
-    <input id="text" placeholder="message" maxlength="280" autocomplete="off" required>
-    <button type="submit">Send</button>
-  </form>
-  <div class="foot">Served by a small Go backend running on hostit, not a static file.</div>
+  <p>Nothing's built here yet, but this is a live Go server, not a static file. Everything below is computed on the server, right now:</p>
+  <div class="clock"><span id="clocktime">--:--:--</span><small>server time</small></div>
+  <div class="stats">
+    <div class="stat"><div class="k">Uptime</div><div class="v" id="uptime">--</div></div>
+    <div class="stat"><div class="k">Visits</div><div class="v" id="visits">--</div></div>
+    <div class="stat"><div class="k">Watching now</div><div class="v" id="viewers">--</div></div>
+  </div>
+  <p class="you">You are visitor <b>#__VISITOR__</b> since this server started.</p>
+  <div class="foot">Served by a small Go backend on hostit. Its owner will replace it with a real app.</div>
 </div>
 <script>
-  var log = document.getElementById("log");
-  var empty = true;
-  function append(m) {
-    if (empty) { log.innerHTML = ""; empty = false; }
-    var row = document.createElement("div"); row.className = "msg";
-    var who = document.createElement("span"); who.className = "name"; who.textContent = m.name + ": ";
-    var what = document.createElement("span"); what.textContent = m.text;
-    row.appendChild(who); row.appendChild(what); log.appendChild(row);
-    log.scrollTop = log.scrollHeight;
-  }
-  // Server-sent events: the backend pushes the backlog and then each new message
-  // as it arrives, so there is no polling. EventSource reconnects on its own.
-  var stream = new EventSource("/chat/stream");
-  stream.onmessage = function (e) { try { append(JSON.parse(e.data)); } catch (_) {} };
-  document.getElementById("f").addEventListener("submit", function (e) {
-    e.preventDefault();
-    var text = document.getElementById("text");
-    fetch("/chat", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: document.getElementById("name").value, text: text.value })
-    }).then(function () { text.value = ""; });
-  });
+  function set(id, v) { document.getElementById(id).textContent = v; }
+  // Server-sent events: the backend pushes a fresh snapshot every second, so the
+  // clock ticks and the counters move with no polling. EventSource reconnects itself.
+  var stream = new EventSource("/live");
+  stream.onmessage = function (e) {
+    try {
+      var s = JSON.parse(e.data);
+      set("clocktime", s.time);
+      set("uptime", s.uptime);
+      set("visits", s.visits);
+      set("viewers", s.viewers);
+    } catch (_) {}
+  };
 </script>
 `

@@ -8,6 +8,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"heckel.io/hostit/store"
 )
 
 func TestEnsureWorkspaceImageBuildsOnce(t *testing.T) {
@@ -71,4 +72,20 @@ func TestPruneOldWorkspaceImages(t *testing.T) {
 	assert.Contains(t, ran, "podman rmi localhost/hostit-workspace:deadbeef")
 	assert.NotContains(t, ran, "podman rmi "+current, "the image in use must survive")
 	assert.NotContains(t, ran, "debian", "only hostit's own images are ours to remove")
+}
+
+func TestEnsureAppImageSkipsBuildForPinnedExistingImage(t *testing.T) {
+	t.Parallel()
+	m, ops := newTestManager(t)
+	// An app pinned to an image that already exists must NOT trigger a build, even
+	// when the current workspace tag differs (a release changed the image). This is
+	// what keeps the id-keying migration from blocking startup on an image build.
+	ops.images["localhost/hostit-workspace:oldtag"] = true
+	require.NoError(t, m.ensureAppImage(&store.App{Name: "blog", ImageTag: "localhost/hostit-workspace:oldtag"}))
+	assert.Empty(t, ops.builds, "a pinned, present image is not rebuilt")
+
+	// An unpinned app builds the current image when it is missing.
+	require.NoError(t, m.ensureAppImage(&store.App{Name: "shop"}))
+	require.Len(t, ops.builds, 1)
+	assert.Equal(t, workspaceImageTag(), ops.builds[0].tag)
 }

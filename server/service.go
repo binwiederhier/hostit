@@ -80,10 +80,22 @@ func New(conf *config.Config, apps *app.Manager, users *user.Manager) *Server {
 		usernameForUID: usernameForUID,
 	}
 	s.exchangeGoogleCode = s.exchangeGoogleCodeLive
-	// The built-in coding assistant, if an API key is configured. Its tools are the
-	// app's own operations, so it is confined to one app the way an agent token is.
-	if conf.AssistantEnabled() {
+	// The built-in coding assistant, available when either backend is configured:
+	// the metered Anthropic API (an API key) or the operator's Claude Max
+	// subscription (a sandboxed claude -p). Its tools are the app's own operations,
+	// so it is confined to one app the way an agent token is.
+	if conf.AssistantAvailable() {
 		s.assistant = assistant.NewManager(assistant.NewClient(conf.AnthropicAPIKey), &appOps{apps: apps}, &appTranscripts{store: apps.Store()}, conf.AssistantModel)
+		if conf.ClaudeBackendSelected() {
+			sandbox, err := app.NewAssistantSandbox(conf)
+			if err != nil {
+				slog.Error("Cannot start the Claude Max assistant backend; assistant disabled", "error", err)
+				s.assistant = nil
+			} else {
+				s.assistant.SetClaudeRunner(&claudeBackend{sandbox: sandbox})
+				slog.Info("Assistant using the Claude Max (subscription) backend")
+			}
+		}
 	}
 	// The web app and REST API get the full header set (CSP, framing denial) plus
 	// the base headers; the public proxy gets only the base headers, so proxied

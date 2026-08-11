@@ -22,6 +22,13 @@ type AppOps interface {
 	Rollback(app, id string) (string, error)
 }
 
+// ToolDefs exposes the tool definitions for another driver of the same app
+// operations -- the sandboxed Claude Max backend advertises these same tools over
+// MCP, so the model sees an identical surface whichever backend runs it.
+func ToolDefs() []Tool {
+	return toolDefs()
+}
+
 // toolDefs describes the tools to the model. The schemas are deliberately small:
 // a path, some content, a command. Everything else the model discovers by using
 // them (list_files, then read hostit.yml).
@@ -85,13 +92,23 @@ func toolDefs() []Tool {
 // (isError), not returned up: the model is expected to read it and adapt, exactly
 // as it would a failed shell command.
 func (m *Manager) dispatch(app, name string, input json.RawMessage) (string, bool) {
+	return DispatchTool(m.ops, app, name, input)
+}
+
+// DispatchTool runs one tool call against an app through the given AppOps and
+// returns the model-facing result text plus whether it was an error. It is the
+// single place tool calls are executed, shared by the built-in API loop (via
+// Manager.dispatch) and the sandboxed Claude Max backend (via the MCP server), so
+// both backends behave identically. refresh_preview is a UI-only signal handled
+// by the caller that has a UI; a headless backend simply will not advertise it.
+func DispatchTool(ops AppOps, app, name string, input json.RawMessage) (string, bool) {
 	switch name {
 	case "list_files":
 		var in struct {
 			Path string `json:"path"`
 		}
 		_ = json.Unmarshal(input, &in)
-		out, err := m.ops.ListFiles(app, in.Path)
+		out, err := ops.ListFiles(app, in.Path)
 		return orError(out, err)
 	case "read_file":
 		var in struct {
@@ -100,7 +117,7 @@ func (m *Manager) dispatch(app, name string, input json.RawMessage) (string, boo
 		if err := json.Unmarshal(input, &in); err != nil || in.Path == "" {
 			return "path is required", true
 		}
-		out, err := m.ops.ReadFile(app, in.Path)
+		out, err := ops.ReadFile(app, in.Path)
 		return orError(out, err)
 	case "write_file":
 		var in struct {
@@ -110,7 +127,7 @@ func (m *Manager) dispatch(app, name string, input json.RawMessage) (string, boo
 		if err := json.Unmarshal(input, &in); err != nil || in.Path == "" {
 			return "path is required", true
 		}
-		if err := m.ops.WriteFile(app, in.Path, in.Content); err != nil {
+		if err := ops.WriteFile(app, in.Path, in.Content); err != nil {
 			return err.Error(), true
 		}
 		return fmt.Sprintf("wrote %d bytes to %s", len(in.Content), in.Path), false
@@ -122,7 +139,7 @@ func (m *Manager) dispatch(app, name string, input json.RawMessage) (string, boo
 		if err := json.Unmarshal(input, &in); err != nil || strings.TrimSpace(in.Command) == "" {
 			return "command is required", true
 		}
-		res, err := m.ops.Exec(app, in.Command, in.TimeoutSeconds)
+		res, err := ops.Exec(app, in.Command, in.TimeoutSeconds)
 		if err != nil {
 			return err.Error(), true
 		}
@@ -132,10 +149,10 @@ func (m *Manager) dispatch(app, name string, input json.RawMessage) (string, boo
 			Lines int `json:"lines"`
 		}
 		_ = json.Unmarshal(input, &in)
-		out, err := m.ops.Logs(app, in.Lines)
+		out, err := ops.Logs(app, in.Lines)
 		return orError(out, err)
 	case "deploy":
-		out, err := m.ops.Deploy(app)
+		out, err := ops.Deploy(app)
 		return orError(out, err)
 	case "refresh_preview":
 		// A UI-only signal: the tool call itself, carried on the event stream, tells
@@ -146,10 +163,10 @@ func (m *Manager) dispatch(app, name string, input json.RawMessage) (string, boo
 			Label string `json:"label"`
 		}
 		_ = json.Unmarshal(input, &in)
-		out, err := m.ops.Snapshot(app, in.Label)
+		out, err := ops.Snapshot(app, in.Label)
 		return orError(out, err)
 	case "list_snapshots":
-		out, err := m.ops.ListSnapshots(app)
+		out, err := ops.ListSnapshots(app)
 		return orError(out, err)
 	case "rollback":
 		var in struct {
@@ -158,7 +175,7 @@ func (m *Manager) dispatch(app, name string, input json.RawMessage) (string, boo
 		if err := json.Unmarshal(input, &in); err != nil || in.ID == "" {
 			return "id is required", true
 		}
-		out, err := m.ops.Rollback(app, in.ID)
+		out, err := ops.Rollback(app, in.ID)
 		return orError(out, err)
 	default:
 		return "unknown tool: " + name, true

@@ -103,6 +103,14 @@ type apiOutputResponse struct {
 	Output string `json:"output"`
 }
 
+// apiToolResponse is the result of one app-scoped tool call over the self
+// socket: the model-facing output, and whether the tool reported an error (which
+// the model reads and adapts to, exactly as a failed shell command)
+type apiToolResponse struct {
+	Output  string `json:"output"`
+	IsError bool   `json:"is_error"`
+}
+
 // apiUsage is a user's current consumption, shown next to their limits
 type apiUsage struct {
 	Apps   int `json:"apps"`
@@ -158,6 +166,13 @@ type apiUserResponse struct {
 	// dollar cost. Only the built-in assistant, never a tenant's own agent.
 	AssistantTokens  int64   `json:"assistant_tokens"`
 	AssistantCostUSD float64 `json:"assistant_cost_usd"`
+
+	// The user's effective assistant permissions: may they use External Claude, and
+	// which API models. HasOverride is true when these are an explicit per-user
+	// setting rather than the inherited global default.
+	AssistantExternalAllowed bool     `json:"assistant_external_allowed"`
+	AssistantAllowedModels   []string `json:"assistant_allowed_models"`
+	AssistantHasOverride     bool     `json:"assistant_has_override"`
 }
 
 // apiInviteUserRequest is the body of POST /api/users: an admin handing out
@@ -190,6 +205,12 @@ type apiUpdateUserRequest struct {
 	AppLimitSet bool `json:"-"`
 	MemoryMBSet bool `json:"-"`
 	DiskMBSet   bool `json:"-"`
+
+	// Assistant permissions. ExternalAllowed/AllowedModels set an explicit override;
+	// ClearOverride reverts the user to the global default instead.
+	AssistantExternalAllowed *bool     `json:"assistant_external_allowed"`
+	AssistantAllowedModels   *[]string `json:"assistant_allowed_models"`
+	AssistantClearOverride   bool      `json:"assistant_clear_override"`
 }
 
 // UnmarshalJSON records which limit fields were present in the request body

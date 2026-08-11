@@ -106,7 +106,10 @@ func (s *Store) RemoveUser(id string) error {
 	if _, err := s.db.Exec(deleteTokensByUserQuery, id); err != nil {
 		return err
 	}
-	_, err = s.db.Exec(deleteUserKeysQuery, id)
+	if _, err := s.db.Exec(deleteUserKeysQuery, id); err != nil {
+		return err
+	}
+	_, err = s.db.Exec(deleteUserAssistantQuery, id)
 	return err
 }
 

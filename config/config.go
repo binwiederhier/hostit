@@ -31,12 +31,30 @@ const (
 	// DefaultAssistantModel is the model the built-in assistant uses unless the
 	// operator names another one
 	DefaultAssistantModel = "claude-sonnet-5"
+	// AssistantBackendAPI drives the assistant through the metered Anthropic API
+	// (the default); AssistantBackendClaudeCLI drives it through `claude -p` in a
+	// sandbox container on the operator's Claude Max subscription.
+	AssistantBackendAPI       = "api"
+	AssistantBackendClaudeCLI = "claude-cli"
+
+	// ExternalClaudeMode is the assistant mode that runs on the operator's Claude
+	// Max subscription (the sandboxed claude -p). Every other mode is an API model
+	// id (e.g. "claude-sonnet-5"). The UI shows one dropdown: this plus the models.
+	ExternalClaudeMode  = "external-claude"
+	ExternalClaudeLabel = "Claude.ai"
 )
 
 var (
 	errBaseDomainRequired = errors.New("base-domain is required, e.g. apps.example.com")
 	errAdminTokenRequired = errors.New("admin-token is required; generate one with e.g. openssl rand -hex 24")
 )
+
+// ModelOption is one selectable model in the assistant's mode dropdown: an id
+// the API understands (or ExternalClaudeMode) and a human label.
+type ModelOption struct {
+	ID    string `yaml:"id" json:"id"`
+	Label string `yaml:"label" json:"label"`
+}
 
 // Config is the hostit server configuration, loaded from a YAML file (see LoadConfig)
 type Config struct {
@@ -76,11 +94,48 @@ type Config struct {
 	// Built-in coding assistant (the in-browser agent). An empty API key disables it.
 	AnthropicAPIKey string `yaml:"anthropic-api-key"` // Anthropic API key for the built-in assistant; empty disables it
 	AssistantModel  string `yaml:"assistant-model"`   // Model the assistant uses; defaults to DefaultAssistantModel
+
+	// AssistantBackend selects the DEFAULT backend when a turn does not name a
+	// mode: "api" (default, metered Anthropic API) or "claude-cli" (the operator's
+	// Claude Max subscription). Per-turn, the user picks a mode from the dropdown
+	// (External Claude, or one of AssistantModels); this is the fallback.
+	AssistantBackend string `yaml:"assistant-backend"`
+
+	// AssistantModels is the catalog of API models offered in the assistant's
+	// mode dropdown (alongside External Claude, when the subscription is set up).
+	// Order is the display order; the first is the default API model and the
+	// fallback target when External Claude is unavailable.
+	AssistantModels []ModelOption `yaml:"assistant-models"`
+
+	// Optional Claude Max backend for the assistant: a subscription OAuth token
+	// (from `claude setup-token`) that drives `claude -p` inside a sandbox
+	// container instead of the metered API. Empty disables the backend. The token
+	// is a high-value personal secret and is only ever mounted into the assistant
+	// sandbox container, never an app container (see plans/260810-...).
+	ClaudeCodeOAuthToken string `yaml:"claude-code-oauth-token"`
 }
 
 // AssistantEnabled reports whether the built-in coding assistant is configured
 func (c *Config) AssistantEnabled() bool {
 	return c.AnthropicAPIKey != ""
+}
+
+// ClaudeBackendEnabled reports whether the optional Claude Max (subscription)
+// backend is configured, i.e. a `claude setup-token` OAuth token is present
+func (c *Config) ClaudeBackendEnabled() bool {
+	return c.ClaudeCodeOAuthToken != ""
+}
+
+// ClaudeBackendSelected reports whether the assistant should actually RUN on the
+// Claude Max backend: it is both selected and has a token to use.
+func (c *Config) ClaudeBackendSelected() bool {
+	return c.AssistantBackend == AssistantBackendClaudeCLI && c.ClaudeCodeOAuthToken != ""
+}
+
+// AssistantAvailable reports whether the built-in assistant can run at all,
+// through either backend, so the UI and routes can enable it.
+func (c *Config) AssistantAvailable() bool {
+	return c.AssistantEnabled() || c.ClaudeBackendSelected()
 }
 
 // IsAdminEmail reports whether the given address is one of the configured admins
@@ -106,7 +161,48 @@ func NewConfig() *Config {
 		PortMax:           19999,
 		DiskCheckInterval: Duration(15 * time.Minute),
 		AssistantModel:    DefaultAssistantModel,
+		AssistantBackend:  AssistantBackendAPI,
+		AssistantModels: []ModelOption{
+			{ID: "claude-sonnet-5", Label: "Sonnet 5"},
+			{ID: "claude-opus-5", Label: "Opus 5"},
+			{ID: "claude-haiku-4-5-20251001", Label: "Haiku 4.5"},
+		},
 	}
+}
+
+// ModeOptions returns the full assistant mode catalog for the dropdown: External
+// Claude first (only when the subscription is configured), then the API models in
+// configured order. The operator's per-user allowlist filters this further.
+func (c *Config) ModeOptions() []ModelOption {
+	opts := make([]ModelOption, 0, len(c.AssistantModels)+1)
+	if c.ClaudeBackendEnabled() {
+		opts = append(opts, ModelOption{ID: ExternalClaudeMode, Label: ExternalClaudeLabel})
+	}
+	opts = append(opts, c.AssistantModels...)
+	return opts
+}
+
+// IsValidMode reports whether mode is External Claude or one of the configured
+// API models (i.e. something a turn may actually run).
+func (c *Config) IsValidMode(mode string) bool {
+	if mode == ExternalClaudeMode {
+		return c.ClaudeBackendEnabled()
+	}
+	for _, m := range c.AssistantModels {
+		if m.ID == mode {
+			return true
+		}
+	}
+	return false
+}
+
+// DefaultAPIModel is the first configured API model: the default for API turns
+// and the target when External Claude falls back. Falls back to AssistantModel.
+func (c *Config) DefaultAPIModel() string {
+	if len(c.AssistantModels) > 0 {
+		return c.AssistantModels[0].ID
+	}
+	return c.AssistantModel
 }
 
 // WebEnabled reports whether Google login (and thus the web app) is configured
@@ -157,6 +253,9 @@ func (c *Config) Validate() error {
 	}
 	if c.DNSProvider != "" && c.DNSProvider != DNSProviderRoute53 {
 		return fmt.Errorf("invalid dns-provider %q, only %q is supported", c.DNSProvider, DNSProviderRoute53)
+	}
+	if c.AssistantBackend != "" && c.AssistantBackend != AssistantBackendAPI && c.AssistantBackend != AssistantBackendClaudeCLI {
+		return fmt.Errorf("invalid assistant-backend %q, must be %q or %q", c.AssistantBackend, AssistantBackendAPI, AssistantBackendClaudeCLI)
 	}
 	return nil
 }

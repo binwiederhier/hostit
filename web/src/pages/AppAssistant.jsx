@@ -142,10 +142,12 @@ const Markdown = ({ text }) => {
 };
 
 // A tool call, collapsed to a one-line summary by default; click to see the exact
-// input and output. Shows a spinner while it runs and a red edge when it errored.
-const ToolCall = ({ item }) => {
+// input and output. Spins only while the turn is running AND this call has no
+// result yet -- so a dropped/late result can never leave it spinning after the turn
+// is done. Red edge when it errored.
+const ToolCall = ({ item, busy }) => {
   const [open, setOpen] = useState(false);
-  const running = item.output == null;
+  const running = item.output == null && busy;
   const cls = ["asst-tool", item.isError ? "asst-tool-error" : "", running ? "asst-tool-running" : ""].join(" ").trim();
   return (
     <div className={cls}>
@@ -179,7 +181,7 @@ const ToolCall = ({ item }) => {
 // Consecutive tool calls collapse into one group -- expanded while they run so
 // progress is visible, collapsed once done to keep the history tidy. Each call
 // inside stays individually expandable.
-const ToolGroup = ({ tools, active }) => {
+const ToolGroup = ({ tools, active, busy }) => {
   // Hooks must run unconditionally and in the same order every render. This fiber
   // is reused as a run grows from one call to many (renderTranscript keeps a stable
   // key), so useState has to come BEFORE the length-1 early return -- otherwise the
@@ -190,14 +192,15 @@ const ToolGroup = ({ tools, active }) => {
   // at this position never switches (ToolCall <-> ToolGroup), which would remount
   // and make the summary chip flicker.
   if (tools.length === 1) {
-    return <ToolCall item={tools[0]} />;
+    return <ToolCall item={tools[0]} busy={busy} />;
   }
   const running = tools.some((t) => t.output == null);
   const anyError = tools.some((t) => t.isError);
   // `active` keeps the still-growing group (the last one while the turn runs) open
   // and labelled with the current action, so it does not flap collapsed->expanded in
-  // the brief gap between one tool finishing and the next starting.
-  const busyGroup = running || active;
+  // the brief gap between one tool finishing and the next starting. Gated on busy so
+  // the group never keeps spinning once the turn is done.
+  const busyGroup = active || (busy && running);
   const open = override ?? busyGroup;
   const current = tools.find((t) => t.output == null) || tools[tools.length - 1];
   return (
@@ -218,7 +221,7 @@ const ToolGroup = ({ tools, active }) => {
       {open && (
         <div className="asst-group-body">
           {tools.map((t) => (
-            <ToolCall key={t.id} item={t} />
+            <ToolCall key={t.id} item={t} busy={busy} />
           ))}
         </div>
       )}
@@ -229,7 +232,7 @@ const ToolGroup = ({ tools, active }) => {
 // renderTranscript walks the items, folding runs of tool calls into groups. busy
 // is the turn-running flag: the trailing group is still growing while it is true,
 // so it is marked active and stays open instead of flickering between tools.
-const renderTranscript = (items, busy) => {
+const renderTranscript = (items, busy, modes) => {
   const out = [];
   let i = 0;
   while (i < items.length) {
@@ -243,29 +246,133 @@ const renderTranscript = (items, busy) => {
       // growing from one call to many keeps the same element type and key here and
       // updates in place instead of remounting. The trailing run while busy is the
       // active one.
-      out.push(<ToolGroup key={group[0].id} tools={group} active={busy && i === items.length} />);
+      out.push(<ToolGroup key={group[0].id} tools={group} active={busy && i === items.length} busy={busy} />);
     } else {
-      out.push(<Turn key={items[i].id} item={items[i]} />);
+      out.push(<Turn key={items[i].id} item={items[i]} modes={modes} />);
       i++;
     }
   }
   return out;
 };
 
-const Turn = ({ item }) => {
+// modelLabel turns a mode id into its human label (from the options), so a reply
+// reads "Sonnet 5", not "claude-sonnet-5".
+const modelLabel = (id, modes) => {
+  if (!id) return "";
+  const m = (modes || []).find((o) => o.id === id);
+  if (m) return m.label;
+  return id === "external-claude" ? "External Claude" : id;
+};
+
+// formatTime renders a reply's timestamp like "11:43 pm".
+const formatTime = (t) => (t ? new Date(t * 1000).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }).toLowerCase() : "");
+
+// responseMeta is the hover caption for a reply, e.g. "11:43 pm, Claude.ai".
+const responseMeta = (item, modes) => {
+  const parts = [];
+  if (item.time) parts.push(formatTime(item.time));
+  const ml = modelLabel(item.model, modes);
+  if (ml) parts.push(ml);
+  return parts.join(", ");
+};
+
+// AssistantText renders one assistant reply; on hover it reveals a small caption
+// after the last line with the reply's time and model ("11:43 pm, Claude.ai").
+const AssistantText = ({ item, modes }) => {
+  const meta = responseMeta(item, modes);
+  return (
+    <div className="asst-turn asst-text">
+      <span className="asst-text-body">
+        <Markdown text={item.text} />
+        {meta && (
+          <>
+            {/* A real space (not a margin) so it collapses when the caption wraps to
+                its own line -- CSS can't detect line-start, but a space handles it. */}
+            {" "}
+            <span className="asst-response-meta">{meta}</span>
+          </>
+        )}
+      </span>
+    </div>
+  );
+};
+
+// ModelDropdown is a subtle model picker inside the input row (right-aligned, in
+// the ChatGPT style): a borderless grey text pill showing the current model with a
+// caret, opening a menu of models with a checkmark on the selected one.
+const ModelDropdown = ({ modes, mode, onChange, disabled }) => {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!open) return undefined;
+    const onDoc = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
+  const current = modes.find((m) => m.id === mode);
+  return (
+    <div className="asst-modeldd" ref={ref}>
+      <button
+        type="button"
+        className="asst-modeldd-btn"
+        onClick={() => setOpen((o) => !o)}
+        disabled={disabled}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        title="Choose model"
+      >
+        <span className="asst-modeldd-label">{current ? current.label : "Model"}</span>
+        <svg className="asst-modeldd-caret" viewBox="0 0 10 6" aria-hidden="true">
+          <path d="M1 1l4 4 4-4" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+        {/* On a phone the label + caret collapse to a thin vertical kebab (see CSS). */}
+        <svg className="asst-modeldd-kebab" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+          <circle cx="8" cy="3.1" r="1.35" />
+          <circle cx="8" cy="8" r="1.35" />
+          <circle cx="8" cy="12.9" r="1.35" />
+        </svg>
+      </button>
+      {open && (
+        <div className="asst-modeldd-menu" role="menu">
+          {modes.map((m) => (
+            <button
+              type="button"
+              key={m.id}
+              role="menuitem"
+              className={"asst-modeldd-item" + (m.id === mode ? " active" : "")}
+              onClick={() => {
+                onChange(m.id);
+                setOpen(false);
+              }}
+            >
+              <span className="asst-modeldd-item-label">{m.label}</span>
+              {m.id === mode && (
+                <svg className="asst-modeldd-check" viewBox="0 0 16 16" aria-hidden="true">
+                  <path d="M3 8.5l3.5 3.5L13 4.5" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const Turn = ({ item, modes }) => {
   switch (item.kind) {
     case "user":
       return <div className="asst-turn asst-user">{item.text}</div>;
     case "thinking":
       return <div className="asst-turn asst-thinking">{item.text}</div>;
     case "text":
-      return (
-        <div className="asst-turn asst-text">
-          <Markdown text={item.text} />
-        </div>
-      );
+      return <AssistantText item={item} modes={modes} />;
     case "tool":
       return <ToolCall item={item} />;
+    case "notice":
+      return <div className="asst-turn asst-notice">{item.text}</div>;
     case "error":
       return <div className="asst-turn asst-error">{item.text}</div>;
     default:
@@ -300,6 +407,9 @@ const AppAssistant = ({ name, onClose, embedded = false, onPreviewRefresh }) => 
   const [loaded, setLoaded] = useState(false);
   const [attachments, setAttachments] = useState([]); // uploaded files pending on the next message
   const [dragOver, setDragOver] = useState(false);
+  const [modes, setModes] = useState([]); // available agent modes (External Claude + models)
+  const [mode, setMode] = useState(""); // the selected mode/model
+  const currentModelRef = useRef(""); // model actually answering the running turn
   const scrollRef = useRef(null);
   const taRef = useRef(null);
   const fileRef = useRef(null);
@@ -324,12 +434,16 @@ const AppAssistant = ({ name, onClose, embedded = false, onPreviewRefresh }) => 
   const loadTranscript = useCallback(async () => {
     try {
       const r = await fetch(`/api/apps/${encodeURIComponent(name)}/assistant`, { credentials: "same-origin" });
-      const data = r.ok ? await r.json() : { items: [], running: false };
+      const data = r.ok ? await r.json() : { items: [], running: false, modes: [], mode: "" };
       // Stable, position-based ids: the transcript is append-only and never
       // reorders, so keying by index means the done-reconcile reuses the existing
       // DOM instead of remounting the whole list (which flickered).
       setItems((data.items || []).map((it, idx) => ({ ...it, id: idx })));
       setBusy(!!data.running);
+      setModes(data.modes || []);
+      // Adopt the server's remembered mode only when we have none yet, so a
+      // reconcile from another device's turn never clobbers an unsent choice here.
+      setMode((cur) => cur || data.mode || "");
     } finally {
       setLoaded(true);
     }
@@ -360,8 +474,14 @@ const AppAssistant = ({ name, onClose, embedded = false, onPreviewRefresh }) => 
       setItems(next);
       return;
     }
+    if (ev.type === "model") {
+      // Which model is answering this turn; tag the replies that follow with it.
+      currentModelRef.current = ev.text || "";
+      setBusy(true);
+      return;
+    }
     setBusy(true);
-    const { items: next, refreshPreview } = reduceChatEvent(itemsRef.current, ev);
+    const { items: next, refreshPreview } = reduceChatEvent(itemsRef.current, ev, currentModelRef.current);
     itemsRef.current = next;
     setItems(next);
     // Reload the live preview only once a deploy/refresh has finished (tool_result),
@@ -470,6 +590,7 @@ const AppAssistant = ({ name, onClose, embedded = false, onPreviewRefresh }) => 
         credentials: "same-origin",
         body: JSON.stringify({
           message,
+          mode,
           attachments: ready.map((a) => ({ path: a.path, media_type: a.media_type })),
         }),
       });
@@ -541,7 +662,7 @@ const AppAssistant = ({ name, onClose, embedded = false, onPreviewRefresh }) => 
             and run commands in its container, then publish. Try: &ldquo;add a leaderboard&rdquo;.
           </p>
         )}
-        {renderTranscript(items, busy)}
+        {renderTranscript(items, busy, modes)}
         {busy && <WorkingIndicator />}
       </div>
 
@@ -594,6 +715,7 @@ const AppAssistant = ({ name, onClose, embedded = false, onPreviewRefresh }) => 
           rows={1}
           disabled={busy}
         />
+        {modes.length > 1 && <ModelDropdown modes={modes} mode={mode} onChange={setMode} disabled={busy} />}
         {busy ? (
           <button type="button" className="btn asst-send asst-stop" onClick={stop} title="Stop" aria-label="Stop">
             <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">

@@ -21,10 +21,10 @@ func New() *cli.App {
 	// on this app through the daemon's socket, which identifies the caller by its
 	// uid; on the host there is no app to be, so those commands cannot work and
 	// listing them only invites the question.
-	commands := []*cli.Command{cmdServe, cmdApps, cmdShell, cmdEnter}
+	commands := []*cli.Command{cmdServe, cmdApps, cmdShell, cmdEnter, cmdAssistantPoc}
 	usage := "self-hosted mini-app platform: isolated apps with SSH access, subdomains and TLS"
 	if insideContainer() {
-		commands = []*cli.Command{cmdDeploy, cmdStart, cmdStop, cmdRestart, cmdPowerOn, cmdPowerOff, cmdReboot, cmdStatus, cmdLogs, cmdInfo, cmdGuide, cmdStatic, cmdPlaceholder, cmdAgent}
+		commands = []*cli.Command{cmdDeploy, cmdStart, cmdStop, cmdRestart, cmdPowerOn, cmdPowerOff, cmdReboot, cmdStatus, cmdLogs, cmdInfo, cmdGuide, cmdStatic, cmdPlaceholder, cmdAgent, cmdMCP}
 		usage = "manage this app: deploy it, restart it, read its logs"
 	}
 	return &cli.App{
