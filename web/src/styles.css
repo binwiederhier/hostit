@@ -1268,6 +1268,13 @@ th:last-child {
   padding-top: 20px;
 }
 
+/* Divider between the user docs and the operator/self-hosting docs. */
+.docs-rule {
+  border: 0;
+  border-top: 1px solid var(--border);
+  margin: 40px 0 4px;
+}
+
 /* Dropdown menu (app actions) */
 .menu {
   position: relative;

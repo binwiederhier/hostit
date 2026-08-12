@@ -1,0 +1,12 @@
+[Unit]
+Description=hostit app homes (btrfs on a loopback image)
+Before=hostit.service
+
+[Mount]
+What={{ hostit_apps_img }}
+Where={{ hostit_apps_dir }}
+Type=btrfs
+Options=loop
+
+[Install]
+WantedBy=multi-user.target

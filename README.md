@@ -79,9 +79,25 @@ apps.example.com.    A  <host-ip>
 ```
 
 Releases are built with goreleaser (`.goreleaser.yml`); `scripts/mkdeb.sh` is a
-git-free fallback. Configuration management is left to you -- everything the
-daemon needs is one config file plus the package, so an Ansible role or similar
-is a natural fit.
+git-free fallback.
+
+### Deploying and updating
+
+Everything the daemon needs is one config file plus the package, so a deploy is
+"install the `.deb`, drop `/etc/hostit/server.yml`, harden sshd, enable the
+service", and an update is just installing the newer package:
+
+```sh
+sudo dpkg -i hostit_<version>_linux_amd64.deb   # --force-confold to keep your config
+sudo systemctl restart hostit
+```
+
+Because that is all it takes, an Ansible role (or any config-management tool) is
+a natural fit, and the recommended way to run this for real: it makes the config,
+the sshd drop-in, and the btrfs setup reproducible. A small, self-contained
+example role lives in [`deploy/ansible/`](deploy/ansible/) -- copy the inventory
+and vars, set `hostit_domain` and `hostit_admin_token`, and run it. Keep
+`admin-token` and any OAuth/AI secrets in an Ansible Vault, not in plain vars.
 
 ### One thing the package cannot do for you
 
@@ -256,6 +272,28 @@ echo | openssl s_client -connect anything.apps.example.com:443 \
 
 Blanking the DNS settings returns hostit to per-app certificates; certificates
 already in `<data-dir>/certs` keep working either way.
+
+### Built-in assistant (optional)
+
+The in-browser chat that builds and changes an app is off until the server has an
+AI key. Two ways to power it, both configured in `server.yml`:
+
+```yaml
+# Metered Anthropic API (pay per token):
+anthropic-api-key: sk-ant-...
+assistant-model: claude-sonnet-5
+
+# Or a Claude Pro/Max subscription, run per turn as `claude -p` in a locked-down
+# podman sandbox (get the token with: claude setup-token):
+assistant-backend: claude-cli
+claude-code-oauth-token: ...
+```
+
+Either way the assistant's only tools are one app's own REST surface, mediated by
+the daemon's peercred socket, so a turn can never touch another app or the host.
+Which models people may pick, the default, and who may use the assistant are set
+per user on the Admin page. Leave all of this unset and the chat UI hides itself;
+SSH and your own agent still work.
 
 ## Where things go in an app
 

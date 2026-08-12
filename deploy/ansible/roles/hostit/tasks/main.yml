@@ -1,0 +1,87 @@
+---
+
+# hostit -- self-hosted mini-app platform. Installs the daemon from a public
+# GitHub release (or a local .deb), writes /etc/hostit/server.yml, optionally puts
+# app homes on btrfs, hardens sshd for app logins, and starts the service.
+#
+# hostit runs as a root daemon and drives podman as root, giving each app its own
+# uid map, network namespace and nftables port rules. uidmap is needed for the
+# id-mapped container filesystems.
+- name: Install podman and container dependencies
+  ansible.builtin.apt:
+    name:
+      - podman
+      - uidmap
+      - passt
+      - slirp4netns
+      - dbus-user-session
+      - nftables
+      - sqlite3
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Fail early if required variables are unset
+  ansible.builtin.assert:
+    that:
+      - hostit_domain | length > 0
+      - hostit_admin_token | length > 0
+    fail_msg: "Set hostit_domain and hostit_admin_token (see group_vars/hostit.example.yml)."
+
+- name: Download the hostit {{ hostit_version }} release .deb
+  ansible.builtin.get_url:
+    url: "https://github.com/binwiederhier/hostit/releases/download/v{{ hostit_version }}/hostit_{{ hostit_version }}_linux_amd64.deb"
+    dest: "/tmp/hostit_{{ hostit_version }}_linux_amd64.deb"
+    mode: "0644"
+  register: hostit_deb_remote
+  when: hostit_deb_local | length == 0
+
+- name: Copy a local hostit .deb (development override)
+  ansible.builtin.copy:
+    src: "{{ hostit_deb_local }}"
+    dest: "/tmp/{{ hostit_deb_local | basename }}"
+    mode: "0644"
+  register: hostit_deb_copy
+  when: hostit_deb_local | length > 0
+
+# dpkg -i (not the apt module): same-version rebuilds are common while iterating,
+# and apt would treat them as already installed. --force-confold keeps the managed
+# /etc/hostit/server.yml instead of prompting on upgrade.
+- name: Install hostit
+  ansible.builtin.command: "dpkg -i --force-confold {{ hostit_deb_remote.dest | default(hostit_deb_copy.dest) }}"
+  when: (hostit_deb_remote.changed | default(false)) or (hostit_deb_copy.changed | default(false))
+  notify: restart hostit
+
+- name: Install /etc/hostit/server.yml
+  ansible.builtin.template:
+    src: server.yml.j2
+    dest: /etc/hostit/server.yml
+    owner: root
+    group: root
+    mode: "0600"
+  notify: restart hostit
+
+# Optionally move app homes onto a btrfs loopback (snapshots + hard quotas).
+- name: Set up btrfs app homes
+  ansible.builtin.import_tasks: btrfs.yml
+  when: hostit_btrfs | default(false)
+  tags: [btrfs]
+
+# An app login must not become a tunnel into the host: without this, a tenant can
+# forward to the cloud metadata service or probe host-local services.
+- name: Harden sshd for app users
+  ansible.builtin.template:
+    src: sshd-hostit-apps.conf.j2
+    dest: /etc/ssh/sshd_config.d/10-hostit-apps.conf
+    owner: root
+    group: root
+    mode: "0644"
+    validate: "sshd -t -f %s"
+  notify: restart ssh
+
+- name: Enable and start hostit
+  ansible.builtin.systemd:
+    name: hostit
+    enabled: true
+    state: started
+    daemon_reload: true

@@ -426,25 +426,43 @@ Service packages at the root, thin `main.go`, no `internal/`:
 | Package | Owns |
 |---|---|
 | `server` | HTTP: proxy, REST API, agent API, OAuth, sessions, unix socket |
-| `app` | apps as system objects: users, containers, files, quotas, ports |
+| `app` | an app's whole lifecycle; composes the service packages below and holds naming, ports and identity |
+| `btrfs` | subvolumes, read-only snapshots, reflink copies, qgroup disk quotas |
+| `container` | podman: build, run, remove app containers; idmapped mounts |
+| `systemd` | per-app unit lifecycle (enable, start, restart, reset-failed) |
+| `unixuser` | Unix user and home creation and teardown |
+| `ssh` | an app's `authorized_keys` and SSH public-key validation |
+| `firewall` | nftables per-app port rules |
+| `run` | the shared `Runner` interface every service uses to shell out on the host |
+| `retention` | pure grandfather-father-son snapshot retention policy (no I/O, heavily tested) |
 | `user` | people: accounts, roles, limits, tokens, SSH keys, allowed domains |
 | `store` | SQLite: schema, migrations, queries |
 | `appctl` | the `hostit.yml` contract and the client for the app-side CLI |
 | `agent` | PID 1 inside a container: supervises the app, rotates its log |
-| `assistant` | the in-browser AI agent: an Anthropic Messages loop whose tools are one app's REST surface |
-| `cmd` | the CLI: `serve`, the app commands, `admin`, and the SSH plumbing |
+| `assistant` | the in-browser AI agent (an Anthropic Messages loop whose tools are one app's REST surface) plus the Claude Max subscription sandbox |
+| `cmd` | the CLI: `serve`, the app commands, `admin`, the hidden `internal` group, and the SSH plumbing |
+| `config` | server config (`/etc/hostit/server.yml`) and its defaults |
 | `client` | Go client for the REST API, used by `hostit apps` |
 | `web` | React + Vite SPA (dashboard, app workspace, admin); built into `server/site/` |
 
 The same binary is all of these; which commands it offers depends on where it
 runs. Inside a container it presents only the app's own commands.
 
+The service packages (`btrfs`, `container`, `systemd`, `unixuser`, `ssh`, `firewall`)
+are each scoped to one host tool or API and expose a small `Service` (in `service.go`)
+built on the shared `run.Runner`. `app.Manager` composes them: it decides *what* an app
+needs and delegates the *how* to the service that owns each tool. That split is what will
+let a future multi-node build run these services on a remote host agent without touching
+the orchestration.
+
 Within a package, code is split per concern into small files rather than a few
 grab-bags: `store` has one file per entity (`app.go`, `snapshot.go`, `domain.go`,
-`event.go`, `token.go`, `setting.go`, ...), `app` separates deploy from
-`reconcile.go`, `migrate.go` and the pure `retention.go` engine, and `server`
-keeps the agent guide (`agentguide.go`), the assistant adapters (`assistantops.go`)
-and each feature's handlers in their own file.
+`event.go`, `token.go`, `setting.go`, ...), and `server` keeps its HTTP handlers in
+`server_handler_<topic>.go` files (thin orchestration over the service packages), with
+the router, middleware and response helpers in `api.go`, `auth.go` and `socket.go`.
+Large text blobs are not inlined as Go strings: the 404 page (`server/errorpage.html`),
+the workspace image recipe (`app/workspace.Containerfile`) and the app scaffold
+(`app/scaffold/`) are pulled in with `//go:embed`.
 
 The SPA is a separate React 19 / Vite app under `web/`; `make web` builds it and copies
 the output into `server/site/`, which `server/web.go` bakes into the binary via

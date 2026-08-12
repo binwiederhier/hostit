@@ -1,0 +1,14 @@
+---
+
+# Deploy hostit to every host in the [hostit] inventory group.
+#
+#   ansible-playbook -i inventory.ini playbook.yml
+#
+# Variables come from group_vars/hostit.yml (copy the .example and edit). Put
+# secrets (admin token, OAuth, AI keys) in an Ansible Vault file, not in plain vars.
+
+- name: Deploy hostit
+  hosts: hostit
+  become: true
+  roles:
+    - hostit

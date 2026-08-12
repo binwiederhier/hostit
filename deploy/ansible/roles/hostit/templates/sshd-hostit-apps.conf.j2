@@ -1,0 +1,18 @@
+# Managed by Ansible (hostit role) -- do not edit on the host.
+#
+# App users log in for one reason: to reach their own container. Forwarding is
+# not part of that, and it is the one thing sshd offers that reaches past the
+# container: a tenant could tunnel to the cloud metadata service or to another
+# app's loopback port. scp/sftp/rsync are unaffected.
+Match Group {{ hostit_apps_group }}
+    AllowTcpForwarding no
+    AllowStreamLocalForwarding no
+    AllowAgentForwarding no
+    X11Forwarding no
+    PermitTunnel no
+    GatewayPorts no
+    PermitUserRC no
+
+# This file is included at the TOP of sshd_config, so the Match above would
+# otherwise swallow every global setting that follows it.
+Match all

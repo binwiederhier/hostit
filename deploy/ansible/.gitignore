@@ -1,0 +1,5 @@
+# Your real inventory and vars (with secrets) -- keep these out of git.
+inventory.ini
+group_vars/hostit.yml
+group_vars/hostit_vault.yml
+*.retry

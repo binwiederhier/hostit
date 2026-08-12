@@ -120,6 +120,17 @@ definitions and the conversation prefix are cache-marked, so repeat turns pay th
 
 ## Smaller things
 
+- **Share apps with other users or groups.** Today an app has exactly one owner,
+  and only that owner (or an admin) can see or manage it. Add collaborators: grant
+  another user, or a group of users, access to an app so it shows up on their
+  dashboard and they can deploy, edit, SSH in and drive its API. Involves an
+  ownership/ACL model beyond the single `OwnerID` (a per-app grants table, roles
+  like viewer/editor), fanning that out to the dashboard listing, the SSH
+  `authorized_keys` (a collaborator's profile keys join the app's), the app-scoped
+  tokens, and the "own app" checks in the server. Groups would layer on top: a
+  named set of users an app can be shared with at once. Ties into the future
+  multi-node work only loosely; mostly a registry + authorization change.
+
 - **Terminal auto-reconnect.** The in-browser terminal's WebSocket drops on any
   blip (network change, laptop sleep, an app restart/redeploy recreating the
   container) and today just dies, leaving a dead pane. Reconnect automatically on

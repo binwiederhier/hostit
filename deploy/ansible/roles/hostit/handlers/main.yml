@@ -1,0 +1,12 @@
+---
+
+- name: restart hostit
+  ansible.builtin.systemd:
+    name: hostit
+    state: restarted
+    daemon_reload: true
+
+- name: restart ssh
+  ansible.builtin.systemd:
+    name: ssh
+    state: restarted

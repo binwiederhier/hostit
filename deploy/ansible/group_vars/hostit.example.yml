@@ -1,0 +1,48 @@
+---
+# Copy to group_vars/hostit.yml and edit. Everything not set here falls back to
+# roles/hostit/defaults/main.yml.
+#
+# SECRETS (admin-token, OAuth secret, AI keys) should live in an Ansible Vault
+# file rather than in plain text here, e.g.:
+#   ansible-vault create group_vars/hostit_vault.yml
+#   ansible-playbook -i inventory.ini playbook.yml --ask-vault-pass
+
+# --- Required ---
+
+# Apps are served at <app>.<hostit_domain>. Requires wildcard DNS: both
+#   *.apps.example.com  A  <host-ip>
+#   apps.example.com    A  <host-ip>
+hostit_domain: "apps.example.com"
+
+# Admin REST API token. Generate: openssl rand -hex 24  (keep it in Vault)
+hostit_admin_token: "CHANGE-ME"
+
+# Which release to install (https://github.com/binwiederhier/hostit/releases).
+hostit_version: "0.8.1"
+
+# --- Recommended for production ---
+
+# btrfs app homes -> snapshots, rollback, fork, hard disk quotas. Optional: apps
+# run without it, you just lose those features.
+hostit_btrfs: true
+
+# Web dashboard via Google OAuth. Omit both to run token-only (REST API + CLI).
+# Redirect URI: https://apps.example.com/auth/callback
+# hostit_google_client_id: "..."
+# hostit_google_client_secret: "..."      # -> Vault
+# hostit_admin_emails:
+#   - you@example.com
+
+# --- Optional ---
+
+# Wildcard TLS via Route 53 (DNS-01) so new apps serve TLS instantly.
+# hostit_aws_access_key_id: "..."
+# hostit_aws_secret_key: "..."            # -> Vault
+# hostit_aws_hosted_zone_id: "..."
+
+# Built-in AI assistant. Metered API:
+# hostit_anthropic_api_key: "sk-ant-..."  # -> Vault
+# hostit_assistant_model: "claude-sonnet-5"
+# ...or a Claude Pro/Max subscription (claude setup-token):
+# hostit_assistant_backend: "claude-cli"
+# hostit_claude_code_oauth_token: "..."   # -> Vault

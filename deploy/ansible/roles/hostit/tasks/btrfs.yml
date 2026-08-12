@@ -1,0 +1,101 @@
+---
+
+# Put the app homes (hostit_apps_dir) on a copy-on-write filesystem so hostit can
+# snapshot them and enforce hard disk quotas. This uses a btrfs image on a loopback
+# file on the existing root filesystem, so no extra block device is needed. It is a
+# one-off migration: existing homes are moved aside and rsynced into subvolumes.
+#
+# Gated behind hostit_btrfs so it only runs where explicitly enabled.
+
+- name: Install btrfs-progs and rsync
+  ansible.builtin.apt:
+    name:
+      - btrfs-progs
+      - rsync
+    state: present
+
+- name: Install the app-homes btrfs mount unit
+  ansible.builtin.template:
+    src: var-lib-hostit-apps.mount.j2
+    dest: "/etc/systemd/system/{{ hostit_apps_mount_unit }}"
+    mode: "0644"
+
+- name: Make hostit wait for the app-homes mount
+  block:
+    - name: Create the hostit.service drop-in directory
+      ansible.builtin.file:
+        path: /etc/systemd/system/hostit.service.d
+        state: directory
+        mode: "0755"
+    - name: Install the RequiresMountsFor drop-in
+      ansible.builtin.template:
+        src: hostit-apps-mount.conf.j2
+        dest: /etc/systemd/system/hostit.service.d/apps-mount.conf
+        mode: "0644"
+
+- name: Check whether the app homes are already on btrfs
+  ansible.builtin.command: "findmnt -n -o FSTYPE --target {{ hostit_apps_dir }}"
+  register: hostit_apps_fstype
+  changed_when: false
+  failed_when: false
+
+# The whole migration in one idempotent script: it no-ops if already btrfs, else it
+# stops hostit, sizes and creates the loopback image (75% of free space), moves the
+# existing homes aside, mounts the btrfs, enables quota, and rsyncs each home into a
+# subvolume. hostit is started again by the play's own "Enable and start" task.
+- name: Set up the app-homes btrfs (one-off migration)
+  when: "'btrfs' not in hostit_apps_fstype.stdout"
+  args:
+    executable: /bin/bash
+  ansible.builtin.shell: |
+    set -euo pipefail
+    APPS="{{ hostit_apps_dir }}"
+    IMG="{{ hostit_apps_img }}"
+    UNIT="{{ hostit_apps_mount_unit }}"
+    PRE="{{ hostit_apps_dir }}.premigrate"
+
+    if findmnt -n -o FSTYPE --target "$APPS" 2>/dev/null | grep -qx btrfs; then
+      echo "already btrfs"; exit 0
+    fi
+
+    systemctl stop hostit 2>/dev/null || true
+
+    mkdir -p "$(dirname "$IMG")"
+    if [ ! -f "$IMG" ]; then
+      FREE_KB=$(df -Pk "$(dirname "$IMG")" | awk 'NR==2{print $4}')
+      SIZE_MB=$(( FREE_KB * 75 / 100 / 1024 ))
+      fallocate -l "${SIZE_MB}M" "$IMG"
+      mkfs.btrfs -q "$IMG"
+      echo "created $IMG (${SIZE_MB}M)"
+    fi
+
+    # Move existing homes aside (only if apps is a non-empty plain directory).
+    if [ -d "$APPS" ] && [ -n "$(ls -A "$APPS" 2>/dev/null)" ] && [ ! -e "$PRE" ]; then
+      mv "$APPS" "$PRE"
+      echo "moved existing homes to $PRE"
+    fi
+    mkdir -p "$APPS"
+
+    systemctl daemon-reload
+    systemctl enable --now "$UNIT"
+    btrfs quota enable "$APPS"
+
+    # Recreate each home as a subvolume with its original contents and ownership.
+    if [ -d "$PRE" ]; then
+      for d in "$PRE"/*/; do
+        [ -d "$d" ] || continue
+        name="$(basename "$d")"
+        [ -e "$APPS/$name" ] && continue
+        btrfs subvolume create "$APPS/$name"
+        rsync -aHAX --numeric-ids "$d" "$APPS/$name/"
+        echo "migrated $name"
+      done
+    fi
+    echo "btrfs setup complete"
+  register: hostit_btrfs_setup
+  changed_when: "'complete' in hostit_btrfs_setup.stdout"
+
+- name: Show the btrfs setup result
+  ansible.builtin.debug:
+    var: hostit_btrfs_setup.stdout_lines
+  when: hostit_btrfs_setup is changed

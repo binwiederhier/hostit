@@ -13,6 +13,10 @@ const sections = [
   { id: "config", title: "hostit.yml" },
   { id: "ssh", title: "SSH, scp and rsync" },
   { id: "api", title: "API reference" },
+  // Operator / self-hosting docs
+  { id: "install", title: "Install a server" },
+  { id: "server-config", title: "Server configuration" },
+  { id: "administration", title: "Administration" },
 ];
 
 const Endpoint = ({ method, path, what }) => (
@@ -280,7 +284,7 @@ hostit poweron/poweroff/reboot   # the container itself`}
       <h2>API reference</h2>
       <p>
         Two kinds of credential. An <strong>app token</strong> (shown on the app's page) can only touch that app, through{" "}
-        <span className="mono">/api/apps/&lt;app&gt;/</span>. An <strong>account token</strong> (Profile → API tokens) can do
+        <span className="mono">/api/apps/&lt;app&gt;/</span>. An <strong>account token</strong> (Profile -&gt; API tokens) can do
         anything you can, including creating and deleting apps.
       </p>
       <Snippet text={`curl -H "Authorization: Bearer <token>" ${origin}/api/apps/<app>/info`} />
@@ -333,6 +337,178 @@ hostit poweron/poweroff/reboot   # the container itself`}
           </tbody>
         </table>
       </div>
+    </section>
+
+    <hr className="docs-rule" />
+    <p className="empty-pitch">
+      The rest is for <strong>operators</strong> running their own hostit server. If you are just using apps on{" "}
+      <span className="mono">{host}</span>, you can stop here.
+    </p>
+
+    <section id="install">
+      <h2>Install a server</h2>
+      <p>
+        hostit is a single Go binary that runs as a root daemon on one Linux host (Debian or Ubuntu). It drives podman,
+        systemd, nftables and (optionally) btrfs, terminates TLS, and serves everything on this page. You need a host you
+        control, root on it, and a domain.
+      </p>
+      <h3>1. DNS</h3>
+      <p>
+        Apps are served at <span className="mono">&lt;app&gt;.&lt;base-domain&gt;</span>, so point a wildcard and the bare
+        name at the host:
+      </p>
+      <Snippet
+        text={`*.apps.example.com.  A  <ip-of-this-host>
+apps.example.com.    A  <ip-of-this-host>   ; SSH and the bare domain`}
+      />
+      <h3>2. Install the package</h3>
+      <p>
+        Install the <span className="mono">.deb</span> (or <span className="mono">.rpm</span>) from the project's releases. It
+        lands the binary, a <span className="mono">hostit.service</span> systemd unit, and a starter config at{" "}
+        <span className="mono">/etc/hostit/server.yml</span>.
+      </p>
+      <Snippet text={`sudo dpkg -i hostit_*_linux_amd64.deb`} />
+      <h3>3. Configure and start</h3>
+      <p>
+        Edit <span className="mono">/etc/hostit/server.yml</span>. Only two keys are required: your{" "}
+        <span className="mono">base-domain</span> and an <span className="mono">admin-token</span> for the REST API.
+      </p>
+      <Snippet
+        text={`base-domain: apps.example.com
+admin-token: $(openssl rand -hex 24)`}
+      />
+      <Snippet text={`sudo systemctl enable --now hostit
+journalctl -u hostit -f`} />
+      <p>
+        That is a working token-only server: create apps over the API or SSH. TLS is issued per subdomain on demand by Let's
+        Encrypt. To get the web dashboard and Google login, and (recommended) wildcard TLS and btrfs snapshots, see the two
+        sections below.
+      </p>
+      <p className="hint">
+        <strong>btrfs (recommended).</strong> Snapshots, rollback, fork and hard disk quotas need the app homes
+        (<span className="mono">apps-dir</span>) on a btrfs filesystem. Without it, apps still run; those features are simply
+        unavailable. Put <span className="mono">apps-dir</span> on a btrfs mount (a loopback file works) before creating apps.
+      </p>
+    </section>
+
+    <section id="server-config">
+      <h2>Server configuration</h2>
+      <p>
+        Everything lives in <span className="mono">/etc/hostit/server.yml</span>. Only{" "}
+        <span className="mono">base-domain</span> and <span className="mono">admin-token</span> are required; the rest has
+        sane defaults. Restart the service after editing (<span className="mono">systemctl restart hostit</span>).
+      </p>
+      <div className="table-wrap">
+        <table className="docs-table">
+          <tbody>
+            <tr>
+              <td className="mono">base-domain</td>
+              <td>Apps are served at <span className="mono">&lt;app&gt;.&lt;base-domain&gt;</span>. Required.</td>
+            </tr>
+            <tr>
+              <td className="mono">admin-token</td>
+              <td>Bearer token for the admin REST API (full access). Required. <span className="mono">openssl rand -hex 24</span>.</td>
+            </tr>
+            <tr>
+              <td className="mono">tls</td>
+              <td>
+                <span className="mono">letsencrypt</span> (default; on-demand per-subdomain certs) or <span className="mono">off</span>{" "}
+                (plain HTTP, for development or behind another TLS proxy).
+              </td>
+            </tr>
+            <tr>
+              <td className="mono">dns-provider</td>
+              <td>
+                Set to <span className="mono">route53</span> for one wildcard <span className="mono">*.&lt;base-domain&gt;</span>{" "}
+                certificate via DNS-01, so a brand-new app serves TLS instantly (and works even when the host is not publicly
+                reachable). AWS credentials fall back to the usual env vars.
+              </td>
+            </tr>
+            <tr>
+              <td className="mono">google-client-id / -secret</td>
+              <td>
+                Google OAuth for the web dashboard. Leave empty to run token-only with no web login. Redirect URI is{" "}
+                <span className="mono">https://&lt;base-domain&gt;/auth/callback</span>.
+              </td>
+            </tr>
+            <tr>
+              <td className="mono">admin-emails</td>
+              <td>Emails that become active admins on their first Google login (skipping approval).</td>
+            </tr>
+            <tr>
+              <td className="mono">data-dir / apps-dir</td>
+              <td>Registry DB + certs, and app home directories. Default under <span className="mono">/var/lib/hostit</span>.</td>
+            </tr>
+            <tr>
+              <td className="mono">port-min / port-max</td>
+              <td>Loopback port range hostit assigns apps (default 10000-19999).</td>
+            </tr>
+            <tr>
+              <td className="mono">anthropic-api-key</td>
+              <td>Enables the built-in assistant on the metered Anthropic API. See Administration.</td>
+            </tr>
+            <tr>
+              <td className="mono">assistant-backend</td>
+              <td>
+                <span className="mono">claude-cli</span> drives the assistant through a Claude Pro/Max subscription in a sandbox
+                instead of the API (<span className="mono">claude-code-oauth-token</span>).
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p className="hint">
+        A full annotated example ships as <span className="mono">server.yml.example</span> in the source repository.
+      </p>
+    </section>
+
+    <section id="administration">
+      <h2>Administration</h2>
+      <p>
+        Admins get an <a href="/admin">Admin</a> link in the dashboard. An admin is anyone whose email is in{" "}
+        <span className="mono">admin-emails</span>, or whom another admin has promoted. Everything below is on the Admin page
+        (or the <span className="mono">/api/users</span>, <span className="mono">/api/settings</span> and{" "}
+        <span className="mono">/api/assistant-defaults</span> endpoints with the admin token).
+      </p>
+      <h3>Approving people and letting them in</h3>
+      <p>
+        A new Google sign-in lands as <em>pending</em> and cannot create apps until an admin approves it, so an open Google
+        login does not mean open signups. Two ways to skip the wait: list a whole email domain under allowed domains (anyone
+        at <span className="mono">@yourco.com</span> is approved automatically), or invite a specific person, which pre-approves
+        their email before they ever sign in.
+      </p>
+      <h3>Roles and limits</h3>
+      <p>
+        Each person is a <strong>user</strong> or an <strong>admin</strong>, and carries limits: how many apps they may
+        create, and the memory and disk each of their apps gets. Set them per person on the Admin page, or set the instance
+        defaults that every new account inherits.
+      </p>
+      <h3>The built-in assistant</h3>
+      <p>
+        The in-browser chat is off until the server has an AI key. Two ways to power it: the metered Anthropic API
+        (<span className="mono">anthropic-api-key</span>, pay per token), or a Claude Pro/Max subscription run in a locked-down
+        podman sandbox (<span className="mono">assistant-backend: claude-cli</span> +{" "}
+        <span className="mono">claude-code-oauth-token</span> from <span className="mono">claude setup-token</span>). Either way
+        the assistant's only tools are one app's own REST surface, so it can never touch another app or the host. On the Admin
+        page you choose which models people may pick, the default, and who may use the assistant at all.
+      </p>
+      <h3>Backups and operations</h3>
+      <p>
+        All durable state is two things: the SQLite registry under <span className="mono">data-dir</span> (accounts, apps,
+        tokens, domains, snapshot metadata) and the app files under <span className="mono">apps-dir</span>. Back up both. On a
+        btrfs host, hostit already snapshots each app hourly and prunes them on a grandfather-father-son schedule, but those
+        snapshots live on the same disk and are not a substitute for an off-box backup.
+      </p>
+      <Snippet
+        text={`systemctl restart hostit         # restart the daemon
+journalctl -u hostit -f          # watch its logs
+sqlite3 /var/lib/hostit/hostit.db ".backup /backup/hostit.db"   # hot registry copy`}
+      />
+      <p className="hint">
+        hostit runs as root because it creates Unix users and drives podman, systemd, nftables and btrfs. Keep the host itself
+        locked down; app containers are isolated (own uid range, network namespace and port rules), but the daemon is the
+        trusted control plane.
+      </p>
     </section>
 
     <p className="docs-foot">
