@@ -19,8 +19,6 @@ type fakeRunner struct {
 
 func newFakeRunner() *fakeRunner { return &fakeRunner{outputs: map[string]string{}} }
 
-func (f *fakeRunner) returns(prefix, out string) { f.outputs[prefix] = out }
-
 func (f *fakeRunner) output(joined string) string {
 	for prefix, out := range f.outputs {
 		if strings.HasPrefix(joined, prefix) {

@@ -32,9 +32,8 @@ const (
 	renameAssistantMirrorQuery = `UPDATE assistant_session SET app_name = ? WHERE app_id = (SELECT id FROM app WHERE name = ?)`
 	// Image pinning: backfill unpinned apps, and list every tag still in use so
 	// image GC never removes one an app is pinned to.
-	pinImageTagsQuery      = `UPDATE app SET image_tag = ? WHERE image_tag = ''`
-	imageTagsInUseQuery    = `SELECT DISTINCT image_tag FROM app WHERE image_tag != ''`
-	updateAppImageTagQuery = `UPDATE app SET image_tag = ? WHERE name = ?`
+	pinImageTagsQuery   = `UPDATE app SET image_tag = ? WHERE image_tag = ''`
+	imageTagsInUseQuery = `SELECT DISTINCT image_tag FROM app WHERE image_tag != ''`
 )
 
 var (
@@ -83,13 +82,6 @@ func (s *Store) RenameApp(oldName, newName string) error {
 	return tx.Commit()
 }
 
-// PinImageTags backfills every app that has no pinned image tag with the given
-// one, so apps from before image pinning stay on the image they are running.
-func (s *Store) PinImageTags(tag string) error {
-	_, err := s.db.Exec(pinImageTagsQuery, tag)
-	return err
-}
-
 // ImageTagsInUse returns the set of workspace image tags apps are pinned to, so
 // image GC keeps them even when their container is momentarily gone.
 func (s *Store) ImageTagsInUse() (map[string]bool, error) {
@@ -107,13 +99,6 @@ func (s *Store) ImageTagsInUse() (map[string]bool, error) {
 		tags[tag] = true
 	}
 	return tags, rows.Err()
-}
-
-// SetAppImageTag repins one app (used when an app is deliberately moved onto a
-// rebuilt image).
-func (s *Store) SetAppImageTag(name, tag string) error {
-	_, err := s.db.Exec(updateAppImageTagQuery, tag, name)
-	return err
 }
 
 // App returns the app with the given name, or ErrAppNotFound
