@@ -41,10 +41,10 @@ admin-token: CHANGE-ME
 # anthropic-api-key: sk-ant-...
 # assistant-model: claude-sonnet-5           # default model for API turns
 #
-# Or drive it through a Claude Pro/Max subscription instead of the API, by running
-# each turn as `claude -p` in a locked-down podman sandbox (tools restricted to this
-# app's own REST surface). Get the token with: claude setup-token
-# assistant-backend: claude-cli
+# Additionally offer Claude.ai (your Claude Pro/Max subscription) as a model in the
+# chat, run per turn as `claude -p` in a locked-down podman sandbox (tools restricted
+# to this app's own REST surface). Setting the token is all it takes; there is no
+# backend switch. Get the token with: claude setup-token
 # claude-code-oauth-token: ...
 #
 # Optional: the model menu shown in the chat (id + human label).

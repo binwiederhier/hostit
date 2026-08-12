@@ -192,6 +192,7 @@ type fakeSystemOps struct {
 	createdUsers   []string
 	deletedUsers   []string
 	renamedUsers   []string
+	syncedGroups   []string
 	killedUsers    []string
 	authorizedKeys map[string][]string
 	scaffolds      map[string][]string
@@ -286,6 +287,13 @@ func (f *fakeSystemOps) RenameUser(oldName, newName string) error {
 			f.createdUsers[i] = newName
 		}
 	}
+	return nil
+}
+
+func (f *fakeSystemOps) SyncGroupName(username string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.syncedGroups = append(f.syncedGroups, username)
 	return nil
 }
 

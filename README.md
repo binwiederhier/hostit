@@ -286,9 +286,9 @@ AI key. Two ways to power it, both configured in `server.yml`:
 anthropic-api-key: sk-ant-...
 assistant-model: claude-sonnet-5
 
-# Or a Claude Pro/Max subscription, run per turn as `claude -p` in a locked-down
-# podman sandbox (get the token with: claude setup-token):
-assistant-backend: claude-cli
+# Additionally offer Claude.ai (a Claude Pro/Max subscription), run per turn as
+# `claude -p` in a locked-down podman sandbox. Setting the token is the whole
+# switch; there is no backend selector. Get the token with: claude setup-token
 claude-code-oauth-token: ...
 ```
 

@@ -86,14 +86,20 @@ func New(conf *config.Config, apps *app.Manager, users *user.Manager) *Server {
 	// so it is confined to one app the way an agent token is.
 	if conf.AssistantAvailable() {
 		s.assistant = assistant.NewManager(assistant.NewClient(conf.AnthropicAPIKey), &appOps{apps: apps}, &appTranscripts{store: apps.Store()}, conf.AssistantModel)
-		if conf.ClaudeBackendSelected() {
+		// Wire the Claude Max (subscription) backend whenever its token is configured,
+		// so selecting "Claude.ai" actually uses the subscription. Its presence is the
+		// whole switch; there is no separate backend setting. (Previously the option
+		// could be offered while the backend was unwired, silently running the API
+		// model and badging replies as Sonnet with no explanation.)
+		if conf.ClaudeBackendEnabled() {
 			sandbox, err := assistant.NewSandbox(conf)
 			if err != nil {
-				slog.Error("Cannot start the Claude Max assistant backend; assistant disabled", "error", err)
-				s.assistant = nil
+				// A missing sandbox disables only the subscription option; the API
+				// backend still serves, so never take the whole assistant down here.
+				slog.Error("Cannot start the Claude Max assistant backend; using the API only", "error", err)
 			} else {
 				s.assistant.SetClaudeRunner(&claudeBackend{sandbox: sandbox})
-				slog.Info("Assistant using the Claude Max (subscription) backend")
+				slog.Info("Claude Max (subscription) backend available for the assistant")
 			}
 		}
 	}

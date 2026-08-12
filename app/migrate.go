@@ -21,6 +21,23 @@ func (m *Manager) BackfillAppIDs() {
 	}
 }
 
+// MigrateGroupNames aligns each app's Unix primary group name with its user's login
+// name. A rename renames the user (usermod --login) and, since a later build, its
+// group too; but an app renamed before that shipped left its group under the old
+// name. That orphan name then blocks creating a new app of the old name (groupadd
+// collides on the name). Idempotent (a no-op once names agree) and best-effort.
+func (m *Manager) MigrateGroupNames() {
+	apps, err := m.store.Apps()
+	if err != nil {
+		return
+	}
+	for _, a := range apps {
+		if err := m.ops.SyncGroupName(a.Name); err != nil {
+			slog.Warn("Cannot align app group name to its user", "app", a.Name, "error", err)
+		}
+	}
+}
+
 // MigrateToIDKeyedHomes is a one-off that moves every pre-id app's home (and its
 // snapshots) from the old name-keyed path to its id-keyed path, so from then on a
 // rename never has to move data. It is the ONLY time an existing app's container

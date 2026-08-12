@@ -448,10 +448,10 @@ journalctl -u hostit -f`} />
               <td>Enables the built-in assistant on the metered Anthropic API. See Administration.</td>
             </tr>
             <tr>
-              <td className="mono">assistant-backend</td>
+              <td className="mono">claude-code-oauth-token</td>
               <td>
-                <span className="mono">claude-cli</span> drives the assistant through a Claude Pro/Max subscription in a sandbox
-                instead of the API (<span className="mono">claude-code-oauth-token</span>).
+                Additionally offers Claude.ai (a Claude Pro/Max subscription) as a model, run in a sandbox. Its presence is the
+                whole switch; there is no backend selector.
               </td>
             </tr>
           </tbody>
@@ -485,12 +485,13 @@ journalctl -u hostit -f`} />
       </p>
       <h3>The built-in assistant</h3>
       <p>
-        The in-browser chat is off until the server has an AI key. Two ways to power it: the metered Anthropic API
-        (<span className="mono">anthropic-api-key</span>, pay per token), or a Claude Pro/Max subscription run in a locked-down
-        podman sandbox (<span className="mono">assistant-backend: claude-cli</span> +{" "}
-        <span className="mono">claude-code-oauth-token</span> from <span className="mono">claude setup-token</span>). Either way
-        the assistant's only tools are one app's own REST surface, so it can never touch another app or the host. On the Admin
-        page you choose which models people may pick, the default, and who may use the assistant at all.
+        The in-browser chat is off until the server has an AI key. Set the metered Anthropic API key
+        (<span className="mono">anthropic-api-key</span>, pay per token) for the API models, and/or a Claude Pro/Max
+        subscription token (<span className="mono">claude-code-oauth-token</span> from{" "}
+        <span className="mono">claude setup-token</span>) to additionally offer Claude.ai, run in a locked-down podman sandbox.
+        Each credential's presence is the whole switch. Either way the assistant's only tools are one app's own REST surface, so
+        it can never touch another app or the host. On the Admin page you choose which models people may pick, the default, and
+        who may use the assistant at all.
       </p>
       <h3>Backups and operations</h3>
       <p>

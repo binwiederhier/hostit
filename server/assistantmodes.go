@@ -172,6 +172,12 @@ func (s *Server) defaultMode() string {
 	if m := settings[store.SettingAssistantDefaultMode]; m != "" && s.config.IsValidMode(m) {
 		return m
 	}
+	// Prefer an API model as the default; Claude.ai (the subscription) is offered as
+	// an additional opt-in whenever its token is present. Only default to Claude.ai
+	// when the API is not configured at all. An admin can still set any default above.
+	if s.config.AssistantEnabled() {
+		return s.config.DefaultAPIModel()
+	}
 	if s.config.ClaudeBackendEnabled() {
 		return config.ExternalClaudeMode
 	}

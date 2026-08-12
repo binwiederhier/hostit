@@ -42,7 +42,8 @@ export default function AppEditor({ name, url, running, diskMB, diskLimitMB, onD
   const [treeWidth, setTreeWidth] = useState(240);
   const [previewOn, setPreviewOn] = useState(false);
   const [previewWidth, setPreviewWidth] = useState(440);
-  const [previewKey, setPreviewKey] = useState(0);
+  // Seed with a timestamp so preview URLs are unique per session (see AppDetail).
+  const [previewKey, setPreviewKey] = useState(() => Date.now());
   const [dragTarget, setDragTarget] = useState(null);
   const [isStatic, setIsStatic] = useState(false);
 

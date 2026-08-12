@@ -7,6 +7,28 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+func TestGroupNeedsRename(t *testing.T) {
+	t.Parallel()
+	// A group left under the old app name (an app renamed before group-rename
+	// shipped) must be renamed to match the user, or a new app of the old name
+	// collides on groupadd.
+	got, ok := groupNeedsRename("demo", "thatphilguy", "hostit-apps")
+	assert.True(t, ok)
+	assert.Equal(t, "thatphilguy", got)
+
+	// Already matching the user: nothing to do.
+	_, ok = groupNeedsRename("blog", "blog", "hostit-apps")
+	assert.False(t, ok)
+
+	// The shared app group is not an app's own group; never touch it.
+	_, ok = groupNeedsRename("hostit-apps", "blog", "hostit-apps")
+	assert.False(t, ok)
+
+	// No group resolved (empty lookup): nothing to do.
+	_, ok = groupNeedsRename("", "blog", "hostit-apps")
+	assert.False(t, ok)
+}
+
 func TestCreateUserArgsBringNoSkeleton(t *testing.T) {
 	t.Parallel()
 	// useradd copies /etc/skel into every new home: .bashrc, .profile,

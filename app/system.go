@@ -69,6 +69,10 @@ func (o *systemOps) RenameUser(oldName, newName string) error {
 	return o.user.Rename(oldName, newName)
 }
 
+func (o *systemOps) SyncGroupName(username string) error {
+	return o.user.SyncGroupName(username)
+}
+
 func (o *systemOps) KillUserProcesses(username string) error {
 	return o.user.KillProcesses(username)
 }

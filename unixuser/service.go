@@ -135,10 +135,32 @@ func (s *Service) Rename(oldName, newName string) error {
 	if err := run("usermod", "--login", newName, oldName); err != nil {
 		return err
 	}
-	if group := primaryGroupName(newName); group != "" && group != newName && group != s.group {
-		_ = run("groupmod", "--new-name", newName, group) // best-effort; cosmetic if it fails
-	}
+	_ = s.SyncGroupName(newName) // best-effort; cosmetic if it fails
 	return nil
+}
+
+// SyncGroupName renames a user's primary group to match its login name, when the
+// two have drifted apart (an app renamed before group-rename shipped kept its old
+// group name). Aligning them keeps a deleted app from leaving an orphan group, and
+// frees the old name so a new app can take it. Idempotent and a no-op when the
+// names already agree or the user is on the shared app group.
+func (s *Service) SyncGroupName(username string) error {
+	group := primaryGroupName(username)
+	newName, ok := groupNeedsRename(group, username, s.group)
+	if !ok {
+		return nil
+	}
+	return run("groupmod", "--new-name", newName, group)
+}
+
+// groupNeedsRename reports whether an app user's primary group should be renamed to
+// match the user's login name, and to what. A group that is empty, already the
+// user's name, or the shared app group is left alone.
+func groupNeedsRename(currentGroup, username, sharedGroup string) (string, bool) {
+	if currentGroup == "" || currentGroup == username || currentGroup == sharedGroup {
+		return "", false
+	}
+	return username, true
 }
 
 // KillProcesses SIGKILLs every process owned by the user. pkill exits 1 when there

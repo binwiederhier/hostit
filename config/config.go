@@ -31,11 +31,6 @@ const (
 	// DefaultAssistantModel is the model the built-in assistant uses unless the
 	// operator names another one
 	DefaultAssistantModel = "claude-sonnet-5"
-	// AssistantBackendAPI drives the assistant through the metered Anthropic API
-	// (the default); AssistantBackendClaudeCLI drives it through `claude -p` in a
-	// sandbox container on the operator's Claude Max subscription.
-	AssistantBackendAPI       = "api"
-	AssistantBackendClaudeCLI = "claude-cli"
 
 	// ExternalClaudeMode is the assistant mode that runs on the operator's Claude
 	// Max subscription (the sandboxed claude -p). Every other mode is an API model
@@ -95,12 +90,6 @@ type Config struct {
 	AnthropicAPIKey string `yaml:"anthropic-api-key"` // Anthropic API key for the built-in assistant; empty disables it
 	AssistantModel  string `yaml:"assistant-model"`   // Model the assistant uses; defaults to DefaultAssistantModel
 
-	// AssistantBackend selects the DEFAULT backend when a turn does not name a
-	// mode: "api" (default, metered Anthropic API) or "claude-cli" (the operator's
-	// Claude Max subscription). Per-turn, the user picks a mode from the dropdown
-	// (External Claude, or one of AssistantModels); this is the fallback.
-	AssistantBackend string `yaml:"assistant-backend"`
-
 	// AssistantModels is the catalog of API models offered in the assistant's
 	// mode dropdown (alongside External Claude, when the subscription is set up).
 	// Order is the display order; the first is the default API model and the
@@ -126,16 +115,11 @@ func (c *Config) ClaudeBackendEnabled() bool {
 	return c.ClaudeCodeOAuthToken != ""
 }
 
-// ClaudeBackendSelected reports whether the assistant should actually RUN on the
-// Claude Max backend: it is both selected and has a token to use.
-func (c *Config) ClaudeBackendSelected() bool {
-	return c.AssistantBackend == AssistantBackendClaudeCLI && c.ClaudeCodeOAuthToken != ""
-}
-
 // AssistantAvailable reports whether the built-in assistant can run at all,
-// through either backend, so the UI and routes can enable it.
+// through either backend, so the UI and routes can enable it. Each backend counts
+// as soon as its own credential is present: the API key, or the Claude.ai token.
 func (c *Config) AssistantAvailable() bool {
-	return c.AssistantEnabled() || c.ClaudeBackendSelected()
+	return c.AssistantEnabled() || c.ClaudeBackendEnabled()
 }
 
 // IsAdminEmail reports whether the given address is one of the configured admins
@@ -161,7 +145,6 @@ func NewConfig() *Config {
 		PortMax:           19999,
 		DiskCheckInterval: Duration(15 * time.Minute),
 		AssistantModel:    DefaultAssistantModel,
-		AssistantBackend:  AssistantBackendAPI,
 		AssistantModels: []ModelOption{
 			{ID: "claude-sonnet-5", Label: "Sonnet 5"},
 			{ID: "claude-opus-5", Label: "Opus 5"},
@@ -253,9 +236,6 @@ func (c *Config) Validate() error {
 	}
 	if c.DNSProvider != "" && c.DNSProvider != DNSProviderRoute53 {
 		return fmt.Errorf("invalid dns-provider %q, only %q is supported", c.DNSProvider, DNSProviderRoute53)
-	}
-	if c.AssistantBackend != "" && c.AssistantBackend != AssistantBackendAPI && c.AssistantBackend != AssistantBackendClaudeCLI {
-		return fmt.Errorf("invalid assistant-backend %q, must be %q or %q", c.AssistantBackend, AssistantBackendAPI, AssistantBackendClaudeCLI)
 	}
 	return nil
 }

@@ -46,6 +46,10 @@ func (o *NopSystemOps) RenameUser(oldName, newName string) error {
 	return nil
 }
 
+func (o *NopSystemOps) SyncGroupName(username string) error {
+	return nil
+}
+
 func (o *NopSystemOps) KillUserProcesses(username string) error {
 	return nil
 }

@@ -1343,7 +1343,9 @@ const AppDetail = ({ account, refreshAccount }) => {
   // The live preview reloads whenever the app is (re)deployed by anything -- the
   // chat's deploy tool, an external `hostit deploy`, a restart. We remount the
   // iframe by bumping its key, and flag "refreshing" until it loads again.
-  const [previewKey, setPreviewKey] = useState(0);
+  // Seed the key with a timestamp (not 0) so preview URLs are unique per session
+  // and never reuse a value a cache might still hold; increments keep it changing.
+  const [previewKey, setPreviewKey] = useState(() => Date.now());
   const [previewHidden, setPreviewHidden] = useState(false); // collapse the preview pane, giving the chat full width
   const [refreshing, setRefreshing] = useState(false);
   const lastAppStart = useRef(null);

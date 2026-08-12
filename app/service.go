@@ -78,6 +78,10 @@ type SystemOps interface {
 	// RenameUser changes a user's login name in place (uid and home unchanged);
 	// this is the only OS mutation a rename needs.
 	RenameUser(oldName, newName string) error
+	// SyncGroupName renames a user's primary group to match its login name when the
+	// two have drifted (an app renamed before group-rename shipped kept its old group
+	// name). Used by the one-off group-name migration.
+	SyncGroupName(username string) error
 	// KillUserProcesses force-kills every process owned by the user, so usermod is
 	// not blocked by a leftover terminal/SSH session. Used only after the app's unit
 	// is stopped, so this reaps session wrappers, not the running app.
