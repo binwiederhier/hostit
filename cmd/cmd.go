@@ -24,7 +24,7 @@ func New() *cli.App {
 	commands := []*cli.Command{cmdServe, cmdApps, cmdShell, cmdEnter, cmdInternal}
 	usage := "self-hosted mini-app platform: isolated apps with SSH access, subdomains and TLS"
 	if insideContainer() {
-		commands = []*cli.Command{cmdDeploy, cmdStart, cmdStop, cmdRestart, cmdPowerOn, cmdPowerOff, cmdReboot, cmdStatus, cmdLogs, cmdInfo, cmdGuide, cmdStatic, cmdPlaceholder, cmdAgent, cmdMCP}
+		commands = []*cli.Command{cmdDeploy, cmdStart, cmdStop, cmdRestart, cmdPowerOn, cmdPowerOff, cmdReboot, cmdStatus, cmdLogs, cmdInfo, cmdGuide, cmdStatic, cmdAgent, cmdMCP}
 		usage = "manage this app: deploy it, restart it, read its logs"
 	}
 	return &cli.App{

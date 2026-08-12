@@ -6,10 +6,16 @@ import (
 )
 
 // scaffoldHostitYml is the hostit.yml new apps start with: a working stub that
-// runs hostit's own placeholder backend, with the other modes documented inline.
+// serves public/ (mode: static), with the other modes documented inline.
 //
 //go:embed scaffold/hostit.yml
 var scaffoldHostitYml string
+
+// scaffoldPublicIndex is the placeholder page a new app serves out of public/
+// until its owner replaces it. Static, so a fresh app needs no running process.
+//
+//go:embed scaffold/public/index.html
+var scaffoldPublicIndex string
 
 // scaffoldAppReadme is the app's OWN readme: agents read it to learn what the app
 // is and write back what they changed, and the owner sees it in the web app. Its
@@ -26,8 +32,9 @@ func scaffoldFiles(name, url, runtimes string) map[string]string {
 		// Silences the host's login banner (Ubuntu's MOTD prints the host's IP,
 		// load and disk usage) and the "Last login" line, so an SSH session opens
 		// with hostit's own greeting and nothing about the machine underneath
-		".hushlogin": "",
-		"hostit.yml": scaffoldHostitYml,
-		"README.md":  fmt.Sprintf(scaffoldAppReadme, name, url, runtimes),
+		".hushlogin":        "",
+		"hostit.yml":        scaffoldHostitYml,
+		"public/index.html": scaffoldPublicIndex,
+		"README.md":         fmt.Sprintf(scaffoldAppReadme, name, url, runtimes),
 	}
 }

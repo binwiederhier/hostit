@@ -1,10 +1,10 @@
 # hostit app config -- apply changes with "hostit up"; see "hostit guide".
 #
-# This is the stub app: it runs hostit's built-in placeholder, a small Go
-# backend. Replace "run:" with your own command, or switch to "mode: static".
+# This stub serves the public/ directory (mode: static), which starts with a
+# placeholder public/index.html. Replace it with your own site, or switch to
+# "mode: app" below to run a command instead.
 
-mode: app
-run: hostit placeholder
+mode: static
 
 # --- Description: one line saying what this app is ---
 # Uncomment and keep it current. The owner's web page shows it, and it is what
