@@ -12,7 +12,7 @@ import (
 
 var (
 	// cmdGuide prints the platform's own instructions. They used to be a
-	// HOSTIT.txt scaffolded into every app, which meant a fourth copy of the
+	// HOSTIT.txt written into every app's skeleton, which meant a fourth copy of the
 	// same text (banner, web docs, agent API) drifting in every app directory,
 	// sitting next to README.md as if it were the app's own file.
 	cmdGuide = &cli.Command{

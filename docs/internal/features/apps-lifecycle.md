@@ -51,7 +51,7 @@ sequenceDiagram
     Server->>Server: checkAppLimit(caller)
     Server->>Manager: CreateApp(name, opts)
     Manager->>Manager: validateName, allocatePort, mint app id
-    Manager->>OS: CreateUser, WriteAuthorizedKeys, WriteScaffold
+    Manager->>OS: CreateUser, WriteAuthorizedKeys, WriteSkeleton
     Manager->>Manager: AddApp, SetMemory/DiskLimit, ReconcilePortRules
     Manager-->>Server: *store.App (+ background Up)
     Server-->>Dashboard: 201 {app, agent_token}
@@ -90,8 +90,8 @@ sequenceDiagram
   id-keyed home (a btrfs subvolume when available, else a plain dir), creates the
   Unix user (`SystemOps.CreateUser`) at a uid derived from the port
   (`uidFor`: a contiguous 65536-wide block per app), writes `authorized_keys` (the
-  union of request keys and the owner's profile keys) and the scaffold
-  (`app/scaffold.go`, see [deploy.md](deploy.md)/[placeholder.md](placeholder.md)),
+  union of request keys and the owner's profile keys) and the skeleton
+  (`app/skeleton.go`, see [deploy.md](deploy.md)/[placeholder.md](placeholder.md)),
   inserts the row (`store.AddApp`), records memory/disk limits, reconciles the
   per-app loopback firewall rules, and starts the app in a goroutine (`Up`).
 - **Data model** (`store/app.go`): the `app` table is

@@ -58,7 +58,7 @@ func (o *NopSystemOps) WriteAuthorizedKeys(username, home string, keys []string)
 	return nil
 }
 
-func (o *NopSystemOps) WriteScaffold(username, home string, files map[string]string) error {
+func (o *NopSystemOps) WriteSkeleton(username, home string, files map[string]string) error {
 	return nil
 }
 

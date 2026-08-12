@@ -69,8 +69,8 @@ func (o *systemOps) DeleteUser(username string) error {
 	return o.user.Delete(username)
 }
 
-func (o *systemOps) WriteScaffold(username, home string, files map[string]string) error {
-	return o.user.WriteScaffold(username, home, files)
+func (o *systemOps) WriteSkeleton(username, home string, files map[string]string) error {
+	return o.user.WriteSkeleton(username, home, files)
 }
 
 func (o *systemOps) ChownToUserIn(root *os.Root, username, rel string) error {

@@ -89,7 +89,7 @@ func TestUpRefusesASymlinkedConfig(t *testing.T) {
 	outside := filepath.Join(t.TempDir(), "outside.yml")
 	require.NoError(t, os.WriteFile(outside, []byte("mode: static\n"), 0o600))
 	link := filepath.Join(m.appHome("blog"), "hostit.yml")
-	require.NoError(t, os.Remove(link)) // Drop the scaffolded config, then plant the symlink
+	require.NoError(t, os.Remove(link)) // Drop the skeleton config, then plant the symlink
 	require.NoError(t, os.Symlink(outside, link))
 	_, err := m.Up("blog")
 	require.ErrorIs(t, err, ErrInvalid)

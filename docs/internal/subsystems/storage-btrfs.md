@@ -76,7 +76,7 @@ one home.
 ## Fork: seed a new app from a snapshot
 
 Fork duplicates an app by seeding the new app's home from a **writable CoW
-snapshot** of the source instead of the demo scaffold (`app/service.go:Fork` ->
+snapshot** of the source instead of the demo skeleton (`app/service.go:Fork` ->
 `create` with a `seedPath`). The seed is the source's current home, or a named
 snapshot of it; the reflink copy is instant and space-shared
 (`btrfs.Snapshot(seedPath, home, false)` -- readonly=false makes it writable).

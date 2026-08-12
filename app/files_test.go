@@ -51,7 +51,7 @@ func TestReadmeRoundTrip(t *testing.T) {
 	t.Parallel()
 	m, _, _ := newTestDeployManager(t)
 	createTestApp(t, m, "blog")
-	// New apps are scaffolded with a README the agent can build on
+	// New apps get a skeleton with a README the agent can build on
 	readme, err := m.Readme("blog")
 	require.NoError(t, err)
 	assert.Contains(t, readme, "blog")

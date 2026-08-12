@@ -366,8 +366,8 @@ curl -s -H "Authorization: Bearer $HOSTIT_TOKEN" \
 
 The response contains the URL and the SSH login. hostit never generates a key
 pair: an app with no keys is managed through the API, and SSH starts working as
-soon as a key is added to the owner's profile. New apps are scaffolded with a
-demo page and started right away, so the URL serves something immediately.
+soon as a key is added to the owner's profile. New apps start from a skeleton with a
+demo page and are started right away, so the URL serves something immediately.
 
 Everything lives under `/api`. One app's own endpoints are under
 `/api/apps/{app}/` -- which is exactly what an app-scoped token may reach, so

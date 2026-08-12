@@ -42,8 +42,8 @@ func TestCreateApp(t *testing.T) {
 	assert.Equal(t, 10000, app.Port)
 	assert.Equal(t, []string{"blog"}, ops.createdUsers)
 	assert.Equal(t, []string{testPublicKey}, ops.authorizedKeys["blog"])
-	assert.Contains(t, ops.scaffolds["blog"], "hostit.yml")
-	assert.Contains(t, ops.scaffolds["blog"], "README.md")
+	assert.Contains(t, ops.skeletons["blog"], "hostit.yml")
+	assert.Contains(t, ops.skeletons["blog"], "README.md")
 	stored, err := m.App("blog")
 	require.NoError(t, err)
 	assert.Equal(t, 10000, stored.Port)
@@ -194,7 +194,7 @@ type fakeSystemOps struct {
 	renamedUsers   []string
 	killedUsers    []string
 	authorizedKeys map[string][]string
-	scaffolds      map[string][]string
+	skeletons      map[string][]string
 	uids           map[string]int
 	portRules      [][]PortRule
 	createUserErr  error
@@ -207,7 +207,7 @@ var _ SystemOps = (*fakeSystemOps)(nil)
 func newFakeSystemOps() *fakeSystemOps {
 	return &fakeSystemOps{
 		authorizedKeys: make(map[string][]string),
-		scaffolds:      make(map[string][]string),
+		skeletons:      make(map[string][]string),
 		uids:           make(map[string]int),
 	}
 }
@@ -287,14 +287,14 @@ func (f *fakeSystemOps) WriteAuthorizedKeys(username, home string, keys []string
 	return nil
 }
 
-// WriteScaffold records the scaffold AND writes it, so tests that read app
+// WriteSkeleton records the skeleton AND writes it, so tests that read app
 // files (README, hostit.yml) see what a real app would have
-func (f *fakeSystemOps) WriteScaffold(username, home string, files map[string]string) error {
+func (f *fakeSystemOps) WriteSkeleton(username, home string, files map[string]string) error {
 	if err := os.MkdirAll(home, 0o755); err != nil {
 		return err
 	}
 	for name, content := range files {
-		f.scaffolds[username] = append(f.scaffolds[username], name)
+		f.skeletons[username] = append(f.skeletons[username], name)
 		full := filepath.Join(home, name)
 		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
 			return err

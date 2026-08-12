@@ -38,7 +38,7 @@ flowchart TB
 
 - **`SystemOps`** (`app/service.go:SystemOps`) -- the root-privileged operations
   that are not a simple command wrapper: `CreateUser`, `RenameUser`,
-  `KillUserProcesses`, `DeleteUser`, `WriteAuthorizedKeys`, `WriteScaffold`,
+  `KillUserProcesses`, `DeleteUser`, `WriteAuthorizedKeys`, `WriteSkeleton`,
   `ChownToUserIn`, `ApplyPortRules`, and the lookups. The real implementation
   (`app/system.go:systemOps`, from `NewSystemOps`) is a thin facade that composes
   the tool-scoped service packages `unixuser`, `ssh`, and `firewall`, converting
@@ -77,7 +77,7 @@ Because both seams are interfaces, a test builds a real `Manager` -- real
 
 - **`fakeSystemOps`** (`app/service_test.go`) -- a **recording** fake for the
   `app` package's own tests: it stores created/deleted/renamed users, written
-  authorized_keys, scaffolds, uids, and the port-rule sets it was handed, so a test
+  authorized_keys, skeletons, uids, and the port-rule sets it was handed, so a test
   can assert *what the Manager asked the host to do* without a host. `newTestManager`
   (`app/service_test.go`) wires it with a temp-dir config, a temp SQLite store, and
   a fake runner, and hands back both the `Manager` and the `fakeSystemOps` so the

@@ -55,7 +55,7 @@ sequenceDiagram
     D->>S: allocate a free port
     D->>OS: btrfs subvolume for the home (id-keyed), then useradd --no-create-home
     D->>OS: write authorized_keys (owner's profile keys)
-    D->>OS: scaffold hostit.yml, README.md, .hushlogin
+    D->>OS: write skeleton hostit.yml, README.md, .hushlogin
     D->>S: register app + mint an app-scoped token
     D->>OS: nftables: port 10000 to uid 0 and the app base uid
     D-->>U: 201 {url, ssh, agent_token}
@@ -68,7 +68,7 @@ sequenceDiagram
 An app that fails to start still exists: its URL shows hostit's "not running" page
 rather than a dead hostname, and the owner can fix `hostit.yml` and deploy. Fork is
 the same flow, except the home is seeded from a writable btrfs snapshot of the source
-instead of the scaffold (`app/service.go:Fork`).
+instead of the skeleton (`app/service.go:Fork`).
 
 ## Serving a request
 

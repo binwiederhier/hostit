@@ -188,7 +188,7 @@ Kept briefly for context; prune when stale.
   into `server/server_handler_<topic>.go` over the service packages; floating test
   files folded to mirror their source. CLI cleaned up: `hostit internal assistant`
   (was `assistant-poc`), internal commands hidden, regexes moved to their packages,
-  scaffold + error page + workspace Containerfile moved to `go:embed`. Assistant
+  skeleton + error page + workspace Containerfile moved to `go:embed`. Assistant
   package owns the Claude/Anthropic + subscription-sandbox integration. Web: app
   name in the title, fixed the stuck rename snackbar, always-fresh preview pane
   (proxy no-store on `?hostit_preview=`), and a friendlier "paused" step-limit note.

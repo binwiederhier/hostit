@@ -1,7 +1,7 @@
 // Package unixuser manages the Unix user account (and matching group) hostit
 // creates per app: creation without an /etc/skel copy, uid/gid lookup, rename,
 // remap to a new id block, and a robust delete that reaps lingering processes. It
-// also writes the app's initial home scaffold and hands home paths to the app user.
+// also writes the app's initial home skeleton and hands home paths to the app user.
 // Everything here shells out to the usual account tools and must run as root.
 package unixuser
 
@@ -193,8 +193,8 @@ func (s *Service) removeGroup(name string) {
 	}
 }
 
-// WriteScaffold writes initial files into the app home, never overwriting existing ones
-func (s *Service) WriteScaffold(username, home string, files map[string]string) error {
+// WriteSkeleton writes initial files into the app home, never overwriting existing ones
+func (s *Service) WriteSkeleton(username, home string, files map[string]string) error {
 	uid, gid, err := lookupIDs(username)
 	if err != nil {
 		return err
@@ -208,7 +208,7 @@ func (s *Service) WriteScaffold(username, home string, files map[string]string) 
 		if _, err := root.Lstat(name); err == nil {
 			continue
 		}
-		// Scaffold paths may be nested (public/index.html), and each directory
+		// Skeleton paths may be nested (public/index.html), and each directory
 		// created on the way has to belong to the app user too
 		if dir := path.Dir(name); dir != "." {
 			if err := root.MkdirAll(dir, 0o755); err != nil {

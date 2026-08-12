@@ -67,7 +67,7 @@ func TestAgentAppInfoIncludesReadmeAndFiles(t *testing.T) {
 	token := newAppToken(t, s, "blog")
 	require.NoError(t, s.apps.WriteReadme("blog", "# blog\n\nThe finance dashboard.\n"))
 	require.NoError(t, s.apps.WriteFile("blog", "index.html", []byte("<h1>hi</h1>"), 0))
-	// The no-op system ops in these tests does not scaffold, so write the config
+	// The no-op system ops in these tests does not write a skeleton, so write the config
 	require.NoError(t, s.apps.WriteFile("blog", "hostit.yml", []byte("mode: app\nrun: python3 -m http.server $PORT\n"), 0))
 	rr := request(t, s.API(), "GET", "/api/apps/blog/info", "", token)
 	require.Equal(t, http.StatusOK, rr.Code)

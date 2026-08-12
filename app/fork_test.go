@@ -32,9 +32,9 @@ func TestForkSeedsHomeFromSourceAndDeploys(t *testing.T) {
 	assert.Contains(t, r.ran(), "btrfs subvolume snapshot "+m.appHome("blog")+" "+m.appHome("blog2"))
 	assert.NotContains(t, r.ran(), "btrfs subvolume snapshot -r "+m.appHome("blog")+" "+m.appHome("blog2"))
 
-	// A user is created, but no demo scaffold is written (the fork keeps the source's files).
+	// A user is created, but no demo skeleton is written (the fork keeps the source's files).
 	assert.Contains(t, ops.createdUsers, "blog2")
-	assert.Empty(t, ops.scaffolds["blog2"], "a fork keeps the source's files, no demo scaffold")
+	assert.Empty(t, ops.skeletons["blog2"], "a fork keeps the source's files, no demo skeleton")
 
 	// The app is registered and deploys; its home is chowned to the new uid.
 	_, err = m.store.App("blog2")

@@ -29,7 +29,7 @@ app costs almost nothing up front.
 
 The design reuses the create path exactly (`app/service.go:create`, shared by
 `CreateApp` and `Fork`): a fork is "create, but seed the home from a subvolume
-instead of writing the demo scaffold". This keeps the two operations honest with each
+instead of writing the demo skeleton". This keeps the two operations honest with each
 other -- a fork gets the same validation, port allocation, uid block, keys, limits and
 background start as any new app; only the home contents differ.
 
@@ -83,9 +83,9 @@ sequenceDiagram
   source's per-app lock (so its home/snapshot is not rolled back or deleted mid-copy),
   and delegates to `create(newName, opts, seedPath)`.
 - **`create` with a seed** (`app/service.go:create`, `forking := seedPath != ""`):
-  - Instead of `CreateSubvolume` + scaffold, it makes a **writable** btrfs snapshot of
+  - Instead of `CreateSubvolume` + skeleton, it makes a **writable** btrfs snapshot of
     the seed into the new app's id-keyed home (`btrfs.Snapshot(seedPath, home, false)`).
-  - It skips `WriteScaffold` (a fork keeps the source's files, including its
+  - It skips `WriteSkeleton` (a fork keeps the source's files, including its
     `hostit.yml`, `README.md` and data).
   - After registering the app, it `chown -R`s the forked home to the new app's uid
     (`uidFor(port)`), because the copied files are owned by the source's uid.

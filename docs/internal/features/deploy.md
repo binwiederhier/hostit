@@ -138,13 +138,13 @@ sequenceDiagram
   Containerfile change only affects new apps.
 - **CLI static server:** `cmd/app.go:execStatic` (`hostit static`) serves `~/public`
   with `appctl.StaticHandler`; this is what a `mode: static` app runs, including a
-  brand-new app (whose scaffold ships `public/index.html`, the placeholder).
+  brand-new app (whose skeleton ships `public/index.html`, the placeholder).
 - **Serialization:** image builds and `/run` execs are each serialized behind a
   mutex (`buildMu`, `execMu`) because two at once would OOM a one-core box.
 
 ## Other notes
 
-- **The scaffold** a new app gets (`app/scaffold/hostit.yml`) is `mode: static`, and
+- **The skeleton** a new app gets (`app/skeleton/hostit.yml`) is `mode: static`, and
   ships a `public/index.html` placeholder, with the `mode: app` alternative documented
   inline as comments. So a brand-new app already serves the placeholder page; see
   [placeholder.md](placeholder.md).

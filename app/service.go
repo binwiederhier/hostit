@@ -1,5 +1,5 @@
 // Package app orchestrates the lifecycle of hostit apps: the per-app Unix user, SSH
-// keys, port allocation, home scaffold and container. Node-local system interaction
+// keys, port allocation, home skeleton and container. Node-local system interaction
 // is delegated to focused service packages (btrfs, systemd, container) plus the
 // SystemOps interface, all injected so they can be faked in tests. Keeping these
 // services separable is also the seam a future control/app-node split would use.
@@ -81,7 +81,7 @@ type SystemOps interface {
 	KillUserProcesses(username string) error
 	DeleteUser(username string) error
 	WriteAuthorizedKeys(username, home string, keys []string) error
-	WriteScaffold(username, home string, files map[string]string) error
+	WriteSkeleton(username, home string, files map[string]string) error
 	ChownToUserIn(root *os.Root, username, rel string) error
 	ApplyPortRules(rules []PortRule) error
 }
@@ -177,7 +177,7 @@ func (m *Manager) lockApp(name string) func() {
 }
 
 // CreateApp registers a new app: it allocates a port, creates the Unix user with
-// SSH access and scaffolds the home directory. Its authorized_keys are the union
+// SSH access and writes the home skeleton. Its authorized_keys are the union
 // of the request keys and the owner's profile keys; an app with neither is fine,
 // since apps are driven through the API and SSH is opt-in.
 func (m *Manager) CreateApp(name string, opts *CreateOptions) (*store.App, error) {
@@ -186,7 +186,7 @@ func (m *Manager) CreateApp(name string, opts *CreateOptions) (*store.App, error
 
 // Fork duplicates an existing app into a new one: the new app's home is seeded
 // from a writable btrfs snapshot of the source (its files, config and data) rather
-// than the demo scaffold. snapshotID picks a specific snapshot to seed from; empty
+// than the demo skeleton. snapshotID picks a specific snapshot to seed from; empty
 // means the source's current home. The fork gets its own port, Unix user, subdomain
 // and container. Requires btrfs (the snapshot primitive it relies on).
 func (m *Manager) Fork(source, newName, snapshotID string, opts *CreateOptions) (*store.App, error) {
@@ -214,9 +214,9 @@ func (m *Manager) Fork(source, newName, snapshotID string, opts *CreateOptions) 
 	return m.create(newName, opts, seedPath)
 }
 
-// create registers a new app. With seedPath == "" it scaffolds the demo app; with
-// a seedPath (a subvolume: an app's home or a snapshot) it forks -- seeding the home
-// from a writable snapshot of that path and skipping the scaffold. Either way it
+// create registers a new app. With seedPath == "" it writes the demo app's skeleton;
+// with a seedPath (a subvolume: an app's home or a snapshot) it forks -- seeding the
+// home from a writable snapshot of that path and skipping the skeleton. Either way it
 // allocates a port, creates the Unix user with SSH access, registers the app and
 // starts it in the background. The authorized_keys are the union of the request keys
 // and the owner's profile keys; an app with neither is fine, since apps are driven
@@ -251,7 +251,7 @@ func (m *Manager) create(name string, opts *CreateOptions, seedPath string) (*st
 	home := m.appHomeByID(app.ID)
 	// Seed the home. A fork is a writable snapshot of the seed subvolume (an instant
 	// CoW copy of its files); a fresh app is an empty subvolume on btrfs that the
-	// scaffold then fills. Either directory is adopted by useradd, whose own mkdir
+	// skeleton then fills. Either directory is adopted by useradd, whose own mkdir
 	// is a no-op.
 	if forking {
 		if err := m.btrfs.Snapshot(seedPath, home, false); err != nil {
@@ -284,11 +284,11 @@ func (m *Manager) create(name string, opts *CreateOptions, seedPath string) (*st
 		cleanup()
 		return nil, fmt.Errorf("cannot write authorized keys for %s: %w", name, err)
 	}
-	// A fork keeps the source's files; only a fresh app gets the demo scaffold.
+	// A fork keeps the source's files; only a fresh app gets the demo skeleton.
 	if !forking {
-		if err := m.ops.WriteScaffold(name, home, scaffoldFiles(name, m.URL(&store.App{Name: name, Port: port}), WorkspaceRuntimes)); err != nil {
+		if err := m.ops.WriteSkeleton(name, home, skeletonFiles(name, m.URL(&store.App{Name: name, Port: port}), WorkspaceRuntimes)); err != nil {
 			cleanup()
-			return nil, fmt.Errorf("cannot write scaffold for %s: %w", name, err)
+			return nil, fmt.Errorf("cannot write skeleton for %s: %w", name, err)
 		}
 	}
 

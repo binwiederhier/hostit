@@ -112,7 +112,7 @@ sequenceDiagram
     User->>S: POST /api/apps {name}
     S->>M: CreateApp
     M->>M: allocate port, derive uid block
-    M->>Sys: create Unix user + group, scaffold home
+    M->>Sys: create Unix user + group, write home skeleton
     M->>M: write hostit.yml + public/index.html (static placeholder)
     M-->>S: app (running), agent token
     S-->>User: 201 + URL, already serving the placeholder

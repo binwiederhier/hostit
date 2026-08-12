@@ -7,9 +7,9 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestScaffoldFiles(t *testing.T) {
+func TestSkeletonFiles(t *testing.T) {
 	t.Parallel()
-	files := scaffoldFiles("blog", "https://blog.apps.example.com", "Go, Python")
+	files := skeletonFiles("blog", "https://blog.apps.example.com", "Go, Python")
 	// The app directory holds the app's files and nothing of hostit's own: the
 	// platform explains itself through the login banner, "hostit guide" and /docs
 	assert.NotContains(t, files, "HOSTIT.txt")

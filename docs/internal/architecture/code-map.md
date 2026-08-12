@@ -13,7 +13,7 @@ all of these; which commands it offers depends on where it runs (see
 | `btrfs` | subvolumes, read-only snapshots, reflink copies, qgroup disk quotas |
 | `container` | podman: create, exec, remove, image build/list; runs app containers with idmapped mounts |
 | `systemd` | per-app unit lifecycle (enable, start, restart, reset-failed) |
-| `unixuser` | Unix user and home creation, rename, teardown; scaffold writes |
+| `unixuser` | Unix user and home creation, rename, teardown; skeleton writes |
 | `ssh` | an app's `authorized_keys` (managed-block merge, root-scoped write) and SSH public-key validation |
 | `firewall` | nftables per-app loopback port rules |
 | `run` | the shared `Runner` interface every service uses to shell out on the host |
@@ -44,7 +44,7 @@ flowchart TB
     mgr --> ops["SystemOps (interface)<br/><i>injected; faked in tests</i>"]
 
     ops -.->|"real impl:<br/>app/system.go NewSystemOps"| sysops["systemOps facade"]
-    sysops --> unixuser["unixuser.Service<br/>accounts, homes, scaffold"]
+    sysops --> unixuser["unixuser.Service<br/>accounts, homes, skeleton"]
     sysops --> ssh["ssh.Service<br/>authorized_keys"]
     sysops --> firewall["firewall.Service<br/>nftables"]
 
@@ -78,8 +78,8 @@ literals:
 | Built web SPA | `server/site/` | `server/web.go` (a placeholder is checked in so the package always compiles) |
 | 404 "nothing here" page | `server/errorpage.html` | `server/errorpage.go` |
 | Workspace image recipe | `app/workspace.Containerfile` | `app/workspace.go` |
-| App scaffold (`hostit.yml`, README) | `app/scaffold/` | `app/scaffold.go` |
-| New-app placeholder page | `app/scaffold/public/index.html` | `app/scaffold.go` (served as a `mode: static` app) |
+| App skeleton (`hostit.yml`, README) | `app/skeleton/` | `app/skeleton.go` |
+| New-app placeholder page | `app/skeleton/public/index.html` | `app/skeleton.go` (served as a `mode: static` app) |
 
 The SPA is a separate app under `web/`; `make web` builds it and copies the output
 into `server/site/`, which `server/web.go` bakes into the binary. The SPA, REST API,
