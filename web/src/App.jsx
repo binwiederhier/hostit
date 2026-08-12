@@ -93,7 +93,7 @@ const AppsMenu = () => {
                 onClick={() => setOpen(false)}
               >
                 <StatusDot running={a.running} appRunning={a.app_running} />
-                <span className="mono">{a.name}</span>
+                <span>{a.name}</span>
               </Link>
             ))}
           {apps && apps.length > 0 && <div className="nav-apps-div" />}
@@ -185,7 +185,7 @@ const Nav = ({ account, appHeader }) => {
               <path d="M9.5 3.5 5 8l4.5 4.5" />
             </svg>
           </Link>
-          <span className="nav-appid-name mono">{appHeader.name}</span>
+          <span className="nav-appid-name">{appHeader.name}</span>
           <StatusDot running={appHeader.running} appRunning={appHeader.appRunning} appState={appHeader.appState} pending={appHeader.pending} />
         </div>
       )}
@@ -197,7 +197,7 @@ const Nav = ({ account, appHeader }) => {
           <NavLink to="/profile">Profile</NavLink>
           {account.role === "admin" && <NavLink to="/admin">Admin</NavLink>}
           {/* A reference you read alongside the app, so: its own tab */}
-          <a href="/docs" target="_blank" rel="noreferrer">
+          <a href="/docs/user" target="_blank" rel="noreferrer">
             Docs
           </a>
         </nav>
@@ -288,7 +288,7 @@ const ProfileMenu = ({ account }) => {
                 Admin
               </NavLink>
             )}
-            <a href="/docs" target="_blank" rel="noreferrer" role="menuitem" onClick={close}>
+            <a href="/docs/user" target="_blank" rel="noreferrer" role="menuitem" onClick={close}>
               Docs
             </a>
           </div>
@@ -325,7 +325,7 @@ const App = () => {
   const [appHeader, setAppHeader] = useState(null); // the app page's identity, for the mobile nav
   // The docs describe the instance, not the account, so they open without one:
   // they are a link people share, and a tab they leave open next to the app
-  const docsOnly = window.location.pathname === "/docs";
+  const docsOnly = window.location.pathname === "/docs" || window.location.pathname.startsWith("/docs/");
   // The popped-out terminal is its own bare, dark window: no nav, no account gate
   // (the WebSocket carries the same cookie). Rendering it before the gate keeps the
   // app chrome from flashing on a white page while the account and xterm chunk load.
@@ -374,7 +374,7 @@ const App = () => {
   }
   if (docsOnly) {
     return (
-      <main className="container">
+      <main className="container docs-container">
         <Docs />
       </main>
     );
