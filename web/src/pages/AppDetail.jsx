@@ -1392,7 +1392,7 @@ const AppDetail = ({ account, refreshAccount }) => {
   const setAppHeader = useSetAppHeader();
   useEffect(() => {
     if (app) {
-      setAppHeader({ name: app.name, running: app.running, appRunning: app.app_running, pending: !!pending || refreshing });
+      setAppHeader({ name: app.name, running: app.running, appRunning: app.app_running, appState: app.app_state, pending: !!pending || refreshing });
     }
   }, [app, pending, refreshing, setAppHeader]);
   useEffect(() => () => setAppHeader(null), [setAppHeader]);
@@ -1599,6 +1599,9 @@ const AppDetail = ({ account, refreshAccount }) => {
   // always fetches the live app rather than the browser's cached copy.
   const previewSrc = app.url + (app.url.includes("?") ? "&" : "?") + "hostit_preview=" + previewKey;
 
+  // A crash loop that gave up: container up, but the app failed repeatedly and
+  // hostit stopped restarting it. Worth calling out in red, not the neutral amber.
+  const crashed = app.running && app.app_state === "failed";
   // "Running" is the unremarkable state, so it is left unsaid; only the states
   // worth noticing get a label.
   const statusText = pending
@@ -1607,9 +1610,11 @@ const AppDetail = ({ account, refreshAccount }) => {
       ? "Refreshing preview"
       : !app.running
         ? "Powered off"
-        : app.app_running
-          ? ""
-          : "App stopped";
+        : crashed
+          ? "App crashed"
+          : app.app_running
+            ? ""
+            : "App stopped";
   const statusPending = !!pending || refreshing;
 
   return (
@@ -1624,7 +1629,7 @@ const AppDetail = ({ account, refreshAccount }) => {
           </Link>
           <div className="ws-idrow">
             <span className="ws-name">{app.name}</span>
-            <StatusDot running={app.running} appRunning={app.app_running} pending={statusPending} />
+            <StatusDot running={app.running} appRunning={app.app_running} appState={app.app_state} pending={statusPending} />
             {pending ? (
               <span className="status-label status-label-pending">
                 {pending.label}
@@ -1636,7 +1641,7 @@ const AppDetail = ({ account, refreshAccount }) => {
               </span>
             ) : (
               statusText && (
-                <span className={"status-label" + (refreshing ? " status-label-pending" : "")}>{statusText}</span>
+                <span className={"status-label" + (refreshing ? " status-label-pending" : "") + (crashed ? " status-label-crashed" : "")}>{statusText}</span>
               )
             )}
           </div>

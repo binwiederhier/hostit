@@ -196,7 +196,7 @@ const UserRow = ({ user, defaults, catalog, externalConfigured, onPatch, onDelet
 const AppRow = ({ app }) => (
   <tr>
     <td>
-      <StatusDot running={app.running} appRunning={app.app_running} />
+      <StatusDot running={app.running} appRunning={app.app_running} appState={app.app_state} />
       <Link className="mono app-link" to={`/app/${app.name}`}>
         {app.name}
       </Link>

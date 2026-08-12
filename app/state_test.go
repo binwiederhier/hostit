@@ -90,6 +90,27 @@ func TestStatesReportsAppProcessState(t *testing.T) {
 	assert.False(t, states["off"].Running)
 }
 
+func TestStatesReportsCrashedAppState(t *testing.T) {
+	t.Parallel()
+	m, _, runner := newTestDeployManager(t)
+	createTestApp(t, m, "crashed") // container up, agent gave up after a crash loop
+	createTestApp(t, m, "up")      // container up, app running
+	createTestApp(t, m, "off")     // container down
+	writeAppFile(t, m, "crashed", "log/state", "failed\n")
+	writeAppFile(t, m, "up", "log/state", "running\n")
+	runner.returns("systemctl is-active", "active\nactive\ninactive\n")
+
+	states := m.States([]string{"crashed", "up", "off"})
+	require.Len(t, states, 3)
+	// The breadcrumb value, not just a bool, so the UI can distinguish a crash loop
+	// that gave up from a plain stop.
+	assert.Equal(t, "failed", states["crashed"].AppState, "the crash-loop give-up state reaches the UI")
+	assert.False(t, states["crashed"].AppRunning, "a crashed app is not serving")
+	assert.Equal(t, "running", states["up"].AppState)
+	assert.True(t, states["up"].AppRunning)
+	assert.Equal(t, "", states["off"].AppState, "a down container has no app process state")
+}
+
 func TestStatesReportsStartTimes(t *testing.T) {
 	t.Parallel()
 	m, _, runner := newTestDeployManager(t)

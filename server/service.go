@@ -320,6 +320,7 @@ func (s *Server) withState(resp []*apiAppResponse) []*apiAppResponse {
 	for _, r := range resp {
 		state := states[r.Name]
 		r.Running, r.AppRunning, r.MemoryMB = state.Running, state.AppRunning, state.MemoryMB
+		r.AppState = state.AppState
 		r.CPUPercent = state.CPUPercent
 		r.StartedAt, r.AppStartedAt = state.StartedAt, state.AppStartedAt
 		r.MemoryLimit, r.DiskLimit = s.appLimits(r.Name)

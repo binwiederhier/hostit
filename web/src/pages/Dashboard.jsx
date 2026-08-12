@@ -120,7 +120,10 @@ const avatarStyle = (id) => {
 // One app as a card: identity, live status, description, resource bars, actions.
 const AppCard = ({ app }) => {
   const running = app.running;
-  const status = running ? "running" : "powered off";
+  // A crash loop that gave up shows red "crashed", not the green "running" its
+  // still-up container would otherwise imply.
+  const crashed = running && app.app_state === "failed";
+  const status = crashed ? "crashed" : running ? "running" : "powered off";
   // Prefer a verified custom domain over the default subdomain for the link.
   const publicUrl = app.custom_domain ? `https://${app.custom_domain}` : app.url;
   const publicHost = app.custom_domain || app.url.replace(/^https?:\/\//, "");
@@ -134,7 +137,7 @@ const AppCard = ({ app }) => {
           <a className="appcard-url" href={publicUrl} target="_blank" rel="noreferrer">{publicHost}</a>
         </div>
       </div>
-      <span className={"appcard-pill" + (running ? "" : " off")}>
+      <span className={"appcard-pill" + (crashed ? " crashed" : running ? "" : " off")}>
         <span className="appcard-dot" />
         {status}
       </span>

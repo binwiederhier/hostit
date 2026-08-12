@@ -309,3 +309,17 @@ func TestRestartPlan(t *testing.T) {
 	assert.True(t, giveUp)
 	assert.Equal(t, crashLimit, n)
 }
+
+func TestLogNoticeWritesFramedLineToAppLog(t *testing.T) {
+	a, home := newTestAgent(t)
+	if _, err := a.openLog(); err != nil {
+		t.Fatal(err)
+	}
+	// A hostit-generated notice lands in the app log (Logs tab), timestamped and
+	// tagged, so a crash-loop give-up is visible next to the output that caused it.
+	a.logNotice("App crashed %d times in a row; giving up.", crashLimit)
+	a.closeLog()
+	b, err := os.ReadFile(filepath.Join(home, "log", "app.log"))
+	require.NoError(t, err)
+	assert.Contains(t, string(b), "[hostit] App crashed 5 times in a row; giving up.")
+}

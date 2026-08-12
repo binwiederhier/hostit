@@ -37,9 +37,20 @@ export const CopyButton = ({ text, small = true, disabled = false, children }) =
 // (booted but not serving), red when the container is down, and a pulsing blue
 // while a lifecycle action is in flight. The title carries the state for anyone
 // who cannot see the color.
-export const StatusDot = ({ running, appRunning, pending }) => {
+export const StatusDot = ({ running, appRunning, appState, pending }) => {
   if (pending) {
     return <span className="status-dot status-pending" title="working" />;
+  }
+  // A crash loop that gave up: the container is up but the app failed repeatedly
+  // and hostit stopped restarting it. Distinct from a plain "container up, app
+  // stopped" -- it is a problem, not an idle state.
+  if (running && appState === "failed") {
+    return (
+      <span
+        className="status-dot status-crashed"
+        title="App crashed: it failed repeatedly, so hostit stopped restarting it. Check the logs, then redeploy or start it."
+      />
+    );
   }
   const cls = !running ? "status-down" : appRunning ? "status-up" : "status-degraded";
   const title = !running ? "stopped" : appRunning ? "running" : "container up, app stopped";

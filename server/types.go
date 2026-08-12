@@ -58,6 +58,7 @@ type apiAppResponse struct {
 
 	Running          bool   `json:"running"`        // The app's container is up
 	AppRunning       bool   `json:"app_running"`    // The run: command inside it is up
+	AppState         string `json:"app_state"`      // Agent breadcrumb: running/crashed/failed/stopped/idle, "" if the container is down
 	StartedAt        int64  `json:"started_at"`     // Unix seconds the container last started
 	AppStartedAt     int64  `json:"app_started_at"` // Unix millis the run: process last changed state
 	OwnerEmail       string `json:"owner_email,omitempty"`

@@ -133,6 +133,7 @@ func (a *Agent) Run() error {
 				// hammer the box forever; the owner fixes it and redeploys/starts.
 				slog.Error("App keeps crashing; stopping restarts until it is redeployed or started",
 					"crashes", a.crashes, "lastStatus", exit.status)
+				a.logNotice("App crashed %d times in a row; giving up on automatic restarts. Fix the app, then redeploy or start it.", crashLimit)
 				a.writeState("failed")
 				a.crashes = 0
 				if !a.waitWake() {
@@ -433,6 +434,18 @@ func (a *Agent) openLog() (*appLog, error) {
 	}
 	a.logFile = log
 	return log, nil
+}
+
+// logNotice writes a hostit-generated line into the app log, timestamped like the
+// app's own output and tagged [hostit], so operational events the owner needs to
+// see (a crash-loop give-up) show up in the Logs tab next to the output that caused
+// them. A closed log is a silent no-op.
+func (a *Agent) logNotice(format string, args ...any) {
+	if a.logFile == nil {
+		return
+	}
+	line := time.Now().Format(logTimeFormat) + " [hostit] " + fmt.Sprintf(format, args...) + "\n"
+	_, _ = a.logFile.Write([]byte(line))
 }
 
 // logTimeFormat stamps each app-log line. Space-separated, no brackets, so it

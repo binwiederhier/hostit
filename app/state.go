@@ -36,12 +36,17 @@ const (
 // running state it was in before, so the UI waits for a start time newer than the
 // one it saw when the action was issued.
 type State struct {
-	Running      bool  `json:"running"`        // The container's systemd unit is active
-	AppRunning   bool  `json:"app_running"`    // The run: command inside it is up
-	MemoryMB     int   `json:"memory_mb"`      // Current container memory use in MB
-	CPUPercent   int   `json:"cpu_percent"`    // Current container CPU use in whole percent (may exceed 100 on multiple cores)
-	StartedAt    int64 `json:"started_at"`     // Unix seconds the container last started (0 if down)
-	AppStartedAt int64 `json:"app_started_at"` // Unix millis the run: process last changed state (0 if never)
+	Running    bool `json:"running"`     // The container's systemd unit is active
+	AppRunning bool `json:"app_running"` // The run: command inside it is up
+	// AppState is the agent's breadcrumb verbatim ("running", "crashed", "failed",
+	// "stopped", "idle"), or "" when the container is down. It lets the UI tell a
+	// crash loop that gave up ("failed") apart from a plain stop, which AppRunning
+	// alone cannot.
+	AppState     string `json:"app_state"`
+	MemoryMB     int    `json:"memory_mb"`      // Current container memory use in MB
+	CPUPercent   int    `json:"cpu_percent"`    // Current container CPU use in whole percent (may exceed 100 on multiple cores)
+	StartedAt    int64  `json:"started_at"`     // Unix seconds the container last started (0 if down)
+	AppStartedAt int64  `json:"app_started_at"` // Unix millis the run: process last changed state (0 if never)
 }
 
 // CachedStates returns the last known state of the given apps immediately and,
@@ -166,10 +171,11 @@ func (m *Manager) States(names []string) map[string]State {
 	for name, running := range m.runningStates(names) {
 		// The app can only be up if its container is; a stopped or crashed app
 		// leaves the container running but reports something other than "running".
-		appRunning, appStartedAt := m.appProcessState(name)
+		appState, appStartedAt := m.appProcessState(name)
 		states[name] = State{
 			Running:      running,
-			AppRunning:   running && appRunning,
+			AppRunning:   running && appState == "running",
+			AppState:     appStateFor(running, appState),
 			StartedAt:    starts[name],
 			AppStartedAt: appStartedAt,
 		}
@@ -188,27 +194,37 @@ type usage struct {
 	cpuPercent int
 }
 
-// appProcessState reads the breadcrumb the agent leaves: whether the run: process
-// is up, and the time it last changed state (the file's mtime, bumped on every
-// start/stop/crash). The time lets the UI see an app restart, which otherwise
-// looks identical to no change. Anything unreadable means "not running", which is
-// the safe default (the app is not serving).
-func (m *Manager) appProcessState(name string) (running bool, startedAt int64) {
+// appProcessState reads the breadcrumb the agent leaves: the run: process state
+// ("running", "crashed", "failed", "stopped", "idle") and the time it last changed
+// (the file's mtime, bumped on every start/stop/crash). The time lets the UI see an
+// app restart, which otherwise looks identical to no change. Anything unreadable
+// means "" -- not serving, the safe default (the app is not up).
+func (m *Manager) appProcessState(name string) (state string, startedAt int64) {
 	root, err := m.homefs.OpenRoot(m.appHome(name))
 	if err != nil {
-		return false, 0
+		return "", 0
 	}
 	defer root.Close()
 	b, err := m.homefs.ReadCapped(root, appStateFile, maxStateRead)
 	if err != nil {
-		return false, 0
+		return "", 0
 	}
 	// Milliseconds, not seconds: a restart of an app that started less than a second
 	// ago would otherwise land in the same second and look like nothing changed.
 	if stat, err := root.Stat(appStateFile); err == nil {
 		startedAt = stat.ModTime().UnixMilli()
 	}
-	return strings.TrimSpace(string(b)) == "running", startedAt
+	return strings.TrimSpace(string(b)), startedAt
+}
+
+// appStateFor is the app process state the UI shows. A down container has no app
+// process, so it is blank regardless of a stale breadcrumb; otherwise it is the
+// agent's breadcrumb verbatim.
+func appStateFor(containerRunning bool, breadcrumb string) string {
+	if !containerRunning {
+		return ""
+	}
+	return breadcrumb
 }
 
 // containerStartTimes reports when each app's container last started, as Unix
