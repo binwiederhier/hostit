@@ -1,21 +1,27 @@
-# Code-walkthrough slides
+# Slides
 
-A [Sli.dev](https://sli.dev/) presentation that walks through hostit: what it is, the
-isolation model, the main flows, the code map, and the key subsystems. It is a
-distilled tour of `docs/internal/` -- when those docs change, update `slides.md` too.
+Two [Sli.dev](https://sli.dev/) presentations live here:
+
+- **`slides.md`** -- a **code overview** for developers: the package structure, how
+  `app.Manager` composes the services, the test seam, and the main flows. A distilled
+  tour of `docs/internal/`; when those docs change, update `slides.md` too.
+- **`intro.md`** -- an **introduction** for a general audience: what hostit is, its
+  features (with UI screenshots), and who made it. Screenshots live in `public/` and
+  are copies of `web/src/assets/docs/*.png`; re-copy them if the UI changes.
 
 ## Run it
 
 ```sh
 cd docs/internal/slides
 npm install
-npm run dev        # opens http://localhost:3030
+npm run dev                 # code overview -> http://localhost:3030
+npx slidev intro.md         # intro deck    -> http://localhost:3030
 ```
 
 Or without installing anything locally:
 
 ```sh
-npx @slidev/cli docs/internal/slides/slides.md --open
+npx @slidev/cli docs/internal/slides/slides.md --open   # or intro.md
 ```
 
 ## Export
