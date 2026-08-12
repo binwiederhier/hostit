@@ -71,12 +71,12 @@ func (m *Manager) takeSnapshot(name, label string, auto bool) (*store.Snapshot, 
 	if err := os.MkdirAll(m.snapshotsRoot(name), snapshotDirMode); err != nil {
 		return nil, err
 	}
-	if err := m.snapshotSubvolume(m.appHome(name), m.snapshotPath(name, id), true); err != nil {
+	if err := m.btrfs.Snapshot(m.appHome(name), m.snapshotPath(name, id), true); err != nil {
 		return nil, fmt.Errorf("cannot snapshot the app home: %w", err)
 	}
 	snap := &store.Snapshot{ID: id, AppName: name, Label: label, CreatedAt: now, Auto: auto}
 	if err := m.store.AddSnapshot(snap); err != nil {
-		_ = m.deleteSubvolume(m.snapshotPath(name, id)) // do not leak an unrecorded subvolume
+		_ = m.btrfs.DeleteSubvolume(m.snapshotPath(name, id)) // do not leak an unrecorded subvolume
 		return nil, err
 	}
 
@@ -109,7 +109,7 @@ func (m *Manager) DeleteSnapshot(name, id string) error {
 	if snap.AppName != name {
 		return store.ErrSnapshotNotFound
 	}
-	if err := m.deleteSubvolume(m.snapshotPath(name, id)); err != nil {
+	if err := m.btrfs.DeleteSubvolume(m.snapshotPath(name, id)); err != nil {
 		return fmt.Errorf("cannot delete the snapshot subvolume: %w", err)
 	}
 	return m.store.DeleteSnapshot(id)
@@ -153,41 +153,41 @@ func (m *Manager) Rollback(name, id string) error {
 	// Stage the restored home from the target first, so the live home stays intact
 	// until the replacement is ready, and the content is safely captured before the
 	// safety snapshot's retention prune (which could remove the target).
-	_ = m.deleteSubvolume(staged) // clear any leftover from an aborted rollback
-	if err := m.snapshotSubvolume(m.snapshotPath(name, id), staged, false); err != nil {
+	_ = m.btrfs.DeleteSubvolume(staged) // clear any leftover from an aborted rollback
+	if err := m.btrfs.Snapshot(m.snapshotPath(name, id), staged, false); err != nil {
 		return fmt.Errorf("cannot stage the snapshot for rollback: %w", err)
 	}
 
 	// The safety snapshot is itself automatic (retention prunes it in time) and
 	// labelled so the owner can see what it captured.
 	if _, err := m.takeSnapshot(name, "Before rolling back to snapshot "+id, true); err != nil {
-		_ = m.deleteSubvolume(staged)
+		_ = m.btrfs.DeleteSubvolume(staged)
 		return fmt.Errorf("cannot take a safety snapshot before rolling back: %w", err)
 	}
 
 	// Stop and remove the container so nothing holds the home subvolume.
-	_, _ = m.runner.Run("systemctl", "disable", "--now", m.unitName(name))
-	_, _ = m.runner.Run("systemctl", "reset-failed", m.unitName(name))
-	_, _ = m.runner.Run("podman", "rm", "--force", m.containerName(name))
+	_ = m.systemd.DisableNow(m.unitName(name))
+	_ = m.systemd.ResetFailed(m.unitName(name))
+	_ = m.container.RemoveForce(m.containerName(name))
 
 	// Swap the staged home in. Move the old home aside first so the home always
 	// exists (old or new): if putting the new one in place fails, restore the old.
-	_ = m.deleteSubvolume(oldHome)
-	if err := m.moveSubvolume(home, oldHome); err != nil {
-		_ = m.deleteSubvolume(staged)
+	_ = m.btrfs.DeleteSubvolume(oldHome)
+	if err := m.btrfs.MoveSubvolume(home, oldHome); err != nil {
+		_ = m.btrfs.DeleteSubvolume(staged)
 		return fmt.Errorf("cannot move the current home aside: %w", err)
 	}
-	if err := m.moveSubvolume(staged, home); err != nil {
-		_ = m.moveSubvolume(oldHome, home) // put the original home back
+	if err := m.btrfs.MoveSubvolume(staged, home); err != nil {
+		_ = m.btrfs.MoveSubvolume(oldHome, home) // put the original home back
 		return fmt.Errorf("cannot put the restored home in place: %w", err)
 	}
-	_ = m.deleteSubvolume(oldHome)
+	_ = m.btrfs.DeleteSubvolume(oldHome)
 
 	uid := m.uidFor(a.Port)
 	if _, err := m.runner.Run("chown", "-R", fmt.Sprintf("%d:%d", uid, uid), home); err != nil {
 		slog.Warn("Cannot restore home ownership after rollback", "app", name, "error", err)
 	}
-	if err := m.setQuota(home, m.diskLimit(name)); err != nil {
+	if err := m.btrfs.SetQuota(home, m.diskLimit(name)); err != nil {
 		slog.Warn("Cannot restore quota after rollback", "app", name, "error", err)
 	}
 	// No extra pre-deploy snapshot: we already took the safety snapshot above.
@@ -204,7 +204,7 @@ func (m *Manager) pruneSnapshots(name string) {
 	}
 	_, prune := applyRetention(toRetentionSnaps(snaps), defaultRetention)
 	for _, p := range prune {
-		if err := m.deleteSubvolume(m.snapshotPath(name, p.ID)); err != nil {
+		if err := m.btrfs.DeleteSubvolume(m.snapshotPath(name, p.ID)); err != nil {
 			slog.Warn("Cannot delete pruned snapshot subvolume", "app", name, "id", p.ID, "error", err)
 			continue // keep the record so we retry, rather than orphan the subvolume
 		}
@@ -218,10 +218,10 @@ func (m *Manager) pruneSnapshots(name string) {
 func (m *Manager) deleteAppSubvolumes(name string) {
 	snaps, _ := m.store.Snapshots(name)
 	for _, s := range snaps {
-		_ = m.deleteSubvolume(m.snapshotPath(name, s.ID))
+		_ = m.btrfs.DeleteSubvolume(m.snapshotPath(name, s.ID))
 	}
 	_ = os.RemoveAll(m.snapshotsRoot(name))
-	_ = m.deleteSubvolume(m.appHome(name))
+	_ = m.btrfs.DeleteSubvolume(m.appHome(name))
 }
 
 // SnapshotLoop takes an automatic snapshot of every app on an interval (hourly),
@@ -256,6 +256,12 @@ func toRetentionSnaps(ss []*store.Snapshot) []Snapshot {
 		out[i] = Snapshot{ID: s.ID, App: s.AppName, Label: s.Label, CreatedAt: s.CreatedAt, Auto: s.Auto}
 	}
 	return out
+}
+
+// snapshotID builds a sortable, unique id from a timestamp: seconds precision plus
+// a short suffix so several snapshots in the same second do not collide.
+func snapshotID(t time.Time, suffix string) string {
+	return fmt.Sprintf("%s-%s", t.UTC().Format("20060102-150405"), suffix)
 }
 
 func snapshotKind(auto bool) string {

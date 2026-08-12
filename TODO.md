@@ -3,7 +3,7 @@
 Things worth doing, with enough context to pick up cold. Not a backlog of
 everything imaginable -- if it is not written down here it is not planned.
 
-## Phil notes
+## Phil notes - round 1 refactor
 
 Refactor:
 
@@ -29,6 +29,22 @@ Remember this and apply here: Server handlers should be in server/server_handler
 Remember this and apply: We should use go embed where applicable. The error page and container files and other large blobs of text are just raw strings.
 
 Remember this and apply: Unless there is a very good reason, we should not repeat raw strings that are identifiers or keys, e.g. "tool_use", "claude-sonnet-5", 
+
+## Phil notes 2
+
+- the assistant-poc CLI command should not be called that. 
+- review the cmd/ package and its commands. each command should be in its own file. subcommands should be in the top command file. i think this is largely like this already
+- make sure that internal commands (commands not to be used by users) are hidden to the user list. i'm wondering if internal commands should be in a "hostit internal ..." subcommand to make it clear what it does
+- keys.go could be in our own ssh/ package maybe, same for validateKeys or whatever its called
+- scaffold.go should use go embed, and then the scaffoldFiles doesn't have to live there. It seems like a non-member util function
+- should Runner be its own command/ package with the interface there? instead of redefining it everywhere
+- containerKeyRegex and other regexes should be defined in the relevant packages, and not in the cmd/
+- does the assistant package contain the claude.ai and anthropic console integration? if so, it should  
+- add browser-based e2e tests
+- should there be a snapshot/ service that sits on top of btrfs? and/or maybe a retention service, or fold that into the snapshot service? the retention should be tested
+- for the /info command, add a message that the generated app should add a /?preview=<counter> or something like that, so the assistant can always show an uptodate version
+- make the title show the app name "<app name> - hostit"
+- The "App renamed" snackbar never disappears
 
 ## Multi-node: a proxy node and hosting nodes
 

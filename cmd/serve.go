@@ -123,10 +123,11 @@ func execServe(c *cli.Context) error {
 		slog.Info("Cleaned up leftovers of apps that no longer exist", "apps", removed)
 	}
 
-	// Periodically measure disk usage and enforce the soft quota
+	// Periodically measure disk usage for the dashboard (btrfs qgroups do the
+	// actual enforcement at write time)
 	done := make(chan struct{})
 	defer close(done)
-	go manager.QuotaLoop(conf.DiskCheckInterval.Duration(), done)
+	go manager.DiskUsageLoop(conf.DiskCheckInterval.Duration(), done)
 	go manager.StateLoop(done)
 	// Hourly automatic snapshots (a no-op unless the apps filesystem is btrfs)
 	go manager.SnapshotLoop(time.Hour, done)

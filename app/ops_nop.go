@@ -78,14 +78,6 @@ func (o *NopSystemOps) ApplyPortRules(rules []PortRule) error {
 	return nil
 }
 
-func (o *NopSystemOps) ImageExists(tag string) bool {
-	return true
-}
-
-func (o *NopSystemOps) BuildImage(contextDir, tag string) error {
-	return nil
-}
-
 func (r *NopRunner) Run(args ...string) (string, error) {
 	return "", nil
 }

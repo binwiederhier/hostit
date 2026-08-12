@@ -245,7 +245,7 @@ func TestAppResponseIncludesUsageAndOwner(t *testing.T) {
 	require.NoError(t, err)
 	rr := request(t, s.API(), "POST", "/api/apps", `{"name":"blog"}`, token)
 	require.Equal(t, http.StatusCreated, rr.Code)
-	require.NoError(t, s.apps.Store().UpdateAppUsage("blog", 42, true))
+	require.NoError(t, s.apps.Store().UpdateAppUsage("blog", 42))
 
 	// The owner sees measured disk usage on their own app
 	rr = request(t, s.API(), "GET", "/api/apps", "", token)

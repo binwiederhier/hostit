@@ -1,8 +1,6 @@
 package app
 
 import (
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -35,65 +33,18 @@ func TestCreateAppSetsDiskQuotaOnBtrfs(t *testing.T) {
 	assert.Contains(t, r.ran(), "btrfs qgroup limit 512M "+m.appHome("blog"))
 }
 
-func TestCheckQuotasStopsOverQuotaApp(t *testing.T) {
+// RefreshDiskUsage records usage for the dashboard but never enforces: btrfs
+// qgroups hard-cap writes at SetDiskLimit time, so over-quota apps are not stopped.
+func TestRefreshDiskUsageRecordsUsageWithoutStopping(t *testing.T) {
 	t.Parallel()
 	m, _, runner := newTestDeployManager(t)
 	createTestApp(t, m, "blog")
 	writeAppFile(t, m, "blog", "big.bin", strings.Repeat("x", 3*1024*1024))
 	m.SetDiskLimit("blog", 1) // 1 MB limit, app uses ~3 MB
 	runner.reset()
-	require.NoError(t, m.CheckQuotas())
+	require.NoError(t, m.RefreshDiskUsage())
 	a, err := m.App("blog")
 	require.NoError(t, err)
-	assert.True(t, a.OverQuota)
-	assert.GreaterOrEqual(t, a.DiskMB, 3)
-	assert.Contains(t, runner.ran(), "systemctl stop "+m.unitName("blog"))
-}
-
-func TestCheckQuotasLeavesCompliantAppRunning(t *testing.T) {
-	t.Parallel()
-	m, _, runner := newTestDeployManager(t)
-	createTestApp(t, m, "blog")
-	writeAppFile(t, m, "blog", "small.bin", "hello")
-	m.SetDiskLimit("blog", 100)
-	runner.reset()
-	require.NoError(t, m.CheckQuotas())
-	a, err := m.App("blog")
-	require.NoError(t, err)
-	assert.False(t, a.OverQuota)
-	assert.NotContains(t, runner.ran(), "stop")
-}
-
-func TestCheckQuotasClearsFlagWhenCleanedUp(t *testing.T) {
-	t.Parallel()
-	m, _, runner := newTestDeployManager(t)
-	createTestApp(t, m, "blog")
-	writeAppFile(t, m, "blog", "big.bin", strings.Repeat("x", 3*1024*1024))
-	m.SetDiskLimit("blog", 1)
-	runner.reset()
-	require.NoError(t, m.CheckQuotas())
-	a, err := m.App("blog")
-	require.NoError(t, err)
-	require.True(t, a.OverQuota)
-	// User cleans up; the next check clears the flag
-	require.NoError(t, os.Remove(filepath.Join(m.appHome("blog"), "big.bin")))
-	runner.reset()
-	require.NoError(t, m.CheckQuotas())
-	a, err = m.App("blog")
-	require.NoError(t, err)
-	assert.False(t, a.OverQuota)
-}
-
-func TestCheckQuotasWithoutLimitIsNoOp(t *testing.T) {
-	t.Parallel()
-	m, _, runner := newTestDeployManager(t)
-	createTestApp(t, m, "blog")
-	writeAppFile(t, m, "blog", "big.bin", strings.Repeat("x", 3*1024*1024))
-	runner.reset()
-	require.NoError(t, m.CheckQuotas()) // No limit set for this app
-	a, err := m.App("blog")
-	require.NoError(t, err)
-	assert.False(t, a.OverQuota)
-	assert.GreaterOrEqual(t, a.DiskMB, 3) // Usage is still measured
-	assert.NotContains(t, runner.ran(), "stop")
+	assert.GreaterOrEqual(t, a.DiskMB, 3)                                     // usage recorded
+	assert.NotContains(t, runner.ran(), "systemctl stop "+m.unitName("blog")) // never stopped
 }

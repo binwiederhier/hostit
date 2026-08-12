@@ -15,7 +15,7 @@ import (
 // so systemd retries it forever against a container that is gone, and its
 // enable symlink starts it again after a reboot.
 func (m *Manager) ReconcileOrphans() []string {
-	out, err := m.runner.Run("systemctl", "list-units", unitTemplate+"*", "--all", "--no-legend", "--plain")
+	out, err := m.systemd.ListUnits(unitTemplate + "*")
 	if err != nil {
 		slog.Warn("Cannot list app units to reconcile", "error", err)
 		return nil
@@ -38,12 +38,12 @@ func (m *Manager) ReconcileOrphans() []string {
 			continue
 		}
 		unit := unitNameForID(id)
-		if _, err := m.runner.Run("systemctl", "disable", "--now", unit); err != nil {
+		if err := m.systemd.DisableNow(unit); err != nil {
 			slog.Warn("Cannot disable the unit of a deleted app", "id", id, "error", err)
 		}
 		// Without this the unit lingers in "failed" forever, which is how these
 		// are noticed in the first place
-		if _, err := m.runner.Run("systemctl", "reset-failed", unit); err != nil {
+		if err := m.systemd.ResetFailed(unit); err != nil {
 			slog.Debug("Cannot reset the unit of a deleted app", "id", id, "error", err)
 		}
 		removed = append(removed, id)
@@ -97,7 +97,7 @@ func (m *Manager) reconcileHomes(known map[string]bool) []string {
 // races the background start that follows creating one: if the start wins, it
 // leaves a container behind that nothing will ever run.
 func (m *Manager) reconcileContainers(known map[string]bool) []string {
-	out, err := m.runner.Run("podman", "ps", "--all", "--format", "{{.Names}}")
+	out, err := m.container.Names(true)
 	if err != nil {
 		slog.Warn("Cannot list containers to reconcile", "error", err)
 		return nil
@@ -108,7 +108,7 @@ func (m *Manager) reconcileContainers(known map[string]bool) []string {
 		if !ok || id == "" || known[id] {
 			continue
 		}
-		if _, err := m.runner.Run("podman", "rm", "--force", containerNameForID(id)); err != nil {
+		if err := m.container.RemoveForce(containerNameForID(id)); err != nil {
 			slog.Warn("Cannot remove the container of a deleted app", "id", id, "error", err)
 			continue
 		}

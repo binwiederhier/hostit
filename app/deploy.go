@@ -62,11 +62,11 @@ func (m *Manager) Ensure(name string) (string, error) {
 	if err != nil {
 		conf = nil // Fall back to an idle workspace
 	}
-	if _, err := m.runner.Run("podman", "container", "inspect", m.containerName(name), "--format", inspectHashFormat); err == nil {
+	if _, err := m.container.Inspect(m.containerName(name), inspectHashFormat); err == nil {
 		if m.isActive(name) {
 			return "workspace ready", nil
 		}
-		if _, err := m.runner.Run("systemctl", "enable", "--now", m.unitName(name)); err != nil {
+		if err := m.systemd.EnableNow(m.unitName(name)); err != nil {
 			return "", err
 		}
 		return "workspace started", nil
@@ -92,7 +92,7 @@ func (m *Manager) signalAgent(name, signal string) error {
 	if _, err := m.store.App(name); err != nil {
 		return err
 	}
-	if _, err := m.runner.Run("podman", "kill", "--signal", signal, m.containerName(name)); err != nil {
+	if err := m.container.Kill(m.containerName(name), signal); err != nil {
 		return fmt.Errorf("%w: the container is not running (power it on first)", ErrInvalid)
 	}
 	return nil
@@ -104,8 +104,7 @@ func (m *Manager) Down(name string) error {
 	if _, err := m.store.App(name); err != nil {
 		return err
 	}
-	_, err := m.runner.Run("systemctl", "disable", "--now", m.unitName(name))
-	return err
+	return m.systemd.DisableNow(m.unitName(name))
 }
 
 // Restart restarts the app's service (and thus its container)
@@ -114,8 +113,7 @@ func (m *Manager) Restart(name string) error {
 	if _, err := m.store.App(name); err != nil {
 		return err
 	}
-	_, err := m.runner.Run("systemctl", "restart", m.unitName(name))
-	return err
+	return m.systemd.Restart(m.unitName(name))
 }
 
 // Status returns the systemd status output for the app's service
@@ -123,7 +121,7 @@ func (m *Manager) Status(name string) (string, error) {
 	if _, err := m.store.App(name); err != nil {
 		return "", err
 	}
-	out, err := m.runner.Run("systemctl", "status", "--no-pager", m.unitName(name))
+	out, err := m.systemd.Status(m.unitName(name))
 	if out != "" {
 		return out, nil // systemctl status exits non-zero for stopped units; still useful
 	}
@@ -172,7 +170,7 @@ func (m *Manager) apply(a *store.App, conf *appctl.AppConfig, allowReload bool) 
 	started := time.Now()
 	desired := containerCreateArgs(conf, a, m.appHome(name), m.config.SocketFile, hostitBinFile, m.memoryLimit(name), ids)
 	hash := containerConfigHash(desired)
-	current, err := m.runner.Run("podman", "container", "inspect", m.containerName(name), "--format", inspectHashFormat)
+	current, err := m.container.Inspect(m.containerName(name), inspectHashFormat)
 	recreated := false
 	if err != nil || strings.TrimSpace(current) != hash {
 		// Creating an app starts it in the background, and the owner may delete it
@@ -182,10 +180,9 @@ func (m *Manager) apply(a *store.App, conf *appctl.AppConfig, allowReload bool) 
 		if _, err := m.store.App(name); err != nil {
 			return "", err
 		}
-		_, _ = m.runner.Run("systemctl", "stop", m.unitName(name))
-		_, _ = m.runner.Run("podman", "rm", "--force", m.containerName(name))
-		createArgs := append([]string{"podman"}, withConfigLabel(desired, hash)...)
-		if _, err := m.runner.Run(createArgs...); err != nil {
+		_ = m.systemd.Stop(m.unitName(name))
+		_ = m.container.RemoveForce(m.containerName(name))
+		if err := m.container.Create(withConfigLabel(desired, hash)...); err != nil {
 			return "", fmt.Errorf("cannot create container: %w", err)
 		}
 		recreated = true
@@ -194,18 +191,18 @@ func (m *Manager) apply(a *store.App, conf *appctl.AppConfig, allowReload bool) 
 
 	// Start if needed; otherwise a changed run: command only needs an agent reload
 	if recreated || !m.isActive(name) {
-		if _, err := m.runner.Run("systemctl", "enable", "--now", m.unitName(name)); err != nil {
+		if err := m.systemd.EnableNow(m.unitName(name)); err != nil {
 			return "", err
 		}
 		if recreated {
-			if _, err := m.runner.Run("systemctl", "restart", m.unitName(name)); err != nil {
+			if err := m.systemd.Restart(m.unitName(name)); err != nil {
 				return "", err
 			}
 		}
 		return "deployed (container created and started)", nil
 	}
 	if allowReload && conf != nil {
-		if _, err := m.runner.Run("podman", "kill", "--signal", "HUP", m.containerName(name)); err != nil {
+		if err := m.container.Kill(m.containerName(name), "HUP"); err != nil {
 			return "", err
 		}
 		return "reloaded (agent restarted the run command)", nil
@@ -214,7 +211,7 @@ func (m *Manager) apply(a *store.App, conf *appctl.AppConfig, allowReload bool) 
 }
 
 func (m *Manager) isActive(name string) bool {
-	out, err := m.runner.Run("systemctl", "is-active", m.unitName(name))
+	out, err := m.systemd.IsActive(0, m.unitName(name))
 	return err == nil && strings.TrimSpace(out) == "active"
 }
 

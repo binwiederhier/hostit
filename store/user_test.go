@@ -111,11 +111,10 @@ func TestAppDiskUsage(t *testing.T) {
 	t.Parallel()
 	s := newTestStore(t)
 	require.NoError(t, s.AddApp(&App{Name: "blog", Port: 10000, Host: HostLocal}))
-	require.NoError(t, s.UpdateAppUsage("blog", 42, true))
+	require.NoError(t, s.UpdateAppUsage("blog", 42))
 	app, err := s.App("blog")
 	require.NoError(t, err)
 	assert.Equal(t, 42, app.DiskMB)
-	assert.True(t, app.OverQuota)
 }
 
 func TestTokens(t *testing.T) {

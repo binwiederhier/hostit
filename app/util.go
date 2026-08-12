@@ -3,15 +3,14 @@ package app
 import (
 	"fmt"
 
-	"golang.org/x/crypto/ssh"
+	"heckel.io/hostit/ssh"
 )
 
-// validateKeys ensures every entry is a parseable authorized_keys line
+// validateKeys ensures every entry is a parseable authorized_keys line, wrapping
+// the ssh package's check in ErrInvalid so the server reports it as a bad request.
 func validateKeys(keys []string) error {
-	for _, key := range keys {
-		if _, _, _, _, err := ssh.ParseAuthorizedKey([]byte(key)); err != nil {
-			return fmt.Errorf("%w: invalid ssh key %q: %s", ErrInvalid, key, err.Error())
-		}
+	if err := ssh.ValidateKeys(keys); err != nil {
+		return fmt.Errorf("%w: %s", ErrInvalid, err.Error())
 	}
 	return nil
 }

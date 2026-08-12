@@ -10,20 +10,20 @@ import (
 const (
 	insertAppQuery = `INSERT INTO app (id, name, port, host, owner_id, created_at, image_tag) VALUES (?, ?, ?, ?, ?, ?, ?)`
 	selectAppQuery = `
-		SELECT id, name, port, host, owner_id, disk_mb, over_quota, created_at, image_tag
+		SELECT id, name, port, host, owner_id, disk_mb, created_at, image_tag
 		FROM app WHERE name = ?
 	`
 	selectAppsQuery = `
-		SELECT id, name, port, host, owner_id, disk_mb, over_quota, created_at, image_tag
+		SELECT id, name, port, host, owner_id, disk_mb, created_at, image_tag
 		FROM app ORDER BY name
 	`
 	selectAppsByOwnerQuery = `
-		SELECT id, name, port, host, owner_id, disk_mb, over_quota, created_at, image_tag
+		SELECT id, name, port, host, owner_id, disk_mb, created_at, image_tag
 		FROM app WHERE owner_id = ? ORDER BY name
 	`
 	selectAppCountByOwnerQuery = `SELECT COUNT(*) FROM app WHERE owner_id = ?`
 	selectPortsQuery           = `SELECT port FROM app ORDER BY port`
-	updateAppUsageQuery        = `UPDATE app SET disk_mb = ?, over_quota = ? WHERE name = ?`
+	updateAppUsageQuery        = `UPDATE app SET disk_mb = ? WHERE name = ?`
 	deleteAppQuery             = `DELETE FROM app WHERE name = ?`
 	renameAppQuery             = `UPDATE app SET name = ? WHERE name = ?`
 	// After the app is renamed, keep assistant_session's name mirror (its primary
@@ -177,7 +177,7 @@ func (s *Store) SetAppImageTag(name, tag string) error {
 func (s *Store) App(name string) (*App, error) {
 	var app App
 	var createdAt int64
-	err := s.db.QueryRow(selectAppQuery, name).Scan(&app.ID, &app.Name, &app.Port, &app.Host, &app.OwnerID, &app.DiskMB, &app.OverQuota, &createdAt, &app.ImageTag)
+	err := s.db.QueryRow(selectAppQuery, name).Scan(&app.ID, &app.Name, &app.Port, &app.Host, &app.OwnerID, &app.DiskMB, &createdAt, &app.ImageTag)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrAppNotFound
 	} else if err != nil {
@@ -222,9 +222,9 @@ func (s *Store) UsedPorts() ([]int, error) {
 	return ports, rows.Err()
 }
 
-// UpdateAppUsage records measured disk usage and whether the app is over quota
-func (s *Store) UpdateAppUsage(name string, diskMB int, overQuota bool) error {
-	result, err := s.db.Exec(updateAppUsageQuery, diskMB, overQuota, name)
+// UpdateAppUsage records an app's measured disk usage (in MB) for the dashboard
+func (s *Store) UpdateAppUsage(name string, diskMB int) error {
+	result, err := s.db.Exec(updateAppUsageQuery, diskMB, name)
 	if err != nil {
 		return err
 	}
@@ -277,7 +277,7 @@ func (s *Store) queryApps(query string, args ...any) ([]*App, error) {
 	for rows.Next() {
 		var app App
 		var createdAt int64
-		if err := rows.Scan(&app.ID, &app.Name, &app.Port, &app.Host, &app.OwnerID, &app.DiskMB, &app.OverQuota, &createdAt, &app.ImageTag); err != nil {
+		if err := rows.Scan(&app.ID, &app.Name, &app.Port, &app.Host, &app.OwnerID, &app.DiskMB, &createdAt, &app.ImageTag); err != nil {
 			return nil, err
 		}
 		app.CreatedAt = time.Unix(createdAt, 0)

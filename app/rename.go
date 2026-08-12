@@ -42,7 +42,7 @@ func (m *Manager) RenameApp(oldName, newName string) (*store.App, error) {
 		// Stop the unit first: it is Restart=always, so it must be stopped (not just
 		// the container killed) or systemd would immediately bring the app back up
 		// and re-block usermod. This also stops the app's own container processes.
-		_, _ = m.runner.Run("systemctl", "stop", unit)
+		_ = m.systemd.Stop(unit)
 	}
 	// usermod --login refuses while ANY process runs as the app user: its container,
 	// but also an in-container htop/shell started via a web-terminal or SSH session
@@ -54,7 +54,7 @@ func (m *Manager) RenameApp(oldName, newName string) (*store.App, error) {
 	// restores, where the name is still the old one, and success).
 	startApp := func() {
 		if wasRunning {
-			_, _ = m.runner.Run("systemctl", "start", unit)
+			_ = m.systemd.Start(unit)
 		}
 	}
 

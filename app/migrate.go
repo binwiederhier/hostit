@@ -52,10 +52,10 @@ func (m *Manager) MigrateToIDKeyedHomes() {
 		// The container is still NAME-keyed here (this app predates id-keying), so
 		// tear that one down; also try the id-keyed names in case a prior run got
 		// partway. All best-effort.
-		_, _ = m.runner.Run("systemctl", "disable", "--now", unitTemplate+a.Name)
-		_, _ = m.runner.Run("systemctl", "stop", unitNameForID(a.ID))
-		_, _ = m.runner.Run("podman", "rm", "--force", containerPrefix+a.Name)
-		_, _ = m.runner.Run("podman", "rm", "--force", containerNameForID(a.ID))
+		_ = m.systemd.DisableNow(unitTemplate + a.Name)
+		_ = m.systemd.Stop(unitNameForID(a.ID))
+		_ = m.container.RemoveForce(containerPrefix + a.Name)
+		_ = m.container.RemoveForce(containerNameForID(a.ID))
 		// An id-keyed container that started before this ran leaves podman's empty
 		// stub at newHome (a bind-mount source it auto-creates). Now that the
 		// container is gone, clear an EMPTY stub so the real home can take its place;
@@ -136,8 +136,8 @@ func (m *Manager) MigrateToBlockUIDs() {
 		started := time.Now()
 		// Stop the app first: usermod refuses a uid change while the user has live
 		// processes, and removing the container frees its old chowned image copy.
-		_, _ = m.runner.Run("systemctl", "stop", unitNameForID(a.ID))
-		_, _ = m.runner.Run("podman", "rm", "--force", containerNameForID(a.ID))
+		_ = m.systemd.Stop(unitNameForID(a.ID))
+		_ = m.container.RemoveForce(containerNameForID(a.ID))
 		if err := m.ops.RemapUser(a.Name, m.appHomeByID(a.ID), want); err != nil {
 			slog.Error("uid migration: cannot remap app, left as-is", "app", a.Name, "from", have, "to", want, "error", err)
 			continue

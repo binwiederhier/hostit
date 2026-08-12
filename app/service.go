@@ -1,6 +1,8 @@
-// Package app manages the lifecycle of hostit apps: Unix users, SSH keys, port
-// allocation and the initial scaffold in the app's home directory. All direct
-// system interaction is behind the SystemOps interface so it can be faked in tests.
+// Package app orchestrates the lifecycle of hostit apps: the per-app Unix user, SSH
+// keys, port allocation, home scaffold and container. Node-local system interaction
+// is delegated to focused service packages (btrfs, systemd, container) plus the
+// SystemOps interface, all injected so they can be faked in tests. Keeping these
+// services separable is also the seam a future control/app-node split would use.
 package app
 
 import (
@@ -14,8 +16,11 @@ import (
 	"sync"
 	"time"
 
+	"heckel.io/hostit/btrfs"
 	"heckel.io/hostit/config"
+	"heckel.io/hostit/container"
 	"heckel.io/hostit/store"
+	"heckel.io/hostit/systemd"
 )
 
 const (
@@ -81,8 +86,6 @@ type SystemOps interface {
 	WriteScaffold(username, home string, files map[string]string) error
 	ChownToUserIn(root *os.Root, username, rel string) error
 	ApplyPortRules(rules []PortRule) error
-	ImageExists(tag string) bool
-	BuildImage(contextDir, tag string) error
 }
 
 // Runner executes a command on the host as root; the daemon performs all
@@ -114,10 +117,13 @@ type CreateOptions struct {
 // Manager creates and deletes apps and everything that belongs to them, and
 // runs their containers as root with per-app uid mappings
 type Manager struct {
-	config *config.Config
-	store  *store.Store
-	ops    SystemOps
-	runner Runner
+	config    *config.Config
+	store     *store.Store
+	ops       SystemOps
+	runner    Runner
+	btrfs     *btrfs.Service
+	systemd   *systemd.Service
+	container *container.Service
 
 	// memoryMB and diskMB cache per-app limits, so redeploys and quota checks
 	// keep them; the authoritative values come from the owner's limits
@@ -154,6 +160,9 @@ func NewManager(conf *config.Config, s *store.Store, ops SystemOps, runner Runne
 		store:      s,
 		ops:        ops,
 		runner:     runner,
+		btrfs:      btrfs.New(runner),
+		systemd:    systemd.New(runner),
+		container:  container.New(runner),
 		memoryMB:   make(map[string]int),
 		diskMB:     make(map[string]int),
 		stateCache: make(map[string]State),
@@ -255,11 +264,11 @@ func (m *Manager) create(name string, opts *CreateOptions, seedPath string) (*st
 	// scaffold then fills. Either directory is adopted by useradd, whose own mkdir
 	// is a no-op.
 	if forking {
-		if err := m.snapshotSubvolume(seedPath, home, false); err != nil {
+		if err := m.btrfs.Snapshot(seedPath, home, false); err != nil {
 			return nil, fmt.Errorf("cannot seed %s: %w", name, err)
 		}
 	} else if m.btrfsEnabled() {
-		if err := m.createSubvolume(home); err != nil {
+		if err := m.btrfs.CreateSubvolume(home); err != nil {
 			return nil, fmt.Errorf("cannot create home subvolume for %s: %w", name, err)
 		}
 	}
@@ -268,7 +277,7 @@ func (m *Manager) create(name string, opts *CreateOptions, seedPath string) (*st
 	slog.Info("Creating app", "app", name, "port", port, "subvolume", forking || m.btrfsEnabled(), "forked", forking)
 	if err := m.ops.CreateUser(name, home, m.uidFor(port)); err != nil {
 		if m.btrfsEnabled() {
-			_ = m.deleteSubvolume(home)
+			_ = m.btrfs.DeleteSubvolume(home)
 		}
 		return nil, fmt.Errorf("cannot create user %s: %w", name, err)
 	}
@@ -278,7 +287,7 @@ func (m *Manager) create(name string, opts *CreateOptions, seedPath string) (*st
 		// the early failures, so this deletes the concrete path rather than resolving
 		// it by name; a brand-new app has no snapshots to clean up.
 		if m.btrfsEnabled() {
-			_ = m.deleteSubvolume(home)
+			_ = m.btrfs.DeleteSubvolume(home)
 		}
 	}
 	if err := m.ops.WriteAuthorizedKeys(name, home, sshKeys); err != nil {
@@ -348,13 +357,13 @@ func (m *Manager) DeleteApp(name string) error {
 	}
 	// Stop the app first: a running container keeps processes alive, and
 	// userdel refuses to remove a user that still has any
-	if _, err := m.runner.Run("systemctl", "disable", "--now", m.unitName(name)); err != nil {
+	if err := m.systemd.DisableNow(m.unitName(name)); err != nil {
 		slog.Warn("Cannot disable the app's unit; reconciling at next start", "app", name, "error", err)
 	}
 	// The unit lingers in "failed" otherwise, and a Restart=always unit that
 	// systemd still knows about keeps retrying a container that is gone
-	_, _ = m.runner.Run("systemctl", "reset-failed", m.unitName(name))
-	_, _ = m.runner.Run("podman", "rm", "--force", m.containerName(name))
+	_ = m.systemd.ResetFailed(m.unitName(name))
+	_ = m.container.RemoveForce(m.containerName(name))
 	// On btrfs the home and snapshots are subvolumes that userdel's rm -rf cannot
 	// remove, so delete them first.
 	if m.btrfsEnabled() {

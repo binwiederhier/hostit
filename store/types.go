@@ -43,7 +43,6 @@ type App struct {
 	Host      string    `json:"host"`
 	OwnerID   string    `json:"owner_id"`
 	DiskMB    int       `json:"disk_mb"`
-	OverQuota bool      `json:"over_quota"`
 	CreatedAt time.Time `json:"created_at"`
 	// ImageTag pins the app to the workspace image it was built with; empty until
 	// the daemon backfills it (apps created before image pinning).

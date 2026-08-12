@@ -24,13 +24,13 @@ const (
 // model forced, since rootless podman keeps its store inside each user's home).
 func (m *Manager) EnsureWorkspaceImage() error {
 	image := workspaceImageTag()
-	if m.ops.ImageExists(image) {
+	if m.container.ImageExists(image) {
 		return nil
 	}
 	// Two apps created at once must not both build this ~230 MB image
 	m.buildMu.Lock()
 	defer m.buildMu.Unlock()
-	if m.ops.ImageExists(image) {
+	if m.container.ImageExists(image) {
 		return nil // Someone built it while we waited
 	}
 	contextDir := filepath.Join(m.config.DataDir, workspaceSubDir)
@@ -42,7 +42,7 @@ func (m *Manager) EnsureWorkspaceImage() error {
 	}
 	slog.Info("Building workspace image (one time, takes a minute)", "image", image)
 	started := time.Now()
-	if err := m.ops.BuildImage(contextDir, image); err != nil {
+	if err := m.container.Build(image, contextDir); err != nil {
 		return fmt.Errorf("cannot build workspace image: %w", err)
 	}
 	slog.Info("Workspace image ready", "image", image, "took", time.Since(started).Round(time.Second))
@@ -55,7 +55,7 @@ func (m *Manager) EnsureWorkspaceImage() error {
 // podman refuses while a container still references an image, and the next
 // start tries again once they have moved on.
 func (m *Manager) PruneOldWorkspaceImages() {
-	out, err := m.runner.Run("podman", "images", "--format", "{{.Repository}}:{{.Tag}}")
+	out, err := m.container.Images()
 	if err != nil {
 		slog.Warn("Cannot list images to prune", "error", err)
 		return
@@ -74,7 +74,7 @@ func (m *Manager) PruneOldWorkspaceImages() {
 		if !strings.HasPrefix(image, workspaceImagePrefix+":") || image == current || inUse[image] {
 			continue
 		}
-		if _, err := m.runner.Run("podman", "rmi", image); err != nil {
+		if err := m.container.RemoveImage(image); err != nil {
 			slog.Info("Keeping an old workspace image; something still uses it", "image", image)
 			continue
 		}
@@ -92,7 +92,7 @@ func (m *Manager) ensureAppImage(a *store.App) error {
 	if image == "" {
 		image = workspaceImageTag()
 	}
-	if m.ops.ImageExists(image) {
+	if m.container.ImageExists(image) {
 		return nil
 	}
 	return m.EnsureWorkspaceImage()
@@ -130,7 +130,7 @@ func (m *Manager) PinUnpinnedApps() {
 // id-keying migration) or already id-keyed, so both names are tried.
 func (m *Manager) runningImage(a *store.App) string {
 	for _, name := range []string{containerNameForID(a.ID), containerPrefix + a.Name} {
-		out, err := m.runner.Run("podman", "inspect", name, "--format", "{{.ImageName}}")
+		out, err := m.container.ImageOf(name)
 		if err != nil {
 			continue
 		}

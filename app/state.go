@@ -217,7 +217,7 @@ func (m *Manager) appProcessState(name string) (running bool, startedAt int64) {
 // the UI uses to know a reboot actually happened.
 func (m *Manager) containerStartTimes(names []string) map[string]int64 {
 	starts := make(map[string]int64, len(names))
-	out, err := m.runner.RunTimeout(stateTimeout, "podman", "ps", "--format", "{{.Names}}|{{.StartedAt}}")
+	out, err := m.container.RunningStartTimes(stateTimeout)
 	if err != nil {
 		return starts
 	}
@@ -245,11 +245,11 @@ func (m *Manager) containerStartTimes(names []string) map[string]int64 {
 // runningStates asks systemd about every app's unit in one call; "systemctl
 // is-active" prints one line per unit, in order
 func (m *Manager) runningStates(names []string) map[string]bool {
-	args := []string{"systemctl", "is-active"}
-	for _, name := range names {
-		args = append(args, m.unitName(name))
+	units := make([]string, len(names))
+	for i, name := range names {
+		units[i] = m.unitName(name)
 	}
-	out, _ := m.runner.RunTimeout(stateTimeout, args...) // Non-zero exit just means "something is inactive"
+	out, _ := m.systemd.IsActive(stateTimeout, units...) // Non-zero exit just means "something is inactive"
 	lines := strings.Split(strings.TrimSpace(out), "\n")
 	running := make(map[string]bool, len(names))
 	for i, name := range names {
@@ -261,7 +261,7 @@ func (m *Manager) runningStates(names []string) map[string]bool {
 // resourceUsage reads current container memory and CPU from one podman stats call
 func (m *Manager) resourceUsage() map[string]usage {
 	usages := make(map[string]usage)
-	out, err := m.runner.RunTimeout(stateTimeout, "podman", "stats", "--no-stream", "--format", "json")
+	out, err := m.container.Stats(stateTimeout)
 	if err != nil {
 		return usages
 	}

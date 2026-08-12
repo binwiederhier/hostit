@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -13,29 +14,30 @@ import (
 
 func TestEnsureWorkspaceImageBuildsOnce(t *testing.T) {
 	t.Parallel()
-	m, ops, _ := newTestDeployManager(t)
+	m, _, runner := newTestDeployManager(t)
+	build := "podman build --tag " + workspaceImageTag()
 	require.NoError(t, m.EnsureWorkspaceImage())
-	require.Len(t, ops.builds, 1)
-	assert.Equal(t, workspaceImageTag(), ops.builds[0].tag)
-	b, err := os.ReadFile(filepath.Join(ops.builds[0].contextDir, "Containerfile"))
+	assert.Equal(t, 1, strings.Count(runner.ran(), build))
+	// The build context holds the Containerfile the image is built from
+	b, err := os.ReadFile(filepath.Join(m.config.DataDir, workspaceSubDir, "Containerfile"))
 	require.NoError(t, err)
 	assert.Contains(t, string(b), "FROM docker.io/library/debian")
 	// The image now exists, so a second call must not rebuild it
 	require.NoError(t, m.EnsureWorkspaceImage())
-	assert.Len(t, ops.builds, 1)
+	assert.Equal(t, 1, strings.Count(runner.ran(), build))
 }
 
 func TestDeployReusesTheOneWorkspaceImage(t *testing.T) {
 	t.Parallel()
-	m, ops, runner := newTestDeployManager(t)
-	ops.images[workspaceImageTag()] = true // Built once, host-wide
+	m, _, runner := newTestDeployManager(t)
+	runner.seedImage(workspaceImageTag()) // Built once, host-wide
 	createTestApp(t, m, "blog")
 	writeAppFile(t, m, "blog", "hostit.yml", "mode: app\nrun: ./server")
 	runner.failOn("container inspect", assert.AnError) // Force a create
 	_, err := m.Up("blog")
 	require.NoError(t, err)
-	assert.Empty(t, ops.builds, "the workspace image is shared, never rebuilt per app")
 	joined := runner.ran()
+	assert.NotContains(t, joined, "podman build", "the workspace image is shared, never rebuilt per app")
 	assert.Contains(t, joined, "podman create --name "+m.containerName("blog"))
 }
 
@@ -76,16 +78,15 @@ func TestPruneOldWorkspaceImages(t *testing.T) {
 
 func TestEnsureAppImageSkipsBuildForPinnedExistingImage(t *testing.T) {
 	t.Parallel()
-	m, ops := newTestManager(t)
+	m, _, runner := newTestDeployManager(t)
 	// An app pinned to an image that already exists must NOT trigger a build, even
 	// when the current workspace tag differs (a release changed the image). This is
 	// what keeps the id-keying migration from blocking startup on an image build.
-	ops.images["localhost/hostit-workspace:oldtag"] = true
+	runner.seedImage("localhost/hostit-workspace:oldtag")
 	require.NoError(t, m.ensureAppImage(&store.App{Name: "blog", ImageTag: "localhost/hostit-workspace:oldtag"}))
-	assert.Empty(t, ops.builds, "a pinned, present image is not rebuilt")
+	assert.NotContains(t, runner.ran(), "podman build", "a pinned, present image is not rebuilt")
 
 	// An unpinned app builds the current image when it is missing.
 	require.NoError(t, m.ensureAppImage(&store.App{Name: "shop"}))
-	require.Len(t, ops.builds, 1)
-	assert.Equal(t, workspaceImageTag(), ops.builds[0].tag)
+	assert.Contains(t, runner.ran(), "podman build --tag "+workspaceImageTag())
 }

@@ -1,6 +1,7 @@
 package app
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,7 +17,7 @@ import (
 
 func TestUpWorkspaceModeCreatesContainer(t *testing.T) {
 	t.Parallel()
-	m, ops, runner := newTestDeployManager(t)
+	m, _, runner := newTestDeployManager(t)
 	createTestApp(t, m, "blog")
 	writeAppFile(t, m, "blog", "hostit.yml", "mode: app\nrun: python3 -m http.server $PORT")
 	runner.failOn("container inspect", assert.AnError) // No container yet -> create
@@ -24,8 +25,7 @@ func TestUpWorkspaceModeCreatesContainer(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, msg, "deployed")
 	// The workspace image is built once, host-wide, not per app
-	require.Len(t, ops.builds, 1)
-	assert.Equal(t, workspaceImageTag(), ops.builds[0].tag)
+	assert.Contains(t, runner.ran(), "podman build --tag "+workspaceImageTag())
 	joined := runner.ran()
 	assert.Contains(t, joined, "podman create --name "+m.containerName("blog"))
 	assert.Contains(t, joined, "systemctl enable --now "+m.unitName("blog"))
@@ -243,10 +243,9 @@ func (f *fakeRunner) reset() {
 
 func newTestDeployManager(t *testing.T) (*Manager, *fakeSystemOps, *fakeRunner) {
 	t.Helper()
-	m, ops := newTestManager(t)
+	conf, s, ops := newTestManagerDeps(t)
 	runner := newFakeRunner()
-	m.runner = runner
-	return m, ops, runner
+	return NewManager(conf, s, ops, runner), ops, runner
 }
 
 // createTestApp creates an app and waits for the background demo deploy to
@@ -290,7 +289,8 @@ type fakeRunner struct {
 	timeouts []time.Duration // Outer bound passed to each RunTimeout call, in order
 	outputs  map[string]string
 	errs     map[string]error
-	mu       sync.Mutex // Protects commands; the demo app deploys in the background
+	built    map[string]bool // Image tags the fake store "has" (built or seeded)
+	mu       sync.Mutex      // Protects commands; the demo app deploys in the background
 }
 
 var _ Runner = (*fakeRunner)(nil)
@@ -299,7 +299,19 @@ func newFakeRunner() *fakeRunner {
 	return &fakeRunner{
 		outputs: make(map[string]string),
 		errs:    make(map[string]error),
+		built:   make(map[string]bool),
 	}
+}
+
+// errImageMissing is what a fake "podman image exists" returns for an image that
+// was never built or seeded, so container.ImageExists reports false.
+var errImageMissing = errors.New("image not known to the fake store")
+
+// seedImage marks an image as already present in the fake store.
+func (f *fakeRunner) seedImage(tag string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.built[tag] = true
 }
 
 func (f *fakeRunner) RunTimeout(timeout time.Duration, args ...string) (string, error) {
@@ -314,6 +326,17 @@ func (f *fakeRunner) Run(args ...string) (string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.commands = append(f.commands, cmd)
+	// Track the image store the way the real podman does: a build makes the tag
+	// exist, and "image exists" fails for a tag never built or seeded.
+	if len(args) >= 4 && args[0] == "podman" && args[1] == "build" && args[2] == "--tag" {
+		f.built[args[3]] = true
+	}
+	if len(args) == 4 && args[0] == "podman" && args[1] == "image" && args[2] == "exists" {
+		if !f.built[args[3]] {
+			return "", errImageMissing
+		}
+		return "", nil
+	}
 	for substr, err := range f.errs {
 		if strings.Contains(cmd, substr) {
 			return "", err

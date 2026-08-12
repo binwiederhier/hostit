@@ -1,8 +1,9 @@
-package app
+// Package ssh manages an app user's authorized_keys (the hostit-managed block) and
+// validates SSH public keys. It writes into the app's home through an os.Root so a
+// tenant cannot redirect the root daemon's writes with a symlink.
+package ssh
 
-import (
-	"strings"
-)
+import "strings"
 
 const (
 	// managedBeginMarker and managedEndMarker delimit the block of authorized_keys
@@ -11,10 +12,10 @@ const (
 	managedEndMarker   = "# END hostit-managed keys"
 )
 
-// mergeAuthorizedKeys replaces the hostit-managed block in an authorized_keys
+// MergeAuthorizedKeys replaces the hostit-managed block in an authorized_keys
 // file while preserving everything around it, so a key someone scp'd in by hand
 // survives every profile change hostit makes
-func mergeAuthorizedKeys(existing string, managed []string) string {
+func MergeAuthorizedKeys(existing string, managed []string) string {
 	isManaged := make(map[string]bool, len(managed))
 	for _, key := range managed {
 		isManaged[keyMaterial(key)] = true

@@ -15,7 +15,23 @@ import (
 
 const (
 	testPublicKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIC24brF98CyUY18aeOGGQY3+wILYYnUUBQqICmMTvTGL test@host"
+	// testProfileKey is a second, distinct key used to check profile-key propagation
+	testProfileKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIi b@host"
 )
+
+func TestSyncKeysRewritesEveryAppOfTheOwner(t *testing.T) {
+	t.Parallel()
+	m, ops, _ := newTestDeployManager(t)
+	createTestApp(t, m, "one")
+	createTestApp(t, m, "two")
+	// A profile key added later must reach every app the user owns
+	require.NoError(t, m.SyncKeys("one", []string{testProfileKey}))
+	require.NoError(t, m.SyncKeys("two", []string{testProfileKey}))
+	for _, name := range []string{"one", "two"} {
+		require.Contains(t, ops.authorizedKeys[name], testProfileKey, "app %s must get the profile key", name)
+		assert.Contains(t, ops.authorizedKeys[name], testPublicKey, "its own app key stays")
+	}
+}
 
 func TestCreateApp(t *testing.T) {
 	t.Parallel()
@@ -146,7 +162,10 @@ func TestApps(t *testing.T) {
 	assert.Equal(t, "blog", apps[0].Name)
 }
 
-func newTestManager(t *testing.T) (*Manager, *fakeSystemOps) {
+// newTestManagerDeps builds the config, store and fake ops a test Manager needs, so
+// callers can construct the Manager via NewManager with their own runner (keeping
+// every runner-backed service -- btrfs, etc. -- on that one runner).
+func newTestManagerDeps(t *testing.T) (*config.Config, *store.Store, *fakeSystemOps) {
 	t.Helper()
 	conf := config.NewConfig()
 	conf.BaseDomain = "apps.example.com"
@@ -158,7 +177,12 @@ func newTestManager(t *testing.T) (*Manager, *fakeSystemOps) {
 	t.Cleanup(func() {
 		_ = s.Close()
 	})
-	ops := newFakeSystemOps()
+	return conf, s, newFakeSystemOps()
+}
+
+func newTestManager(t *testing.T) (*Manager, *fakeSystemOps) {
+	t.Helper()
+	conf, s, ops := newTestManagerDeps(t)
 	return NewManager(conf, s, ops, newFakeRunner()), ops
 }
 
@@ -174,17 +198,9 @@ type fakeSystemOps struct {
 	uids           map[string]int
 	userHomes      map[string]string
 	portRules      [][]PortRule
-	images         map[string]bool
-	builds         []imageBuild
 	createUserErr  error
 
 	mu sync.Mutex // Protects everything above: CreateApp starts the app in the background
-}
-
-// imageBuild records a BuildImage call
-type imageBuild struct {
-	contextDir string
-	tag        string
 }
 
 var _ SystemOps = (*fakeSystemOps)(nil)
@@ -195,22 +211,7 @@ func newFakeSystemOps() *fakeSystemOps {
 		scaffolds:      make(map[string][]string),
 		uids:           make(map[string]int),
 		userHomes:      make(map[string]string),
-		images:         make(map[string]bool),
 	}
-}
-
-func (f *fakeSystemOps) ImageExists(tag string) bool {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return f.images[tag]
-}
-
-func (f *fakeSystemOps) BuildImage(contextDir, tag string) error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.builds = append(f.builds, imageBuild{contextDir: contextDir, tag: tag})
-	f.images[tag] = true
-	return nil
 }
 
 func (f *fakeSystemOps) LookupIDs(username string) (IDs, error) {

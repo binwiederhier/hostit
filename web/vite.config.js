@@ -12,4 +12,9 @@ export default defineConfig({
     port: 3000,
   },
   plugins: [react()],
+  // Unit tests are the vitest specs under src/; the browser e2e specs under e2e/
+  // are Playwright tests (npm run test:e2e) and must not be collected by vitest.
+  test: {
+    include: ["src/**/*.test.{js,jsx}"],
+  },
 });
