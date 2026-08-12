@@ -4,9 +4,9 @@ import { defineConfig, devices } from "@playwright/test";
 // (stage by default). Auth uses the breakglass endpoint (admin-token gated), so no
 // Google round-trip is needed -- see e2e/auth.setup.js.
 //
-// Run: HOSTIT_BASE_URL=https://stageapps.heckel.io npm run test:e2e
-// The admin token is read from ansible secrets or the HOSTIT_ADMIN_TOKEN env var.
-const baseURL = process.env.HOSTIT_BASE_URL || "https://stageapps.heckel.io";
+// Run: HOSTIT_BASE_URL=https://apps.example.com HOSTIT_ADMIN_TOKEN=... npm run test:e2e
+// These specs create and delete real apps, so point them at a test instance.
+const baseURL = process.env.HOSTIT_BASE_URL || "https://apps.example.com";
 
 export default defineConfig({
   testDir: "./e2e",
