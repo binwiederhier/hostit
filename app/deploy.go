@@ -151,7 +151,7 @@ func (m *Manager) Logs(name string, lines int) (string, error) {
 // just the run command
 func (m *Manager) apply(a *store.App, conf *appctl.AppConfig, allowReload bool) (string, error) {
 	name := a.Name
-	ids, err := m.ops.LookupIDs(name)
+	ids, err := m.lookupIDs(name)
 	if err != nil {
 		return "", err
 	}

@@ -9,8 +9,15 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"heckel.io/hostit/btrfs"
 	"heckel.io/hostit/config"
+	"heckel.io/hostit/container"
+	"heckel.io/hostit/firewall"
+	"heckel.io/hostit/run"
+	"heckel.io/hostit/ssh"
 	"heckel.io/hostit/store"
+	"heckel.io/hostit/systemd"
+	"heckel.io/hostit/unixuser"
 )
 
 const (
@@ -162,10 +169,10 @@ func TestApps(t *testing.T) {
 	assert.Equal(t, "blog", apps[0].Name)
 }
 
-// newTestManagerDeps builds the config, store and fake ops a test Manager needs, so
-// callers can construct the Manager via NewManager with their own runner (keeping
-// every runner-backed service -- btrfs, etc. -- on that one runner).
-func newTestManagerDeps(t *testing.T) (*config.Config, *store.Store, *fakeSystemOps) {
+// newTestManagerDeps builds the config, store and fake system services a test
+// Manager needs, so callers can construct the Manager via NewManager with their own
+// runner (keeping every runner-backed service -- btrfs, etc. -- on that one runner).
+func newTestManagerDeps(t *testing.T) (*config.Config, *store.Store, *fakeSystem) {
 	t.Helper()
 	conf := config.NewConfig()
 	conf.BaseDomain = "apps.example.com"
@@ -177,17 +184,33 @@ func newTestManagerDeps(t *testing.T) (*config.Config, *store.Store, *fakeSystem
 	t.Cleanup(func() {
 		_ = s.Close()
 	})
-	return conf, s, newFakeSystemOps()
+	return conf, s, newFakeSystem()
 }
 
-func newTestManager(t *testing.T) (*Manager, *fakeSystemOps) {
+func newTestManager(t *testing.T) (*Manager, *fakeSystem) {
 	t.Helper()
 	conf, s, ops := newTestManagerDeps(t)
-	return NewManager(conf, s, ops, newFakeRunner()), ops
+	return NewManager(conf, s, testServices(ops, newFakeRunner())), ops
 }
 
-// fakeSystemOps records system calls instead of executing them
-type fakeSystemOps struct {
+// testServices bundles the fake privileged services (users, ssh keys, firewall)
+// with the runner-backed node-local services onto one Services, so a test Manager
+// records system calls instead of executing them.
+func testServices(ops *fakeSystem, runner run.Runner) *Services {
+	return &Services{
+		Btrfs:     btrfs.New(runner),
+		Systemd:   systemd.New(runner),
+		Container: container.New(runner),
+		User:      ops,
+		SSH:       ops,
+		Firewall:  ops,
+		Runner:    runner,
+	}
+}
+
+// fakeSystem records the privileged system calls (users, ssh keys, firewall)
+// instead of executing them; it satisfies the unixuser, ssh and firewall interfaces.
+type fakeSystem struct {
 	existingUsers  []string
 	createdUsers   []string
 	deletedUsers   []string
@@ -196,28 +219,32 @@ type fakeSystemOps struct {
 	authorizedKeys map[string][]string
 	skeletons      map[string][]string
 	uids           map[string]int
-	portRules      [][]PortRule
+	portRules      [][]firewall.Rule
 	createUserErr  error
 
 	mu sync.Mutex // Protects everything above: CreateApp starts the app in the background
 }
 
-var _ SystemOps = (*fakeSystemOps)(nil)
+var (
+	_ unixuser.Interface = (*fakeSystem)(nil)
+	_ ssh.Interface      = (*fakeSystem)(nil)
+	_ firewall.Interface = (*fakeSystem)(nil)
+)
 
-func newFakeSystemOps() *fakeSystemOps {
-	return &fakeSystemOps{
+func newFakeSystem() *fakeSystem {
+	return &fakeSystem{
 		authorizedKeys: make(map[string][]string),
 		skeletons:      make(map[string][]string),
 		uids:           make(map[string]int),
 	}
 }
 
-func (f *fakeSystemOps) LookupIDs(username string) (IDs, error) {
-	uid, _ := f.LookupUID(username)
-	return IDs{UID: uid, GID: uid, Count: 65536}, nil
+func (f *fakeSystem) LookupIDs(username string) (uid, gid int, err error) {
+	u, _ := f.LookupUID(username)
+	return u, u, nil
 }
 
-func (f *fakeSystemOps) UserExists(username string) bool {
+func (f *fakeSystem) Exists(username string) bool {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	for _, u := range append(f.existingUsers, f.createdUsers...) {
@@ -228,7 +255,7 @@ func (f *fakeSystemOps) UserExists(username string) bool {
 	return false
 }
 
-func (f *fakeSystemOps) LookupUID(username string) (int, error) {
+func (f *fakeSystem) LookupUID(username string) (int, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if uid, ok := f.uids[username]; ok {
@@ -237,7 +264,7 @@ func (f *fakeSystemOps) LookupUID(username string) (int, error) {
 	return 1001, nil
 }
 
-func (f *fakeSystemOps) CreateUser(username, home string, uid int) error {
+func (f *fakeSystem) Create(username, home string, uid int) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.createUserErr != nil {
@@ -248,16 +275,16 @@ func (f *fakeSystemOps) CreateUser(username, home string, uid int) error {
 	return nil
 }
 
-func (f *fakeSystemOps) KillUserProcesses(username string) error {
+func (f *fakeSystem) KillProcesses(username string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.killedUsers = append(f.killedUsers, username)
 	return nil
 }
 
-// RenameUser moves all the fake's per-user state from the old login name to the
+// Rename moves all the fake's per-user state from the old login name to the
 // new one, so lookups keep working after a rename just as the real usermod -l does.
-func (f *fakeSystemOps) RenameUser(oldName, newName string) error {
+func (f *fakeSystem) Rename(oldName, newName string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.renamedUsers = append(f.renamedUsers, oldName+"->"+newName)
@@ -273,14 +300,14 @@ func (f *fakeSystemOps) RenameUser(oldName, newName string) error {
 	return nil
 }
 
-func (f *fakeSystemOps) DeleteUser(username string) error {
+func (f *fakeSystem) Delete(username string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.deletedUsers = append(f.deletedUsers, username)
 	return nil
 }
 
-func (f *fakeSystemOps) WriteAuthorizedKeys(username, home string, keys []string) error {
+func (f *fakeSystem) WriteAuthorizedKeys(username, home string, keys []string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.authorizedKeys[username] = keys
@@ -289,7 +316,7 @@ func (f *fakeSystemOps) WriteAuthorizedKeys(username, home string, keys []string
 
 // WriteSkeleton records the skeleton AND writes it, so tests that read app
 // files (README, hostit.yml) see what a real app would have
-func (f *fakeSystemOps) WriteSkeleton(username, home string, files map[string]string) error {
+func (f *fakeSystem) WriteSkeleton(username, home string, files map[string]string) error {
 	if err := os.MkdirAll(home, 0o755); err != nil {
 		return err
 	}
@@ -306,11 +333,11 @@ func (f *fakeSystemOps) WriteSkeleton(username, home string, files map[string]st
 	return nil
 }
 
-func (f *fakeSystemOps) ChownToUserIn(root *os.Root, username, rel string) error {
+func (f *fakeSystem) ChownIn(root *os.Root, username, rel string) error {
 	return nil
 }
 
-func (f *fakeSystemOps) ApplyPortRules(rules []PortRule) error {
+func (f *fakeSystem) Apply(rules []firewall.Rule) error {
 	f.portRules = append(f.portRules, rules)
 	return nil
 }

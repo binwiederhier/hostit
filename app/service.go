@@ -1,7 +1,7 @@
 // Package app orchestrates the lifecycle of hostit apps: the per-app Unix user, SSH
 // keys, port allocation, home skeleton and container. Node-local system interaction
-// is delegated to focused service packages (btrfs, systemd, container) plus the
-// SystemOps interface, all injected so they can be faked in tests. Keeping these
+// is delegated to focused service packages (btrfs, systemd, container, unixuser, ssh,
+// firewall), each injected as an interface so it can be faked in tests. Keeping these
 // services separable is also the seam a future control/app-node split would use.
 package app
 
@@ -19,11 +19,23 @@ import (
 	"heckel.io/hostit/btrfs"
 	"heckel.io/hostit/config"
 	"heckel.io/hostit/container"
+	"heckel.io/hostit/firewall"
 	"heckel.io/hostit/homefs"
 	"heckel.io/hostit/run"
 	"heckel.io/hostit/snapshot"
+	"heckel.io/hostit/ssh"
 	"heckel.io/hostit/store"
 	"heckel.io/hostit/systemd"
+	"heckel.io/hostit/unixuser"
+)
+
+const (
+	// userShellFile is the login shell for app users; it execs the SSH session
+	// into the app container (see cmd/shell.go). Also used by exec.go's terminal.
+	userShellFile = "/usr/bin/hostit-shell"
+	// AppsGroup owns the sudoers grant that lets app users enter their own
+	// container (and nothing else); see /etc/sudoers.d/hostit
+	AppsGroup = "hostit-apps"
 )
 
 const (
@@ -65,32 +77,32 @@ var (
 	}
 )
 
-// SystemOps abstracts the root-privileged system operations the Manager needs;
-// the real implementation (NewSystemOps) shells out to useradd, loginctl, nft
-// and friends.
-type SystemOps interface {
-	UserExists(username string) bool
-	LookupUID(username string) (int, error)
-	LookupIDs(username string) (IDs, error)
-	CreateUser(username, home string, uid int) error
-	// RenameUser changes a user's login name in place (uid and home unchanged);
-	// this is the only OS mutation a rename needs.
-	RenameUser(oldName, newName string) error
-	// KillUserProcesses force-kills every process owned by the user, so usermod is
-	// not blocked by a leftover terminal/SSH session. Used only after the app's unit
-	// is stopped, so this reaps session wrappers, not the running app.
-	KillUserProcesses(username string) error
-	DeleteUser(username string) error
-	WriteAuthorizedKeys(username, home string, keys []string) error
-	WriteSkeleton(username, home string, files map[string]string) error
-	ChownToUserIn(root *os.Root, username, rel string) error
-	ApplyPortRules(rules []PortRule) error
+// Services bundles the node-local system services the Manager depends on. Each is
+// an interface so a test can substitute a fake for any single one; production builds
+// the real, root-requiring implementations with NewSystemServices.
+type Services struct {
+	Btrfs     btrfs.Interface
+	Systemd   systemd.Interface
+	Container container.Interface
+	User      unixuser.Interface
+	SSH       ssh.Interface
+	Firewall  firewall.Interface
+	Runner    run.Runner
 }
 
-// PortRule restricts loopback connects to an app port to root and the owning UID
-type PortRule struct {
-	Port int
-	UID  int
+// NewSystemServices builds the real services the daemon runs with. btrfs, systemd
+// and container shell out through the shared runner; unixuser, ssh and firewall
+// touch the host directly (useradd, authorized_keys, nft) and must run as root.
+func NewSystemServices(runner run.Runner) *Services {
+	return &Services{
+		Btrfs:     btrfs.New(runner),
+		Systemd:   systemd.New(runner),
+		Container: container.New(runner),
+		User:      unixuser.New(userShellFile, AppsGroup, homeMode),
+		SSH:       ssh.New(),
+		Firewall:  firewall.New(),
+		Runner:    runner,
+	}
 }
 
 // CreateOptions carries everything CreateApp needs beyond the name: who owns the
@@ -108,11 +120,13 @@ type CreateOptions struct {
 type Manager struct {
 	config    *config.Config
 	store     *store.Store
-	ops       SystemOps
 	runner    run.Runner
-	btrfs     *btrfs.Service
-	systemd   *systemd.Service
-	container *container.Service
+	btrfs     btrfs.Interface
+	systemd   systemd.Interface
+	container container.Interface
+	user      unixuser.Interface
+	ssh       ssh.Interface
+	firewall  firewall.Interface
 	homefs    *homefs.Service
 	snapshots *snapshot.Service
 
@@ -139,16 +153,19 @@ type Manager struct {
 	appLocksMu sync.Mutex // Protects appLocks
 }
 
-// NewManager creates a Manager
-func NewManager(conf *config.Config, s *store.Store, ops SystemOps, runner run.Runner) *Manager {
+// NewManager creates a Manager from its config, store and the node-local services
+// (real ones from NewSystemServices in production, fakes in tests).
+func NewManager(conf *config.Config, s *store.Store, svc *Services) *Manager {
 	m := &Manager{
 		config:     conf,
 		store:      s,
-		ops:        ops,
-		runner:     runner,
-		btrfs:      btrfs.New(runner),
-		systemd:    systemd.New(runner),
-		container:  container.New(runner),
+		runner:     svc.Runner,
+		btrfs:      svc.Btrfs,
+		systemd:    svc.Systemd,
+		container:  svc.Container,
+		user:       svc.User,
+		ssh:        svc.SSH,
+		firewall:   svc.Firewall,
 		homefs:     homefs.New(ErrInvalid),
 		memoryMB:   make(map[string]int),
 		diskMB:     make(map[string]int),
@@ -262,24 +279,24 @@ func (m *Manager) create(name string, opts *CreateOptions, seedPath string) (*st
 		}
 	}
 	slog.Info("Creating app", "app", name, "port", port, "forked", forking)
-	if err := m.ops.CreateUser(name, home, m.uidFor(port)); err != nil {
+	if err := m.user.Create(name, home, m.uidFor(port)); err != nil {
 		_ = m.btrfs.DeleteSubvolume(home)
 		return nil, fmt.Errorf("cannot create user %s: %w", name, err)
 	}
 	cleanup := func() {
-		_ = m.ops.DeleteUser(name)
+		_ = m.user.Delete(name)
 		// Remove the id-keyed home we just created. The app is not in the store on
 		// the early failures, so this deletes the concrete path rather than resolving
 		// it by name; a brand-new app has no snapshots to clean up.
 		_ = m.btrfs.DeleteSubvolume(home)
 	}
-	if err := m.ops.WriteAuthorizedKeys(name, home, sshKeys); err != nil {
+	if err := m.ssh.WriteAuthorizedKeys(name, home, sshKeys); err != nil {
 		cleanup()
 		return nil, fmt.Errorf("cannot write authorized keys for %s: %w", name, err)
 	}
 	// A fork keeps the source's files; only a fresh app gets the demo skeleton.
 	if !forking {
-		if err := m.ops.WriteSkeleton(name, home, skeletonFiles(name, m.URL(&store.App{Name: name, Port: port}), WorkspaceRuntimes)); err != nil {
+		if err := m.user.WriteSkeleton(name, home, skeletonFiles(name, m.URL(&store.App{Name: name, Port: port}), WorkspaceRuntimes)); err != nil {
 			cleanup()
 			return nil, fmt.Errorf("cannot write skeleton for %s: %w", name, err)
 		}
@@ -350,7 +367,7 @@ func (m *Manager) DeleteApp(name string) error {
 	// The home and snapshots are subvolumes that userdel's rm -rf cannot remove, so
 	// delete them first.
 	m.snapshots.DeleteAppSubvolumes(name)
-	if err := m.ops.DeleteUser(name); err != nil {
+	if err := m.user.Delete(name); err != nil {
 		return fmt.Errorf("cannot delete user %s: %w", name, err)
 	}
 	// userdel --remove will not delete a home directory it does not own -- on btrfs
@@ -374,16 +391,16 @@ func (m *Manager) ReconcilePortRules() {
 		slog.Warn("Cannot list apps for port rules", "error", err)
 		return
 	}
-	rules := make([]PortRule, 0, len(apps))
+	rules := make([]firewall.Rule, 0, len(apps))
 	for _, a := range apps {
-		uid, err := m.ops.LookupUID(a.Name)
+		uid, err := m.user.LookupUID(a.Name)
 		if err != nil {
 			slog.Warn("Cannot look up uid for port rule", "app", a.Name, "error", err)
 			continue
 		}
-		rules = append(rules, PortRule{Port: a.Port, UID: uid})
+		rules = append(rules, firewall.Rule{Port: a.Port, UID: uid})
 	}
-	if err := m.ops.ApplyPortRules(rules); err != nil {
+	if err := m.firewall.Apply(rules); err != nil {
 		slog.Warn("Cannot apply port rules", "error", err)
 	}
 }
@@ -416,7 +433,7 @@ func (m *Manager) SyncKeys(name string, profileKeys []string) error {
 
 func (m *Manager) writeKeys(name string, appKeys, profileKeys []string) error {
 	keys := append(append([]string{}, appKeys...), profileKeys...)
-	return m.ops.WriteAuthorizedKeys(name, filepath.Join(m.config.AppsDir, name), keys)
+	return m.ssh.WriteAuthorizedKeys(name, filepath.Join(m.config.AppsDir, name), keys)
 }
 
 // App returns a registered app by name
@@ -455,7 +472,7 @@ func (m *Manager) validateName(name string) error {
 	} else if !errors.Is(err, store.ErrAppNotFound) {
 		return err
 	}
-	if m.ops.UserExists(name) {
+	if m.user.Exists(name) {
 		return ErrAppExists
 	}
 	return nil
@@ -479,4 +496,14 @@ func (m *Manager) allocatePort() (int, error) {
 // app, spaced by port so blocks never overlap. Container uid 0 maps here.
 func (m *Manager) uidFor(port int) int {
 	return uidBlockStart + (port-m.config.PortMin)*uidBlockSize
+}
+
+// lookupIDs returns the app's contiguous id block: its uid/gid (which become
+// container root) and the block size that runs up from there.
+func (m *Manager) lookupIDs(username string) (IDs, error) {
+	uid, gid, err := m.user.LookupIDs(username)
+	if err != nil {
+		return IDs{}, err
+	}
+	return IDs{UID: uid, GID: gid, Count: uidBlockSize}, nil
 }

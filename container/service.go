@@ -14,10 +14,29 @@ import (
 // repeat the literal.
 const podman = "podman"
 
+// Interface is the subset of podman operations the app and snapshot packages depend
+// on; the concrete *Service satisfies it, so a test can substitute a fake.
+type Interface interface {
+	Inspect(name, format string) (string, error)
+	RemoveForce(name string) error
+	Kill(name, signal string) error
+	Create(args ...string) error
+	Names(all bool) (string, error)
+	RunningStartTimes(timeout time.Duration) (string, error)
+	Stats(timeout time.Duration) (string, error)
+	Exec(timeout time.Duration, name, workdir string, args ...string) (string, error)
+	Images() (string, error)
+	RemoveImage(image string) error
+	ImageExists(tag string) bool
+	Build(tag, contextDir string) error
+}
+
 // Service drives podman over a run.Runner.
 type Service struct {
 	runner run.Runner
 }
+
+var _ Interface = (*Service)(nil)
 
 // New builds a container Service from a command runner.
 func New(runner run.Runner) *Service {

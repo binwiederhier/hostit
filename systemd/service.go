@@ -15,10 +15,26 @@ import (
 // repeat the literal.
 const systemctl = "systemctl"
 
+// Interface is the subset of systemctl operations the app and snapshot packages
+// depend on; the concrete *Service satisfies it, so a test can substitute a fake.
+type Interface interface {
+	EnableNow(unit string) error
+	DisableNow(unit string) error
+	Start(unit string) error
+	Stop(unit string) error
+	Restart(unit string) error
+	ResetFailed(unit string) error
+	Status(unit string) (string, error)
+	ListUnits(pattern string) (string, error)
+	IsActive(timeout time.Duration, units ...string) (string, error)
+}
+
 // Service drives systemctl over a run.Runner.
 type Service struct {
 	runner run.Runner
 }
+
+var _ Interface = (*Service)(nil)
 
 // New builds a systemd Service from a command runner.
 func New(runner run.Runner) *Service {

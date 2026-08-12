@@ -79,16 +79,16 @@ type Host interface {
 
 // Service performs app-home snapshots, rollback and retention pruning.
 type Service struct {
-	btrfs     *btrfs.Service
-	systemd   *systemd.Service
-	container *container.Service
+	btrfs     btrfs.Interface
+	systemd   systemd.Interface
+	container container.Interface
 	store     *store.Store
 	host      Host
 }
 
 // New builds a snapshot Service from the node-local services, the store and the
 // host callbacks.
-func New(bt *btrfs.Service, sd *systemd.Service, ct *container.Service, st *store.Store, host Host) *Service {
+func New(bt btrfs.Interface, sd systemd.Interface, ct container.Interface, st *store.Store, host Host) *Service {
 	return &Service{btrfs: bt, systemd: sd, container: ct, store: st, host: host}
 }
 

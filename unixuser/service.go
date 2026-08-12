@@ -26,6 +26,20 @@ const (
 	userdelDelay     = time.Second
 )
 
+// Interface is the subset of user-account operations the app package depends on;
+// the concrete *Service satisfies it, so a test can substitute a fake.
+type Interface interface {
+	Exists(username string) bool
+	LookupUID(username string) (int, error)
+	LookupIDs(username string) (uid, gid int, err error)
+	Create(username, home string, uid int) error
+	Rename(oldName, newName string) error
+	KillProcesses(username string) error
+	Delete(username string) error
+	WriteSkeleton(username, home string, files map[string]string) error
+	ChownIn(root *os.Root, username, rel string) error
+}
+
 // Service creates and removes app users. It carries the deployment settings a new
 // account needs (login shell, supplementary group, home permissions), injected so
 // the package holds no host-specific policy of its own.
@@ -34,6 +48,8 @@ type Service struct {
 	group    string
 	homeMode os.FileMode
 }
+
+var _ Interface = (*Service)(nil)
 
 // New builds a unixuser Service. shell is the app users' login shell, group is the
 // supplementary group that grants container entry, and homeMode is the app home's

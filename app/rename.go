@@ -49,7 +49,7 @@ func (m *Manager) RenameApp(oldName, newName string) (*store.App, error) {
 	// (those exec into the container, so stopping the unit does not reliably reap
 	// them in time). With the unit stopped (so nothing restarts), force-kill whatever
 	// is left owned by that user. It is session leftovers, not the app.
-	_ = m.ops.KillUserProcesses(oldName)
+	_ = m.user.KillProcesses(oldName)
 	// startApp brings the app back under its CURRENT name (used on both the failure
 	// restores, where the name is still the old one, and success).
 	startApp := func() {
@@ -65,7 +65,7 @@ func (m *Manager) RenameApp(oldName, newName string) (*store.App, error) {
 	}
 	// Flip the name in the store; on failure, undo the user rename to stay consistent.
 	if err := m.store.RenameApp(oldName, newName); err != nil {
-		_ = m.ops.RenameUser(newName, oldName)
+		_ = m.user.Rename(newName, oldName)
 		startApp()
 		if errors.Is(err, store.ErrAppNameTaken) {
 			return nil, ErrAppExists
@@ -91,7 +91,7 @@ func (m *Manager) RenameApp(oldName, newName string) (*store.App, error) {
 func (m *Manager) renameUser(oldName, newName string) error {
 	var err error
 	for i := 0; i < 15; i++ {
-		if err = m.ops.RenameUser(oldName, newName); err == nil {
+		if err = m.user.Rename(oldName, newName); err == nil {
 			return nil
 		}
 		if !strings.Contains(err.Error(), "currently used") {

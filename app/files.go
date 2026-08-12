@@ -55,7 +55,7 @@ const (
 // it is theirs inside the container (where their uid is root) and over SSH.
 func (m *Manager) chowner(name string) homefs.Chowner {
 	return func(root *os.Root, rel string) error {
-		return m.ops.ChownToUserIn(root, name, rel)
+		return m.user.ChownIn(root, name, rel)
 	}
 }
 

@@ -20,8 +20,16 @@ const (
 // directory (e.g. a symlink the tenant planted); hostit refuses to write into it.
 var ErrNotDirectory = errors.New(".ssh must be a directory")
 
+// Interface is the subset of ssh-key operations the app package depends on; the
+// concrete *Service satisfies it, so a test can substitute a fake.
+type Interface interface {
+	WriteAuthorizedKeys(username, home string, keys []string) error
+}
+
 // Service writes app users' authorized_keys as root.
 type Service struct{}
+
+var _ Interface = (*Service)(nil)
 
 // New builds an ssh key Service.
 func New() *Service {

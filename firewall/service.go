@@ -17,8 +17,16 @@ type Rule struct {
 	UID  int
 }
 
+// Interface is the subset of firewall operations the app package depends on; the
+// concrete *Service satisfies it, so a test can substitute a fake.
+type Interface interface {
+	Apply(rules []Rule) error
+}
+
 // Service applies port rules via the nft command.
 type Service struct{}
+
+var _ Interface = (*Service)(nil)
 
 // New builds a firewall Service.
 func New() *Service {

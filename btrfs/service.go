@@ -21,10 +21,23 @@ const (
 	bytesPerMB = 1024 * 1024
 )
 
+// Interface is the subset of btrfs operations the app and snapshot packages depend
+// on; the concrete *Service satisfies it, so a test can substitute a fake.
+type Interface interface {
+	CreateSubvolume(path string) error
+	DeleteSubvolume(path string) error
+	MoveSubvolume(src, dst string) error
+	Snapshot(src, dst string, readonly bool) error
+	SetQuota(home string, diskMB int) error
+	UsageMB(home string) int
+}
+
 // Service performs btrfs subvolume and qgroup operations over a run.Runner.
 type Service struct {
 	runner run.Runner
 }
+
+var _ Interface = (*Service)(nil)
 
 // New builds a btrfs Service from a command runner.
 func New(runner run.Runner) *Service {

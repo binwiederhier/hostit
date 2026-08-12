@@ -35,12 +35,12 @@ func TestUpWorkspaceModeCreatesContainer(t *testing.T) {
 
 func TestUpWorkspaceModeUnchangedOnlyReloadsAgent(t *testing.T) {
 	t.Parallel()
-	m, ops, runner := newTestDeployManager(t)
+	m, _, runner := newTestDeployManager(t)
 	a := createTestApp(t, m, "blog")
 	writeAppFile(t, m, "blog", "hostit.yml", "mode: app\nrun: ./server")
 	// Existing container reports the exact hash of the desired config
 	conf := mustLoadConfig(t, m, "blog")
-	ids, err := ops.LookupIDs("blog")
+	ids, err := m.lookupIDs("blog")
 	require.NoError(t, err)
 	hash := containerConfigHash(containerCreateArgs(conf, a, m.appHome("blog"), m.config.SocketFile, hostitBinFile, 0, ids))
 	runner.returns("container inspect", hash)
@@ -181,7 +181,7 @@ func TestPortRulesReconciledOnCreateAndDelete(t *testing.T) {
 	last = ops.portRules[len(ops.portRules)-1]
 	require.Len(t, last, 1)
 	// The one remaining rule is blog's: its port and its uid, not wiki's
-	ids, err := ops.LookupIDs("blog")
+	ids, err := m.lookupIDs("blog")
 	require.NoError(t, err)
 	assert.Equal(t, 10000, last[0].Port)
 	assert.Equal(t, ids.UID, last[0].UID)
@@ -215,11 +215,11 @@ func (f *fakeRunner) reset() {
 	f.commands = nil
 }
 
-func newTestDeployManager(t *testing.T) (*Manager, *fakeSystemOps, *fakeRunner) {
+func newTestDeployManager(t *testing.T) (*Manager, *fakeSystem, *fakeRunner) {
 	t.Helper()
 	conf, s, ops := newTestManagerDeps(t)
 	runner := newFakeRunner()
-	return NewManager(conf, s, ops, runner), ops, runner
+	return NewManager(conf, s, testServices(ops, runner)), ops, runner
 }
 
 // createTestApp creates an app and waits for the background demo deploy to
