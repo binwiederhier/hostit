@@ -204,7 +204,7 @@ The id-vs-name split is the single most load-bearing decision in the code. See
 
 # Flow: creating an app
 
-```mermaid
+```mermaid {scale: 0.6}
 sequenceDiagram
     actor User
     participant S as server
@@ -226,12 +226,10 @@ anything -- the skeleton ships a static placeholder page.
 </div>
 
 ---
-zoom: 0.9
----
 
 # Flow: deploying (hostit.yml -> running)
 
-```mermaid
+```mermaid {scale: 0.5}
 sequenceDiagram
     actor Dev as Owner / agent
     participant S as server (REST)
@@ -260,7 +258,7 @@ SSH sessions); a reload just re-runs the command. The hash decides which.
 
 # Flow: serving a request
 
-```mermaid
+```mermaid {scale: 0.62}
 sequenceDiagram
     actor Visitor
     participant P as proxy (daemon)
