@@ -1,4 +1,10 @@
 import { Snippet, Wordmark } from "../components";
+import dashboardShot from "../assets/docs/dashboard.png";
+import workspaceShot from "../assets/docs/workspace.png";
+import editorShot from "../assets/docs/editor.png";
+import terminalShot from "../assets/docs/terminal.png";
+import snapshotsShot from "../assets/docs/snapshots.png";
+import adminShot from "../assets/docs/admin.png";
 
 // The user documentation, served by hostit itself so it is always the docs for
 // THIS instance: every example uses the reader's own hostname.
@@ -27,6 +33,14 @@ const Endpoint = ({ method, path, what }) => (
   </tr>
 );
 
+// A captioned screenshot of the running app.
+const Figure = ({ src, alt, caption }) => (
+  <figure className="docs-fig">
+    <img className="docs-shot" src={src} alt={alt} loading="lazy" />
+    {caption ? <figcaption>{caption}</figcaption> : null}
+  </figure>
+);
+
 const Docs = () => (
   <div className="docs">
     <div className="docs-header">
@@ -51,6 +65,7 @@ const Docs = () => (
         Sign in with Google. If your account is new and your email domain is not pre-approved, an administrator has to approve
         you once; the dashboard will say so.
       </p>
+      <Figure src={dashboardShot} alt="The hostit dashboard listing apps" caption="The dashboard: your apps, their status and resource use, and New app." />
       <p>
         Then click <strong>New app</strong> and give it a name (lowercase letters, digits and dashes). Within a few seconds the
         app exists and already serves a placeholder page at{" "}
@@ -72,6 +87,7 @@ const Docs = () => (
         (next). The built-in assistant needs the server to be configured with an AI key; if it is not, use SSH or your own
         agent.
       </p>
+      <Figure src={workspaceShot} alt="The app workspace: assistant chat beside a live preview" caption="The app workspace: the assistant on the left, a live preview on the right, and tabs across the top." />
       <p>
         The same page has tabs for the app's <strong>Files</strong> (a browser editor), its <strong>Logs</strong> (a feed of
         actions taken on the app, alongside its live, timestamped output), its <strong>Snapshots</strong>, and{" "}
@@ -102,6 +118,7 @@ const Docs = () => (
 
     <section id="layout">
       <h2>Where things go</h2>
+      <Figure src={editorShot} alt="The in-browser file editor" caption="The Files tab: a file browser and editor over the app's home directory." />
       <p>Every app's home directory has a place for each kind of thing:</p>
       <table className="docs-table">
         <tbody>
@@ -218,6 +235,7 @@ env:
         nothing else is reachable from outside. hostit restarts the command if it exits.
       </p>
       <h3>snapshot: (optional)</h3>
+      <Figure src={snapshotsShot} alt="The Snapshots tab listing snapshots" caption="The Snapshots tab: take one now, roll back, or fork a new app from any snapshot." />
       <p>
         hostit snapshots your app's files before every deploy and hourly, so you can roll back. If the app has a database,
         add hooks so a snapshot captures a consistent copy: <span className="mono">pre</span> runs before the snapshot (flush
@@ -256,6 +274,7 @@ env:
 
     <section id="ssh">
       <h2>SSH, scp and rsync</h2>
+      <Figure src={terminalShot} alt="The in-browser terminal inside the app container" caption="The Terminal tab drops you inside the app's container; the same session you get over SSH." />
       <p>
         Add an SSH key to your <a href="/profile">profile</a> first -- it applies to every app you own, present and future.
         Without a key, SSH cannot work and the app page says so.
@@ -464,6 +483,7 @@ journalctl -u hostit -f`} />
 
     <section id="administration">
       <h2>Administration</h2>
+      <Figure src={adminShot} alt="The admin page: users, roles and limits" caption="The Admin page: approve users, set roles and per-user limits, and configure the assistant." />
       <p>
         Admins get an <a href="/admin">Admin</a> link in the dashboard. An admin is anyone whose email is in{" "}
         <span className="mono">admin-emails</span>, or whom another admin has promoted. Everything below is on the Admin page
