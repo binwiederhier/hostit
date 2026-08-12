@@ -3,20 +3,7 @@
 Things worth doing, with enough context to pick up cold. Not a backlog of
 everything imaginable -- if it is not written down here it is not planned.
 
-# Phil notes (round 3)
-
-- Look for deprecated or old code. Go file by file, fan out if you have to. Remove old stuff.
-- The server/ package contains a lot of stuff that should not be there. Review and refactor.
-- pricing.go does not belong in the server package
-- i dont like stray server/ files that dont belong to a handler, unless they really need their own file. agentguide.go should be in the file that has the accompanying handler, domains.go should be in server_handler_domains.go, etc.
-- the handlers dont have tests. 
-- the placeholder app could be a static app with the public/index.html being part of the skaffold. that could remove ht ehostit placeholder cli
-- why is ops_nop.go still a thing. i thought we're getting rid of systemops?
-- is skaffold not called skeletion usually?
-- the public docs are not great. look at the Code/ntfy/ntfy/docs and get inspired by that. add screenshots too. fan out to make it possible
-- why is snapshot.go not in a snapshot service? everything that does direct file operations in app/ seems like a code smell to me. idk.
-
-## Phil notes -- round 4
+## Open questions
 
 - is "hostit apps" api really necessary?
 - what is v1/self and why is it not just the same api as the main api?
@@ -83,13 +70,6 @@ The dashboard can create, manage and delete apps and drive them in the browser
   sets the initial app-detail tab -- host leans on details/deploy, build opens the
   split chat+preview workspace -- so each person lands in the surface that fits what
   they came to do.
-- **Redesign the public error page and the placeholder app (both are weak).** The
-  "nothing here" 404 page (`server/errorpage.go`, currently a card with a little
-  jump game) and the placeholder page a new app serves (`cmd/placeholder.go`,
-  currently a guestbook) both look poor and need a proper redesign, ideally sharing
-  one visual language with the dashboard. Keep the 404's free-vs-stopped pages
-  identical and keep the placeholder a real running backend (it proves an app can
-  execute code).
 - **Semi-live app previews on the dashboard.** Thumbnails of each app in the list.
   Browser-side screenshotting is out (the app iframe is a different origin, so its
   pixels can't be read). Two workable options: (A) scaled-down live sandboxed
@@ -109,11 +89,6 @@ these levers act on. Prompt caching is already in place: the system prompt, tool
 definitions and the conversation prefix are cache-marked, so repeat turns pay the
 ~10x-cheaper cache-read rate. The remaining levers, roughly by impact:
 
-- **Claude Max / subscription backend (biggest lever).** Add an option to drive the
-  assistant through the Claude Agent SDK / Claude Code auth so an operator spends
-  their own Claude Max subscription instead of API credit. An alternate `completer`
-  backend (the loop already abstracts the model call behind an interface), an
-  auth/token flow for the subscription, and config to pick the backend per install.
 - **Model routing.** Default is `claude-sonnet-5` ($3/$15 per M in/out). Route
   simple turns (small edits, questions) to Haiku (~10x cheaper) and escalate to
   Sonnet only for hard work. Even a crude heuristic (cheap model unless the last
@@ -205,6 +180,10 @@ definitions and the conversation prefix are cache-marked, so repeat turns pay th
 
 Kept briefly for context; prune when stale.
 
+- **Claude Max / subscription assistant backend.** The assistant can drive a Claude
+  Pro/Max subscription (`claude-code-oauth-token`) run in a locked-down podman sandbox,
+  in addition to the metered Anthropic API; a credential's presence is the whole
+  switch (no backend selector). See `assistant/sandbox.go`.
 - **App modularization (refactor rounds 1 & 2).** `app/` split into single-purpose
   service packages -- `btrfs/`, `systemd/`, `container/`, `ssh/`, `unixuser/`, `run/`
   (shared Runner), `retention/` (tested GFS policy) -- composed by `app.Manager`.
