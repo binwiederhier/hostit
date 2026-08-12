@@ -528,16 +528,16 @@ const AdminInner = () => {
 
   const load = useCallback(async () => {
     try {
-      const [u, a, s, ad] = await Promise.all([
+      const [u, a, s] = await Promise.all([
         api.get("/api/users"),
         api.get("/api/apps?all=true"),
         api.get("/api/settings"),
-        api.get("/api/assistant-defaults"),
       ]);
       setUsers(u);
       setApps(a);
       setSettings(s);
-      setAsstDefaults(ad);
+      // The assistant defaults are part of the settings response now.
+      setAsstDefaults(s.assistant);
     } catch (err) {
       setError(err.message);
     }
@@ -633,7 +633,8 @@ const AssistantDefaults = ({ defaults, onSaved, setError }) => {
     setBusy(true);
     setError("");
     try {
-      await api.put("/api/assistant-defaults", body);
+      // Assistant defaults are part of the settings call now, nested under "assistant".
+      await api.patch("/api/settings", { assistant: body });
       await onSaved();
     } catch (err) {
       setError(err.message);

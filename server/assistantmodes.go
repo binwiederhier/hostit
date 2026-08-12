@@ -1,9 +1,7 @@
 package server
 
 import (
-	"encoding/json"
 	"fmt"
-	"net/http"
 	"strings"
 
 	"heckel.io/hostit/config"
@@ -39,54 +37,17 @@ type apiAssistantDefaults struct {
 	ExternalConfigured bool               `json:"external_configured"` // is the subscription set up
 }
 
-// handleAssistantDefaults returns the global assistant defaults and the catalog.
-func (s *Server) handleAssistantDefaults(w http.ResponseWriter, _ *http.Request, _ *caller) {
-	settings, _ := s.apps.Store().Settings()
-	writeJSON(w, http.StatusOK, &apiAssistantDefaults{
+// assistantDefaults builds the global assistant defaults block for the settings
+// response: the operator's defaults plus the API model catalog for the admin UI.
+// The assistant defaults live inside /api/settings, not on a separate endpoint.
+func (s *Server) assistantDefaults(settings map[string]string) *apiAssistantDefaults {
+	return &apiAssistantDefaults{
 		ExternalAllowed:    s.defaultExternalAllowed(settings),
 		AllowedModels:      splitCSV(settings[store.SettingAssistantDefaultModels]),
 		DefaultMode:        s.defaultMode(),
 		Models:             modelCatalog(s.config),
 		ExternalConfigured: s.config.ClaudeBackendEnabled(),
-	})
-}
-
-// handleAssistantDefaultsUpdate sets the global assistant defaults for users
-// without an explicit override.
-func (s *Server) handleAssistantDefaultsUpdate(w http.ResponseWriter, r *http.Request, c *caller) {
-	var req struct {
-		ExternalAllowed *bool     `json:"external_allowed"`
-		AllowedModels   *[]string `json:"allowed_models"`
-		DefaultMode     *string   `json:"default_mode"`
 	}
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8192)).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, err)
-		return
-	}
-	st := s.apps.Store()
-	if req.ExternalAllowed != nil {
-		if err := st.SetSetting(store.SettingAssistantDefaultExternal, boolStr(*req.ExternalAllowed)); err != nil {
-			writeAppError(w, err)
-			return
-		}
-	}
-	if req.AllowedModels != nil {
-		if err := st.SetSetting(store.SettingAssistantDefaultModels, strings.Join(*req.AllowedModels, ",")); err != nil {
-			writeAppError(w, err)
-			return
-		}
-	}
-	if req.DefaultMode != nil {
-		if *req.DefaultMode != "" && !s.config.IsValidMode(*req.DefaultMode) {
-			writeError(w, http.StatusBadRequest, errInvalidMode(*req.DefaultMode))
-			return
-		}
-		if err := st.SetSetting(store.SettingAssistantDefaultMode, *req.DefaultMode); err != nil {
-			writeAppError(w, err)
-			return
-		}
-	}
-	s.handleAssistantDefaults(w, r, c)
 }
 
 // modelCatalog is the configured API models as dropdown options (no External Claude).

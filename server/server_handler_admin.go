@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"heckel.io/hostit/assistant"
 	"heckel.io/hostit/store"
@@ -227,16 +228,18 @@ func (s *Server) handleSettingsGet(w http.ResponseWriter, _ *http.Request, _ *ca
 		writeAppError(w, err)
 		return
 	}
+	settings, _ := s.apps.Store().Settings()
 	writeJSON(w, http.StatusOK, &apiSettingsResponse{
 		DefaultAppLimit: defaults.AppLimit,
 		DefaultMemoryMB: defaults.MemoryMB,
 		DefaultDiskMB:   defaults.DiskMB,
+		Assistant:       s.assistantDefaults(settings),
 	})
 }
 
-func (s *Server) handleSettingsUpdate(w http.ResponseWriter, r *http.Request, _ *caller) {
+func (s *Server) handleSettingsUpdate(w http.ResponseWriter, r *http.Request, c *caller) {
 	var req apiUpdateSettingsRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8192)).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
@@ -258,11 +261,35 @@ func (s *Server) handleSettingsUpdate(w http.ResponseWriter, r *http.Request, _ 
 		writeAppError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, &apiSettingsResponse{
-		DefaultAppLimit: defaults.AppLimit,
-		DefaultMemoryMB: defaults.MemoryMB,
-		DefaultDiskMB:   defaults.DiskMB,
-	})
+	// Assistant defaults are part of the same settings call rather than a separate
+	// endpoint; only the fields present in the body are changed.
+	if a := req.Assistant; a != nil {
+		st := s.apps.Store()
+		if a.ExternalAllowed != nil {
+			if err := st.SetSetting(store.SettingAssistantDefaultExternal, boolStr(*a.ExternalAllowed)); err != nil {
+				writeAppError(w, err)
+				return
+			}
+		}
+		if a.AllowedModels != nil {
+			if err := st.SetSetting(store.SettingAssistantDefaultModels, strings.Join(*a.AllowedModels, ",")); err != nil {
+				writeAppError(w, err)
+				return
+			}
+		}
+		if a.DefaultMode != nil {
+			if *a.DefaultMode != "" && !s.config.IsValidMode(*a.DefaultMode) {
+				writeError(w, http.StatusBadRequest, errInvalidMode(*a.DefaultMode))
+				return
+			}
+			if err := st.SetSetting(store.SettingAssistantDefaultMode, *a.DefaultMode); err != nil {
+				writeAppError(w, err)
+				return
+			}
+		}
+	}
+	// Echo the merged settings (limits + assistant) back, so one round-trip writes and reads.
+	s.handleSettingsGet(w, r, c)
 }
 
 // transferTarget resolves who is to receive the apps, refusing anyone who

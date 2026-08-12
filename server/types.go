@@ -232,16 +232,26 @@ func (r *apiUpdateUserRequest) UnmarshalJSON(b []byte) error {
 
 // apiSettingsResponse is the global default limits
 type apiSettingsResponse struct {
-	DefaultAppLimit int `json:"default_app_limit"`
-	DefaultMemoryMB int `json:"default_memory_mb"`
-	DefaultDiskMB   int `json:"default_disk_mb"`
+	DefaultAppLimit int                   `json:"default_app_limit"`
+	DefaultMemoryMB int                   `json:"default_memory_mb"`
+	DefaultDiskMB   int                   `json:"default_disk_mb"`
+	Assistant       *apiAssistantDefaults `json:"assistant"` // global assistant defaults + model catalog
 }
 
 // apiUpdateSettingsRequest is the body of PATCH /api/settings
 type apiUpdateSettingsRequest struct {
-	DefaultAppLimit *int `json:"default_app_limit"`
-	DefaultMemoryMB *int `json:"default_memory_mb"`
-	DefaultDiskMB   *int `json:"default_disk_mb"`
+	DefaultAppLimit *int                        `json:"default_app_limit"`
+	DefaultMemoryMB *int                        `json:"default_memory_mb"`
+	DefaultDiskMB   *int                        `json:"default_disk_mb"`
+	Assistant       *apiAssistantDefaultsUpdate `json:"assistant"`
+}
+
+// apiAssistantDefaultsUpdate is the assistant-defaults portion of a settings update;
+// each field is optional and only the ones present are changed.
+type apiAssistantDefaultsUpdate struct {
+	ExternalAllowed *bool     `json:"external_allowed"`
+	AllowedModels   *[]string `json:"allowed_models"`
+	DefaultMode     *string   `json:"default_mode"`
 }
 
 // apiAgentEndpoint documents one endpoint in the agent-facing API index

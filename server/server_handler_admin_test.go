@@ -113,8 +113,6 @@ func TestAdminEndpointsRefuseNonAdmins(t *testing.T) {
 		{"POST", "/api/domains", `{"domain":"example.com"}`},
 		{"GET", "/api/settings", ""},
 		{"PATCH", "/api/settings", `{"default_app_limit":1}`},
-		{"GET", "/api/assistant-defaults", ""},
-		{"PUT", "/api/assistant-defaults", `{}`},
 	} {
 		rr := request(t, s.API(), tc.method, tc.path, tc.body, token)
 		assert.Equal(t, http.StatusForbidden, rr.Code, "%s %s must be 403 for a non-admin", tc.method, tc.path)
