@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      # Builds the React app into server/site, which the Go binary embeds. Also
+      # installs the web dependencies that the web unit tests use below.
+      - name: Build web assets
+        run: make web
+
+      # go test (compiles everything), gofmt check, and go vet.
+      - name: Go checks
+        run: make check
+
+      - name: Web unit tests
+        run: cd web && npm test
