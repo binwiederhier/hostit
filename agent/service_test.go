@@ -277,3 +277,35 @@ func TestTimestampWriterFlushesAnOverLongLine(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotEmpty(t, buf.String(), "a line past the cap is flushed rather than pinned in memory")
 }
+
+func TestRestartPlan(t *testing.T) {
+	t.Parallel()
+	// A run that lasted a healthy while is not a crash loop: reset the count and
+	// restart promptly with the base delay.
+	n, d, giveUp := restartPlan(3, healthyRunTime)
+	assert.Equal(t, 0, n)
+	assert.False(t, giveUp)
+	assert.Equal(t, restartBackoffBase, d)
+
+	// Consecutive rapid crashes back off exponentially from the base.
+	for _, s := range []struct {
+		in    int
+		delay time.Duration
+	}{
+		{0, 2 * time.Second},
+		{1, 4 * time.Second},
+		{2, 8 * time.Second},
+		{3, 16 * time.Second},
+	} {
+		n, d, giveUp = restartPlan(s.in, time.Second)
+		assert.Equal(t, s.in+1, n, "crash count increments")
+		assert.False(t, giveUp)
+		assert.Equal(t, s.delay, d)
+	}
+
+	// After crashLimit rapid crashes in a row, give up so a doomed app stops
+	// hammering the box instead of restarting forever.
+	n, _, giveUp = restartPlan(crashLimit-1, time.Second)
+	assert.True(t, giveUp)
+	assert.Equal(t, crashLimit, n)
+}

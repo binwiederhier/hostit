@@ -25,8 +25,17 @@ const (
 	// hostitBinFile is where the hostit binary is mounted inside the container;
 	// "mode: static" apps run its file server
 	hostitBinFile = "/usr/bin/hostit"
-	// defaultRestartDelay is the pause before restarting an exited command
-	defaultRestartDelay = 2 * time.Second
+	// Crash-loop supervision: a command that keeps exiting is restarted with an
+	// exponential backoff (base doubling each time, capped), and after crashLimit
+	// rapid crashes in a row the agent gives up and idles ("failed") instead of
+	// restarting forever, so a doomed app stops pegging the box's one core.
+	restartBackoffBase = 2 * time.Second
+	restartBackoffMax  = 60 * time.Second
+	// healthyRunTime is how long the command must run to count as healthy: a longer
+	// run resets the backoff, so an app that runs fine then dies once is not treated
+	// as a crash loop.
+	healthyRunTime = 30 * time.Second
+	crashLimit     = 5
 	// killTimeout is how long a child gets after SIGTERM before SIGKILL
 	killTimeout = 10 * time.Second
 	// logMaxSize caps the app log; beyond it the log is rotated to .old
@@ -51,13 +60,14 @@ type Agent struct {
 	logFile      *appLog
 	stopOnce     sync.Once
 	paused       atomic.Bool // App stopped by the owner; the container stays up
+	crashes      int         // Consecutive rapid crashes, for the restart backoff
 }
 
 // New creates an Agent for the app living in home (usually $HOME)
 func New(home string) *Agent {
 	return &Agent{
 		home:         home,
-		restartDelay: defaultRestartDelay,
+		restartDelay: restartBackoffBase,
 		reap:         os.Getpid() == 1,
 		exits:        make(chan childExit, 16),
 		reloads:      make(chan struct{}, 1),
@@ -106,6 +116,7 @@ func (a *Agent) Run() error {
 			}
 			continue
 		}
+		startedAt := time.Now()
 		slog.Info("Started app command", "pid", cmd.Process.Pid, "command", conf.Command(hostitBinFile))
 		a.writeState("running")
 		exited := a.waitFor(cmd) // Exactly one waiter per child (Wait must not be called twice)
@@ -113,16 +124,36 @@ func (a *Agent) Run() error {
 		// Wait for the child to exit, a reload request, or shutdown
 		select {
 		case exit := <-exited:
-			slog.Warn("App command exited, restarting", "status", exit.status, "delay", a.restartDelay)
+			ranFor := time.Since(startedAt)
+			var delay time.Duration
+			var giveUp bool
+			a.crashes, delay, giveUp = restartPlan(a.crashes, ranFor)
+			if giveUp {
+				// The command keeps crashing on start. Stop restarting rather than
+				// hammer the box forever; the owner fixes it and redeploys/starts.
+				slog.Error("App keeps crashing; stopping restarts until it is redeployed or started",
+					"crashes", a.crashes, "lastStatus", exit.status)
+				a.writeState("failed")
+				a.crashes = 0
+				if !a.waitWake() {
+					return nil
+				}
+				continue
+			}
+			slog.Warn("App command exited, restarting", "status", exit.status,
+				"ranFor", ranFor.Round(time.Second), "delay", delay)
 			a.writeState("crashed")
-			if !a.sleepInterruptible() {
+			if !a.sleepFor(delay) {
 				return nil
 			}
 		case <-a.wake:
-			// Paused or resumed: stop the command and let the loop top decide
+			// Paused or resumed: stop the command and let the loop top decide. Owner
+			// action, so forget prior crashes and start the backoff fresh.
+			a.crashes = 0
 			a.killAndWait(cmd, exited)
 		case <-a.reloads:
 			slog.Info("Reloading: stopping app command")
+			a.crashes = 0
 			a.killAndWait(cmd, exited)
 		case <-a.stop:
 			a.killAndWait(cmd, exited)
@@ -349,8 +380,14 @@ func (a *Agent) killAndWait(cmd *exec.Cmd, exited <-chan childExit) {
 
 // sleepInterruptible pauses before a restart; returns false on shutdown
 func (a *Agent) sleepInterruptible() bool {
+	return a.sleepFor(a.restartDelay)
+}
+
+// sleepFor waits d, or returns early if a reload/wake arrives; it returns false
+// only on shutdown, so callers can bail out of a backoff the moment the owner acts.
+func (a *Agent) sleepFor(d time.Duration) bool {
 	select {
-	case <-time.After(a.restartDelay):
+	case <-time.After(d):
 		return true
 	case <-a.reloads:
 		return true
@@ -359,6 +396,26 @@ func (a *Agent) sleepInterruptible() bool {
 	case <-a.stop:
 		return false
 	}
+}
+
+// restartPlan decides what to do after the run command exits. crashes is the count
+// of consecutive rapid crashes so far; ranFor is how long the command just ran. It
+// returns the new crash count, the backoff to wait before the next start, and
+// whether to give up restarting because the app keeps crashing.
+func restartPlan(crashes int, ranFor time.Duration) (newCrashes int, delay time.Duration, giveUp bool) {
+	if ranFor >= healthyRunTime {
+		// Ran long enough to be healthy: an isolated exit, not a crash loop.
+		return 0, restartBackoffBase, false
+	}
+	crashes++
+	if crashes >= crashLimit {
+		return crashes, 0, true
+	}
+	delay = restartBackoffBase << (crashes - 1)
+	if delay > restartBackoffMax {
+		delay = restartBackoffMax
+	}
+	return crashes, delay, false
 }
 
 // openLog (re)opens the app log. The returned writer rotates as it writes: an
