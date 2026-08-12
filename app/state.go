@@ -194,12 +194,12 @@ type usage struct {
 // looks identical to no change. Anything unreadable means "not running", which is
 // the safe default (the app is not serving).
 func (m *Manager) appProcessState(name string) (running bool, startedAt int64) {
-	root, err := m.appRoot(name)
+	root, err := m.homefs.OpenRoot(m.appHome(name))
 	if err != nil {
 		return false, 0
 	}
 	defer root.Close()
-	b, err := readCapped(root, appStateFile, maxStateRead)
+	b, err := m.homefs.ReadCapped(root, appStateFile, maxStateRead)
 	if err != nil {
 		return false, 0
 	}

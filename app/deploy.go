@@ -136,12 +136,12 @@ func (m *Manager) Logs(name string, lines int) (string, error) {
 	}
 	// Through the app's root: log/ lives in a directory the app user owns,
 	// so the log file can be a symlink to anything the daemon can read
-	root, err := m.appRoot(name)
+	root, err := m.homefs.OpenRoot(m.appHome(name))
 	if err != nil {
 		return "", err
 	}
 	defer root.Close()
-	b, err := readCapped(root, appLogFile, maxLogRead)
+	b, err := m.homefs.ReadCapped(root, appLogFile, maxLogRead)
 	if err != nil {
 		return "", fmt.Errorf("no logs yet: %w", err)
 	}
@@ -242,12 +242,12 @@ func (m *Manager) appHomeByID(id string) string {
 // symlink the tenant planted there cannot walk the root daemon out of the home,
 // and the file is capped rather than read unbounded.
 func (m *Manager) loadConfig(name string) (*appctl.AppConfig, error) {
-	root, err := m.appRoot(name)
+	root, err := m.homefs.OpenRoot(m.appHome(name))
 	if err != nil {
 		return nil, err
 	}
 	defer root.Close()
-	b, err := readCapped(root, configFile, maxConfigSize)
+	b, err := m.homefs.ReadCapped(root, configFile, maxConfigSize)
 	if err != nil {
 		return nil, err
 	}

@@ -19,6 +19,7 @@ import (
 	"heckel.io/hostit/btrfs"
 	"heckel.io/hostit/config"
 	"heckel.io/hostit/container"
+	"heckel.io/hostit/homefs"
 	"heckel.io/hostit/run"
 	"heckel.io/hostit/store"
 	"heckel.io/hostit/systemd"
@@ -111,6 +112,7 @@ type Manager struct {
 	btrfs     *btrfs.Service
 	systemd   *systemd.Service
 	container *container.Service
+	homefs    *homefs.Service
 
 	// memoryMB and diskMB cache per-app limits, so redeploys and quota checks
 	// keep them; the authoritative values come from the owner's limits
@@ -150,6 +152,7 @@ func NewManager(conf *config.Config, s *store.Store, ops SystemOps, runner run.R
 		btrfs:      btrfs.New(runner),
 		systemd:    systemd.New(runner),
 		container:  container.New(runner),
+		homefs:     homefs.New(ErrInvalid),
 		memoryMB:   make(map[string]int),
 		diskMB:     make(map[string]int),
 		stateCache: make(map[string]State),
