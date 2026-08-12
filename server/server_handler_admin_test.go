@@ -61,6 +61,66 @@ func TestDeleteUserTransfersOrDeletesTheirApps(t *testing.T) {
 	assert.ErrorIs(t, err, store.ErrAppNotFound)
 }
 
+func TestSettingsGetAndUpdate(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+
+	// The defaults are readable, then a partial PATCH changes only what it names
+	rr := request(t, s.API(), "GET", "/api/settings", "", testToken)
+	require.Equal(t, http.StatusOK, rr.Code)
+	var before apiSettingsResponse
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &before))
+
+	rr = request(t, s.API(), "PATCH", "/api/settings", `{"default_app_limit":7,"default_memory_mb":512}`, testToken)
+	require.Equal(t, http.StatusOK, rr.Code)
+	var after apiSettingsResponse
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &after))
+	assert.Equal(t, 7, after.DefaultAppLimit)
+	assert.Equal(t, 512, after.DefaultMemoryMB)
+	assert.Equal(t, before.DefaultDiskMB, after.DefaultDiskMB, "an omitted field is left untouched")
+
+	// And it persisted
+	rr = request(t, s.API(), "GET", "/api/settings", "", testToken)
+	require.Equal(t, http.StatusOK, rr.Code)
+	var reread apiSettingsResponse
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &reread))
+	assert.Equal(t, 7, reread.DefaultAppLimit)
+	assert.Equal(t, 512, reread.DefaultMemoryMB)
+}
+
+func TestSettingsUpdateRejectsGarbage(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	rr := request(t, s.API(), "PATCH", "/api/settings", `not json`, testToken)
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+}
+
+// Every admin endpoint sits behind requireAdmin: an approved but non-admin user
+// is refused with a 403 (not a 404, not a 401), across the whole admin surface.
+func TestAdminEndpointsRefuseNonAdmins(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	u := newActiveTestUser(t, s, "member@example.com")
+	token, _, err := s.users.CreateAppToken(u.ID, "", "t")
+	require.NoError(t, err)
+
+	for _, tc := range []struct {
+		method, path, body string
+	}{
+		{"GET", "/api/users", ""},
+		{"POST", "/api/users", `{"email":"x@example.com"}`},
+		{"GET", "/api/domains", ""},
+		{"POST", "/api/domains", `{"domain":"example.com"}`},
+		{"GET", "/api/settings", ""},
+		{"PATCH", "/api/settings", `{"default_app_limit":1}`},
+		{"GET", "/api/assistant-defaults", ""},
+		{"PUT", "/api/assistant-defaults", `{}`},
+	} {
+		rr := request(t, s.API(), tc.method, tc.path, tc.body, token)
+		assert.Equal(t, http.StatusForbidden, rr.Code, "%s %s must be 403 for a non-admin", tc.method, tc.path)
+	}
+}
+
 func TestDeleteUserRefusesAnUnusableTransfer(t *testing.T) {
 	t.Parallel()
 	s := newTestServer(t)

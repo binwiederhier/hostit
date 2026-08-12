@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -94,6 +95,93 @@ func TestRemoveCustomDomainWrongApp(t *testing.T) {
 
 	err = s.removeAppDomain("other", "blog.example.com")
 	assert.ErrorIs(t, err, store.ErrAppDomainNotFound)
+}
+
+// The custom-domain HTTP surface: add records a pending domain (201) and returns
+// the DNS records the owner must create; cert issuance is a background goroutine,
+// so we assert the response and the stored row, not the eventual active state.
+func TestAppDomainAddListVerifyDelete(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	u := newActiveTestUser(t, s, "owner@example.com")
+	token := accountToken(t, s, u)
+	require.NoError(t, s.apps.Store().AddApp(&store.App{Name: "blog", Port: 10000, Host: store.HostLocal, OwnerID: u.ID}))
+
+	// Empty to begin with
+	rr := request(t, s.API(), "GET", "/api/apps/blog/domains", "", token)
+	require.Equal(t, http.StatusOK, rr.Code)
+	assert.Equal(t, "[]\n", rr.Body.String())
+
+	// Add attaches the domain and returns the DNS records to create
+	rr = request(t, s.API(), "POST", "/api/apps/blog/domains", `{"domain":"blog.example.com"}`, token)
+	require.Equal(t, http.StatusCreated, rr.Code)
+	var added apiAppDomainResponse
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &added))
+	assert.Equal(t, "blog.example.com", added.Domain)
+	assert.NotEmpty(t, added.DNS, "the owner needs at least the traffic record")
+
+	// The store records it against the app right away, before any cert exists
+	d, err := s.apps.Store().Domain("blog.example.com")
+	require.NoError(t, err)
+	assert.Equal(t, "blog", d.AppName)
+
+	// It now shows up in the list
+	rr = request(t, s.API(), "GET", "/api/apps/blog/domains", "", token)
+	require.Equal(t, http.StatusOK, rr.Code)
+	var list []*apiAppDomainResponse
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &list))
+	require.Len(t, list, 1)
+	assert.Equal(t, "blog.example.com", list[0].Domain)
+
+	// Verify re-attempts issuance in the background and answers 200
+	rr = request(t, s.API(), "POST", "/api/apps/blog/domains/blog.example.com/verify", "", token)
+	assert.Equal(t, http.StatusOK, rr.Code)
+
+	// Delete detaches it, and it is gone from the store
+	rr = request(t, s.API(), "DELETE", "/api/apps/blog/domains/blog.example.com", "", token)
+	require.Equal(t, http.StatusOK, rr.Code)
+	_, err = s.apps.Store().Domain("blog.example.com")
+	assert.ErrorIs(t, err, store.ErrAppDomainNotFound)
+}
+
+func TestAppDomainAddRejectsBadDomain(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	u := newActiveTestUser(t, s, "owner@example.com")
+	token := accountToken(t, s, u)
+	require.NoError(t, s.apps.Store().AddApp(&store.App{Name: "blog", Port: 10000, Host: store.HostLocal, OwnerID: u.ID}))
+	rr := request(t, s.API(), "POST", "/api/apps/blog/domains", `{"domain":"not a domain"}`, token)
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+}
+
+// The custom-domain endpoints are app-scoped just like the rest: a non-owner sees
+// someone else's app as a 404, so the domain surface never leaks it either.
+func TestAppDomainEndpointsAreOwnerScoped(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	owner := newActiveTestUser(t, s, "owner@example.com")
+	stranger := newActiveTestUser(t, s, "stranger@example.com")
+	require.NoError(t, s.apps.Store().AddApp(&store.App{Name: "secret", Port: 10000, Host: store.HostLocal, OwnerID: owner.ID}))
+	strangerToken := accountToken(t, s, stranger)
+
+	assert.Equal(t, http.StatusNotFound, request(t, s.API(), "GET", "/api/apps/secret/domains", "", strangerToken).Code)
+	assert.Equal(t, http.StatusNotFound, request(t, s.API(), "POST", "/api/apps/secret/domains", `{"domain":"x.example.com"}`, strangerToken).Code)
+}
+
+// Verify and delete only accept a domain that belongs to the named app, so one
+// app cannot manage another's domain even by guessing the name.
+func TestAppDomainVerifyDeleteWrongApp(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	u := newActiveTestUser(t, s, "owner@example.com")
+	token := accountToken(t, s, u)
+	require.NoError(t, s.apps.Store().AddApp(&store.App{Name: "blog", Port: 10000, Host: store.HostLocal, OwnerID: u.ID}))
+	require.NoError(t, s.apps.Store().AddApp(&store.App{Name: "wiki", Port: 10001, Host: store.HostLocal, OwnerID: u.ID}))
+	_, err := s.addAppDomain("blog", "blog.example.com")
+	require.NoError(t, err)
+
+	assert.Equal(t, http.StatusNotFound, request(t, s.API(), "POST", "/api/apps/wiki/domains/blog.example.com/verify", "", token).Code)
+	assert.Equal(t, http.StatusNotFound, request(t, s.API(), "DELETE", "/api/apps/wiki/domains/blog.example.com", "", token).Code)
 }
 
 func TestDomainDNSRecords(t *testing.T) {
