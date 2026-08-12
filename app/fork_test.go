@@ -89,14 +89,6 @@ func TestForkSetsDiskQuota(t *testing.T) {
 	assert.Contains(t, r.ran(), "btrfs qgroup limit 256M "+m.appHome("blog2"))
 }
 
-func TestForkRequiresBtrfs(t *testing.T) {
-	t.Parallel()
-	m, _, _ := newTestDeployManager(t)
-	require.NoError(t, m.store.AddApp(&store.App{Name: "blog", Port: 10000, Host: store.HostLocal}))
-	_, err := m.Fork("blog", "blog2", "", &CreateOptions{})
-	assert.ErrorIs(t, err, ErrSnapshotsUnavailable)
-}
-
 func TestForkUnknownSourceFails(t *testing.T) {
 	t.Parallel()
 	m, _, r := newTestDeployManager(t)

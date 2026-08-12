@@ -371,7 +371,7 @@ func (s *Server) appResponse(a *store.App, customDomain string) *apiAppResponse 
 		Port:             a.Port,
 		DiskMB:           a.DiskMB,
 		OwnerEmail:       s.ownerEmail(a.OwnerID),
-		SnapshotsEnabled: s.apps.SnapshotsEnabled(),
+		SnapshotsEnabled: true, // btrfs is mandatory, so snapshots are always available
 		AssistantEnabled: s.assistant != nil,
 		// What the app says it is, straight from its hostit.yml; empty for a stub
 		Description: s.apps.Description(a.Name),

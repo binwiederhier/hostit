@@ -41,10 +41,8 @@ func (m *Manager) up(name string, snapshot bool) (string, error) {
 	}
 	// Snapshot the current state before applying the new config, so a bad deploy is
 	// undoable. Best effort: a snapshot failure must not block the deploy.
-	if snapshot && m.btrfsEnabled() {
-		if _, err := m.takeSnapshot(name, preDeploySnapshotLabel, true); err != nil {
-			slog.Warn("Pre-deploy snapshot failed", "app", name, "error", err)
-		}
+	if snapshot {
+		m.snapshots.PreDeploySnapshot(name)
 	}
 	return m.apply(a, conf, true)
 }

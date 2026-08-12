@@ -305,6 +305,14 @@ func (f *fakeRunner) Run(args ...string) (string, error) {
 	if len(args) >= 4 && args[0] == "podman" && args[1] == "build" && args[2] == "--tag" {
 		f.built[args[3]] = true
 	}
+	// Stand in for btrfs's on-disk effect so the create/fork/snapshot paths yield a
+	// real directory on the non-btrfs test host: creating a subvolume, or snapshotting
+	// one, materializes the destination path (the last argument). Without this the
+	// home a fresh app's create path relies on would never exist.
+	if len(args) >= 4 && args[0] == "btrfs" && args[1] == "subvolume" &&
+		(args[2] == "create" || args[2] == "snapshot") {
+		_ = os.MkdirAll(args[len(args)-1], 0o755)
+	}
 	if len(args) == 4 && args[0] == "podman" && args[1] == "image" && args[2] == "exists" {
 		if !f.built[args[3]] {
 			return "", errImageMissing

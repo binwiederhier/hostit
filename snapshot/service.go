@@ -1,0 +1,331 @@
+// Package snapshot orchestrates app-home snapshots, rollback and retention on
+// btrfs. It composes the node-local services (btrfs, systemd, container) and the
+// store directly, and calls back into its Host (the app.Manager) for the
+// app-lifecycle operations a snapshot or rollback needs: taking the per-app lock,
+// bringing the app up after a rollback, running snapshot hooks, and resolving the
+// id-keyed paths, names, uid and quota of an app.
+package snapshot
+
+import (
+	"crypto/rand"
+	"encoding/hex"
+	"fmt"
+	"log/slog"
+	"os"
+	"time"
+
+	"heckel.io/hostit/btrfs"
+	"heckel.io/hostit/container"
+	"heckel.io/hostit/retention"
+	"heckel.io/hostit/store"
+	"heckel.io/hostit/systemd"
+)
+
+const (
+	// snapshotHookTimeout bounds a hostit.yml snapshot.pre/post command
+	snapshotHookTimeout = 30 * time.Second
+	// snapshotDirMode is the mode of the .snapshots/<app> directory
+	snapshotDirMode = 0o700
+	// rollbackStagedSuffix names the writable copy of a rollback target, built
+	// beside the home before the home is touched; rollbackOldSuffix names the old
+	// home moved aside during the swap. Both are cleaned up as the rollback proceeds.
+	rollbackStagedSuffix = ".rollback-staged"
+	rollbackOldSuffix    = ".rollback-old"
+	// autoSnapshotLabel labels the hourly automatic snapshots, and
+	// preDeploySnapshotLabel the one taken just before a deploy, so the owner sees
+	// why each unattended snapshot exists instead of a blank row.
+	autoSnapshotLabel      = "Automated snapshot"
+	preDeploySnapshotLabel = "Automated snapshot before deploy"
+)
+
+// Host is the set of app-orchestration callbacks the Service needs from its owner
+// (app.Manager). Everything node-local (btrfs, systemd, container, the store) the
+// Service holds directly; these are the app-lifecycle operations and the id-keyed
+// path/name/uid/quota lookups that stay in the app package, so the path layout and
+// the deploy machinery have a single home.
+type Host interface {
+	// LockApp acquires the per-app lifecycle lock and returns its unlock func, so a
+	// snapshot or rollback never races a deploy on the same app's home.
+	LockApp(name string) func()
+	// Up brings the app up after a rollback. It must NOT take the per-app lock (the
+	// caller holds it) nor a pre-deploy snapshot (the rollback already took a safety
+	// one) -- the app.Manager's unlocked up path.
+	Up(name string) error
+	// StateChanged drops the app's cached state after its home or process moved.
+	StateChanged(name string)
+	// SnapshotHooks returns the app's snapshot.pre/post commands from its
+	// hostit.yml; empty strings when there is no (valid) config or no such hook.
+	SnapshotHooks(name string) (pre, post string)
+	// RunHook runs a snapshot hook command inside the app's container and returns
+	// its exit code. A non-nil error means the command could not be run at all.
+	RunHook(name, command string, timeout time.Duration) (exitCode int, err error)
+	// AppHome is the app's home subvolume path.
+	AppHome(name string) string
+	// SnapshotsRoot is the app's snapshots directory, <apps>/.snapshots/<id>.
+	SnapshotsRoot(name string) string
+	// SnapshotPath is one snapshot's subvolume path.
+	SnapshotPath(name, id string) string
+	// UnitName and ContainerName are the app's systemd unit and container names.
+	UnitName(name string) string
+	ContainerName(name string) string
+	// UIDForPort is an app's base uid, for restoring home ownership after a rollback.
+	UIDForPort(port int) int
+	// DiskLimit is the app's recorded disk quota in MB, for restoring the qgroup
+	// cap after a rollback.
+	DiskLimit(name string) int
+	// Chown restores ownership of a rolled-back home to the app's uid.
+	Chown(path string, uid int) error
+}
+
+// Service performs app-home snapshots, rollback and retention pruning.
+type Service struct {
+	btrfs     *btrfs.Service
+	systemd   *systemd.Service
+	container *container.Service
+	store     *store.Store
+	host      Host
+}
+
+// New builds a snapshot Service from the node-local services, the store and the
+// host callbacks.
+func New(bt *btrfs.Service, sd *systemd.Service, ct *container.Service, st *store.Store, host Host) *Service {
+	return &Service{btrfs: bt, systemd: sd, container: ct, store: st, host: host}
+}
+
+// TakeSnapshot snapshots an app's home into a read-only subvolume and records it.
+// label is an optional note; auto marks automatic snapshots (which retention may
+// prune). The app's snapshot.pre hook runs first and aborts the snapshot if it
+// fails, so a torn state is never captured; snapshot.post runs after (best effort).
+func (s *Service) TakeSnapshot(name, label string, auto bool) (*store.Snapshot, error) {
+	defer s.host.LockApp(name)()
+	return s.takeSnapshot(name, label, auto)
+}
+
+// takeSnapshot is TakeSnapshot without the per-app lock, for callers that already
+// hold it (PreDeploySnapshot, Rollback).
+func (s *Service) takeSnapshot(name, label string, auto bool) (*store.Snapshot, error) {
+	if _, err := s.store.App(name); err != nil {
+		return nil, err
+	}
+	pre, post := s.host.SnapshotHooks(name) // hooks are optional; a missing/invalid config just means none
+
+	if pre != "" {
+		code, err := s.host.RunHook(name, pre, snapshotHookTimeout)
+		if err != nil {
+			return nil, fmt.Errorf("snapshot pre hook could not run: %w", err)
+		}
+		if code != 0 {
+			return nil, fmt.Errorf("snapshot pre hook failed (exit %d); snapshot aborted", code)
+		}
+	}
+
+	now := time.Now()
+	id := snapshotID(now, snapshotKind(auto)+"-"+randID())
+	if err := os.MkdirAll(s.host.SnapshotsRoot(name), snapshotDirMode); err != nil {
+		return nil, err
+	}
+	if err := s.btrfs.Snapshot(s.host.AppHome(name), s.host.SnapshotPath(name, id), true); err != nil {
+		return nil, fmt.Errorf("cannot snapshot the app home: %w", err)
+	}
+	snap := &store.Snapshot{ID: id, AppName: name, Label: label, CreatedAt: now, Auto: auto}
+	if err := s.store.AddSnapshot(snap); err != nil {
+		_ = s.btrfs.DeleteSubvolume(s.host.SnapshotPath(name, id)) // do not leak an unrecorded subvolume
+		return nil, err
+	}
+
+	if post != "" {
+		if _, err := s.host.RunHook(name, post, snapshotHookTimeout); err != nil {
+			slog.Warn("Snapshot post hook failed", "app", name, "error", err)
+		}
+	}
+	s.pruneSnapshots(name)
+	return snap, nil
+}
+
+// PreDeploySnapshot takes the automatic safety snapshot a deploy makes before
+// applying a new config, so a bad deploy is undoable. The caller (the app's
+// unlocked up path) already holds the per-app lock, and a failure only warns: a
+// snapshot failure must not block the deploy.
+func (s *Service) PreDeploySnapshot(name string) {
+	if _, err := s.takeSnapshot(name, preDeploySnapshotLabel, true); err != nil {
+		slog.Warn("Pre-deploy snapshot failed", "app", name, "error", err)
+	}
+}
+
+// ListSnapshots returns an app's snapshots, newest first.
+func (s *Service) ListSnapshots(name string) ([]*store.Snapshot, error) {
+	return s.store.Snapshots(name)
+}
+
+// DeleteSnapshot removes a single snapshot -- its subvolume and its record -- when
+// an owner or agent deletes one by hand. The record is dropped only after the
+// subvolume is gone, so a failed delete never orphans the subvolume.
+func (s *Service) DeleteSnapshot(name, id string) error {
+	defer s.host.LockApp(name)()
+	snap, err := s.store.Snapshot(id)
+	if err != nil {
+		return err
+	}
+	if snap.AppName != name {
+		return store.ErrSnapshotNotFound
+	}
+	if err := s.btrfs.DeleteSubvolume(s.host.SnapshotPath(name, id)); err != nil {
+		return fmt.Errorf("cannot delete the snapshot subvolume: %w", err)
+	}
+	return s.store.DeleteSnapshot(id)
+}
+
+// Rollback restores an app's home from a snapshot. The replacement is built and
+// swapped in atomically so a failure never leaves the app without a home:
+//
+//  1. stage a writable copy of the target snapshot (before touching the home, and
+//     before the safety snapshot -- whose retention prune could otherwise delete
+//     the very target being restored);
+//  2. take a safety snapshot of the current state (so the rollback is itself undoable);
+//  3. stop the container, then swap: move the live home aside, move the staged copy
+//     in, and only then drop the old home;
+//  4. restore ownership and quota and bring the app back up.
+//
+// The per-app lock serializes this against concurrent deploys/snapshots on the app.
+func (s *Service) Rollback(name, id string) error {
+	defer s.host.LockApp(name)()
+
+	snap, err := s.store.Snapshot(id)
+	if err != nil {
+		return err
+	}
+	if snap.AppName != name {
+		return store.ErrSnapshotNotFound
+	}
+	a, err := s.store.App(name)
+	if err != nil {
+		return err
+	}
+	defer s.host.StateChanged(name)
+
+	home := s.host.AppHome(name)
+	staged := home + rollbackStagedSuffix
+	oldHome := home + rollbackOldSuffix
+
+	// Stage the restored home from the target first, so the live home stays intact
+	// until the replacement is ready, and the content is safely captured before the
+	// safety snapshot's retention prune (which could remove the target).
+	_ = s.btrfs.DeleteSubvolume(staged) // clear any leftover from an aborted rollback
+	if err := s.btrfs.Snapshot(s.host.SnapshotPath(name, id), staged, false); err != nil {
+		return fmt.Errorf("cannot stage the snapshot for rollback: %w", err)
+	}
+
+	// The safety snapshot is itself automatic (retention prunes it in time) and
+	// labelled so the owner can see what it captured.
+	if _, err := s.takeSnapshot(name, "Before rolling back to snapshot "+id, true); err != nil {
+		_ = s.btrfs.DeleteSubvolume(staged)
+		return fmt.Errorf("cannot take a safety snapshot before rolling back: %w", err)
+	}
+
+	// Stop and remove the container so nothing holds the home subvolume.
+	_ = s.systemd.DisableNow(s.host.UnitName(name))
+	_ = s.systemd.ResetFailed(s.host.UnitName(name))
+	_ = s.container.RemoveForce(s.host.ContainerName(name))
+
+	// Swap the staged home in. Move the old home aside first so the home always
+	// exists (old or new): if putting the new one in place fails, restore the old.
+	_ = s.btrfs.DeleteSubvolume(oldHome)
+	if err := s.btrfs.MoveSubvolume(home, oldHome); err != nil {
+		_ = s.btrfs.DeleteSubvolume(staged)
+		return fmt.Errorf("cannot move the current home aside: %w", err)
+	}
+	if err := s.btrfs.MoveSubvolume(staged, home); err != nil {
+		_ = s.btrfs.MoveSubvolume(oldHome, home) // put the original home back
+		return fmt.Errorf("cannot put the restored home in place: %w", err)
+	}
+	_ = s.btrfs.DeleteSubvolume(oldHome)
+
+	uid := s.host.UIDForPort(a.Port)
+	if err := s.host.Chown(home, uid); err != nil {
+		slog.Warn("Cannot restore home ownership after rollback", "app", name, "error", err)
+	}
+	if err := s.btrfs.SetQuota(home, s.host.DiskLimit(name)); err != nil {
+		slog.Warn("Cannot restore quota after rollback", "app", name, "error", err)
+	}
+	// No extra pre-deploy snapshot: we already took the safety snapshot above.
+	return s.host.Up(name)
+}
+
+// pruneSnapshots deletes the snapshots that fall outside the retention policy,
+// removing both the subvolume and the record.
+func (s *Service) pruneSnapshots(name string) {
+	snaps, err := s.store.Snapshots(name)
+	if err != nil {
+		return
+	}
+	_, prune := retention.Apply(toRetentionSnaps(snaps), retention.Default)
+	for _, p := range prune {
+		if err := s.btrfs.DeleteSubvolume(s.host.SnapshotPath(name, p.ID)); err != nil {
+			slog.Warn("Cannot delete pruned snapshot subvolume", "app", name, "id", p.ID, "error", err)
+			continue // keep the record so we retry, rather than orphan the subvolume
+		}
+		_ = s.store.DeleteSnapshot(p.ID)
+	}
+}
+
+// DeleteAppSubvolumes removes an app's home and all its snapshot subvolumes, used
+// when an app is deleted. On a btrfs host `btrfs subvolume delete` cleans the whole
+// subvolume; the caller then leaves an empty plain directory for userdel to remove.
+func (s *Service) DeleteAppSubvolumes(name string) {
+	snaps, _ := s.store.Snapshots(name)
+	for _, snap := range snaps {
+		_ = s.btrfs.DeleteSubvolume(s.host.SnapshotPath(name, snap.ID))
+	}
+	_ = os.RemoveAll(s.host.SnapshotsRoot(name))
+	_ = s.btrfs.DeleteSubvolume(s.host.AppHome(name))
+}
+
+// SnapshotLoop takes an automatic snapshot of every app on an interval (hourly),
+// so an owner always has a recent point to roll back to.
+func (s *Service) SnapshotLoop(interval time.Duration, done <-chan struct{}) {
+	slog.Info("Starting snapshot loop", "interval", interval)
+	defer slog.Info("Stopping snapshot loop")
+	for {
+		select {
+		case <-time.After(interval):
+		case <-done:
+			return
+		}
+		apps, err := s.store.Apps()
+		if err != nil {
+			continue
+		}
+		for _, a := range apps {
+			if _, err := s.TakeSnapshot(a.Name, autoSnapshotLabel, true); err != nil {
+				slog.Warn("Hourly snapshot failed", "app", a.Name, "error", err)
+			}
+		}
+	}
+}
+
+func toRetentionSnaps(ss []*store.Snapshot) []retention.Snapshot {
+	out := make([]retention.Snapshot, len(ss))
+	for i, s := range ss {
+		out[i] = retention.Snapshot{ID: s.ID, App: s.AppName, Label: s.Label, CreatedAt: s.CreatedAt, Auto: s.Auto}
+	}
+	return out
+}
+
+// snapshotID builds a sortable, unique id from a timestamp: seconds precision plus
+// a short suffix so several snapshots in the same second do not collide.
+func snapshotID(t time.Time, suffix string) string {
+	return fmt.Sprintf("%s-%s", t.UTC().Format("20060102-150405"), suffix)
+}
+
+func snapshotKind(auto bool) string {
+	if auto {
+		return "auto"
+	}
+	return "manual"
+}
+
+func randID() string {
+	b := make([]byte, 3)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)
+}

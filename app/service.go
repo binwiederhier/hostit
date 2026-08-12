@@ -21,6 +21,7 @@ import (
 	"heckel.io/hostit/container"
 	"heckel.io/hostit/homefs"
 	"heckel.io/hostit/run"
+	"heckel.io/hostit/snapshot"
 	"heckel.io/hostit/store"
 	"heckel.io/hostit/systemd"
 )
@@ -113,6 +114,7 @@ type Manager struct {
 	systemd   *systemd.Service
 	container *container.Service
 	homefs    *homefs.Service
+	snapshots *snapshot.Service
 
 	// memoryMB and diskMB cache per-app limits, so redeploys and quota checks
 	// keep them; the authoritative values come from the owner's limits
@@ -124,11 +126,6 @@ type Manager struct {
 	stateCache      map[string]State
 	stateFresh      time.Time
 	stateRefreshing bool
-
-	// btrfs detection is cached: whether AppsDir is btrfs decides if snapshots and
-	// hard qgroup quotas are available. On a plain ext4 host it stays false.
-	btrfsOnce sync.Once
-	btrfsOK   bool
 
 	// appLocks serializes mutating lifecycle work per app (deploy, snapshot,
 	// rollback, delete), so operations on one app's home never interleave -- e.g. a
@@ -144,7 +141,7 @@ type Manager struct {
 
 // NewManager creates a Manager
 func NewManager(conf *config.Config, s *store.Store, ops SystemOps, runner run.Runner) *Manager {
-	return &Manager{
+	m := &Manager{
 		config:     conf,
 		store:      s,
 		ops:        ops,
@@ -158,6 +155,11 @@ func NewManager(conf *config.Config, s *store.Store, ops SystemOps, runner run.R
 		stateCache: make(map[string]State),
 		appLocks:   make(map[string]*sync.Mutex),
 	}
+	// The snapshot Service reuses the Manager's node-local services and store, and
+	// calls back into it through snapshotHost for the app-lifecycle operations and
+	// id-keyed lookups a snapshot or rollback needs.
+	m.snapshots = snapshot.New(m.btrfs, m.systemd, m.container, s, snapshotHost{m})
+	return m
 }
 
 // lockApp acquires the per-app lifecycle lock and returns its unlock func, so
@@ -190,9 +192,6 @@ func (m *Manager) CreateApp(name string, opts *CreateOptions) (*store.App, error
 // means the source's current home. The fork gets its own port, Unix user, subdomain
 // and container. Requires btrfs (the snapshot primitive it relies on).
 func (m *Manager) Fork(source, newName, snapshotID string, opts *CreateOptions) (*store.App, error) {
-	if !m.btrfsEnabled() {
-		return nil, ErrSnapshotsUnavailable
-	}
 	if _, err := m.store.App(source); err != nil {
 		return nil, err
 	}
@@ -257,18 +256,14 @@ func (m *Manager) create(name string, opts *CreateOptions, seedPath string) (*st
 		if err := m.btrfs.Snapshot(seedPath, home, false); err != nil {
 			return nil, fmt.Errorf("cannot seed %s: %w", name, err)
 		}
-	} else if m.btrfsEnabled() {
+	} else {
 		if err := m.btrfs.CreateSubvolume(home); err != nil {
 			return nil, fmt.Errorf("cannot create home subvolume for %s: %w", name, err)
 		}
 	}
-	// Record whether this home is a btrfs subvolume: a plain-directory home (btrfs
-	// off) silently lacks snapshots/quotas/rollback/fork, so make the choice visible.
-	slog.Info("Creating app", "app", name, "port", port, "subvolume", forking || m.btrfsEnabled(), "forked", forking)
+	slog.Info("Creating app", "app", name, "port", port, "forked", forking)
 	if err := m.ops.CreateUser(name, home, m.uidFor(port)); err != nil {
-		if m.btrfsEnabled() {
-			_ = m.btrfs.DeleteSubvolume(home)
-		}
+		_ = m.btrfs.DeleteSubvolume(home)
 		return nil, fmt.Errorf("cannot create user %s: %w", name, err)
 	}
 	cleanup := func() {
@@ -276,9 +271,7 @@ func (m *Manager) create(name string, opts *CreateOptions, seedPath string) (*st
 		// Remove the id-keyed home we just created. The app is not in the store on
 		// the early failures, so this deletes the concrete path rather than resolving
 		// it by name; a brand-new app has no snapshots to clean up.
-		if m.btrfsEnabled() {
-			_ = m.btrfs.DeleteSubvolume(home)
-		}
+		_ = m.btrfs.DeleteSubvolume(home)
 	}
 	if err := m.ops.WriteAuthorizedKeys(name, home, sshKeys); err != nil {
 		cleanup()
@@ -354,11 +347,9 @@ func (m *Manager) DeleteApp(name string) error {
 	// systemd still knows about keeps retrying a container that is gone
 	_ = m.systemd.ResetFailed(m.unitName(name))
 	_ = m.container.RemoveForce(m.containerName(name))
-	// On btrfs the home and snapshots are subvolumes that userdel's rm -rf cannot
-	// remove, so delete them first.
-	if m.btrfsEnabled() {
-		m.deleteAppSubvolumes(name)
-	}
+	// The home and snapshots are subvolumes that userdel's rm -rf cannot remove, so
+	// delete them first.
+	m.snapshots.DeleteAppSubvolumes(name)
 	if err := m.ops.DeleteUser(name); err != nil {
 		return fmt.Errorf("cannot delete user %s: %w", name, err)
 	}

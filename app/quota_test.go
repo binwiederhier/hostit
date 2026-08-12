@@ -1,7 +1,6 @@
 package app
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -10,17 +9,14 @@ import (
 
 func TestMeasureDiskUsage(t *testing.T) {
 	t.Parallel()
-	m, _, _ := newTestDeployManager(t)
+	m, _, r := newTestDeployManager(t)
 	createTestApp(t, m, "blog")
-	// ~3 MB of files in the app home
-	big := strings.Repeat("x", 1024*1024)
-	for _, name := range []string{"a.bin", "b.bin", "c.bin"} {
-		writeAppFile(t, m, "blog", name, big)
-	}
+	// Usage is read from the subvolume's qgroup (btrfs qgroup show), not a walk:
+	// 3145728 referenced bytes is 3 MB.
+	r.returns("qgroup show", "Qgroupid Referenced Exclusive Path\n-------- ---------- --------- ----\n0/257 3145728 3145728 blog\n")
 	usage, err := m.measureDiskMB("blog")
 	require.NoError(t, err)
-	assert.GreaterOrEqual(t, usage, 3)
-	assert.Less(t, usage, 10) // Sanity: not wildly off
+	assert.Equal(t, 3, usage)
 }
 
 func TestCreateAppSetsDiskQuotaOnBtrfs(t *testing.T) {
@@ -39,7 +35,8 @@ func TestRefreshDiskUsageRecordsUsageWithoutStopping(t *testing.T) {
 	t.Parallel()
 	m, _, runner := newTestDeployManager(t)
 	createTestApp(t, m, "blog")
-	writeAppFile(t, m, "blog", "big.bin", strings.Repeat("x", 3*1024*1024))
+	// The app's qgroup reports ~3 MB referenced (3145728 bytes).
+	runner.returns("qgroup show", "Qgroupid Referenced Exclusive Path\n0/257 3145728 3145728 blog\n")
 	m.SetDiskLimit("blog", 1) // 1 MB limit, app uses ~3 MB
 	runner.reset()
 	require.NoError(t, m.RefreshDiskUsage())

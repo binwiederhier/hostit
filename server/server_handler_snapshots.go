@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"time"
 
-	"heckel.io/hostit/app"
 	"heckel.io/hostit/store"
 )
 
@@ -83,12 +82,10 @@ func (s *Server) handleAgentSnapshotDelete(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, http.StatusOK, &apiMessageResponse{Message: "deleted snapshot " + id})
 }
 
-// writeSnapshotError maps snapshot errors to status codes: unavailable (not btrfs)
-// is 501, an unknown id is 404, the rest fall through.
+// writeSnapshotError maps snapshot errors to status codes: an unknown id is 404,
+// the rest fall through.
 func writeSnapshotError(w http.ResponseWriter, err error) {
 	switch {
-	case errors.Is(err, app.ErrSnapshotsUnavailable):
-		writeError(w, http.StatusNotImplemented, err)
 	case errors.Is(err, store.ErrSnapshotNotFound):
 		writeError(w, http.StatusNotFound, err)
 	default:

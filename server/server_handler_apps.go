@@ -95,7 +95,7 @@ func (s *Server) handleAppsFork(w http.ResponseWriter, r *http.Request, c *calle
 	opts := &app.CreateOptions{OwnerID: c.userID(), ProfileKeys: profileKeys, MemoryMB: memoryMB, DiskMB: diskMB}
 	a, err := s.apps.Fork(source.Name, req.NewName, req.SnapshotID, opts)
 	if err != nil {
-		writeSnapshotError(w, err) // ErrSnapshotsUnavailable -> 501; the rest fall through
+		writeSnapshotError(w, err) // an unknown snapshot id -> 404; the rest fall through
 		return
 	}
 	slog.Info("App forked", "source", source.Name, "app", a.Name, "owner", c.userID())
