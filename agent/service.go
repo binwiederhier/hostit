@@ -58,9 +58,9 @@ type Agent struct {
 	wake         chan struct{}
 	stop         chan struct{}
 	logFile      *appLog
+	crashes      int // Consecutive rapid crashes, for the restart backoff
 	stopOnce     sync.Once
 	paused       atomic.Bool // App stopped by the owner; the container stays up
-	crashes      int         // Consecutive rapid crashes, for the restart backoff
 }
 
 // New creates an Agent for the app living in home (usually $HOME)

@@ -38,10 +38,8 @@ const (
 type State struct {
 	Running    bool `json:"running"`     // The container's systemd unit is active
 	AppRunning bool `json:"app_running"` // The run: command inside it is up
-	// AppState is the agent's breadcrumb verbatim ("running", "crashed", "failed",
-	// "stopped", "idle"), or "" when the container is down. It lets the UI tell a
-	// crash loop that gave up ("failed") apart from a plain stop, which AppRunning
-	// alone cannot.
+	// AppState is the agent's breadcrumb verbatim ("running"/"crashed"/"failed"/... or
+	// "" when the container is down), so the UI can tell a crashed give-up from a stop.
 	AppState     string `json:"app_state"`
 	MemoryMB     int    `json:"memory_mb"`      // Current container memory use in MB
 	CPUPercent   int    `json:"cpu_percent"`    // Current container CPU use in whole percent (may exceed 100 on multiple cores)
