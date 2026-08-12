@@ -54,5 +54,3 @@ hostit_apps_mount_unit: var-lib-hostit-apps.mount
 # app logins (must match app.AppsGroup in the hostit source).
 hostit_apps_group: "hostit-apps"
 
-# How often each app's disk usage is measured for the soft quota.
-hostit_disk_check_interval: "5m"

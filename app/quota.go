@@ -5,6 +5,11 @@ import (
 	"time"
 )
 
+// diskUsageInterval is how often app disk usage is re-measured for the dashboard.
+// It is pure accounting (the qgroup enforces the quota), so a fixed 5 minutes is
+// plenty and there is no reason to make it configurable.
+const diskUsageInterval = 5 * time.Minute
+
 // SetDiskLimit records the disk quota for an app; 0 means unlimited. It also sets
 // the subvolume's qgroup limit, which hard-caps writes (EDQUOT).
 func (m *Manager) SetDiskLimit(name string, diskMB int) {
@@ -46,12 +51,12 @@ func (m *Manager) RefreshDiskUsage() error {
 }
 
 // DiskUsageLoop periodically refreshes recorded disk usage until the stop channel closes
-func (m *Manager) DiskUsageLoop(interval time.Duration, done <-chan struct{}) {
-	slog.Info("Starting disk usage loop", "interval", interval)
+func (m *Manager) DiskUsageLoop(done <-chan struct{}) {
+	slog.Info("Starting disk usage loop", "interval", diskUsageInterval)
 	defer slog.Info("Stopping disk usage loop")
 	for {
 		select {
-		case <-time.After(interval):
+		case <-time.After(diskUsageInterval):
 		case <-done:
 			return
 		}

@@ -120,7 +120,7 @@ func execServe(c *cli.Context) error {
 	// actual enforcement at write time)
 	done := make(chan struct{})
 	defer close(done)
-	go manager.DiskUsageLoop(conf.DiskCheckInterval.Duration(), done)
+	go manager.DiskUsageLoop(done)
 	go manager.StateLoop(done)
 	// Hourly automatic snapshots (a no-op unless the apps filesystem is btrfs)
 	go manager.SnapshotLoop(time.Hour, done)

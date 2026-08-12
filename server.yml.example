@@ -60,9 +60,6 @@ admin-token: CHANGE-ME
 # left empty; set it only to share sessions across a rebuild.
 # session-key: ...
 
-# How often each app's disk usage is measured for the soft quota.
-# disk-check-interval: 1h
-
 # Listeners (defaults shown)
 # listen-http: ":80"
 # listen-https: ":443"

@@ -36,9 +36,6 @@ admin-emails:
 {% endfor %}
 {% endif %}
 
-# How often app disk usage is measured (soft quota accounting).
-disk-check-interval: {{ hostit_disk_check_interval }}
-
 # Let the admin token mint a browser session for an admin email without Google
 # (recovery + end-to-end UI testing). Grants nothing the admin token does not.
 breakglass: {{ hostit_breakglass | default(false) | lower }}

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"strings"
-	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -83,7 +82,6 @@ type Config struct {
 	GoogleClientSecret string   `yaml:"google-client-secret"` // Google OAuth client secret
 	SessionKey         string   `yaml:"session-key"`          // Secret for signing session cookies; generated if empty
 	AdminEmails        []string `yaml:"admin-emails"`         // These emails become active admins on first login
-	DiskCheckInterval  Duration `yaml:"disk-check-interval"`  // How often app disk usage is measured
 	Breakglass         bool     `yaml:"breakglass"`           // Allow the admin token to mint a session for an admin email (no Google); for e2e/recovery
 
 	// Built-in coding assistant (the in-browser agent). An empty API key disables it.
@@ -135,16 +133,15 @@ func (c *Config) IsAdminEmail(email string) bool {
 // NewConfig returns a Config with all defaults set; BaseDomain and AdminToken must be filled in
 func NewConfig() *Config {
 	return &Config{
-		ListenHTTP:        ":80",
-		ListenHTTPS:       ":443",
-		SocketFile:        "/run/hostit/hostit.sock",
-		DataDir:           "/var/lib/hostit",
-		AppsDir:           "/var/lib/hostit/apps",
-		TLS:               TLSLetsEncrypt,
-		PortMin:           10000,
-		PortMax:           19999,
-		DiskCheckInterval: Duration(15 * time.Minute),
-		AssistantModel:    DefaultAssistantModel,
+		ListenHTTP:     ":80",
+		ListenHTTPS:    ":443",
+		SocketFile:     "/run/hostit/hostit.sock",
+		DataDir:        "/var/lib/hostit",
+		AppsDir:        "/var/lib/hostit/apps",
+		TLS:            TLSLetsEncrypt,
+		PortMin:        10000,
+		PortMax:        19999,
+		AssistantModel: DefaultAssistantModel,
 		AssistantModels: []ModelOption{
 			{ID: "claude-sonnet-5", Label: "Sonnet 5"},
 			{ID: "claude-opus-5", Label: "Opus 5"},
