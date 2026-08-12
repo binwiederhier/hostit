@@ -1,10 +1,43 @@
 package server
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 )
+
+func TestIsPreviewRequest(t *testing.T) {
+	t.Parallel()
+	// The preview iframe's top-level document carries the query param.
+	top := httptest.NewRequest("GET", "http://blog.example.com/?hostit_preview=3", nil)
+	assert.True(t, isPreviewRequest(top))
+	// Its same-origin sub-resources carry it in the Referer instead.
+	asset := httptest.NewRequest("GET", "http://blog.example.com/style.css", nil)
+	asset.Header.Set("Referer", "https://blog.example.com/?hostit_preview=3")
+	assert.True(t, isPreviewRequest(asset))
+	// Ordinary traffic is not a preview.
+	plain := httptest.NewRequest("GET", "http://blog.example.com/", nil)
+	assert.False(t, isPreviewRequest(plain))
+	other := httptest.NewRequest("GET", "http://blog.example.com/?x=1", nil)
+	other.Header.Set("Referer", "https://google.com/")
+	assert.False(t, isPreviewRequest(other))
+}
+
+func TestStripCachingForPreview(t *testing.T) {
+	t.Parallel()
+	h := http.Header{}
+	h.Set("Cache-Control", "public, max-age=3600")
+	h.Set("ETag", `"abc"`)
+	h.Set("Last-Modified", "Mon, 01 Jan 2024 00:00:00 GMT")
+	h.Set("Expires", "Tue, 02 Jan 2024 00:00:00 GMT")
+	stripCachingForPreview(h)
+	assert.Equal(t, "no-store, must-revalidate", h.Get("Cache-Control"))
+	assert.Empty(t, h.Get("ETag"))
+	assert.Empty(t, h.Get("Last-Modified"))
+	assert.Empty(t, h.Get("Expires"))
+}
 
 // appNameFromHost decides whether a Host reaches an app's container or the front
 // door, so its edge cases are security-relevant: only a single label directly

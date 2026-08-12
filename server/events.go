@@ -11,14 +11,15 @@ import (
 // recordEvent appends one entry to an app's activity log (the Logs tab). A failure
 // is logged, never returned, so auditing can never break the action it records.
 func (s *Server) recordEvent(appName, actor, level, action, detail string) {
-	if err := s.apps.Store().AddEvent(&store.Event{
+	err := s.apps.Store().AddEvent(&store.Event{
 		AppName:   appName,
 		CreatedAt: time.Now(),
 		Actor:     actor,
 		Level:     level,
 		Action:    action,
 		Detail:    detail,
-	}); err != nil {
+	})
+	if err != nil {
 		slog.Warn("Cannot record app event", "app", appName, "action", action, "error", err)
 	}
 }

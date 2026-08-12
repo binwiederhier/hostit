@@ -5,26 +5,23 @@
 // caller.
 package systemd
 
-import "time"
+import (
+	"time"
+
+	"heckel.io/hostit/run"
+)
 
 // systemctl is the control binary; centralized so the verb wrappers don't each
 // repeat the literal.
 const systemctl = "systemctl"
 
-// Runner executes a system command and returns its combined output; the daemon's
-// root command runner satisfies it.
-type Runner interface {
-	Run(args ...string) (string, error)
-	RunTimeout(timeout time.Duration, args ...string) (string, error)
-}
-
-// Service drives systemctl over a Runner.
+// Service drives systemctl over a run.Runner.
 type Service struct {
-	runner Runner
+	runner run.Runner
 }
 
 // New builds a systemd Service from a command runner.
-func New(runner Runner) *Service {
+func New(runner run.Runner) *Service {
 	return &Service{runner: runner}
 }
 

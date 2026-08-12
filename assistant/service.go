@@ -22,6 +22,9 @@ const (
 	// look at the results before we stop. A backstop against a loop that never
 	// decides it is finished, not a normal limit.
 	maxIterations = 40
+	// maxIterationsNotice is shown to the owner when a turn hits maxIterations: a
+	// friendly "paused, say continue" rather than an error, since nothing failed.
+	maxIterationsNotice = "The assistant has been running for too long without human interaction. Say \"continue\" to resume the session."
 	// maxTokens caps a single reply (thinking plus output).
 	maxTokens = 16000
 	// assistantEffort tunes how hard the model works per turn
@@ -41,9 +44,6 @@ const (
 )
 
 var (
-	// errMaxIterations means the loop hit its step limit without the model
-	// deciding it was done
-	errMaxIterations = errors.New("assistant reached its step limit without finishing")
 	// ErrTooManyRuns means the user already has the most turns running they may
 	ErrTooManyRuns = errors.New("too many assistant turns running; finish one first")
 	// ErrRateLimited means the user has started too many turns recently
@@ -307,6 +307,7 @@ func (m *Manager) runAPILoop(ctx context.Context, s *session, app, model string,
 	// Tell watchers which model is answering this turn (so the chat can badge the
 	// reply, and show the fallback model truthfully when External Claude failed).
 	s.publish(Event{Type: "model", Text: model})
+	var turn Usage // running token totals for this turn, published as it grows
 	for iter := 0; iter < maxIterations; iter++ {
 		resp, err := m.client.complete(ctx, request{
 			Model:        model,
@@ -327,16 +328,24 @@ func (m *Manager) runAPILoop(ctx context.Context, s *session, app, model string,
 			s.publish(Event{Type: "error", Error: err.Error()})
 			return
 		}
-		// Record this turn's token usage against the app (best effort; a failure to
-		// account must never interrupt the run).
-		if err := m.store.RecordUsage(app, Usage{
+		// Record this step's token usage against the app (best effort; a failure to
+		// account must never interrupt the run), and publish the running turn total so
+		// the UI can show a live token counter.
+		step := Usage{
 			InputTokens:      resp.Usage.InputTokens,
 			OutputTokens:     resp.Usage.OutputTokens,
 			CacheWriteTokens: resp.Usage.CacheCreationInputTokens,
 			CacheReadTokens:  resp.Usage.CacheReadInputTokens,
-		}); err != nil {
+		}
+		if err := m.store.RecordUsage(app, step); err != nil {
 			slog.Warn("Cannot record assistant usage", "app", app, "error", err)
 		}
+		turn.InputTokens += step.InputTokens
+		turn.OutputTokens += step.OutputTokens
+		turn.CacheWriteTokens += step.CacheWriteTokens
+		turn.CacheReadTokens += step.CacheReadTokens
+		snapshot := turn
+		s.publish(Event{Type: "usage", Usage: &snapshot})
 
 		// Keep the reply in the transcript. Thinking blocks are shown but not
 		// stored: an adaptive thinking block carries internal fields we do not
@@ -366,7 +375,7 @@ func (m *Manager) runAPILoop(ctx context.Context, s *session, app, model string,
 		m.save(app, history)
 	}
 
-	s.publish(Event{Type: "error", Error: errMaxIterations.Error()})
+	s.publish(Event{Type: "paused", Text: maxIterationsNotice})
 }
 
 // apiRequestMessages builds the message list for one API request: the recent

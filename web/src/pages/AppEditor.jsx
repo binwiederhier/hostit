@@ -615,7 +615,7 @@ export default function AppEditor({ name, url, running, diskMB, diskLimitMB, onD
               </div>
             ))}
           </div>
-          <button type="button" className={"ed-ctl" + (previewOn ? " on" : "")} onClick={() => setPreviewOn((v) => !v)} title={previewOn ? "Hide preview" : "Show live preview"}>
+          <button type="button" className={"ed-ctl ed-ctl-preview" + (previewOn ? " on" : "")} onClick={() => setPreviewOn((v) => !v)} title={previewOn ? "Hide preview" : "Show live preview"}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
               <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z" />
               <circle cx="12" cy="12" r="3" />
@@ -709,7 +709,7 @@ export default function AppEditor({ name, url, running, diskMB, diskLimitMB, onD
           </div>
           <div className="ed-preview" style={{ flex: `0 0 ${previewWidth}px` }}>
             {running ? (
-              <iframe key={previewKey} title={`Live preview of ${name}`} src={`${url}${url && url.includes("?") ? "&" : "?"}_hostitprev=${previewKey}`} sandbox="allow-scripts allow-same-origin allow-forms" />
+              <iframe key={previewKey} title={`Live preview of ${name}`} src={`${url}${url && url.includes("?") ? "&" : "?"}hostit_preview=${previewKey}`} sandbox="allow-scripts allow-same-origin allow-forms" />
             ) : (
               <div className="ed-empty">The app is powered off.</div>
             )}

@@ -87,7 +87,7 @@ func New(conf *config.Config, apps *app.Manager, users *user.Manager) *Server {
 	if conf.AssistantAvailable() {
 		s.assistant = assistant.NewManager(assistant.NewClient(conf.AnthropicAPIKey), &appOps{apps: apps}, &appTranscripts{store: apps.Store()}, conf.AssistantModel)
 		if conf.ClaudeBackendSelected() {
-			sandbox, err := app.NewAssistantSandbox(conf)
+			sandbox, err := assistant.NewSandbox(conf)
 			if err != nil {
 				slog.Error("Cannot start the Claude Max assistant backend; assistant disabled", "error", err)
 				s.assistant = nil

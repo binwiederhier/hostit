@@ -1,4 +1,4 @@
-package app
+package assistant
 
 import (
 	"os"
@@ -17,8 +17,8 @@ import (
 // only in this container -- so a refactor (or a claude version bump that reopens a
 // tool) breaks a test loudly instead of silently widening the attack surface.
 
-func testSandbox() *AssistantSandbox {
-	return &AssistantSandbox{
+func testSandbox() *Sandbox {
+	return &Sandbox{
 		conf: &config.Config{
 			SocketFile:           "/run/hostit/hostit.sock",
 			DataDir:              "/var/lib/hostit",

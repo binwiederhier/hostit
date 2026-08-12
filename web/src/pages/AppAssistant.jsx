@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { marked } from "marked";
 import DOMPurify from "dompurify";
-import { reduceChatEvent } from "../chat";
+import { reduceChatEvent, formatTokens, formatDuration } from "../chat";
 
 // The in-browser coding agent. It POSTs a message to the daemon's assistant
 // endpoint and reads the loop back as Server-Sent Events -- the model's thinking,
@@ -373,6 +373,17 @@ const Turn = ({ item, modes }) => {
       return <ToolCall item={item} />;
     case "notice":
       return <div className="asst-turn asst-notice">{item.text}</div>;
+    case "paused":
+      return (
+        <div className="asst-turn asst-paused">
+          <svg className="asst-paused-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="9" />
+            <path d="M12 11v5" />
+            <path d="M12 8h.01" />
+          </svg>
+          <span>{item.text}</span>
+        </div>
+      );
     case "error":
       return <div className="asst-turn asst-error">{item.text}</div>;
     default:
@@ -380,13 +391,27 @@ const Turn = ({ item, modes }) => {
   }
 };
 
-// A rotating "Working... / Baking..." status shown while the assistant runs.
-const WorkingIndicator = () => {
+// A rotating "Working... / Baking..." status shown while the assistant runs. Once a
+// turn has been going for more than 10s it also shows how long it has taken and the
+// tokens produced so far, so a slow turn visibly keeps making progress.
+const WorkingIndicator = ({ tokens }) => {
   const [i, setI] = useState(0);
+  const [elapsed, setElapsed] = useState(0); // seconds since this turn started
+  const startRef = useRef(Date.now());
   useEffect(() => {
-    const t = setInterval(() => setI((n) => (n + 1) % WORKING_WORDS.length), 2500);
-    return () => clearInterval(t);
+    const words = setInterval(() => setI((n) => (n + 1) % WORKING_WORDS.length), 2500);
+    const clock = setInterval(() => setElapsed(Math.floor((Date.now() - startRef.current) / 1000)), 1000);
+    return () => {
+      clearInterval(words);
+      clearInterval(clock);
+    };
   }, []);
+  // · is a middle dot, ↓ a down arrow (output tokens); escaped to keep
+  // the source ASCII.
+  const meta =
+    elapsed >= 10
+      ? `(${formatDuration(elapsed)}${tokens > 0 ? ` \u00b7 \u2193 ${formatTokens(tokens)} tokens` : ""})`
+      : null;
   return (
     <div className="asst-working">
       <span className="asst-working-spinner" aria-hidden="true" />
@@ -396,6 +421,7 @@ const WorkingIndicator = () => {
         <span>.</span>
         <span>.</span>
       </span>
+      {meta && <span className="asst-working-meta">{meta}</span>}
     </div>
   );
 };
@@ -404,6 +430,7 @@ const AppAssistant = ({ name, onClose, embedded = false, onPreviewRefresh }) => 
   const [items, setItems] = useState([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
+  const [turnTokens, setTurnTokens] = useState(0); // output tokens for the running/last turn
   const [loaded, setLoaded] = useState(false);
   const [attachments, setAttachments] = useState([]); // uploaded files pending on the next message
   const [dragOver, setDragOver] = useState(false);
@@ -474,9 +501,25 @@ const AppAssistant = ({ name, onClose, embedded = false, onPreviewRefresh }) => 
       setItems(next);
       return;
     }
+    if (ev.type === "paused") {
+      // The turn hit its step limit: nothing failed, so show a calm "say continue"
+      // notice rather than an error.
+      setBusy(false);
+      const next = [...itemsRef.current, { id: itemsRef.current.length, kind: "paused", text: ev.text }];
+      itemsRef.current = next;
+      setItems(next);
+      return;
+    }
     if (ev.type === "model") {
       // Which model is answering this turn; tag the replies that follow with it.
       currentModelRef.current = ev.text || "";
+      setTurnTokens(0); // a new turn is starting; reset the counter
+      setBusy(true);
+      return;
+    }
+    if (ev.type === "usage") {
+      // Running token total for the turn; drives the live counter.
+      setTurnTokens(ev.usage?.output_tokens || 0);
       setBusy(true);
       return;
     }
@@ -582,6 +625,7 @@ const AppAssistant = ({ name, onClose, embedded = false, onPreviewRefresh }) => 
     if (!message && ready.length === 0) return;
     setInput("");
     setAttachments([]);
+    setTurnTokens(0); // reset the token counter for the new turn
     setBusy(true);
     try {
       const r = await fetch(`/api/apps/${encodeURIComponent(name)}/assistant`, {
@@ -663,7 +707,7 @@ const AppAssistant = ({ name, onClose, embedded = false, onPreviewRefresh }) => 
           </p>
         )}
         {renderTranscript(items, busy, modes)}
-        {busy && <WorkingIndicator />}
+        {busy && <WorkingIndicator tokens={turnTokens} />}
       </div>
 
       {attachments.length > 0 && (

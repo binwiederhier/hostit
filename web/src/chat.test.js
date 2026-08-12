@@ -53,3 +53,40 @@ describe("reduceChatEvent", () => {
     expect(items.map((i) => i.kind)).toEqual(["user", "text", "thinking"]);
   });
 });
+
+import { formatTokens } from "./chat";
+
+describe("formatTokens", () => {
+  it("shows exact counts below 1000", () => {
+    expect(formatTokens(0)).toBe("0");
+    expect(formatTokens(42)).toBe("42");
+    expect(formatTokens(999)).toBe("999");
+  });
+  it("abbreviates thousands and trims a trailing .0", () => {
+    expect(formatTokens(1000)).toBe("1k");
+    expect(formatTokens(1234)).toBe("1.2k");
+    expect(formatTokens(12345)).toBe("12.3k");
+  });
+  it("treats missing or negative as 0", () => {
+    expect(formatTokens(undefined)).toBe("0");
+    expect(formatTokens(null)).toBe("0");
+    expect(formatTokens(-5)).toBe("0");
+  });
+});
+
+import { formatDuration } from "./chat";
+
+describe("formatDuration", () => {
+  it("shows seconds under a minute", () => {
+    expect(formatDuration(0)).toBe("0s");
+    expect(formatDuration(45)).toBe("45s");
+    expect(formatDuration(59)).toBe("59s");
+  });
+  it("shows minutes and seconds under an hour", () => {
+    expect(formatDuration(60)).toBe("1m 0s");
+    expect(formatDuration(303)).toBe("5m 3s");
+  });
+  it("shows hours and minutes past an hour", () => {
+    expect(formatDuration(3723)).toBe("1h 2m");
+  });
+});

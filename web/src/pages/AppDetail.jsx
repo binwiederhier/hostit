@@ -419,11 +419,6 @@ const PromptDialog = ({ prompt, token, onClose }) => {
         </button>
         <div className="modal-head">
           <h2>Use your own AI agent</h2>
-          <button type="button" className="term-btn" onClick={onClose} title="Close" aria-label="Close">
-            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M4 4l8 8M12 4l-8 8" />
-            </svg>
-          </button>
         </div>
         <p className="hint">
           Prefer Claude Code or another agent over the built-in chat? Paste this prompt and it will learn this app's
@@ -454,11 +449,6 @@ const SshDialog = ({ app, hasKeys, onClose }) => {
         </button>
         <div className="modal-head">
           <h2>Connect via SSH</h2>
-          <button type="button" className="term-btn" onClick={onClose} title="Close" aria-label="Close">
-            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M4 4l8 8M12 4l-8 8" />
-            </svg>
-          </button>
         </div>
         {hasKeys === false ? (
           <p className="hint">
@@ -595,25 +585,47 @@ const NewSnapshotDialog = ({ name, onClose, onCreated, showToast }) => {
 
   return (
     <div className="modal-backdrop" role="dialog" aria-modal="true" onMouseDown={onClose}>
-      <form className="card modal modal-sheet" onSubmit={create} onMouseDown={(e) => e.stopPropagation()}>
+      <form className="card modal newapp modal-sheet" onSubmit={create} onMouseDown={(e) => e.stopPropagation()}>
         <button type="button" className="modal-x" onClick={onClose} title="Close" aria-label="Close">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
         </button>
-        <h2>New snapshot</h2>
-        <p className="hint">
-          Save a point-in-time copy of <span className="mono">{name}</span>'s files you can roll back to. A name is
-          optional.
-        </p>
+        <div className="newapp-head">
+          <div className="newapp-avatar newapp-avatar-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <circle cx="12" cy="13" r="3.2" />
+              <path d="M4 9a2 2 0 0 1 2-2h1.6l1.2-1.6h6.4L16.4 7H18a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z" />
+            </svg>
+          </div>
+          <div>
+            <h2>New snapshot</h2>
+            <p className="newapp-sub">A restorable point-in-time copy of <span className="mono">{name}</span>'s files.</p>
+          </div>
+        </div>
         <ErrorBanner message={error} onDismiss={() => setError("")} />
-        <input
-          type="text"
-          value={label}
-          onChange={(e) => setLabel(e.target.value)}
-          placeholder="e.g. before the big refactor"
-          aria-label="Snapshot name"
-          maxLength={200}
-          autoFocus
-        />
+        <label className="newapp-label">Label <span className="newapp-optional">(optional)</span></label>
+        <div className="newapp-input">
+          <input
+            type="text"
+            value={label}
+            onChange={(e) => setLabel(e.target.value)}
+            placeholder="e.g. before the big refactor"
+            aria-label="Snapshot name"
+            maxLength={200}
+            autoFocus
+          />
+        </div>
+        <div className="newapp-willbe">
+          <div className="row">
+            <span className="ico">{"\u{1F4F8}"}</span>
+            <span className="lab">Captures</span>
+            <span className="val"><b>{name}</b>'s files, right now</span>
+          </div>
+          <div className="row">
+            <span className="ico">{"\u{21A9}\u{FE0F}"}</span>
+            <span className="lab">Roll back</span>
+            <span className="val">anytime -- the current state is saved first</span>
+          </div>
+        </div>
         <div className="btn-row">
           <button type="button" className="btn" onClick={onClose} disabled={busy}>
             Cancel
@@ -1091,31 +1103,14 @@ const SnapRowActions = ({ busy, onRollback, onFork, onDelete }) => {
 
 // The Snapshots header's primary action: a split button -- take a snapshot, or
 // (via the caret) fork the app from its current state.
-const SnapTakeButton = ({ onNew, onForkApp }) => {
-  const { open, setOpen, ref } = useDropdown();
-  return (
-    <div className="menu split-btn" ref={ref}>
-      <button type="button" className="btn btn-primary split-btn-main split-btn-text" onClick={onNew}>
-        Take snapshot
-      </button>
-      <button
-        type="button"
-        className="btn btn-primary split-btn-caret"
-        onClick={() => setOpen(!open)}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        aria-label="More snapshot actions"
-      >
-        <span aria-hidden="true">&#9662;</span>
-      </button>
-      {open && (
-        <div className="menu-items" role="menu">
-          <MenuItem icon={<ForkIcon />} label="Fork app" onClick={() => { setOpen(false); onForkApp(); }} />
-        </div>
-      )}
-    </div>
-  );
-};
+// A single rounded primary button, styled exactly like "Open app". Forking is
+// available from the app header (current state) and per-snapshot in each row, so
+// this no longer needs a split caret.
+const SnapTakeButton = ({ onNew }) => (
+  <button type="button" className="btn btn-primary" onClick={onNew}>
+    Take snapshot
+  </button>
+);
 
 // The Snapshots view: the snapshots list with rollback / fork / delete, and a
 // "Take snapshot" action -- the former dialog's contents, inline in a tab.
@@ -1200,7 +1195,7 @@ const SnapshotsPane = ({ name, showToast, onRolledBack, onFork, onNew, reloadSig
           <div className="ov-desc">hostit snapshots {name} automatically on a schedule and before every deploy. Take one yourself anytime, roll back to any point (reversible -- the current state is snapshotted first), or fork a snapshot into a brand-new app.</div>
         </div>
         <div className="ov-quick">
-          <SnapTakeButton onNew={() => onNew(load)} onForkApp={() => onFork()} />
+          <SnapTakeButton onNew={() => onNew(load)} />
         </div>
       </div>
       <ErrorBanner message={error} onDismiss={() => setError("")} />
@@ -1349,6 +1344,7 @@ const AppDetail = ({ account, refreshAccount }) => {
   // chat's deploy tool, an external `hostit deploy`, a restart. We remount the
   // iframe by bumping its key, and flag "refreshing" until it loads again.
   const [previewKey, setPreviewKey] = useState(0);
+  const [previewHidden, setPreviewHidden] = useState(false); // collapse the preview pane, giving the chat full width
   const [refreshing, setRefreshing] = useState(false);
   const lastAppStart = useRef(null);
   const refreshTimer = useRef(null);
@@ -1473,9 +1469,19 @@ const AppDetail = ({ account, refreshAccount }) => {
       catchUpTimers.current.forEach(clearTimeout);
       clearInterval(ticker);
       clearTimeout(refreshTimer.current);
-      clearTimeout(toastTimer.current);
     };
   }, [load, scheduleCatchUp]);
+  // The toast timer is cleared only on unmount, NOT in the poll effect above: a
+  // rename changes `name` -> `load` -> re-runs that effect, which would otherwise
+  // clear the just-set "App renamed" timer and leave the snackbar stuck forever.
+  useEffect(() => () => clearTimeout(toastTimer.current), []);
+  // Reflect the current app in the tab title.
+  useEffect(() => {
+    document.title = name ? `${name} - hostit` : "hostit";
+    return () => {
+      document.title = "hostit";
+    };
+  }, [name]);
   useReconnect(load); // refresh when connectivity or visibility returns
 
   // The app process restarting (a deploy, restart or reboot) is our signal to
@@ -1760,6 +1766,31 @@ const AppDetail = ({ account, refreshAccount }) => {
             </svg>
             Settings
           </button>
+          {/* Preview controls: only meaningful in the assistant view, right-aligned. */}
+          {app.assistant_enabled && view === "assistant" && (
+            <div className="ws-viewtabs-right">
+              <button type="button" className="ws-viewtab ws-preview-ctl" onClick={reloadPreview} title="Refresh the preview" disabled={previewHidden}>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+                  <path d="M20 11a8 8 0 1 0-.6 4" />
+                  <path d="M20 5v6h-6" />
+                </svg>
+                Refresh
+              </button>
+              <button
+                type="button"
+                className={"ws-viewtab ws-preview-ctl" + (previewHidden ? "" : " on")}
+                onClick={() => setPreviewHidden((v) => !v)}
+                aria-pressed={!previewHidden}
+                title={previewHidden ? "Show the preview" : "Hide the preview"}
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+                  <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z" />
+                  <circle cx="12" cy="12" r="2.5" />
+                </svg>
+                {previewHidden ? "Show preview" : "Hide preview"}
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Views stay mounted -- only the active one is shown -- so switching is
@@ -1812,7 +1843,7 @@ const AppDetail = ({ account, refreshAccount }) => {
           <div
             className={"ws-split" + (view === "assistant" ? "" : " ws-inactive")}
             ref={splitRef}
-            style={{ gridTemplateColumns: `minmax(0, ${chatFrac}fr) 10px minmax(0, ${1 - chatFrac}fr)` }}
+            style={{ gridTemplateColumns: previewHidden ? "minmax(0, 1fr)" : `minmax(0, ${chatFrac}fr) 10px minmax(0, ${1 - chatFrac}fr)` }}
           >
           <div className="ws-chat">
             <Suspense fallback={<div className="ws-chat-loading">Loading assistant...</div>}>
@@ -1820,6 +1851,8 @@ const AppDetail = ({ account, refreshAccount }) => {
             </Suspense>
           </div>
 
+          {!previewHidden && (
+            <>
           <div
             className="ws-resizer"
             role="separator"
@@ -1861,6 +1894,8 @@ const AppDetail = ({ account, refreshAccount }) => {
               </div>
             )}
           </div>
+            </>
+          )}
         </div>
         )}
       </div>

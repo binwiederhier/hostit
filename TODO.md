@@ -3,49 +3,6 @@
 Things worth doing, with enough context to pick up cold. Not a backlog of
 everything imaginable -- if it is not written down here it is not planned.
 
-## Phil notes - round 1 refactor
-
-Refactor:
-
-I'd like you to refactor and restructure to make the app more modular. Do this carefully, and add tests where needed.
-
-The app/ package is huge. It mixes the responsibilities of many different layers. It may be worth having a container package, a package that does all the container/podman ops. 
-
-The general approach is: Make service classes scoped for a specific took or API and then compose them in the other packages. 
-
-Possible other packages/services could be:
-- btrfs/
-- unix/user
-- systemd/
-- podman/ or container/
-- ssh/ service.go + keys.go
-
-The over-quota management (shut down when over quota) can be entirely removed, since that is done by the btrfs quotas, right?
-
-Test files should usually mirror the go file, e.g. terminal.go+terminal_test.go. Remember this and apply here: I don't like random test files that don't map to original files, e.g. upload_test.go is just floating.
-
-Remember this and apply here: Server handlers should be in server/server_handler_<topic>.go, and they should almost all be tested. Handlers should use service packages such as the assistant package/service, or the container package, or the systemd package. Handlers should be simple and simply orchestrate the other packages. That makes them easy to mock and test with mocks.
-
-Remember this and apply: We should use go embed where applicable. The error page and container files and other large blobs of text are just raw strings.
-
-Remember this and apply: Unless there is a very good reason, we should not repeat raw strings that are identifiers or keys, e.g. "tool_use", "claude-sonnet-5", 
-
-## Phil notes 2
-
-- the assistant-poc CLI command should not be called that. 
-- review the cmd/ package and its commands. each command should be in its own file. subcommands should be in the top command file. i think this is largely like this already
-- make sure that internal commands (commands not to be used by users) are hidden to the user list. i'm wondering if internal commands should be in a "hostit internal ..." subcommand to make it clear what it does
-- keys.go could be in our own ssh/ package maybe, same for validateKeys or whatever its called
-- scaffold.go should use go embed, and then the scaffoldFiles doesn't have to live there. It seems like a non-member util function
-- should Runner be its own command/ package with the interface there? instead of redefining it everywhere
-- containerKeyRegex and other regexes should be defined in the relevant packages, and not in the cmd/
-- does the assistant package contain the claude.ai and anthropic console integration? if so, it should  
-- add browser-based e2e tests
-- should there be a snapshot/ service that sits on top of btrfs? and/or maybe a retention service, or fold that into the snapshot service? the retention should be tested
-- for the /info command, add a message that the generated app should add a /?preview=<counter> or something like that, so the assistant can always show an uptodate version
-- make the title show the app name "<app name> - hostit"
-- The "App renamed" snackbar never disappears
-
 ## Multi-node: a proxy node and hosting nodes
 
 Today one machine is everything: it terminates TLS, proxies, holds the registry,
@@ -205,6 +162,18 @@ definitions and the conversation prefix are cache-marked, so repeat turns pay th
 ## Done (recent)
 
 Kept briefly for context; prune when stale.
+
+- **App modularization (refactor rounds 1 & 2).** `app/` split into single-purpose
+  service packages -- `btrfs/`, `systemd/`, `container/`, `ssh/`, `unixuser/`, `run/`
+  (shared Runner), `retention/` (tested GFS policy) -- composed by `app.Manager`.
+  Over-quota shutdown removed (btrfs qgroups enforce it). Server handlers regrouped
+  into `server/server_handler_<topic>.go` over the service packages; floating test
+  files folded to mirror their source. CLI cleaned up: `hostit internal assistant`
+  (was `assistant-poc`), internal commands hidden, regexes moved to their packages,
+  scaffold + error page + workspace Containerfile moved to `go:embed`. Assistant
+  package owns the Claude/Anthropic + subscription-sandbox integration. Web: app
+  name in the title, fixed the stuck rename snackbar, always-fresh preview pane
+  (proxy no-store on `?hostit_preview=`), and a friendlier "paused" step-limit note.
 
 - **App id + cheap rename.** Every app has a stable opaque id; durable resources
   (home `apps/<id>`, snapshots, container `hostit-app-<id>`, unit, the per-app FK

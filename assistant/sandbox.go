@@ -1,4 +1,4 @@
-package app
+package assistant
 
 import (
 	"bufio"
@@ -36,6 +36,8 @@ const (
 	// assistantMemoryMB and assistantPids bound the sandbox like an app container
 	assistantMemoryMB = 1024
 	assistantPids     = 512
+	// podman is the container CLI the sandbox drives, named once rather than repeated
+	podman = "podman"
 
 	// mcpToolGlob allows exactly the hostit MCP server's tools and nothing else.
 	mcpToolGlob = "mcp__hostit__*"
@@ -69,39 +71,39 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-ins
 CMD ["/bin/bash"]
 `
 
-// AssistantSandbox runs one assistant turn as `claude -p` inside a locked-down
+// Sandbox runs one assistant turn as `claude -p` inside a locked-down
 // podman container on the operator's Claude Max subscription. It holds no per-app
 // state: the target app is named per turn, mapped to that app's uid so the
 // daemon's peercred socket scopes every tool call to it. Both the CLI PoC and the
 // server's claude-cli backend drive it.
-type AssistantSandbox struct {
+type Sandbox struct {
 	conf      *config.Config
 	hostitBin string
 }
 
-// NewAssistantSandbox builds a sandbox launcher from the daemon config; it needs
+// NewSandbox builds a sandbox launcher from the daemon config; it needs
 // the subscription token (config claude-code-oauth-token) to run.
-func NewAssistantSandbox(conf *config.Config) (*AssistantSandbox, error) {
+func NewSandbox(conf *config.Config) (*Sandbox, error) {
 	bin, err := os.Executable()
 	if err != nil {
 		return nil, err
 	}
-	return &AssistantSandbox{conf: conf, hostitBin: bin}, nil
+	return &Sandbox{conf: conf, hostitBin: bin}, nil
 }
 
-// AssistantUsage is one turn's token usage as claude reports it.
-type AssistantUsage struct {
+// StreamUsage is one turn's token usage as claude reports it.
+type StreamUsage struct {
 	InputTokens      int64
 	OutputTokens     int64
 	CacheWriteTokens int64
 	CacheReadTokens  int64
 }
 
-// AssistantStreamEvent is one normalized event from claude's stream, already
+// StreamEvent is one normalized event from claude's stream, already
 // stripped of the MCP tool-name prefix. Its consumers are the CLI (which prints
 // it) and the server (which maps it to the assistant's own SSE events and stores
 // the transcript).
-type AssistantStreamEvent struct {
+type StreamEvent struct {
 	Type     string // init | text | thinking | tool_use | tool_result | result | error
 	Text     string
 	Tool     string
@@ -110,7 +112,7 @@ type AssistantStreamEvent struct {
 	IsError  bool
 	Model    string
 	Tools    []string
-	Usage    *AssistantUsage
+	Usage    *StreamUsage
 	Result   string
 	ErrorMsg string
 }
@@ -119,7 +121,7 @@ type AssistantStreamEvent struct {
 // systemPrompt to Claude Code's own system prompt (so the agent knows it is
 // working on a hostit app), and calls onEvent for each streamed event. It blocks
 // until claude exits (or ctx is cancelled, which kills the container).
-func (s *AssistantSandbox) RunTurn(ctx context.Context, appName, prompt, systemPrompt string, onEvent func(AssistantStreamEvent)) error {
+func (s *Sandbox) RunTurn(ctx context.Context, appName, prompt, systemPrompt string, onEvent func(StreamEvent)) error {
 	uid, gid, appID, err := appIdentity(appName)
 	if err != nil {
 		return err
@@ -134,11 +136,11 @@ func (s *AssistantSandbox) RunTurn(ctx context.Context, appName, prompt, systemP
 	// it timed out) the podman client is killed and can orphan the container -- which
 	// would keep a long task running and burning the subscription. Remove it
 	// explicitly, out of band from the (now cancelled) turn context.
-	defer func() { _ = exec.Command("podman", "rm", "--force", name).Run() }()
+	defer func() { _ = exec.Command(podman, "rm", "--force", name).Run() }()
 	args := append(s.baseArgs(name, uid, gid), "-i", image)
 	args = append(args, s.claudeArgs(systemPrompt)...)
 
-	cmd := exec.CommandContext(ctx, "podman", args...)
+	cmd := exec.CommandContext(ctx, podman, args...)
 	cmd.Stdin = strings.NewReader(prompt)
 	var stderr strings.Builder
 	cmd.Stderr = &stderr
@@ -179,14 +181,14 @@ func (s *AssistantSandbox) RunTurn(ctx context.Context, appName, prompt, systemP
 		if msg == "" {
 			msg = err.Error()
 		}
-		onEvent(AssistantStreamEvent{Type: "error", ErrorMsg: msg})
+		onEvent(StreamEvent{Type: "error", ErrorMsg: msg})
 	}
 	return nil
 }
 
 // Shell drops into an interactive shell in the sandbox, for trying the claude
 // invocation by hand on the host (debugging without redeploys).
-func (s *AssistantSandbox) Shell(appName string) error {
+func (s *Sandbox) Shell(appName string) error {
 	uid, gid, appID, err := appIdentity(appName)
 	if err != nil {
 		return err
@@ -198,7 +200,7 @@ func (s *AssistantSandbox) Shell(appName string) error {
 	name := containerName(appID)
 	args := append(s.baseArgs(name, uid, gid), "-it", image, "/bin/bash")
 	fmt.Fprintf(os.Stderr, "==> shell in sandbox %s (app=%s uid=%d). Try: claude --version; hostit mcp --socket %s\n", name, appName, uid, s.conf.SocketFile)
-	cmd := exec.Command("podman", args...)
+	cmd := exec.Command(podman, args...)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 	return cmd.Run()
 }
@@ -208,7 +210,7 @@ func (s *AssistantSandbox) Shell(appName string) error {
 // network), holding no host mount but the hostit binary and the daemon socket
 // dir, and carrying the subscription plus the flags that keep claude
 // non-interactive and away from its auto-updater.
-func (s *AssistantSandbox) baseArgs(name string, uid, gid int) []string {
+func (s *Sandbox) baseArgs(name string, uid, gid int) []string {
 	socketDir := filepath.Dir(s.conf.SocketFile)
 	return []string{
 		"run", "--rm", "--name", name,
@@ -242,7 +244,7 @@ func (s *AssistantSandbox) baseArgs(name string, uid, gid int) []string {
 // leave the agent with no tools. The prompt is fed on stdin (see RunTurn), not as
 // an argument, because --mcp-config is variadic and would swallow a trailing
 // positional prompt.
-func (s *AssistantSandbox) claudeArgs(systemPrompt string) []string {
+func (s *Sandbox) claudeArgs(systemPrompt string) []string {
 	mcpConfig := fmt.Sprintf(`{"mcpServers":{"hostit":{"command":%q,"args":["mcp","--socket",%q]}}}`, s.hostitBin, s.conf.SocketFile)
 	args := []string{
 		"claude", "-p",
@@ -263,14 +265,14 @@ func (s *AssistantSandbox) claudeArgs(systemPrompt string) []string {
 // AssistantLogDir is where per-app raw claude session logs are written, under the
 // data dir. Root-owned (0700); a tenant cannot read another app's -- or its own --
 // session log.
-func (s *AssistantSandbox) AssistantLogDir() string {
+func (s *Sandbox) AssistantLogDir() string {
 	return filepath.Join(s.conf.DataDir, "assistant")
 }
 
 // openSessionLog creates (truncating) the raw session log for one app's current
 // turn, keyed on the app id (not its name, which a rename would change). Best
 // effort: returns nil on failure, and the turn proceeds without it.
-func (s *AssistantSandbox) openSessionLog(appID string) *os.File {
+func (s *Sandbox) openSessionLog(appID string) *os.File {
 	if err := os.MkdirAll(s.AssistantLogDir(), 0o700); err != nil {
 		return nil
 	}
@@ -284,10 +286,10 @@ func (s *AssistantSandbox) openSessionLog(appID string) *os.File {
 
 // EnsureImage builds the sandbox image if it is not already present, tagging it
 // by a hash of the Containerfile so an edit rebuilds it.
-func (s *AssistantSandbox) EnsureImage() (string, error) {
+func (s *Sandbox) EnsureImage() (string, error) {
 	sum := sha256.Sum256([]byte(assistantContainerfile))
 	tag := assistantImagePrefix + ":" + hex.EncodeToString(sum[:6])
-	if err := exec.Command("podman", "image", "exists", tag).Run(); err == nil {
+	if err := exec.Command(podman, "image", "exists", tag).Run(); err == nil {
 		return tag, nil
 	}
 	dir, err := os.MkdirTemp("", "hostit-assistant-build-")
@@ -299,7 +301,7 @@ func (s *AssistantSandbox) EnsureImage() (string, error) {
 		return "", err
 	}
 	fmt.Fprintf(os.Stderr, "==> building sandbox image %s (first run; installs claude %s)...\n", tag, claudeVersion)
-	build := exec.Command("podman", "build", "-t", tag, "-f", filepath.Join(dir, "Containerfile"), dir)
+	build := exec.Command(podman, "build", "-t", tag, "-f", filepath.Join(dir, "Containerfile"), dir)
 	build.Stdout, build.Stderr = os.Stderr, os.Stderr
 	if err := build.Run(); err != nil {
 		return "", err
@@ -342,7 +344,7 @@ func randHex(n int) string {
 // care about), so a message that batches several blocks -- e.g. parallel tool
 // calls, or several tool_results together -- surfaces every one. Dropping the extra
 // blocks would leave a tool spinning forever on a result that never arrived.
-func parseAssistantStreamLine(line []byte) []AssistantStreamEvent {
+func parseAssistantStreamLine(line []byte) []StreamEvent {
 	var raw struct {
 		Type    string          `json:"type"`
 		Subtype string          `json:"subtype"`
@@ -359,18 +361,18 @@ func parseAssistantStreamLine(line []byte) []AssistantStreamEvent {
 	switch raw.Type {
 	case "system":
 		if raw.Subtype == "init" {
-			return []AssistantStreamEvent{{Type: "init", Model: raw.Model, Tools: raw.Tools}}
+			return []StreamEvent{{Type: "init", Model: raw.Model, Tools: raw.Tools}}
 		}
 	case "assistant", "user":
 		return blockEvents(raw.Message)
 	case "result":
-		return []AssistantStreamEvent{{Type: "result", Result: raw.Result, IsError: raw.IsError, Usage: parseUsage(raw.Usage)}}
+		return []StreamEvent{{Type: "result", Result: raw.Result, IsError: raw.IsError, Usage: parseUsage(raw.Usage)}}
 	}
 	return nil
 }
 
 // blockEvents returns one event per meaningful content block in a message.
-func blockEvents(raw json.RawMessage) []AssistantStreamEvent {
+func blockEvents(raw json.RawMessage) []StreamEvent {
 	var msg struct {
 		Content []struct {
 			Type      string          `json:"type"`
@@ -386,21 +388,21 @@ func blockEvents(raw json.RawMessage) []AssistantStreamEvent {
 	if err := json.Unmarshal(raw, &msg); err != nil {
 		return nil
 	}
-	var out []AssistantStreamEvent
+	var out []StreamEvent
 	for _, b := range msg.Content {
 		switch b.Type {
 		case "text":
 			if strings.TrimSpace(b.Text) != "" {
-				out = append(out, AssistantStreamEvent{Type: "text", Text: b.Text})
+				out = append(out, StreamEvent{Type: "text", Text: b.Text})
 			}
 		case "thinking":
 			if strings.TrimSpace(b.Thinking) != "" {
-				out = append(out, AssistantStreamEvent{Type: "thinking", Text: b.Thinking})
+				out = append(out, StreamEvent{Type: "thinking", Text: b.Thinking})
 			}
 		case "tool_use":
-			out = append(out, AssistantStreamEvent{Type: "tool_use", Tool: stripToolPrefix(b.Name), Input: string(b.Input)})
+			out = append(out, StreamEvent{Type: "tool_use", Tool: stripToolPrefix(b.Name), Input: string(b.Input)})
 		case "tool_result":
-			out = append(out, AssistantStreamEvent{Type: "tool_result", Output: toolResultText(b.Content), IsError: b.IsError})
+			out = append(out, StreamEvent{Type: "tool_result", Output: toolResultText(b.Content), IsError: b.IsError})
 		}
 	}
 	return out
@@ -429,7 +431,7 @@ func toolResultText(raw json.RawMessage) string {
 	return string(raw)
 }
 
-func parseUsage(raw json.RawMessage) *AssistantUsage {
+func parseUsage(raw json.RawMessage) *StreamUsage {
 	if len(raw) == 0 {
 		return nil
 	}
@@ -442,7 +444,7 @@ func parseUsage(raw json.RawMessage) *AssistantUsage {
 	if json.Unmarshal(raw, &u) != nil {
 		return nil
 	}
-	return &AssistantUsage{
+	return &StreamUsage{
 		InputTokens:      u.InputTokens,
 		OutputTokens:     u.OutputTokens,
 		CacheWriteTokens: u.CacheCreationInputTokens,

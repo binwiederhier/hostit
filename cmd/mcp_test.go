@@ -31,7 +31,7 @@ func (f *fakeToolCaller) Tool(name string, args []byte) (string, bool, error) {
 
 // run feeds newline-delimited JSON-RPC requests through the server and returns
 // the response lines it wrote.
-func run(t *testing.T, ctl toolCaller, requests ...string) []map[string]any {
+func runMCP(t *testing.T, ctl toolCaller, requests ...string) []map[string]any {
 	t.Helper()
 	var out bytes.Buffer
 	srv := &mcpServer{ctl: ctl, out: &out, version: "test"}
@@ -50,7 +50,7 @@ func run(t *testing.T, ctl toolCaller, requests ...string) []map[string]any {
 
 func TestMCPInitializeEchoesProtocolVersion(t *testing.T) {
 	t.Parallel()
-	resp := run(t, &fakeToolCaller{}, `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}`)
+	resp := runMCP(t, &fakeToolCaller{}, `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}`)
 	require.Len(t, resp, 1)
 	result := resp[0]["result"].(map[string]any)
 	assert.Equal(t, "2025-06-18", result["protocolVersion"], "the client's protocol version is echoed back")
@@ -62,13 +62,13 @@ func TestMCPNotificationGetsNoResponse(t *testing.T) {
 	t.Parallel()
 	// A message without an id is a notification; it must be acknowledged by silence,
 	// not a response (a response to a notification is a protocol error).
-	resp := run(t, &fakeToolCaller{}, `{"jsonrpc":"2.0","method":"notifications/initialized"}`)
+	resp := runMCP(t, &fakeToolCaller{}, `{"jsonrpc":"2.0","method":"notifications/initialized"}`)
 	assert.Empty(t, resp)
 }
 
 func TestMCPToolsListExposesAppToolsWithoutRefreshPreview(t *testing.T) {
 	t.Parallel()
-	resp := run(t, &fakeToolCaller{}, `{"jsonrpc":"2.0","id":2,"method":"tools/list"}`)
+	resp := runMCP(t, &fakeToolCaller{}, `{"jsonrpc":"2.0","id":2,"method":"tools/list"}`)
 	require.Len(t, resp, 1)
 	tools := resp[0]["result"].(map[string]any)["tools"].([]any)
 	names := map[string]bool{}
@@ -90,7 +90,7 @@ func TestMCPToolsListExposesAppToolsWithoutRefreshPreview(t *testing.T) {
 func TestMCPToolCallForwardsToDaemonAndWrapsResult(t *testing.T) {
 	t.Parallel()
 	ctl := &fakeToolCaller{output: "hostit.yml\n  public/", isError: false}
-	resp := run(t, ctl, `{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"list_files","arguments":{"path":"public"}}}`)
+	resp := runMCP(t, ctl, `{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"list_files","arguments":{"path":"public"}}}`)
 	require.Len(t, resp, 1)
 
 	// The call is forwarded to the daemon with the tool name and its arguments.
@@ -112,7 +112,7 @@ func TestMCPToolErrorIsResultNotProtocolError(t *testing.T) {
 	// normal result with isError set -- the model reads it and adapts. Only a
 	// transport failure would be a JSON-RPC error.
 	ctl := &fakeToolCaller{output: "no such file", isError: true}
-	resp := run(t, ctl, `{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"read_file","arguments":{"path":"nope"}}}`)
+	resp := runMCP(t, ctl, `{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"read_file","arguments":{"path":"nope"}}}`)
 	require.Len(t, resp, 1)
 	assert.NotContains(t, resp[0], "error", "a tool error is not a JSON-RPC error")
 	result := resp[0]["result"].(map[string]any)
@@ -121,7 +121,7 @@ func TestMCPToolErrorIsResultNotProtocolError(t *testing.T) {
 
 func TestMCPUnknownMethodReturnsError(t *testing.T) {
 	t.Parallel()
-	resp := run(t, &fakeToolCaller{}, `{"jsonrpc":"2.0","id":5,"method":"nonsense/method"}`)
+	resp := runMCP(t, &fakeToolCaller{}, `{"jsonrpc":"2.0","id":5,"method":"nonsense/method"}`)
 	require.Len(t, resp, 1)
 	assert.Equal(t, float64(-32601), resp[0]["error"].(map[string]any)["code"])
 }
@@ -137,7 +137,7 @@ func TestMCPHandlesLargeWriteFileArgument(t *testing.T) {
 	require.NoError(t, err)
 
 	ctl := &fakeToolCaller{output: "wrote big.txt"}
-	resp := run(t, ctl, string(req))
+	resp := runMCP(t, ctl, string(req))
 	require.Len(t, resp, 1)
 	require.Len(t, ctl.calls, 1)
 	var got map[string]string

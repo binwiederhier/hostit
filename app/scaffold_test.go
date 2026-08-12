@@ -9,8 +9,7 @@ import (
 
 func TestScaffoldFiles(t *testing.T) {
 	t.Parallel()
-	m, _ := newTestManager(t)
-	files := m.scaffoldFiles("blog", 10000)
+	files := scaffoldFiles("blog", "https://blog.apps.example.com", "Go, Python")
 	// The app directory holds the app's files and nothing of hostit's own: the
 	// platform explains itself through the login banner, "hostit guide" and /docs
 	assert.NotContains(t, files, "HOSTIT.txt")

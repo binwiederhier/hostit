@@ -4,15 +4,14 @@ import (
 	"context"
 	"errors"
 
-	"heckel.io/hostit/app"
 	"heckel.io/hostit/assistant"
 )
 
-// claudeBackend adapts app.AssistantSandbox to assistant.ClaudeRunner: it drives
+// claudeBackend adapts assistant.Sandbox to assistant.ClaudeRunner: it drives
 // one sandboxed `claude -p` turn and maps its stream to the assistant's own
 // events, so the web UI streams a Claude Max turn exactly as it does an API turn.
 type claudeBackend struct {
-	sandbox *app.AssistantSandbox
+	sandbox *assistant.Sandbox
 }
 
 var _ assistant.ClaudeRunner = (*claudeBackend)(nil)
@@ -25,7 +24,7 @@ func (c *claudeBackend) RunTurn(ctx context.Context, appName, prompt, systemProm
 	var runErr error
 	lastTool := "" // tool_result events do not name their tool; pair by order
 
-	err := c.sandbox.RunTurn(ctx, appName, prompt, systemPrompt, func(ev app.AssistantStreamEvent) {
+	err := c.sandbox.RunTurn(ctx, appName, prompt, systemPrompt, func(ev assistant.StreamEvent) {
 		switch ev.Type {
 		case "text":
 			publish(assistant.Event{Type: "text", Text: ev.Text})
@@ -44,6 +43,10 @@ func (c *claudeBackend) RunTurn(ctx context.Context, appName, prompt, systemProm
 					CacheWriteTokens: int(ev.Usage.CacheWriteTokens),
 					CacheReadTokens:  int(ev.Usage.CacheReadTokens),
 				}
+				// Surface the turn's tokens to the UI (the sandbox reports them once, at
+				// the end) so the chat can show a per-turn token count.
+				u := usage
+				publish(assistant.Event{Type: "usage", Usage: &u})
 			}
 			if ev.IsError {
 				runErr = errors.New("assistant turn ended with an error")

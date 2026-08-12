@@ -1,0 +1,27 @@
+# hostit app config -- apply changes with "hostit up"; see "hostit guide".
+#
+# This is the stub app: it runs hostit's built-in placeholder, a small Go
+# backend. Replace "run:" with your own command, or switch to "mode: static".
+
+mode: app
+run: hostit placeholder
+
+# --- Description: one line saying what this app is ---
+# Uncomment and keep it current. The owner's web page shows it, and it is what
+# the next AI session starts from instead of a blank page.
+#
+# description: A tiny app that does X
+#
+# --- mode: static -- hostit serves public/ ---
+# Good for plain HTML, or the built output of any frontend. Put files in public/:
+#
+# mode: static
+#
+# --- mode: app -- hostit runs your command in the workspace container ---
+# The command MUST listen on 0.0.0.0:$PORT ($PORT is set for you).
+#
+# mode: app
+# prepare: cd src && go build -o ../bin/server .
+# run: ./bin/server
+# env:
+#   DEBUG: "true"

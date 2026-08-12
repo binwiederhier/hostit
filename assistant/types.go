@@ -150,13 +150,16 @@ type apiError struct {
 // happens so a phone watching the build sees the loop unfold: the model's
 // thinking, its text, each tool it calls, and each result.
 type Event struct {
-	Type    string `json:"type"` // thinking | text | tool_use | tool_result | done | error
+	Type    string `json:"type"` // model | thinking | text | tool_use | tool_result | usage | done | error
 	Text    string `json:"text,omitempty"`
 	Tool    string `json:"tool,omitempty"`
 	Input   string `json:"input,omitempty"`
 	Output  string `json:"output,omitempty"`
 	IsError bool   `json:"is_error,omitempty"`
 	Error   string `json:"error,omitempty"`
+	// Usage carries the running token totals for the turn on a "usage" event, so the
+	// UI can show a live counter as work happens.
+	Usage *Usage `json:"usage,omitempty"`
 }
 
 // ExecResult is what running a command in the app's container produced. It

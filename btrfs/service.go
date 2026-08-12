@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"heckel.io/hostit/run"
 )
 
 const (
@@ -19,20 +21,13 @@ const (
 	bytesPerMB = 1024 * 1024
 )
 
-// Runner executes a system command and returns its combined output; the daemon's
-// root command runner satisfies it.
-type Runner interface {
-	Run(args ...string) (string, error)
-	RunTimeout(timeout time.Duration, args ...string) (string, error)
-}
-
-// Service performs btrfs subvolume and qgroup operations over a Runner.
+// Service performs btrfs subvolume and qgroup operations over a run.Runner.
 type Service struct {
-	runner Runner
+	runner run.Runner
 }
 
 // New builds a btrfs Service from a command runner.
-func New(runner Runner) *Service {
+func New(runner run.Runner) *Service {
 	return &Service{runner: runner}
 }
 

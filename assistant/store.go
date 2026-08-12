@@ -8,10 +8,10 @@ import (
 // what the built-in assistant has spent. Cache tokens are separate: they are
 // priced differently from fresh input.
 type Usage struct {
-	InputTokens      int
-	OutputTokens     int
-	CacheWriteTokens int
-	CacheReadTokens  int
+	InputTokens      int `json:"input_tokens"`
+	OutputTokens     int `json:"output_tokens"`
+	CacheWriteTokens int `json:"cache_write_tokens"`
+	CacheReadTokens  int `json:"cache_read_tokens"`
 }
 
 // Store persists one conversation per app, so it survives a reload, a restart, or

@@ -56,13 +56,13 @@ const AppsMenu = () => {
   const [failed, setFailed] = useState(false);
   const closeTimer = useRef(null);
   useEffect(() => {
-    if (open && apps === null && !failed) {
-      api
-        .get("/api/apps")
-        .then(setApps)
-        .catch(() => setFailed(true));
-    }
-  }, [open, apps, failed]);
+    // Prefetch on mount so the switcher is populated the moment it opens, rather
+    // than showing "Loading..." on the first hover.
+    api
+      .get("/api/apps")
+      .then(setApps)
+      .catch(() => setFailed(true));
+  }, []);
   // Hover opens it (a small close delay bridges the gap to the popup); clicking
   // "Apps" still navigates to the list.
   const openNow = () => {

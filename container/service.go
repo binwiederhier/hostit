@@ -4,26 +4,23 @@
 // hostit-app-<id> convention) is app-identity policy and stays with the caller.
 package container
 
-import "time"
+import (
+	"time"
+
+	"heckel.io/hostit/run"
+)
 
 // podman is the container runtime binary; centralized so the wrappers don't each
 // repeat the literal.
 const podman = "podman"
 
-// Runner executes a system command and returns its combined output; the daemon's
-// root command runner satisfies it.
-type Runner interface {
-	Run(args ...string) (string, error)
-	RunTimeout(timeout time.Duration, args ...string) (string, error)
-}
-
-// Service drives podman over a Runner.
+// Service drives podman over a run.Runner.
 type Service struct {
-	runner Runner
+	runner run.Runner
 }
 
 // New builds a container Service from a command runner.
-func New(runner Runner) *Service {
+func New(runner run.Runner) *Service {
 	return &Service{runner: runner}
 }
 

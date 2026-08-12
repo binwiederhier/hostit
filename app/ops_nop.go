@@ -2,28 +2,24 @@ package app
 
 import (
 	"os"
-	"time"
+
+	"heckel.io/hostit/run"
 )
 
 // NopSystemOps is a SystemOps that does nothing; useful for tests and dry runs
 type NopSystemOps struct{}
 
-// NopRunner is a Runner that does nothing; useful for tests and dry runs
-type NopRunner struct{}
-
-var (
-	_ SystemOps = (*NopSystemOps)(nil)
-	_ Runner    = (*NopRunner)(nil)
-)
+var _ SystemOps = (*NopSystemOps)(nil)
 
 // NewNopSystemOps returns a no-op SystemOps
 func NewNopSystemOps() SystemOps {
 	return &NopSystemOps{}
 }
 
-// NewNopRunner returns a no-op Runner
-func NewNopRunner() Runner {
-	return &NopRunner{}
+// NewNopRunner returns a no-op run.Runner, kept as an app-level constructor for
+// tests that build a Manager without touching the host.
+func NewNopRunner() run.Runner {
+	return run.Nop{}
 }
 
 func (o *NopSystemOps) UserExists(username string) bool {
@@ -76,12 +72,4 @@ func (o *NopSystemOps) ChownToUserIn(root *os.Root, username, rel string) error 
 
 func (o *NopSystemOps) ApplyPortRules(rules []PortRule) error {
 	return nil
-}
-
-func (r *NopRunner) Run(args ...string) (string, error) {
-	return "", nil
-}
-
-func (r *NopRunner) RunTimeout(timeout time.Duration, args ...string) (string, error) {
-	return "", nil
 }

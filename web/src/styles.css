@@ -1630,6 +1630,30 @@ th:last-child {
   padding: 2px 12px;
 }
 
+/* The assistant paused at its step limit: an informational note, not a failure, so
+   it reads calm (accent, not danger) with an info icon rather than a red banner. */
+.asst-paused {
+  align-self: stretch;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.4;
+  padding: 10px 12px;
+}
+
+.asst-paused-icon {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin-top: 1px;
+  color: var(--accent);
+}
+
 /* Hover-revealed caption after an assistant reply's last line ("11:43 pm, Claude.ai").
    The markdown is made inline, its children restored to block so lists/code still
    render, and only a trailing paragraph goes inline -- so the caption trails the last
@@ -2029,6 +2053,15 @@ th:last-child {
   border-top-color: var(--accent);
   border-radius: 50%;
   animation: asst-spin 0.7s linear infinite;
+}
+
+/* Elapsed time + token count on the working indicator (shown after ~10s), so a
+   long turn visibly progresses. */
+.asst-working-meta {
+  margin-left: 2px;
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--faint);
 }
 
 @keyframes asst-spin {
@@ -2633,6 +2666,17 @@ body.ws-resizing iframe { pointer-events: none; }
   -webkit-overflow-scrolling: touch;
 }
 .ws-viewtabs::-webkit-scrollbar { display: none; }
+/* Preview controls (refresh / show-hide) sit at the right end of the tab strip. */
+.ws-viewtabs-right { margin-left: auto; display: flex; align-items: center; flex: none; }
+.ws-preview-ctl { border-bottom-color: transparent; }
+.ws-preview-ctl:disabled { opacity: 0.4; cursor: default; }
+/* Editor files tab: the live preview (pane, resizer and its toggle) is not useful
+   on small screens, so drop it well before the phone breakpoint. */
+@media (max-width: 768px) {
+  .ed-preview { display: none; }
+  .ed-view .ws-resizer { display: none; }
+  .ed-ctl-preview { display: none; }
+}
 .ws-viewtab {
   display: inline-flex;
   align-items: center;
@@ -2888,6 +2932,8 @@ body.ws-resizing iframe { pointer-events: none; }
 .newapp { max-width: 440px; width: 92vw; }
 .newapp-head { display: flex; align-items: center; gap: 14px; }
 .newapp-avatar { width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center; font-family: var(--mono); font-weight: 700; font-size: 18px; color: var(--on-accent); background: linear-gradient(135deg, var(--accent), var(--accent-strong)); flex: none; text-transform: lowercase; }
+.newapp-avatar-icon svg { width: 22px; height: 22px; }
+.newapp-optional { color: var(--faint); font-weight: 400; }
 .newapp-head h2 { margin: 0; }
 .newapp-sub { color: var(--muted); font-size: 13px; margin: 2px 0 0; }
 .newapp-label { display: block; font-size: 12px; color: var(--muted); margin: 16px 0 6px; }

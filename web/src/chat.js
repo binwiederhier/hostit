@@ -40,3 +40,21 @@ export function reduceChatEvent(items, ev, model) {
   }
   return { items: next, refreshPreview };
 }
+
+// formatTokens renders a token count compactly for the live counter: exact below
+// 1000, then "1.2k" style (trailing ".0" trimmed). Non-positive/missing -> "0".
+export function formatTokens(n) {
+  if (!n || n < 0) return "0";
+  if (n < 1000) return String(n);
+  return (n / 1000).toFixed(1).replace(/\.0$/, "") + "k";
+}
+
+// formatDuration renders an elapsed time compactly: "45s", "5m 3s", "1h 2m".
+export function formatDuration(seconds) {
+  const s = Math.max(0, Math.floor(seconds));
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ${s % 60}s`;
+  const h = Math.floor(m / 60);
+  return `${h}h ${m % 60}m`;
+}

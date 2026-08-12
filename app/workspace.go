@@ -2,6 +2,7 @@ package app
 
 import (
 	"crypto/sha256"
+	_ "embed"
 	"encoding/hex"
 	"fmt"
 	"path/filepath"
@@ -12,6 +13,14 @@ import (
 	"heckel.io/hostit/appctl"
 	"heckel.io/hostit/store"
 )
+
+// workspaceContainerfile builds the default workspace image: small, but with
+// everything needed for ssh/scp/sftp/rsync sessions and quick demo apps. The
+// hostit binary itself is bind-mounted, not baked in. Embedded (not a raw string)
+// so its bytes -- which the image tag hashes -- stay stable and easy to edit.
+//
+//go:embed workspace.Containerfile
+var workspaceContainerfile string
 
 const (
 	// containerPrefix names an app's container; the daemon runs containers as
@@ -42,28 +51,6 @@ const (
 	// after it is a hash of the Containerfile, so editing that file is enough to
 	// get the new image built and the containers recreated onto it.
 	workspaceImagePrefix = "localhost/hostit-workspace"
-
-	// workspaceContainerfile builds the default workspace image: small, but with
-	// everything needed for ssh/scp/sftp/rsync sessions and quick demo apps.
-	// The hostit binary itself is bind-mounted, not baked in.
-	workspaceContainerfile = `FROM docker.io/library/debian:stable-slim
-RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-      bash ca-certificates curl git htop less nano openssh-sftp-server procps rsync vim \
-      sqlite3 \
-      python3 python3-venv python3-pip \
-      golang-go \
-      nodejs npm \
-      php-cli \
-    && rm -rf /var/lib/apt/lists/*
-# System-wide shell niceties so every login shell (SSH and the web terminal)
-# gets the usual colours and ll/la aliases, without a dotfile in the app's home.
-# Written from base64 so the escapes survive the Containerfile (a heredoc RUN is
-# not portable across buildah versions); the decoded file is:
-#   alias ls='ls --color=auto'; alias ll='ls -alF'; alias la='ls -A'; alias l='ls -CF'
-#   alias grep='grep --color=auto'; dircolors; a coloured PS1
-RUN echo YWxpYXMgbHM9J2xzIC0tY29sb3I9YXV0bycKYWxpYXMgbGw9J2xzIC1hbEYnCmFsaWFzIGxhPSdscyAtQScKYWxpYXMgbD0nbHMgLUNGJwphbGlhcyBncmVwPSdncmVwIC0tY29sb3I9YXV0bycKWyAteCAvdXNyL2Jpbi9kaXJjb2xvcnMgXSAmJiBldmFsICIkKGRpcmNvbG9ycyAtYikiCmV4cG9ydCBQUzE9J1xbXDAzM1swMTszMm1cXVx1QFxoXFtcMDMzWzAwbVxdOlxbXDAzM1swMTszNG1cXVx3XFtcMDMzWzAwbVxdXCQgJwo= | base64 -d > /etc/profile.d/hostit.sh
-CMD ["/bin/bash"]
-`
 
 	// WorkspaceRuntimes is what the workspace image ships, quoted verbatim to
 	// users and agents so nobody has to guess what is available. It is kept lean

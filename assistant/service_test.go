@@ -86,7 +86,7 @@ func drainUntilDone(t *testing.T, ch <-chan Event) []Event {
 				return events
 			}
 			events = append(events, ev)
-			if ev.Type == "done" || ev.Type == "error" {
+			if ev.Type == "done" || ev.Type == "error" || ev.Type == "paused" {
 				return events
 			}
 		case <-deadline:
@@ -199,8 +199,12 @@ func TestRunStopsAtStepLimit(t *testing.T) {
 	fc := &endlessToolCompleter{}
 	m := NewManager(fc, newFakeOps(), NewMemoryStore(), "test-model")
 
+	// Hitting the step limit is surfaced as a friendly "paused" notice (say
+	// "continue" to resume), not an error: nothing actually failed.
 	events := runTurn(t, m, "blog", "go")
-	assert.Equal(t, "error", events[len(events)-1].Type)
+	last := events[len(events)-1]
+	assert.Equal(t, "paused", last.Type)
+	assert.Equal(t, maxIterationsNotice, last.Text)
 	assert.Equal(t, maxIterations, fc.calls)
 }
 
@@ -281,7 +285,7 @@ func TestRunReportsAPIError(t *testing.T) {
 func TestBroadcastsToEverySubscriber(t *testing.T) {
 	t.Parallel()
 	fc := &fakeCompleter{replies: []response{
-		{StopReason: "end_turn", Content: []ContentBlock{{Type: "text", Text: "broadcast"}}},
+		{StopReason: "end_turn", Content: []ContentBlock{{Type: "text", Text: "broadcast"}}, Usage: usage{OutputTokens: 7}},
 	}}
 	m := NewManager(fc, newFakeOps(), NewMemoryStore(), "test-model")
 
@@ -297,8 +301,44 @@ func TestBroadcastsToEverySubscriber(t *testing.T) {
 	got1 := eventTypes(drainUntilDone(t, ch1))
 	got2 := eventTypes(drainUntilDone(t, ch2))
 	assert.Equal(t, got1, got2)
-	// "model" announces which model is answering, before the reply streams.
-	assert.Equal(t, []string{"user", "model", "text", "done"}, got1)
+	// "model" announces which model is answering; "usage" reports the turn's tokens
+	// (as a live activity signal) before the reply text streams.
+	assert.Equal(t, []string{"user", "model", "usage", "text", "done"}, got1)
+}
+
+func TestPublishesTokenUsage(t *testing.T) {
+	t.Parallel()
+	fc := &fakeCompleter{replies: []response{
+		{StopReason: "end_turn", Content: []ContentBlock{{Type: "text", Text: "hi"}}, Usage: usage{InputTokens: 100, OutputTokens: 42}},
+	}}
+	m := NewManager(fc, newFakeOps(), NewMemoryStore(), "test-model")
+	ch, cancel, err := m.Subscribe("blog")
+	require.NoError(t, err)
+	defer cancel()
+	require.NoError(t, m.Send("blog", "", "hi", ""))
+
+	var got *Event
+	for _, ev := range drainUntilDone(t, ch) {
+		if ev.Type == "usage" {
+			e := ev
+			got = &e
+			break
+		}
+	}
+	require.NotNil(t, got, "a usage event must be published so the UI can show a token count")
+	require.NotNil(t, got.Usage)
+	assert.Equal(t, 42, got.Usage.OutputTokens)
+	assert.Equal(t, 100, got.Usage.InputTokens)
+}
+
+// The web UI reads snake_case usage keys; a struct without json tags would serialize
+// as InputTokens/OutputTokens and the counter would silently read undefined.
+func TestUsageEventSerializesSnakeCase(t *testing.T) {
+	t.Parallel()
+	b, err := json.Marshal(Event{Type: "usage", Usage: &Usage{InputTokens: 100, OutputTokens: 42}})
+	require.NoError(t, err)
+	assert.Contains(t, string(b), `"output_tokens":42`)
+	assert.Contains(t, string(b), `"input_tokens":100`)
 }
 
 func TestSecondSenderIsRejectedWhileBusy(t *testing.T) {

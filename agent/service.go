@@ -393,8 +393,8 @@ const maxLineBuffer = 64 * 1024
 // The stdout and stderr copiers share one writer, so it guards its buffer.
 type timestampWriter struct {
 	w   io.Writer
-	mu  sync.Mutex
 	buf []byte
+	mu  sync.Mutex // Protects buf
 }
 
 func newTimestampWriter(w io.Writer) *timestampWriter {

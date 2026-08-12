@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"heckel.io/hostit/app"
 	"os"
 	"os/exec"
 	"os/user"
@@ -12,6 +11,8 @@ import (
 	"syscall"
 
 	"github.com/urfave/cli/v2"
+	"heckel.io/hostit/app"
+	"heckel.io/hostit/container"
 )
 
 const (
@@ -22,14 +23,9 @@ const (
 )
 
 var (
-	// appUserRegex re-validates the resolved account name before it is passed to
-	// podman, so a surprising name cannot turn into something argument-shaped
-	appUserRegex = regexp.MustCompile(app.AppNamePattern)
-	// containerKeyRegex re-validates the container key (an app id, or an app name
-	// for a pre-id app) taken from the caller's home-dir path, before it reaches
-	// podman -- same argument-shaped-input guard as appUserRegex
-	containerKeyRegex = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,63}$`)
-	// termRegex keeps TERM to boring terminal names
+	// termRegex keeps TERM to boring terminal names. The app-name and container-key
+	// formats are re-validated via app.ValidName / container.ValidName, which own
+	// those patterns.
 	termRegex = regexp.MustCompile(`^[a-zA-Z0-9._-]{1,32}$`)
 
 	// cmdEnter is the privileged half of "hostit shell": it runs as root through
@@ -59,7 +55,7 @@ func execEnter(c *cli.Context) error {
 	if err != nil {
 		return cli.Exit("cannot resolve the calling user", 1)
 	}
-	if !appUserRegex.MatchString(u.Username) {
+	if !app.ValidName(u.Username) {
 		return cli.Exit("not an app user", 1)
 	}
 	// Resolve the app's container from the caller's home directory, not its name.
@@ -103,7 +99,7 @@ func execEnter(c *cli.Context) error {
 // surprising passwd entry cannot inject podman arguments.
 func containerKeyFromHome(home string) (string, bool) {
 	base := filepath.Base(filepath.Clean(home))
-	if !containerKeyRegex.MatchString(base) {
+	if !container.ValidName(base) {
 		return "", false
 	}
 	return containerPrefix + base, true

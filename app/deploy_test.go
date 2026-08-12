@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"heckel.io/hostit/appctl"
+	"heckel.io/hostit/run"
 	"heckel.io/hostit/store"
 )
 
@@ -293,7 +294,7 @@ type fakeRunner struct {
 	mu       sync.Mutex      // Protects commands; the demo app deploys in the background
 }
 
-var _ Runner = (*fakeRunner)(nil)
+var _ run.Runner = (*fakeRunner)(nil)
 
 func newFakeRunner() *fakeRunner {
 	return &fakeRunner{

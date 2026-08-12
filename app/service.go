@@ -19,6 +19,7 @@ import (
 	"heckel.io/hostit/btrfs"
 	"heckel.io/hostit/config"
 	"heckel.io/hostit/container"
+	"heckel.io/hostit/run"
 	"heckel.io/hostit/store"
 	"heckel.io/hostit/systemd"
 )
@@ -88,16 +89,6 @@ type SystemOps interface {
 	ApplyPortRules(rules []PortRule) error
 }
 
-// Runner executes a command on the host as root; the daemon performs all
-// container and service work itself, on behalf of app users
-type Runner interface {
-	Run(args ...string) (string, error)
-	// RunTimeout is for calls whose answer is nice to have but must not block a
-	// request: podman serializes on its own lock, so a slow create or pull would
-	// otherwise stall everything that asks for state
-	RunTimeout(timeout time.Duration, args ...string) (string, error)
-}
-
 // PortRule restricts loopback connects to an app port to root and the owning UID
 type PortRule struct {
 	Port int
@@ -120,7 +111,7 @@ type Manager struct {
 	config    *config.Config
 	store     *store.Store
 	ops       SystemOps
-	runner    Runner
+	runner    run.Runner
 	btrfs     *btrfs.Service
 	systemd   *systemd.Service
 	container *container.Service
@@ -154,7 +145,7 @@ type Manager struct {
 }
 
 // NewManager creates a Manager
-func NewManager(conf *config.Config, s *store.Store, ops SystemOps, runner Runner) *Manager {
+func NewManager(conf *config.Config, s *store.Store, ops SystemOps, runner run.Runner) *Manager {
 	return &Manager{
 		config:     conf,
 		store:      s,
@@ -296,7 +287,7 @@ func (m *Manager) create(name string, opts *CreateOptions, seedPath string) (*st
 	}
 	// A fork keeps the source's files; only a fresh app gets the demo scaffold.
 	if !forking {
-		if err := m.ops.WriteScaffold(name, home, m.scaffoldFiles(name, port)); err != nil {
+		if err := m.ops.WriteScaffold(name, home, scaffoldFiles(name, m.URL(&store.App{Name: name, Port: port}), WorkspaceRuntimes)); err != nil {
 			cleanup()
 			return nil, fmt.Errorf("cannot write scaffold for %s: %w", name, err)
 		}

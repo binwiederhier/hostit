@@ -1,4 +1,7 @@
-package app
+// Package retention decides which of an app's snapshots to keep and which to
+// prune, under a restic-style grandfather-father-son policy. It is pure logic (no
+// I/O), so the tricky bucketing math is easy to test.
+package retention
 
 import (
 	"fmt"
@@ -6,10 +9,10 @@ import (
 	"time"
 )
 
-// Snapshot is one point-in-time copy of an app's home (a read-only btrfs subvolume).
-// Auto records how it was taken -- automatically (before a deploy or assistant turn,
-// and hourly) or manually (a labelled save the owner/agent asked for). Retention
-// applies to all of them, so no snapshot lives forever.
+// Snapshot is one point-in-time copy of an app's home (a read-only btrfs
+// subvolume). Auto records how it was taken -- automatically (before a deploy or
+// assistant turn, and hourly) or manually (a labelled save the owner/agent asked
+// for). Retention applies to all of them, so no snapshot lives forever.
 type Snapshot struct {
 	ID        string    // Unique, sortable; the subvolume's directory name
 	App       string    // The app it belongs to
@@ -18,23 +21,23 @@ type Snapshot struct {
 	Auto      bool      // Taken automatically (retention applies) vs. on purpose
 }
 
-// RetentionPolicy is a restic-style grandfather-father-son policy: keep the most
-// recent Last snapshots, plus the newest snapshot in each of the last Daily days,
-// Weekly ISO weeks and Monthly months. The union is kept; the rest are pruned.
-type RetentionPolicy struct {
+// Policy is a restic-style grandfather-father-son policy: keep the most recent
+// Last snapshots, plus the newest snapshot in each of the last Daily days, Weekly
+// ISO weeks and Monthly months. The union is kept; the rest are pruned.
+type Policy struct {
 	Last    int
 	Daily   int
 	Weekly  int
 	Monthly int
 }
 
-// defaultRetention keeps a dense recent history and thins it out with age.
-var defaultRetention = RetentionPolicy{Last: 50, Daily: 7, Weekly: 4, Monthly: 3}
+// Default keeps a dense recent history and thins it out with age.
+var Default = Policy{Last: 50, Daily: 7, Weekly: 4, Monthly: 3}
 
-// applyRetention partitions snapshots into those to keep and those to prune under
-// the policy. Every snapshot -- manual and automatic alike -- is subject to it, so
+// Apply partitions snapshots into those to keep and those to prune under the
+// policy. Every snapshot -- manual and automatic alike -- is subject to it, so
 // none lives forever. Input need not be sorted; the result is order-independent.
-func applyRetention(snaps []Snapshot, p RetentionPolicy) (keep, prune []Snapshot) {
+func Apply(snaps []Snapshot, p Policy) (keep, prune []Snapshot) {
 	all := append([]Snapshot(nil), snaps...)
 	// Newest first, deterministic on ties so pruning is stable.
 	sort.Slice(all, func(i, j int) bool {

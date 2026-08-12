@@ -9,6 +9,7 @@ import (
 	"os"
 	"time"
 
+	"heckel.io/hostit/retention"
 	"heckel.io/hostit/store"
 )
 
@@ -202,7 +203,7 @@ func (m *Manager) pruneSnapshots(name string) {
 	if err != nil {
 		return
 	}
-	_, prune := applyRetention(toRetentionSnaps(snaps), defaultRetention)
+	_, prune := retention.Apply(toRetentionSnaps(snaps), retention.Default)
 	for _, p := range prune {
 		if err := m.btrfs.DeleteSubvolume(m.snapshotPath(name, p.ID)); err != nil {
 			slog.Warn("Cannot delete pruned snapshot subvolume", "app", name, "id", p.ID, "error", err)
@@ -250,10 +251,10 @@ func (m *Manager) SnapshotLoop(interval time.Duration, done <-chan struct{}) {
 	}
 }
 
-func toRetentionSnaps(ss []*store.Snapshot) []Snapshot {
-	out := make([]Snapshot, len(ss))
+func toRetentionSnaps(ss []*store.Snapshot) []retention.Snapshot {
+	out := make([]retention.Snapshot, len(ss))
 	for i, s := range ss {
-		out[i] = Snapshot{ID: s.ID, App: s.AppName, Label: s.Label, CreatedAt: s.CreatedAt, Auto: s.Auto}
+		out[i] = retention.Snapshot{ID: s.ID, App: s.AppName, Label: s.Label, CreatedAt: s.CreatedAt, Auto: s.Auto}
 	}
 	return out
 }

@@ -7,24 +7,34 @@ import (
 	"strings"
 
 	"github.com/urfave/cli/v2"
-	"heckel.io/hostit/app"
+	"heckel.io/hostit/assistant"
 	"heckel.io/hostit/config"
 )
 
-var cmdAssistantPoc = &cli.Command{
-	Name:      "assistant-poc",
-	Usage:     "PoC: run one assistant turn via the sandboxed Claude Max backend",
+// cmdInternal groups host-side debug/plumbing commands that app owners never run.
+// It is hidden from the command list; the other internal commands (shell, enter,
+// agent, mcp) stay top-level because external wrappers, sudoers, the systemd unit
+// and claude's mcp-config invoke them by name.
+var cmdInternal = &cli.Command{
+	Name:        "internal",
+	Usage:       "internal debug commands (not for app owners)",
+	Hidden:      true,
+	Subcommands: []*cli.Command{cmdInternalAssistant},
+}
+
+var cmdInternalAssistant = &cli.Command{
+	Name:      "assistant",
+	Usage:     "run one assistant turn via the sandboxed Claude Max backend (debug)",
 	ArgsUsage: "<app> [prompt]",
-	Hidden:    true,
 	Flags: []cli.Flag{
 		&cli.StringFlag{Name: "config", Aliases: []string{"c"}, Value: config.DefaultServerConfigFile, Usage: "server config file"},
 		&cli.BoolFlag{Name: "shell", Usage: "drop into a shell in the sandbox instead of running claude (debugging)"},
 		&cli.BoolFlag{Name: "raw", Usage: "print raw event fields instead of a pretty summary"},
 	},
-	Action: execAssistantPoc,
+	Action: execInternalAssistant,
 }
 
-func execAssistantPoc(c *cli.Context) error {
+func execInternalAssistant(c *cli.Context) error {
 	conf, err := config.LoadConfig(c.String("config"))
 	if err != nil {
 		return err
@@ -34,13 +44,13 @@ func execAssistantPoc(c *cli.Context) error {
 	}
 	appName := c.Args().Get(0)
 	if appName == "" {
-		return fmt.Errorf("usage: hostit assistant-poc <app> [prompt]")
+		return fmt.Errorf("usage: hostit internal assistant <app> [prompt]")
 	}
 	prompt := strings.Join(c.Args().Slice()[1:], " ")
 	if prompt == "" && !c.Bool("shell") {
-		return fmt.Errorf("usage: hostit assistant-poc <app> <prompt>  (or --shell for a debug shell)")
+		return fmt.Errorf("usage: hostit internal assistant <app> <prompt>  (or --shell for a debug shell)")
 	}
-	sandbox, err := app.NewAssistantSandbox(conf)
+	sandbox, err := assistant.NewSandbox(conf)
 	if err != nil {
 		return err
 	}
@@ -54,8 +64,8 @@ func execAssistantPoc(c *cli.Context) error {
 // printAssistantEvent renders one sandbox event as a compact human summary (or
 // the raw fields with --raw): the model's text, each tool it calls, each result,
 // and the final result with token usage.
-func printAssistantEvent(raw bool) func(app.AssistantStreamEvent) {
-	return func(ev app.AssistantStreamEvent) {
+func printAssistantEvent(raw bool) func(assistant.StreamEvent) {
+	return func(ev assistant.StreamEvent) {
 		if raw {
 			fmt.Printf("%+v\n", ev)
 			return
