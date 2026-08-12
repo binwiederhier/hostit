@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 
+	"heckel.io/hostit/assistant"
 	"heckel.io/hostit/store"
 )
 
@@ -34,7 +35,7 @@ func (s *Server) handleUsersList(w http.ResponseWriter, _ *http.Request, _ *call
 		r := newUserResponse(u, count)
 		if usage, ok := usageByOwner[u.ID]; ok {
 			r.AssistantTokens = usage.InputTokens + usage.OutputTokens + usage.CacheWriteTokens + usage.CacheReadTokens
-			r.AssistantCostUSD = assistantCostUSD(usage, s.config.AssistantModel)
+			r.AssistantCostUSD = assistant.CostUSD(usage, s.config.AssistantModel)
 		}
 		s.fillUserAssistant(r, u.ID)
 		resp = append(resp, r)

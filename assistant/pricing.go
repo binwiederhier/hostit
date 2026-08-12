@@ -1,4 +1,4 @@
-package server
+package assistant
 
 import "heckel.io/hostit/store"
 
@@ -20,10 +20,10 @@ var modelPricing = map[string]pricing{
 // sonnetPricing is the fallback (and current default) tier.
 var sonnetPricing = pricing{input: 3, output: 15, cacheWrite: 3.75, cacheRead: 0.30}
 
-// assistantCostUSD converts accumulated token usage into a dollar figure for the
+// CostUSD converts accumulated token usage into a dollar figure for the
 // given model. It is an estimate: usage is summed over time and priced at current
 // rates, so a rate change since the tokens were spent is not reflected.
-func assistantCostUSD(u store.AssistantUsage, model string) float64 {
+func CostUSD(u store.AssistantUsage, model string) float64 {
 	p, ok := modelPricing[model]
 	if !ok {
 		p = sonnetPricing

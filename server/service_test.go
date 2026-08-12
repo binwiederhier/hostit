@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"heckel.io/hostit/app"
+	"heckel.io/hostit/app/apptest"
 	"heckel.io/hostit/config"
 	"heckel.io/hostit/store"
 	"heckel.io/hostit/user"
@@ -430,7 +431,7 @@ func newTestServer(t *testing.T) *Server {
 	t.Cleanup(func() {
 		_ = s.Close()
 	})
-	manager := app.NewManager(conf, s, app.NewNopSystemOps(), app.NewNopRunner())
+	manager := app.NewManager(conf, s, apptest.NewNopSystemOps(), apptest.NewNopRunner())
 	return New(conf, manager, user.NewManager(conf, s))
 }
 

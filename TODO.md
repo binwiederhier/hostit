@@ -5,8 +5,16 @@ everything imaginable -- if it is not written down here it is not planned.
 
 # Phil notes (round 3)
 
+- Look for deprecated or old code. Go file by file, fan out if you have to. Remove old stuff.
 - The server/ package contains a lot of stuff that should not be there. Review and refactor.
-- pricing.go
+- pricing.go does not belong in the server package
+- i dont like stray server/ files that dont belong to a handler, unless they really need their own file. agentguide.go should be in the file that has the accompanying handler, domains.go should be in server_handler_domains.go, etc.
+- the handlers dont have tests. 
+- the placeholder app could be a static app with the public/index.html being part of the skaffold. that could remove ht ehostit placeholder cli
+- why is ops_nop.go still a thing. i thought we're getting rid of systemops?
+- is skaffold not called skeletion usually?
+- the public docs are not great. look at the Code/ntfy/ntfy/docs and get inspired by that. add screenshots too. fan out to make it possible
+- why is snapshot.go not in a snapshot service? everything that does direct file operations in app/ seems like a code smell to me. idk.
 
 ## Multi-node: a proxy node and hosting nodes
 
