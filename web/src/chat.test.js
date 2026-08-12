@@ -1,5 +1,27 @@
 import { describe, it, expect } from "vitest";
-import { reduceChatEvent } from "./chat";
+import { reduceChatEvent, filesFromClipboard } from "./chat";
+
+describe("filesFromClipboard", () => {
+  it("returns the pasted files (e.g. a screenshot in clipboardData.files)", () => {
+    const img = { name: "shot.png", type: "image/png" };
+    expect(filesFromClipboard({ files: [img] })).toEqual([img]);
+  });
+  it("falls back to items of kind 'file' when files is empty", () => {
+    const img = { name: "x.png", type: "image/png" };
+    const cd = {
+      files: [],
+      items: [
+        { kind: "string", getAsFile: () => null },
+        { kind: "file", getAsFile: () => img },
+      ],
+    };
+    expect(filesFromClipboard(cd)).toEqual([img]);
+  });
+  it("returns [] for a plain-text paste and for null", () => {
+    expect(filesFromClipboard({ files: [], items: [{ kind: "string", getAsFile: () => null }] })).toEqual([]);
+    expect(filesFromClipboard(null)).toEqual([]);
+  });
+});
 
 describe("reduceChatEvent", () => {
   it("appends a tool_use as a pending tool without refreshing the preview", () => {

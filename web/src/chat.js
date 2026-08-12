@@ -58,3 +58,26 @@ export function formatDuration(seconds) {
   const h = Math.floor(m / 60);
   return `${h}h ${m % 60}m`;
 }
+
+// filesFromClipboard extracts File objects from a paste's clipboard data, so a
+// pasted screenshot (or any file) attaches the way a drag-drop or the "+" button
+// does. A plain-text paste carries no files and yields [], leaving the browser's
+// default paste behaviour intact.
+export function filesFromClipboard(clipboardData) {
+  if (!clipboardData) return [];
+  const files = [];
+  // Modern browsers put a pasted image directly in .files.
+  if (clipboardData.files && clipboardData.files.length) {
+    for (const f of clipboardData.files) files.push(f);
+  }
+  // Fall back to items of kind "file" when .files is empty.
+  if (files.length === 0 && clipboardData.items) {
+    for (const it of clipboardData.items) {
+      if (it.kind === "file") {
+        const f = it.getAsFile && it.getAsFile();
+        if (f) files.push(f);
+      }
+    }
+  }
+  return files;
+}

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { marked } from "marked";
 import DOMPurify from "dompurify";
-import { reduceChatEvent, formatTokens, formatDuration } from "../chat";
+import { reduceChatEvent, formatTokens, formatDuration, filesFromClipboard } from "../chat";
 
 // The in-browser coding agent. It POSTs a message to the daemon's assistant
 // endpoint and reads the loop back as Server-Sent Events -- the model's thinking,
@@ -593,6 +593,14 @@ const AppAssistant = ({ name, onClose, embedded = false, onPreviewRefresh }) => 
     setDragOver(false);
     if (e.dataTransfer?.files?.length) uploadFiles(e.dataTransfer.files);
   };
+  // Paste an image (a screenshot) or any file straight into the chat; a plain-text
+  // paste carries no files, so the default paste is left untouched.
+  const onPaste = (e) => {
+    const files = filesFromClipboard(e.clipboardData);
+    if (files.length === 0) return;
+    e.preventDefault();
+    uploadFiles(files);
+  };
   const onDragOver = (e) => {
     if (e.dataTransfer?.types?.includes("Files")) {
       e.preventDefault();
@@ -755,6 +763,7 @@ const AppAssistant = ({ name, onClose, embedded = false, onPreviewRefresh }) => 
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={onKeyDown}
+          onPaste={onPaste}
           placeholder="Build or change your app..."
           rows={1}
           disabled={busy}
