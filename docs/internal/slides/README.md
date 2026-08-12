@@ -5,9 +5,8 @@ Two [Sli.dev](https://sli.dev/) presentations live here:
 - **`slides.md`** -- a **code overview** for developers: the package structure, how
   `app.Manager` composes the services, the test seam, and the main flows. A distilled
   tour of `docs/internal/`; when those docs change, update `slides.md` too.
-- **`intro.md`** -- an **introduction** for a general audience: what hostit is, its
-  features (with UI screenshots), and who made it. Screenshots live in `public/` and
-  are copies of `web/src/assets/docs/*.png`; re-copy them if the UI changes.
+- **`intro.md`** -- an **introduction** for a general audience: who made it, then a
+  feature-by-feature tour of what hostit can do. Text only, no screenshots.
 
 ## Run it
 
