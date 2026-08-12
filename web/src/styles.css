@@ -1590,6 +1590,26 @@ th:last-child {
   color: #e8ecf1;
 }
 
+/* A small pill near the bottom of the terminal while the socket reconnects, so a
+   dropped session shows a countdown instead of a dead pane. */
+.term-reconnect {
+  position: absolute;
+  left: 50%;
+  bottom: 14px;
+  transform: translateX(-50%);
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  padding: 7px 12px;
+  border-radius: 8px;
+  background: rgba(20, 24, 29, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #e8ecf1;
+  font-size: 13px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+}
+
 .term-btn svg {
   width: 15px;
   height: 15px;

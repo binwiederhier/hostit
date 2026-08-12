@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
+import { reconnectDelaySeconds } from "../reconnect";
 
 // A shell in the app's container, in the browser. The websocket streams raw
 // terminal bytes both ways (binary), and a text frame carries the size whenever
@@ -22,9 +23,9 @@ const AppTerminal = ({ name, onClose, onMinimize, onReady, onSessionEnd, onSsh, 
   const fitRef = useRef(null);
   const termRef = useRef(null);
   const sendSizeRef = useRef(() => {});
-  // Set just before we tear the socket down ourselves, so onclose can tell an
-  // intentional close (unmount) from the server ending the session (e.g. a reboot).
-  const closingRef = useRef(false);
+  // Reconnect state for the UI (countdown) and a handle to retry immediately.
+  const reconnectNowRef = useRef(() => {});
+  const [reconnect, setReconnect] = useState({ active: false, seconds: 0 });
   // Where the floating panel sits; null until first dragged, so CSS places it.
   const [pos, setPos] = useState(null);
 
@@ -43,37 +44,87 @@ const AppTerminal = ({ name, onClose, onMinimize, onReady, onSessionEnd, onSsh, 
     fit.fit();
 
     const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const ws = new WebSocket(`${proto}//${window.location.host}/api/apps/${encodeURIComponent(name)}/terminal`);
-    ws.binaryType = "arraybuffer";
+    const url = `${proto}//${window.location.host}/api/apps/${encodeURIComponent(name)}/terminal`;
     const encoder = new TextEncoder();
+    let ws = null;
+    let attempt = 0; // consecutive drops, for the backoff
+    let retryTimer = null;
+    let countdownTimer = null;
+    let disposed = false;
 
     const sendSize = () => {
       fit.fit();
-      if (ws.readyState === WebSocket.OPEN) {
+      if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ cols: term.cols, rows: term.rows }));
       }
     };
     sendSizeRef.current = sendSize;
-    ws.onopen = () => {
-      sendSize();
-      term.focus();
-      if (onReady) {
-        onReady(); // the shell is connected; the page can stop showing "connecting"
-      }
+
+    const clearTimers = () => {
+      clearTimeout(retryTimer);
+      clearInterval(countdownTimer);
+      retryTimer = null;
+      countdownTimer = null;
     };
-    ws.onmessage = (e) => term.write(new Uint8Array(e.data));
-    ws.onclose = () => {
-      term.write("\r\n\x1b[90m[session closed]\x1b[0m\r\n");
-      // The server ended the session (a reboot/poweroff killed the container, or
-      // the time cap hit) rather than us tearing it down: let the page reflect it.
-      if (!closingRef.current && onSessionEnd) {
-        onSessionEnd();
-      }
+
+    // After an unexpected drop, wait out the backoff (with a visible countdown),
+    // then reconnect. The socket is reconnected in place; the xterm terminal and
+    // its scrollback are kept, so a network blip or a container restart heals on
+    // its own without losing the pane.
+    const scheduleReconnect = () => {
+      const secs = reconnectDelaySeconds(attempt);
+      attempt += 1;
+      let remaining = secs;
+      setReconnect({ active: true, seconds: remaining });
+      countdownTimer = setInterval(() => {
+        remaining -= 1;
+        setReconnect({ active: true, seconds: Math.max(0, remaining) });
+      }, 1000);
+      retryTimer = setTimeout(connect, secs * 1000);
     };
-    ws.onerror = () => term.write("\r\n\x1b[31m[connection error]\x1b[0m\r\n");
+
+    function connect() {
+      if (disposed) return;
+      clearTimers();
+      setReconnect({ active: false, seconds: 0 });
+      // Detach the old socket's handlers first, so its onclose does not also try to
+      // reconnect (double reconnect on a manual retry).
+      if (ws) {
+        ws.onopen = ws.onmessage = ws.onclose = ws.onerror = null;
+        try {
+          ws.close();
+        } catch {
+          // already closing/closed
+        }
+      }
+      ws = new WebSocket(url);
+      ws.binaryType = "arraybuffer";
+      ws.onopen = () => {
+        attempt = 0; // a clean connect resets the backoff
+        sendSize();
+        term.focus();
+        if (onReady) {
+          onReady(); // the shell is connected; the page can stop showing "connecting"
+        }
+      };
+      ws.onmessage = (e) => term.write(new Uint8Array(e.data));
+      ws.onclose = () => {
+        if (disposed) return; // our own teardown (unmount)
+        scheduleReconnect();
+      };
+      ws.onerror = () => {}; // the close handler drives the reconnect; don't double-report
+    }
+
+    // Retry now: cancel any pending backoff and reconnect immediately.
+    reconnectNowRef.current = () => {
+      attempt = 0;
+      connect();
+    };
+
+    connect();
 
     const dataSub = term.onData((d) => {
-      if (ws.readyState === WebSocket.OPEN) {
+      if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(encoder.encode(d));
       }
     });
@@ -88,12 +139,15 @@ const AppTerminal = ({ name, onClose, onMinimize, onReady, onSessionEnd, onSsh, 
     }
 
     return () => {
+      disposed = true;
       window.removeEventListener("resize", onResize);
       document.removeEventListener("fullscreenchange", onResize);
       ro.disconnect();
       dataSub.dispose();
-      closingRef.current = true; // our own teardown, not a server-side session end
-      ws.close();
+      clearTimers();
+      if (ws) {
+        ws.close();
+      }
       term.dispose();
     };
   }, [name]);
@@ -172,6 +226,13 @@ const AppTerminal = ({ name, onClose, onMinimize, onReady, onSessionEnd, onSsh, 
       <div className={fixed ? "term-bar" : "term-bar term-bar-drag"} onPointerDown={startDrag}>
         {!embedded && <span className="mono">{name} &mdash; terminal</span>}
         <span className="term-bar-actions">
+          {reconnect.active && (
+            <button type="button" className="term-btn" onClick={() => reconnectNowRef.current()} title="Reconnect now" aria-label="Reconnect now">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M13 8a5 5 0 1 1-1.5-3.6M13 2.5v2.4h-2.4" />
+              </svg>
+            </button>
+          )}
           {!fixed && onMinimize && (
             <button type="button" className="term-btn" onClick={onMinimize} title="Minimize" aria-label="Minimize">
               <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -209,6 +270,21 @@ const AppTerminal = ({ name, onClose, onMinimize, onReady, onSessionEnd, onSsh, 
       </div>
       {/* The host stays mounted (and the session alive) while the window is hidden. */}
       <div className="term-host" ref={hostRef} />
+      {reconnect.active && (
+        <div className="term-reconnect" role="status">
+          <span>
+            Reconnecting{reconnect.seconds > 0 ? ` in ${reconnect.seconds}s` : ""}
+            <span className="ellipsis" aria-hidden="true">
+              <span>.</span>
+              <span>.</span>
+              <span>.</span>
+            </span>
+          </span>
+          <button type="button" className="btn btn-small" onClick={() => reconnectNowRef.current()}>
+            Reconnect now
+          </button>
+        </div>
+      )}
     </div>
   );
 
