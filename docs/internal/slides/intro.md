@@ -30,14 +30,33 @@ class: text-left
 **Philipp Heckel** -- Head of Engineering at **Slide**, based in Connecticut (by way
 of Germany).
 
-- **Founder and maintainer of [ntfy](https://ntfy.sh)** -- the open-source pub-sub
-  notification service, self-hosted or run on ntfy.sh
-- **GitHub:** [github.com/binwiederhier](https://github.com/binwiederhier)
-- **LinkedIn:** [linkedin.com/in/philippheckel](https://www.linkedin.com/in/philippheckel)
+<div class="grid grid-cols-2 gap-8 mt-6">
+<div>
 
-<div class="mt-8 text-base opacity-80">
-hostit scratches the same itch as ntfy: run your own thing, own your data, keep it
-small. This is that idea applied to <b>hosting little web apps</b>.
+**The work**
+
+- 3 years at **Deutsche Bank** (with Steffen)
+- 8 years at **Datto**, building BCDR appliances
+- Now 3 years at **Slide** -- BCDR again
+- **Maintainer of [ntfy](https://ntfy.sh)**, founder of
+  **ntfy.sh** (a mini-SaaS)
+
+</div>
+<div>
+
+**The person**
+
+- Linux nerd, open source fan
+- Loves block devices; Go fanboy
+- Dad of two kids
+- F1 fan
+
+</div>
+</div>
+
+<div class="mt-6 text-sm opacity-60">
+github.com/binwiederhier &middot; linkedin.com/in/philippheckel &middot; hostit scratches
+the same itch as ntfy: run your own thing, own your data, keep it small.
 </div>
 
 ---
