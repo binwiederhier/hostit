@@ -414,7 +414,7 @@ func recentHistory(history []Message, maxTurns int) []Message {
 // cachedSystem returns the system prompt as a single cache-marked block, so the
 // large, stable instructions are read once and reused across the conversation.
 func cachedSystem(text string) []systemBlock {
-	return []systemBlock{{Type: blockText, Text: text, CacheControl: ephemeralCache}}
+	return []systemBlock{{Type: blockText, Text: text, CacheControl: ephemeral1hCache}}
 }
 
 // cachedToolDefs marks the tools block as cacheable (it never changes within a
@@ -422,7 +422,7 @@ func cachedSystem(text string) []systemBlock {
 func cachedToolDefs() []Tool {
 	tools := toolDefs()
 	if n := len(tools); n > 0 {
-		tools[n-1].CacheControl = ephemeralCache
+		tools[n-1].CacheControl = ephemeral1hCache
 	}
 	return tools
 }

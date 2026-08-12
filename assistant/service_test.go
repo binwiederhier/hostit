@@ -568,3 +568,31 @@ func toolResultIsError(msgs []Message, toolUseID string) bool {
 	}
 	return false
 }
+
+func TestStablePrefixUsesOneHourCache(t *testing.T) {
+	// The stable system prompt + tools are cached with a 1-hour TTL so they stay
+	// warm across a whole session; the growing conversation keeps the 5-minute one.
+	sys := cachedSystem("hello")
+	require.Len(t, sys, 1)
+	require.NotNil(t, sys[0].CacheControl)
+	assert.Equal(t, "1h", sys[0].CacheControl.TTL, "system prompt uses the 1-hour cache")
+
+	tools := cachedToolDefs()
+	require.NotEmpty(t, tools)
+	last := tools[len(tools)-1]
+	require.NotNil(t, last.CacheControl)
+	assert.Equal(t, "1h", last.CacheControl.TTL, "tool schema uses the 1-hour cache")
+
+	msgs := cacheConversation([]Message{{Role: roleUser, Content: []ContentBlock{{Type: blockText, Text: "hi"}}}})
+	require.NotEmpty(t, msgs)
+	cc := msgs[0].Content[len(msgs[0].Content)-1].CacheControl
+	require.NotNil(t, cc)
+	assert.Equal(t, "", cc.TTL, "the conversation prefix keeps the default 5-minute cache")
+
+	b, err := json.Marshal(ephemeralCache)
+	require.NoError(t, err)
+	assert.NotContains(t, string(b), "ttl", "the 5-minute breakpoint omits ttl on the wire")
+	b, err = json.Marshal(ephemeral1hCache)
+	require.NoError(t, err)
+	assert.Contains(t, string(b), `"ttl":"1h"`)
+}

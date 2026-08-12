@@ -134,11 +134,18 @@ type outputConfig struct {
 // prefix up to it across requests instead of re-reading it, cutting the cost of
 // the large, stable system prompt + tools and the growing conversation.
 type cacheControl struct {
-	Type string `json:"type"` // "ephemeral"
+	Type string `json:"type"`          // "ephemeral"
+	TTL  string `json:"ttl,omitempty"` // "" for the 5-minute default, "1h" for the extended cache
 }
 
-// ephemeralCache is the standard (5-minute) cache breakpoint.
-var ephemeralCache = &cacheControl{Type: "ephemeral"}
+// ephemeralCache is the standard (5-minute) cache breakpoint; ephemeral1hCache is
+// the 1-hour breakpoint (no beta header needed) for the large, stable prefix that
+// stays warm across a whole session. The 1-hour write costs ~2x vs ~1.25x, which
+// pays off since the prefix is read every turn and rewritten only rarely.
+var (
+	ephemeralCache   = &cacheControl{Type: "ephemeral"}
+	ephemeral1hCache = &cacheControl{Type: "ephemeral", TTL: "1h"}
+)
 
 // systemBlock is one block of the system prompt; sent as an array (not a bare
 // string) so it can carry a cache_control breakpoint.
