@@ -43,9 +43,11 @@ loopback port that nftables restricts to that uid. SSH logins are handed to
 users never get a host shell, and an escape inside the container lands on the
 app's own uid rather than on root.
 
-**[ARCHITECTURE.md](ARCHITECTURE.md)** has the diagrams: the components, what
-isolates what, and sequence diagrams for creating an app, serving a request,
-logging in over SSH, and an agent deploying.
+**[docs/internal/architecture/](docs/internal/architecture/)** has the diagrams: the
+components ([overview](docs/internal/architecture/overview.md)), what
+[isolates what](docs/internal/architecture/isolation.md), and
+[sequence diagrams](docs/internal/architecture/flows.md) for creating an app, serving
+a request, logging in over SSH, and an agent deploying.
 
 ## Install (server)
 

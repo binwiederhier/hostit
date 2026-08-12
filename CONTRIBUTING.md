@@ -1,8 +1,10 @@
 # Contributing to hostit
 
 Thanks for your interest. hostit is a single Go binary plus a React/Vite web app;
-[ARCHITECTURE.md](ARCHITECTURE.md) explains how the pieces fit and where the code
-lives, and is the best first read before a non-trivial change.
+[docs/internal/architecture/](docs/internal/architecture/) explains how the pieces
+fit and where the code lives (start with
+[overview.md](docs/internal/architecture/overview.md)), and is the best first read
+before a non-trivial change.
 
 ## Building and testing
 

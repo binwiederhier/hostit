@@ -1,0 +1,155 @@
+# Release, deploy, and startup
+
+How a hostit build becomes a running daemon on a box, and what has to be true for
+it to start. Three stages: **build and package** (goreleaser -> `.deb`/`.rpm`),
+**deploy** (the example Ansible role), and **start** (the preflight, then the
+background upgrade of running agents).
+
+## Build and package: goreleaser + the .deb
+
+hostit ships as a single static Go binary. `make release` (or `release-snapshot`
+for a local test build) runs `goreleaser`, gated behind `clean deps web check`
+(`Makefile`) -- note `web` runs first, so the React SPA is built and embedded into
+the binary via `//go:embed` before the Go build (a placeholder is checked in so
+the package always compiles even without a web build).
+
+`.goreleaser.yml` builds `linux/amd64` and `linux/arm64` and produces `deb` and
+`rpm` packages (`nfpms`). The package is more than the binary; it lays down the
+whole host contract:
+
+| Packaged file | Destination | Role |
+|---|---|---|
+| `hostit` | `/usr/bin/hostit` | the one binary (daemon, CLI, agent, shell, enter, mcp) |
+| `hostit.service` | `/lib/systemd/system/` | the daemon unit |
+| `hostit-app@.service` | `/lib/systemd/system/` | the per-app template unit |
+| `hostit-shell` | `/usr/bin/` (0755) | app users' login shell |
+| `hostit-enter` | `/usr/bin/` (0755) | the privileged container-entry helper |
+| `hostit.sudoers` | `/etc/sudoers.d/hostit` (0440, noreplace) | the narrow sudo grant |
+| `server.yml.example` | `/etc/hostit/server.yml.example` | config template |
+
+Package **dependencies** are the host tools the daemon shells out to: `podman`,
+`uidmap` (for idmapped container filesystems), `slirp4netns` (per-app netns),
+`nftables`, `dbus-user-session`, `openssh-server`, with `passt` recommended.
+
+The **postinstall** script (`scripts/postinst.sh`) does only what is safe on every
+install/upgrade: registers `/usr/bin/hostit-shell` in `/etc/shells` (so sshd
+accepts it as a login shell), creates the `hostit-apps` system group (the sudoers
+grant is scoped to it), validates the sudoers file with `visudo -cf` and removes
+it if broken (never leave a broken sudoers behind), reloads systemd, and restarts
+the daemon **only if it is already running**. It deliberately does **not** enable
+the service -- hostit refuses to start without a configured
+`/etc/hostit/server.yml`, so enabling is left to the operator or Ansible.
+
+## Deploy: the example Ansible role
+
+`deploy/ansible/` is an example role that a maintainer can copy and adapt (it is
+the shape the production deploy follows, not a vendored copy of it). The role
+(`deploy/ansible/roles/hostit/tasks/main.yml`) is one linear pass:
+
+1. Install podman and the container/network dependencies.
+2. Assert the required variables are set (`hostit_domain`, `hostit_admin_token`).
+3. Fetch the release `.deb` from GitHub (or copy a locally built one for
+   development), and install it with `dpkg -i --force-confold` -- `dpkg`, not the
+   apt module, because same-version rebuilds are common while iterating and apt
+   would treat them as already installed; `--force-confold` keeps the managed
+   `/etc/hostit/server.yml` instead of prompting on upgrade.
+4. Template `/etc/hostit/server.yml` (0600).
+5. **Set up the btrfs loopback** for app homes (`btrfs.yml`, gated on
+   `hostit_btrfs`, on by default) -- see [storage-btrfs.md](storage-btrfs.md).
+6. **Harden sshd** for app users (drop the forwarding-stripping config) -- see
+   [security-isolation.md](security-isolation.md).
+7. Enable and start the daemon.
+
+Secrets (admin token, OAuth secret, AI keys) are meant to live in an Ansible Vault,
+not plain vars (`deploy/ansible/roles/hostit/defaults/main.yml` documents each
+variable, including the assistant credentials whose *presence* is the whole switch
+-- see [assistant-internals.md](assistant-internals.md)).
+
+## Start: the preflight
+
+`hostit serve` refuses to run on a host it cannot support, up front, rather than
+failing lazily on the first app operation (`cmd/serve.go:execServe` calls
+`cmd/preflight.go`). Two gates:
+
+**`checkHostRequirements`** (`cmd/preflight.go`):
+
+- Must run as **root** -- it creates Unix users and drives podman, systemd,
+  nftables and btrfs.
+- Every command it shells out to must be installed. It checks them **all** and
+  reports the missing set at once (so an operator fixes them in one pass):
+  `podman, btrfs, nft, systemctl, useradd, usermod, userdel, groupadd, groupmod,
+  groupdel, pkill` (`requiredBinaries`).
+
+**`requireBtrfs`** (`cmd/preflight.go`): the app-homes directory must be on a
+btrfs filesystem, or the daemon refuses to start. Checked after the directory is
+created. btrfs is core (snapshots, rollback, fork, hard quotas), not optional.
+
+```mermaid
+flowchart TB
+    start["hostit serve"] --> cfg["load + validate server.yml"]
+    cfg --> root{"running as root?<br/>all binaries present?"}
+    root -->|no| die1["refuse to start"]
+    root -->|yes| dirs["mkdir data-dir (0711) + apps-dir"]
+    dirs --> btr{"apps-dir on btrfs?"}
+    btr -->|no| die2["refuse to start"]
+    btr -->|yes| open["open store, build Manager"]
+    open --> bg["background: build workspace image,<br/>RestartStaleAgents, prune old images"]
+    open --> rec["ReconcileOrphans (units/containers/homes)"]
+    open --> loops["disk / state / snapshot / domain-retry loops"]
+    open --> srv["serve HTTPS + REST + socket"]
+    style die1 fill:#7f1d1d,color:#fff
+    style die2 fill:#7f1d1d,color:#fff
+```
+
+After the preflight, startup opens the store (which runs any pending schema
+migrations), builds the `Manager`, and kicks off background work: build the shared
+workspace image, restart stale agents, prune superseded images
+(`cmd/serve.go`, the `go func`), reconcile orphaned units/containers/homes against
+the registry (`app/reconcile.go`), and start the periodic loops (disk usage, state,
+hourly snapshots, custom-domain retry).
+
+## Why agents only upgrade on a restart
+
+An app's **agent is PID 1 inside its container**, exec'd from the hostit binary as
+it was at container-create time. The binary is **bind-mounted** into the container
+as a file (`app/workspace.go:appendCommonMounts`), so replacing `/usr/bin/hostit`
+on the host swaps the file, but a **running container keeps the inode it started
+with** -- the old agent behaviour keeps running until the container is recreated.
+
+This matters for correctness, not just freshness: the agent decides what the app's
+`run:` command actually is. `app/upgrade.go:RestartStaleAgents` documents the real
+bug it prevents -- a static app once kept serving its old directory through an
+upgrade this way, with the app's whole home on the internet.
+
+So an upgrade must actively reach the agents. On startup, once the new `Version` is
+set (`cmd/serve.go`, `app.Version = c.App.Version`), `RestartStaleAgents` compares
+the stored `agent_version` setting to the running build and, if it changed, brings
+every app **Up** (`Up`, not a bare restart -- a new binary may want the container
+built differently, and only `apply` notices that), then records the new version
+(`app/upgrade.go`). It runs in the background because it costs each app a moment of
+downtime and the proxy should come up first. `app.Version` is itself part of each
+container's identity (a `hostit.version` label,
+`app/workspace.go:containerCreateArgs`), so `apply` recreates a container whose
+label predates the current build.
+
+## No one-off migrations anymore
+
+hostit used to carry imperative one-off migrations run once at startup (e.g. the
+older single-uid -> contiguous-uid-block remap, and the `app_id`/`image_tag`
+backfills). Those have been **removed** after they ran once on staging and
+production: keeping a run-once mutation in the startup path forever is dead weight
+and a foot-gun. What remains is:
+
+- **Ordered schema migrations** in `store/migrate.go` -- append-only, each
+  recording its version in the same transaction, so a failure rolls back whole and
+  a success never replays. These are declarative table changes, not data
+  transforms.
+- **Idempotent reconciliation** on every start (`app/reconcile.go`) and the
+  **version-gated** `RestartStaleAgents` -- both safe to run every boot, neither a
+  one-shot.
+
+If you need a genuinely one-time data transform in the future, do it as a schema
+migration (if SQL can express it) or a version-gated idempotent step, not a
+run-once imperative block that lingers in `serve`. See the related design notes in
+`plans/260808-hostit-app-id-identity.md` and
+`plans/260809-hostit-app-id-image-pinning-migration.md`.
