@@ -23,6 +23,20 @@ A code walkthrough. Source of truth: <code>docs/internal/</code>.
 
 ---
 
+## What we'll cover
+
+1. **What you get** -- one binary, one container per app, a subdomain, an API
+2. **Isolation** -- what stops an app escaping to the host or to another app
+3. **The flows** -- creating an app, serving a request, an agent deploying
+4. **The code map** -- `app.Manager` and the service packages behind it
+5. **The subsystems** -- btrfs storage, the built-in assistant, build and preflight
+
+<div class="pt-8 text-sm opacity-70">
+Each section maps to a folder under <code>docs/internal/</code>; the last slide has the links.
+</div>
+
+---
+
 ## What you get, per app
 
 - Its **own container** -- SSH lands inside it (root in there, `apt install` away); other
