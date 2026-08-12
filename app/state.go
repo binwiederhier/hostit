@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"heckel.io/hostit/appctl"
 )
 
 const (
@@ -172,7 +174,7 @@ func (m *Manager) States(names []string) map[string]State {
 		appState, appStartedAt := m.appProcessState(name)
 		states[name] = State{
 			Running:      running,
-			AppRunning:   running && appState == "running",
+			AppRunning:   running && appState == appctl.AppStateRunning,
 			AppState:     appStateFor(running, appState),
 			StartedAt:    starts[name],
 			AppStartedAt: appStartedAt,

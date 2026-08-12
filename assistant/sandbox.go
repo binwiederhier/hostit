@@ -168,7 +168,7 @@ func (s *Sandbox) RunTurn(ctx context.Context, appName, prompt, systemPrompt str
 			_, _ = sessionLog.Write([]byte{'\n'})
 		}
 		for _, ev := range parseAssistantStreamLine(line) {
-			if ev.Type == "result" {
+			if ev.Type == evtResult {
 				sawResult = true
 			}
 			onEvent(ev)
@@ -181,7 +181,7 @@ func (s *Sandbox) RunTurn(ctx context.Context, appName, prompt, systemPrompt str
 		if msg == "" {
 			msg = err.Error()
 		}
-		onEvent(StreamEvent{Type: "error", ErrorMsg: msg})
+		onEvent(StreamEvent{Type: evtError, ErrorMsg: msg})
 	}
 	return nil
 }
@@ -361,12 +361,12 @@ func parseAssistantStreamLine(line []byte) []StreamEvent {
 	switch raw.Type {
 	case "system":
 		if raw.Subtype == "init" {
-			return []StreamEvent{{Type: "init", Model: raw.Model, Tools: raw.Tools}}
+			return []StreamEvent{{Type: evtInit, Model: raw.Model, Tools: raw.Tools}}
 		}
 	case "assistant", "user":
 		return blockEvents(raw.Message)
 	case "result":
-		return []StreamEvent{{Type: "result", Result: raw.Result, IsError: raw.IsError, Usage: parseUsage(raw.Usage)}}
+		return []StreamEvent{{Type: evtResult, Result: raw.Result, IsError: raw.IsError, Usage: parseUsage(raw.Usage)}}
 	}
 	return nil
 }
@@ -391,18 +391,18 @@ func blockEvents(raw json.RawMessage) []StreamEvent {
 	var out []StreamEvent
 	for _, b := range msg.Content {
 		switch b.Type {
-		case "text":
+		case blockText:
 			if strings.TrimSpace(b.Text) != "" {
-				out = append(out, StreamEvent{Type: "text", Text: b.Text})
+				out = append(out, StreamEvent{Type: evtText, Text: b.Text})
 			}
-		case "thinking":
+		case blockThinking:
 			if strings.TrimSpace(b.Thinking) != "" {
-				out = append(out, StreamEvent{Type: "thinking", Text: b.Thinking})
+				out = append(out, StreamEvent{Type: evtThinking, Text: b.Thinking})
 			}
-		case "tool_use":
-			out = append(out, StreamEvent{Type: "tool_use", Tool: stripToolPrefix(b.Name), Input: string(b.Input)})
-		case "tool_result":
-			out = append(out, StreamEvent{Type: "tool_result", Output: toolResultText(b.Content), IsError: b.IsError})
+		case blockToolUse:
+			out = append(out, StreamEvent{Type: evtToolUse, Tool: stripToolPrefix(b.Name), Input: string(b.Input)})
+		case blockToolResult:
+			out = append(out, StreamEvent{Type: evtToolResult, Output: toolResultText(b.Content), IsError: b.IsError})
 		}
 	}
 	return out

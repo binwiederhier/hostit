@@ -6,6 +6,22 @@ import (
 	"strings"
 )
 
+const (
+	// Tool registry names: each tool the model may call. Defined in toolDefs and
+	// matched in DispatchTool's switch; the names also tag which tool ran on the
+	// event stream, so they are a stable contract shared by both backends.
+	toolListFiles      = "list_files"
+	toolReadFile       = "read_file"
+	toolWriteFile      = "write_file"
+	toolRunCommand     = "run_command"
+	toolReadLogs       = "read_logs"
+	toolDeploy         = "deploy"
+	toolRefreshPreview = "refresh_preview"
+	toolSnapshot       = "snapshot"
+	toolListSnapshots  = "list_snapshots"
+	toolRollback       = "rollback"
+)
+
 // AppOps is what the assistant can do to an app. It is exactly the app's own REST
 // surface -- read and write files, run a command in the container, read logs --
 // so the model is confined to the one app the same way a pasted agent token is.
@@ -35,52 +51,52 @@ func ToolDefs() []Tool {
 func toolDefs() []Tool {
 	return []Tool{
 		{
-			Name:        "list_files",
+			Name:        toolListFiles,
 			Description: "List the files in a directory of the app's home (relative path, defaults to the root). Use this to see the app's layout before reading or writing.",
 			InputSchema: schema(`{"type":"object","properties":{"path":{"type":"string","description":"Directory relative to the app home, e.g. \"public\". Empty for the root."}}}`),
 		},
 		{
-			Name:        "read_file",
+			Name:        toolReadFile,
 			Description: "Read a UTF-8 text file from the app's home, by path relative to the home (e.g. \"hostit.yml\" or \"public/index.html\").",
 			InputSchema: schema(`{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}`),
 		},
 		{
-			Name:        "write_file",
+			Name:        toolWriteFile,
 			Description: "Create or overwrite a text file in the app's home. Parent directories are created. This is how you change the app; a static app serves public/ and a run: app is described by hostit.yml.",
 			InputSchema: schema(`{"type":"object","properties":{"path":{"type":"string"},"content":{"type":"string"}},"required":["path","content"]}`),
 		},
 		{
-			Name:        "run_command",
+			Name:        toolRunCommand,
 			Description: "Run a shell command inside the app's container (as the app user, in its home). Use it to build, install dependencies, or inspect. Returns stdout+stderr, the exit code, and whether it timed out.",
 			InputSchema: schema(`{"type":"object","properties":{"command":{"type":"string"},"timeout_seconds":{"type":"integer","description":"Optional; 0 for the default."}},"required":["command"]}`),
 		},
 		{
-			Name:        "read_logs",
+			Name:        toolReadLogs,
 			Description: "Read the tail of the app's runtime log (the output of its run: command). Use this to debug why a running app misbehaves.",
 			InputSchema: schema(`{"type":"object","properties":{"lines":{"type":"integer","description":"How many trailing lines; 0 for the default."}}}`),
 		},
 		{
-			Name:        "deploy",
+			Name:        toolDeploy,
 			Description: "Apply hostit.yml and (re)start the app: build if needed, recreate the container if its configuration (mode, run command, env) changed, and serve the latest files. Run this after you change hostit.yml or a run: app's code, so the change goes live. A static app already serving public/ does not need this for content edits.",
 			InputSchema: schema(`{"type":"object","properties":{}}`),
 		},
 		{
-			Name:        "refresh_preview",
+			Name:        toolRefreshPreview,
 			Description: "Reload the live preview shown next to this chat in the owner's browser. Call this after a content change that does not need a deploy (e.g. editing a static file the app already serves) so the owner sees the result. A deploy reloads the preview on its own; use this only when nothing else would.",
 			InputSchema: schema(`{"type":"object","properties":{}}`),
 		},
 		{
-			Name:        "snapshot",
+			Name:        toolSnapshot,
 			Description: "Save a restorable snapshot of the app's files right now. Take one before any risky change, and periodically as you make progress, so there is always a recent point to roll back to. Always pass a short one-line label saying why you took it (what you are about to do, or what you just finished). (Snapshots are also taken automatically before every deploy and hourly.)",
 			InputSchema: schema(`{"type":"object","properties":{"label":{"type":"string","description":"Short one-line reason for this snapshot, e.g. \"before rewriting the router\" or \"finished the login page\""}},"required":["label"]}`),
 		},
 		{
-			Name:        "list_snapshots",
+			Name:        toolListSnapshots,
 			Description: "List the app's snapshots (id, time and label), newest first, so you can pick one to roll back to.",
 			InputSchema: schema(`{"type":"object","properties":{}}`),
 		},
 		{
-			Name:        "rollback",
+			Name:        toolRollback,
 			Description: "Roll the app back to a snapshot, restoring its files to that point. A snapshot of the current state is taken first, so this is reversible (you can roll forward again). Get the id from list_snapshots first.",
 			InputSchema: schema(`{"type":"object","properties":{"id":{"type":"string"}},"required":["id"]}`),
 		},
@@ -103,14 +119,14 @@ func (m *Manager) dispatch(app, name string, input json.RawMessage) (string, boo
 // by the caller that has a UI; a headless backend simply will not advertise it.
 func DispatchTool(ops AppOps, app, name string, input json.RawMessage) (string, bool) {
 	switch name {
-	case "list_files":
+	case toolListFiles:
 		var in struct {
 			Path string `json:"path"`
 		}
 		_ = json.Unmarshal(input, &in)
 		out, err := ops.ListFiles(app, in.Path)
 		return orError(out, err)
-	case "read_file":
+	case toolReadFile:
 		var in struct {
 			Path string `json:"path"`
 		}
@@ -119,7 +135,7 @@ func DispatchTool(ops AppOps, app, name string, input json.RawMessage) (string, 
 		}
 		out, err := ops.ReadFile(app, in.Path)
 		return orError(out, err)
-	case "write_file":
+	case toolWriteFile:
 		var in struct {
 			Path    string `json:"path"`
 			Content string `json:"content"`
@@ -131,7 +147,7 @@ func DispatchTool(ops AppOps, app, name string, input json.RawMessage) (string, 
 			return err.Error(), true
 		}
 		return fmt.Sprintf("wrote %d bytes to %s", len(in.Content), in.Path), false
-	case "run_command":
+	case toolRunCommand:
 		var in struct {
 			Command        string `json:"command"`
 			TimeoutSeconds int    `json:"timeout_seconds"`
@@ -144,31 +160,31 @@ func DispatchTool(ops AppOps, app, name string, input json.RawMessage) (string, 
 			return err.Error(), true
 		}
 		return formatExec(res), res.ExitCode != 0
-	case "read_logs":
+	case toolReadLogs:
 		var in struct {
 			Lines int `json:"lines"`
 		}
 		_ = json.Unmarshal(input, &in)
 		out, err := ops.Logs(app, in.Lines)
 		return orError(out, err)
-	case "deploy":
+	case toolDeploy:
 		out, err := ops.Deploy(app)
 		return orError(out, err)
-	case "refresh_preview":
+	case toolRefreshPreview:
 		// A UI-only signal: the tool call itself, carried on the event stream, tells
 		// the owner's browser to reload the live preview. Nothing to do server-side.
 		return "the live preview has been reloaded in the owner's browser", false
-	case "snapshot":
+	case toolSnapshot:
 		var in struct {
 			Label string `json:"label"`
 		}
 		_ = json.Unmarshal(input, &in)
 		out, err := ops.Snapshot(app, in.Label)
 		return orError(out, err)
-	case "list_snapshots":
+	case toolListSnapshots:
 		out, err := ops.ListSnapshots(app)
 		return orError(out, err)
-	case "rollback":
+	case toolRollback:
 		var in struct {
 			ID string `json:"id"`
 		}

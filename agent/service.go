@@ -86,7 +86,7 @@ func (a *Agent) Run() error {
 		// container alive, until start (or reload) wakes us.
 		if a.paused.Load() {
 			slog.Info("App stopped; container stays up until it is started")
-			a.writeState("stopped")
+			a.writeState(appctl.AppStateStopped)
 			if !a.waitWake() {
 				return nil
 			}
@@ -95,7 +95,7 @@ func (a *Agent) Run() error {
 		conf := a.loadConfig()
 		if conf == nil {
 			slog.Info("No run command configured; idling until reload")
-			a.writeState("idle")
+			a.writeState(appctl.AppStateIdle)
 			if !a.waitWake() {
 				return nil
 			}
@@ -118,7 +118,7 @@ func (a *Agent) Run() error {
 		}
 		startedAt := time.Now()
 		slog.Info("Started app command", "pid", cmd.Process.Pid, "command", conf.Command(hostitBinFile))
-		a.writeState("running")
+		a.writeState(appctl.AppStateRunning)
 		exited := a.waitFor(cmd) // Exactly one waiter per child (Wait must not be called twice)
 
 		// Wait for the child to exit, a reload request, or shutdown
@@ -134,7 +134,7 @@ func (a *Agent) Run() error {
 				slog.Error("App keeps crashing; stopping restarts until it is redeployed or started",
 					"crashes", a.crashes, "lastStatus", exit.status)
 				a.logNotice("App crashed %d times in a row; giving up on automatic restarts. Fix the app, then redeploy or start it.", crashLimit)
-				a.writeState("failed")
+				a.writeState(appctl.AppStateFailed)
 				a.crashes = 0
 				if !a.waitWake() {
 					return nil
@@ -143,7 +143,7 @@ func (a *Agent) Run() error {
 			}
 			slog.Warn("App command exited, restarting", "status", exit.status,
 				"ranFor", ranFor.Round(time.Second), "delay", delay)
-			a.writeState("crashed")
+			a.writeState(appctl.AppStateCrashed)
 			if !a.sleepFor(delay) {
 				return nil
 			}

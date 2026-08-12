@@ -248,9 +248,9 @@ func (m *Manager) runLoop(s *session, app, userID, userText, mode string, attach
 	// Store and show the user's message once, up front, so a fallback from the
 	// External Claude backend to the API does not duplicate it in the transcript.
 	content, display := buildUserContent(userText, attachments)
-	history := append(m.load(app), Message{Role: "user", Content: content})
+	history := append(m.load(app), Message{Role: roleUser, Content: content})
 	m.save(app, history)
-	s.publish(Event{Type: "user", Text: display})
+	s.publish(Event{Type: evtUser, Text: display})
 
 	// External Claude mode: run the subscription-backed agent in its sandbox. If the
 	// subscription is unavailable, tell the user and fall back to the API backend so
@@ -259,7 +259,7 @@ func (m *Manager) runLoop(s *session, app, userID, userText, mode string, attach
 		if err := m.runClaudeTurn(ctx, s, app, history, userText); err == nil {
 			return // handled the turn (published done) or was cancelled
 		} else {
-			s.publish(Event{Type: "notice", Text: fmt.Sprintf("External Claude is unavailable (%s). Falling back to %s.", err.Error(), m.model)})
+			s.publish(Event{Type: evtNotice, Text: fmt.Sprintf("External Claude is unavailable (%s). Falling back to %s.", err.Error(), m.model)})
 			mode = m.model
 		}
 	}
@@ -306,7 +306,7 @@ func (m *Manager) runAPILoop(ctx context.Context, s *session, app, model string,
 	history = dedupeToolIDs(history)
 	// Tell watchers which model is answering this turn (so the chat can badge the
 	// reply, and show the fallback model truthfully when External Claude failed).
-	s.publish(Event{Type: "model", Text: model})
+	s.publish(Event{Type: evtModel, Text: model})
 	var turn Usage // running token totals for this turn, published as it grows
 	for iter := 0; iter < maxIterations; iter++ {
 		resp, err := m.client.complete(ctx, request{
@@ -322,10 +322,10 @@ func (m *Manager) runAPILoop(ctx context.Context, s *session, app, model string,
 			// A cancelled context is the owner pressing Stop (or the run timing out),
 			// not a failure: end the turn cleanly so watchers just stop working.
 			if ctx.Err() != nil {
-				s.publish(Event{Type: "done"})
+				s.publish(Event{Type: evtDone})
 				return
 			}
-			s.publish(Event{Type: "error", Error: err.Error()})
+			s.publish(Event{Type: evtError, Error: err.Error()})
 			return
 		}
 		// Record this step's token usage against the app (best effort; a failure to
@@ -345,17 +345,17 @@ func (m *Manager) runAPILoop(ctx context.Context, s *session, app, model string,
 		turn.CacheWriteTokens += step.CacheWriteTokens
 		turn.CacheReadTokens += step.CacheReadTokens
 		snapshot := turn
-		s.publish(Event{Type: "usage", Usage: &snapshot})
+		s.publish(Event{Type: evtUsage, Usage: &snapshot})
 
 		// Keep the reply in the transcript. Thinking blocks are shown but not
 		// stored: an adaptive thinking block carries internal fields we do not
 		// round-trip, and the model does not need its earlier thinking echoed back.
 		toolUses := m.publishReply(s, resp.Content)
-		history = append(history, Message{Role: "assistant", Content: withoutThinking(resp.Content), Model: model, Time: time.Now().Unix()})
+		history = append(history, Message{Role: roleAssistant, Content: withoutThinking(resp.Content), Model: model, Time: time.Now().Unix()})
 		m.save(app, history)
 		if len(toolUses) == 0 {
 			// No tool calls: the model has said its piece and is done.
-			s.publish(Event{Type: "done"})
+			s.publish(Event{Type: evtDone})
 			return
 		}
 
@@ -363,19 +363,19 @@ func (m *Manager) runAPILoop(ctx context.Context, s *session, app, model string,
 		results := make([]ContentBlock, 0, len(toolUses))
 		for _, tu := range toolUses {
 			out, isErr := m.dispatch(app, tu.Name, tu.Input)
-			s.publish(Event{Type: "tool_result", Tool: tu.Name, Output: out, IsError: isErr})
+			s.publish(Event{Type: evtToolResult, Tool: tu.Name, Output: out, IsError: isErr})
 			results = append(results, ContentBlock{
-				Type:      "tool_result",
+				Type:      blockToolResult,
 				ToolUseID: tu.ID,
 				Content:   out,
 				IsError:   isErr,
 			})
 		}
-		history = append(history, Message{Role: "user", Content: results})
+		history = append(history, Message{Role: roleUser, Content: results})
 		m.save(app, history)
 	}
 
-	s.publish(Event{Type: "paused", Text: maxIterationsNotice})
+	s.publish(Event{Type: evtPaused, Text: maxIterationsNotice})
 }
 
 // apiRequestMessages builds the message list for one API request: the recent
@@ -401,7 +401,7 @@ func apiRequestMessages(history []Message) []Message {
 func recentHistory(history []Message, maxTurns int) []Message {
 	var starts []int
 	for i, msg := range history {
-		if msg.Role == "user" && hasTextBlock(msg) {
+		if msg.Role == roleUser && hasTextBlock(msg) {
 			starts = append(starts, i)
 		}
 	}
@@ -414,7 +414,7 @@ func recentHistory(history []Message, maxTurns int) []Message {
 // cachedSystem returns the system prompt as a single cache-marked block, so the
 // large, stable instructions are read once and reused across the conversation.
 func cachedSystem(text string) []systemBlock {
-	return []systemBlock{{Type: "text", Text: text, CacheControl: ephemeralCache}}
+	return []systemBlock{{Type: blockText, Text: text, CacheControl: ephemeralCache}}
 }
 
 // cachedToolDefs marks the tools block as cacheable (it never changes within a
@@ -449,7 +449,7 @@ func cacheConversation(msgs []Message) []Message {
 // opposed to a user message that only carries tool results
 func hasTextBlock(msg Message) bool {
 	for _, b := range msg.Content {
-		if b.Type == "text" {
+		if b.Type == blockText {
 			return true
 		}
 	}
@@ -461,7 +461,7 @@ func hasTextBlock(msg Message) bool {
 func withoutThinking(blocks []ContentBlock) []ContentBlock {
 	out := make([]ContentBlock, 0, len(blocks))
 	for _, b := range blocks {
-		if b.Type == "thinking" || b.Type == "redacted_thinking" {
+		if b.Type == blockThinking || b.Type == blockRedactedThinking {
 			continue
 		}
 		out = append(out, b)
@@ -475,12 +475,12 @@ func (m *Manager) publishReply(s *session, content []ContentBlock) []ContentBloc
 	var toolUses []ContentBlock
 	for _, b := range content {
 		switch b.Type {
-		case "text":
-			s.publish(Event{Type: "text", Text: b.Text})
-		case "thinking":
-			s.publish(Event{Type: "thinking", Text: b.Thinking})
-		case "tool_use":
-			s.publish(Event{Type: "tool_use", Tool: b.Name, Input: string(b.Input)})
+		case blockText:
+			s.publish(Event{Type: evtText, Text: b.Text})
+		case blockThinking:
+			s.publish(Event{Type: evtThinking, Text: b.Thinking})
+		case blockToolUse:
+			s.publish(Event{Type: evtToolUse, Tool: b.Name, Input: string(b.Input)})
 			toolUses = append(toolUses, b)
 		}
 	}

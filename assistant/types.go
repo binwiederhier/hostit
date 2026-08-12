@@ -4,6 +4,45 @@ import (
 	"encoding/json"
 )
 
+const (
+	// Anthropic message roles: the author of a turn (Message.Role) and the role
+	// checks on stored messages. A user turn carries human text or our tool results;
+	// an assistant turn is the model's reply.
+	roleUser      = "user"
+	roleAssistant = "assistant"
+)
+
+const (
+	// Anthropic content-block types: the tag on ContentBlock.Type. One turn's content
+	// is a list of these, and claude's stream carries the same tags on its blocks.
+	blockText             = "text"
+	blockThinking         = "thinking"
+	blockRedactedThinking = "redacted_thinking"
+	blockToolUse          = "tool_use"
+	blockToolResult       = "tool_result"
+	blockImage            = "image"
+)
+
+const (
+	// Assistant event vocabulary: the Type on events streamed to watchers (Event.Type)
+	// and the normalized claude-stream events (StreamEvent.Type) the server maps onto
+	// them. These strings are a browser contract -- the web UI keys off them -- so
+	// their values must stay byte-identical.
+	evtModel      = "model"
+	evtUser       = "user"
+	evtText       = "text"
+	evtThinking   = "thinking"
+	evtToolUse    = "tool_use"
+	evtToolResult = "tool_result"
+	evtUsage      = "usage"
+	evtDone       = "done"
+	evtError      = "error"
+	evtNotice     = "notice"
+	evtPaused     = "paused"
+	evtInit       = "init"
+	evtResult     = "result"
+)
+
 // Message is one turn in the conversation sent to the model. Content is a list of
 // blocks because a single turn can carry several things at once: the model's
 // thinking, its text, and its tool calls; our tool results go back the same way.

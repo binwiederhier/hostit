@@ -39,7 +39,7 @@ func (m *Manager) SetClaudeRunner(r ClaudeRunner) {
 // deliberately saves nothing, so the fallback turn starts from a clean transcript.
 func (m *Manager) runClaudeTurn(ctx context.Context, s *session, app string, history []Message, userText string) error {
 	prior := history[:len(history)-1] // everything before the user message just added
-	s.publish(Event{Type: "model", Text: config.ExternalClaudeMode})
+	s.publish(Event{Type: evtModel, Text: config.ExternalClaudeMode})
 	acc := &claudeAccumulator{}
 	usage, err := m.claude.RunTurn(ctx, app, buildClaudePrompt(prior, userText), systemPrompt(app), func(ev Event) {
 		s.publish(ev)
@@ -58,7 +58,7 @@ func (m *Manager) runClaudeTurn(ctx context.Context, s *session, app string, his
 			acc.flush() // cancelled (Stop / timeout): keep what was done, end cleanly
 			tagModel(acc.messages, config.ExternalClaudeMode)
 			m.save(app, append(history, acc.messages...))
-			s.publish(Event{Type: "done"})
+			s.publish(Event{Type: evtDone})
 			return nil
 		}
 		return err // subscription unavailable: caller falls back to the API backend
@@ -68,7 +68,7 @@ func (m *Manager) runClaudeTurn(ctx context.Context, s *session, app string, his
 	acc.flush()
 	tagModel(acc.messages, config.ExternalClaudeMode)
 	m.save(app, append(history, acc.messages...))
-	s.publish(Event{Type: "done"})
+	s.publish(Event{Type: evtDone})
 	return nil
 }
 
@@ -77,7 +77,7 @@ func (m *Manager) runClaudeTurn(ctx context.Context, s *session, app string, his
 func tagModel(msgs []Message, model string) {
 	now := time.Now().Unix()
 	for i := range msgs {
-		if msgs[i].Role == "assistant" {
+		if msgs[i].Role == roleAssistant {
 			msgs[i].Model = model
 			msgs[i].Time = now
 		}
@@ -113,34 +113,34 @@ type claudeAccumulator struct {
 
 func (a *claudeAccumulator) add(ev Event) {
 	switch ev.Type {
-	case "text":
+	case evtText:
 		a.flushResults() // text after some results closes that user message
-		a.pendingAsst = append(a.pendingAsst, ContentBlock{Type: "text", Text: ev.Text})
-	case "tool_use":
+		a.pendingAsst = append(a.pendingAsst, ContentBlock{Type: blockText, Text: ev.Text})
+	case evtToolUse:
 		a.flushResults()
 		id := newToolID()
 		a.toolIDs = append(a.toolIDs, id)
-		a.pendingAsst = append(a.pendingAsst, ContentBlock{Type: "tool_use", ID: id, Name: ev.Tool, Input: rawJSON(ev.Input)})
-	case "tool_result":
+		a.pendingAsst = append(a.pendingAsst, ContentBlock{Type: blockToolUse, ID: id, Name: ev.Tool, Input: rawJSON(ev.Input)})
+	case evtToolResult:
 		a.flushAsst() // results go in a user message after the assistant that called them
 		id := ""
 		if len(a.toolIDs) > 0 {
 			id, a.toolIDs = a.toolIDs[0], a.toolIDs[1:]
 		}
-		a.pendingResults = append(a.pendingResults, ContentBlock{Type: "tool_result", ToolUseID: id, Content: ev.Output, IsError: ev.IsError})
+		a.pendingResults = append(a.pendingResults, ContentBlock{Type: blockToolResult, ToolUseID: id, Content: ev.Output, IsError: ev.IsError})
 	}
 }
 
 func (a *claudeAccumulator) flushAsst() {
 	if len(a.pendingAsst) > 0 {
-		a.messages = append(a.messages, Message{Role: "assistant", Content: a.pendingAsst})
+		a.messages = append(a.messages, Message{Role: roleAssistant, Content: a.pendingAsst})
 		a.pendingAsst = nil
 	}
 }
 
 func (a *claudeAccumulator) flushResults() {
 	if len(a.pendingResults) > 0 {
-		a.messages = append(a.messages, Message{Role: "user", Content: a.pendingResults})
+		a.messages = append(a.messages, Message{Role: roleUser, Content: a.pendingResults})
 		a.pendingResults = nil
 	}
 }
@@ -165,11 +165,11 @@ func dedupeToolIDs(history []Message) []Message {
 		copy(blocks, msg.Content)
 		for j := range blocks {
 			switch blocks[j].Type {
-			case "tool_use":
+			case blockToolUse:
 				id := newToolID()
 				blocks[j].ID = id
 				queue = append(queue, id)
-			case "tool_result":
+			case blockToolResult:
 				if len(queue) > 0 {
 					blocks[j].ToolUseID = queue[0]
 					queue = queue[1:]

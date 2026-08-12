@@ -5,6 +5,15 @@ import (
 	"strings"
 )
 
+const (
+	// Item.Kind: how the transcript renders one stored item -- a user bubble, a line
+	// of assistant text, or a tool call with its result. A browser contract (the chat
+	// UI keys off these), shared by toItems (writer) and RenderTranscript (reader).
+	kindUser = "user"
+	kindText = "text"
+	kindTool = "tool"
+)
+
 // Item is one thing the chat shows: a user message, a line of the assistant's
 // reply, or a tool call with its result. It is what a page loading an existing
 // conversation renders, and it mirrors the Events streamed during a live run.
@@ -29,19 +38,19 @@ func toItems(history []Message) []Item {
 	for _, msg := range history {
 		for _, b := range msg.Content {
 			switch b.Type {
-			case "text":
-				if msg.Role == "user" {
+			case blockText:
+				if msg.Role == roleUser {
 					if strings.HasPrefix(b.Text, attachmentNotePrefix) {
 						continue // the attachment note is for the model, not the display
 					}
-					items = append(items, Item{Kind: "user", Text: b.Text})
+					items = append(items, Item{Kind: kindUser, Text: b.Text})
 				} else {
-					items = append(items, Item{Kind: "text", Text: b.Text, Model: msg.Model, Time: msg.Time})
+					items = append(items, Item{Kind: kindText, Text: b.Text, Model: msg.Model, Time: msg.Time})
 				}
-			case "tool_use":
-				items = append(items, Item{Kind: "tool", Tool: b.Name, Input: string(b.Input)})
+			case blockToolUse:
+				items = append(items, Item{Kind: kindTool, Tool: b.Name, Input: string(b.Input)})
 				toolIndex[b.ID] = len(items) - 1
-			case "tool_result":
+			case blockToolResult:
 				if idx, ok := toolIndex[b.ToolUseID]; ok {
 					items[idx].Output = contentString(b.Content)
 					items[idx].IsError = b.IsError
@@ -60,11 +69,11 @@ func RenderTranscript(items []Item) string {
 	var b strings.Builder
 	for _, it := range items {
 		switch it.Kind {
-		case "user":
+		case kindUser:
 			fmt.Fprintf(&b, "## User\n\n%s\n\n", strings.TrimSpace(it.Text))
-		case "text":
+		case kindText:
 			fmt.Fprintf(&b, "## Assistant\n\n%s\n\n", strings.TrimSpace(it.Text))
-		case "tool":
+		case kindTool:
 			fmt.Fprintf(&b, "### Tool: %s\n", it.Tool)
 			// An empty input object is noise, not context, so leave it out.
 			if in := strings.TrimSpace(it.Input); in != "" && in != "{}" {

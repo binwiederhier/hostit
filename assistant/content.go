@@ -18,19 +18,19 @@ func buildUserContent(userText string, attachments []Attachment) (content []Cont
 		paths = append(paths, a.Path)
 		if a.Data != "" && strings.HasPrefix(a.MediaType, "image/") {
 			content = append(content, ContentBlock{
-				Type:   "image",
+				Type:   blockImage,
 				Source: &ImageSource{Type: "base64", MediaType: a.MediaType, Data: a.Data},
 			})
 		}
 	}
 	if userText != "" {
-		content = append(content, ContentBlock{Type: "text", Text: userText})
+		content = append(content, ContentBlock{Type: blockText, Text: userText})
 	}
 	if len(paths) > 0 {
-		content = append(content, ContentBlock{Type: "text", Text: attachmentNotePrefix + strings.Join(paths, ", ")})
+		content = append(content, ContentBlock{Type: blockText, Text: attachmentNotePrefix + strings.Join(paths, ", ")})
 	}
 	if len(content) == 0 {
-		content = append(content, ContentBlock{Type: "text", Text: userText}) // keep a valid (empty) message
+		content = append(content, ContentBlock{Type: blockText, Text: userText}) // keep a valid (empty) message
 	}
 	return content, userText
 }
