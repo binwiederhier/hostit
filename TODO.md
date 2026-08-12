@@ -72,12 +72,6 @@ The dashboard can create, manage and delete apps and drive them in the browser
   one visual language with the dashboard. Keep the 404's free-vs-stopped pages
   identical and keep the placeholder a real running backend (it proves an app can
   execute code).
-- **Defined behavior when no Anthropic key is set.** The built-in assistant needs
-  an Anthropic API key in config; today it's assumed present. Decide and implement
-  the no-key path: the assistant endpoints should report "not configured" cleanly
-  (not a 500), and the UI should hide or disable the chat surface (and default the
-  app-detail view away from the split/chat layout) so a server without a key is
-  still fully usable for hosting.
 - **Semi-live app previews on the dashboard.** Thumbnails of each app in the list.
   Browser-side screenshotting is out (the app iframe is a different origin, so its
   pixels can't be read). Two workable options: (A) scaled-down live sandboxed

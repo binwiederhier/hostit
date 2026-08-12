@@ -1,5 +1,8 @@
 # hostit
 
+[![CI](https://github.com/binwiederhier/hostit/actions/workflows/ci.yml/badge.svg)](https://github.com/binwiederhier/hostit/actions/workflows/ci.yml)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+
 **hostit** is a tiny self-hosted mini-app platform, built to be driven by AI agents
 (or humans) over SSH and a REST API. One binary. Each app gets:
 
