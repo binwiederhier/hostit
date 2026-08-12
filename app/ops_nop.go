@@ -38,23 +38,11 @@ func (o *NopSystemOps) CreateUser(username, home string, uid int) error {
 	return nil
 }
 
-func (o *NopSystemOps) SetUserHome(username, home string) error {
-	return nil
-}
-
 func (o *NopSystemOps) RenameUser(oldName, newName string) error {
 	return nil
 }
 
-func (o *NopSystemOps) SyncGroupName(username string) error {
-	return nil
-}
-
 func (o *NopSystemOps) KillUserProcesses(username string) error {
-	return nil
-}
-
-func (o *NopSystemOps) RemapUser(username, home string, uid int) error {
 	return nil
 }
 

@@ -49,8 +49,11 @@ logging in over SSH, and an agent deploying.
 
 ## Install (server)
 
-Requirements: Linux with systemd, sshd, and `podman` (plus `uidmap`, `passt` or
-`slirp4netns`, `dbus-user-session`, `nftables`).
+Requirements: a Linux host with systemd, sshd, `podman` (plus `uidmap`, `passt` or
+`slirp4netns`, `dbus-user-session`), `nftables`, and `btrfs-progs`. hostit must run
+as **root**, and its app homes must be on **btrfs** (both are mandatory). On start
+it preflights these: it refuses to run if it is not root, if a required command is
+missing, or if the app-homes path is not btrfs, naming exactly what to fix.
 
 Via the .deb (ships the binary, `hostit-shell`, a systemd unit and an example
 config):
@@ -517,8 +520,7 @@ subvolume, which unlocks two things:
 
 - **Hard disk quotas.** The app's `disk_mb` limit is enforced by a btrfs qgroup, so
   a write past it fails immediately (EDQUOT) instead of the app being stopped later
-  by a periodic sweep. (On a non-btrfs host, snapshots are unavailable and the older
-  soft "measure-and-stop" quota applies.)
+  by a periodic sweep.
 
 Setting this up is a one-off: a btrfs image on a loopback file, mounted at the
 app-homes path -- see [Development](#development). It needs no extra block device.
@@ -637,11 +639,12 @@ make release-snapshot   # local .deb in dist/ (for staging / a dev box)
 git tag vX.Y.Z && GITHUB_TOKEN=$(gh auth token) make release   # tag + publish a GitHub release
 ```
 
-To enable **snapshots and hard quotas**, the app-homes path must be btrfs. The
-Ansible role does this behind `hostit_btrfs: true`: it creates a btrfs image on a
-loopback file (75% of free space), mounts it at `/var/lib/hostit/apps` via a
+**btrfs is required**: hostit refuses to start unless the app-homes path is on a
+btrfs filesystem, because snapshots, rollback, fork and hard disk quotas are core.
+The Ansible role sets it up behind `hostit_btrfs: true`: it creates a btrfs image
+on a loopback file (75% of free space), mounts it at `/var/lib/hostit/apps` via a
 systemd unit, and migrates existing homes into subvolumes once. No extra block
-device is needed; a non-btrfs host simply runs without snapshots.
+device is needed.
 
 The reference deployment is driven by Ansible with two environments -- a **staging**
 host and a **prod** host, each its own machine and base domain. Staging installs a

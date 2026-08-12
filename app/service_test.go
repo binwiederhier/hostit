@@ -192,12 +192,10 @@ type fakeSystemOps struct {
 	createdUsers   []string
 	deletedUsers   []string
 	renamedUsers   []string
-	syncedGroups   []string
 	killedUsers    []string
 	authorizedKeys map[string][]string
 	scaffolds      map[string][]string
 	uids           map[string]int
-	userHomes      map[string]string
 	portRules      [][]PortRule
 	createUserErr  error
 
@@ -211,7 +209,6 @@ func newFakeSystemOps() *fakeSystemOps {
 		authorizedKeys: make(map[string][]string),
 		scaffolds:      make(map[string][]string),
 		uids:           make(map[string]int),
-		userHomes:      make(map[string]string),
 	}
 }
 
@@ -251,20 +248,6 @@ func (f *fakeSystemOps) CreateUser(username, home string, uid int) error {
 	return nil
 }
 
-func (f *fakeSystemOps) RemapUser(username, home string, uid int) error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.uids[username] = uid
-	return nil
-}
-
-func (f *fakeSystemOps) SetUserHome(username, home string) error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.userHomes[username] = home
-	return nil
-}
-
 func (f *fakeSystemOps) KillUserProcesses(username string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -288,20 +271,6 @@ func (f *fakeSystemOps) RenameUser(oldName, newName string) error {
 		}
 	}
 	return nil
-}
-
-func (f *fakeSystemOps) SyncGroupName(username string) error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.syncedGroups = append(f.syncedGroups, username)
-	return nil
-}
-
-// setUID forces a user's uid, to simulate an app created before the block scheme
-func (f *fakeSystemOps) setUID(username string, uid int) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.uids[username] = uid
 }
 
 func (f *fakeSystemOps) DeleteUser(username string) error {

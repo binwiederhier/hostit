@@ -32,30 +32,3 @@ func TestAddAppKeepsExplicitID(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "fixedid", got.ID)
 }
-
-func TestBackfillAppIDs(t *testing.T) {
-	t.Parallel()
-	s := newTestStore(t)
-	// Simulate two apps created before app ids by blanking their ids in place.
-	require.NoError(t, s.AddApp(&App{Name: "old1", Port: 10000}))
-	require.NoError(t, s.AddApp(&App{Name: "old2", Port: 10001}))
-	_, err := s.db.Exec(`UPDATE app SET id = '' WHERE name IN ('old1', 'old2')`)
-	require.NoError(t, err)
-
-	require.NoError(t, s.BackfillAppIDs())
-
-	old1, err := s.App("old1")
-	require.NoError(t, err)
-	old2, err := s.App("old2")
-	require.NoError(t, err)
-	assert.NotEmpty(t, old1.ID)
-	assert.NotEmpty(t, old2.ID)
-	assert.NotEqual(t, old1.ID, old2.ID)
-
-	// Idempotent: a second run assigns nothing new and does not disturb existing ids.
-	firstID := old1.ID
-	require.NoError(t, s.BackfillAppIDs())
-	old1, err = s.App("old1")
-	require.NoError(t, err)
-	assert.Equal(t, firstID, old1.ID)
-}

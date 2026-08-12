@@ -71,17 +71,9 @@ type SystemOps interface {
 	LookupUID(username string) (int, error)
 	LookupIDs(username string) (IDs, error)
 	CreateUser(username, home string, uid int) error
-	RemapUser(username, home string, uid int) error
-	// SetUserHome points a user at a new home path without moving files (the home
-	// was already moved); used by the one-off migration to id-keyed homes.
-	SetUserHome(username, home string) error
 	// RenameUser changes a user's login name in place (uid and home unchanged);
 	// this is the only OS mutation a rename needs.
 	RenameUser(oldName, newName string) error
-	// SyncGroupName renames a user's primary group to match its login name when the
-	// two have drifted (an app renamed before group-rename shipped kept its old group
-	// name). Used by the one-off group-name migration.
-	SyncGroupName(username string) error
 	// KillUserProcesses force-kills every process owned by the user, so usermod is
 	// not blocked by a leftover terminal/SSH session. Used only after the app's unit
 	// is stopped, so this reaps session wrappers, not the running app.

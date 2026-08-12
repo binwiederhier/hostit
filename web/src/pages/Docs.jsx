@@ -230,8 +230,8 @@ env:
   post: rm -f data/app.snap.db`}
       />
       <p className="hint">
-        Snapshots and rollback need the server on a btrfs host; otherwise these hooks are simply unused. Roll back from the
-        chat, <span className="mono">hostit apps rollback</span>, or the API.
+        Snapshots run on every deploy and hourly (hostit requires a btrfs host). Roll back from the chat,{" "}
+        <span className="mono">hostit apps rollback</span>, or the API.
       </p>
       <p className="hint">
         You can also <strong>fork</strong> an app -- a new app seeded from a copy of this one's files (its own subdomain,
@@ -349,8 +349,8 @@ hostit poweron/poweroff/reboot   # the container itself`}
       <h2>Install a server</h2>
       <p>
         hostit is a single Go binary that runs as a root daemon on one Linux host (Debian or Ubuntu). It drives podman,
-        systemd, nftables and (optionally) btrfs, terminates TLS, and serves everything on this page. You need a host you
-        control, root on it, and a domain.
+        systemd, nftables and btrfs, terminates TLS, and serves everything on this page. You need a host you control, root on
+        it, a domain, and the app homes on btrfs (both root and btrfs are required, and hostit preflights them on start).
       </p>
       <h3>1. DNS</h3>
       <p>
@@ -381,13 +381,13 @@ admin-token: $(openssl rand -hex 24)`}
 journalctl -u hostit -f`} />
       <p>
         That is a working token-only server: create apps over the API or SSH. TLS is issued per subdomain on demand by Let's
-        Encrypt. To get the web dashboard and Google login, and (recommended) wildcard TLS and btrfs snapshots, see the two
-        sections below.
+        Encrypt. To get the web dashboard and Google login, and (recommended) wildcard TLS, see the two sections below.
       </p>
       <p className="hint">
-        <strong>btrfs (recommended).</strong> Snapshots, rollback, fork and hard disk quotas need the app homes
-        (<span className="mono">apps-dir</span>) on a btrfs filesystem. Without it, apps still run; those features are simply
-        unavailable. Put <span className="mono">apps-dir</span> on a btrfs mount (a loopback file works) before creating apps.
+        <strong>btrfs (required).</strong> Snapshots, rollback, fork and hard disk quotas need the app homes
+        (<span className="mono">apps-dir</span>) on a btrfs filesystem, and hostit refuses to start without it. Put{" "}
+        <span className="mono">apps-dir</span> on a btrfs mount (a loopback file works) before starting. The example Ansible
+        role does this for you.
       </p>
     </section>
 

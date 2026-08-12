@@ -49,6 +49,11 @@ func execServe(c *cli.Context) error {
 	if err := conf.Validate(); err != nil {
 		return err
 	}
+	// Refuse to start on a host that cannot support the daemon (not root, a missing
+	// command), rather than failing lazily on the first app operation.
+	if err := checkHostRequirements(); err != nil {
+		return err
+	}
 	// 0711: app users must traverse this to reach their own home below it, but
 	// must not be able to list it. What lives here is the registry -- every app's
 	// agent token and the session signing key -- which is 0600 besides.
@@ -62,6 +67,12 @@ func execServe(c *cli.Context) error {
 		return err
 	}
 	if err := os.Chmod(conf.AppsDir, appsDirMode); err != nil {
+		return err
+	}
+	// btrfs is mandatory: snapshots, rollback, fork and hard disk quotas are core.
+	// Check it here, once the app-homes directory exists, and refuse to start
+	// otherwise rather than silently running without those features.
+	if err := requireBtrfs(conf.AppsDir); err != nil {
 		return err
 	}
 	s, err := store.NewStore(filepath.Join(conf.DataDir, "hostit.db"))
@@ -79,34 +90,12 @@ func execServe(c *cli.Context) error {
 	if err := applyStoredLimits(s, manager, users); err != nil {
 		return err
 	}
-	// Assign ids to any pre-id apps (and their per-app rows) before serving, so
-	// every request resolves an app by its stable id rather than racing a
-	// background backfill. Fast: a few UPDATEs.
-	manager.BackfillAppIDs()
-	// Pin every not-yet-pinned app to the image it is CURRENTLY running, BEFORE the
-	// migration recreates it. Otherwise a release that changes the workspace image
-	// would recreate existing apps onto the new (unbuilt) image, and building it
-	// would block startup -- a proxy outage for the whole build. Pinned to their
-	// running image, the migration recreates them onto an image that already exists.
-	manager.PinUnpinnedApps()
-	// Move any pre-id app's home (and snapshots) onto its id-keyed path before
-	// serving, so requests never resolve a home that has not moved yet. One-off:
-	// a no-op once every app is id-keyed. This recreates each moved app's container
-	// once (the bind-mount source changes); no rename ever does so again.
-	manager.MigrateToIDKeyedHomes()
 	// Build the workspace image once. This runs in the background: it takes
 	// about a minute on a small host, and the proxy must not wait for it.
 	go func() {
 		if err := manager.EnsureWorkspaceImage(); err != nil {
 			slog.Warn("Cannot prepare shared workspace image; apps will build their own", "error", err)
 		}
-		// One-off: move any app still on the old split-uid scheme onto its
-		// contiguous block, so it becomes idmapped like new apps. No-op once done.
-		manager.MigrateToBlockUIDs()
-		// One-off: align each app's primary group name with its user, healing apps
-		// renamed before group-rename shipped (whose stale group name blocks reusing
-		// that name for a new app). No-op once names agree.
-		manager.MigrateGroupNames()
 		// Agents keep the behaviour of the binary they were exec'd from, so an
 		// upgrade only reaches them on a restart. In the background: this costs
 		// each app a moment, and the proxy should be up first.

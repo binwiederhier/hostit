@@ -35,24 +35,7 @@ const (
 	pinImageTagsQuery      = `UPDATE app SET image_tag = ? WHERE image_tag = ''`
 	imageTagsInUseQuery    = `SELECT DISTINCT image_tag FROM app WHERE image_tag != ''`
 	updateAppImageTagQuery = `UPDATE app SET image_tag = ? WHERE name = ?`
-	// App-id backfill: name the unpinned apps so the daemon can assign each a fresh
-	// id on startup (SQL can't generate a distinct random id per row).
-	selectAppsWithoutIDQuery = `SELECT name FROM app WHERE id = ''`
-	setAppIDQuery            = `UPDATE app SET id = ? WHERE name = ? AND id = ''`
 )
-
-// fkAppIDBackfillQueries fill each per-app table's app_id from the app it points
-// at by name, for rows that predate the app_id columns. Only rows whose app still
-// exists are touched; account-wide tokens (empty app_name) and orphans are left
-// with an empty app_id. All are idempotent (WHERE app_id = ”).
-var fkAppIDBackfillQueries = []string{
-	`UPDATE app_key SET app_id = (SELECT id FROM app WHERE app.name = app_key.app_name) WHERE app_id = '' AND EXISTS (SELECT 1 FROM app WHERE app.name = app_key.app_name)`,
-	`UPDATE token SET app_id = (SELECT id FROM app WHERE app.name = token.app_name) WHERE app_id = '' AND app_name != '' AND EXISTS (SELECT 1 FROM app WHERE app.name = token.app_name)`,
-	`UPDATE assistant_session SET app_id = (SELECT id FROM app WHERE app.name = assistant_session.app_name) WHERE app_id = '' AND EXISTS (SELECT 1 FROM app WHERE app.name = assistant_session.app_name)`,
-	`UPDATE snapshot SET app_id = (SELECT id FROM app WHERE app.name = snapshot.app_name) WHERE app_id = '' AND EXISTS (SELECT 1 FROM app WHERE app.name = snapshot.app_name)`,
-	`UPDATE app_domain SET app_id = (SELECT id FROM app WHERE app.name = app_domain.app_name) WHERE app_id = '' AND EXISTS (SELECT 1 FROM app WHERE app.name = app_domain.app_name)`,
-	`UPDATE app_event SET app_id = (SELECT id FROM app WHERE app.name = app_event.app_name) WHERE app_id = '' AND EXISTS (SELECT 1 FROM app WHERE app.name = app_event.app_name)`,
-}
 
 var (
 	// ErrAppNotFound is returned when an app does not exist in the registry
@@ -72,34 +55,6 @@ func (s *Store) AddApp(app *App) error {
 	}
 	_, err := s.db.Exec(insertAppQuery, app.ID, app.Name, app.Port, app.Host, app.OwnerID, app.CreatedAt.Unix(), app.ImageTag)
 	return err
-}
-
-// BackfillAppIDs assigns an id to every app that has none (apps created before
-// app ids), so id becomes a complete, unique identity. Idempotent: once every
-// app has an id there is nothing to do.
-func (s *Store) BackfillAppIDs() error {
-	rows, err := s.db.Query(selectAppsWithoutIDQuery)
-	if err != nil {
-		return err
-	}
-	defer rows.Close()
-	var names []string
-	for rows.Next() {
-		var name string
-		if err := rows.Scan(&name); err != nil {
-			return err
-		}
-		names = append(names, name)
-	}
-	if err := rows.Err(); err != nil {
-		return err
-	}
-	for _, name := range names {
-		if _, err := s.db.Exec(setAppIDQuery, randomID(), name); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 // RenameApp changes an app's name in one transaction. Everything durable keys on
@@ -126,18 +81,6 @@ func (s *Store) RenameApp(oldName, newName string) error {
 		return err
 	}
 	return tx.Commit()
-}
-
-// BackfillFKAppIDs fills app_id on every per-app table from the app it points at
-// by name, for rows created before those columns existed. Must run after
-// BackfillAppIDs so the app ids it copies are present. Idempotent.
-func (s *Store) BackfillFKAppIDs() error {
-	for _, query := range fkAppIDBackfillQueries {
-		if _, err := s.db.Exec(query); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 // PinImageTags backfills every app that has no pinned image tag with the given

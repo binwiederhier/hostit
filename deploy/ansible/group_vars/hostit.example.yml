@@ -20,11 +20,11 @@ hostit_admin_token: "CHANGE-ME"
 # Which release to install (https://github.com/binwiederhier/hostit/releases).
 hostit_version: "0.8.1"
 
-# --- Recommended for production ---
-
-# btrfs app homes -> snapshots, rollback, fork, hard disk quotas. Optional: apps
-# run without it, you just lose those features.
+# btrfs app homes -> snapshots, rollback, fork, hard disk quotas. REQUIRED: hostit
+# refuses to start unless apps-dir is btrfs, and this role sets it up.
 hostit_btrfs: true
+
+# --- Recommended for production ---
 
 # Web dashboard via Google OAuth. Omit both to run token-only (REST API + CLI).
 # Redirect URI: https://apps.example.com/auth/callback

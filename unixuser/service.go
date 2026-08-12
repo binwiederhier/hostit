@@ -104,29 +104,6 @@ func createUserArgs(username, home string, uid int, shell, group string) []strin
 		"--uid", id, "--gid", id, "--groups", group, "--comment", "hostit app", username}
 }
 
-// Remap moves an existing app user and its home to a new uid/gid block. Used only
-// by the one-off migration to contiguous blocks; the app must be stopped first,
-// since usermod refuses a uid change while the user has live processes.
-func (s *Service) Remap(username, home string, uid int) error {
-	id := strconv.Itoa(uid)
-	if err := run("groupmod", "--gid", id, username); err != nil {
-		return err
-	}
-	if err := run("usermod", "--uid", id, "--gid", username, username); err != nil {
-		return err
-	}
-	// Flatten every file in the home to the new base: usermod only rechowns files
-	// still owned by the old primary uid, not ones a container process wrote as a
-	// subordinate uid.
-	return run("chown", "-R", id+":"+id, home)
-}
-
-// SetHome repoints a user at an already-moved home. No --move-home: the migration
-// renamed the directory itself, so usermod must only update the record.
-func (s *Service) SetHome(username, home string) error {
-	return run("usermod", "--home", home, username)
-}
-
 // Rename changes a user's login name; uid, home and files are untouched, so this
 // is cheap and safe to do while the app keeps running. It also renames the user's
 // primary group to match, so a later delete (which removes the group by the user's

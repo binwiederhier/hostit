@@ -3,6 +3,11 @@
 Things worth doing, with enough context to pick up cold. Not a backlog of
 everything imaginable -- if it is not written down here it is not planned.
 
+# Phil notes (round 3)
+
+- The server/ package contains a lot of stuff that should not be there. Review and refactor.
+- pricing.go
+
 ## Multi-node: a proxy node and hosting nodes
 
 Today one machine is everything: it terminates TLS, proxies, holds the registry,

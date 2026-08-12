@@ -41,10 +41,11 @@ hostit_aws_access_key_id: ""
 hostit_aws_secret_key: ""
 hostit_aws_hosted_zone_id: ""
 
-# Optional: put app homes on a btrfs loopback so hostit can snapshot them and
-# enforce hard disk quotas. A one-off migration; enable per host. Without it,
-# apps still run but snapshots/rollback/fork/hard-quotas are unavailable.
-hostit_btrfs: false
+# REQUIRED: put app homes on a btrfs loopback so hostit can snapshot them and
+# enforce hard disk quotas. hostit refuses to start unless apps-dir is btrfs, so
+# leave this on (this role sets it up). Turn it off only if apps-dir is already
+# btrfs by other means.
+hostit_btrfs: true
 hostit_apps_dir: /var/lib/hostit/apps
 hostit_apps_img: /var/lib/hostit/apps.btrfs
 hostit_apps_mount_unit: var-lib-hostit-apps.mount

@@ -57,20 +57,8 @@ func (o *systemOps) CreateUser(username, home string, uid int) error {
 	return o.user.Create(username, home, uid)
 }
 
-func (o *systemOps) RemapUser(username, home string, uid int) error {
-	return o.user.Remap(username, home, uid)
-}
-
-func (o *systemOps) SetUserHome(username, home string) error {
-	return o.user.SetHome(username, home)
-}
-
 func (o *systemOps) RenameUser(oldName, newName string) error {
 	return o.user.Rename(oldName, newName)
-}
-
-func (o *systemOps) SyncGroupName(username string) error {
-	return o.user.SyncGroupName(username)
 }
 
 func (o *systemOps) KillUserProcesses(username string) error {
