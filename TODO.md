@@ -16,6 +16,11 @@ everything imaginable -- if it is not written down here it is not planned.
 - the public docs are not great. look at the Code/ntfy/ntfy/docs and get inspired by that. add screenshots too. fan out to make it possible
 - why is snapshot.go not in a snapshot service? everything that does direct file operations in app/ seems like a code smell to me. idk.
 
+## Phil notes -- round 4
+
+- is "hostit apps" api really necessary?
+- what is v1/self and why is it not just the same api as the main api?
+
 ## Multi-node: a proxy node and hosting nodes
 
 Today one machine is everything: it terminates TLS, proxies, holds the registry,
@@ -151,6 +156,25 @@ definitions and the conversation prefix are cache-marked, so repeat turns pay th
   systemctl, useradd/usermod, nftables and btrfs -- audit which of those truly
   require root vs could run under a dedicated user with specific capabilities or a
   narrow sudoers grant, and whether the attack surface of a root daemon can be cut.
+
+- **Split the in-container agent into its own binary (`cmd/init`).** Today one binary
+  is daemon + CLI + in-container agent, bind-mounted read-only into every app
+  container and run as PID 1 via `hostit agent`. A separate, minimal `init` binary
+  linking only the agent code (supervise `run:`, reap zombies, static-serve, talk to
+  the peercred socket) would be bind-mounted instead, so the daemon's TLS/ACME,
+  OAuth, podman/systemd/nft/store, assistant and admin-API code is not even present
+  where the tenant is root. Defense-in-depth / least privilege, NOT a fix for a live
+  hole: the container's isolation (userns to an unprivileged host uid, no host
+  podman/nft/store, peercred socket) already contains the tenant, and the extra
+  daemon subcommands are inert in the container today; nothing secret is compiled in
+  (secrets live in `/etc/hostit/server.yml`). Trade-off: it costs the "one Go binary"
+  property (a stated selling point in the intro deck + docs) and adds a second build
+  target and a separately-versioned bind-mount. Preferred shape: keep the shared
+  packages (`appctl`, `agent`, `run`) and add a thin `cmd/init/main.go` that links
+  only the agent; `cmd/hostit` (or root `main.go`) stays the daemon/CLI; update
+  `containerCreateArgs` to mount the init binary and the preflight/`RestartStaleAgents`
+  accordingly. Worth doing if/when the in-container surface grows; skippable while the
+  agent stays tiny. Discussed 2026-08-12.
 
 - **Dev/stage -> promote to prod (the "we work in prod" problem).** Right now the
   only copy of an app is the live one, so every edit (and every assistant change) is
