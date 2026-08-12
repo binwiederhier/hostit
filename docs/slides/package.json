@@ -3,9 +3,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "slidev slides.md --open",
-    "build": "slidev build slides.md",
-    "export": "slidev export slides.md"
+    "dev": "slidev presentations/tech-overview.md --open",
+    "build": "slidev build presentations/tech-overview.md",
+    "export": "slidev export presentations/tech-overview.md"
   },
   "dependencies": {
     "@slidev/cli": "^52.19.0",

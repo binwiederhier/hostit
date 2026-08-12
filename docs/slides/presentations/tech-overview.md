@@ -3,7 +3,7 @@ theme: seriph
 title: hostit -- a code overview
 info: |
   A code overview of hostit: the package structure and the flows that matter, for a
-  developer reading the codebase for the first time. Built from docs/internal/.
+  developer reading the codebase for the first time. Built from docs/.
 class: text-center
 transition: slide-left
 mdc: true
@@ -18,7 +18,7 @@ The package structure, and the flows that matter, for reading the codebase
 </div>
 
 <div class="abs-br m-6 text-sm opacity-40">
-heckel.io/hostit &middot; source of truth: <code>docs/internal/</code>
+heckel.io/hostit &middot; source of truth: <code>docs/</code>
 </div>
 
 ---
