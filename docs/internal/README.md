@@ -22,7 +22,9 @@ docs/internal/
   then the flows), then skim the [feature catalog](features/).
 - Working on one feature? Its [`features/<name>.md`](features/) file links to the exact
   code and explains the intent before you touch it.
-- Want the guided tour? See [`slides/`](slides/).
+- Want the guided tour? Run the slides:
+  `npx @slidev/cli docs/internal/slides/slides.md --open` (or `cd slides && npm install
+  && npm run dev`). See [`slides/`](slides/) for export and presenter notes.
 
 ## Conventions
 
