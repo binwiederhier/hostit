@@ -10,6 +10,7 @@ import (
 
 	"github.com/urfave/cli/v2"
 	"heckel.io/hostit/client"
+	"heckel.io/hostit/config"
 )
 
 var (
@@ -20,8 +21,8 @@ var (
 		Name:  "apps",
 		Usage: "Manage apps on a hostit server via its REST API",
 		Flags: []cli.Flag{
-			&cli.StringFlag{Name: "host", Aliases: []string{"H"}, EnvVars: []string{"HOSTIT_HOST"}, Usage: "API base URL, e.g. https://hostit.apps.example.com"},
-			&cli.StringFlag{Name: "token", Aliases: []string{"t"}, EnvVars: []string{"HOSTIT_TOKEN"}, Usage: "account or admin API token"},
+			&cli.StringFlag{Name: "host", Aliases: []string{"H"}, EnvVars: []string{"HOSTIT_HOST"}, Usage: "remote API base URL, e.g. https://hostit.apps.example.com (default: the local unix socket)"},
+			&cli.StringFlag{Name: "token", Aliases: []string{"t"}, EnvVars: []string{"HOSTIT_TOKEN"}, Usage: "account or admin API token (needed with --host)"},
 		},
 		Subcommands: []*cli.Command{
 			{
@@ -356,12 +357,53 @@ func execAppsKeys(c *cli.Context) error {
 	return nil
 }
 
+// transport is how the CLI reaches a daemon: a remote REST API or the local
+// unix socket, on which the peer credentials make root the global admin
+type transport int
+
+const (
+	transportRemote transport = iota
+	transportSocket
+)
+
 func appsClient(c *cli.Context) (*client.Client, error) {
 	host, token := c.String("host"), c.String("token")
-	if host == "" || token == "" {
-		return nil, errors.New("--host and --token are required (or set HOSTIT_HOST and HOSTIT_TOKEN)")
+	socketFile := localSocketFile()
+	_, statErr := os.Stat(socketFile)
+	tr, err := resolveTransport(host, token, socketFile, statErr == nil)
+	if err != nil {
+		return nil, err
 	}
-	return client.New(host, token), nil
+	if tr == transportRemote {
+		return client.New(host, token), nil
+	}
+	return client.NewSocket(socketFile), nil
+}
+
+// resolveTransport picks the way to the daemon: an explicit --host means remote
+// (and needs a token); otherwise the local unix socket, whose absence means
+// there is no daemon to talk to
+func resolveTransport(host, token, socketFile string, socketExists bool) (transport, error) {
+	if host != "" {
+		if token == "" {
+			return 0, errors.New("--token is required with --host (or set HOSTIT_TOKEN)")
+		}
+		return transportRemote, nil
+	}
+	if !socketExists {
+		return 0, fmt.Errorf("hostit daemon socket not found at %s; is the daemon running? For a remote daemon, pass --host and --token.", socketFile)
+	}
+	return transportSocket, nil
+}
+
+// localSocketFile is the daemon's socket path from the server config; a plain
+// operator may not be able to read /etc/hostit/server.yml, so an unreadable or
+// missing config falls back to the built-in default rather than failing
+func localSocketFile() string {
+	if conf, err := config.LoadConfig(config.DefaultServerConfigFile); err == nil && conf.SocketFile != "" {
+		return conf.SocketFile
+	}
+	return config.NewConfig().SocketFile
 }
 
 // readKeyFlags resolves --ssh-key values: file paths are read, literals passed through

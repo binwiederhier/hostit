@@ -340,9 +340,13 @@ faster. The agent guide at `/api/apps/{app}/info` says all of this too.
 ## Create an app
 
 Via the REST API (`https://hostit.<base-domain>`, Bearer token: the global admin
-token or a user's own token) or the bundled client:
+token or a user's own token) or the bundled client. On the server itself, the
+CLI needs no configuration: run as root, it talks to the daemon's unix socket
+and acts as the global admin, no token required. For a remote daemon, point it
+at the REST API instead:
 
 ```sh
+# Only for a REMOTE daemon; locally (as root) the unix socket just works
 export HOSTIT_HOST=https://hostit.apps.example.com
 export HOSTIT_TOKEN=...
 

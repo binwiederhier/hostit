@@ -117,9 +117,18 @@ func (s *Server) exchangeGoogleCodeLive(code, host string) (*googleIdentity, err
 	return &identity, nil
 }
 
-// authenticate resolves the caller from a session cookie or bearer token; it
-// does NOT check status or role (see requireActive / requireAdmin)
+// authenticate resolves the caller from the unix socket's peer credentials, a
+// session cookie or a bearer token; it does NOT check status or role (see
+// requireActive / requireAdmin)
 func (s *Server) authenticate(r *http.Request) (*caller, error) {
+	// Root on the unix socket is the operator: SO_PEERCRED is kernel-attested and
+	// cannot be spoofed, so uid 0 gets the same super-admin the admin token
+	// grants. ONLY uid 0: the socket is world-connectable (0666) and its
+	// directory is bind-mounted into every app container, so any other peer must
+	// fall through and authenticate like a remote caller.
+	if uid, ok := peerUID(r.Context()); ok && uid == 0 {
+		return &caller{globalAdmin: true}, nil
+	}
 	if token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "); token != "" && token != r.Header.Get("Authorization") {
 		if subtle.ConstantTimeCompare([]byte(token), []byte(s.config.AdminToken)) == 1 {
 			return &caller{globalAdmin: true}, nil

@@ -1,6 +1,8 @@
 package client
 
 import (
+	"net"
+	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"testing"
@@ -80,6 +82,53 @@ func newTestClient(t *testing.T, token string) *Client {
 	httpServer := httptest.NewServer(srv.API())
 	t.Cleanup(httpServer.Close)
 	return New(httpServer.URL, token)
+}
+
+func TestNewSocketTalksOverTheSocketWithoutAuthorization(t *testing.T) {
+	t.Parallel()
+	// A fake daemon on a unix socket, recording what the client sent
+	type received struct {
+		path, auth string
+	}
+	requests := make(chan received, 1)
+	socketFile := filepath.Join(t.TempDir(), "hostit.sock")
+	listener, err := net.Listen("unix", socketFile)
+	require.NoError(t, err)
+	httpServer := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests <- received{path: r.URL.Path, auth: r.Header.Get("Authorization")}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte("[]"))
+	})}
+	go func() {
+		_ = httpServer.Serve(listener)
+	}()
+	t.Cleanup(func() {
+		_ = httpServer.Close()
+	})
+	c := NewSocket(socketFile)
+	apps, err := c.Apps()
+	require.NoError(t, err)
+	assert.Empty(t, apps)
+	got := <-requests
+	assert.Equal(t, "/api/apps", got.path)
+	// Peer credentials authenticate the socket caller; a token header would only
+	// suggest the daemon looks at one
+	assert.Empty(t, got.auth)
+}
+
+func TestNewSetsBearerToken(t *testing.T) {
+	t.Parallel()
+	auths := make(chan string, 1)
+	httpServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		auths <- r.Header.Get("Authorization")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte("[]"))
+	}))
+	t.Cleanup(httpServer.Close)
+	c := New(httpServer.URL, "tok123")
+	_, err := c.Apps()
+	require.NoError(t, err)
+	assert.Equal(t, "Bearer tok123", <-auths)
 }
 
 func TestLifecycleFromTheClient(t *testing.T) {

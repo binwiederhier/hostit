@@ -36,6 +36,10 @@ func (s *Server) newSocketHandler() http.Handler {
 	// One app-scoped tool call (the sandboxed Claude Max backend reaches its tools
 	// through here, over the same peercred-authenticated socket the app CLI uses).
 	mux.HandleFunc("POST /v1/self/tool/{name}", s.selfApp(s.handleSelfTool))
+	// The operator API rides the same socket: authenticate() grants global admin
+	// to peer uid 0, so root's CLI works without a token. Scoped to /api on
+	// purpose; the web app and OAuth endpoints have no business on a local socket.
+	mux.Handle(apiPrefix+"/", s.api)
 	return mux
 }
 

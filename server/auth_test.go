@@ -83,6 +83,59 @@ func TestAuthWithGlobalAdminToken(t *testing.T) {
 	assert.Contains(t, rr.Body.String(), `"role":"admin"`)
 }
 
+func TestAuthPeerUIDRootIsGlobalAdmin(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	// Root on the unix socket needs no token: SO_PEERCRED is kernel-attested, so
+	// uid 0 gets the same super-admin the admin token grants. requireAdmin and
+	// requireActive must both let it through.
+	for _, path := range []string{"/api/users", "/api/apps"} {
+		req := httptest.NewRequest("GET", path, nil)
+		req = req.WithContext(withPeerUID(req.Context(), 0))
+		rr := httptest.NewRecorder()
+		s.API().ServeHTTP(rr, req)
+		require.Equal(t, http.StatusOK, rr.Code, "path %s must open for peer uid 0", path)
+	}
+}
+
+func TestAuthPeerUIDNonRootGetsNothing(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	// The socket is world-connectable and bind-mounted into every app container,
+	// so any uid but 0 must be treated exactly like a tokenless request
+	for _, uid := range []int{1, 1000, 1234} {
+		for _, path := range []string{"/api/users", "/api/apps"} {
+			req := httptest.NewRequest("GET", path, nil)
+			req = req.WithContext(withPeerUID(req.Context(), uid))
+			rr := httptest.NewRecorder()
+			s.API().ServeHTTP(rr, req)
+			require.Equal(t, http.StatusUnauthorized, rr.Code, "uid %d must not reach %s", uid, path)
+		}
+	}
+	// A non-root peer with a real token still authenticates through the token
+	u := newActiveTestUser(t, s, "phil@example.com")
+	token, _, err := s.users.CreateToken(u.ID, "cli")
+	require.NoError(t, err)
+	req := httptest.NewRequest("GET", "/api/account", nil)
+	req = req.WithContext(withPeerUID(req.Context(), 1234))
+	req.Header.Set("Authorization", "Bearer "+token)
+	rr := httptest.NewRecorder()
+	s.API().ServeHTTP(rr, req)
+	require.Equal(t, http.StatusOK, rr.Code)
+	assert.Contains(t, rr.Body.String(), "phil@example.com")
+}
+
+func TestAuthWithoutPeerUIDIsUnchanged(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	// A TCP request carries no peer UID in its context; without a token it stays
+	// out, with the admin token it gets in, exactly as before
+	rr := request(t, s.API(), "GET", "/api/users", "", "")
+	require.Equal(t, http.StatusUnauthorized, rr.Code)
+	rr = request(t, s.API(), "GET", "/api/users", "", testToken)
+	require.Equal(t, http.StatusOK, rr.Code)
+}
+
 func TestAuthRejectsUnknownCredentials(t *testing.T) {
 	t.Parallel()
 	s := newTestServer(t)

@@ -238,6 +238,32 @@ func TestSocketSelfUnknownUser(t *testing.T) {
 	require.Equal(t, http.StatusNotFound, w.Code)
 }
 
+func TestSocketServesOperatorAPIForRoot(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	// Root over the socket reaches the same /api the TCP listeners serve, with
+	// no token: the peer UID is the credential
+	req := httptest.NewRequest("GET", "/api/apps", nil)
+	req = req.WithContext(withPeerUID(req.Context(), 0))
+	w := httptest.NewRecorder()
+	s.socketHandler().ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+	// A non-root peer gets what a tokenless TCP caller gets: nothing
+	req = httptest.NewRequest("GET", "/api/apps", nil)
+	req = req.WithContext(withPeerUID(req.Context(), 1234))
+	w = httptest.NewRecorder()
+	s.socketHandler().ServeHTTP(w, req)
+	require.Equal(t, http.StatusUnauthorized, w.Code)
+	// Only /api is mounted; the web app and OAuth login stay off the socket
+	for _, path := range []string{"/", "/auth/google"} {
+		req = httptest.NewRequest("GET", path, nil)
+		req = req.WithContext(withPeerUID(req.Context(), 0))
+		w = httptest.NewRecorder()
+		s.socketHandler().ServeHTTP(w, req)
+		require.Equal(t, http.StatusNotFound, w.Code, "path %s must not exist on the socket", path)
+	}
+}
+
 func TestAppResponseIncludesUsageAndOwner(t *testing.T) {
 	t.Parallel()
 	s := newTestServer(t)

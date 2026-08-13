@@ -4,9 +4,11 @@ package client
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -15,6 +17,9 @@ import (
 
 const (
 	requestTimeout = 30 * time.Second
+	// socketBaseURL is the dummy base URL for socket clients; the transport
+	// ignores it and dials the unix socket instead
+	socketBaseURL = "http://hostit"
 )
 
 // Client talks to the hostit admin REST API
@@ -30,6 +35,24 @@ func New(host, token string) *Client {
 		host:   strings.TrimSuffix(host, "/"),
 		token:  token,
 		client: &http.Client{Timeout: requestTimeout},
+	}
+}
+
+// NewSocket creates a Client that talks to the local daemon over its unix
+// socket. The kernel's peer credentials (SO_PEERCRED) authenticate the caller,
+// so there is no token and no Authorization header.
+func NewSocket(socketFile string) *Client {
+	return &Client{
+		host: socketBaseURL,
+		client: &http.Client{
+			Timeout: requestTimeout,
+			Transport: &http.Transport{
+				DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+					var d net.Dialer
+					return d.DialContext(ctx, "unix", socketFile)
+				},
+			},
+		},
 	}
 }
 
@@ -238,7 +261,11 @@ func (c *Client) request(method, path string, body, response any) error {
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Authorization", "Bearer "+c.token)
+	// A socket client has no token: the peer credentials on the connection are
+	// the authentication, and an empty Bearer header would only confuse
+	if c.token != "" {
+		req.Header.Set("Authorization", "Bearer "+c.token)
+	}
 	resp, err := c.client.Do(req)
 	if err != nil {
 		return err
