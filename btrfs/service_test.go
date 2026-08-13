@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // fakeRunner records the commands it is asked to run and can be primed to return
@@ -228,4 +229,35 @@ func TestUsageMB(t *testing.T) {
 0/258     268435456   268435456  blog
 `)
 	assert.Equal(t, 256, New(r).UsageMB("/apps/blog"))
+}
+
+func TestQgroupDestroyRetriesAfterSyncWhenBusy(t *testing.T) {
+	t.Parallel()
+	// Destroying a group right after deleting its member subvolumes fails with
+	// "Device or resource busy" until the btrfs transaction commits. A filesystem
+	// sync forces that commit, so one sync+retry turns the common app-delete case
+	// from a warning + leftover group into a clean destroy.
+	r := newFakeRunner()
+	r.returns("btrfs qgroup destroy", "ERROR: unable to destroy quota group: Device or resource busy\n")
+	r.fails("btrfs qgroup destroy", assert.AnError)
+	err := New(r).QgroupDestroy("/apps", "1/1000000")
+	assert.Error(t, err, "still busy after the sync+retry surfaces the error")
+	joined := strings.Join(r.ran, "\n")
+	assert.Contains(t, joined, "btrfs filesystem sync /apps")
+	assert.Equal(t, 2, strings.Count(joined, "btrfs qgroup destroy 1/1000000 /apps"))
+}
+
+func TestListBudgetGroups(t *testing.T) {
+	t.Parallel()
+	r := newFakeRunner()
+	r.returns("btrfs qgroup show", `qgroupid         rfer         excl
+--------         ----         ----
+0/5           16.00KiB     16.00KiB
+0/412        455.17MiB     16.52MiB
+1/1000000    480.84MiB     42.19MiB
+1/1131072    794.59MiB     60.71MiB
+`)
+	groups, err := New(r).ListBudgetGroups("/apps")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"1/1000000", "1/1131072"}, groups)
 }

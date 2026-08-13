@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"heckel.io/hostit/store"
 	"heckel.io/hostit/workspace"
 )
 
@@ -53,10 +54,38 @@ func (m *Manager) ReconcileOrphans() []string {
 	removed = append(removed, m.reconcileContainers(known)...)
 	removed = append(removed, m.reconcileHomes(known)...)
 	removed = append(removed, m.reconcileRootfs(known)...)
+	m.reconcileBudgets(apps)
 	if len(removed) > 0 {
 		slog.Info("Removed leftovers of deleted apps", "apps", removed)
 	}
 	return removed
+}
+
+// reconcileBudgets destroys budget qgroups whose uid maps to no app: a destroy
+// that stayed "Device or resource busy" during app delete (its member subvolume
+// deletions had not committed yet) leaves the empty group behind. Budget groups
+// are keyed "1/<uid>" and uids derive from ports, so the live set is computable
+// from the registry alone.
+func (m *Manager) reconcileBudgets(apps []*store.App) {
+	groups, err := m.btrfs.ListBudgetGroups(m.config.AppsDir)
+	if err != nil {
+		slog.Debug("Cannot list budget qgroups to reconcile", "error", err)
+		return
+	}
+	live := make(map[string]bool, len(apps))
+	for _, a := range apps {
+		live[budgetGroup(m.uidFor(a.Port))] = true
+	}
+	for _, group := range groups {
+		if live[group] {
+			continue
+		}
+		if err := m.btrfs.QgroupDestroy(m.config.AppsDir, group); err != nil {
+			slog.Debug("Cannot destroy stray budget qgroup", "group", group, "error", err)
+			continue
+		}
+		slog.Info("Removed a stray budget qgroup", "group", group)
+	}
 }
 
 // reconcileHomes sweeps empty home directories left under AppsDir for apps no

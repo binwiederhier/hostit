@@ -39,6 +39,7 @@ type Interface interface {
 	QgroupLimitExclusive(pool, groupID string, diskMB int) error
 	QgroupDestroy(pool, groupID string) error
 	ExclusiveUsageMB(pool, groupID string) int
+	ListBudgetGroups(pool string) ([]string, error)
 }
 
 // Service performs btrfs subvolume and qgroup operations over a run.Runner.
@@ -163,10 +164,35 @@ func (s *Service) QgroupLimitExclusive(pool, groupID string, diskMB int) error {
 }
 
 // QgroupDestroy removes a higher-level qgroup; best-effort cleanup when an app
-// is deleted (its member subvolumes are already gone by then).
+// is deleted (its member subvolumes are already gone by then). Right after the
+// member subvolumes were deleted, destroy fails with "Device or resource busy"
+// until the btrfs transaction commits -- a filesystem sync forces that commit,
+// so one sync+retry turns the common app-delete case into a clean destroy.
 func (s *Service) QgroupDestroy(pool, groupID string) error {
-	_, err := s.runner.RunTimeout(timeout, "btrfs", "qgroup", "destroy", groupID, pool)
+	out, err := s.runner.RunTimeout(timeout, "btrfs", "qgroup", "destroy", groupID, pool)
+	if err != nil && strings.Contains(out+err.Error(), "busy") {
+		_, _ = s.runner.RunTimeout(timeout, "btrfs", "filesystem", "sync", pool)
+		_, err = s.runner.RunTimeout(timeout, "btrfs", "qgroup", "destroy", groupID, pool)
+	}
 	return err
+}
+
+// ListBudgetGroups returns the level-1 qgroup ids ("1/<id>") that exist on the
+// pool -- the app budget groups. Used by the orphan reconcile to sweep groups
+// whose app is gone (a destroy that stayed busy leaves one behind).
+func (s *Service) ListBudgetGroups(pool string) ([]string, error) {
+	out, err := s.runner.RunTimeout(timeout, "btrfs", "qgroup", "show", pool)
+	if err != nil {
+		return nil, err
+	}
+	groups := make([]string, 0)
+	for _, line := range strings.Split(out, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) > 0 && strings.HasPrefix(fields[0], "1/") {
+			groups = append(groups, fields[0])
+		}
+	}
+	return groups, nil
 }
 
 // ExclusiveUsageMB returns a group's exclusive bytes in MB from `btrfs qgroup
