@@ -3,6 +3,7 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { api, isNetworkError } from "../api";
 import { useReconnect } from "../hooks";
 import { ErrorBanner, Loading, Wordmark } from "../components";
+import { previewSrc, previewScale, DESKTOP_WIDTH, DESKTOP_HEIGHT } from "../preview";
 
 // Same rule the server enforces (app.AppNamePattern)
 const nameRe = /^[a-z]([a-z0-9-]{0,30}[a-z0-9])?$/;
@@ -117,7 +118,48 @@ const avatarStyle = (id) => {
   return { background: `hsl(${h % 360} 52% 45%)`, color: "#fff" };
 };
 
-// One app as a card: identity, live status, description, resource bars, actions.
+// A non-interactive live thumbnail of the app: its own URL in an iframe rendered
+// at a desktop viewport, then CSS-scaled down to the card width. pointer-events
+// are off so a click falls through to the card's stretched link (opens the app),
+// and the frame is sandboxed and hidden from assistive tech. Powered-off and
+// crashed apps have nothing live to show, so we render a muted placeholder to
+// keep the grid's card heights even.
+const AppPreview = ({ app }) => {
+  const src = previewSrc(app);
+  const ref = useRef(null);
+  const [scale, setScale] = useState(0);
+  useEffect(() => {
+    if (!src || !ref.current) return undefined;
+    const el = ref.current;
+    // The card width is set by the grid and changes with the viewport, so measure
+    // it rather than guessing a scale.
+    const measure = () => setScale(previewScale(el.clientWidth));
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [src]);
+  return (
+    <div className={"appcard-preview" + (src ? "" : " is-empty")} ref={ref} aria-hidden="true">
+      {src ? (
+        <iframe
+          className="appcard-preview-frame"
+          src={src}
+          title=""
+          tabIndex={-1}
+          scrolling="no"
+          loading="lazy"
+          sandbox="allow-scripts allow-same-origin"
+          style={{ width: DESKTOP_WIDTH, height: DESKTOP_HEIGHT, transform: `scale(${scale})` }}
+        />
+      ) : (
+        <span className="appcard-preview-empty">No live preview</span>
+      )}
+    </div>
+  );
+};
+
+// One app as a card: identity, live status, preview, description, bars, actions.
 const AppCard = ({ app }) => {
   const running = app.running;
   // A crash loop that gave up shows red "crashed", not the green "running" its
@@ -141,6 +183,7 @@ const AppCard = ({ app }) => {
         <span className="appcard-dot" />
         {status}
       </span>
+      <AppPreview app={app} />
       <div className="appcard-desc">{app.description || <span className="appcard-nodesc">No description yet</span>}</div>
       <div className="appcard-bars">
         <div className="appcard-bar"><span className="k">CPU</span><span className="bar"><i style={{ width: `${running ? app.cpu_percent || 0 : 0}%` }} /></span><span className="v">{running ? `${app.cpu_percent || 0}%` : "--"}</span></div>
