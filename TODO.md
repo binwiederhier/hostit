@@ -42,8 +42,9 @@ everything imaginable -- if it is not written down here it is not planned.
   - `RefreshDiskUsage` swallows the registry write failure: `store.UpdateAppUsage`
     throws `database or disk is full`, which is caught and only `slog.Warn`d
     (`app/quota.go:47`), so the dashboard keeps serving the last good numbers forever.
-  - **Approach decided + mechanism validated (2026-08-13): a real hard cap, no
-    passive monitoring.** The gap is the container's writable overlay layer (the
+  - **Approach decided + BOTH mechanisms validated (2026-08-13): a real hard cap,
+    no passive monitoring. Recommended: podman btrfs storage driver + exclusive
+    qgroups (no reboot needed).** The gap is the container's writable overlay layer (the
     home already has a btrfs qgroup). `--storage-opt size` needs XFS/btrfs storage
     (we have ext4 overlay, and the 24G disk has no room for a dedicated fs);
     old-style ext4 quota is unsupported by the kernel. The working mechanism is
