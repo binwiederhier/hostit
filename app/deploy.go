@@ -179,18 +179,18 @@ func (m *Manager) apply(a *store.App, conf *appctl.AppConfig, allowReload bool) 
 	if err != nil {
 		return "", err
 	}
-	// Make sure the image THIS app uses is present -- its pinned tag, not
-	// necessarily the current one. An app pinned to an image that already exists
-	// needs no build, so recreating it (e.g. during the id-keying migration) never
-	// blocks on building a new image; only an app that actually needs the current
-	// image pays for building it.
-	if err := m.workspace.EnsureAppImage(a); err != nil {
+	// Make sure the rootfs THIS app runs exists -- a snapshot of its pinned tag's
+	// base, which is only built/exported when the app actually needs it. An app
+	// whose rootfs already exists needs nothing here (the invariant: an existing
+	// rootfs is never recreated), so recreating its container never blocks on an
+	// image build or export.
+	if err := m.workspace.EnsureRootfs(a, ids); err != nil {
 		return "", err
 	}
 
 	// Recreate the container if the desired config differs from the running one
 	started := time.Now()
-	desired := workspace.CreateArgs(conf, a, m.appHome(name), m.config.SocketFile, hostitBinFile, Version, m.memoryLimit(name), ids)
+	desired := workspace.CreateArgs(conf, a, m.appHome(name), m.workspace.RootfsPath(a.ID), m.config.SocketFile, hostitBinFile, Version, m.memoryLimit(name), ids)
 	hash := workspace.ConfigHash(desired)
 	current, err := m.container.Inspect(m.containerName(name), inspectHashFormat)
 	recreated := false

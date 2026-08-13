@@ -44,9 +44,12 @@ func TestUpWorkspaceModeUnchangedOnlyReloadsAgent(t *testing.T) {
 	conf := mustLoadConfig(t, m, "blog")
 	ids, err := m.lookupIDs("blog")
 	require.NoError(t, err)
-	hash := workspace.ConfigHash(workspace.CreateArgs(conf, a, m.appHome("blog"), m.config.SocketFile, hostitBinFile, Version, 0, ids))
+	hash := workspace.ConfigHash(workspace.CreateArgs(conf, a, m.appHome("blog"), m.workspace.RootfsPath(a.ID), m.config.SocketFile, hostitBinFile, Version, 0, ids))
 	runner.returns("container inspect", hash)
 	runner.returns("is-active", "active")
+	// The app's rootfs already exists (steady state), so the deploy must not touch
+	// the base or export anything -- only the reload path below runs.
+	require.NoError(t, os.MkdirAll(m.workspace.RootfsPath(a.ID), 0o700))
 	runner.reset()
 	msg, err := m.Up("blog")
 	require.NoError(t, err)

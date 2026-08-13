@@ -9,6 +9,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"heckel.io/hostit/btrfs"
 	"heckel.io/hostit/container"
 	"heckel.io/hostit/store"
 )
@@ -44,7 +45,7 @@ func TestWorkspaceContainerfile(t *testing.T) {
 
 func TestEnsureImageBuildsOnlyWhenMissing(t *testing.T) {
 	t.Parallel()
-	svc, fc, _ := newTestService(t)
+	svc, fc, _, _ := newTestService(t)
 	require.NoError(t, svc.EnsureImage())
 	require.Equal(t, []string{ImageTag()}, fc.builds)
 	// The build context holds the Containerfile the image is built from
@@ -58,7 +59,7 @@ func TestEnsureImageBuildsOnlyWhenMissing(t *testing.T) {
 
 func TestPruneOldImagesKeepsCurrentAndPinnedTags(t *testing.T) {
 	t.Parallel()
-	svc, fc, s := newTestService(t)
+	svc, fc, _, s := newTestService(t)
 	// An app pinned to an old tag keeps that tag alive: it cannot be rebuilt (its
 	// Containerfile is gone), so pruning it would strand the app.
 	require.NoError(t, s.AddApp(&store.App{Name: "blog", Port: 10000, ImageTag: "localhost/hostit-workspace:pinned1"}))
@@ -77,41 +78,31 @@ func TestPruneOldImagesKeepsCurrentAndPinnedTags(t *testing.T) {
 	assert.NotContains(t, fc.removed, "docker.io/library/debian:stable-slim", "only hostit's own images are ours to remove")
 }
 
-func TestEnsureAppImageSkipsBuildForPinnedExistingImage(t *testing.T) {
-	t.Parallel()
-	svc, fc, _ := newTestService(t)
-	// An app pinned to an image that already exists must NOT trigger a build, even
-	// when the current workspace tag differs (a release changed the image). This is
-	// what keeps the id-keying migration from blocking startup on an image build.
-	fc.images["localhost/hostit-workspace:oldtag"] = true
-	require.NoError(t, svc.EnsureAppImage(&store.App{Name: "blog", ImageTag: "localhost/hostit-workspace:oldtag"}))
-	assert.Empty(t, fc.builds, "a pinned, present image is not rebuilt")
-
-	// An unpinned app builds the current image when it is missing.
-	require.NoError(t, svc.EnsureAppImage(&store.App{Name: "shop"}))
-	assert.Equal(t, []string{ImageTag()}, fc.builds)
-}
-
-// newTestService builds a Service on a fake container runtime, a fresh store and
-// a temp data dir.
-func newTestService(t *testing.T) (*Service, *fakeContainer, *store.Store) {
+// newTestService builds a Service on a fake container runtime, a fake command
+// runner (for the btrfs and chown calls), a fresh store and temp dirs.
+func newTestService(t *testing.T) (*Service, *fakeContainer, *fakeRunner, *store.Store) {
 	t.Helper()
 	fc := newFakeContainer()
+	r := &fakeRunner{}
 	s, err := store.NewStore(filepath.Join(t.TempDir(), "hostit.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { s.Close() })
-	return New(fc, s, t.TempDir()), fc, s
+	return New(fc, s, btrfs.New(r), r, t.TempDir(), t.TempDir()), fc, r, s
 }
 
-// fakeContainer fakes the image-store half of container.Interface: which tags
-// exist, what was built and what was removed. The container-lifecycle methods are
-// never called by this package and panic via the embedded nil Interface.
+// fakeContainer fakes the image-store and export half of container.Interface:
+// which tags exist, what was built, removed, created-from and exported. The
+// remaining container-lifecycle methods are never called by this package and
+// panic via the embedded nil Interface.
 type fakeContainer struct {
 	container.Interface
-	images  map[string]bool
-	builds  []string
-	removed []string
-	mu      sync.Mutex // Protects images, builds, removed
+	images      map[string]bool
+	builds      []string
+	removed     []string
+	createdFrom []string
+	exportedTo  []string
+	removedCtrs []string
+	mu          sync.Mutex // Protects all recorded fields
 }
 
 func newFakeContainer() *fakeContainer {

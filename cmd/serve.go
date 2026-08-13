@@ -89,11 +89,11 @@ func execServe(c *cli.Context) error {
 	if err := applyStoredLimits(s, manager, users); err != nil {
 		return err
 	}
-	// Build the workspace image once. This runs in the background: it takes
-	// about a minute on a small host, and the proxy must not wait for it.
+	// Build the workspace image and export its base rootfs once. This runs in the
+	// background: it takes minutes on a small host, and the proxy must not wait.
 	go func() {
-		if err := manager.EnsureWorkspaceImage(); err != nil {
-			slog.Warn("Cannot prepare shared workspace image; apps will build their own", "error", err)
+		if err := manager.EnsureWorkspaceBase(); err != nil {
+			slog.Warn("Cannot prepare workspace base rootfs; the first app deploy will retry", "error", err)
 		}
 		// Agents keep the behaviour of the binary they were exec'd from, so an
 		// upgrade only reaches them on a restart. In the background: this costs

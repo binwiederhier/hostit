@@ -178,8 +178,9 @@ func NewManager(conf *config.Config, s *store.Store, svc *Services) *Manager {
 	// id-keyed lookups a snapshot or rollback needs.
 	m.snapshots = snapshot.New(m.btrfs, m.systemd, m.container, s, snapshotHost{m})
 	// The workspace Service owns the shared workspace image lifecycle (build,
-	// per-app pinned tags, prune); it needs no callbacks into the Manager.
-	m.workspace = workspace.New(m.container, s, conf.DataDir)
+	// per-app pinned tags, prune) and the base/rootfs subvolumes app containers
+	// run; it needs no callbacks into the Manager.
+	m.workspace = workspace.New(m.container, s, m.btrfs, m.runner, conf.DataDir, conf.AppsDir)
 	return m
 }
 

@@ -9,17 +9,19 @@ import (
 	"heckel.io/hostit/workspace"
 )
 
-func TestEnsureWorkspaceImageBuildsOnce(t *testing.T) {
+func TestEnsureWorkspaceBaseBuildsAndExportsOnce(t *testing.T) {
 	t.Parallel()
 	m, _, runner := newTestDeployManager(t)
 	// The Manager delegates to the workspace Service (which owns the build logic
 	// and its mutex); this covers the wiring the daemon's startup path relies on.
 	build := "podman build --tag " + workspace.ImageTag()
-	require.NoError(t, m.EnsureWorkspaceImage())
+	require.NoError(t, m.EnsureWorkspaceBase())
 	assert.Equal(t, 1, strings.Count(runner.ran(), build))
-	// The image now exists, so a second call must not rebuild it
-	require.NoError(t, m.EnsureWorkspaceImage())
+	assert.Equal(t, 1, strings.Count(runner.ran(), "podman export"), "the image is exported into the base subvolume")
+	// The base now exists, so a second call must neither rebuild nor re-export
+	require.NoError(t, m.EnsureWorkspaceBase())
 	assert.Equal(t, 1, strings.Count(runner.ran(), build))
+	assert.Equal(t, 1, strings.Count(runner.ran(), "podman export"))
 }
 
 func TestPruneOldWorkspaceImages(t *testing.T) {

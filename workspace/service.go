@@ -12,7 +12,9 @@ import (
 	"sync"
 	"time"
 
+	"heckel.io/hostit/btrfs"
 	"heckel.io/hostit/container"
+	"heckel.io/hostit/run"
 	"heckel.io/hostit/store"
 )
 
@@ -35,21 +37,26 @@ const (
 )
 
 // Service owns the workspace image lifecycle in the host's shared (root) image
-// store: building the current image, keeping an app's pinned image present, and
-// pruning tags nothing references anymore.
+// store -- building the current image and pruning tags nothing references -- and
+// the btrfs storage its containers actually run: per-tag base subvolumes exported
+// from the image, and per-app writable rootfs subvolumes snapshotted from a base.
 type Service struct {
 	container container.Interface
 	store     *store.Store
+	btrfs     btrfs.Interface
+	runner    run.Runner
 	dataDir   string
+	appsDir   string
 
-	buildMu sync.Mutex // Serializes image builds; two at once OOM a small host
+	buildMu sync.Mutex // Serializes image builds and base exports; two at once OOM a small host
 }
 
-// New builds a workspace image Service from the container runtime, the store
-// (for the pinned tags apps hold) and the daemon's data directory (where the
-// build context is staged).
-func New(ct container.Interface, st *store.Store, dataDir string) *Service {
-	return &Service{container: ct, store: st, dataDir: dataDir}
+// New builds a workspace Service from the container runtime, the store (for the
+// pinned tags apps hold), the btrfs service and runner (for base/rootfs subvolume
+// work), the daemon's data directory (where the build context is staged) and the
+// apps directory (the btrfs pool holding .bases and .rootfs).
+func New(ct container.Interface, st *store.Store, bt btrfs.Interface, runner run.Runner, dataDir, appsDir string) *Service {
+	return &Service{container: ct, store: st, btrfs: bt, runner: runner, dataDir: dataDir, appsDir: appsDir}
 }
 
 // ImageTag is the image built from the current Containerfile
@@ -127,20 +134,4 @@ func (s *Service) PruneOldImages() {
 		}
 		slog.Info("Removed an old workspace image", "image", image)
 	}
-}
-
-// EnsureAppImage makes sure the image an app will actually run is present. That is
-// its pinned tag, not necessarily the current one: an app pinned to an image that
-// already exists needs nothing built, so recreating it never blocks on a build. A
-// missing image is built as the current one (the only Containerfile we have), which
-// is the path a new or unpinned app takes.
-func (s *Service) EnsureAppImage(a *store.App) error {
-	image := a.ImageTag
-	if image == "" {
-		image = ImageTag()
-	}
-	if s.container.ImageExists(image) {
-		return nil
-	}
-	return s.EnsureImage()
 }

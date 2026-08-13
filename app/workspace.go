@@ -16,16 +16,17 @@ func (m *Manager) unitName(name string) string {
 	return workspace.UnitName(m.appID(name))
 }
 
-// EnsureWorkspaceImage builds the workspace image unless it already exists; the
-// image lifecycle lives in the workspace Service, this is the Manager's handle
-// on it for the daemon's startup path.
-func (m *Manager) EnsureWorkspaceImage() error {
-	return m.workspace.EnsureImage()
+// EnsureWorkspaceBase builds the current workspace image (if needed) and exports
+// its base rootfs subvolume; the lifecycle lives in the workspace Service, this
+// is the Manager's handle on it for the daemon's startup path.
+func (m *Manager) EnsureWorkspaceBase() error {
+	return m.workspace.EnsureBase(workspace.ImageTag())
 }
 
-// PruneOldWorkspaceImages removes workspace images that are neither the current
-// one nor pinned by an app; like EnsureWorkspaceImage, a thin handle on the
-// workspace Service for the daemon's startup path.
+// PruneOldWorkspaceImages removes workspace images and base subvolumes that are
+// neither current nor pinned by an app; like EnsureWorkspaceBase, a thin handle
+// on the workspace Service for the daemon's startup path.
 func (m *Manager) PruneOldWorkspaceImages() {
 	m.workspace.PruneOldImages()
+	m.workspace.PruneOldBases()
 }

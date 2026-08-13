@@ -51,9 +51,12 @@ const (
 )
 
 const (
-	// containerArgsTrailer is how many elements at the end of CreateArgs are
-	// the image and its command rather than flags: [imageTag, hostitBin, "agent"].
-	containerArgsTrailer = 3
+	// containerArgsTrailer is how many elements at the end of CreateArgs are the
+	// rootfs and its command rather than options: ["--rootfs", path, hostitBin,
+	// "agent"]. podman's flag order is critical here: an option placed after
+	// --rootfs is treated as the container command, so every option must come
+	// before this trailer.
+	containerArgsTrailer = 4
 )
 
 // IDs is the app's contiguous host uid/gid block. Container uid 0 maps to UID on
@@ -87,7 +90,11 @@ func UnitName(id string) string {
 // app both inside and outside, and a workload escape lands on that uid rather
 // than on root. Each app gets its own network stack (slirp4netns), so containers
 // cannot reach each other, and ports are published on loopback only.
-func CreateArgs(conf *appctl.AppConfig, a *store.App, home, socketFile, hostitBin, version string, memoryMB int, ids IDs) []string {
+//
+// The container runs the app's persistent rootfs subvolume (--rootfs), not an
+// image: recreating the container (config change, daemon upgrade) keeps whatever
+// the app installed, and the rootfs is part of the app's disk budget.
+func CreateArgs(conf *appctl.AppConfig, a *store.App, home, rootfs, socketFile, hostitBin, version string, memoryMB int, ids IDs) []string {
 	args := []string{"create", "--name", ContainerName(a.ID), "--hostname", a.Name}
 	// conmon signals readiness to systemd, so the app's Type=notify unit only reports
 	// active once the container is actually running. Without this a deploy can race a
@@ -134,15 +141,10 @@ func CreateArgs(conf *appctl.AppConfig, a *store.App, home, socketFile, hostitBi
 		}
 	}
 	args = appendCommonMounts(args, socketFile, hostitBin)
-	// The trailer: image, then the command podman runs in it. Everything before it
-	// is a flag, so a late-added label (WithConfigLabel) goes in just ahead of it.
-	// The app is pinned to the image tag it was built with; an app from before
-	// pinning (empty tag) falls back to the current image.
-	image := a.ImageTag
-	if image == "" {
-		image = ImageTag()
-	}
-	args = append(args, image, hostitBin, "agent")
+	// The trailer: the rootfs, then the command podman runs in it. Everything
+	// before it is an option, so a late-added label (WithConfigLabel) goes in just
+	// ahead of it; anything AFTER --rootfs would be taken as the container command.
+	args = append(args, "--rootfs", rootfs, hostitBin, "agent")
 	return args
 }
 
@@ -166,10 +168,10 @@ func ConfigHash(args []string) string {
 	return hex.EncodeToString(sum[:8])
 }
 
-// WithConfigLabel inserts the config-hash label into create args. A label is a
-// flag, so it goes anywhere before the image; inserting it just ahead of the
-// trailing image+command survives new flags being added at the front (the common
-// change) rather than depending on a fixed offset into the leading flags.
+// WithConfigLabel inserts the config-hash label into create args. A label is an
+// option, so it must go before --rootfs; inserting it just ahead of the trailing
+// rootfs+command survives new flags being added at the front (the common change)
+// rather than depending on a fixed offset into the leading flags.
 func WithConfigLabel(args []string, hash string) []string {
 	cut := len(args) - containerArgsTrailer
 	out := make([]string, 0, len(args)+2)
