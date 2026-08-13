@@ -1003,6 +1003,7 @@ const AppSettings = ({ app, showToast, onCopyToken, onRegenerateToken, hasToken,
           <div className="ov-metric"><div className="ov-mt"><span>CPU</span><span className="mono">{app.cpu_percent || 0}%</span></div><div className="ov-bar"><i style={{ width: `${app.cpu_percent || 0}%` }} /></div></div>
           <div className="ov-metric"><div className="ov-mt"><span>RAM</span><span className="mono">{mb(app.memory_mb, app.memory_limit_mb)}</span></div><div className="ov-bar"><i style={{ width: `${pct(app.memory_mb, app.memory_limit_mb)}%` }} /></div></div>
           <div className="ov-metric"><div className="ov-mt"><span>Disk</span><span className="mono">{mb(app.disk_mb, app.disk_limit_mb)}</span></div><div className="ov-bar"><i style={{ width: `${pct(app.disk_mb, app.disk_limit_mb)}%` }} /></div></div>
+          {app.id && <div className="ov-meta"><span>App ID</span><span className="mono">{app.id}</span></div>}
           <div className="ov-meta"><span>Created</span><span className="mono">{created}</span></div>
         </div>
       </div>
