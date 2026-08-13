@@ -10,43 +10,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestParseMemMB(t *testing.T) {
-	t.Parallel()
-	tests := []struct {
-		in   string
-		want int
-	}{
-		{"12.3MB / 512MB", 12},
-		{"1.5GB / 2GB", 1536},
-		{"800kB / 512MB", 0},
-		{"512B", 0},
-		{"", 0},
-		{"garbage", 0},
-	}
-	for _, tt := range tests {
-		assert.Equal(t, tt.want, parseMemMB(tt.in), "input %q", tt.in)
-	}
-}
-
-func TestParseCPUPercent(t *testing.T) {
-	t.Parallel()
-	tests := []struct {
-		in   string
-		want int
-	}{
-		{"0.00%", 0},
-		{"3.70%", 4},
-		{"12.4%", 12},
-		{"100.00%", 100},
-		{"250.5%", 251}, // multi-core containers can exceed 100
-		{"", 0},
-		{"garbage", 0},
-	}
-	for _, tt := range tests {
-		assert.Equal(t, tt.want, parseCPUPercent(tt.in), "input %q", tt.in)
-	}
-}
-
 func TestStatesReadsRunningAndMemory(t *testing.T) {
 	t.Parallel()
 	m, _, runner := newTestDeployManager(t)

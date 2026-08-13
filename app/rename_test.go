@@ -6,6 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"heckel.io/hostit/store"
+	"heckel.io/hostit/workspace"
 )
 
 func TestRenameAppIsCheapAndPreservesTheContainer(t *testing.T) {
@@ -33,8 +34,8 @@ func TestRenameAppIsCheapAndPreservesTheContainer(t *testing.T) {
 	// Durable resources are unchanged: the id-keyed home, container and unit are the
 	// same as before, so nothing had to move.
 	assert.Equal(t, oldHome, m.appHome("shop"))
-	assert.Equal(t, containerNameForID(id), m.containerName("shop"))
-	assert.Equal(t, unitNameForID(id), m.unitName("shop"))
+	assert.Equal(t, workspace.ContainerName(id), m.containerName("shop"))
+	assert.Equal(t, workspace.UnitName(id), m.unitName("shop"))
 
 	// The critical property: the (stateful) container is NOT recreated.
 	ran := runner.ran()
@@ -56,7 +57,7 @@ func TestRenameStopsAndStartsARunningApp(t *testing.T) {
 	t.Parallel()
 	m, ops, runner := newTestDeployManager(t)
 	a := createTestApp(t, m, "blog")
-	unit := unitNameForID(a.ID)
+	unit := workspace.UnitName(a.ID)
 	// The app is running: usermod would be blocked by the container/session, so the
 	// rename must stop the app around the usermod and start it again afterwards.
 	runner.returns("is-active", "active")

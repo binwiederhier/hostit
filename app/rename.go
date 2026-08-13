@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"heckel.io/hostit/store"
+	"heckel.io/hostit/workspace"
 )
 
 // RenameApp changes an app's name. Because every durable resource -- home,
@@ -36,7 +37,7 @@ func (m *Manager) RenameApp(oldName, newName string) (*store.App, error) {
 		return nil, err
 	}
 	// The unit is keyed on the (unchanging) id, so the same name stops and starts it.
-	unit := unitNameForID(a.ID)
+	unit := workspace.UnitName(a.ID)
 	wasRunning := m.isActive(oldName)
 	if wasRunning {
 		// Stop the unit first: it is Restart=always, so it must be stopped (not just

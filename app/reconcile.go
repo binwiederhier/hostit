@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"heckel.io/hostit/workspace"
 )
 
 // ReconcileOrphans removes the host state of apps that no longer exist -- their
@@ -15,7 +17,7 @@ import (
 // so systemd retries it forever against a container that is gone, and its
 // enable symlink starts it again after a reboot.
 func (m *Manager) ReconcileOrphans() []string {
-	out, err := m.systemd.ListUnits(unitTemplate + "*")
+	out, err := m.systemd.ListUnits(workspace.UnitTemplate + "*")
 	if err != nil {
 		slog.Warn("Cannot list app units to reconcile", "error", err)
 		return nil
@@ -37,7 +39,7 @@ func (m *Manager) ReconcileOrphans() []string {
 		if !ok || known[id] {
 			continue
 		}
-		unit := unitNameForID(id)
+		unit := workspace.UnitName(id)
 		if err := m.systemd.DisableNow(unit); err != nil {
 			slog.Warn("Cannot disable the unit of a deleted app", "id", id, "error", err)
 		}
@@ -104,11 +106,11 @@ func (m *Manager) reconcileContainers(known map[string]bool) []string {
 	}
 	removed := make([]string, 0)
 	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
-		id, ok := strings.CutPrefix(strings.TrimSpace(line), containerPrefix)
+		id, ok := strings.CutPrefix(strings.TrimSpace(line), workspace.ContainerPrefix)
 		if !ok || id == "" || known[id] {
 			continue
 		}
-		if err := m.container.RemoveForce(containerNameForID(id)); err != nil {
+		if err := m.container.RemoveForce(workspace.ContainerName(id)); err != nil {
 			slog.Warn("Cannot remove the container of a deleted app", "id", id, "error", err)
 			continue
 		}
@@ -124,7 +126,7 @@ func idFromUnit(fields []string) (string, bool) {
 		return "", false
 	}
 	unit := strings.TrimSuffix(strings.TrimPrefix(fields[0], "\u25cf "), ".service")
-	id, ok := strings.CutPrefix(unit, unitTemplate)
+	id, ok := strings.CutPrefix(unit, workspace.UnitTemplate)
 	if !ok || id == "" || strings.Contains(id, "@") {
 		return "", false
 	}

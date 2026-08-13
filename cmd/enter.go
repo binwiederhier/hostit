@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	// containerPrefix must match app.containerPrefix. This file deliberately
+	// containerPrefix must match workspace.ContainerPrefix. This file deliberately
 	// imports as little as possible: it is the only code that runs as root on
 	// behalf of an app user, so its blast radius is kept small.
 	containerPrefix = "hostit-app-"

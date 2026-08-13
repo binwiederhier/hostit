@@ -1,13 +1,14 @@
 package app
 
 import (
-	"encoding/json"
 	"log/slog"
 	"strconv"
 	"strings"
 	"time"
 
 	"heckel.io/hostit/appctl"
+	"heckel.io/hostit/container"
+	"heckel.io/hostit/workspace"
 )
 
 const (
@@ -243,7 +244,7 @@ func (m *Manager) containerStartTimes(names []string) map[string]int64 {
 		if len(fields) != 2 {
 			continue
 		}
-		id := strings.TrimPrefix(fields[0], containerPrefix)
+		id := strings.TrimPrefix(fields[0], workspace.ContainerPrefix)
 		if id == fields[0] {
 			continue // Not one of ours
 		}
@@ -281,19 +282,13 @@ func (m *Manager) resourceUsage() map[string]usage {
 	if err != nil {
 		return usages
 	}
-	// podman prints lowercase snake_case keys, e.g.
-	//   {"name":"hostit-app-blog","cpu_percent":"3.70%","mem_usage":"4.633MB / 536.9MB"}
-	var stats []struct {
-		Name       string `json:"name"`
-		MemUsage   string `json:"mem_usage"`
-		CPUPercent string `json:"cpu_percent"`
-	}
-	if err := json.Unmarshal([]byte(out), &stats); err != nil {
+	stats, err := container.ParseStats(out)
+	if err != nil {
 		return usages
 	}
 	nameByID := m.nameByID() // containers are id-named; map back to the app name
 	for _, stat := range stats {
-		id := strings.TrimPrefix(stat.Name, containerPrefix)
+		id := strings.TrimPrefix(stat.Name, workspace.ContainerPrefix)
 		if id == stat.Name {
 			continue // Not one of ours
 		}
@@ -301,7 +296,7 @@ func (m *Manager) resourceUsage() map[string]usage {
 		if !ok {
 			continue
 		}
-		usages[name] = usage{memoryMB: parseMemMB(stat.MemUsage), cpuPercent: parseCPUPercent(stat.CPUPercent)}
+		usages[name] = usage{memoryMB: stat.MemoryMB, cpuPercent: stat.CPUPercent}
 	}
 	return usages
 }
@@ -319,36 +314,4 @@ func (m *Manager) nameByID() map[string]string {
 		byID[a.ID] = a.Name
 	}
 	return byID
-}
-
-// parseCPUPercent turns podman's "3.70%" into whole percent, rounded. It can be
-// over 100 for a container using more than one core, which is fine to report.
-func parseCPUPercent(cpu string) int {
-	value := strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(cpu), "%"))
-	parsed, err := strconv.ParseFloat(value, 64)
-	if err != nil {
-		return 0
-	}
-	return int(parsed + 0.5)
-}
-
-// parseMemMB turns podman's "12.3MB / 512MB" into whole megabytes
-func parseMemMB(memUsage string) int {
-	value := strings.TrimSpace(strings.Split(memUsage, "/")[0])
-	multiplier := 1.0
-	switch {
-	case strings.HasSuffix(value, "GB"):
-		multiplier, value = 1024, strings.TrimSuffix(value, "GB")
-	case strings.HasSuffix(value, "MB"):
-		multiplier, value = 1, strings.TrimSuffix(value, "MB")
-	case strings.HasSuffix(value, "kB"):
-		multiplier, value = 1.0/1024, strings.TrimSuffix(value, "kB")
-	case strings.HasSuffix(value, "B"):
-		multiplier, value = 1.0/(1024*1024), strings.TrimSuffix(value, "B")
-	}
-	parsed, err := strconv.ParseFloat(strings.TrimSpace(value), 64)
-	if err != nil {
-		return 0
-	}
-	return int(parsed * multiplier)
 }

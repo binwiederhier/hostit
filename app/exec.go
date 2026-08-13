@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"heckel.io/hostit/workspace"
 )
 
 const (
@@ -63,7 +65,7 @@ func (m *Manager) Exec(name, command string, timeout time.Duration) (*ExecResult
 	// exec" out here would leave the command running in there, burning the app's
 	// memory and CPU with nobody left to notice. The outer bound is a backstop
 	// for podman itself hanging, so it has to be the looser of the two.
-	out, err := m.container.Exec(limit+execGraceTimeout, m.containerName(name), containerHome,
+	out, err := m.container.Exec(limit+execGraceTimeout, m.containerName(name), workspace.ContainerHome,
 		"timeout", "--kill-after", "5s", strconv.Itoa(int(limit.Seconds())),
 		"/bin/sh", "-lc", command)
 	res := &ExecResult{ExitCode: exitCode(err)}

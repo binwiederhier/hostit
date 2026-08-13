@@ -9,6 +9,7 @@ import (
 
 	"heckel.io/hostit/appctl"
 	"heckel.io/hostit/store"
+	"heckel.io/hostit/workspace"
 )
 
 const (
@@ -160,14 +161,14 @@ func (m *Manager) apply(a *store.App, conf *appctl.AppConfig, allowReload bool) 
 	// needs no build, so recreating it (e.g. during the id-keying migration) never
 	// blocks on building a new image; only an app that actually needs the current
 	// image pays for building it.
-	if err := m.ensureAppImage(a); err != nil {
+	if err := m.workspace.EnsureAppImage(a); err != nil {
 		return "", err
 	}
 
 	// Recreate the container if the desired config differs from the running one
 	started := time.Now()
-	desired := containerCreateArgs(conf, a, m.appHome(name), m.config.SocketFile, hostitBinFile, m.memoryLimit(name), ids)
-	hash := containerConfigHash(desired)
+	desired := workspace.CreateArgs(conf, a, m.appHome(name), m.config.SocketFile, hostitBinFile, Version, m.memoryLimit(name), ids)
+	hash := workspace.ConfigHash(desired)
 	current, err := m.container.Inspect(m.containerName(name), inspectHashFormat)
 	recreated := false
 	if err != nil || strings.TrimSpace(current) != hash {
@@ -180,7 +181,7 @@ func (m *Manager) apply(a *store.App, conf *appctl.AppConfig, allowReload bool) 
 		}
 		_ = m.systemd.Stop(m.unitName(name))
 		_ = m.container.RemoveForce(m.containerName(name))
-		if err := m.container.Create(withConfigLabel(desired, hash)...); err != nil {
+		if err := m.container.Create(workspace.WithConfigLabel(desired, hash)...); err != nil {
 			return "", fmt.Errorf("cannot create container: %w", err)
 		}
 		recreated = true
@@ -265,19 +266,6 @@ func (m *Manager) memoryLimit(name string) int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.memoryMB[name]
-}
-
-// withConfigLabel inserts the config-hash label into create args. A label is a
-// flag, so it goes anywhere before the image; inserting it just ahead of the
-// trailing image+command survives new flags being added at the front (the common
-// change) rather than depending on a fixed offset into the leading flags.
-func withConfigLabel(args []string, hash string) []string {
-	cut := len(args) - containerArgsTrailer
-	out := make([]string, 0, len(args)+2)
-	out = append(out, args[:cut]...)
-	out = append(out, "--label", "hostit.config="+hash)
-	out = append(out, args[cut:]...)
-	return out
 }
 
 func tailLines(s string, n int) string {

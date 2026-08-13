@@ -6,8 +6,8 @@ import (
 	"strings"
 
 	"github.com/urfave/cli/v2"
-	"heckel.io/hostit/app"
 	"heckel.io/hostit/appctl"
+	"heckel.io/hostit/workspace"
 )
 
 var (
@@ -62,7 +62,7 @@ func guideText(self *appctl.SelfInfo) string {
 		"  and it is what the next AI session starts from.\n" +
 		"\n" +
 		"WHAT IS INSTALLED\n" +
-		"  " + wrap(app.WorkspaceRuntimes, 74, "  ") + "\n" +
+		"  " + wrap(workspace.Runtimes, 74, "  ") + "\n" +
 		"  You are root in here, so \"apt-get install <package>\" works for anything\n" +
 		"  else. Installed packages last until the container is recreated.\n" +
 		"\n" +

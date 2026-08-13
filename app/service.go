@@ -27,6 +27,7 @@ import (
 	"heckel.io/hostit/store"
 	"heckel.io/hostit/systemd"
 	"heckel.io/hostit/unixuser"
+	"heckel.io/hostit/workspace"
 )
 
 const (
@@ -129,6 +130,7 @@ type Manager struct {
 	firewall  firewall.Interface
 	homefs    *homefs.Service
 	snapshots *snapshot.Service
+	workspace *workspace.Service
 
 	// memoryMB and diskMB cache per-app limits, so redeploys and quota checks
 	// keep them; the authoritative values come from the owner's limits
@@ -148,7 +150,6 @@ type Manager struct {
 
 	mu         sync.Mutex // Protects memoryMB, diskMB
 	stateMu    sync.Mutex // Protects stateCache, stateFresh, stateRefreshing
-	buildMu    sync.Mutex // Serializes image builds; two at once OOM a small host
 	execMu     sync.Mutex // Serializes /run commands; they are builds, and the box has one core
 	appLocksMu sync.Mutex // Protects appLocks
 }
@@ -176,6 +177,9 @@ func NewManager(conf *config.Config, s *store.Store, svc *Services) *Manager {
 	// calls back into it through snapshotHost for the app-lifecycle operations and
 	// id-keyed lookups a snapshot or rollback needs.
 	m.snapshots = snapshot.New(m.btrfs, m.systemd, m.container, s, snapshotHost{m})
+	// The workspace Service owns the shared workspace image lifecycle (build,
+	// per-app pinned tags, prune); it needs no callbacks into the Manager.
+	m.workspace = workspace.New(m.container, s, conf.DataDir)
 	return m
 }
 
@@ -259,7 +263,7 @@ func (m *Manager) create(name string, opts *CreateOptions, seedPath string) (*st
 	// Mint the app's stable id up front: the home directory (and its snapshots) are
 	// keyed on the id, not the name, so a later rename never moves them. The id is
 	// on the App struct that gets inserted below.
-	app := &store.App{ID: store.NewAppID(), Name: name, Port: port, Host: store.HostLocal, OwnerID: opts.OwnerID, ImageTag: workspaceImageTag()}
+	app := &store.App{ID: store.NewAppID(), Name: name, Port: port, Host: store.HostLocal, OwnerID: opts.OwnerID, ImageTag: workspace.ImageTag()}
 
 	// Create the user, install keys and populate the home directory. The uid is a
 	// contiguous block derived from the (unique) port, so the container maps as a
@@ -296,7 +300,7 @@ func (m *Manager) create(name string, opts *CreateOptions, seedPath string) (*st
 	}
 	// A fork keeps the source's files; only a fresh app gets the demo skeleton.
 	if !forking {
-		if err := m.user.WriteSkeleton(name, home, skeletonFiles(name, m.URL(&store.App{Name: name, Port: port}), WorkspaceRuntimes)); err != nil {
+		if err := m.user.WriteSkeleton(name, home, skeletonFiles(name, m.URL(&store.App{Name: name, Port: port}), workspace.Runtimes)); err != nil {
 			cleanup()
 			return nil, fmt.Errorf("cannot write skeleton for %s: %w", name, err)
 		}
@@ -492,18 +496,18 @@ func (m *Manager) allocatePort() (int, error) {
 	return 0, ErrNoPortsAvailable
 }
 
-// uidFor is an app's base uid: a contiguous uidBlockSize-wide block, one per
+// uidFor is an app's base uid: a contiguous workspace.UIDBlockSize-wide block, one per
 // app, spaced by port so blocks never overlap. Container uid 0 maps here.
 func (m *Manager) uidFor(port int) int {
-	return uidBlockStart + (port-m.config.PortMin)*uidBlockSize
+	return workspace.UIDBlockStart + (port-m.config.PortMin)*workspace.UIDBlockSize
 }
 
 // lookupIDs returns the app's contiguous id block: its uid/gid (which become
 // container root) and the block size that runs up from there.
-func (m *Manager) lookupIDs(username string) (IDs, error) {
+func (m *Manager) lookupIDs(username string) (workspace.IDs, error) {
 	uid, gid, err := m.user.LookupIDs(username)
 	if err != nil {
-		return IDs{}, err
+		return workspace.IDs{}, err
 	}
-	return IDs{UID: uid, GID: gid, Count: uidBlockSize}, nil
+	return workspace.IDs{UID: uid, GID: gid, Count: workspace.UIDBlockSize}, nil
 }

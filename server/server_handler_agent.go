@@ -8,11 +8,11 @@ import (
 	"strings"
 	"time"
 
-	"heckel.io/hostit/app"
 	"heckel.io/hostit/appctl"
 	"heckel.io/hostit/assistant"
 	"heckel.io/hostit/config"
 	"heckel.io/hostit/store"
+	"heckel.io/hostit/workspace"
 )
 
 const (
@@ -330,7 +330,7 @@ func (s *Server) agentGuide(appName, description string) *apiAgentInfoResponse {
 			"    (upload binaries with ?mode=755 so they are executable)\n\n" +
 			"Optional in both: env: {KEY: value}, and description: a one-liner about the app. " +
 			"Unknown keys are an error, so a typo is reported rather than ignored.",
-		Runtimes: app.WorkspaceRuntimes + ". Install anything else inside the container with apt-get; " +
+		Runtimes: workspace.Runtimes + ". Install anything else inside the container with apt-get; " +
 			"a new app starts as a stub serving a placeholder page.",
 		SuggestedStack: "A single Go binary that embeds its frontend (go:embed) is the easiest thing to run here: " +
 			"one file, no runtime to install, instant start. Use run: ./" + appctl.BinDir + "/myapp listening on 0.0.0.0:$PORT. " +
