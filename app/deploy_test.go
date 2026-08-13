@@ -190,6 +190,21 @@ func TestEnsureStartsAnEnabledButStoppedApp(t *testing.T) {
 	assert.Contains(t, runner.ran(), "enable --now", "an enabled-but-stopped app is started on login")
 }
 
+func TestPowerOnStartsAPoweredOffApp(t *testing.T) {
+	t.Parallel()
+	m, _, runner := newTestDeployManager(t)
+	createTestApp(t, m, "blog")
+	// PowerOn is the explicit verb: it must start (and re-enable) even a
+	// deliberately powered-off app -- that is the whole point, unlike a login.
+	runner.returns("is-enabled", "disabled")
+	runner.returns("container inspect", "whatever") // Exists
+	runner.returns("is-active", "inactive")
+	runner.reset()
+	_, err := m.PowerOn("blog")
+	require.NoError(t, err)
+	assert.Contains(t, runner.ran(), "enable --now", "power-on re-enables and starts the unit")
+}
+
 func TestDeleteAppStopsAppBeforeRemovingUser(t *testing.T) {
 	t.Parallel()
 	m, ops, runner := newTestDeployManager(t)

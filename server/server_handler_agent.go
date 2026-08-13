@@ -179,7 +179,7 @@ func (s *Server) handleAgentDeploy(w http.ResponseWriter, _ *http.Request, c *ca
 // tearing the whole container down.
 
 func (s *Server) handleAgentPowerOn(w http.ResponseWriter, _ *http.Request, c *caller, a *store.App) {
-	msg, err := s.apps.Ensure(a.Name)
+	msg, err := s.apps.PowerOn(a.Name)
 	if err != nil {
 		writeAppError(w, err)
 		return

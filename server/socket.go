@@ -28,7 +28,7 @@ func (s *Server) newSocketHandler() http.Handler {
 	mux.HandleFunc("POST /v1/self/start", s.selfApp(s.handleSelfStart))
 	mux.HandleFunc("POST /v1/self/stop", s.selfApp(s.handleSelfStop))
 	mux.HandleFunc("POST /v1/self/restart", s.selfApp(s.handleSelfRestart))
-	mux.HandleFunc("POST /v1/self/poweron", s.selfApp(s.handleSelfEnsure))
+	mux.HandleFunc("POST /v1/self/poweron", s.selfApp(s.handleSelfPowerOn))
 	mux.HandleFunc("POST /v1/self/poweroff", s.selfApp(s.handleSelfPowerOff))
 	mux.HandleFunc("POST /v1/self/reboot", s.selfApp(s.handleSelfReboot))
 	mux.HandleFunc("GET /v1/self/status", s.selfApp(s.handleSelfStatus))

@@ -56,6 +56,17 @@ func (s *Server) handleSelfEnsure(w http.ResponseWriter, r *http.Request, a *sto
 	writeJSON(w, http.StatusOK, &apiMessageResponse{Message: msg})
 }
 
+// handleSelfPowerOn is the explicit power-on verb: unlike Ensure (the login path)
+// it clears a prior poweroff rather than refusing a powered-off app.
+func (s *Server) handleSelfPowerOn(w http.ResponseWriter, r *http.Request, a *store.App) {
+	msg, err := s.apps.PowerOn(a.Name)
+	if err != nil {
+		writeAppError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, &apiMessageResponse{Message: msg})
+}
+
 // handleSelfDeploy applies hostit.yml and (re)starts the app
 func (s *Server) handleSelfDeploy(w http.ResponseWriter, r *http.Request, a *store.App) {
 	msg, err := s.apps.Up(a.Name)

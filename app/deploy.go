@@ -48,21 +48,37 @@ func (m *Manager) up(name string, snapshot bool) (string, error) {
 	return m.apply(a, conf, true)
 }
 
-// Ensure makes sure the app's container exists and its service is running; it
-// never recreates or reloads a live container (used on SSH login). Without a
-// (valid) hostit.yml it provisions an idle workspace.
+// Ensure is the login path (SSH shell, browser terminal): it brings the app's
+// container up so there is something to exec into, but refuses a deliberately
+// powered-off one. A login must not resurrect a powered-off app -- that would
+// defeat poweroff, and the web terminal auto-reconnecting after the drop would
+// fight the operator. A crashed or fresh-reboot app is still enabled, so it starts
+// as before; only an explicit PowerOn clears a poweroff.
 func (m *Manager) Ensure(name string) (string, error) {
+	if _, err := m.store.App(name); err != nil {
+		return "", err
+	}
+	if !m.systemd.IsEnabled(m.unitName(name)) {
+		return "", appctl.ErrPoweredOff
+	}
+	return m.powerOn(name)
+}
+
+// PowerOn brings the app's container up, clearing a prior poweroff by re-enabling
+// its unit. Unlike Ensure it never refuses a powered-off app -- powering it on is
+// exactly the point.
+func (m *Manager) PowerOn(name string) (string, error) {
+	return m.powerOn(name)
+}
+
+// powerOn makes sure the app's container exists and its service is running; it
+// never recreates or reloads a live container. Without a (valid) hostit.yml it
+// provisions an idle workspace.
+func (m *Manager) powerOn(name string) (string, error) {
 	defer m.stateChanged(name)
 	a, err := m.store.App(name)
 	if err != nil {
 		return "", err
-	}
-	// A deliberately powered-off app (its unit disabled) must not be resurrected by
-	// a login: that would defeat poweroff, and the web terminal auto-reconnecting
-	// after the drop would fight the operator. Only an explicit power-on (Up) clears
-	// this. A crashed or fresh-reboot app is still enabled, so it starts as before.
-	if !m.systemd.IsEnabled(m.unitName(name)) {
-		return "", appctl.ErrPoweredOff
 	}
 	conf, err := m.loadConfig(name)
 	if err != nil {
