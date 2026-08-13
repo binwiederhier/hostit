@@ -86,9 +86,6 @@ func execServe(c *cli.Context) error {
 	if err := ensureSessionKey(conf, s); err != nil {
 		return err
 	}
-	if err := applyStoredLimits(s, manager, users); err != nil {
-		return err
-	}
 	// Quota accounting is the mechanism behind every per-app disk budget;
 	// idempotent, so it simply runs at every start.
 	manager.EnableDiskBudgets()
@@ -98,6 +95,12 @@ func execServe(c *cli.Context) error {
 	// exports the base image -- the known one-time migration outage.
 	if err := manager.MigrateRootfsStorage(c.App.Version); err != nil {
 		slog.Warn("Storage migration incomplete; retrying at next start", "error", err)
+	}
+	// After the budgets exist: applying a stored limit also caps the app's qgroup,
+	// which warns into the log if the group is not there yet. Migration briefly runs
+	// on the 2048M default and this corrects every group to the owner's real limit.
+	if err := applyStoredLimits(s, manager, users); err != nil {
+		return err
 	}
 	// Build the workspace image and export its base rootfs once. This runs in the
 	// background: it takes minutes on a small host, and the proxy must not wait.

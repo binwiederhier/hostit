@@ -32,29 +32,52 @@ func TestEnsureBaseExportsOnceAndSealsReadOnly(t *testing.T) {
 	require.NoError(t, svc.EnsureBase(ImageTag()))
 
 	base := svc.BasePath(ImageTag())
-	// The export recipe: subvolume, create a throwaway container, stream its
-	// filesystem out, remove it, then seal the base so nothing can dirty what
-	// every app rootfs shares.
-	assert.Contains(t, r.ran(), "btrfs subvolume create "+base)
+	tmp := base + ".tmp"
+	// The export recipe runs entirely against a TEMP subvolume -- create a
+	// throwaway container, stream its filesystem out, seal it read-only -- and only
+	// a rename publishes it at the base path. The daemon dying mid-export (a deploy
+	// restart did exactly this on stage) must never leave a half-written base that
+	// passes the exists check: partial bases gave every app a rootfs without its
+	// ELF interpreter.
+	assert.Contains(t, r.ran(), "btrfs subvolume create "+tmp)
 	assert.Equal(t, []string{ImageTag()}, fc.createdFrom)
-	assert.Equal(t, []string{base}, fc.exportedTo)
+	assert.Equal(t, []string{tmp}, fc.exportedTo)
 	assert.Equal(t, []string{"ctr-1"}, fc.removedCtrs)
-	assert.Contains(t, r.ran(), "btrfs property set "+base+" ro true")
+	assert.Contains(t, r.ran(), "btrfs property set "+tmp+" ro true")
 	assert.Empty(t, fc.builds, "an existing image is not rebuilt")
+	// Published atomically: the base exists, the temp name is gone.
+	assert.DirExists(t, base)
+	assert.NoDirExists(t, tmp)
 
 	// The base exists now, so a second call must not export again.
 	require.NoError(t, svc.EnsureBase(ImageTag()))
-	assert.Equal(t, []string{base}, fc.exportedTo)
+	assert.Equal(t, []string{tmp}, fc.exportedTo)
+}
+
+func TestEnsureBaseCleansUpAKilledExport(t *testing.T) {
+	t.Parallel()
+	svc, fc, r, _ := newTestService(t)
+	fc.images[ImageTag()] = true
+	base := svc.BasePath(ImageTag())
+	tmp := base + ".tmp"
+	// Simulate a daemon killed mid-export: the temp subvolume exists, the base
+	// does not. The stale temp must be discarded and a fresh export published.
+	require.NoError(t, os.MkdirAll(tmp, 0o755))
+	require.NoError(t, svc.EnsureBase(ImageTag()))
+	assert.Contains(t, r.ran(), "btrfs subvolume delete "+tmp)
+	assert.Equal(t, []string{tmp}, fc.exportedTo, "the export must run again from scratch")
+	assert.DirExists(t, base)
+	assert.NoDirExists(t, tmp)
 }
 
 func TestEnsureBaseBuildsTheImageFirst(t *testing.T) {
 	t.Parallel()
 	svc, fc, _, _ := newTestService(t)
 	// No image at all: the current tag is built (the image remains the build
-	// input), then exported into the base subvolume.
+	// input), then exported into the base subvolume (via its temp path).
 	require.NoError(t, svc.EnsureBase(ImageTag()))
 	assert.Equal(t, []string{ImageTag()}, fc.builds)
-	assert.Equal(t, []string{svc.BasePath(ImageTag())}, fc.exportedTo)
+	assert.Equal(t, []string{svc.BasePath(ImageTag()) + ".tmp"}, fc.exportedTo)
 }
 
 func TestEnsureBaseRefusesAnUnbuildableOldTag(t *testing.T) {
@@ -183,6 +206,11 @@ func (f *fakeRunner) Run(args ...string) (string, error) {
 	if len(args) >= 4 && args[0] == "btrfs" && args[1] == "subvolume" &&
 		(args[2] == "create" || args[2] == "snapshot") {
 		_ = os.MkdirAll(args[len(args)-1], 0o755)
+	}
+	// The base publish is a rename; emulate it so the atomicity assertions
+	// (base exists, temp gone) run against the real temp dir.
+	if len(args) == 3 && args[0] == "mv" {
+		_ = os.Rename(args[1], args[2])
 	}
 	return "", nil
 }

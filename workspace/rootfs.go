@@ -71,9 +71,19 @@ func (s *Service) EnsureBase(tag string) error {
 	if err := os.MkdirAll(filepath.Dir(base), hiddenDirMode); err != nil {
 		return err
 	}
+	// The whole export runs against a temp subvolume; only the final rename
+	// publishes it at the base path. The exists check above is the only guard
+	// against reusing a base, so a daemon killed mid-export (a deploy restart hit
+	// exactly this window on stage) must never leave a partial tree at the base
+	// path: every app rootfs snapshotted from it would be missing files -- the
+	// stage incident lost the ELF interpreter and bricked every container.
+	tmp := base + ".tmp"
+	if _, err := os.Stat(tmp); err == nil {
+		_ = s.btrfs.DeleteSubvolume(tmp) // leftover of a killed export; discard
+	}
 	slog.Info("Exporting base rootfs (one time per image tag)", "image", tag)
 	started := time.Now()
-	if err := s.btrfs.CreateSubvolume(base); err != nil {
+	if err := s.btrfs.CreateSubvolume(tmp); err != nil {
 		return fmt.Errorf("cannot create base subvolume for %s: %w", tag, err)
 	}
 	// Export recipe: a throwaway (never started) container, streamed out with
@@ -81,17 +91,22 @@ func (s *Service) EnsureBase(tag string) error {
 	// what every app rootfs shares.
 	ctr, err := s.container.CreateFrom(tag, "true")
 	if err != nil {
-		_ = s.btrfs.DeleteSubvolume(base)
+		_ = s.btrfs.DeleteSubvolume(tmp)
 		return fmt.Errorf("cannot create export container for %s: %w", tag, err)
 	}
-	if err := s.container.ExportRootfs(exportTimeout, ctr, base); err != nil {
+	if err := s.container.ExportRootfs(exportTimeout, ctr, tmp); err != nil {
 		_ = s.container.RemoveForce(ctr)
-		_ = s.btrfs.DeleteSubvolume(base) // a half-exported base must not pass the exists check
+		_ = s.btrfs.DeleteSubvolume(tmp)
 		return fmt.Errorf("cannot export base rootfs for %s: %w", tag, err)
 	}
 	_ = s.container.RemoveForce(ctr)
-	if err := s.btrfs.SetReadOnly(base, true); err != nil {
+	if err := s.btrfs.SetReadOnly(tmp, true); err != nil {
+		_ = s.btrfs.DeleteSubvolume(tmp)
 		return fmt.Errorf("cannot seal base rootfs for %s: %w", tag, err)
+	}
+	if err := s.btrfs.MoveSubvolume(tmp, base); err != nil {
+		_ = s.btrfs.DeleteSubvolume(tmp)
+		return fmt.Errorf("cannot publish base rootfs for %s: %w", tag, err)
 	}
 	slog.Info("Base rootfs ready", "image", tag, "took", time.Since(started).Round(time.Second))
 	return nil

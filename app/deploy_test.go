@@ -398,6 +398,14 @@ func (f *fakeRunner) Run(args ...string) (string, error) {
 		(args[2] == "create" || args[2] == "snapshot") {
 		_ = os.MkdirAll(args[len(args)-1], 0o755)
 	}
+	// The base export publishes via a rename (MoveSubvolume); emulate it so the
+	// base actually appears at its final path and a second ensure is a no-op.
+	// ONLY for .bases paths: the rollback home-swap also moves subvolumes, but the
+	// fake snapshot above materializes empty dirs, so a faithful mv there would
+	// swap a populated test home for an empty one.
+	if len(args) == 3 && args[0] == "mv" && strings.Contains(args[1], "/.bases/") {
+		_ = os.Rename(args[1], args[2])
+	}
 	if len(args) == 4 && args[0] == "podman" && args[1] == "image" && args[2] == "exists" {
 		if !f.built[args[3]] {
 			return "", errImageMissing
