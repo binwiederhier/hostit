@@ -26,6 +26,11 @@ const AppTerminal = ({ name, onClose, onMinimize, onReady, onSessionEnd, onSsh, 
   // Reconnect state for the UI (countdown) and a handle to retry immediately.
   const reconnectNowRef = useRef(() => {});
   const [reconnect, setReconnect] = useState({ active: false, seconds: 0 });
+  // Set when the server closed with the powered-off code: no automatic retries
+  // (they would be refused), but the pane keeps a manual Reconnect button and
+  // re-entering the tab retries once -- the app may have been powered on since.
+  const stoppedRef = useRef(false);
+  const [stopped, setStopped] = useState(false);
   // Where the floating panel sits; null until first dragged, so CSS places it.
   const [pos, setPos] = useState(null);
 
@@ -101,6 +106,8 @@ const AppTerminal = ({ name, onClose, onMinimize, onReady, onSessionEnd, onSsh, 
       ws.binaryType = "arraybuffer";
       ws.onopen = () => {
         attempt = 0; // a clean connect resets the backoff
+        stoppedRef.current = false;
+        setStopped(false);
         sendSize();
         term.focus();
         if (onReady) {
@@ -110,9 +117,14 @@ const AppTerminal = ({ name, onClose, onMinimize, onReady, onSessionEnd, onSsh, 
       ws.onmessage = (e) => term.write(new Uint8Array(e.data));
       ws.onclose = (event) => {
         if (disposed) return; // our own teardown (unmount)
-        // A powered-off app closes with a distinct code: show a note and stop, so
-        // an auto-reconnect never fights the poweroff (nor powers the app back on).
+        // A powered-off app closes with a distinct code: show a note and stop the
+        // automatic retries, so an auto-reconnect never fights the poweroff (nor
+        // powers the app back on). The manual Reconnect button stays, and coming
+        // back to the tab retries once (see the active effect below) -- the app
+        // may have been powered on in the meantime.
         if (!shouldReconnect(event.code)) {
+          stoppedRef.current = true;
+          setStopped(true);
           setReconnect({ active: false, seconds: 0 });
           term.write("\r\n\x1b[33mThis app is powered off. Power it on to use the terminal.\x1b[0m\r\n");
           return;
@@ -169,9 +181,14 @@ const AppTerminal = ({ name, onClose, onMinimize, onReady, onSessionEnd, onSsh, 
   }, [minimized]);
 
   // Switching to the terminal tab: it was display:none, so re-measure and put the
-  // cursor in it -- you can start typing without clicking first.
+  // cursor in it -- you can start typing without clicking first. If the last
+  // close was the powered-off code, retry once here: the pane must not stay dead
+  // after the owner powers the app back on and comes back to the tab.
   useEffect(() => {
     if (!active) return;
+    if (stoppedRef.current) {
+      reconnectNowRef.current();
+    }
     requestAnimationFrame(() =>
       requestAnimationFrame(() => {
         sendSizeRef.current();
@@ -233,7 +250,7 @@ const AppTerminal = ({ name, onClose, onMinimize, onReady, onSessionEnd, onSsh, 
       <div className={fixed ? "term-bar" : "term-bar term-bar-drag"} onPointerDown={startDrag}>
         {!embedded && <span className="mono">{name} &mdash; terminal</span>}
         <span className="term-bar-actions">
-          {reconnect.active && (
+          {(reconnect.active || stopped) && (
             <button type="button" className="term-btn" onClick={() => reconnectNowRef.current()} title="Reconnect now" aria-label="Reconnect now">
               <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M13 8a5 5 0 1 1-1.5-3.6M13 2.5v2.4h-2.4" />

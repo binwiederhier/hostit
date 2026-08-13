@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/exec"
@@ -60,6 +61,10 @@ func (s *Server) handleTerminal(w http.ResponseWriter, r *http.Request, c *calle
 	// as before, but returns ErrPoweredOff for a disabled one, which we relay with a
 	// distinct close code so the client stops reconnecting.
 	if _, err := s.apps.Ensure(a.Name); err != nil {
+		// Logged, not just closed: the browser only sees a close code, and a
+		// wrongly-refused terminal (seen once on stage, cause invisible) is
+		// undiagnosable without the server-side reason.
+		slog.Warn("Terminal refused: cannot ensure app", "app", a.Name, "error", err)
 		if errors.Is(err, appctl.ErrPoweredOff) {
 			conn.Close(terminalStatusPoweredOff, "app is powered off")
 			return
