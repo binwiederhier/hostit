@@ -213,6 +213,70 @@ func TestUnknownAppAndStoppedApp(t *testing.T) {
 	e.waitForBody(url, "Nothing here yet")
 }
 
+// TestRootfsPersistsAcrossDeploy proves the container's filesystem is the app's
+// persistent rootfs subvolume, not a throwaway image layer: a file planted
+// outside the home (in /usr/local) must survive a config change that recreates
+// the container. This is the apt-persistence promise -- installed packages no
+// longer vanish on deploys and upgrades.
+func TestRootfsPersistsAcrossDeploy(t *testing.T) {
+	e := newEnv(t)
+	name := uniqueName("e2e-rootfs")
+	app := e.createApp(name)
+	t.Cleanup(func() {
+		e.deleteApp(name)
+	})
+	token := fmt.Sprint(app["agent_token"])
+	e.put(fmt.Sprintf("/api/apps/%s/files/hostit.yml", name), token, "mode: static\n")
+	e.post(fmt.Sprintf("/api/apps/%s/deploy", name), token, nil)
+	e.waitForBody(fmt.Sprint(app["url"]), "Nothing here yet")
+
+	// Plant a marker OUTSIDE the bind-mounted home: only the rootfs holds it.
+	_, code := e.runEventually(name, token, "touch /usr/local/persist-marker")
+	require.Equal(t, 0, code, "planting the marker must succeed")
+
+	// An env change alters the container config hash, which recreates the
+	// container on deploy -- the exact path that used to lose installed packages.
+	e.put(fmt.Sprintf("/api/apps/%s/files/hostit.yml", name), token, "mode: static\nenv:\n  PERSIST: marker\n")
+	e.post(fmt.Sprintf("/api/apps/%s/deploy", name), token, nil)
+	e.waitForBody(fmt.Sprint(app["url"]), "Nothing here yet")
+
+	out, code := e.runEventually(name, token, "ls /usr/local/persist-marker")
+	assert.Equal(t, 0, code, "the marker must survive the container recreate; ls said: %s", out)
+	assert.Contains(t, out, "persist-marker")
+}
+
+// TestDiskHardCap proves the combined disk budget is a filesystem-enforced hard
+// cap: a dd into the rootfs (outside the home, the layer that used to be
+// uncapped) fails with EDQUOT/ENOSPC at the limit instead of filling the host.
+func TestDiskHardCap(t *testing.T) {
+	e := newEnv(t)
+	// The cap of a new app comes from the instance default (there is no per-app
+	// disk PATCH); set it small, restore afterwards.
+	var settings map[string]any
+	e.get("/api/settings", e.token, &settings)
+	original := int(settings["default_disk_mb"].(float64))
+	e.doJSON("PATCH", "/api/settings", e.token, map[string]any{"default_disk_mb": 200}, nil, http.StatusOK)
+	t.Cleanup(func() {
+		e.doJSON("PATCH", "/api/settings", e.token, map[string]any{"default_disk_mb": original}, nil, http.StatusOK)
+	})
+
+	name := uniqueName("e2e-cap")
+	app := e.createApp(name)
+	t.Cleanup(func() {
+		e.deleteApp(name)
+	})
+	token := fmt.Sprint(app["agent_token"])
+	e.waitForBody(fmt.Sprint(app["url"]), "Nothing here yet")
+
+	// 300 MB into /usr/bin against a 200 MB budget: the write itself must fail at
+	// the cap -- no monitoring, no after-the-fact cutoff.
+	out, code := e.runEventually(name, token, "dd if=/dev/zero of=/usr/bin/x bs=1M count=300")
+	assert.NotEqual(t, 0, code, "dd past the budget must fail; output: %s", out)
+	lower := strings.ToLower(out)
+	assert.True(t, strings.Contains(lower, "quota") || strings.Contains(lower, "no space"),
+		"dd must fail with EDQUOT/ENOSPC, got: %s", out)
+}
+
 // --- helpers ---
 
 func uniqueName(prefix string) string {
@@ -295,6 +359,42 @@ func (e *env) doJSON(method, path, token string, body, out any, want int) {
 	if out != nil {
 		require.NoError(e.t, json.Unmarshal(raw, out), "%s %s: %s", method, path, string(raw))
 	}
+}
+
+// runEventually runs one shell command in the app's container via the /run API,
+// retrying while the container is still coming up (a deploy recreates it, and
+// exec needs it running). Returns the command's output and exit code.
+func (e *env) runEventually(name, token, command string) (string, int) {
+	e.t.Helper()
+	body, err := json.Marshal(map[string]any{"command": command, "timeout_seconds": 180})
+	require.NoError(e.t, err)
+	deadline := time.Now().Add(appLive)
+	var lastStatus int
+	var lastBody string
+	for time.Now().Before(deadline) {
+		req, err := http.NewRequest("POST", e.host+fmt.Sprintf("/api/apps/%s/run", name), bytes.NewReader(body))
+		require.NoError(e.t, err)
+		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("Content-Type", "application/json")
+		client := &http.Client{Timeout: 4 * time.Minute}
+		resp, err := client.Do(req)
+		if err == nil {
+			raw, _ := io.ReadAll(resp.Body)
+			_ = resp.Body.Close()
+			lastStatus, lastBody = resp.StatusCode, string(raw)
+			if resp.StatusCode == http.StatusOK {
+				var res struct {
+					Output   string `json:"output"`
+					ExitCode int    `json:"exit_code"`
+				}
+				require.NoError(e.t, json.Unmarshal(raw, &res), "run %q: %s", command, lastBody)
+				return res.Output, res.ExitCode
+			}
+		}
+		time.Sleep(pollInterval)
+	}
+	e.t.Fatalf("run %q never got through; last status %d: %s", command, lastStatus, truncate(lastBody, 400))
+	return "", -1
 }
 
 func (e *env) status(method, path, token string) int {
