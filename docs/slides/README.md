@@ -1,12 +1,16 @@
 # Slides
 
-Two [Sli.dev](https://sli.dev/) presentations live in [`presentations/`](presentations/):
+Three [Sli.dev](https://sli.dev/) presentations live in [`presentations/`](presentations/):
 
 - **`tech-overview.md`** -- a **code overview** for developers: the package structure,
   how `app.Manager` composes the services, the test seam, and the main flows. A
   distilled tour of `docs/`; when those docs change, update the deck too.
 - **`intro.md`** -- an **introduction** for a general audience: who made it, then a
   feature-by-feature tour of what hostit can do. Text only, no screenshots.
+- **`storage.md`** -- the **storage redesign**: the disk-full incident, the validated
+  hard-cap mechanisms, the decided phase-1 plan (btrfs storage driver + hierarchical
+  qgroups) and the from-scratch target shape (per-app subtrees, podman as a pure
+  runtime). Companion to `plans/260813-hostit-disk-hard-cap.md`.
 
 ## Run it
 
