@@ -170,11 +170,45 @@ func (s *Service) QgroupLimitExclusive(pool, groupID string, diskMB int) error {
 // so one sync+retry turns the common app-delete case into a clean destroy.
 func (s *Service) QgroupDestroy(pool, groupID string) error {
 	out, err := s.runner.RunTimeout(timeout, "btrfs", "qgroup", "destroy", groupID, pool)
-	if err != nil && strings.Contains(out+err.Error(), "busy") {
-		_, _ = s.runner.RunTimeout(timeout, "btrfs", "filesystem", "sync", pool)
-		_, err = s.runner.RunTimeout(timeout, "btrfs", "qgroup", "destroy", groupID, pool)
+	if err == nil || !strings.Contains(out+err.Error(), "busy") {
+		return err
 	}
+	_, _ = s.runner.RunTimeout(timeout, "btrfs", "filesystem", "sync", pool)
+	out, err = s.runner.RunTimeout(timeout, "btrfs", "qgroup", "destroy", groupID, pool)
+	if err == nil || !strings.Contains(out+err.Error(), "busy") {
+		return err
+	}
+	// Still busy after the sync: the group has members whose subvolumes are long
+	// deleted (they linger as stale 0/<id> qgroups), and btrfs refuses to destroy
+	// a group that has members. Remove them from the group, then destroy.
+	for _, member := range s.groupMembers(pool, groupID) {
+		_, _ = s.runner.RunTimeout(timeout, "btrfs", "qgroup", "remove", member, groupID, pool)
+	}
+	_, err = s.runner.RunTimeout(timeout, "btrfs", "qgroup", "destroy", groupID, pool)
 	return err
+}
+
+// groupMembers parses the group's child list from `btrfs qgroup show -pc`. The
+// child list is the FIFTH column (qgroupid, referenced, exclusive, parent,
+// child); a trailing path column follows and can itself contain spaces ("<0
+// member qgroups>"), so the last field is NOT the child list.
+func (s *Service) groupMembers(pool, groupID string) []string {
+	out, err := s.runner.RunTimeout(timeout, "btrfs", "qgroup", "show", "-pc", pool)
+	if err != nil {
+		return nil
+	}
+	for _, line := range strings.Split(out, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 5 || fields[0] != groupID {
+			continue
+		}
+		children := fields[4]
+		if children == "-" || children == "" {
+			return nil
+		}
+		return strings.Split(children, ",")
+	}
+	return nil
 }
 
 // ListBudgetGroups returns the level-1 qgroup ids ("1/<id>") that exist on the

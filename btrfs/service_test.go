@@ -241,10 +241,11 @@ func TestQgroupDestroyRetriesAfterSyncWhenBusy(t *testing.T) {
 	r.returns("btrfs qgroup destroy", "ERROR: unable to destroy quota group: Device or resource busy\n")
 	r.fails("btrfs qgroup destroy", assert.AnError)
 	err := New(r).QgroupDestroy("/apps", "1/1000000")
-	assert.Error(t, err, "still busy after the sync+retry surfaces the error")
+	assert.Error(t, err, "still busy after the whole ladder surfaces the error")
 	joined := strings.Join(r.ran, "\n")
 	assert.Contains(t, joined, "btrfs filesystem sync /apps")
-	assert.Equal(t, 2, strings.Count(joined, "btrfs qgroup destroy 1/1000000 /apps"))
+	// The full ladder: destroy -> sync + destroy -> remove members + destroy.
+	assert.Equal(t, 3, strings.Count(joined, "btrfs qgroup destroy 1/1000000 /apps"))
 }
 
 func TestListBudgetGroups(t *testing.T) {
@@ -260,4 +261,31 @@ func TestListBudgetGroups(t *testing.T) {
 	groups, err := New(r).ListBudgetGroups("/apps")
 	require.NoError(t, err)
 	assert.Equal(t, []string{"1/1000000", "1/1131072"}, groups)
+}
+
+func TestQgroupDestroyRemovesStaleMembersWhenStillBusy(t *testing.T) {
+	t.Parallel()
+	// A group can stay "busy" forever: members whose subvolumes are long deleted
+	// remain assigned as stale 0/<id> qgroups, and btrfs refuses to destroy a
+	// group that has members. When sync+retry does not clear it, the members must
+	// be removed from the group first (seen live: a leftover group with six
+	// <stale> members survived every destroy).
+	r := newFakeRunner()
+	r.returns("btrfs qgroup destroy", "ERROR: unable to destroy quota group: Device or resource busy\n")
+	r.fails("btrfs qgroup destroy", assert.AnError)
+	// Real -pc output has a trailing path column ("<0 member qgroups>" for a
+	// level-1 group, with spaces!), so the child list is NOT the last field --
+	// grabbing the last field fed "qgroups>" to qgroup remove on stage.
+	r.returns("btrfs qgroup show -pc", `qgroupid  rfer   excl   parent     child          path
+0/1612    0      0      1/1262144  -              <stale>
+0/1614    0      0      1/1262144  -              <stale>
+1/1262144 0      0      -          0/1612,0/1614  <0 member qgroups>
+`)
+	err := New(r).QgroupDestroy("/apps", "1/1262144")
+	assert.Error(t, err, "the fake keeps failing the destroy; the removals still must have run")
+	joined := strings.Join(r.ran, "\n")
+	assert.Contains(t, joined, "btrfs qgroup remove 0/1612 1/1262144 /apps")
+	assert.Contains(t, joined, "btrfs qgroup remove 0/1614 1/1262144 /apps")
+	// destroy attempted: initial, post-sync, post-removal
+	assert.Equal(t, 3, strings.Count(joined, "btrfs qgroup destroy 1/1262144 /apps"))
 }
