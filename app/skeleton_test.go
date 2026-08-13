@@ -1,6 +1,7 @@
 package app
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -24,4 +25,14 @@ func TestSkeletonFiles(t *testing.T) {
 	assert.Contains(t, strings.ToLower(readme), "stub")
 	assert.Contains(t, readme, "# blog")
 	assert.Contains(t, readme, "Go binary")
+	// The README must describe what the skeleton ACTUALLY is. It used to claim the
+	// old Go-stub era's `mode: app` + `run: hostit placeholder` -- a command that
+	// does not exist -- and agents trusting it wrote that run: line into
+	// hostit.yml, crash-looping their apps (seen on prod: emojo, golf).
+	assert.NotContains(t, readme, "hostit placeholder")
+	assert.NotContains(t, readme, "mode: app`")
+	assert.Contains(t, readme, "mode: static")
+	// The runtimes blurb already ends with the apt-get hint; the template must not
+	// append it a second time ("(install anything else with apt-get) (install...")
+	assert.Equal(t, 1, strings.Count(fmt.Sprintf(skeletonAppReadme, "x", "u", "RUNTIMES (install anything else with apt-get)"), "install anything else with apt-get"))
 }

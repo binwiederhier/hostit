@@ -1,11 +1,12 @@
 # %s
 
-**This is a stub.** hostit created this app running its built-in placeholder (a
-small Go backend); nothing has been built here yet.
+**This is a stub.** hostit created this app serving a static placeholder page;
+nothing has been built here yet.
 
 - URL: %s
-- Currently: `mode: app`, run: `hostit placeholder` in hostit.yml
-- Available in the container: %s (install anything else with apt-get)
+- Currently: `mode: static` in hostit.yml -- hostit serves the `public/`
+  directory, which starts with a placeholder `index.html`
+- Available in the container: %s
 - Suggested stack: a single Go binary with an embedded frontend -- one file to
   upload, no runtime to install. Python and plain HTML (mode: static) work too.
 
