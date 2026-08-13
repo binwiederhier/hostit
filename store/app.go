@@ -82,6 +82,13 @@ func (s *Store) RenameApp(oldName, newName string) error {
 	return tx.Commit()
 }
 
+// PinImageTags backfills apps from before image pinning (empty tag) to the given
+// (current) tag; already pinned apps keep theirs.
+func (s *Store) PinImageTags(tag string) error {
+	_, err := s.db.Exec(pinImageTagsQuery, tag)
+	return err
+}
+
 // ImageTagsInUse returns the set of workspace image tags apps are pinned to, so
 // image GC keeps them even when their container is momentarily gone.
 func (s *Store) ImageTagsInUse() (map[string]bool, error) {
