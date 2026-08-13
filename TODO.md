@@ -8,6 +8,37 @@ everything imaginable -- if it is not written down here it is not planned.
 - is "hostit apps" api really necessary?
 - what is v1/self and why is it not just the same api as the main api?
 
+## Bugs
+
+- **A full disk wedges silently instead of surfacing "out of disk".** Filling the
+  disk produced no hostit-level error, the dashboard disk-usage stats froze (never
+  updated for 5-10 min), and the only signal was podman failing in the terminal
+  view: `Error: saving container ... state: database or disk is full`. Root causes,
+  all confirmed in the code:
+  - The registry DB (`/var/lib/hostit/hostit.db`, `DataDir`) and the apps
+    (`/var/lib/hostit/apps/<id>`, `AppsDir`) share one filesystem/btrfs pool, so an
+    app filling its subvolume fills the space the daemon's SQLite and podman's
+    container-state DB write to. The terminal error is podman's *host*-level
+    disk-full, not a per-app event.
+  - **No host free-space guard exists anywhere** -- nothing calls `Statfs`/checks
+    `Bavail`. hostit only ever sets per-app btrfs qgroup caps.
+  - A qgroup cap is not a reservation: an app with `disk_mb: 0` (unlimited -- what
+    `callerDiskLimit` returns when the owner/admin default is 0) has *no* cap and can
+    eat the whole pool; and even set caps can be oversubscribed (sum of quotas >
+    capacity), so the host fills while every app is "within quota".
+  - Per-app enforcement is EDQUOT delivered to the *app's own* write() calls inside
+    the container, so the app sees ENOSPC, not hostit -- nothing surfaces it.
+  - `RefreshDiskUsage` swallows the registry write failure: `store.UpdateAppUsage`
+    throws `database or disk is full`, which is caught and only `slog.Warn`d
+    (`app/quota.go:47`), so the dashboard keeps serving the last good numbers forever.
+  - Fix directions (not yet built): `Statfs(AppsDir)` in the disk loop with
+    warn/critical thresholds; surface a `disk` field in the health/settings API + a
+    dashboard banner; refuse creates/deploys/forks/snapshot-restores when critically
+    low (so operations fail with a clear error instead of wedging podman); stop
+    swallowing the daemon's *own* disk-full (a daemon-health event, not a per-app
+    Warn); and reconsider defaulting `disk_mb` to unlimited / guarding
+    oversubscription against a reserved host margin. Reported 2026-08-12.
+
 ## Multi-node: a proxy node and hosting nodes
 
 Today one machine is everything: it terminates TLS, proxies, holds the registry,
@@ -75,16 +106,6 @@ The dashboard can create, manage and delete apps and drive them in the browser
   sets the initial app-detail tab -- host leans on details/deploy, build opens the
   split chat+preview workspace -- so each person lands in the surface that fits what
   they came to do.
-- **Semi-live app previews on the dashboard.** Thumbnails of each app in the list.
-  Browser-side screenshotting is out (the app iframe is a different origin, so its
-  pixels can't be read). Two workable options: (A) scaled-down live sandboxed
-  iframes per card (`transform: scale`, `pointer-events: none`, lazy/visible-only)
-  -- client-only, no deps, but every listed app loads, so guard it for many apps;
-  (B) server-side headless-Chromium screenshots, cached and refreshed on deploy +
-  a timer, served as `/api/apps/{name}/thumbnail` -- scales better but Chromium is
-  a heavy dep that breaks the single-binary property, so it'd be an optional
-  sidecar. Start with A.
-
 ## Assistant (AI chat) cost
 
 The built-in assistant calls the Anthropic Messages API with the operator's API
@@ -184,6 +205,13 @@ definitions and the conversation prefix are cache-marked, so repeat turns pay th
 ## Done (recent)
 
 Kept briefly for context; prune when stale.
+
+- **Semi-live app previews on the dashboard (option A).** Each running app's card
+  shows a non-interactive thumbnail: the app in a sandboxed iframe rendered at a
+  1280x800 desktop viewport, CSS-scaled to the card width via a measured
+  ResizeObserver factor. `pointer-events: none` so a click falls through to the
+  card's stretched link; powered-off/crashed apps show a muted placeholder. Logic
+  unit-tested in `web/src/preview.js` / `preview.test.js`.
 
 - **Claude Max / subscription assistant backend.** The assistant can drive a Claude
   Pro/Max subscription (`claude-code-oauth-token`) run in a locked-down podman sandbox,
