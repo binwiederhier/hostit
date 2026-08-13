@@ -211,15 +211,21 @@ func (m *Manager) apply(a *store.App, conf *appctl.AppConfig, allowReload bool) 
 		slog.Info("Container recreated", "app", name, "took", time.Since(started).Round(time.Second))
 	}
 
-	// Start if needed; otherwise a changed run: command only needs an agent reload
-	if recreated || !m.isActive(name) {
-		if err := m.systemd.EnableNow(m.unitName(name)); err != nil {
-			return "", err
-		}
-		if recreated {
+	// Start if needed; otherwise a changed run: command only needs an agent reload.
+	// Exactly one start, never enable-then-restart: that pair started every fresh
+	// container twice (run 1 died ~300ms in when the restart tore it down, and
+	// Restart=always brought up run 2), a churn window that raced every early
+	// stop/start/deploy against a container that was about to die. A recreated
+	// container whose unit is still active (the Stop above failed, or something
+	// raced it back up) DOES need the bounce -- EnableNow would be a no-op against
+	// the unit still attached to the old container.
+	if active := m.isActive(name); recreated || !active {
+		if recreated && active {
 			if err := m.systemd.Restart(m.unitName(name)); err != nil {
 				return "", err
 			}
+		} else if err := m.systemd.EnableNow(m.unitName(name)); err != nil {
+			return "", err
 		}
 		return "deployed (container created and started)", nil
 	}

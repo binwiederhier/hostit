@@ -32,7 +32,12 @@ func TestUpWorkspaceModeCreatesContainer(t *testing.T) {
 	joined := runner.ran()
 	assert.Contains(t, joined, "podman create --name "+m.containerName("blog"))
 	assert.Contains(t, joined, "systemctl enable --now "+m.unitName("blog"))
-	assert.Contains(t, joined, "systemctl restart "+m.unitName("blog"))
+	// Exactly ONE start: enable --now brings the fresh unit up attached to the new
+	// container. The old enable-then-restart pair started every new app twice --
+	// run 1 died ~300ms in when the restart tore it down, a churn window that
+	// raced every early stop/start (seen live on stage; podman events showed
+	// start/died/start on every create).
+	assert.NotContains(t, joined, "systemctl restart "+m.unitName("blog"))
 }
 
 func TestUpWorkspaceModeUnchangedOnlyReloadsAgent(t *testing.T) {
@@ -110,7 +115,8 @@ func TestEnsureWithoutConfigCreatesIdleWorkspace(t *testing.T) {
 	joined := runner.ran()
 	assert.Contains(t, joined, "podman create --name "+m.containerName("blog"))
 	assert.Contains(t, joined, workspace.ImageTag())
-	assert.Contains(t, joined, "systemctl restart "+m.unitName("blog"))
+	assert.Contains(t, joined, "systemctl enable --now "+m.unitName("blog"))
+	assert.NotContains(t, joined, "systemctl restart "+m.unitName("blog"))
 }
 
 func TestDeployReusesTheOneWorkspaceImage(t *testing.T) {
@@ -318,11 +324,14 @@ func createTestApp(t *testing.T, m *Manager, name string) *store.App {
 	if !ok {
 		return a
 	}
-	// Wait for the deploy's last command (the agent restart), not just the first
-	// time the unit is mentioned: otherwise the goroutine's trailing commands leak
-	// past a reset() the test does next.
+	// Wait for the deploy's last command, not just the first time the unit is
+	// mentioned: otherwise the goroutine's trailing commands leak past a reset()
+	// the test does next. The deploy finishes with exactly one start: enable --now
+	// for a stopped unit, or a restart when a test stubs the unit as still active.
 	require.Eventually(t, func() bool {
-		return strings.Contains(runner.ran(), "restart "+m.unitName(name))
+		ran := runner.ran()
+		return strings.Contains(ran, "enable --now "+m.unitName(name)) ||
+			strings.Contains(ran, "systemctl restart "+m.unitName(name))
 	}, 5*time.Second, 5*time.Millisecond, "background demo deploy did not settle")
 	return a
 }
@@ -451,7 +460,10 @@ func TestRestartStaleAgents(t *testing.T) {
 
 	// A running agent is the binary it was exec'd from: after an upgrade it
 	// keeps the old behaviour until its container restarts. That is how a
-	// changed static: directory once kept serving the old one.
+	// changed static: directory once kept serving the old one. The unit is
+	// active here (the realistic upgrade case: apps are up), so re-attaching to
+	// the recreated container takes a restart, not an enable.
+	runner.returns("is-active", "active")
 	restarted, err := m.RestartStaleAgents("v0.3.0")
 	require.NoError(t, err)
 	assert.Equal(t, []string{"blog"}, restarted)
