@@ -491,10 +491,10 @@ subvolume, which unlocks two things:
   for a week, weekly for a month, monthly for a quarter) -- none is kept forever.
 
   ```sh
-  hostit apps snapshot myapp "before the rewrite"   # save a restorable point
-  hostit apps snapshots myapp                        # list them, newest first
-  hostit apps rollback myapp <snapshot-id>           # restore (safety-snapshotted)
-  hostit apps rmsnapshot myapp <snapshot-id>         # delete one by hand
+  hostit apps snapshot create myapp "before the rewrite"  # save a restorable point
+  hostit apps snapshot list myapp                          # list them, newest first
+  hostit apps rollback myapp <snapshot-id>                 # restore (safety-snapshotted)
+  hostit apps snapshot delete myapp <snapshot-id>          # delete one by hand
   ```
 
   The built-in assistant has the same abilities (it snapshots before risky work and
