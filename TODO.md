@@ -26,6 +26,17 @@ everything imaginable -- if it is not written down here it is not planned.
     `callerDiskLimit` returns when the owner/admin default is 0) has *no* cap and can
     eat the whole pool; and even set caps can be oversubscribed (sum of quotas >
     capacity), so the host fills while every app is "within quota".
+  - **The btrfs qgroup only covers the app HOME subvolume, not the container's
+    writable overlay layer.** Confirmed live on stage 2026-08-12: `thatphilguy-fork`
+    had a 10MB home quota, yet a tenant `dd`'d ~8GB into `/usr/bin/aa` and
+    `/usr/bin/bb` *inside the container*, which lands in
+    `/var/lib/containers/storage/overlay/<layer>/diff` -- unquota'd -- and filled the
+    host to 100%. Recovery required `rm`-ing those two files directly from the
+    overlay diff (podman itself could not even remove the container: its own state DB
+    write failed with "database or disk is full"), then deleting the app. So any real
+    per-app disk cap has to bound the *container writable layer* too (e.g. a storage
+    quota / `--storage-opt size=`, or move the writable layer onto a quota'd btrfs
+    subvolume), not just the mounted home.
   - Per-app enforcement is EDQUOT delivered to the *app's own* write() calls inside
     the container, so the app sees ENOSPC, not hostit -- nothing surfaces it.
   - `RefreshDiskUsage` swallows the registry write failure: `store.UpdateAppUsage`
