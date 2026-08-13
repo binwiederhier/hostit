@@ -4,6 +4,8 @@ title: hostit -- a code overview
 info: |
   A code overview of hostit: the package structure and the flows that matter, for a
   developer reading the codebase for the first time. Built from docs/.
+layout: cover
+background: https://cover.sli.dev
 class: text-center
 transition: slide-left
 mdc: true
@@ -21,6 +23,18 @@ The package structure, and the flows that matter, for reading the codebase
 heckel.io/hostit &middot; source of truth: <code>docs/</code>
 </div>
 
+<style>
+h1 {
+  background-color: #10b981;
+  background-image: linear-gradient(45deg, #34d399 20%, #0e7490 80%);
+  background-size: 100%;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+</style>
+
+---
+transition: fade-out
 ---
 
 # How to read this deck
@@ -31,7 +45,7 @@ with HTTPS, SSH, and a REST API an agent can drive. This deck is not the product
 
 - **The shape** -- one binary, a thin `main.go`, service packages at the root
 - **The packages** -- what each one owns, and how `app.Manager` composes them
-- **The seam** -- `SystemOps` + `run.Runner`, why the whole thing tests without root
+- **The seam** -- the injected service interfaces + `run.Runner`, why it tests without root
 - **The flows** -- create, deploy, serve, supervise, snapshot, assist
 
 <div class="mt-8 text-sm opacity-60">
@@ -126,25 +140,27 @@ zoom: 0.9
 `app.Manager` decides *what* an app needs and delegates the *how* to the service that
 owns each host tool (`app/service.go:NewManager`).
 
-```mermaid
+```mermaid {scale: 0.72}
 flowchart TB
     mgr["app.Manager"]
-    mgr --> btrfs["btrfs.Service"]
-    mgr --> systemd["systemd.Service"]
-    mgr --> container["container.Service"]
-    mgr --> runner["run.Runner"]
-    mgr --> ops["SystemOps (interface)<br/><i>injected; faked in tests</i>"]
-    ops -.->|"real: app/system.go"| sysops["systemOps facade"]
-    sysops --> unixuser["unixuser.Service"]
-    sysops --> ssh["ssh.Service"]
-    sysops --> firewall["firewall.Service"]
+    mgr --> shell
+    mgr --> direct
+    subgraph shell["shell out via run.Runner"]
+      direction LR
+      btrfs["btrfs"] ~~~ systemd["systemd"] ~~~ container["container"]
+    end
+    subgraph direct["touch the host directly (root)"]
+      direction LR
+      user["unixuser"] ~~~ ssh["ssh"] ~~~ firewall["firewall"]
+    end
     style mgr fill:#047857,color:#fff
-    style ops fill:#1f252d,color:#fff
 ```
 
 <div class="mt-2 text-sm opacity-60">
-The three it calls constantly are wired directly; the root-only account/key/firewall
-ops go through <code>SystemOps</code>, a facade so they can be faked as a group.
+Each host tool sits behind its own interface, bundled in <code>app.Services</code>. The
+daemon wires the real impls (<code>NewSystemServices</code>); tests pass
+<code>apptest.NewNopServices</code>. btrfs/systemd/container shell out via the runner;
+unixuser/ssh/firewall touch the host directly and need root.
 </div>
 
 ---
@@ -166,11 +182,11 @@ is an assertion, not a side effect.
 </div>
 <div class="p-4 rounded border border-gray-400 border-opacity-30">
 
-**`SystemOps`**
+**The service interfaces**
 
-`useradd`, `nftables`, `authorized_keys` -- the root-only group. The real impl is a
-facade (`app/system.go`); tests inject `apptest.NopSystemOps`. Same seam a future
-control-plane / app-node split would remote.
+`useradd`, `nftables`, `authorized_keys`, btrfs, systemd, podman -- each host tool
+behind its own interface, bundled in `app.Services`. Tests inject
+`apptest.NewNopServices`. Same seam a future control-plane / app-node split would remote.
 
 </div>
 </div>
@@ -202,6 +218,49 @@ The id-vs-name split is the single most load-bearing decision in the code. See
 
 ---
 
+# The SQLite schema: everything hangs off the app id
+
+```mermaid {scale: 0.5}
+erDiagram
+    user {
+        text id PK
+        text email
+    }
+    app {
+        text id PK "opaque, stable"
+        text name "renamable"
+        text owner_id FK
+        int port
+    }
+    user ||--o{ app : owns
+    user ||--o{ user_key : "SSH keys"
+    app ||--o{ token : "app-scoped API tokens"
+    app ||--o{ snapshot : "btrfs snapshots"
+    app ||--o{ app_domain : "custom domains"
+    app ||--o{ app_event : "audit log"
+    app ||--|| app_usage : "assistant token spend"
+    app ||--o| app_assistant : "assistant prefs"
+    app ||--o| assistant_session : "chat history"
+```
+
+<div class="mt-2 text-sm opacity-60">
+One `store.Store` (<code>store/</code>) wraps it all. Child rows key on
+<code>app_id</code>, not name, so a rename is a single row update. Schema lives in
+<code>store/migrate.go</code> (forward-only numbered migrations).
+</div>
+
+---
+layout: section
+transition: slide-up
+---
+
+# The flows
+
+From here on: what actually happens when you create, deploy, serve, supervise,
+snapshot and assist an app.
+
+---
+
 # Flow: creating an app
 
 ```mermaid {scale: 0.6}
@@ -209,7 +268,7 @@ sequenceDiagram
     actor User
     participant S as server
     participant M as app.Manager
-    participant Sys as SystemOps (root)
+    participant Sys as unixuser (root)
     User->>S: POST /api/apps {name}
     S->>M: CreateApp
     M->>M: allocate port, derive uid block, mint id

@@ -4,6 +4,8 @@ title: hostit -- introduction
 info: |
   hostit: a tiny self-hosted platform for small web apps, drivable by people or by AI
   agents. Who made it, what it is, why, and what it can do.
+layout: cover
+background: https://cover.sli.dev
 class: text-center
 transition: slide-left
 mdc: true
@@ -17,11 +19,26 @@ mdc: true
 What it is, why it exists, and everything it can do
 </div>
 
+<div @click="$slidev.nav.next" class="mt-10 py-1 inline-block px-3 rounded cursor-pointer" hover:bg="white op-10">
+Press Space to start <carbon:arrow-right class="inline" />
+</div>
+
 <div class="abs-br m-6 text-sm opacity-40">
 Philipp Heckel &middot; Head of Engineering at Slide
 </div>
 
+<style>
+h1 {
+  background-color: #10b981;
+  background-image: linear-gradient(45deg, #34d399 20%, #0e7490 80%);
+  background-size: 100%;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+</style>
+
 ---
+transition: fade-out
 class: text-left
 ---
 
@@ -67,7 +84,7 @@ One binary you run on a Linux box. It turns that box into a tiny platform for sm
 web apps -- your own miniature Vercel/Heroku, that you own end to end.
 
 <div class="grid grid-cols-2 gap-6 mt-8">
-<div class="p-4 rounded border border-gray-400 border-opacity-30">
+<div v-click class="p-4 rounded border border-gray-400 border-opacity-30">
 
 **Every app gets**
 
@@ -77,7 +94,7 @@ web apps -- your own miniature Vercel/Heroku, that you own end to end.
 - **snapshots**, logs, resource limits
 
 </div>
-<div class="p-4 rounded border border-gray-400 border-opacity-30">
+<div v-click class="p-4 rounded border border-gray-400 border-opacity-30">
 
 **Two ways to drive it**
 
@@ -98,14 +115,14 @@ AI agents are great at producing small apps. The awkward part is everything afte
 what else?
 
 <div class="grid grid-cols-3 gap-4 mt-8 text-sm">
-<div class="p-4 rounded border border-gray-400 border-opacity-30">
+<div v-click class="p-4 rounded border border-gray-400 border-opacity-30">
 
 **Self-hosted**
 
 Your server, your data, your costs. No per-seat SaaS, no vendor lock-in.
 
 </div>
-<div class="p-4 rounded border border-gray-400 border-opacity-30">
+<div v-click class="p-4 rounded border border-gray-400 border-opacity-30">
 
 **Isolated**
 
@@ -113,7 +130,7 @@ Each app is its own Unix user, container and network namespace. Apps cannot see 
 other.
 
 </div>
-<div class="p-4 rounded border border-gray-400 border-opacity-30">
+<div v-click class="p-4 rounded border border-gray-400 border-opacity-30">
 
 **Agent-native**
 
@@ -134,7 +151,7 @@ zoom: 0.85
 # Everything it can do
 
 <div class="grid grid-cols-2 gap-x-10 gap-y-3 mt-4">
-<div>
+<div v-click>
 
 - **Instant apps** -- create it, and it serves a live HTTPS URL immediately
 - **Static or app mode** -- serve `public/`, or run any command that binds `$PORT`
@@ -146,7 +163,7 @@ zoom: 0.85
   new app
 
 </div>
-<div>
+<div v-click>
 
 - **Bring your own agent** -- REST API + an app-scoped token; the URL is the permission
 - **Custom domains** -- your own hostname on an app, TLS issued automatically
@@ -157,6 +174,14 @@ zoom: 0.85
 
 </div>
 </div>
+
+---
+layout: fact
+transition: slide-up
+---
+
+# 1 binary
+No database server, no queue, no sidecars -- the whole platform is one Go binary on one Linux box
 
 ---
 
@@ -184,8 +209,8 @@ No database service, no message queue, no external dependencies to run. Just the
 </div>
 
 ---
-layout: center
-class: text-center
+layout: statement
+transition: fade-out
 ---
 
 # One box. Your apps. Your rules.
