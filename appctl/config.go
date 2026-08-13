@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -106,4 +107,29 @@ func (c *AppConfig) Command(hostitBin string) string {
 		return fmt.Sprintf("%s static", hostitBin)
 	}
 	return c.Run
+}
+
+// SetDescription replaces the description: value in a hostit.yml document, or
+// prepends one if there is none. A one-liner, so no multi-line handling; the rest
+// of the document (other keys, comments) is left untouched.
+func SetDescription(content, desc string) string {
+	line := "description: " + yamlQuote(desc)
+	lines := strings.Split(content, "\n")
+	for i, l := range lines {
+		if strings.HasPrefix(strings.TrimSpace(l), "description:") {
+			lines[i] = line
+			return strings.Join(lines, "\n")
+		}
+	}
+	if strings.TrimSpace(content) == "" {
+		return line + "\n"
+	}
+	return line + "\n" + content
+}
+
+// yamlQuote returns a YAML double-quoted scalar, escaping backslashes and quotes.
+func yamlQuote(s string) string {
+	s = strings.ReplaceAll(s, "\\", "\\\\")
+	s = strings.ReplaceAll(s, "\"", "\\\"")
+	return "\"" + s + "\""
 }

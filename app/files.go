@@ -157,37 +157,13 @@ func (m *Manager) Description(name string) string {
 
 // SetDescription writes the app's one-line description into its hostit.yml,
 // replacing an existing description: line or inserting one at the top, so it lives
-// with the app's config where the assistant also keeps it current.
+// with the app's config where the assistant also keeps it current. The line
+// surgery itself is appctl.SetDescription, next to the hostit.yml parsing.
 func (m *Manager) SetDescription(name, desc string) error {
 	desc = strings.ReplaceAll(strings.TrimSpace(desc), "\n", " ")
 	var content string
 	if b, err := m.ReadFile(name, configFile); err == nil {
 		content = string(b)
 	}
-	return m.WriteFile(name, configFile, []byte(setYAMLDescription(content, desc)), 0)
-}
-
-// setYAMLDescription replaces the description: value in a hostit.yml document, or
-// prepends one if there is none. A one-liner, so no multi-line handling; the rest
-// of the document (other keys, comments) is left untouched.
-func setYAMLDescription(content, desc string) string {
-	line := "description: " + yamlQuote(desc)
-	lines := strings.Split(content, "\n")
-	for i, l := range lines {
-		if strings.HasPrefix(strings.TrimSpace(l), "description:") {
-			lines[i] = line
-			return strings.Join(lines, "\n")
-		}
-	}
-	if strings.TrimSpace(content) == "" {
-		return line + "\n"
-	}
-	return line + "\n" + content
-}
-
-// yamlQuote returns a YAML double-quoted scalar, escaping backslashes and quotes.
-func yamlQuote(s string) string {
-	s = strings.ReplaceAll(s, "\\", "\\\\")
-	s = strings.ReplaceAll(s, "\"", "\\\"")
-	return "\"" + s + "\""
+	return m.WriteFile(name, configFile, []byte(appctl.SetDescription(content, desc)), 0)
 }
