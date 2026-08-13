@@ -2,8 +2,9 @@
 // btrfs. It composes the node-local services (btrfs, systemd, container) and the
 // store directly, and calls back into its Host (the app.Manager) for the
 // app-lifecycle operations a snapshot or rollback needs: taking the per-app lock,
-// bringing the app up after a rollback, running snapshot hooks, and resolving the
-// id-keyed paths, names, uid and quota of an app.
+// bringing the app up after a rollback, running snapshot hooks, resolving the
+// id-keyed paths, names and uid of an app, and joining new subvolumes to the
+// app's disk budget.
 package snapshot
 
 import (
@@ -41,7 +42,7 @@ const (
 // Host is the set of app-orchestration callbacks the Service needs from its owner
 // (app.Manager). Everything node-local (btrfs, systemd, container, the store) the
 // Service holds directly; these are the app-lifecycle operations and the id-keyed
-// path/name/uid/quota lookups that stay in the app package, so the path layout and
+// path/name/uid lookups that stay in the app package, so the path layout and
 // the deploy machinery have a single home.
 type Host interface {
 	// LockApp acquires the per-app lifecycle lock and returns its unlock func, so a

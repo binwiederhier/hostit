@@ -78,7 +78,7 @@ func (m *Manager) RenameApp(oldName, newName string) (*store.App, error) {
 	startApp()
 	// The container keeps the --hostname it was created with: podman drops
 	// CAP_SYS_ADMIN, so a running container's hostname cannot be changed without
-	// recreating it (which would lose its writable layer) or granting a near-root
+	// recreating it (a needless restart blip) or granting a near-root
 	// capability. It picks up the new name on the next deploy, which recreates it.
 	// The SSH login banner shows the app's current name regardless (it comes from
 	// the daemon); only the bare `hostname` command and the shell's \h prompt keep

@@ -111,13 +111,19 @@ func (s *Service) EnsureRootfs(a *store.App, ids IDs) error {
 	if _, err := os.Stat(rootfs); err == nil {
 		return nil
 	}
-	if err := s.EnsureBase(a.ImageTag); err != nil {
+	// An app from before pinning (empty tag) ran the current image, so that is
+	// the base its rootfs comes from -- same fallback as EnsureBase's.
+	tag := a.ImageTag
+	if tag == "" {
+		tag = ImageTag()
+	}
+	if err := s.EnsureBase(tag); err != nil {
 		return err
 	}
 	if err := os.MkdirAll(filepath.Dir(rootfs), hiddenDirMode); err != nil {
 		return err
 	}
-	if err := s.btrfs.Snapshot(s.BasePath(a.ImageTag), rootfs, false); err != nil {
+	if err := s.btrfs.Snapshot(s.BasePath(tag), rootfs, false); err != nil {
 		return fmt.Errorf("cannot snapshot rootfs for %s: %w", a.Name, err)
 	}
 	return s.chownRootfs(rootfs, ids)

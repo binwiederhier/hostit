@@ -34,9 +34,10 @@ func (m *Manager) SnapshotLoop(interval time.Duration, done <-chan struct{}) {
 }
 
 // snapshotHost adapts the Manager to snapshot.Host: it exposes the per-app lock,
-// the unlocked deploy path and the id-keyed path/name/uid/quota lookups the
-// snapshot Service calls back for. It is a thin binding, so the Manager's public
-// API stays free of these callbacks (and of a second method named Exec).
+// the unlocked deploy path, the id-keyed path/name/uid lookups and the disk
+// budget assignment the snapshot Service calls back for. It is a thin binding,
+// so the Manager's public API stays free of these callbacks (and of a second
+// method named Exec).
 type snapshotHost struct{ m *Manager }
 
 var _ snapshot.Host = snapshotHost{}

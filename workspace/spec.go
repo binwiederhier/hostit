@@ -1,8 +1,10 @@
 // Package workspace owns the workspace container: the podman create spec every
 // app container is built from (id-keyed names, uid mappings, mounts, config
-// hash) and the shared workspace image those containers run (its Containerfile,
-// content-derived tags, and the build/prune lifecycle in Service). It is pure
-// app-container policy with no callbacks into the app orchestration.
+// hash) and the storage those containers run -- the workspace image (its
+// Containerfile, content-derived tags, and the build/prune lifecycle in
+// Service), the per-tag base subvolumes exported from it, and the per-app
+// writable rootfs subvolumes. It is pure app-container policy with no callbacks
+// into the app orchestration.
 package workspace
 
 import (

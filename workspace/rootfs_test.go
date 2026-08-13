@@ -87,6 +87,18 @@ func TestEnsureRootfsSnapshotsThePinnedBaseAndChowns(t *testing.T) {
 	assert.Empty(t, fc.exportedTo)
 }
 
+func TestEnsureRootfsFallsBackToTheCurrentTagWhenUnpinned(t *testing.T) {
+	t.Parallel()
+	svc, _, r, _ := newTestService(t)
+	// An app from before pinning (empty tag) ran the current image, so its rootfs
+	// snapshots the CURRENT base -- never ".bases/" itself (the empty dir name).
+	require.NoError(t, os.MkdirAll(svc.BasePath(ImageTag()), 0o700))
+	a := &store.App{ID: "appid123", Name: "blog"}
+	require.NoError(t, svc.EnsureRootfs(a, IDs{UID: 1001, GID: 1001, Count: 65536}))
+	assert.Contains(t, r.ran(), "btrfs subvolume snapshot "+svc.BasePath(ImageTag())+" "+svc.RootfsPath("appid123"))
+	assert.NotContains(t, r.ran(), "snapshot "+filepath.Join(svc.appsDir, basesDirName)+" ")
+}
+
 func TestEnsureRootfsNeverRecreatesAnExistingRootfs(t *testing.T) {
 	t.Parallel()
 	svc, fc, r, _ := newTestService(t)
