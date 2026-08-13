@@ -126,6 +126,9 @@ func (s *Service) WriteFileFrom(home, relPath string, r io.Reader, mode os.FileM
 	if err := root.MkdirAll(path.Dir(rel), 0o755); err != nil {
 		return err
 	}
+	if err := chownParents(root, rel, chown); err != nil {
+		return err
+	}
 	tmpRel := path.Join(path.Dir(rel), tempPrefix+randomSuffix())
 	tmp, err := root.OpenFile(tmpRel, os.O_CREATE|os.O_EXCL|os.O_WRONLY, fileMode(mode))
 	if err != nil {
@@ -153,6 +156,28 @@ func (s *Service) WriteFileFrom(home, relPath string, r io.Reader, mode os.FileM
 		return err
 	}
 	return root.Rename(tmpRel, rel)
+}
+
+// chownParents gives every parent directory of rel to the app user. MkdirAll
+// creates missing parents as the daemon (root); a root-owned directory falls
+// outside the container's uid map, so without this an upload or deploy that first
+// creates uploads/ or public/ leaves it owned by host root -- the app then sees it
+// as nobody and cannot read or even chown it. Re-chowning a parent that already
+// belonged to the app is harmless, so there is no need to track which MkdirAll
+// actually created. It runs through the same os.Root as the write, so a planted
+// symlink cannot redirect the chown out of the home.
+func chownParents(root *os.Root, rel string, chown Chowner) error {
+	dir := path.Dir(rel)
+	if dir == "." || dir == "/" {
+		return nil
+	}
+	parts := strings.Split(dir, "/")
+	for i := range parts {
+		if err := chown(root, path.Join(parts[:i+1]...)); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // randomSuffix names an upload's scratch file; concurrent uploads of the same
@@ -416,6 +441,9 @@ func (s *Service) ExtractTar(home string, r io.Reader, chown Chowner) ([]string,
 				return nil, fmt.Errorf("%w: %q exceeds %d bytes", s.errInvalid, header.Name, maxUploadSize)
 			}
 			if err := root.MkdirAll(path.Dir(rel), 0o755); err != nil {
+				return nil, err
+			}
+			if err := chownParents(root, rel, chown); err != nil {
 				return nil, err
 			}
 			mode := fileMode(os.FileMode(header.Mode))

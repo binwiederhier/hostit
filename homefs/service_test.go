@@ -23,6 +23,45 @@ var errInvalid = errors.New("invalid request")
 // nopChown is the post-write chown a plain-filesystem test does not need
 func nopChown(root *os.Root, rel string) error { return nil }
 
+// recordingChown records every path handed to the post-write chown, so a test can
+// assert that new parent directories are given to the app user, not just the file.
+func recordingChown(seen *[]string) Chowner {
+	return func(root *os.Root, rel string) error {
+		*seen = append(*seen, rel)
+		return nil
+	}
+}
+
+func TestWriteFileFromGivesNewParentDirsToTheAppUser(t *testing.T) {
+	t.Parallel()
+	s, home := newTestService(t)
+	var chowned []string
+	require.NoError(t, s.WriteFile(home, "uploads/pics/logo.png", []byte("x"), 0, recordingChown(&chowned)))
+	// Not just the file: MkdirAll creates uploads/ and uploads/pics/ as the daemon
+	// (root), and a root-owned directory falls outside the container's uid map, so
+	// the app sees it as nobody and cannot even read it.
+	assert.Contains(t, chowned, "uploads")
+	assert.Contains(t, chowned, "uploads/pics")
+}
+
+func TestExtractTarGivesNewParentDirsToTheAppUser(t *testing.T) {
+	t.Parallel()
+	s, home := newTestService(t)
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+	content := "console.log(1)"
+	require.NoError(t, tw.WriteHeader(&tar.Header{Name: "public/assets/app.js", Mode: 0644, Size: int64(len(content)), Typeflag: tar.TypeReg}))
+	_, err := tw.Write([]byte(content))
+	require.NoError(t, err)
+	require.NoError(t, tw.Close())
+	var chowned []string
+	_, err = s.ExtractTar(home, &buf, recordingChown(&chowned))
+	require.NoError(t, err)
+	assert.Contains(t, chowned, "public")
+	assert.Contains(t, chowned, "public/assets")
+	assert.Contains(t, chowned, "public/assets/app.js")
+}
+
 func newTestService(t *testing.T) (*Service, string) {
 	t.Helper()
 	return New(errInvalid), t.TempDir()
