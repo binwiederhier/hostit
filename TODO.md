@@ -42,21 +42,23 @@ everything imaginable -- if it is not written down here it is not planned.
   - `RefreshDiskUsage` swallows the registry write failure: `store.UpdateAppUsage`
     throws `database or disk is full`, which is caught and only `slog.Warn`d
     (`app/quota.go:47`), so the dashboard keeps serving the last good numbers forever.
-  - **Approach decided + BOTH mechanisms validated (2026-08-13): a real hard cap,
-    no passive monitoring. Recommended: podman btrfs storage driver + exclusive
-    qgroups (no reboot needed).** The gap is the container's writable overlay layer (the
-    home already has a btrfs qgroup). `--storage-opt size` needs XFS/btrfs storage
-    (we have ext4 overlay, and the 24G disk has no room for a dedicated fs);
-    old-style ext4 quota is unsupported by the kernel. The working mechanism is
-    **ext4 journaled usrquota capped per app uid** (the overlay files are owned by
-    the app's userns host uid) -- proven on stage to cut a `dd` off exactly at the
-    cap. hostit code: `SetDiskLimit` also runs `setquota -u <appUID>` on the
-    container-storage fs (fail-open). Blocker: enabling journaled quota on the
-    existing root fs needs a one-time **offline** `tune2fs -O quota` (a maintenance
-    reboot), plus `linux-modules-extra` (quota_v2) + the `quota` package. Full
-    findings, the two infra options (root-fs quota vs bigger disk + dedicated fs),
-    the code, and the ansible are in `plans/260813-hostit-disk-hard-cap.md`. Also
-    reconsider the `disk_mb: 0` (unlimited) default. Reported 2026-08-12.
+  - **Approach decided + BOTH mechanisms validated on stage (2026-08-13): a real
+    hard cap, no passive monitoring.** The gap is the container's writable layer
+    (the home already has a btrfs qgroup). **Recommended: switch podman to the
+    btrfs storage driver -- every layer is then a real subvolume, and hostit caps
+    the container's layer with `btrfs qgroup limit -e <cap>`** (exclusive bytes,
+    because the layer is a snapshot of the image; a referenced limit counts the
+    shared ~2GB image and wedges the container). Validated: dd inside the
+    container wrote exactly ~50MiB then "Disk quota exceeded". No reboot; cost is
+    a storage-driver migration (images rebuild, containers recreate) plus a btrfs
+    pool for /var/lib/containers (grow apps.btrfs or a second loop image).
+    Alternative (works, but needs a maintenance reboot): ext4 journaled usrquota
+    per app uid on the root fs (offline `tune2fs -O quota` + linux-modules-extra +
+    quota pkg). Dead ends verified: overlay `--storage-opt size` demands XFS
+    regardless of backing fs; old-style ext4 quota unsupported by the kernel.
+    Full findings, pool-layout options, code and ansible sketches in
+    `plans/260813-hostit-disk-hard-cap.md`. Also reconsider the `disk_mb: 0`
+    (unlimited) default. Reported 2026-08-12.
 
 ## Multi-node: a proxy node and hosting nodes
 
