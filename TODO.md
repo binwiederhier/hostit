@@ -104,9 +104,6 @@ The dashboard can create, manage and delete apps and drive them in the browser
   caches the app shell (JS/CSS) but is **network-first** for `/api/*` and app previews
   so it never serves stale data. HTTPS is already in place; everything drops into
   `web/public/` and is embedded into the Go binary. No new runtime deps.
-- **Paste-to-upload in the chat.** Drag-and-drop and the "+" button now upload files
-  into the app (images also go to the model as vision); add clipboard paste of an
-  image as a natural extension.
 - **Align the chat input controls across multiple lines.** In the assistant chat
   input, when the textarea grows to multiple lines the "+" (attach) button, the model
   selector, and the send button drift out of vertical alignment. They should stay
@@ -130,9 +127,6 @@ definitions and the conversation prefix are cache-marked, so repeat turns pay th
   simple turns (small edits, questions) to Haiku (~10x cheaper) and escalate to
   Sonnet only for hard work. Even a crude heuristic (cheap model unless the last
   turn used tools heavily / the ask is large) saves a lot.
-- **Longer cache TTL for the stable prefix.** The default ephemeral cache is ~5 min;
-  after a pause the next turn re-pays full input on the large, stable system prompt +
-  tools. Use the 1-hour cache for that prefix so it stays warm across a real session.
 - **Tune the thinking / effort budget.** Adaptive thinking bills at the output rate
   ($15/M). Dial effort down for routine turns; reserve high effort for hard ones.
 - **Compact the transcript.** Context is capped at recent turns, but long sessions
@@ -155,15 +149,6 @@ definitions and the conversation prefix are cache-marked, so repeat turns pay th
   named set of users an app can be shared with at once. Ties into the future
   multi-node work only loosely; mostly a registry + authorization change.
 
-- **Terminal auto-reconnect.** The in-browser terminal's WebSocket drops on any
-  blip (network change, laptop sleep, an app restart/redeploy recreating the
-  container) and today just dies, leaving a dead pane. Reconnect automatically on
-  an unexpected close with incremental backoff capped at 60s, show a countdown
-  timer in the pane while waiting ("reconnecting in Ns..."), and add a manual
-  "Reconnect" button in the terminal bar (top right, next to SSH/pop-out/fullscreen)
-  to retry immediately. Applies to both the embedded terminal tab and the
-  full-page pop-out.
-
 - **Does the hostit daemon actually need to run as root?** It drives podman,
   systemctl, useradd/usermod, nftables and btrfs -- audit which of those truly
   require root vs could run under a dedicated user with specific capabilities or a
@@ -184,7 +169,7 @@ definitions and the conversation prefix are cache-marked, so repeat turns pay th
   target and a separately-versioned bind-mount. Preferred shape: keep the shared
   packages (`appctl`, `agent`, `run`) and add a thin `cmd/init/main.go` that links
   only the agent; `cmd/hostit` (or root `main.go`) stays the daemon/CLI; update
-  `containerCreateArgs` to mount the init binary and the preflight/`RestartStaleAgents`
+  `workspace.CreateArgs` to mount the init binary and the preflight/`RestartStaleAgents`
   accordingly. Worth doing if/when the in-container surface grows; skippable while the
   agent stays tiny. Discussed 2026-08-12.
 
@@ -216,6 +201,20 @@ definitions and the conversation prefix are cache-marked, so repeat turns pay th
 ## Done (recent)
 
 Kept briefly for context; prune when stale.
+
+- **v0.8.7 (deploy-race fix + robustness).** App systemd units are now `Type=notify`
+  with containers created `--sdnotify=conmon`, so a deploy never SIGHUPs a container
+  that has not finished starting (killed a spurious 500 on a loaded box; RestartStale
+  Agents recreates existing containers with the conmon policy on upgrade). Uploads/
+  deploys now chown the parent directories they create, not just the file, so
+  `public/`/`uploads/` are owned by the app, not host root. Token-free local CLI over
+  the peercred unix socket (`hostit apps ...` as root, no token); `apps power
+  on|off|reboot` and `apps snapshot list|create|delete` grouped. Terminal auto-
+  reconnect (backoff + countdown + manual button); paste-an-image into the chat;
+  1-hour assistant prompt cache. Internal: extracted the `workspace` package, moved
+  podman stats to `container/` and hostit.yml description surgery to `appctl`; dropped
+  the `SystemOps` facade for injected mockable interfaces; removed the dead
+  `disk-check-interval` config.
 
 - **Semi-live app previews on the dashboard (option A).** Each running app's card
   shows a non-interactive thumbnail: the app in a sandboxed iframe rendered at a
