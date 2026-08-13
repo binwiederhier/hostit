@@ -380,10 +380,10 @@ zoom: 0.92
 
 Snapshots are cheap btrfs subvolumes; rollback is a crash-safe staged swap.
 
-```mermaid
+```mermaid {scale: 0.58}
 flowchart LR
   subgraph rb["Rollback (snapshot/service.go)"]
-    direction TB
+    direction LR
     a["stage a writable<br/>copy of the target"] --> b["safety snapshot<br/>of the live home"]
     b --> c["stop + remove<br/>the container"]
     c --> d["swap homes<br/>(rename)"]
