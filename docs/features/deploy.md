@@ -5,7 +5,7 @@
 Deploying is how an app goes from "files in a home directory" to "a running web
 service on its subdomain". The owner (or their agent) describes how the app runs in
 a single file, `hostit.yml`, then triggers a deploy. hostit reads the config,
-builds the workspace image if needed, (re)creates the container when the
+makes sure the app's rootfs exists, (re)creates the container when the
 configuration changed, and starts (or reloads) the app.
 
 `hostit.yml` has two modes:
@@ -46,7 +46,9 @@ The deploy path is careful about **when a container is recreated versus reloaded
 recreating tears down the container (and any SSH/terminal session in it) and is only
 done when something load-bearing changed; a changed `run:`/`prepare:`/`mode:` only
 signals the in-container agent to restart the command. This keeps iterating on an
-app fast and non-disruptive.
+app fast and non-disruptive. Even a recreate keeps the app's filesystem: the
+container runs the app's persistent rootfs subvolume, so `apt-get` installs and
+anything else written outside the home survive it.
 
 ## User flows
 
@@ -61,8 +63,8 @@ sequenceDiagram
     API->>Mgr: Up(app)
     Mgr->>Mgr: loadConfig (read+validate hostit.yml via os.Root)
     Mgr->>Mgr: pre-deploy snapshot (btrfs, best effort)
-    Mgr->>Mgr: ensureAppImage (build workspace image if missing)
-    Mgr->>Mgr: containerCreateArgs -> config hash vs running
+    Mgr->>Mgr: EnsureRootfs (snapshot the pinned tag's base if missing)
+    Mgr->>Mgr: CreateArgs -> config hash vs running
     alt config changed (or no container)
         Mgr->>Podman: recreate container, restart unit
     else config unchanged, run: changed
@@ -101,46 +103,56 @@ sequenceDiagram
   SSH login: makes sure the container exists and runs, never recreates a live
   container, falls back to an idle workspace without a valid config).
 - **`apply`** (`app/deploy.go:apply`) is the convergence step. It ensures the app's
-  pinned image exists (`ensureAppImage`), computes the desired container create args
-  (`app/workspace.go:containerCreateArgs`) and a config hash
-  (`containerConfigHash`), compares to the running container's stored
+  rootfs exists (`workspace/rootfs.go:EnsureRootfs` -- a snapshot of its pinned
+  tag's base subvolume, a no-op for an existing rootfs, which is **never**
+  recreated), computes the desired container create args
+  (`workspace/spec.go:CreateArgs`) and a config hash
+  (`ConfigHash`), compares to the running container's stored
   `hostit.config` label (`inspectHashFormat`), and:
   - recreates the container (stop unit, remove, create with the label) if the hash
     differs or no container exists;
   - starts the unit if not active; if recreated, restarts it;
   - otherwise, if reload is allowed and there is a config, sends the agent SIGHUP to
     restart just the `run:` command ("reloaded"), else "up to date".
-- **The config hash deliberately excludes `--hostname`** (`containerConfigHash`) so a
+- **The config hash deliberately excludes `--hostname`** (`ConfigHash`) so a
   rename never forces a recreate. `env:` changes *are* in the hash, so changing env
-  recreates the container (and ends SSH sessions in it); `mode:`/`prepare:`/`run:`
-  changes only reload.
-- **The workspace container** (`app/workspace.go`): `containerCreateArgs` builds a
-  `podman create` invocation. Each app gets its own network namespace
+  recreates the container (ending SSH sessions in it, but keeping the filesystem);
+  `mode:`/`prepare:`/`run:` changes only reload.
+- **The workspace container** (`workspace/spec.go`): `CreateArgs` builds a
+  `podman create` invocation. The container runs the app's persistent rootfs
+  subvolume (`--rootfs`, chowned once to the app's uid block), not an image. Each
+  app gets its own network namespace
   (`--network slirp4netns`, loopback publish `127.0.0.1:port:80`), a contiguous uid
-  map (`0:UID:65536`, so container-root is the app's unprivileged host uid and podman
-  can idmap-mount the shared image), `--pids-limit 512`, `--security-opt
+  map (`0:UID:65536`, so container-root is the app's unprivileged host uid),
+  `--pids-limit 512`, `--security-opt
   no-new-privileges`, `--security-opt apparmor=unconfined` (podman's AppArmor
   profile otherwise blocks the multithreaded Go agent's SIGKILL to children),
   memory limit if set, the app's env, the home bind-mounted at `/home/app`, and the
   hostit binary + daemon socket dir mounted read-only. The container command is
-  `<hostitBin> agent`.
+  `<hostitBin> agent` (after `--rootfs`, since podman treats everything past it as
+  the command).
 - **The in-container agent** (`agent/service.go`) is PID 1. It loads `hostit.yml`,
   runs `prepare:` (`agent/service.go:prepare`, output timestamped into
   `log/app.log`), then starts the `run:`/`static` command (`startChild`), restarts it
   on exit, reloads it on SIGHUP (`Reload`), pauses/resumes on SIGUSR1/SIGUSR2
   (stop/start the app without touching the container), reaps zombies, and writes a
   state breadcrumb (`log/state`: running/stopped/crashed/idle) the daemon reads.
-- **The default workspace image** (`app/workspace.Containerfile`) is a Debian slim
-  with python3/venv/pip, the Go toolchain, Node.js+npm, php-cli, sqlite3, plus git,
-  curl, rsync, htop, vim, nano and the sftp server. The image tag is a hash of the
-  Containerfile (`workspaceImageTag`), so editing that file yields a new image; each
-  app is pinned to the tag it was built with (`store.App.ImageTag`), so a
-  Containerfile change only affects new apps.
+- **The workspace image is the build input, not the runtime.** The Containerfile
+  (`workspace/workspace.Containerfile`) is a Debian slim with python3/venv/pip, the
+  Go toolchain, Node.js+npm, php-cli, sqlite3, plus git, curl, rsync, htop, vim,
+  nano and the sftp server. The image tag is a hash of the Containerfile
+  (`workspace.ImageTag`), so editing that file yields a new image; each app is
+  pinned to the tag it was built with (`store.App.ImageTag`). The built image is
+  exported once per tag into a read-only base subvolume
+  (`workspace/rootfs.go:EnsureBase`), and every app's rootfs is an instant snapshot
+  of its pinned tag's base -- so a Containerfile change only affects new apps, and
+  an existing app's rootfs is never touched.
 - **CLI static server:** `cmd/app.go:execStatic` (`hostit static`) serves `~/public`
   with `appctl.StaticHandler`; this is what a `mode: static` app runs, including a
   brand-new app (whose skeleton ships `public/index.html`, the placeholder).
-- **Serialization:** image builds and `/run` execs are each serialized behind a
-  mutex (`buildMu`, `execMu`) because two at once would OOM a one-core box.
+- **Serialization:** image builds / base exports and `/run` execs are each
+  serialized behind a mutex (`buildMu`, `execMu`) because two at once would OOM a
+  one-core box.
 
 ## Other notes
 

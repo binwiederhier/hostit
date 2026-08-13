@@ -19,7 +19,7 @@
 
 Multi-user: people sign in with Google, an admin approves them from a small web
 app, and each user gets their own apps within admin-adjustable limits (app count,
-container memory, soft disk quota). Per-user API tokens make the same REST API and
+container memory, hard disk cap). Per-user API tokens make the same REST API and
 CLI available to their agent, which is the point: `hostit apps add myapp` with a
 user token is all an AI agent needs.
 
@@ -193,9 +193,11 @@ if their domain is allowed later, and removing a domain does not touch the
 accounts already approved under it -- revoking access stays a per-user decision.
 
 Limits are `app_limit` (enforced at create), `memory_mb` (podman `--memory`,
-cgroup-enforced) and `disk_mb`. Disk is a **soft** quota: the daemon measures
-each app periodically, shows usage, and stops apps that exceed it. ext4 without
-project quotas cannot hard-cap, so nothing blocks a write mid-flight.
+cgroup-enforced) and `disk_mb`. Disk is a **hard** cap: one btrfs qgroup per app
+covers its home, its root filesystem and its snapshots combined, and a write past
+the cap fails with "Disk quota exceeded" inside the container -- wherever the app
+writes, `/home/app` and `/usr` alike. A `disk_mb` of 0 means the platform default
+(2 GB); nothing is unlimited.
 
 Without Google credentials configured, the web login returns 501 and the REST API
 plus CLI keep working with the admin token.
@@ -524,9 +526,12 @@ subvolume, which unlocks two things:
   (`POST /api/apps/{app}/fork` with `{"new_name": "...", "snapshot_id": "..."}`; the
   snapshot id is optional.)
 
-- **Hard disk quotas.** The app's `disk_mb` limit is enforced by a btrfs qgroup, so
-  a write past it fails immediately (EDQUOT) instead of the app being stopped later
-  by a periodic sweep.
+- **Hard disk quotas.** The app's `disk_mb` limit is enforced by one btrfs qgroup
+  per app spanning its home, its root filesystem and its snapshots, capped on the
+  bytes the app itself pins (data shared with the base image is free). A write past
+  the cap fails immediately (EDQUOT) -- in the home or anywhere else in the
+  container -- instead of the app being stopped later by a periodic sweep. A
+  `disk_mb` of 0 falls back to the platform default (2 GB); nothing is unlimited.
 
 Setting this up is a one-off: a btrfs image on a loopback file, mounted at the
 app-homes path -- see [Development](#development). It needs no extra block device.
@@ -599,8 +604,10 @@ hostit info        # name, URL, port
 ```
 
 Changing `env:` recreates the container (which kicks active SSH sessions, like
-docker); changing `mode:`, `prepare:` or `run:` only restarts the app inside it. Keys hostit does not know are an error, so a typo is reported rather than
-quietly ignored.
+docker, but keeps all files and installed packages -- the container's filesystem
+is persistent); changing `mode:`, `prepare:` or `run:` only restarts the app
+inside it. Keys hostit does not know are an error, so a typo is reported rather
+than quietly ignored.
 
 ## Notes
 
@@ -610,9 +617,12 @@ quietly ignored.
   behind an existing TLS-terminating proxy.
 - The app CLI talks to the daemon via `/run/hostit/hostit.sock`, authenticated by
   the kernel (SO_PEERCRED); app users can only ever act on their own app.
-- The workspace image is built once for the whole host. The earlier rootless
-  model forced a per-app copy (~40s and ~230 MB each), which is why the image is
-  now shared across apps.
+- The workspace image is built once for the whole host, then exported once per
+  image tag into a read-only base subvolume; each app's container runs its own
+  persistent root filesystem, an instant snapshot of that base. Recreating the
+  container (config change, daemon upgrade) keeps the filesystem, so `apt-get`
+  installs survive redeploys. The earlier rootless model forced a per-app image
+  copy (~40s and ~230 MB each), which is why the build is shared.
 - On small hosts, give the machine swap: an `apt`-based image build inside a
   container gets OOM-killed on a 512 MB box.
 - Scale-out to multiple runner hosts behind one proxy is on the roadmap (the

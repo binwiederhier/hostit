@@ -8,58 +8,6 @@ everything imaginable -- if it is not written down here it is not planned.
 - is "hostit apps" api really necessary?
 - what is v1/self and why is it not just the same api as the main api?
 
-## Bugs
-
-- **A full disk wedges silently instead of surfacing "out of disk".** Filling the
-  disk produced no hostit-level error, the dashboard disk-usage stats froze (never
-  updated for 5-10 min), and the only signal was podman failing in the terminal
-  view: `Error: saving container ... state: database or disk is full`. Root causes,
-  all confirmed in the code:
-  - The registry DB (`/var/lib/hostit/hostit.db`, `DataDir`) and the apps
-    (`/var/lib/hostit/apps/<id>`, `AppsDir`) share one filesystem/btrfs pool, so an
-    app filling its subvolume fills the space the daemon's SQLite and podman's
-    container-state DB write to. The terminal error is podman's *host*-level
-    disk-full, not a per-app event.
-  - **No host free-space guard exists anywhere** -- nothing calls `Statfs`/checks
-    `Bavail`. hostit only ever sets per-app btrfs qgroup caps.
-  - A qgroup cap is not a reservation: an app with `disk_mb: 0` (unlimited -- what
-    `callerDiskLimit` returns when the owner/admin default is 0) has *no* cap and can
-    eat the whole pool; and even set caps can be oversubscribed (sum of quotas >
-    capacity), so the host fills while every app is "within quota".
-  - **The btrfs qgroup only covers the app HOME subvolume, not the container's
-    writable overlay layer.** Confirmed live on stage 2026-08-12: `thatphilguy-fork`
-    had a 10MB home quota, yet a tenant `dd`'d ~8GB into `/usr/bin/aa` and
-    `/usr/bin/bb` *inside the container*, which lands in
-    `/var/lib/containers/storage/overlay/<layer>/diff` -- unquota'd -- and filled the
-    host to 100%. Recovery required `rm`-ing those two files directly from the
-    overlay diff (podman itself could not even remove the container: its own state DB
-    write failed with "database or disk is full"), then deleting the app. So any real
-    per-app disk cap has to bound the *container writable layer* too (e.g. a storage
-    quota / `--storage-opt size=`, or move the writable layer onto a quota'd btrfs
-    subvolume), not just the mounted home.
-  - Per-app enforcement is EDQUOT delivered to the *app's own* write() calls inside
-    the container, so the app sees ENOSPC, not hostit -- nothing surfaces it.
-  - `RefreshDiskUsage` swallows the registry write failure: `store.UpdateAppUsage`
-    throws `database or disk is full`, which is caught and only `slog.Warn`d
-    (`app/quota.go:47`), so the dashboard keeps serving the last good numbers forever.
-  - **Approach decided + BOTH mechanisms validated on stage (2026-08-13): a real
-    hard cap, no passive monitoring.** The gap is the container's writable layer
-    (the home already has a btrfs qgroup). **Recommended: switch podman to the
-    btrfs storage driver -- every layer is then a real subvolume, and hostit caps
-    the container's layer with `btrfs qgroup limit -e <cap>`** (exclusive bytes,
-    because the layer is a snapshot of the image; a referenced limit counts the
-    shared ~2GB image and wedges the container). Validated: dd inside the
-    container wrote exactly ~50MiB then "Disk quota exceeded". No reboot; cost is
-    a storage-driver migration (images rebuild, containers recreate) plus a btrfs
-    pool for /var/lib/containers (grow apps.btrfs or a second loop image).
-    Alternative (works, but needs a maintenance reboot): ext4 journaled usrquota
-    per app uid on the root fs (offline `tune2fs -O quota` + linux-modules-extra +
-    quota pkg). Dead ends verified: overlay `--storage-opt size` demands XFS
-    regardless of backing fs; old-style ext4 quota unsupported by the kernel.
-    Full findings, pool-layout options, code and ansible sketches in
-    `plans/260813-hostit-disk-hard-cap.md`. Also reconsider the `disk_mb: 0`
-    (unlimited) default. Reported 2026-08-12.
-
 ## Multi-node: a proxy node and hosting nodes
 
 Today one machine is everything: it terminates TLS, proxies, holds the registry,
@@ -201,16 +149,27 @@ definitions and the conversation prefix are cache-marked, so repeat turns pay th
 - **Long jobs.** `POST /api/apps/{app}/run` is bounded at five minutes, so a first
   `npm install` on a small box can outlast it. Anything longer has to become a
   `prepare:` step, which is fine but not obvious.
-- **Persist apt-installed packages across a container recreate.** Packages a tenant
-  `apt-get install`s live in the container's writable layer, so a deploy/reboot that
-  recreates the container loses them. Options: a per-app overlay/commit, or a
-  documented `prepare:` step that reinstalls them on every build. (The image-version
-  half of this -- pinning each app to the image tag it was built with -- is done; see
-  Done below.)
-
 ## Done (recent)
 
 Kept briefly for context; prune when stale.
+
+- **Hard disk cap + rootfs storage (fixes the full-disk wedge reported
+  2026-08-12).** App containers now run a persistent per-app btrfs rootfs
+  subvolume (`.rootfs/<id>`, snapshotted from a read-only per-image-tag base in
+  `.bases/<tag>`; plain podman `--rootfs`, the image store is only the build
+  input), and every app has one hierarchical budget qgroup (`1/<uid>`) over
+  home + rootfs + snapshots, hard-capped on **exclusive** bytes at `disk_mb` --
+  a write past the cap fails with EDQUOT wherever the tenant writes (`/home/app`
+  or `/usr` alike), and `disk_mb: 0` now means a 2 GB default, so nothing is
+  unlimited. A one-time, settings-gated startup migration moved existing apps
+  (kept home state, dropped pre-existing snapshots, built each rootfs, budgeted
+  every app). Remaining, accepted: budgets can oversubscribe the (bounded) apps
+  pool; the host root fs and the daemon's SQLite live outside it and stay safe.
+  Design: `plans/260813-hostit-disk-hard-cap.md` section 3c.
+- **Persist apt-installed packages across a container recreate.** Solved by the
+  rootfs work above: an app's rootfs, once created, is never recreated or reset,
+  so `apt-get install`s survive deploys, reboots and daemon upgrades. A
+  Containerfile change mints a new base for new apps only.
 
 - **v0.8.8 (poweroff sticks).** Powering off an app disabled its unit, but any
   SSH/browser-terminal login called `Ensure`, which started the container back up

@@ -278,7 +278,7 @@ func (m *Manager) create(name string, opts *CreateOptions, seedPath, seedRootfsI
 
 	// Create the user, install keys and populate the home directory. The uid is a
 	// contiguous block derived from the (unique) port, so the container maps as a
-	// single offset and podman idmap-mounts the image instead of copying it.
+	// single offset and the rootfs is chowned to the block once (see workspace.IDs).
 	home := m.appHomeByID(app.ID)
 	// Seed the home. A fork is a writable snapshot of the seed subvolume (an instant
 	// CoW copy of its files); a fresh app is an empty subvolume on btrfs that the

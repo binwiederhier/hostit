@@ -10,7 +10,7 @@ pages zoom in on one mechanism each.
 ## Pages
 
 - [security-isolation.md](security-isolation.md) -- the full isolation model: the
-  per-app contiguous uid block, podman idmapped mounts, per-app network namespace
+  per-app contiguous uid block and uid map, per-app network namespace
   and nftables port rules keyed to the uid, `os.OpenRoot` containment for file
   operations, `hostit-shell` (SSH lands in the container, never a host shell),
   the sshd forwarding hardening, and the trust boundary (the root daemon is the
@@ -25,7 +25,9 @@ pages zoom in on one mechanism each.
   subscription sandbox (`claude -p` in a locked-down container, tools mediated
   MCP-over-peercred-socket). Why a credential's *presence* is the whole switch.
 - [storage-btrfs.md](storage-btrfs.md) -- the btrfs storage model: per-app home
-  subvolumes, read-only CoW snapshots, reflink fork, qgroup hard quotas (EDQUOT),
+  and rootfs subvolumes (containers run `--rootfs`, not an image; per-tag base
+  subvolumes; installs survive recreates), read-only CoW snapshots, reflink fork,
+  the per-app budget qgroup hard-capped on exclusive bytes (EDQUOT),
   the pure retention/GFS engine, and why btrfs is now mandatory.
 - [release-and-preflight.md](release-and-preflight.md) -- how hostit is built,
   shipped and started: goreleaser and the `.deb`, the example Ansible role, the

@@ -53,12 +53,12 @@ uidFor(port) = uidBlockStart + (port - PortMin) * uidBlockSize
              = 1_000_000     + (port - PortMin) * 65536
 ```
 
-The constants are in `app/workspace.go` (`uidBlockStart = 1_000_000`,
-`uidBlockSize = 65536`). Because ports are unique per app (`allocatePort`), the
+The constants are in `workspace/spec.go` (`UIDBlockStart = 1_000_000`,
+`UIDBlockSize = 65536`). Because ports are unique per app (`allocatePort`), the
 base uids never collide, and the blocks tile the uid space without overlap.
 
 The container is created with the block as a single offset
-(`app/workspace.go:containerCreateArgs`):
+(`workspace/spec.go:CreateArgs`):
 
 ```
 --uidmap 0:<base>:65536   --gidmap 0:<base>:65536
@@ -69,20 +69,22 @@ base uid**, and the whole range up to `nobody` maps one-to-one above it.
 
 ### Why contiguity is load-bearing
 
-A single contiguous range is what lets podman use a **kernel idmapped mount** of
-the shared workspace image: the mapping is one uniform offset, applied by the
-kernel at mount time, instant and with no copy. The alternative -- a split map
-like `0:uid:1` plus `1:subuid:N` -- forces podman to **chown a private copy of
-the whole image** for that mapping, which is slow and multiplies disk use per
-app. This is documented on the `IDs` type (`app/workspace.go:IDs`), which carries
-`{UID, GID, Count}` from `systemOps.LookupIDs` (`app/system.go`) into the create
-args. Keep the block contiguous, or every app pays for a private image copy.
+The container runs the app's own persistent rootfs subvolume (`--rootfs`, an
+instant snapshot of the shared read-only base -- see
+[storage-btrfs.md](storage-btrfs.md)), and that rootfs is **chowned once to the
+app's block** at creation, because this crun cannot idmap-mount a `--rootfs`.
+A single contiguous range keeps the mapping one uniform offset, so that one-time
+chown is all it takes: every uid a workload uses inside the container lands
+inside the app's own block, on the rootfs and the bind-mounted home alike. A
+split map like `0:uid:1` plus `1:subuid:N` would break that correspondence. This
+is documented on the `IDs` type (`workspace/spec.go:IDs`), which carries
+`{UID, GID, Count}` into the create args. Keep the block contiguous.
 
 ## App vs host: what an escape lands as
 
 The uidmap already means a container escape lands as the app's unprivileged host
 uid, not root. Three more create flags harden the container itself
-(`app/workspace.go:containerCreateArgs`):
+(`workspace/spec.go:CreateArgs`):
 
 - `--network slirp4netns` gives each app its **own network namespace** with no
   peers and no host loopback, so one app cannot reach another's published port
@@ -257,7 +259,7 @@ on itself is a channel where identity is a fact the app cannot forge.**
   outside a container. An app can therefore ask about *itself* and act on
   *itself*, and **cannot name another app**. The socket directory (not the socket
   file) is bind-mounted into the container, because the daemon recreates the
-  socket on every start (`app/workspace.go:appendCommonMounts`).
+  socket on every start (`workspace/spec.go:appendCommonMounts`).
 - **From the outside REST API:** an app-scoped bearer token that maps to exactly
   one app's endpoints; anything outside `/api/apps/<app>/` is refused. The
   sandboxed Claude Max backend reaches its tools through the *same* peercred

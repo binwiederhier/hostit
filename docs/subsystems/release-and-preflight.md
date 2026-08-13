@@ -28,7 +28,7 @@ whole host contract:
 | `server.yml.example` | `/etc/hostit/server.yml.example` | config template |
 
 Package **dependencies** are the host tools the daemon shells out to: `podman`,
-`uidmap` (for idmapped container filesystems), `slirp4netns` (per-app netns),
+`uidmap` (per-app user-namespace uid mappings), `slirp4netns` (per-app netns),
 `nftables`, `dbus-user-session`, `openssh-server`, with `passt` recommended.
 
 The **postinstall** script (`scripts/postinst.sh`) does only what is safe on every
@@ -92,9 +92,9 @@ flowchart TB
     root -->|yes| dirs["mkdir data-dir (0711) + apps-dir"]
     dirs --> btr{"apps-dir on btrfs?"}
     btr -->|no| die2["refuse to start"]
-    btr -->|yes| open["open store, build Manager"]
-    open --> bg["background: build workspace image,<br/>RestartStaleAgents, prune old images"]
-    open --> rec["ReconcileOrphans (units/containers/homes)"]
+    btr -->|yes| open["open store, build Manager,<br/>enable disk budgets,<br/>one-time rootfs migration"]
+    open --> bg["background: build workspace image + export base rootfs,<br/>RestartStaleAgents, prune old images/bases"]
+    open --> rec["ReconcileOrphans (units/containers/homes/rootfs/budgets)"]
     open --> loops["disk / state / snapshot / domain-retry loops"]
     open --> srv["serve HTTPS + REST + socket"]
     style die1 fill:#7f1d1d,color:#fff
@@ -102,17 +102,21 @@ flowchart TB
 ```
 
 After the preflight, startup opens the store (which runs any pending schema
-migrations), builds the `Manager`, and kicks off background work: build the shared
-workspace image, restart stale agents, prune superseded images
-(`cmd/serve.go`, the `go func`), reconcile orphaned units/containers/homes against
-the registry (`app/reconcile.go`), and start the periodic loops (disk usage, state,
-hourly snapshots, custom-domain retry).
+migrations), builds the `Manager`, enables btrfs quota accounting
+(`EnableDiskBudgets`) and runs the one-time, settings-gated rootfs storage
+migration (`app/migrate.go`; a partial run only warns and resumes at the next
+start). It then kicks off background work: build the shared workspace image and
+export its base rootfs subvolume, restart stale agents, prune superseded images
+and unpinned bases (`cmd/serve.go`, the `go func`), reconcile orphaned
+units/containers/homes/rootfs/budget-qgroups against the registry
+(`app/reconcile.go`), and start the periodic loops (disk usage, state, hourly
+snapshots, custom-domain retry).
 
 ## Why agents only upgrade on a restart
 
 An app's **agent is PID 1 inside its container**, exec'd from the hostit binary as
 it was at container-create time. The binary is **bind-mounted** into the container
-as a file (`app/workspace.go:appendCommonMounts`), so replacing `/usr/bin/hostit`
+as a file (`workspace/spec.go:appendCommonMounts`), so replacing `/usr/bin/hostit`
 on the host swaps the file, but a **running container keeps the inode it started
 with** -- the old agent behaviour keeps running until the container is recreated.
 
@@ -129,10 +133,12 @@ built differently, and only `apply` notices that), then records the new version
 (`app/upgrade.go`). It runs in the background because it costs each app a moment of
 downtime and the proxy should come up first. `app.Version` is itself part of each
 container's identity (a `hostit.version` label,
-`app/workspace.go:containerCreateArgs`), so `apply` recreates a container whose
-label predates the current build.
+`workspace/spec.go:CreateArgs`), so `apply` recreates a container whose
+label predates the current build. A recreate keeps the app's filesystem: the
+container runs the app's persistent rootfs subvolume, so installed packages
+survive an upgrade.
 
-## No one-off migrations anymore
+## One-off migrations: gated and idempotent only
 
 hostit used to carry imperative one-off migrations run once at startup (e.g. the
 older single-uid -> contiguous-uid-block remap, and the `app_id`/`image_tag`
@@ -147,9 +153,15 @@ and a foot-gun. What remains is:
 - **Idempotent reconciliation** on every start (`app/reconcile.go`) and the
   **version-gated** `RestartStaleAgents` -- both safe to run every boot, neither a
   one-shot.
+- **Settings-gated, ensure-style data migrations** for the rare genuinely one-time
+  transform. The current example is the rootfs storage migration
+  (`app/migrate.go:MigrateRootfsStorage`): every step is idempotent, only a fully
+  successful pass records the settings gate, and later starts skip on it -- so a
+  run killed halfway resumes safely, and once complete it costs a single settings
+  read per start until it is eventually removed.
 
-If you need a genuinely one-time data transform in the future, do it as a schema
-migration (if SQL can express it) or a version-gated idempotent step, not a
+If you need a one-time data transform in the future, do it as a schema
+migration (if SQL can express it) or a gated idempotent step like the above, not a
 run-once imperative block that lingers in `serve`. See the related design notes in
 `plans/260808-hostit-app-id-identity.md` and
 `plans/260809-hostit-app-id-image-pinning-migration.md`.

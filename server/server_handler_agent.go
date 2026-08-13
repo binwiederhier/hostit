@@ -331,7 +331,8 @@ func (s *Server) agentGuide(appName, description string) *apiAgentInfoResponse {
 			"Optional in both: env: {KEY: value}, and description: a one-liner about the app. " +
 			"Unknown keys are an error, so a typo is reported rather than ignored.",
 		Runtimes: workspace.Runtimes + ". Install anything else inside the container with apt-get; " +
-			"a new app starts as a stub serving a placeholder page.",
+			"installed packages persist across restarts and redeploys (the container's filesystem is the app's " +
+			"own durable disk) and count against the app's disk budget. A new app starts as a stub serving a placeholder page.",
 		SuggestedStack: "A single Go binary that embeds its frontend (go:embed) is the easiest thing to run here: " +
 			"one file, no runtime to install, instant start. Use run: ./" + appctl.BinDir + "/myapp listening on 0.0.0.0:$PORT. " +
 			"Python, Node.js (with npm) and PHP work out of the box, a plain HTML site needs only mode: static, and anything else installs with apt-get.\n\n" +
@@ -366,7 +367,7 @@ func (s *Server) agentGuide(appName, description string) *apiAgentInfoResponse {
 		},
 		Notes: []string{
 			"Apps also accept SSH: the owner's SSH keys work, and you can scp/rsync into the app's home directory.",
-			"Changing env: recreates the container (which ends any SSH session in it); changing mode:, prepare: or run: only restarts the app inside it.",
+			"Changing env: recreates the container (which ends any SSH session in it, but keeps all files and installed packages); changing mode:, prepare: or run: only restarts the app inside it.",
 			"/run is bounded: a minute by default, five at most, and its output is capped. Anything longer belongs in \"prepare:\". A command you background (with & and its output redirected) keeps running after /run returns -- useful, but nothing will stop it except POST /reboot, which replaces the container.",
 			"Your app has 512 processes and its memory limit to work with, and the disk quota is shared with everything else in the app. A build that fans out past that fails rather than taking the host with it.",
 			"Deleting an app, renaming it, and attaching a custom domain are done by the owner in the web app, not through this API. A rename keeps the app running and changes none of its files, so nothing you build here is affected.",

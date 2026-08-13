@@ -5,10 +5,11 @@
 hostit caps three resources so one app -- or one user -- cannot starve the rest of a
 node:
 
-- **Disk quota** (`disk_mb`, per app): how much the app's home may use. On a btrfs
-  host this is a hard cap enforced by a btrfs qgroup -- a write past it fails
-  immediately with `EDQUOT`. On a non-btrfs host it is measured and reported but not
-  enforced.
+- **Disk budget** (`disk_mb`, per app): how much the app may pin on disk, across its
+  home, its container's root filesystem and its snapshots combined. It is a hard cap
+  enforced by one btrfs qgroup per app -- a write past it fails immediately with
+  `EDQUOT` ("Disk quota exceeded"), wherever the app writes. A `disk_mb` of 0 means
+  the platform default (2048 MB); nothing is unlimited.
 - **Memory limit** (`memory_mb`, per app): the container's memory cap, enforced by the
   kernel via podman/cgroups.
 - **App-count limit** (`app_limit`, per user): how many apps a user may own at once.
@@ -26,13 +27,15 @@ a memory leak, a log that fills the disk -- would take the whole box and every o
 tenant with it. The three limits are the guardrails that make multi-tenancy safe on
 one machine.
 
-The disk quota is deliberately a **hard** cap on btrfs (qgroup `EDQUOT`) rather than a
+The disk budget is deliberately a **hard** cap (qgroup `EDQUOT`) rather than a
 soft "measure and stop it later" sweep: a background sweep would let an app blow far
 past its limit before anything noticed, and stopping the app after the fact is a
-worse failure than the write itself failing. On filesystems that cannot hard-cap,
-hostit degrades to soft accounting rather than refusing to run -- it still runs
-anywhere, it just loses enforcement (README: btrfs is recommended precisely because
-snapshots, rollback, fork and hard quotas are core).
+worse failure than the write itself failing. It also deliberately covers
+**everything the tenant can write**, not just the home: before the rootfs model, an
+app once filled the whole host from inside a 10 MB-quota'd app by writing into
+`/usr` (the then-uncapped container writable layer), wedging the daemon's own
+SQLite. btrfs is mandatory for exactly this reason -- the daemon refuses to start
+without it, rather than degrading to unenforced accounting.
 
 Limits are **per-user with per-app application**: a user's plan is expressed once
 (their `Limits`), and every app they make inherits the same disk/memory cap. The
@@ -54,7 +57,7 @@ sequenceDiagram
     API->>UM: Limits(user) -> {AppLimit, MemoryMB, DiskMB}
     API->>AM: CreateApp(name, {MemoryMB, DiskMB, ...})
     AM->>AM: SetMemoryLimit (applied on container create)
-    AM->>Btrfs: SetDiskLimit -> qgroup limit <DiskMB>M on the home subvolume
+    AM->>Btrfs: budget qgroup 1/<uid>: home + rootfs join, limit -e <DiskMB>M
     Note over Btrfs: later writes past the limit fail with EDQUOT
     loop background
         AM->>AM: RefreshDiskUsage (record disk_mb for the dashboard)
@@ -97,57 +100,70 @@ sequenceDiagram
 
 - Recorded per app in `Manager.memoryMB` (`app/deploy.go:SetMemoryLimit` /
   `memoryLimit`), cached in memory rather than only in the DB so redeploys keep it.
-- Applied when the container is (re)created: `app/workspace.go:containerCreateArgs`
+- Applied when the container is (re)created: `workspace/spec.go:CreateArgs`
   adds `--memory <MB>m` when the limit is > 0 (0 means unlimited). The kernel enforces
   it via cgroups.
 - Live usage is read from `podman stats` (`app/state.go:resourceUsage`, parsed by
   `parseMemMB`) and surfaced in `State.MemoryMB`.
 
-### Disk quota
+### Disk budget
 
-- Recorded per app in `Manager.diskMB` (`app/quota.go:SetDiskLimit` / `diskLimit`).
-- On btrfs, `SetDiskLimit` also sets the subvolume's qgroup limit
-  (`btrfs/service.go:SetQuota` -> `btrfs qgroup limit <MB>M <home>`; `0` clears it).
-  This is a **hard** limit: a write past it fails with `EDQUOT`. Quota must already be
-  enabled on the filesystem (a one-off at setup).
-- Applied at create/fork (`app/service.go:create` calls `SetDiskLimit`) and re-applied
-  after a rollback (`app/snapshot.go:Rollback` calls `btrfs.SetQuota`), so the cap
-  survives a home swap.
+- Each app has one hierarchical qgroup, `1/<uid>` (`app/budget.go:budgetGroup`,
+  keyed on the app's unix uid: stable across renames, unique per app). Its members
+  are the app's home subvolume, its rootfs subvolume, and every snapshot subvolume
+  (`app/budget.go:ensureBudget`; the snapshot service joins each subvolume it
+  creates via `snapshot.Host.AssignBudget`).
+- The group is capped on **exclusive bytes** (`btrfs/service.go:QgroupLimitExclusive`
+  -> `btrfs qgroup limit -e <MB>M`): the app pays for what it alone pins, while data
+  still shared with the read-only base rootfs is charged to nobody. This is a
+  **hard** limit: a write past it fails with `EDQUOT` -- in the home or anywhere
+  else inside the container. Quota accounting is enabled at every start
+  (`app/budget.go:EnableDiskBudgets`).
+- A stored `disk_mb` of 0 (or less) is enforced as the 2048 MB default
+  (`app/budget.go:effectiveDiskCapMB`); nothing is unlimited.
+- Recorded per app in `Manager.diskMB` (`app/quota.go:SetDiskLimit` / `diskLimit`);
+  `SetDiskLimit` re-caps the budget group. The budget is set up at create/fork and
+  re-ensured at startup; a rollback needs no re-application, because the staged home
+  joins the group before the swap and qgroup membership survives the rename.
 - **Usage accounting** (`app/quota.go:RefreshDiskUsage` / `DiskUsageLoop`,
-  `measureDiskMB`): on btrfs it reads the qgroup's referenced bytes
-  (`btrfs.UsageMB`, cheap and accurate, no directory walk); on other filesystems it
-  walks the home directory. The measured value is stored via `Store.UpdateAppUsage`
-  into `app.disk_mb` for the dashboard. On btrfs this loop is pure accounting -- the
-  qgroup already enforces the cap, so there is nothing here to stop.
+  `measureDiskMB`): reads the budget group's exclusive bytes
+  (`btrfs.ExclusiveUsageMB`, cheap and accurate, no directory walk) -- the true
+  bytes the app pins, i.e. what deleting it would free. A fresh app shows ~47 MB,
+  the metadata cost of chowning its rootfs snapshot. The measured value is stored
+  via `Store.UpdateAppUsage` into `app.disk_mb` for the dashboard. The loop is pure
+  accounting -- the qgroup already enforces the cap, so there is nothing here to
+  stop.
 - Snapshots are stored **beside** the app subvolumes, under `.snapshots/<id>/`
-  (`app/btrfs.go:snapshotsDirName`), not inside the home, so a snapshot's space is not
-  charged to the app's own quota.
+  (`app/btrfs.go:snapshotsDirName`), not inside the home, but they are members of
+  the budget group: under exclusive accounting a snapshot only costs budget for
+  data that has since diverged from the live home.
 
 ### btrfs detection
 
 - `app/btrfs.go:btrfsEnabled` caches whether `AppsDir` is btrfs (via
-  `btrfs.Filesystem` -> `stat -f`). On a plain ext4 host it is false and hostit keeps
-  its plain-directory, soft-quota behavior. The detection is logged once so a
-  mis-detection is visible rather than silent.
+  `btrfs.Filesystem` -> `stat -f`). With the mandatory preflight
+  (`cmd/preflight.go:requireBtrfs`) it is always true in a real deployment; the
+  guards remain as defense in depth and for the fake-ops unit tests. See the note in
+  [storage-btrfs.md](../subsystems/storage-btrfs.md).
 
 ## Other notes
 
-- **Hard vs soft disk quota is the headline gotcha.** The README's `## Users, roles
-  and limits` section (older text) still describes disk as a *soft* quota; the
-  `## Snapshots, rollback and quotas` section and the code describe the current
-  behavior: hard on btrfs (qgroup `EDQUOT`), soft/report-only elsewhere. Treat the
-  code (`btrfs/service.go:SetQuota`, `app/quota.go`) as authoritative.
-- **The disk quota is shared** by everything in the app (the app process, builds,
-  logs, uploaded files, dependencies). A build that fans out past the quota fails
-  rather than taking the host with it -- as does one past the 512-process
-  (`app/workspace.go:maxProcesses`) or memory limit.
+- **The budget spans the whole app.** Home, rootfs and snapshots are one number: an
+  `apt-get install` (rootfs) competes with uploaded files (home) and retained
+  snapshot divergence for the same `disk_mb`. Treat the code (`app/budget.go`,
+  `app/quota.go`) as authoritative.
+- **The disk budget is shared** by everything in the app (the app process, builds,
+  logs, uploaded files, dependencies, installed packages). A build that fans out
+  past the budget fails rather than taking the host with it -- as does one past the
+  512-process (`workspace/spec.go:maxProcesses`) or memory limit.
 - **Process limit** is a fourth, fixed guardrail: `--pids-limit 512` on every
   container, not user-configurable, sized generously for a build but far below what it
   takes to exhaust the host.
 - **Changing a user's limits does not retroactively resize existing apps' caps** in
   the running daemon beyond what a redeploy re-applies; disk is re-applied on
-  create/fork/rollback, memory on the next container (re)create.
+  create/fork and at every daemon start (`applyStoredLimits` in `cmd/serve.go`),
+  memory on the next container (re)create.
 - **Related:** [apps-lifecycle.md](apps-lifecycle.md) (create enforces the app-count
   limit and applies the caps), [fork.md](fork.md) (also counts against the app limit
   and inherits the caps), [snapshots-rollback.md](snapshots-rollback.md) (shares the
-  btrfs substrate and re-applies the quota).
+  btrfs substrate; snapshots join the budget group).

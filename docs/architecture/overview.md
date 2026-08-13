@@ -102,7 +102,9 @@ three non-negotiable prerequisites hold: it is root, every external binary it dr
 is installed, and the app-homes directory is on btrfs
 (`cmd/preflight.go:checkHostRequirements`, `requireBtrfs`). btrfs is mandatory:
 snapshots, rollback, fork and hard disk quotas are core, not optional. Only then does
-it open the store, build the workspace image in the background, restart any app whose
-agent predates this build, reconcile orphans, and start the listeners. The full
-sequence is in [`flows.md`](flows.md).
+it open the store, enable btrfs quota accounting and run the one-time rootfs storage
+migration (`app/migrate.go`), apply the stored disk limits, build the workspace image
+and export its base rootfs in the background, restart any app whose agent predates
+this build, reconcile orphans, and start the listeners. The full sequence is in
+[`flows.md`](flows.md).
 </content>

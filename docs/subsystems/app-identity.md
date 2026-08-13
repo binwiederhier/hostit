@@ -17,6 +17,7 @@ flowchart LR
     subgraph stable["Stable (the id) -- everything durable"]
         id["id: a1b2c3d4..."]
         home["home apps/&lt;id&gt;"]
+        rootfs["rootfs .rootfs/&lt;id&gt;"]
         snaps["snapshots .snapshots/&lt;id&gt;/"]
         cont["container hostit-app-&lt;id&gt;"]
         unit["unit hostit-app@&lt;id&gt;"]
@@ -34,11 +35,14 @@ can be created id-named. From then on:
 
 - **Home directory:** `apps/<id>` (`app/deploy.go:appHomeByID`, and `appHome`
   which resolves a name to its id first via `app/deploy.go:appID`).
+- **Container rootfs:** `apps/.rootfs/<id>` (`workspace/rootfs.go:RootfsPath`) --
+  the app's persistent root filesystem, keyed on the id like the home, so a
+  rename never moves it.
 - **Snapshots:** `apps/.snapshots/<id>/<snapshot-id>`
   (`app/btrfs.go:snapshotsRoot`, `snapshotPath`) -- keyed on the id like the home,
   so a rename does not move them.
-- **Container:** `hostit-app-<id>` (`app/workspace.go:containerNameForID`).
-- **systemd unit:** `hostit-app@<id>.service` (`app/workspace.go:unitNameForID`),
+- **Container:** `hostit-app-<id>` (`workspace/spec.go:ContainerName`).
+- **systemd unit:** `hostit-app@<id>.service` (`workspace/spec.go:UnitName`),
   the per-app instance of `hostit-app@.service`.
 - **Per-app DB tables:** every one keys on `app_id` -- `app_key`, `token`,
   `assistant_session`, `snapshot`, `app_domain`, `app_event`, `app_usage`,
@@ -46,8 +50,8 @@ can be created id-named. From then on:
   `store/migrate.go`, the "Point every per-app table at app.id" step). The join
   key is the id; the name is looked up from the id, never stored as the join key.
 
-The `containerHome` inside the container is a fixed path (`/home/app`), not the
-app name (`app/workspace.go`), for the same reason: a rename never has to recreate
+The `ContainerHome` inside the container is a fixed path (`/home/app`), not the
+app name (`workspace/spec.go`), for the same reason: a rename never has to recreate
 the container just to fix a mount path.
 
 ## A rename is `usermod -l` plus one DB update
@@ -68,8 +72,10 @@ the Unix login name, and the app row's `name` column. `app/rename.go:RenameApp`:
    move.
 
 No data move. No container recreate. The app keeps whatever state it built up (its
-writable layer, installed packages), because the container is the same one -- it is
-addressed by id, which did not change.
+rootfs, installed packages), because the container is the same one -- it is
+addressed by id, which did not change. (Even a recreate would keep that state now:
+the rootfs is a persistent id-keyed subvolume; not recreating is about avoiding the
+restart, not about data.)
 
 ```mermaid
 sequenceDiagram
@@ -114,12 +120,13 @@ request.
 
 The container keeps the `--hostname` it was created with (`app/rename.go`, closing
 comment): podman drops `CAP_SYS_ADMIN`, so a running container's hostname cannot
-change without recreating it (which would lose the writable layer) or granting a
-near-root capability. So the bare `hostname` command and the shell's `\h` prompt
-show the old name until the next deploy recreates the container; the SSH login
-banner shows the current name regardless (it comes from the daemon). This is why
-`--hostname` is deliberately **excluded** from the container config hash
-(`app/workspace.go:containerConfigHash`): it is cosmetic and derived from the
+change without recreating it (a needless restart that kicks every SSH/terminal
+session -- the filesystem itself would survive, since the rootfs persists) or
+granting a near-root capability. So the bare `hostname` command and the shell's
+`\h` prompt show the old name until the next deploy recreates the container; the
+SSH login banner shows the current name regardless (it comes from the daemon).
+This is why `--hostname` is deliberately **excluded** from the container config
+hash (`workspace/spec.go:ConfigHash`): it is cosmetic and derived from the
 mutable name, and a rename must never force a recreate.
 
 ## How tokens follow a rename

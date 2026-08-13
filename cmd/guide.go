@@ -64,7 +64,9 @@ func guideText(self *appctl.SelfInfo) string {
 		"WHAT IS INSTALLED\n" +
 		"  " + wrap(workspace.Runtimes, 74, "  ") + "\n" +
 		"  You are root in here, so \"apt-get install <package>\" works for anything\n" +
-		"  else. Installed packages last until the container is recreated.\n" +
+		"  else. Installed packages persist: this container's filesystem is your\n" +
+		"  app's own durable disk, so redeploys and restarts keep them. Installs\n" +
+		"  count against your app's disk budget.\n" +
 		"\n" +
 		"  Prefer keeping your source here: put it in " + appctl.SrcDir + "/ and add a build step,\n" +
 		"  which runs before the app starts (a failed build leaves the app alone):\n" +

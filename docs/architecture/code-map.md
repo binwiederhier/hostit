@@ -10,8 +10,9 @@ all of these; which commands it offers depends on where it runs (see
 |---|---|
 | `server` | HTTP: the TLS-terminating proxy, REST API, app-scoped agent API, OAuth, sessions, the peercred unix socket, terminal WebSocket, assistant SSE |
 | `app` | an app's whole lifecycle; composes the service packages below and holds naming, ports and identity |
-| `btrfs` | subvolumes, read-only snapshots, reflink copies, qgroup disk quotas |
-| `container` | podman: create, exec, remove, image build/list; runs app containers with idmapped mounts |
+| `btrfs` | subvolumes, read-only snapshots, reflink copies, qgroup disk budgets |
+| `container` | podman: create, exec, remove, image build/list, rootfs export |
+| `workspace` | the app-container spec (`CreateArgs`, `--rootfs` + uid map, config hash) and its storage: the workspace image (build input), per-tag base subvolumes, per-app persistent rootfs subvolumes |
 | `systemd` | per-app unit lifecycle (enable, start, restart, reset-failed) |
 | `unixuser` | Unix user and home creation, rename, teardown; skeleton writes |
 | `ssh` | an app's `authorized_keys` (managed-block merge, root-scoped write) and SSH public-key validation |
@@ -77,7 +78,7 @@ literals:
 |---|---|---|
 | Built web SPA | `server/site/` | `server/web.go` (a placeholder is checked in so the package always compiles) |
 | 404 "nothing here" page | `server/errorpage.html` | `server/errorpage.go` |
-| Workspace image recipe | `app/workspace.Containerfile` | `app/workspace.go` |
+| Workspace image recipe | `workspace/workspace.Containerfile` | `workspace/service.go` |
 | App skeleton (`hostit.yml`, README) | `app/skeleton/` | `app/skeleton.go` |
 | New-app placeholder page | `app/skeleton/public/index.html` | `app/skeleton.go` (served as a `mode: static` app) |
 

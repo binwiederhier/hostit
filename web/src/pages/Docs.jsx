@@ -232,8 +232,9 @@ rsync -av ./site/ <app>@${baseDomain}:public/`}
     />
     <p>
       The session lands <em>inside</em> the app's container, where you are root and can{" "}
-      <span className="mono">apt-get install</span> whatever you need. Installed packages last until the container is recreated,
-      so anything permanent belongs in a <span className="mono">prepare:</span> step.
+      <span className="mono">apt-get install</span> whatever you need. Installed packages persist: the container's filesystem is
+      the app's own durable disk, so redeploys, reboots and platform upgrades keep them. Installs count against the app's disk
+      budget.
     </p>
     <p>Inside, these commands manage the app:</p>
     <Snippet
@@ -493,7 +494,9 @@ const AdminPage = () => (
     <p>
       Each person is a <strong>user</strong> or an <strong>admin</strong>, and carries limits: how many apps they may create,
       and the memory and disk each of their apps gets. Set them per person on the Admin page, or set the instance defaults that
-      every new account inherits.
+      every new account inherits. Disk is a hard cap covering everything the app writes (home, installed packages, snapshots
+      combined): a write past it fails inside the container with "Disk quota exceeded". A disk limit of 0 means the platform
+      default (2 GB); nothing is unlimited.
     </p>
     <h3>The built-in assistant</h3>
     <p>
@@ -522,7 +525,7 @@ const TroubleshootingPage = () => (
     <h2>Troubleshooting</h2>
     <p>
       When something looks wrong, you can inspect every piece of an app's state directly on the host. Run these as root. The
-      one thing to know first: durable resources (container, unit, home, snapshots) are keyed by an app's stable{" "}
+      one thing to know first: durable resources (container, unit, home, rootfs, snapshots) are keyed by an app's stable{" "}
       <strong>id</strong>, not its name, so start by mapping the name to its id.
     </p>
 
@@ -576,10 +579,19 @@ tail -f /var/lib/hostit/apps/<id>/log/app.log # the run: command's output`}
     </p>
 
     <h3>Storage and snapshots (btrfs)</h3>
+    <p>
+      Each app's container runs a persistent root filesystem subvolume under <span className="mono">.rootfs/&lt;id&gt;</span>,
+      snapshotted from the read-only base of its image tag under <span className="mono">.bases/&lt;tag&gt;</span>; it is never
+      recreated, which is why installed packages survive container recreates. An app's disk budget is the qgroup{" "}
+      <span className="mono">1/&lt;uid&gt;</span> spanning its home, rootfs and snapshots, capped on exclusive bytes -- a{" "}
+      "Disk quota exceeded" inside an app means it hit that budget.
+    </p>
     <Snippet
-      text={`btrfs subvolume list /var/lib/hostit/apps          # every app home + snapshot subvolume
-ls /var/lib/hostit/apps/.snapshots/<id>/          # an app's snapshots, by id
-btrfs qgroup show -re /var/lib/hostit/apps         # per-app disk usage and quota`}
+      text={`btrfs subvolume list /var/lib/hostit/apps          # every home/rootfs/base/snapshot subvolume
+ls /var/lib/hostit/apps/.rootfs/                   # per-app container root filesystems, by id
+ls /var/lib/hostit/apps/.bases/                    # read-only base rootfs, one per image tag
+ls /var/lib/hostit/apps/.snapshots/<id>/           # an app's snapshots, by id
+btrfs qgroup show -re /var/lib/hostit/apps         # disk budgets: 1/<uid> rows, exclusive bytes vs cap`}
     />
 
     <h3>Port rules (nftables)</h3>

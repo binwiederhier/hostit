@@ -16,6 +16,7 @@ flowchart TB
             direction TB
             idmap["--uidmap 0:1000000:65536<br/><i>container root IS the app's base uid</i>"]
             pid1["PID 1: hostit agent<br/>supervises the run: command"]
+            rootfs["--rootfs .rootfs/&lt;id&gt;<br/><i>the app's persistent root filesystem</i>"]
             mounts["/home/blog       (the home, bind-mounted)<br/>/usr/bin/hostit  (the binary)<br/>/run/hostit      (the daemon socket dir)"]
             net["own netns (slirp4netns)<br/>no peers, no host loopback"]
         end
@@ -44,22 +45,25 @@ flowchart TB
 ### Per-app Unix user and uid-block idmap
 
 Each app owns a **65536-wide contiguous uid/gid block**: `uidFor(port) = 1000000 +
-(port - PortMin) * 65536` (`app/service.go:uidFor`, `app/util.go` block constants).
-The container is created by the root daemon but mapped `--uidmap 0:<base>:65536`
-(and the matching `--gidmap`), so container root *is* the app's unprivileged host uid
-and the whole block maps one-to-one (`app/workspace.go:containerCreateArgs`). Files in
-the bind-mounted home belong to the app inside and outside the container alike, and a
-workload escape lands on that uid, never on host root.
+(port - PortMin) * 65536` (`app/service.go:uidFor`, `workspace/spec.go` block
+constants). The container is created by the root daemon but mapped
+`--uidmap 0:<base>:65536` (and the matching `--gidmap`), so container root *is* the
+app's unprivileged host uid and the whole block maps one-to-one
+(`workspace/spec.go:CreateArgs`). Files in the bind-mounted home belong to the app
+inside and outside the container alike, and a workload escape lands on that uid,
+never on host root.
 
-Contiguity is load-bearing: it lets podman **idmap-mount** the shared workspace image
-(instant, no per-app copy or chown) rather than duplicating it. Homes are keyed on the
-app's stable id, so there is no uid-migration step; older single-uid schemes are gone.
+Contiguity is load-bearing: the mapping is a single uniform offset, so the app's
+persistent rootfs subvolume is chowned to the block once at creation
+(`workspace/rootfs.go:EnsureRootfs`) and every uid a workload uses stays inside the
+app's own range. Homes are keyed on the app's stable id, so there is no
+uid-migration step; older single-uid schemes are gone.
 
 ### Network namespace
 
 Each container gets its own network stack (`--network slirp4netns`), so containers
 cannot reach each other and have no route to the host's loopback
-(`app/workspace.go:containerCreateArgs`). The app's port is published on host loopback
+(`workspace/spec.go:CreateArgs`). The app's port is published on host loopback
 only (`--publish 127.0.0.1:<port>:<containerPort>`), so the proxy can reach it but the
 outside world cannot.
 
@@ -69,7 +73,7 @@ binary the tenant plants from escalating beyond where it started. AppArmor is le
 `unconfined` deliberately (the default profile's signal mediation breaks the
 multithreaded Go agent's SIGKILL to children); the uid map, no-new-privileges and
 per-app netns already isolate the container. The comments in
-`app/workspace.go:containerCreateArgs` explain each choice.
+`workspace/spec.go:CreateArgs` explain each choice.
 
 ### nftables port rules
 

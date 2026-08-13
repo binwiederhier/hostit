@@ -19,8 +19,8 @@ flowchart TB
     bins -- all present --> dirs["mkdir DataDir 0711, AppsDir 0755"]
     dirs --> btrfs{"AppsDir on btrfs?"}
     btrfs -- no --> fail3["refuse: app homes must be btrfs"]
-    btrfs -- yes --> ok["open store, then start"]
-    ok --> bg["background: build workspace image,<br/>restart stale agents, prune old images"]
+    btrfs -- yes --> ok["open store, enable disk budgets,<br/>run the one-time rootfs migration"]
+    ok --> bg["background: build workspace image + export base rootfs,<br/>restart stale agents, prune old images/bases"]
     ok --> rec["reconcile orphaned units/containers"]
     ok --> listen["open listeners + loops (state, disk, snapshot, domain retry)"]
 
@@ -32,16 +32,19 @@ flowchart TB
 
 btrfs is mandatory (`cmd/preflight.go:requireBtrfs`): snapshots, rollback, fork and
 hard disk quotas are core, so hostit refuses to run without them rather than silently
-degrading. There are no one-off data migrations on this path; the only post-upgrade
-work is `RestartStaleAgents`, which brings each app up on the new binary because a
-running agent keeps the behaviour of the binary it was exec'd from
-(`app/upgrade.go`).
+degrading. One settings-gated migration runs on this path: the one-time move to
+rootfs-backed containers (`app/migrate.go:MigrateRootfsStorage`), which is
+ensure-style and resumable, so a partial run only warns and retries at the next
+start. The other post-upgrade work is `RestartStaleAgents`, which brings each app up
+on the new binary because a running agent keeps the behaviour of the binary it was
+exec'd from (`app/upgrade.go`).
 
 ## Creating an app
 
-The API answers as soon as the app exists; the container comes up behind it, so the
-first request is never blocked on an image build (`app/service.go:create`,
-`server/server_handler_apps.go`).
+The API answers as soon as the app exists; the container comes up behind it
+(`app/service.go:create`, `server/server_handler_apps.go`). The app's rootfs is an
+instant snapshot of its image tag's base subvolume; the base itself is exported once
+per tag, in the background at startup, so create normally never waits on it.
 
 ```mermaid
 sequenceDiagram
@@ -56,7 +59,9 @@ sequenceDiagram
     D->>OS: btrfs subvolume for the home (id-keyed), then useradd --no-create-home
     D->>OS: write authorized_keys (owner's profile keys)
     D->>OS: write skeleton hostit.yml, README.md, .hushlogin
+    D->>OS: rootfs: snapshot the pinned tag's base subvolume, chown to the uid block
     D->>S: register app + mint an app-scoped token
+    D->>OS: disk budget qgroup: home + rootfs, capped on exclusive bytes
     D->>OS: nftables: port 10000 to uid 0 and the app base uid
     D-->>U: 201 {url, ssh, agent_token}
 
@@ -68,7 +73,9 @@ sequenceDiagram
 An app that fails to start still exists: its URL shows hostit's "not running" page
 rather than a dead hostname, and the owner can fix `hostit.yml` and deploy. Fork is
 the same flow, except the home is seeded from a writable btrfs snapshot of the source
-instead of the skeleton (`app/service.go:Fork`).
+instead of the skeleton, and the rootfs from the source's rootfs rather than the
+base -- so installed packages carry over (`app/service.go:Fork`,
+`workspace/rootfs.go:ForkRootfs`).
 
 ## Serving a request
 
@@ -169,5 +176,7 @@ Every path in the file operations resolves through `os.OpenRoot` on the app's ho
 a symlink the app planted cannot walk the daemon out of it (`app/files.go`); see
 [`isolation.md`](isolation.md). The deploy decides between an in-place SIGHUP and a
 container recreate by diffing the create arguments (`app/deploy.go`), so a
-run-command-only change costs no container restart.
+run-command-only change costs no container restart. A recreate keeps the app's
+filesystem either way: the container runs the app's persistent rootfs subvolume
+(`--rootfs`), so installed packages survive it.
 </content>

@@ -11,8 +11,8 @@ each. Any snapshot can be restored: **rollback** replaces the live home with the
 snapshot's contents, and first takes a safety snapshot of the current state so the
 rollback is itself undoable. Snapshots are also what `fork` seeds a new app from.
 
-Snapshots require a btrfs apps filesystem; on a plain-directory host the feature
-is unavailable (the app page hides the Snapshots tab, and the API answers 501).
+Snapshots are built on btrfs, which hostit requires outright (the daemon refuses
+to start without it); the 501 "unavailable" path survives only as defense in depth.
 Retention keeps history from growing without bound using a restic-style
 grandfather-father-son policy, so old automatic snapshots are thinned out with
 age while recent ones stay dense.
@@ -56,7 +56,8 @@ Manual and rollback:
    records it, runs `snapshot.post` (best effort), and prunes per retention.
 3. To roll back, the owner/agent picks a snapshot and restores it; hostit stages
    the target, takes a safety snapshot, stops the container, swaps the home in,
-   restores ownership and quota, and brings the app back up.
+   restores ownership, and brings the app back up (the staged copy joined the
+   app's disk budget at stage time).
 
 ```mermaid
 sequenceDiagram
@@ -66,44 +67,50 @@ sequenceDiagram
     participant store
     User->>hostit: restore snapshot S
     hostit->>btrfs: stage writable copy of S (home.rollback-staged)
+    hostit->>btrfs: staged copy joins the app's budget qgroup
     hostit->>hostit: takeSnapshot(current, "Before rolling back", auto)
     hostit->>hostit: stop + remove container
     hostit->>btrfs: move home -> home.rollback-old
     hostit->>btrfs: move staged -> home
     hostit->>btrfs: delete home.rollback-old
-    hostit->>hostit: chown home, restore quota, bring app up
+    hostit->>hostit: chown home, bring app up
     hostit-->>User: rolled back (and undoable via the safety snapshot)
 ```
 
 ## Technical details
 
-Core logic in `app/snapshot.go` (`app.Manager`):
+Core logic in the `snapshot/` service (`snapshot/service.go`), bound to the
+`app.Manager` through the small `snapshot.Host` interface (`app/snapshot.go`):
 
-- `Manager.TakeSnapshot` / `takeSnapshot`: runs `snapshot.pre` (aborts on
-  non-zero exit), makes the read-only subvolume via `m.btrfs.Snapshot(home,
-  path, true)`, records a `store.Snapshot`, runs `snapshot.post`, then
+- `Service.TakeSnapshot` / `takeSnapshot`: runs `snapshot.pre` (aborts on
+  non-zero exit), makes the read-only subvolume via `btrfs.Snapshot(home,
+  path, true)`, joins it to the app's disk budget qgroup (`Host.AssignBudget`;
+  under exclusive accounting it only costs budget as it diverges), records a
+  `store.Snapshot`, runs `snapshot.post`, then
   `pruneSnapshots`. `snapshotID` builds a sortable id from the timestamp plus a
-  short random suffix; `snapshotKind` tags it auto/manual.
-- `Manager.Rollback`: the staged/safety/swap sequence described above, using
-  `rollbackStagedSuffix` / `rollbackOldSuffix`, `m.btrfs.MoveSubvolume`,
-  `m.systemd.DisableNow` / `m.container.RemoveForce` to release the home, and
-  `m.btrfs.SetQuota` to restore the disk quota. It holds the per-app lock and
-  passes `snapshot=false` to `up` (it already took a safety snapshot).
-- `Manager.DeleteSnapshot`: removes the subvolume then the record (never orphan
+  short random suffix.
+- `Service.Rollback`: the staged/safety/swap sequence described above, using
+  `rollbackStagedSuffix` / `rollbackOldSuffix`, `btrfs.MoveSubvolume`, and
+  `systemd.DisableNow` / `container.RemoveForce` to release the home. The staged
+  copy joins the budget group before the swap, and qgroup membership survives the
+  rename, so there is no quota to restore afterwards. It holds the per-app lock
+  and skips the pre-deploy snapshot on the way back up (it already took a safety
+  snapshot).
+- `Service.DeleteSnapshot`: removes the subvolume then the record (never orphan
   a subvolume).
-- `Manager.pruneSnapshots`: calls `retention.Apply` and deletes the pruned
+- `Service.pruneSnapshots`: calls `retention.Apply` and deletes the pruned
   subvolumes and records; keeps the record if the subvolume delete fails so it
   retries rather than orphaning.
-- `Manager.SnapshotLoop`: the hourly automatic snapshot loop (no-op on non-btrfs);
+- `Service.SnapshotLoop`: the hourly automatic snapshot loop;
   started from `cmd/serve.go` with a 1h interval.
 - `Manager.SnapshotsEnabled` gates the feature on `btrfsEnabled()`;
-  `ErrSnapshotsUnavailable` is the sentinel for non-btrfs hosts.
-- Labels for unattended snapshots: `autoSnapshotLabel` ("Automated snapshot") and
-  `preDeploySnapshotLabel` ("Automated snapshot before deploy").
+  `ErrSnapshotsUnavailable` is the sentinel (always available in a real
+  deployment, since the preflight mandates btrfs).
+- Labels for unattended snapshots: "Automated snapshot" and
+  "Automated snapshot before deploy".
 
-Pre-deploy trigger: `app/deploy.go:Manager.up` calls `takeSnapshot(name,
-preDeploySnapshotLabel, true)` when `snapshot && btrfsEnabled()` before applying
-the new config.
+Pre-deploy trigger: `app/deploy.go:Up` calls the snapshot service's
+`PreDeploySnapshot` (best effort) before applying the new config.
 
 Retention (`retention/retention.go`, pure logic, no I/O):
 
@@ -137,20 +144,24 @@ HTTP surface:
 
 ## Other notes
 
-- Everything is btrfs-gated; a plain-directory home silently lacks
-  snapshots/quotas/rollback/fork, which `Manager.create` logs so the choice is
-  visible.
+- Everything is btrfs-built, and btrfs is mandatory: the startup preflight refuses
+  a non-btrfs apps directory (`cmd/preflight.go:requireBtrfs`).
+- Snapshots are members of the app's disk budget qgroup, so a churning app pays for
+  its retention history -- but under exclusive accounting a snapshot only costs
+  budget for data that has since diverged from the live home. See
+  [quotas-limits.md](quotas-limits.md).
 - The safety snapshot taken before a rollback is itself `auto`, so retention will
   eventually prune it; it is labelled "Before rolling back to snapshot <id>".
 - Rollback stops and removes the container (nothing may hold the home subvolume)
-  and then restores ownership (`chown -R`) and the disk quota, because the swapped
-  subvolume is a fresh subvolume that does not inherit them.
+  and then restores ownership (`chown -R`), because the swapped-in subvolume arrives
+  owned as the snapshot was; the disk cap needs no restoring, since it lives on the
+  app's budget qgroup, which the staged copy joined.
 - Snapshot ids are second-precision plus a random suffix, so multiple snapshots in
   the same second do not collide and still sort chronologically.
 - `snapshot.pre` / `snapshot.post` hooks come from `hostit.yml`; a failing `pre`
   hook aborts the snapshot, a failing `post` hook only logs.
 - Related features: `deploy.md` (pre-deploy snapshot), `fork.md` (snapshot as a
-  seed), `quotas-limits.md` (the btrfs qgroup quota restored on rollback), and
+  seed), `quotas-limits.md` (snapshots count toward the app's disk budget), and
   the web `web-dashboard.md` Snapshots tab.
 - Known sharp edge worth noting: retention applies to manual snapshots too, so a
   long-lived manual bookmark is not guaranteed to survive forever.
