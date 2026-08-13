@@ -19,6 +19,7 @@ func TestForkSeedsHomeFromSourceAndDeploys(t *testing.T) {
 	r.failOn("container inspect", assert.AnError) // no container yet -> Up creates one
 	require.NoError(t, m.store.AddApp(&store.App{Name: "blog", Port: 10000, Host: store.HostLocal}))
 	require.NoError(t, os.MkdirAll(m.appHome("blog"), 0o755))
+	require.NoError(t, os.MkdirAll(m.workspace.RootfsPath(m.appID("blog")), 0o700))
 	// The fake runner never touches disk, so stand in for the snapshot's on-disk
 	// effect: the forked home exists with the source's files, so the deploy resolves.
 	require.NoError(t, os.MkdirAll(m.appHome("blog2"), 0o755))
@@ -31,6 +32,10 @@ func TestForkSeedsHomeFromSourceAndDeploys(t *testing.T) {
 	// The home is seeded from a WRITABLE snapshot of the source home, not read-only.
 	assert.Contains(t, r.ran(), "btrfs subvolume snapshot "+m.appHome("blog")+" "+m.appHome("blog2"))
 	assert.NotContains(t, r.ran(), "btrfs subvolume snapshot -r "+m.appHome("blog")+" "+m.appHome("blog2"))
+
+	// The rootfs is forked from the SOURCE's rootfs (installed packages carry
+	// over), not snapshotted fresh from the base.
+	assert.Contains(t, r.ran(), "btrfs subvolume snapshot "+m.workspace.RootfsPath(m.appID("blog"))+" "+m.workspace.RootfsPath(fork.ID))
 
 	// A user is created, but no demo skeleton is written (the fork keeps the source's files).
 	assert.Contains(t, ops.createdUsers, "blog2")
@@ -53,6 +58,7 @@ func TestForkFromSnapshotSeedsFromThatSnapshot(t *testing.T) {
 	r.failOn("container inspect", assert.AnError)
 	require.NoError(t, m.store.AddApp(&store.App{Name: "blog", Port: 10000, Host: store.HostLocal}))
 	require.NoError(t, os.MkdirAll(m.appHome("blog"), 0o755))
+	require.NoError(t, os.MkdirAll(m.workspace.RootfsPath(m.appID("blog")), 0o700))
 	require.NoError(t, os.MkdirAll(m.appHome("blog2"), 0o755))
 	writeAppFile(t, m, "blog2", "hostit.yml", "mode: app\nrun: ./server")
 
@@ -82,11 +88,13 @@ func TestForkSetsDiskQuota(t *testing.T) {
 	r.returns("stat -f", "btrfs\n")
 	require.NoError(t, m.store.AddApp(&store.App{Name: "blog", Port: 10000, Host: store.HostLocal}))
 	require.NoError(t, os.MkdirAll(m.appHome("blog"), 0o755))
+	require.NoError(t, os.MkdirAll(m.workspace.RootfsPath(m.appID("blog")), 0o700))
 
-	_, err := m.Fork("blog", "blog2", "", &CreateOptions{DiskMB: 256})
+	fork, err := m.Fork("blog", "blog2", "", &CreateOptions{DiskMB: 256})
 	require.NoError(t, err)
-	// The fork's home gets its own hard qgroup cap, not the source's and not none.
-	assert.Contains(t, r.ran(), "btrfs qgroup limit 256M "+m.appHome("blog2"))
+	// The fork gets its own hard budget cap, not the source's and not none.
+	group := fmt.Sprintf("1/%d", m.uidFor(fork.Port))
+	assert.Contains(t, r.ran(), "btrfs qgroup limit -e 256M "+group+" "+m.config.AppsDir)
 }
 
 func TestForkUnknownSourceFails(t *testing.T) {

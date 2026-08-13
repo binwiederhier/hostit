@@ -10,15 +10,27 @@ import (
 // plenty and there is no reason to make it configurable.
 const diskUsageInterval = 5 * time.Minute
 
-// SetDiskLimit records the disk quota for an app; 0 means unlimited. It also sets
-// the subvolume's qgroup limit, which hard-caps writes (EDQUOT).
+// SetDiskLimit records the disk quota for an app and caps its budget qgroup
+// (home + rootfs + snapshots combined) on exclusive bytes, which hard-caps
+// writes (EDQUOT). 0 falls back to the default cap; nothing is unlimited.
 func (m *Manager) SetDiskLimit(name string, diskMB int) {
-	m.mu.Lock()
-	m.diskMB[name] = diskMB
-	m.mu.Unlock()
-	if err := m.btrfs.SetQuota(m.appHome(name), diskMB); err != nil {
-		slog.Warn("Cannot set btrfs quota", "app", name, "limit_mb", diskMB, "error", err)
+	m.recordDiskLimit(name, diskMB)
+	ids, err := m.lookupIDs(name)
+	if err != nil {
+		slog.Warn("Cannot resolve uid to set disk budget", "app", name, "error", err)
+		return
 	}
+	if err := m.btrfs.QgroupLimitExclusive(m.config.AppsDir, budgetGroup(ids.UID), effectiveDiskCapMB(diskMB)); err != nil {
+		slog.Warn("Cannot set disk budget limit", "app", name, "limit_mb", diskMB, "error", err)
+	}
+}
+
+// recordDiskLimit caches the stored limit without touching the qgroup, for the
+// create path where the budget group does not exist yet (ensureBudget applies it).
+func (m *Manager) recordDiskLimit(name string, diskMB int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.diskMB[name] = diskMB
 }
 
 // diskLimit returns the recorded disk quota of an app
@@ -66,8 +78,13 @@ func (m *Manager) DiskUsageLoop(done <-chan struct{}) {
 	}
 }
 
-// measureDiskMB returns the app's disk usage in MB, read from the subvolume's
-// qgroup (accurate and cheap, no directory walk).
+// measureDiskMB returns the app's disk usage in MB: its budget group's exclusive
+// bytes, i.e. the bytes the app itself pins (what deleting it would free), with
+// the shared base rootfs charged to nobody. Cheap qgroup read, no directory walk.
 func (m *Manager) measureDiskMB(name string) (int, error) {
-	return m.btrfs.UsageMB(m.appHome(name)), nil
+	ids, err := m.lookupIDs(name)
+	if err != nil {
+		return 0, err
+	}
+	return m.btrfs.ExclusiveUsageMB(m.config.AppsDir, budgetGroup(ids.UID)), nil
 }

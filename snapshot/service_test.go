@@ -33,6 +33,10 @@ func TestTakeSnapshotRecordsAndSnapshotsSubvolume(t *testing.T) {
 	assert.False(t, snap.Auto)
 	assert.Equal(t, "my save", snap.Label)
 	assert.Contains(t, r.ran(), "btrfs subvolume snapshot -r "+h.AppHome("blog")+" "+h.SnapshotPath("blog", snap.ID))
+	// The new subvolume joins the app's disk budget: extents shared between home
+	// and snapshot would otherwise be reachable outside the group and stop
+	// counting as the group's exclusive bytes -- home data would leak out of the cap.
+	assert.Contains(t, h.assigned, h.SnapshotPath("blog", snap.ID))
 
 	got, err := svc.ListSnapshots("blog")
 	require.NoError(t, err)
@@ -101,6 +105,10 @@ func TestRollbackStagesTargetBeforeSafetySnapshot(t *testing.T) {
 	require.GreaterOrEqual(t, stagedIdx, 0, "the target must be staged into a writable copy for rollback")
 	require.GreaterOrEqual(t, safetyIdx, 0, "a safety snapshot must be taken")
 	assert.Less(t, stagedIdx, safetyIdx, "the target must be staged before the safety snapshot (which can prune it)")
+
+	// The staged writable copy becomes the app's home after the swap, so it must
+	// join the app's disk budget like every other subvolume the service creates.
+	assert.Contains(t, h.assigned, h.AppHome("blog")+rollbackStagedSuffix)
 }
 
 // A rollback should record exactly one auto snapshot (the safety one), not also a
@@ -169,14 +177,14 @@ func newTestService(t *testing.T) (*Service, *fakeHost, *fakeRunner, *store.Stor
 }
 
 // fakeHost stands in for app.Manager: it hands out tmpdir-based paths, records the
-// Up callback and returns canned snapshot-hook results.
+// Up and AssignBudget callbacks and returns canned snapshot-hook results.
 type fakeHost struct {
 	base      string
 	upCalled  []string
-	pre, post string // Snapshot hook commands
-	hookCode  int    // Exit code RunHook reports
-	hookErr   error  // Error RunHook reports (command could not run)
-	diskLimit int
+	assigned  []string // Subvolume paths assigned to the app's disk budget
+	pre, post string   // Snapshot hook commands
+	hookCode  int      // Exit code RunHook reports
+	hookErr   error    // Error RunHook reports (command could not run)
 }
 
 var _ Host = (*fakeHost)(nil)
@@ -198,8 +206,12 @@ func (h *fakeHost) SnapshotPath(name, id string) string {
 func (h *fakeHost) UnitName(name string) string      { return "hostit-app@" + name }
 func (h *fakeHost) ContainerName(name string) string { return "hostit-app-" + name }
 func (h *fakeHost) UIDForPort(port int) int          { return 100000 + port }
-func (h *fakeHost) DiskLimit(string) int             { return h.diskLimit }
 func (h *fakeHost) Chown(string, int) error          { return nil }
+
+func (h *fakeHost) AssignBudget(_ string, subvolPath string) error {
+	h.assigned = append(h.assigned, subvolPath)
+	return nil
+}
 
 // fakeRunner records commands and, like the real btrfs tool, materializes the
 // destination directory of a subvolume create/snapshot so staged paths exist.

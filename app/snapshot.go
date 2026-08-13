@@ -72,7 +72,10 @@ func (h snapshotHost) SnapshotPath(name, id string) string { return h.m.snapshot
 func (h snapshotHost) UnitName(name string) string         { return h.m.unitName(name) }
 func (h snapshotHost) ContainerName(name string) string    { return h.m.containerName(name) }
 func (h snapshotHost) UIDForPort(port int) int             { return h.m.uidFor(port) }
-func (h snapshotHost) DiskLimit(name string) int           { return h.m.diskLimit(name) }
+
+func (h snapshotHost) AssignBudget(name, subvolPath string) error {
+	return h.m.assignBudget(name, subvolPath)
+}
 
 func (h snapshotHost) Chown(path string, uid int) error {
 	_, err := h.m.runner.Run("chown", "-R", fmt.Sprintf("%d:%d", uid, uid), path)

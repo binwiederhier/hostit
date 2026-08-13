@@ -52,6 +52,7 @@ func (m *Manager) ReconcileOrphans() []string {
 	}
 	removed = append(removed, m.reconcileContainers(known)...)
 	removed = append(removed, m.reconcileHomes(known)...)
+	removed = append(removed, m.reconcileRootfs(known)...)
 	if len(removed) > 0 {
 		slog.Info("Removed leftovers of deleted apps", "apps", removed)
 	}
@@ -90,6 +91,30 @@ func (m *Manager) reconcileHomes(known map[string]bool) []string {
 			continue
 		}
 		slog.Info("Removed empty orphaned app home", "id", id, "path", home)
+		removed = append(removed, id)
+	}
+	return removed
+}
+
+// reconcileRootfs removes rootfs subvolumes whose app is gone -- e.g. a delete
+// that failed halfway, or an app deleted while the daemon was down. A live app's
+// rootfs is never touched (an existing rootfs is never recreated, so deleting one
+// by mistake would be data loss); the id-keyed known-set is the sole gate.
+func (m *Manager) reconcileRootfs(known map[string]bool) []string {
+	ids, err := m.workspace.RootfsIDs()
+	if err != nil {
+		slog.Warn("Cannot list rootfs subvolumes to reconcile", "error", err)
+		return nil
+	}
+	removed := make([]string, 0)
+	for _, id := range ids {
+		if known[id] {
+			continue
+		}
+		if err := m.workspace.DeleteRootfs(id); err != nil {
+			slog.Warn("Cannot remove the rootfs of a deleted app", "id", id, "error", err)
+			continue
+		}
 		removed = append(removed, id)
 	}
 	return removed
