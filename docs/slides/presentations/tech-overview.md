@@ -107,8 +107,8 @@ Each wraps exactly one host tool. `app.Manager` calls them; none call each other
 
 | Package | Wraps |
 |---|---|
-| `btrfs` | subvolumes, RO snapshots, reflink, qgroup quotas |
-| `container` | podman: create, exec, remove, image build |
+| `btrfs` | subvolumes, RO snapshots, reflink, qgroup budgets |
+| `container` | podman: create, exec, remove, image build, rootfs export |
 | `systemd` | per-app unit lifecycle |
 | `unixuser` | Unix user + home + skeleton |
 | `ssh` | an app's `authorized_keys` block |
@@ -122,6 +122,7 @@ Each wraps exactly one host tool. `app.Manager` calls them; none call each other
 | `run` | the shared `Runner` that shells out |
 | `retention` | pure GFS snapshot policy (no I/O) |
 | `snapshot` | orchestrates snapshot + rollback |
+| `workspace` | container spec (`--rootfs` + uid map) and its storage: image build (input), per-tag bases, per-app rootfs |
 | `agent` &middot; `appctl` &middot; `assistant` | in-container supervisor &middot; the `hostit.yml` contract + app-side client &middot; the in-browser AI agent |
 
 </div>
@@ -198,13 +199,14 @@ colocated <code>_test.go</code> and the suite runs anywhere.
 
 ---
 
-# An app is four host resources, keyed by id
+# An app is five host resources, keyed by id
 
 ```mermaid
 flowchart LR
   A["app<br/><i>opaque id</i>"] --> U["Unix user<br/>unixuser"]
   A --> H["home subvolume<br/>apps/&lt;id&gt; (btrfs)"]
-  A --> C["podman container<br/>root mapped to the uid"]
+  A --> R["rootfs subvolume<br/>.rootfs/&lt;id&gt; (persistent)"]
+  A --> C["podman container<br/>runs --rootfs, root mapped to the uid"]
   A --> P["loopback port<br/>nftables pins it to the uid"]
 ```
 
@@ -275,6 +277,7 @@ sequenceDiagram
     M->>Sys: create Unix user + group
     M->>M: create btrfs subvolume home
     M->>M: write skeleton (hostit.yml: mode static, public/index.html)
+    M->>M: rootfs: snapshot the image tag's base, chown; budget qgroup
     M-->>S: app (running), agent token
     S-->>User: 201 + URL, already serving the placeholder
 ```
@@ -299,9 +302,9 @@ sequenceDiagram
     S->>M: Up
     M->>M: loadConfig (read hostit.yml via os.Root)
     M->>M: pre-deploy snapshot (btrfs)
-    M->>M: ensureAppImage, compute config hash
+    M->>M: EnsureRootfs (no-op if it exists), compute config hash
     alt config hash changed (or no container)
-        M->>Pod: recreate container, restart unit
+        M->>Pod: recreate container (--rootfs persists), restart unit
     else only run:/prepare:/mode: changed
         M->>Ag: SIGHUP (restart just the command)
     end
@@ -309,8 +312,10 @@ sequenceDiagram
 ```
 
 <div class="mt-2 text-sm opacity-60">
-<code>app/deploy.go:apply</code> is the convergence step. Recreate is expensive (ends
-SSH sessions); a reload just re-runs the command. The hash decides which.
+<code>app/deploy.go:apply</code> is the convergence step. Recreate is disruptive (ends
+SSH sessions) but lossless -- the container runs the app's persistent rootfs
+subvolume, so installed packages survive. A reload just re-runs the command. The
+hash decides which.
 </div>
 
 ---

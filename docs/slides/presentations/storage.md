@@ -3,10 +3,10 @@ theme: seriph
 title: hostit storage -- hard caps
 info: |
   The hostit storage redesign: a filesystem-enforced hard cap on everything a
-  tenant writes (home, snapshots, container layer), the phase-1 plan (btrfs
-  storage driver + hierarchical qgroups), and the from-scratch target shape
-  (per-app subtrees, podman as a pure runtime). All mechanisms shown were
-  validated live on stage on 2026-08-13.
+  tenant writes (home, snapshots, container rootfs), how the phase-1 plan (btrfs
+  storage driver) was skipped, and the from-scratch target shape (per-app rootfs
+  subvolumes, podman as a pure runtime) -- which is what shipped. All mechanisms
+  shown were validated live on stage on 2026-08-13.
 layout: cover
 background: https://cover.sli.dev
 class: text-center
@@ -19,8 +19,8 @@ mdc: true
 ### Hard caps, and the from-scratch shape
 
 <div class="mt-8 opacity-60">
-One budget per app, enforced by the filesystem -- and where the storage design
-should end up
+One budget per app, enforced by the filesystem -- and the from-scratch shape it
+landed in (this is implemented, not a plan)
 </div>
 
 <div class="abs-br m-6 text-sm opacity-40">
@@ -174,10 +174,10 @@ layout: section
 transition: slide-up
 ---
 
-# The decided plan
+# The decided design
 
-Six decisions, locked 2026-08-13. Phase 1 ships on today's image flow;
-the from-scratch shape is the target it converges to.
+Locked 2026-08-13 -- and these budget semantics are exactly what shipped.
+(The "phase 1" packaging of them was skipped; the verdict slides at the end.)
 
 ---
 
@@ -185,18 +185,18 @@ the from-scratch shape is the target it converges to.
 
 ```mermaid {scale: 0.85}
 flowchart LR
-  subgraph appgroup["qgroup 1/&lt;app&gt; -- limit = disk_mb (exclusive) -- inside the one bounded apps.btrfs pool"]
+  subgraph appgroup["qgroup 1/&lt;uid&gt; -- limit = disk_mb (exclusive) -- inside the one bounded apps.btrfs pool"]
     direction LR
-    home["home subvol<br/>apps/&lt;id&gt;"] ~~~ snaps["snapshot subvols<br/>.snapshots/&lt;id&gt;/*"] ~~~ layer["container layer subvol<br/>(podman btrfs driver)"]
+    home["home subvol<br/>apps/&lt;id&gt;"] ~~~ snaps["snapshot subvols<br/>.snapshots/&lt;id&gt;/*"] ~~~ layer["rootfs subvol<br/>.rootfs/&lt;id&gt;"]
   end
-  appgroup ~~~ images["shared image subvols<br/>(outside every group: free)"]
+  appgroup ~~~ images["shared base subvols .bases/&lt;tag&gt;<br/>(outside every group: free)"]
   style appgroup fill:#04785722,stroke:#059669
 ```
 
-- **One shared pool** -- homes + container storage; the pool itself bounds total
+- **One shared pool** -- homes + rootfs + bases; the pool itself bounds total
   damage, so the root fs and the daemon's SQLite are safe even before per-app caps
-- **One combined budget** -- `disk_mb` covers home + snapshots + layer via a
-  hierarchical qgroup; shared image bytes are free (exclusive accounting)
+- **One combined budget** -- `disk_mb` covers home + snapshots + rootfs via a
+  hierarchical qgroup; bytes shared with the base are free (exclusive accounting)
 - **Snapshots count** -- the budget is the true bytes an app pins; a churning app
   pays for its retention history
 - **No more unlimited** -- `disk_mb: 0` now means the platform default (**2 GB**);
@@ -213,7 +213,7 @@ root@myapp:~# dd if=/dev/zero of=/home/app/big bs=1M count=4000
 dd: error writing '/home/app/big': Disk quota exceeded          # home: EDQUOT
 
 root@myapp:~# dd if=/dev/zero of=/usr/bin/evil bs=1M count=4000
-dd: error writing '/usr/bin/evil': Disk quota exceeded          # layer: EDQUOT
+dd: error writing '/usr/bin/evil': Disk quota exceeded          # rootfs: EDQUOT
 
 root@myapp:~# apt-get install imagemagick                        # fine -- within budget
 ```
@@ -246,7 +246,7 @@ the right trade for small boxes.
 
 ---
 
-# Phase-1 layout: what actually sits where
+# Phase-1 layout: what would have sat where (never built)
 
 ```
 apps.btrfs  (the existing loop image, grown; a real volume later)
@@ -264,9 +264,10 @@ The daemon's SQLite (`/var/lib/hostit/hostit.db`) and the OS stay on the ext4
 root, **outside** the pool: however full the pool gets, the host never wedges.
 
 <div class="mt-4 text-sm opacity-60">
-Same pool, same qgroup mechanism everywhere; the only structural change is the
-podman graphroot moving into the pool under the btrfs driver. Compare with the
-from-scratch tree later -- the difference is only where the layer lives.
+Same pool, same qgroup mechanism everywhere; the only structural change would have
+been the podman graphroot moving into the pool under the btrfs driver. <b>Verdict:
+skipped</b> -- the from-scratch tree on the next slides shipped directly, and the
+graphroot never moved.
 </div>
 
 ---
@@ -276,43 +277,46 @@ transition: slide-up
 
 # From scratch
 
-If the storage design started today: hostit owns all tenant storage,
-podman is just a runtime.
+hostit owns all tenant storage, podman is just a runtime.
+This is the shape that shipped -- the spike-validated details below became
+the implementation.
 
 ---
 
-# The target shape: an app is one subtree
+# The target shape, as built: an app is subvolumes
 
 ```
-pool/  (the existing loop pool works; a real device is a perf nicety for new nodes)
-  bases/
-    <image-tag>/          # workspace rootfs, exported once per pinned tag
-  apps/
-    <id>/                 # qgroup 1/<id>: limit = disk_mb -- the whole app
-      home/               # the app home (as today)
-      rootfs/             # container rootfs: reflink snapshot of bases/<tag>
-      snapshots/          # home + rootfs snapshots
+apps/  (the existing loop pool; homes never moved)
+  <id>/                   # home subvols -- exactly where they were
+  .bases/
+    <tag>/                # workspace rootfs, exported once per pinned tag (read-only)
+  .rootfs/
+    <id>/                 # container rootfs: snapshot of .bases/<tag>, chowned once
+  .snapshots/
+    <id>/*                # home snapshots -- all join the app's qgroup 1/<uid>
 ```
 
 No image/layer storage for app containers at all:
 
 ```console
-$ btrfs subvolume snapshot pool/bases/1a3027527a55 pool/apps/<id>/rootfs   # instant CoW
-$ podman run --rootfs /pool/apps/<id>/rootfs \
-    --uidmap 0:1196608:65536 --network slirp4netns ...                     # same isolation
+$ btrfs subvolume snapshot apps/.bases/1a3027527a55 apps/.rootfs/<id>      # instant CoW
+$ podman create --uidmap 0:1196608:65536 --network slirp4netns ... \
+    --rootfs /var/lib/hostit/apps/.rootfs/<id> hostit agent               # same isolation
 ```
 
 <div class="mt-4 text-sm opacity-60">
-The base is built once from the Containerfile and exported; every app's rootfs
-is a free reflink of it. Apps are already pinned to image tags -- the pin
-becomes "which base subvolume".
+The base is built once from the Containerfile and exported (atomically: temp
+subvolume, sealed read-only, renamed into place); every app's rootfs is a free
+snapshot of it. Apps were already pinned to image tags -- the pin now means
+"which base subvolume". Flag order matters: everything after <code>--rootfs</code>
+is the container command.
 </div>
 
 ---
 
 # Wait -- are containers not "never rebuilt"?
 
-The actual requirement (and what is built) is narrower: **a Containerfile change
+The actual requirement is narrower: **a Containerfile change
 never recreates an existing app's container.** Each app is pinned to the image
 tag it was built with, so new images only affect new apps. But containers ARE
 recreated in normal operation:
@@ -324,10 +328,12 @@ recreated in normal operation:
   container (v0.8.7 did exactly this to roll out `--sdnotify=conmon`)
 
 <div class="mt-4 text-sm opacity-60">
-And every recreate throws away the writable layer: <code>apt-get install</code>
-lives in that layer, so packages silently vanish on the next deploy or upgrade --
-a long-standing open TODO. Recreation is fine for hostit (containers are cattle);
-it is the <b>layer dying with them</b> that hurts.
+In the image-backed world every recreate threw away the writable layer:
+<code>apt-get install</code> lived in that layer, so packages silently vanished on
+the next deploy or upgrade -- a long-standing open TODO. Recreation is fine for
+hostit (containers are cattle); it was the <b>layer dying with them</b> that hurt.
+The rootfs model fixes exactly this: <b>a rootfs, once created, is never recreated
+or reset</b> -- recreates keep the filesystem.
 </div>
 
 ---
@@ -337,7 +343,7 @@ it is the <b>layer dying with them</b> that hurts.
 <div class="grid grid-cols-2 gap-6 mt-4">
 <div class="p-4 rounded border border-red-400 border-opacity-40">
 
-**Today (and phase 1)**
+**Before (image-backed containers)**
 
 ```console
 root@myapp:~# apt-get install ffmpeg
@@ -353,11 +359,11 @@ bash: ffmpeg: command not found   # gone
 </div>
 <div class="p-4 rounded border border-green-500 border-opacity-40">
 
-**Target (--rootfs subtree)**
+**Now (--rootfs subvolume)**
 
 ```console
 root@myapp:~# apt-get install ffmpeg
-# ... lands in apps/<id>/rootfs
+# ... lands in .rootfs/<id>
 
 $ # deploy -> recreate: podman gets the
 $ # SAME rootfs subvolume back
@@ -371,7 +377,7 @@ ffmpeg version 6.1.1 ...          # still there
 
 <div class="mt-6 text-sm opacity-60">
 The rootfs is the app's own persistent subvolume: the container process is
-disposable, its filesystem is not. Recreates (config change, upgrades) become
+disposable, its filesystem is not. Recreates (config change, upgrades) are
 lossless, and the never-rebuild-on-image-change pin is unchanged -- the app's
 rootfs came from its pinned base and stays put.
 </div>
@@ -384,19 +390,20 @@ rootfs came from its pinned base and stays put.
 <div v-click class="p-4 rounded border border-gray-400 border-opacity-30">
 
 **apt-get survives** -- the rootfs is a persistent subvolume, so installed
-packages live through container recreation. (An open TODO, solved as a side
+packages live through container recreation. (A long-open TODO, closed as a side
 effect.)
 
 </div>
 <div v-click class="p-4 rounded border border-gray-400 border-opacity-30">
 
-**Rollback covers system state** -- snapshot and roll back the rootfs with the
-home: an app's installed packages travel with its data.
+**Rollback stays home-scoped (for now)** -- snapshots and rollback cover the
+home; the rootfs simply persists through them. Snapshotting it alongside the
+home is a natural extension, not built yet.
 
 </div>
 <div v-click class="p-4 rounded border border-gray-400 border-opacity-30">
 
-**Multi-node migration is `btrfs send`** -- an app is literally one subtree.
+**Multi-node migration is `btrfs send`** -- an app is a handful of subvolumes.
 Moving it to another hosting node is send/receive + start. The cleanest possible
 primitive for the `hostit-node` split.
 
@@ -405,46 +412,50 @@ primitive for the `hostit-node` split.
 
 **No storage-driver dependency** -- podman gets a rootfs path plus the
 userns/netns/cgroup flags hostit already passes. The less-maintained btrfs
-graph driver is no longer load-bearing.
+graph driver never became load-bearing.
 
 </div>
 </div>
 
 <div class="mt-4 text-sm opacity-60">
-Cost: hostit owns base-rootfs lifecycle (export on build, GC unused bases) and
-leaves the standard image/layer world -- machinery hostit does not use anyway.
+Cost: hostit now owns the base-rootfs lifecycle (export once per tag, GC only
+unpinned bases -- a pinned base is never deleted, its extents are shared with
+every pinned app) and leaves the standard image/layer world for app containers.
+The image store remains the build input and the assistant sandbox host.
 </div>
 
 ---
 
-# Phase 1 -> target
+# Phase 1 -> target: the target won
 
 ```mermaid {scale: 0.75}
 flowchart LR
-  now["today<br/>overlay on ext4<br/>layer unbounded"] --> p1["phase 1<br/>btrfs driver + qgroups<br/>one budget per app"]
-  p1 --> tgt["target<br/>--rootfs on per-app subtree<br/>podman = pure runtime"]
-  style p1 fill:#047857,color:#fff
+  now["before<br/>overlay on ext4<br/>layer unbounded"] -.->|skipped| p1["phase 1<br/>btrfs driver + qgroups<br/>one budget per app"]
+  now --> tgt["target (SHIPPED)<br/>--rootfs per-app subvolume<br/>podman = pure runtime"]
+  p1 -.-> tgt
+  style tgt fill:#047857,color:#fff
 ```
 
-| | Phase 1 (decided) | Target (from scratch) |
+| | Phase 1 (skipped) | Target (shipped) |
 |---|---|---|
-| Layer lives | podman graphroot (btrfs driver) | `apps/<id>/rootfs` subtree |
-| Budget | hierarchical qgroup (home+snaps+layer) | same semantics, simpler membership |
-| Image flow | unchanged (build + pinned tags) | base subvolume per tag |
+| Layer lives | podman graphroot (btrfs driver) | `.rootfs/<id>` subvolume |
+| Budget | hierarchical qgroup (home+snaps+layer) | same semantics, `1/<uid>` |
+| Image flow | unchanged (build + pinned tags) | build input; base subvolume per tag |
 | apt persistence | no | **yes** |
 | Node migration | home only | **whole app: btrfs send** |
 
 <div class="mt-2 text-sm opacity-60">
-The budget semantics decided for phase 1 carry to the target unchanged -- only
-the layer's physical home moves. Rollout: code (fail-open) -> stage migration +
-dd acceptance test -> soak -> prod window.
+The budget semantics decided for phase 1 carried to the target unchanged -- only
+the layer's physical home differs. Shipped with a one-time startup migration:
+keep each app's home state, drop pre-existing snapshots, build the rootfs from
+the pinned tag, budget every app.
 </div>
 
 ---
 zoom: 0.8
 ---
 
-# Or: skip phase 1 entirely?
+# Or: skip phase 1 entirely? (Verdict: yes -- this is what happened)
 
 Going straight to the target quietly drops phase 1's riskiest parts:
 
@@ -453,14 +464,18 @@ Going straight to the target quietly drops phase 1's riskiest parts:
 | Storage-driver migration | **yes** -- all nodes switch to the btrfs driver, images rebuild | **none** -- app containers stop using graph storage; overlay stays for builds + the assistant sandbox |
 | btrfs graph driver risk | load-bearing | not used for apps |
 | Throwaway work | layer-subvol qgroup plumbing, driver migration | none |
-| New machinery | little | base export per tag, rootfs lifecycle (create/fork/rollback/delete), `--rootfs :idmap` under userns |
+| New machinery | little | base export per tag, rootfs lifecycle (create/fork/delete), `--rootfs` under userns |
 | Rough effort | days | 1.5-2.5 weeks incl. validation |
 
 <div class="mt-4 text-sm opacity-60">
-The open question for going direct: <code>--rootfs</code> with an id-mapped mount
-under the per-app userns (kernel 6.8 should support it; needs a stage spike). If
-that spike passes, direct is the better deal: nothing thrown away, no driver
-migration, and apt persistence lands with the cap.
+The open question was <code>--rootfs</code> with an id-mapped mount under the
+per-app userns. The stage spike <b>failed</b> on this crun (uid_map EINVAL, then
+/etc/mtab EOVERFLOW) -- resolved with the chown fallback: snapshot the base, then
+<code>chown -R</code> the rootfs to the app's uid block once (1.6s for 57k files,
+~47MB exclusive metadata; data extents stay shared), then plain
+<code>--rootfs</code>. Direct was still the better deal, and it is the path that
+shipped: nothing thrown away, no driver migration, apt persistence landed with
+the cap.
 </div>
 
 ---
@@ -475,5 +490,5 @@ One pool, one budget per app, enforced at write time.
 </div>
 
 <div class="mt-10 text-sm opacity-50">
-plans/260813-hostit-disk-hard-cap.md &middot; validated on stage 2026-08-13
+plans/260813-hostit-disk-hard-cap.md &middot; validated on stage 2026-08-13 &middot; implemented (rootfs storage target)
 </div>
