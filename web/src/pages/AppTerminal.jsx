@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
-import { reconnectDelaySeconds } from "../reconnect";
+import { reconnectDelaySeconds, shouldReconnect } from "../reconnect";
 
 // A shell in the app's container, in the browser. The websocket streams raw
 // terminal bytes both ways (binary), and a text frame carries the size whenever
@@ -108,8 +108,15 @@ const AppTerminal = ({ name, onClose, onMinimize, onReady, onSessionEnd, onSsh, 
         }
       };
       ws.onmessage = (e) => term.write(new Uint8Array(e.data));
-      ws.onclose = () => {
+      ws.onclose = (event) => {
         if (disposed) return; // our own teardown (unmount)
+        // A powered-off app closes with a distinct code: show a note and stop, so
+        // an auto-reconnect never fights the poweroff (nor powers the app back on).
+        if (!shouldReconnect(event.code)) {
+          setReconnect({ active: false, seconds: 0 });
+          term.write("\r\n\x1b[33mThis app is powered off. Power it on to use the terminal.\x1b[0m\r\n");
+          return;
+        }
         scheduleReconnect();
       };
       ws.onerror = () => {}; // the close handler drives the reconnect; don't double-report

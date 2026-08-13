@@ -6,6 +6,7 @@
 package systemd
 
 import (
+	"strings"
 	"time"
 
 	"heckel.io/hostit/run"
@@ -27,6 +28,7 @@ type Interface interface {
 	Status(unit string) (string, error)
 	ListUnits(pattern string) (string, error)
 	IsActive(timeout time.Duration, units ...string) (string, error)
+	IsEnabled(unit string) bool
 }
 
 // Service drives systemctl over a run.Runner.
@@ -100,4 +102,14 @@ func (s *Service) IsActive(timeout time.Duration, units ...string) (string, erro
 		return s.runner.RunTimeout(timeout, args...)
 	}
 	return s.runner.Run(args...)
+}
+
+// IsEnabled reports whether a unit is not disabled. hostit only ever disables a
+// unit through poweroff, so a false here means the app was deliberately powered
+// off. Anything other than an explicit "disabled" (including a systemctl error or
+// an unknown state) counts as enabled, so a transient hiccup never wrongly blocks
+// a login.
+func (s *Service) IsEnabled(unit string) bool {
+	out, _ := s.runner.Run(systemctl, "is-enabled", unit)
+	return strings.TrimSpace(out) != "disabled"
 }

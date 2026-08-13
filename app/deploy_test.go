@@ -158,6 +158,38 @@ func TestEnsureRunningContainerIsNoOp(t *testing.T) {
 	assert.NotContains(t, joined, "restart")
 }
 
+func TestEnsureRefusesAPoweredOffApp(t *testing.T) {
+	t.Parallel()
+	m, _, runner := newTestDeployManager(t)
+	createTestApp(t, m, "blog")
+	// A poweroff disables the unit. A login (SSH or the web terminal) must not
+	// power it back on -- otherwise poweroff never sticks, and an auto-reconnecting
+	// terminal fights the operator.
+	runner.returns("is-enabled", "disabled")
+	runner.reset()
+	_, err := m.Ensure("blog")
+	require.ErrorIs(t, err, appctl.ErrPoweredOff)
+	joined := runner.ran()
+	assert.NotContains(t, joined, "enable --now", "a powered-off app must not be re-enabled on login")
+	assert.NotContains(t, joined, "restart")
+	assert.NotContains(t, joined, "podman create")
+}
+
+func TestEnsureStartsAnEnabledButStoppedApp(t *testing.T) {
+	t.Parallel()
+	m, _, runner := newTestDeployManager(t)
+	createTestApp(t, m, "blog")
+	// Enabled but not running (e.g. crashed, or a fresh reboot): a login should
+	// still bring it up -- only a deliberate poweroff (disabled) is left alone.
+	runner.returns("is-enabled", "enabled")
+	runner.returns("container inspect", "whatever") // Exists
+	runner.returns("is-active", "inactive")
+	runner.reset()
+	_, err := m.Ensure("blog")
+	require.NoError(t, err)
+	assert.Contains(t, runner.ran(), "enable --now", "an enabled-but-stopped app is started on login")
+}
+
 func TestDeleteAppStopsAppBeforeRemovingUser(t *testing.T) {
 	t.Parallel()
 	m, ops, runner := newTestDeployManager(t)

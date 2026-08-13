@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"os"
 	"os/exec"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/creack/pty"
+	"heckel.io/hostit/appctl"
 )
 
 const (
@@ -19,6 +21,11 @@ const (
 	// terminalReadLimit bounds a single websocket message; terminal input arrives
 	// in tiny frames, so anything large is a client bug or abuse.
 	terminalReadLimit = 64 * 1024
+	// terminalStatusPoweredOff is the close code the browser terminal receives when
+	// the app is powered off. Unlike an ordinary drop, the client shows a note and
+	// does NOT reconnect: a reconnect would be refused and must never power the app
+	// back on. 4001 is in the WebSocket application-private code range.
+	terminalStatusPoweredOff = websocket.StatusCode(4001)
 )
 
 // handleTerminal bridges a browser terminal to an interactive shell in the app's
@@ -46,6 +53,20 @@ func (s *Server) handleTerminal(w http.ResponseWriter, r *http.Request, c *calle
 	}
 	defer conn.CloseNow()
 	conn.SetReadLimit(terminalReadLimit)
+
+	// Opening a terminal must not power a stopped app back on if it was deliberately
+	// powered off -- that would defeat poweroff, and an auto-reconnecting terminal
+	// would fight the operator. Ensure gates that: it starts a crashed/enabled app
+	// as before, but returns ErrPoweredOff for a disabled one, which we relay with a
+	// distinct close code so the client stops reconnecting.
+	if _, err := s.apps.Ensure(a.Name); err != nil {
+		if errors.Is(err, appctl.ErrPoweredOff) {
+			conn.Close(terminalStatusPoweredOff, "app is powered off")
+			return
+		}
+		conn.Close(websocket.StatusInternalError, "cannot start app")
+		return
+	}
 
 	ctx, cancel := context.WithTimeout(r.Context(), terminalMaxDuration)
 	defer cancel()

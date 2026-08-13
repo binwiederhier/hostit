@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"heckel.io/hostit/app"
+	"heckel.io/hostit/appctl"
 	"heckel.io/hostit/store"
 )
 
@@ -115,6 +116,8 @@ func writeAppError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, ErrForbidden):
 		writeError(w, http.StatusForbidden, err)
+	case errors.Is(err, appctl.ErrPoweredOff):
+		writeError(w, http.StatusConflict, err)
 	case errors.Is(err, store.ErrAppNotFound):
 		writeError(w, http.StatusNotFound, err)
 	case errors.Is(err, app.ErrAppExists):

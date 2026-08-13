@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -52,6 +53,12 @@ func execShell(c *cli.Context) error {
 		return cli.Exit("", 1)
 	}
 	if _, err := ctl.Ensure(); err != nil {
+		// A powered-off app is not started by a login; say so plainly rather than
+		// with a generic failure, so the owner knows to power it on first.
+		if errors.Is(err, appctl.ErrPoweredOff) {
+			fmt.Fprintf(os.Stderr, "hostit: %s is powered off. Power it on first (from the dashboard, or `hostit apps power on %s`).\n", self.Name, self.Name)
+			return cli.Exit("", 1)
+		}
 		fmt.Fprintf(os.Stderr, "hostit: cannot start workspace for %s: %s\n", self.Name, err.Error())
 		return cli.Exit("", 1)
 	}

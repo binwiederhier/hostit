@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -21,6 +22,15 @@ import (
 const (
 	// requestTimeout bounds socket calls; ensure/up can build images, so generous
 	requestTimeout = 10 * time.Minute
+)
+
+var (
+	// ErrPoweredOff means an operation needs a running app but the app was
+	// deliberately powered off (its unit disabled). The daemon returns it so a
+	// login never silently powers an app back on; the login shell surfaces it and
+	// the web terminal stops reconnecting on it. Its message is matched across the
+	// socket boundary, so it must stay exactly as the daemon sends it.
+	ErrPoweredOff = errors.New("app is powered off; power it on first")
 )
 
 // Controller is a client for the daemon's /v1/self API
@@ -167,6 +177,11 @@ func (c *Controller) requestBody(method, path string, body []byte, response any)
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		var errResp errorResponse
 		if err := json.Unmarshal(respBody, &errResp); err == nil && errResp.Error != "" {
+			// Recover the typed sentinel so callers (the login shell) can react to a
+			// powered-off app; the error is otherwise flattened to its message here.
+			if errResp.Error == ErrPoweredOff.Error() {
+				return ErrPoweredOff
+			}
 			return fmt.Errorf("%s", errResp.Error)
 		}
 		return fmt.Errorf("daemon request failed with HTTP %d", resp.StatusCode)

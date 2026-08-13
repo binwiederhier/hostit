@@ -57,6 +57,13 @@ func (m *Manager) Ensure(name string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	// A deliberately powered-off app (its unit disabled) must not be resurrected by
+	// a login: that would defeat poweroff, and the web terminal auto-reconnecting
+	// after the drop would fight the operator. Only an explicit power-on (Up) clears
+	// this. A crashed or fresh-reboot app is still enabled, so it starts as before.
+	if !m.systemd.IsEnabled(m.unitName(name)) {
+		return "", appctl.ErrPoweredOff
+	}
 	conf, err := m.loadConfig(name)
 	if err != nil {
 		conf = nil // Fall back to an idle workspace
