@@ -109,6 +109,19 @@ func TestContainerMountsTheSocketDirectory(t *testing.T) {
 	assert.NotContains(t, joined, "--volume /run/hostit/hostit.sock:/run/hostit/hostit.sock")
 }
 
+func TestContainerUsesConmonSdnotify(t *testing.T) {
+	t.Parallel()
+	conf := &appctl.AppConfig{Mode: appctl.ModeStatic}
+	a := &store.App{Name: "blog", Port: 10000}
+	joined := strings.Join(CreateArgs(conf, a, "/srv/hostit/apps/blog", "/run/hostit/hostit.sock", "/usr/bin/hostit", testVersion, 0, testIDs), " ")
+	// conmon (not the container) signals readiness, so the app's Type=notify systemd
+	// unit only reports active once the container is actually running -- a deploy that
+	// races a just-created app must not try to reload a container that is still
+	// starting. Anything but conmon (the default "container") would make systemd wait
+	// on a READY the agent never sends.
+	assert.Contains(t, joined, "--sdnotify conmon")
+}
+
 func TestEnvOrderDoesNotChangeTheConfigHash(t *testing.T) {
 	t.Parallel()
 	conf := &appctl.AppConfig{Mode: appctl.ModeApp, Run: "./server", Env: map[string]string{

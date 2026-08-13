@@ -7,8 +7,15 @@ Description=hostit app %i
 After=network-online.target
 Wants=network-online.target
 
+# Type=notify with the container created --sdnotify=conmon: conmon signals READY
+# only once the container is actually running, so "systemctl start" (and the unit's
+# active state) reflects a running container, not merely that podman was exec'd.
+# This closes a race where a deploy hitting a just-created app would try to reload a
+# container that had not finished starting. NotifyAccess=all lets conmon, a child of
+# podman rather than the main process, deliver the notification.
 [Service]
-Type=exec
+Type=notify
+NotifyAccess=all
 ExecStart=/usr/bin/podman start --attach hostit-app-%i
 ExecStop=/usr/bin/podman stop --time 2 hostit-app-%i
 Restart=always

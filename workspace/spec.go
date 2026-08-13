@@ -89,6 +89,12 @@ func UnitName(id string) string {
 // cannot reach each other, and ports are published on loopback only.
 func CreateArgs(conf *appctl.AppConfig, a *store.App, home, socketFile, hostitBin, version string, memoryMB int, ids IDs) []string {
 	args := []string{"create", "--name", ContainerName(a.ID), "--hostname", a.Name}
+	// conmon signals readiness to systemd, so the app's Type=notify unit only reports
+	// active once the container is actually running. Without this a deploy can race a
+	// just-created app whose container is still starting and try to reload (SIGHUP) a
+	// container that is not up yet, which podman rejects. The default "container"
+	// policy would instead make systemd wait on a READY the agent never sends.
+	args = append(args, "--sdnotify", "conmon")
 	// Part of the container's identity, so an upgrade makes it stale and apply
 	// recreates it: the bind-mounted binary is a file, and a running container
 	// keeps the inode it started with
