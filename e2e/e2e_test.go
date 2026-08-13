@@ -71,8 +71,8 @@ func TestAgentCanBuildAnAppFromNothing(t *testing.T) {
 	assert.NotEmpty(t, guide["runtimes"])
 	assert.Contains(t, strings.ToLower(fmt.Sprint(info["readme"])), "stub")
 
-	// The stub serves immediately, before the agent touches anything
-	e.waitForBody(fmt.Sprint(app["url"]), "stub")
+	// The skeleton placeholder serves immediately, before the agent touches anything
+	e.waitForBody(fmt.Sprint(app["url"]), "Nothing here yet")
 
 	// Now act as the agent: upload a Go-free static site, deploy, verify
 	e.put(fmt.Sprintf("/api/apps/%s/files/public/index.html", name), token, "<h1>e2e built this</h1>")
@@ -197,17 +197,20 @@ func TestUnknownAppAndStoppedApp(t *testing.T) {
 	})
 	token := fmt.Sprint(app["agent_token"])
 	url := fmt.Sprint(app["url"])
-	e.waitForBody(url, "stub")
+	e.waitForBody(url, "Nothing here yet")
 
-	// A stopped app shows the "not running" page, with owner instructions
+	// A stopped app is deliberately indistinguishable from a hostname that belongs
+	// to no app: both serve the same "nothing deployed" page, so a visitor cannot
+	// tell a free name from a stopped app, and no internals (or the ssh login that
+	// would confirm the app exists) leak.
 	e.post(fmt.Sprintf("/api/apps/%s/stop", name), token, nil)
-	body := e.waitForBody(url, "not running")
-	assert.Contains(t, body, "ssh "+name+"@", "the owner hint names the app's ssh login")
+	body := e.waitForBody(url, "deployed here")
+	assert.NotContains(t, body, "ssh "+name+"@", "a stopped app must not reveal its ssh login to visitors")
 	assert.NotContains(t, body, "127.0.0.1", "no internals for visitors")
 
-	// Starting it again brings the stub back
+	// Starting it again brings the skeleton back
 	e.post(fmt.Sprintf("/api/apps/%s/start", name), token, nil)
-	e.waitForBody(url, "stub")
+	e.waitForBody(url, "Nothing here yet")
 }
 
 // --- helpers ---
