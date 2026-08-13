@@ -136,6 +136,9 @@ type Manager struct {
 	// keep them; the authoritative values come from the owner's limits
 	memoryMB map[string]int
 	diskMB   map[string]int
+	// reservedPorts holds ports handed out by allocatePort but not yet registered
+	// in the store, so concurrent creates never share one (see allocatePort)
+	reservedPorts map[int]bool
 
 	// stateCache holds the last measured state of every app, so listing apps
 	// answers from memory instead of waiting on podman
@@ -148,7 +151,7 @@ type Manager struct {
 	// rollback deleting the home while a deploy writes into it.
 	appLocks map[string]*sync.Mutex
 
-	mu         sync.Mutex // Protects memoryMB, diskMB
+	mu         sync.Mutex // Protects memoryMB, diskMB, reservedPorts
 	stateMu    sync.Mutex // Protects stateCache, stateFresh, stateRefreshing
 	execMu     sync.Mutex // Serializes /run commands; they are builds, and the box has one core
 	appLocksMu sync.Mutex // Protects appLocks
@@ -158,20 +161,21 @@ type Manager struct {
 // (real ones from NewSystemServices in production, fakes in tests).
 func NewManager(conf *config.Config, s *store.Store, svc *Services) *Manager {
 	m := &Manager{
-		config:     conf,
-		store:      s,
-		runner:     svc.Runner,
-		btrfs:      svc.Btrfs,
-		systemd:    svc.Systemd,
-		container:  svc.Container,
-		user:       svc.User,
-		ssh:        svc.SSH,
-		firewall:   svc.Firewall,
-		homefs:     homefs.New(ErrInvalid),
-		memoryMB:   make(map[string]int),
-		diskMB:     make(map[string]int),
-		stateCache: make(map[string]State),
-		appLocks:   make(map[string]*sync.Mutex),
+		config:        conf,
+		store:         s,
+		runner:        svc.Runner,
+		btrfs:         svc.Btrfs,
+		systemd:       svc.Systemd,
+		container:     svc.Container,
+		user:          svc.User,
+		ssh:           svc.SSH,
+		firewall:      svc.Firewall,
+		homefs:        homefs.New(ErrInvalid),
+		memoryMB:      make(map[string]int),
+		diskMB:        make(map[string]int),
+		reservedPorts: make(map[int]bool),
+		stateCache:    make(map[string]State),
+		appLocks:      make(map[string]*sync.Mutex),
 	}
 	// The snapshot Service reuses the Manager's node-local services and store, and
 	// calls back into it through snapshotHost for the app-lifecycle operations and
@@ -258,6 +262,10 @@ func (m *Manager) create(name string, opts *CreateOptions, seedPath, seedRootfsI
 	if err != nil {
 		return nil, err
 	}
+	// The reservation has done its job once create returns: on success AddApp has
+	// registered the port (UsedPorts covers it from then on), on failure it is
+	// genuinely free again.
+	defer m.releasePort(port)
 
 	appKeys := opts.RequestKeys
 	sshKeys := append(append([]string{}, appKeys...), opts.ProfileKeys...)
@@ -527,12 +535,28 @@ func (m *Manager) allocatePort() (int, error) {
 	if err != nil {
 		return 0, err
 	}
+	// Reserve in memory until the app is registered (or the create fails): the
+	// port only shows up in UsedPorts at AddApp time, seconds after allocation,
+	// and two concurrent creates reading the store in that window were both handed
+	// the same port -- the second useradd then failed on the taken uid.
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	for port := m.config.PortMin; port <= m.config.PortMax; port++ {
-		if !slices.Contains(used, port) {
+		if !slices.Contains(used, port) && !m.reservedPorts[port] {
+			m.reservedPorts[port] = true
 			return port, nil
 		}
 	}
 	return 0, ErrNoPortsAvailable
+}
+
+// releasePort ends a port's in-memory reservation: after AddApp registered it
+// (UsedPorts covers it from then on), or when the create failed. Leaving it
+// reserved would leak the port until the next daemon restart.
+func (m *Manager) releasePort(port int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.reservedPorts, port)
 }
 
 // uidFor is an app's base uid: a contiguous workspace.UIDBlockSize-wide block, one per

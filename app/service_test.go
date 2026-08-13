@@ -341,3 +341,24 @@ func (f *fakeSystem) Apply(rules []firewall.Rule) error {
 	f.portRules = append(f.portRules, rules)
 	return nil
 }
+
+func TestAllocatePortReservesUntilRegistered(t *testing.T) {
+	t.Parallel()
+	m, _, _ := newTestDeployManager(t)
+	// Two creates can run concurrently (the UI and an agent, or two agents), and
+	// the port only shows up in the store's UsedPorts at AddApp time -- seconds
+	// after allocation now that rootfs creation sits in between. Allocation must
+	// therefore reserve the port in memory until it is registered or released:
+	// handing both creates port N made the second useradd fail on a taken uid
+	// (seen live: a UI create 500'd against a concurrent e2e create).
+	first, err := m.allocatePort()
+	require.NoError(t, err)
+	second, err := m.allocatePort()
+	require.NoError(t, err)
+	assert.NotEqual(t, first, second, "an unregistered port must not be handed out twice")
+	// Released ports become allocatable again (the failed-create path).
+	m.releasePort(second)
+	third, err := m.allocatePort()
+	require.NoError(t, err)
+	assert.Equal(t, second, third, "a released port is free again")
+}
