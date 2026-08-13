@@ -245,6 +245,31 @@ the right trade for small boxes.
 </div>
 
 ---
+
+# Phase-1 layout: what actually sits where
+
+```
+apps.btrfs  (the existing loop image, grown; a real volume later)
+  apps/
+    <id>/                  # home subvols -- unchanged, referenced qgroup limit
+  .snapshots/
+    <id>/*                 # snapshot subvols -- join the app's qgroup
+  containers/              # NEW: podman graphroot moves in (driver = btrfs)
+    btrfs/subvolumes/
+      <image-layer>...     # shared image subvols -- outside every app group, free
+      <container-layer>    # each app's writable layer -- joins its qgroup, -e capped
+```
+
+The daemon's SQLite (`/var/lib/hostit/hostit.db`) and the OS stay on the ext4
+root, **outside** the pool: however full the pool gets, the host never wedges.
+
+<div class="mt-4 text-sm opacity-60">
+Same pool, same qgroup mechanism everywhere; the only structural change is the
+podman graphroot moving into the pool under the btrfs driver. Compare with the
+from-scratch tree later -- the difference is only where the layer lives.
+</div>
+
+---
 layout: section
 transition: slide-up
 ---
@@ -259,7 +284,7 @@ podman is just a runtime.
 # The target shape: an app is one subtree
 
 ```
-pool/  (btrfs on a real device -- no loop)
+pool/  (the existing loop pool works; a real device is a perf nicety for new nodes)
   bases/
     <image-tag>/          # workspace rootfs, exported once per pinned tag
   apps/
@@ -281,6 +306,74 @@ $ podman run --rootfs /pool/apps/<id>/rootfs \
 The base is built once from the Containerfile and exported; every app's rootfs
 is a free reflink of it. Apps are already pinned to image tags -- the pin
 becomes "which base subvolume".
+</div>
+
+---
+
+# Wait -- are containers not "never rebuilt"?
+
+The actual requirement (and what is built) is narrower: **a Containerfile change
+never recreates an existing app's container.** Each app is pinned to the image
+tag it was built with, so new images only affect new apps. But containers ARE
+recreated in normal operation:
+
+- the app's own **config changes** (`hostit.yml` run:/env:, memory limit) -- the
+  desired-args hash differs, `apply()` recreates
+- a **daemon upgrade** -- the version is part of the container's identity (new
+  binary may mount/flag things differently); `RestartStaleAgents` recreates every
+  container (v0.8.7 did exactly this to roll out `--sdnotify=conmon`)
+
+<div class="mt-4 text-sm opacity-60">
+And every recreate throws away the writable layer: <code>apt-get install</code>
+lives in that layer, so packages silently vanish on the next deploy or upgrade --
+a long-standing open TODO. Recreation is fine for hostit (containers are cattle);
+it is the <b>layer dying with them</b> that hurts.
+</div>
+
+---
+
+# Apt persistence, concretely
+
+<div class="grid grid-cols-2 gap-6 mt-4">
+<div class="p-4 rounded border border-red-400 border-opacity-40">
+
+**Today (and phase 1)**
+
+```console
+root@myapp:~# apt-get install ffmpeg
+# ... works, lands in the writable layer
+
+$ # owner edits hostit.yml, deploys
+$ # -> config hash changed -> recreate
+
+root@myapp:~# ffmpeg
+bash: ffmpeg: command not found   # gone
+```
+
+</div>
+<div class="p-4 rounded border border-green-500 border-opacity-40">
+
+**Target (--rootfs subtree)**
+
+```console
+root@myapp:~# apt-get install ffmpeg
+# ... lands in apps/<id>/rootfs
+
+$ # deploy -> recreate: podman gets the
+$ # SAME rootfs subvolume back
+
+root@myapp:~# ffmpeg -version
+ffmpeg version 6.1.1 ...          # still there
+```
+
+</div>
+</div>
+
+<div class="mt-6 text-sm opacity-60">
+The rootfs is the app's own persistent subvolume: the container process is
+disposable, its filesystem is not. Recreates (config change, upgrades) become
+lossless, and the never-rebuild-on-image-change pin is unchanged -- the app's
+rootfs came from its pinned base and stays put.
 </div>
 
 ---
@@ -345,6 +438,29 @@ flowchart LR
 The budget semantics decided for phase 1 carry to the target unchanged -- only
 the layer's physical home moves. Rollout: code (fail-open) -> stage migration +
 dd acceptance test -> soak -> prod window.
+</div>
+
+---
+zoom: 0.8
+---
+
+# Or: skip phase 1 entirely?
+
+Going straight to the target quietly drops phase 1's riskiest parts:
+
+| | Incremental (phase 1 first) | Direct to target |
+|---|---|---|
+| Storage-driver migration | **yes** -- all nodes switch to the btrfs driver, images rebuild | **none** -- app containers stop using graph storage; overlay stays for builds + the assistant sandbox |
+| btrfs graph driver risk | load-bearing | not used for apps |
+| Throwaway work | layer-subvol qgroup plumbing, driver migration | none |
+| New machinery | little | base export per tag, rootfs lifecycle (create/fork/rollback/delete), `--rootfs :idmap` under userns |
+| Rough effort | days | 1.5-2.5 weeks incl. validation |
+
+<div class="mt-4 text-sm opacity-60">
+The open question for going direct: <code>--rootfs</code> with an id-mapped mount
+under the per-app userns (kernel 6.8 should support it; needs a stage spike). If
+that spike passes, direct is the better deal: nothing thrown away, no driver
+migration, and apt persistence lands with the cap.
 </div>
 
 ---
