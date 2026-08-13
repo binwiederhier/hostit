@@ -140,6 +140,12 @@ func (s *Service) QgroupAssign(pool, subvolQgroup, groupID string) error {
 		_, _ = s.runner.RunTimeout(timeout, "btrfs", "quota", "rescan", pool)
 		return nil
 	}
+	// An existing membership ("File exists") is success: every budget path is
+	// ensure-style and re-runs after partial failures, and the migration retries
+	// whole apps -- treating a re-assign as an error would keep it from converging.
+	if err != nil && strings.Contains(out+err.Error(), "File exists") {
+		return nil
+	}
 	return err
 }
 

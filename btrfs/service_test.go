@@ -177,6 +177,18 @@ func TestQgroupAssignToleratesRescanWarning(t *testing.T) {
 	assert.Error(t, New(hard).QgroupAssign("/apps", "0/257", "1/1000000"))
 }
 
+func TestQgroupAssignIsIdempotent(t *testing.T) {
+	t.Parallel()
+	// Assigning a subvolume that is already a member errors with "File exists".
+	// Every budget path is ensure-style and re-runs after partial failures (the
+	// storage migration retries whole apps), so an existing membership is success,
+	// not an error -- without this the migration can never converge.
+	r := newFakeRunner()
+	r.returns("btrfs qgroup assign", "ERROR: unable to assign quota group: File exists\n")
+	r.fails("btrfs qgroup assign", assert.AnError)
+	assert.NoError(t, New(r).QgroupAssign("/apps", "0/257", "1/1000000"))
+}
+
 func TestQgroupLimitExclusive(t *testing.T) {
 	t.Parallel()
 	r := newFakeRunner()
