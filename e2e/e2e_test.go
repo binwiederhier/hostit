@@ -358,18 +358,22 @@ func TestAssistantGlobalDefaultsFilterModes(t *testing.T) {
 	e := newEnv(t)
 	orig := e.assistantDefaults()
 	t.Cleanup(func() {
-		e.doJSON("PUT", "/api/assistant-defaults", e.token, map[string]any{
-			"external_allowed": orig["external_allowed"],
-			"allowed_models":   orig["allowed_models"],
-			"default_mode":     orig["default_mode"],
+		e.doJSON("PATCH", "/api/settings", e.token, map[string]any{
+			"assistant": map[string]any{
+				"external_allowed": orig["external_allowed"],
+				"allowed_models":   orig["allowed_models"],
+				"default_mode":     orig["default_mode"],
+			},
 		}, nil, http.StatusOK)
 	})
 	first := fmt.Sprint(asSlice(orig["models"])[0].(map[string]any)["id"])
 
 	// Restrict the catalog to one model and disallow External Claude.
-	e.doJSON("PUT", "/api/assistant-defaults", e.token, map[string]any{
-		"external_allowed": false,
-		"allowed_models":   []string{first},
+	e.doJSON("PATCH", "/api/settings", e.token, map[string]any{
+		"assistant": map[string]any{
+			"external_allowed": false,
+			"allowed_models":   []string{first},
+		},
 	}, nil, http.StatusOK)
 
 	name := uniqueName("e2e-filter")
@@ -434,8 +438,11 @@ func TestAssistantEveryModelRunsATurn(t *testing.T) {
 }
 
 func (e *env) assistantDefaults() map[string]any {
-	var d map[string]any
-	e.get("/api/assistant-defaults", e.token, &d)
+	// The assistant defaults are part of the global settings call, not a separate
+	// endpoint: GET /api/settings returns them under "assistant".
+	var s map[string]any
+	e.get("/api/settings", e.token, &s)
+	d, _ := s["assistant"].(map[string]any)
 	return d
 }
 
