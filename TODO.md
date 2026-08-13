@@ -42,13 +42,20 @@ everything imaginable -- if it is not written down here it is not planned.
   - `RefreshDiskUsage` swallows the registry write failure: `store.UpdateAppUsage`
     throws `database or disk is full`, which is caught and only `slog.Warn`d
     (`app/quota.go:47`), so the dashboard keeps serving the last good numbers forever.
-  - Fix directions (not yet built): `Statfs(AppsDir)` in the disk loop with
-    warn/critical thresholds; surface a `disk` field in the health/settings API + a
-    dashboard banner; refuse creates/deploys/forks/snapshot-restores when critically
-    low (so operations fail with a clear error instead of wedging podman); stop
-    swallowing the daemon's *own* disk-full (a daemon-health event, not a per-app
-    Warn); and reconsider defaulting `disk_mb` to unlimited / guarding
-    oversubscription against a reserved host margin. Reported 2026-08-12.
+  - **Approach decided + mechanism validated (2026-08-13): a real hard cap, no
+    passive monitoring.** The gap is the container's writable overlay layer (the
+    home already has a btrfs qgroup). `--storage-opt size` needs XFS/btrfs storage
+    (we have ext4 overlay, and the 24G disk has no room for a dedicated fs);
+    old-style ext4 quota is unsupported by the kernel. The working mechanism is
+    **ext4 journaled usrquota capped per app uid** (the overlay files are owned by
+    the app's userns host uid) -- proven on stage to cut a `dd` off exactly at the
+    cap. hostit code: `SetDiskLimit` also runs `setquota -u <appUID>` on the
+    container-storage fs (fail-open). Blocker: enabling journaled quota on the
+    existing root fs needs a one-time **offline** `tune2fs -O quota` (a maintenance
+    reboot), plus `linux-modules-extra` (quota_v2) + the `quota` package. Full
+    findings, the two infra options (root-fs quota vs bigger disk + dedicated fs),
+    the code, and the ansible are in `plans/260813-hostit-disk-hard-cap.md`. Also
+    reconsider the `disk_mb: 0` (unlimited) default. Reported 2026-08-12.
 
 ## Multi-node: a proxy node and hosting nodes
 
@@ -201,6 +208,14 @@ definitions and the conversation prefix are cache-marked, so repeat turns pay th
 ## Done (recent)
 
 Kept briefly for context; prune when stale.
+
+- **v0.8.8 (poweroff sticks).** Powering off an app disabled its unit, but any
+  SSH/browser-terminal login called `Ensure`, which started the container back up
+  -- and v0.8.7's terminal auto-reconnect made that an automatic loop. `Ensure`
+  (the login path) now refuses a powered-off app (`ErrPoweredOff`); the shell says
+  so and the browser terminal shows a note and stops reconnecting. A separate
+  `PowerOn` (re-enables + starts) is what the explicit poweron verb uses. Validated
+  on stage and prod.
 
 - **v0.8.7 (deploy-race fix + robustness).** App systemd units are now `Type=notify`
   with containers created `--sdnotify=conmon`, so a deploy never SIGHUPs a container
