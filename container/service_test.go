@@ -90,6 +90,31 @@ func TestContainerImages(t *testing.T) {
 	}, r.ran)
 }
 
+func TestCreateFromReturnsTheContainerID(t *testing.T) {
+	t.Parallel()
+	r := newFakeRunner()
+	r.outputs["podman create"] = "abc123def\n"
+	s := New(r)
+
+	id, err := s.CreateFrom("localhost/hostit-workspace:abc", "true")
+	require.NoError(t, err)
+	assert.Equal(t, "abc123def", id)
+	assert.Equal(t, []string{"podman create localhost/hostit-workspace:abc true"}, r.ran)
+}
+
+func TestExportRootfsPipesIntoTheTargetDirectory(t *testing.T) {
+	t.Parallel()
+	r := newFakeRunner()
+	s := New(r)
+
+	require.NoError(t, s.ExportRootfs(15*time.Minute, "abc123def", "/apps/.bases/tag1"))
+	require.Len(t, r.timed, 1)
+	// The export streams straight into tar: an ~860 MB rootfs must never hit a
+	// temp file on a host this small. xattrs (file capabilities) must survive.
+	assert.Equal(t, "sh -c podman export abc123def | tar -xpf - --xattrs --xattrs-include='*' -C /apps/.bases/tag1", r.timed[0])
+	assert.Empty(t, r.ran, "the export is bounded by a timeout")
+}
+
 func TestContainerTimedCalls(t *testing.T) {
 	t.Parallel()
 	r := newFakeRunner()

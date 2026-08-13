@@ -5,6 +5,8 @@
 package container
 
 import (
+	"fmt"
+	"strings"
 	"time"
 
 	"heckel.io/hostit/run"
@@ -29,6 +31,8 @@ type Interface interface {
 	RemoveImage(image string) error
 	ImageExists(tag string) bool
 	Build(tag, contextDir string) error
+	CreateFrom(image string, command ...string) (string, error)
+	ExportRootfs(timeout time.Duration, name, dir string) error
 }
 
 // Service drives podman over a run.Runner.
@@ -118,6 +122,26 @@ func (s *Service) ImageOf(name string) (string, error) {
 func (s *Service) ImageExists(tag string) bool {
 	_, err := s.runner.Run(podman, "image", "exists", tag)
 	return err == nil
+}
+
+// CreateFrom creates a (never started) container from an image with the given
+// command and returns its id; used to export an image's rootfs.
+func (s *Service) CreateFrom(image string, command ...string) (string, error) {
+	out, err := s.runner.Run(append([]string{podman, "create", image}, command...)...)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(out), nil
+}
+
+// ExportRootfs streams a container's filesystem into dir, preserving permissions
+// and xattrs (file capabilities). It pipes podman export straight into tar so an
+// ~860 MB rootfs never needs a temp file, and is bounded by timeout since it is
+// the one long-running podman call here.
+func (s *Service) ExportRootfs(timeout time.Duration, name, dir string) error {
+	pipe := fmt.Sprintf("%s export %s | tar -xpf - --xattrs --xattrs-include='*' -C %s", podman, name, dir)
+	_, err := s.runner.RunTimeout(timeout, "sh", "-c", pipe)
+	return err
 }
 
 // Build builds an image tag from a context directory into the shared image store.
