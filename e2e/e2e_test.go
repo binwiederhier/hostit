@@ -992,3 +992,41 @@ func contains(ss []string, s string) bool {
 	}
 	return false
 }
+
+// TestChurnDeleteRecreate proves the lifecycle stays fast and correct under
+// rapid churn: delete answers immediately (rows first, host teardown in the
+// background), and an immediate same-name recreate succeeds -- it waits out
+// the dying unix user instead of failing with "already exists". The bounds are
+// generous CI-style ceilings, not performance targets; what they catch is the
+// return of the old behavior (multi-second deletes, 409s, or creates stalled
+// ~12s behind a teardown's filesystem sync).
+func TestChurnDeleteRecreate(t *testing.T) {
+	e := newEnv(t)
+	name := uniqueName("e2e-churn")
+	app := e.createApp(name)
+	t.Cleanup(func() {
+		e.deleteApp(name)
+	})
+	e.waitForBody(fmt.Sprint(app["url"]), "Nothing here yet")
+
+	start := time.Now()
+	e.deleteApp(name)
+	deleteTook := time.Since(start)
+	assert.Less(t, deleteTook, 5*time.Second, "delete must answer immediately, not wait for the teardown")
+
+	// The rows are gone at once.
+	req, err := http.NewRequest("GET", e.host+"/api/apps/"+name, nil)
+	require.NoError(t, err)
+	req.Header.Set("Authorization", "Bearer "+e.token)
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	_ = resp.Body.Close()
+	assert.Equal(t, http.StatusNotFound, resp.StatusCode, "the app is gone from the API immediately")
+
+	// Immediate same-name recreate: succeeds within the bounded teardown wait.
+	start = time.Now()
+	app = e.createApp(name)
+	recreateTook := time.Since(start)
+	assert.Less(t, recreateTook, 45*time.Second, "a same-name recreate waits out the teardown, bounded")
+	e.waitForBody(fmt.Sprint(app["url"]), "Nothing here yet")
+}
