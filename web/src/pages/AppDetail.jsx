@@ -109,6 +109,7 @@ Read that and the app's README.md and docs/, then reply exactly: "I understand t
 const connectionText = (name, token) => `Project info: ${origin}/api/apps/${name}/info
 Bearer token: ${token}
 `;
+
 // A small svg icon set, so the top bar reads as buttons, not a wall of words.
 const TerminalIcon = () => (
   <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
