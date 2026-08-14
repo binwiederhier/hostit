@@ -7,12 +7,13 @@
 // The page content is untrusted (an app can serve anything, including a
 // renderer exploit), so chrome never runs on the host: every shot runs the
 // headless-shell image in a locked-down rootful podman container (its own
-// user namespace via --userns=auto, all capabilities dropped, no privilege
-// escalation, memory and pid caps). Chrome's own sandbox is off inside; the
+// user namespace via an explicit high uid/gid mapping, all capabilities
+// dropped, no privilege escalation, memory and pid caps). Chrome's own sandbox is off inside; the
 // container is the sandbox. One shot runs at a time, through a single queue.
 package preview
 
 import (
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -26,8 +27,11 @@ import (
 const (
 	// SweepInterval is how often every running app is re-shot
 	SweepInterval = 6 * time.Hour
-	// image is the headless chrome the shots run in; pulled at loop start
-	image = "docker.io/chromedp/headless-shell:latest"
+	// image is the chrome the shots run in; pulled at loop start. Chosen for
+	// supporting one-shot --screenshot runs (chromedp/headless-shell does not:
+	// its build only serves the CDP protocol) and for running chrome as a
+	// non-root user inside the container.
+	image = "docker.io/zenika/alpine-chrome:latest"
 	// screenshotTimeout bounds one container run; a hung page must not stall the queue
 	screenshotTimeout = 90 * time.Second
 	// pullTimeout bounds the one-off image pull at startup
@@ -48,6 +52,11 @@ const (
 	shotFile = "shot.png"
 	// containerPrefix names shot containers, so leftovers are recognizable
 	containerPrefix = "hostit-preview-"
+	// userNSBase/userNSSize is the explicit uid/gid mapping for the shot
+	// container's user namespace: a high, otherwise-unused host range, mapped
+	// directly (rootful podman needs no /etc/subuid for explicit maps).
+	userNSBase = 3000000
+	userNSSize = 2000000
 )
 
 // App is one candidate for a screenshot.
@@ -239,11 +248,13 @@ func (m *Manager) shoot(a App) error {
 	}
 	defer os.RemoveAll(workDir)
 	container := containerPrefix + a.ID
+	userns := fmt.Sprintf("0:%d:%d", userNSBase, userNSSize)
 	_, err := m.runner.RunTimeout(screenshotTimeout, "podman", "run", "--rm", "--replace", "--name", container,
-		"--userns=auto", "--cap-drop=ALL", "--security-opt=no-new-privileges",
-		"--memory=1g", "--pids-limit=256",
+		"--uidmap="+userns, "--gidmap="+userns,
+		"--cap-drop=ALL", "--security-opt=no-new-privileges",
+		"--memory=1g", "--pids-limit=256", "--shm-size=256m",
 		"-v", workDir+":/out:U", image,
-		"--no-sandbox", "--disable-gpu", "--hide-scrollbars",
+		"--headless", "--no-sandbox", "--disable-gpu", "--hide-scrollbars",
 		"--window-size="+windowSize, "--virtual-time-budget=10000",
 		"--screenshot=/out/"+shotFile, a.URL)
 	if err != nil {

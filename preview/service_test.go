@@ -104,8 +104,10 @@ func TestSweepScreenshotsRunningAppsInAContainer(t *testing.T) {
 	// page content is untrusted, so the container is the sandbox.
 	cmd := strings.Join(runner.lastShot(), " ")
 	assert.Contains(t, cmd, "podman run")
-	assert.Contains(t, cmd, "--userns=auto")
+	assert.Contains(t, cmd, "--uidmap=0:3000000:2000000")
+	assert.Contains(t, cmd, "--gidmap=0:3000000:2000000")
 	assert.Contains(t, cmd, "--cap-drop=ALL")
+	assert.Contains(t, cmd, "--headless")
 	assert.Contains(t, cmd, "--security-opt=no-new-privileges")
 	assert.Contains(t, cmd, image)
 	assert.Contains(t, cmd, "https://up.example.com")
