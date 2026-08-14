@@ -2630,9 +2630,25 @@ body.ws-resizing iframe { pointer-events: none; }
 @media (max-width: 640px) {
   .ws-topbar > .ws-back,
   .ws-idrow { display: none; }
-  /* The identity row is gone (the nav shows it); the controls keep the row,
-     right-aligned as one cluster next to Open app. */
-  .ws-topright { width: 100%; justify-content: flex-end; }
+  /* The identity row is gone (the nav shows it), and the controls give up
+     their own row too: the cluster overlays the right end of the tab strip,
+     tabs scrolling underneath it. The topbar collapses to nothing. */
+  .ws-page { position: relative; }
+  .ws-topbar { padding: 0; }
+  .ws-topright {
+    position: absolute;
+    top: 0;
+    right: 0;
+    z-index: 6;
+    width: auto;
+    height: 38px;
+    align-items: center;
+    background: var(--bg);
+    padding-left: 8px;
+    box-shadow: -14px 0 10px -6px var(--bg);
+  }
+  /* Room at the strip's end so the last tab can scroll clear of the overlay */
+  .ws-viewtabs { padding-right: 96px; scroll-padding-right: 96px; }
 
   /* Tight on space: the Open app button shrinks to just its icon */
   .ws-topacts .btn-primary .ws-open-label { display: none; }
