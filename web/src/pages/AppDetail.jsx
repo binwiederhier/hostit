@@ -104,26 +104,11 @@ Read that and the app's README.md and docs/, then reply exactly: "I understand t
 `;
 };
 
-// connectionText is the "put this in your repo" variant: a compact markdown
-// block for a README / CLAUDE.md / agent rules file, so any agent working on
-// the project knows this app is where it deploys and how to drive it.
-const connectionText = (name, url, token, sshCommand) => {
-  const api = `${origin}/api/apps/${name}`;
-  return `## Deployment: hostit app "${name}"
-
-This project deploys to the hostit app "${name}": ${url}
-
-- REST API base: ${api} -- authenticate every call with the header
-  "Authorization: Bearer ${token}"
-- START HERE: GET ${api}/info returns the full API and app-layout reference;
-  read it before deploying.
-- Common calls: PUT ${api}/files/<path> (upload a file), POST ${api}/deploy
-  (apply hostit.yml and (re)start), GET ${api}/logs, POST ${api}/run with
-  {"command": "..."} (run a shell command inside the app container),
-  POST ${api}/snapshots with {"label": "..."} (restorable snapshot).
-${sshCommand ? `- SSH/scp/rsync: ${sshCommand} (lands inside the app container)\n` : ""}`;
-};
-
+// connectionText is the bare-details variant: just the info endpoint and the
+// token, for pasting into your own agent's context however you like.
+const connectionText = (name, token) => `Project info: ${origin}/api/apps/${name}/info
+Bearer token: ${token}
+`;
 // A small svg icon set, so the top bar reads as buttons, not a wall of words.
 const TerminalIcon = () => (
   <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -489,8 +474,8 @@ const PromptDialog = ({ prompt, details, token, onClose }) => {
           </p>
         ) : (
           <p className="hint">
-            Drop this into your project's README, CLAUDE.md or agent rules: it tells any agent working on that
-            codebase how this app is deployed and how to drive it.
+            The app's details, for pasting into your own agent's context (a README, CLAUDE.md or chat). The info
+            URL returns everything an agent needs to work with this app.
           </p>
         )}
         <div className="term prompt-block">
@@ -1852,7 +1837,7 @@ const AppDetail = ({ account, refreshAccount }) => {
   const own = !account.limits || app.owner_email === undefined || app.owner_email === account.email;
   const token = app.agent_token || "";
   const prompt = promptText(app.name, app.url, token || tokenPlaceholder, (app.description || "").trim());
-  const connectionDetails = connectionText(app.name, app.url, token || tokenPlaceholder, app.ssh && app.ssh.command);
+  const connectionDetails = connectionText(app.name, token || tokenPlaceholder);
 
   // A cache-busting query on the preview URL, bumped on every reload, so a refresh
   // always fetches the live app rather than the browser's cached copy.
