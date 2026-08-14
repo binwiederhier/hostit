@@ -1977,7 +1977,7 @@ const AppDetail = ({ account, refreshAccount }) => {
             Settings
           </button>
           {/* Preview controls: only meaningful in the assistant view, right-aligned. */}
-          {((app.assistant_enabled && view === "assistant") || view === "files") && (
+          {((app.assistant_enabled && view === "assistant") || view === "editor") && (
             <div className="ws-viewtabs-right">
               <button
                 type="button"
