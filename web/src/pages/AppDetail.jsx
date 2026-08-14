@@ -1075,7 +1075,6 @@ const AppSettings = ({ app, showToast, onCopyToken, onRegenerateToken, hasToken,
                 <path d="M10.5 3.5l2 2" />
               </svg>
             </button>
-            {app.id && <span className="ov-appid">(App ID: {app.id})</span>}
           </div>
           <div className="ov-line">
             <span className="ov-k">{urls.length > 1 ? "URLs" : "URL"}</span>
