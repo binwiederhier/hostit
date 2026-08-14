@@ -54,7 +54,7 @@ func (s *Service) AppSubvolumePath(id string) string {
 // small host the same way two builds would.
 func (s *Service) EnsureBase(tag string) error {
 	if tag == "" {
-		tag = ImageTag() // an app from before pinning falls back to the current image
+		tag = ImageTag() // pre-pinning fallback; historical (PinImageTags backfills every row)
 	}
 	base := s.BasePath(tag)
 	if _, err := os.Stat(base); err == nil {
@@ -136,7 +136,8 @@ func (s *Service) EnsureAppSubvolume(a *store.App, ids IDs) error {
 		return nil
 	}
 	// An app from before pinning (empty tag) ran the current image, so that is
-	// the base its subvolume comes from -- same fallback as EnsureBase's.
+	// the base its subvolume comes from -- same historical fallback as
+	// EnsureBase's; PinImageTags backfills every row before any app migrates.
 	tag := a.ImageTag
 	if tag == "" {
 		tag = ImageTag()

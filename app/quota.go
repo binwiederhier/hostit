@@ -10,17 +10,19 @@ import (
 // plenty and there is no reason to make it configurable.
 const diskUsageInterval = 5 * time.Minute
 
-// SetDiskLimit records the disk quota for an app and caps its budget qgroup
-// (home + rootfs + snapshots combined) on exclusive bytes, which hard-caps
-// writes (EDQUOT). 0 falls back to the default cap; nothing is unlimited.
+// SetDiskLimit records the disk quota for an app and re-ensures its budget
+// (subvolume + snapshots, capped on exclusive bytes: EDQUOT at the cap).
+// Going through ensureBudget also creates and assigns the qgroup when it is
+// missing, so a limit change never depends on startup having built the group
+// first. 0 falls back to the default cap; nothing is unlimited.
 func (m *Manager) SetDiskLimit(name string, diskMB int) {
 	m.recordDiskLimit(name, diskMB)
-	ids, err := m.lookupIDs(name)
+	a, err := m.store.App(name)
 	if err != nil {
-		slog.Warn("Cannot resolve uid to set disk budget", "app", name, "error", err)
+		slog.Warn("Cannot load app to set disk budget", "app", name, "error", err)
 		return
 	}
-	if err := m.btrfs.QgroupLimitExclusive(m.config.AppsDir, budgetGroup(ids.UID), effectiveDiskCapMB(diskMB)); err != nil {
+	if err := m.ensureBudget(a); err != nil {
 		slog.Warn("Cannot set disk budget limit", "app", name, "limit_mb", diskMB, "error", err)
 	}
 }

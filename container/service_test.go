@@ -51,7 +51,6 @@ func TestContainerVerbs(t *testing.T) {
 	require.NoError(t, s.Create("create", "--name", "hostit-app-abc", "img"))
 	require.NoError(t, s.RemoveImage("localhost/hostit-workspace:old"))
 	_, _ = s.Images()
-	_, _ = s.ImageOf("hostit-app-abc")
 
 	assert.Equal(t, []string{
 		"podman container inspect hostit-app-abc --format {{.Config.Labels.hash}}",
@@ -60,7 +59,6 @@ func TestContainerVerbs(t *testing.T) {
 		"podman create --name hostit-app-abc img",
 		"podman rmi localhost/hostit-workspace:old",
 		"podman images --format {{.Repository}}:{{.Tag}}",
-		"podman inspect hostit-app-abc --format {{.ImageName}}",
 	}, r.ran)
 }
 

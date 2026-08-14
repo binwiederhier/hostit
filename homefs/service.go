@@ -96,8 +96,7 @@ type Chowner func(root *os.Root, rel string) error
 // which only root controls; Rel is the files directory inside it ("home/app"),
 // whose path components live in the tenant-owned tree and are therefore resolved
 // INSIDE the subvolume's os.Root by OpenRoot -- never as one plain host path,
-// which would follow a tenant-planted symlink as root. An empty Rel means the
-// subvolume root itself.
+// which would follow a tenant-planted symlink as root.
 type Dir struct {
 	Subvolume string
 	Rel       string
@@ -525,17 +524,14 @@ func (s *Service) ReadCapped(root *os.Root, rel string, max int64) ([]byte, erro
 // absolute one is refused by os.Root, and a link that stays inside the
 // subvolume can at worst redirect their own file API within their own tree.
 func (s *Service) OpenRoot(d Dir) (*os.Root, error) {
-	// CreateUser makes this directory; create it anyway so file operations still
-	// work for an app whose Unix user was set up elsewhere (and in tests)
+	// The workspace service creates the real subvolume; this MkdirAll exists so
+	// file operations work in tests, where no subvolume was ever snapshotted
 	if err := os.MkdirAll(d.Subvolume, homeMode); err != nil {
 		return nil, err
 	}
 	subvol, err := os.OpenRoot(d.Subvolume)
 	if err != nil {
 		return nil, err
-	}
-	if d.Rel == "" {
-		return subvol, nil
 	}
 	defer subvol.Close()
 	if err := subvol.MkdirAll(d.Rel, homeMode); err != nil {

@@ -3,7 +3,6 @@ package app
 import (
 	"fmt"
 	"log/slog"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -151,8 +150,7 @@ func (m *Manager) Status(name string) (string, error) {
 	return out, err
 }
 
-// Logs returns the last lines of the app's output: the agent log file for
-// workspace apps, podman logs for image apps
+// Logs returns the last lines of the app's output, from the agent's log file.
 func (m *Manager) Logs(name string, lines int) (string, error) {
 	if _, err := m.store.App(name); err != nil {
 		return "", err
@@ -263,9 +261,10 @@ func (m *Manager) appSubvolume(name string) string {
 }
 
 // appSubvolumeByID builds the subvolume path straight from an id, for the create
-// path where the app is not yet in the store to resolve a name through.
+// path where the app is not yet in the store to resolve a name through. The
+// workspace service owns the layout fact; this only saves callers the hop.
 func (m *Manager) appSubvolumeByID(id string) string {
-	return filepath.Join(m.config.AppsDir, id)
+	return m.workspace.AppSubvolumePath(id)
 }
 
 // appFiles locates an app's files directory (home/app INSIDE the subvolume) for

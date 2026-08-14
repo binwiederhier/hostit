@@ -1,7 +1,7 @@
 // Package unixuser manages the Unix user account (and matching group) hostit
 // creates per app: creation without an /etc/skel copy, uid/gid lookup, rename,
-// remap to a new id block, and a robust delete that reaps lingering processes. It
-// also writes the app's initial home skeleton and hands home paths to the app user.
+// and a robust delete that reaps lingering processes. It also writes the app's
+// initial home skeleton and hands home paths to the app user.
 // Everything here shells out to the usual account tools and must run as root.
 package unixuser
 
@@ -155,16 +155,16 @@ func (s *Service) Rename(oldName, newName string) error {
 	if err := run("usermod", "--login", newName, oldName); err != nil {
 		return err
 	}
-	_ = s.SyncGroupName(newName) // best-effort; cosmetic if it fails
+	_ = s.syncGroupName(newName) // best-effort; cosmetic if it fails
 	return nil
 }
 
-// SyncGroupName renames a user's primary group to match its login name, when the
+// syncGroupName renames a user's primary group to match its login name, when the
 // two have drifted apart (an app renamed before group-rename shipped kept its old
 // group name). Aligning them keeps a deleted app from leaving an orphan group, and
 // frees the old name so a new app can take it. Idempotent and a no-op when the
 // names already agree or the user is on the shared app group.
-func (s *Service) SyncGroupName(username string) error {
+func (s *Service) syncGroupName(username string) error {
 	group := primaryGroupName(username)
 	newName, ok := groupNeedsRename(group, username, s.group)
 	if !ok {

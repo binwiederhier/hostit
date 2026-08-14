@@ -46,9 +46,9 @@ The chosen shape and the decisions behind it:
   below) is the natural registry key: name -> id -> (node, port).
 - **SSH routing: single front door + ProxyJump.** One SSH endpoint on the proxy;
   `hostit-shell` looks up the app's node and jumps into the right container.
-- **State and quota collection** become cross-node: the state cache and the disk
-  quota walk currently assume everything is on this box; they move behind the
-  agent's heartbeat/report path.
+- **State and quota collection** become cross-node: the state cache and the
+  per-app qgroup usage reads currently assume everything is on this box; they
+  move behind the agent's heartbeat/report path.
 
 ## Web app
 

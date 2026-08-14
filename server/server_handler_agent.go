@@ -252,8 +252,8 @@ func (s *Server) requireApp(next func(http.ResponseWriter, *http.Request, *calle
 }
 
 // logLines turns the "?lines=" parameter into a bounded line count; the value
-// reaches "podman logs --tail" and a tail of the log file, so an absurd number
-// would be an absurd allocation
+// sizes a tail of the agent log file, so an absurd number would be an absurd
+// allocation
 func logLines(raw string) int {
 	n, err := strconv.Atoi(raw)
 	if err != nil || n <= 0 {

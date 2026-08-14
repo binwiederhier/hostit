@@ -44,12 +44,12 @@ func missingBinaries(lookPath func(string) (string, error)) []string {
 	return missing
 }
 
-// requireBtrfs fails unless the app homes live on a btrfs filesystem. btrfs is
+// requireBtrfs fails unless the app subvolumes live on a btrfs filesystem. btrfs is
 // mandatory: snapshots, rollback, fork and hard disk quotas are core, not
 // optional, and hostit refuses to run without them rather than silently degrading.
 func requireBtrfs(appsDir string) error {
 	if !btrfs.New(run.New()).IsBtrfs(appsDir) {
-		return fmt.Errorf("hostit requires the app homes (%s) to be on a btrfs filesystem, for snapshots, rollback and hard disk quotas; see the install docs", appsDir)
+		return fmt.Errorf("hostit requires the apps directory (%s) to be on a btrfs filesystem, for snapshots, rollback and hard disk quotas; see the install docs", appsDir)
 	}
 	return nil
 }

@@ -71,7 +71,7 @@ func execServe(c *cli.Context) error {
 		return err
 	}
 	// btrfs is mandatory: snapshots, rollback, fork and hard disk quotas are core.
-	// Check it here, once the app-homes directory exists, and refuse to start
+	// Check it here, once the apps directory exists, and refuse to start
 	// otherwise rather than silently running without those features.
 	if err := requireBtrfs(conf.AppsDir); err != nil {
 		return err
@@ -90,22 +90,22 @@ func execServe(c *cli.Context) error {
 	// Quota accounting is the mechanism behind every per-app disk budget;
 	// idempotent, so it simply runs at every start.
 	manager.EnableDiskBudgets()
-	// One-time move to rootfs-backed containers, before anything serves: it is
-	// ensure-style and resumable, so a failure only warns and the next start
-	// retries the apps it missed. On the first run this synchronously builds and
+	// One-time storage migrations, in order, before anything serves. The host
+	// states they cover: a fresh or fully migrated host records both gates as
+	// no-ops; a pre-rootfs host runs both; a host stopped mid-chain (rootfs
+	// staged, homes not yet folded) runs only the second. Both are ensure-style
+	// and resumable, so a failure only warns and the next start retries the apps
+	// it missed. On a pre-rootfs host the first run synchronously builds and
 	// exports the base image -- the known one-time migration outage.
 	if err := manager.MigrateRootfsStorage(c.App.Version); err != nil {
 		slog.Warn("Storage migration incomplete; retrying at next start", "error", err)
 	}
-	// One-time unification of each app's home into its rootfs (one subvolume per
-	// app), gated separately and run AFTER the rootfs migration: a pre-rootfs
-	// host runs both, in order. Same failure contract: warn and retry next start.
 	if err := manager.MigrateUnifiedStorage(c.App.Version); err != nil {
 		slog.Warn("Unified-storage migration incomplete; retrying at next start", "error", err)
 	}
-	// After the budgets exist: applying a stored limit also caps the app's qgroup,
-	// which warns into the log if the group is not there yet. Migration briefly runs
-	// on the 2048M default and this corrects every group to the owner's real limit.
+	// After the budgets exist: applying a stored limit re-ensures the app's
+	// budget qgroup and its cap. Migration briefly runs on the 2048M default and
+	// this corrects every group to the owner's real limit.
 	if err := applyStoredLimits(s, manager, users); err != nil {
 		return err
 	}

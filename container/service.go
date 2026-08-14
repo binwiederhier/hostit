@@ -115,11 +115,6 @@ func (s *Service) RemoveImage(image string) error {
 	return err
 }
 
-// ImageOf returns the image a container was created from.
-func (s *Service) ImageOf(name string) (string, error) {
-	return s.runner.Run(podman, "inspect", name, "--format", "{{.ImageName}}")
-}
-
 // ImageExists reports whether the image store holds the given tag.
 func (s *Service) ImageExists(tag string) bool {
 	_, err := s.runner.Run(podman, "image", "exists", tag)

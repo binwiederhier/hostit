@@ -157,9 +157,7 @@ func CreateArgs(conf *appctl.AppConfig, a *store.App, subvol, socketFile, hostit
 	return args
 }
 
-// ConfigHash returns a short hash of the container configuration; it is
-// stored as a label so the daemon can decide whether a recreate is needed
-// ConfigHash fingerprints the container's configuration, so apply
+// ConfigHash fingerprints the container's configuration (stored as a label), so apply
 // recreates it only when something load-bearing changed. The --hostname is
 // deliberately excluded: it is cosmetic and derived from the app's mutable name,
 // and a rename must never recreate the (stateful) container. Everything else in

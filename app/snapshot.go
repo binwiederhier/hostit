@@ -1,11 +1,19 @@
 package app
 
 import (
+	"path/filepath"
 	"time"
 
 	"heckel.io/hostit/snapshot"
 	"heckel.io/hostit/store"
 	"heckel.io/hostit/workspace"
+)
+
+const (
+	// snapshotsDirName holds read-only snapshots under the apps mount, one directory
+	// per app. It sits beside the app subvolumes, not inside them: a snapshot must
+	// not be part of the tree it captures (and the container must not see it).
+	snapshotsDirName = ".snapshots"
 )
 
 // TakeSnapshot snapshots an app's whole subvolume (files AND installed
@@ -82,4 +90,15 @@ func (h snapshotHost) AssignBudget(name, subvolPath string) error {
 
 func (h snapshotHost) Chown(path string, uid int) error {
 	return h.m.workspace.ChownTree(path, workspace.IDs{UID: uid, GID: uid})
+}
+
+// snapshotsRoot is where an app's snapshots live: <apps>/.snapshots/<id>/. Keyed
+// on the app's id (like the app subvolume) so a rename does not move them.
+func (m *Manager) snapshotsRoot(app string) string {
+	return filepath.Join(m.config.AppsDir, snapshotsDirName, m.appID(app))
+}
+
+// snapshotPath is one snapshot's subvolume path.
+func (m *Manager) snapshotPath(app, id string) string {
+	return filepath.Join(m.snapshotsRoot(app), id)
 }

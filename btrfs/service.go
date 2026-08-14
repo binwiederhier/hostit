@@ -1,8 +1,8 @@
 // Package btrfs wraps the btrfs subvolume and qgroup operations hostit uses for
-// app-home snapshots and hard disk quotas. It shells out through an injected runner
-// (so it can be faked in tests) and owns its own command timeout. Path layout --
-// where an app's home and snapshots live -- stays with the caller; this package only
-// operates on the paths it is given.
+// app-subvolume snapshots and hard disk quotas. It shells out through an injected
+// runner (so it can be faked in tests) and owns its own command timeout. Path layout
+// -- where an app's subvolume and snapshots live -- stays with the caller; this
+// package only operates on the paths it is given.
 package btrfs
 
 import (
@@ -57,9 +57,9 @@ func New(runner run.Runner) *Service {
 	return &Service{runner: runner}
 }
 
-// Filesystem returns the filesystem type of dir (e.g. "btrfs", "ext2/ext3"), as
-// reported by stat(1). The error is surfaced so callers can log why detection failed.
-func (s *Service) Filesystem(dir string) (string, error) {
+// filesystem returns the filesystem type of dir (e.g. "btrfs", "ext2/ext3"), as
+// reported by stat(1).
+func (s *Service) filesystem(dir string) (string, error) {
 	out, err := s.runner.RunTimeout(timeout, "stat", "-f", "-c", "%T", dir)
 	return strings.TrimSpace(out), err
 }
@@ -67,25 +67,26 @@ func (s *Service) Filesystem(dir string) (string, error) {
 // IsBtrfs reports whether dir lives on a btrfs filesystem, which is what makes
 // subvolume snapshots and hard qgroup quotas possible.
 func (s *Service) IsBtrfs(dir string) bool {
-	fstype, err := s.Filesystem(dir)
+	fstype, err := s.filesystem(dir)
 	return err == nil && fstype == "btrfs"
 }
 
-// CreateSubvolume makes a new btrfs subvolume at path (the app's home).
+// CreateSubvolume makes a new btrfs subvolume at path (a base staging subvolume).
 func (s *Service) CreateSubvolume(path string) error {
 	_, err := s.runner.RunTimeout(timeout, "btrfs", "subvolume", "create", path)
 	return err
 }
 
-// DeleteSubvolume removes a subvolume (an app home or a snapshot). A read-only
+// DeleteSubvolume removes a subvolume (an app subvolume, a snapshot, a base). A read-only
 // snapshot must have its flag cleared first, which the caller handles.
 func (s *Service) DeleteSubvolume(path string) error {
 	_, err := s.runner.RunTimeout(timeout, "btrfs", "subvolume", "delete", path)
 	return err
 }
 
-// MoveSubvolume renames a subvolume within the app-homes filesystem. Same-fs, so
-// it is a metadata rename (fast, atomic), used to swap a rollback's staged home in.
+// MoveSubvolume renames a subvolume within the apps filesystem. Same-fs, so it is
+// a metadata rename (fast, atomic): what publishes a base export and swaps a
+// rollback's or the migration's staged subvolume into place.
 func (s *Service) MoveSubvolume(src, dst string) error {
 	_, err := s.runner.Run("mv", src, dst)
 	return err

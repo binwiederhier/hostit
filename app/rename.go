@@ -13,8 +13,8 @@ import (
 // RenameApp changes an app's name. Because every durable resource -- home,
 // snapshots, container, systemd unit, tokens and the other per-app rows -- keys on
 // the app's stable id, the rename itself moves nothing and the container is NOT
-// recreated: an app keeps whatever state it built up (installed packages, its
-// writable layer).
+// recreated: an app keeps whatever state it built up in its subvolume (its
+// files and everything it installed).
 //
 // The one wrinkle is the Unix login: usermod --login refuses while the user has a
 // live process, and its container -- plus any open web-terminal or SSH session,

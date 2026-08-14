@@ -1,5 +1,5 @@
 # systemd template unit for hostit app containers, instantiated per app as
-# hostit-app@<name>.service. The daemon enables and starts these; the container
+# hostit-app@<id>.service (keyed on the app's stable id, not its name). The daemon enables and starts these; the container
 # itself is created by the daemon with a uid mapping that makes container root
 # the app's unprivileged user.
 [Unit]
