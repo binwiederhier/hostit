@@ -2620,6 +2620,9 @@ body.ws-resizing iframe { pointer-events: none; }
      without a visible pane. */
   .ws-resources { display: none; }
   .ws-right { display: none; }
+  /* No preview pane at this width, so the assistant view's preview controls
+     (Refresh, Show/Hide preview) have nothing to control. */
+  .ws-viewtabs-right { display: none; }
   .ws-resizer { display: none; }
   .ws-split { grid-template-columns: 1fr !important; }
   .ws-chat { height: 100%; }
