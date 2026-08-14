@@ -1,11 +1,24 @@
 //go:build e2e
 
-// Package e2e drives a real, running hostit server over HTTPS: it creates apps,
-// deploys them through the agent API, and checks that they actually serve. Run
-// it with "make e2e" (see the Makefile for the environment it needs).
+// Package e2e is the run-anytime regression suite for a REAL hostit server: it
+// drives the public HTTP API exactly as users and agents do -- creating apps,
+// uploading files, deploying, running commands, snapshotting and rolling back,
+// forking, renaming, power-cycling -- and checks the results on the live app
+// URLs. Run it with "make e2e" against a server you can afford to litter:
 //
-// These tests create and delete apps named e2e-*, so point them at a test
-// server, never at one hosting anything you care about.
+//	HOSTIT_HOST=https://hostit.apps.example.com HOSTIT_TOKEN=<admin token> make e2e
+//
+// Every test is independent, tolerates a slow (1-core) box via generous
+// polling, and cleans up its e2e-* apps via t.Cleanup even on partial failure.
+// Still: point it at a test/staging server, never at one hosting anything you
+// care about. Expect the full suite to take on the order of 15-25 minutes; the
+// journey tests added on top of the original suite contribute roughly 6 of
+// those.
+//
+// The assistant tests are the only metered ones (they spend real model
+// tokens); set HOSTIT_E2E_SKIP_ASSISTANT=1 to skip all of them. Of these,
+// TestAssistantBuildsSomething is the only one that runs a full build turn: it
+// is kept to exactly one turn on the cheapest model in the catalog.
 package e2e
 
 import (
@@ -315,6 +328,209 @@ func TestDiskHardCap(t *testing.T) {
 		"dd must fail with EDQUOT/ENOSPC, got: %s", out)
 }
 
+// TestFullLifecycleJourney is a real user session as code, end to end on one
+// app: build and deploy a small python app, "install" software and write data,
+// snapshot, brick the app (lose the software, corrupt the data, even delete
+// python itself), restore the snapshot, and verify that everything -- marker,
+// data, interpreter, and the served page -- is back.
+func TestFullLifecycleJourney(t *testing.T) {
+	e := newEnv(t)
+	name := uniqueName("e2e-journey")
+	app := e.createApp(name)
+	t.Cleanup(func() {
+		e.deleteApp(name)
+	})
+	e.requireSnapshots(app)
+	token := fmt.Sprint(app["agent_token"])
+	url := fmt.Sprint(app["url"])
+	e.waitForBody(url, "Nothing here yet")
+
+	// Build the app the way an agent would: upload files, write hostit.yml, deploy
+	e.put(fmt.Sprintf("/api/apps/%s/files/server.py", name), token,
+		"import http.server,os\n"+
+			"class H(http.server.BaseHTTPRequestHandler):\n"+
+			"    def do_GET(s):\n"+
+			"        s.send_response(200); s.end_headers(); s.wfile.write(b'journey serves')\n"+
+			"http.server.HTTPServer(('0.0.0.0', int(os.environ['PORT'])), H).serve_forever()\n")
+	e.put(fmt.Sprintf("/api/apps/%s/files/hostit.yml", name), token, "mode: app\nrun: python3 server.py\n")
+	e.post(fmt.Sprintf("/api/apps/%s/deploy", name), token, nil)
+	e.waitForBody(url, "journey serves")
+
+	// "Install" something outside the home and write data inside it, then snapshot
+	_, code := e.runEventually(name, token, "touch /usr/local/journey-install && echo v1 > /home/app/data.txt")
+	require.Equal(t, 0, code, "planting the install marker and data must succeed")
+	var snap map[string]any
+	e.doJSON("POST", fmt.Sprintf("/api/apps/%s/snapshots", name), token, map[string]string{"label": "journey: known good"}, &snap, http.StatusOK)
+	snapID := fmt.Sprint(snap["id"])
+	require.NotEmpty(t, snapID)
+
+	// Brick it: lose the installed software, corrupt the data, delete python
+	// itself. (The already-running server keeps serving from its open inode.)
+	_, code = e.runEventually(name, token, "rm -f /usr/local/journey-install /usr/bin/python3 && echo BRICKED > /home/app/data.txt")
+	require.Equal(t, 0, code, "bricking the app must succeed")
+	out, code := e.runEventually(name, token, "ls /usr/local/journey-install")
+	require.NotEqual(t, 0, code, "the install marker must be gone before the restore; ls said: %s", out)
+
+	// Restore: marker, data and interpreter come back together, and it serves
+	e.post(fmt.Sprintf("/api/apps/%s/snapshots/%s/restore", name, snapID), token, nil)
+	out, code = e.runEventually(name, token, "ls /usr/local/journey-install && cat /home/app/data.txt && python3 --version")
+	assert.Equal(t, 0, code, "everything must be back after the restore; output: %s", out)
+	assert.Contains(t, out, "v1")
+	assert.NotContains(t, out, "BRICKED")
+	e.waitForBody(url, "journey serves")
+}
+
+// TestForkCarriesEverything proves a fork (POST /api/apps/{name}/fork) copies
+// the WHOLE app subvolume, not just the home: a marker in /usr/local and a file
+// in the home both show up in the fork, and the fork serves on its own URL.
+func TestForkCarriesEverything(t *testing.T) {
+	e := newEnv(t)
+	source := uniqueName("e2e-fkr-src")
+	app := e.createApp(source)
+	t.Cleanup(func() {
+		e.deleteApp(source)
+	})
+	e.requireSnapshots(app)
+	token := fmt.Sprint(app["agent_token"])
+	e.waitForBody(fmt.Sprint(app["url"]), "Nothing here yet")
+
+	// Plant one marker outside the home and one inside it
+	_, code := e.runEventually(source, token, "touch /usr/local/fork-marker && echo carried > /home/app/fork-home.txt")
+	require.Equal(t, 0, code, "planting the markers must succeed")
+
+	// Fork, and clean the fork up too (registered only once it exists)
+	forkName := uniqueName("e2e-fkr-new")
+	var fork map[string]any
+	e.doJSON("POST", fmt.Sprintf("/api/apps/%s/fork", source), e.token, map[string]string{"new_name": forkName}, &fork, http.StatusCreated)
+	t.Cleanup(func() {
+		e.deleteApp(forkName)
+	})
+	forkToken := fmt.Sprint(fork["agent_token"])
+	require.NotEmpty(t, forkToken, "a fork comes with its own agent token")
+
+	// Both markers made the trip, and the fork serves on its own URL
+	out, code := e.runEventually(forkName, forkToken, "ls /usr/local/fork-marker && cat /home/app/fork-home.txt")
+	assert.Equal(t, 0, code, "both markers must exist in the fork; output: %s", out)
+	assert.Contains(t, out, "carried")
+	e.waitForBody(fmt.Sprint(fork["url"]), "Nothing here yet")
+}
+
+// TestPowerCycleJourney powers an app's container off and on again: while off,
+// visitors get the anonymous "nothing deployed" page, and the API refuses
+// container-needing calls with a 409 that says why (powered off). Power on
+// brings the skeleton back.
+func TestPowerCycleJourney(t *testing.T) {
+	e := newEnv(t)
+	name := uniqueName("e2e-power")
+	app := e.createApp(name)
+	t.Cleanup(func() {
+		e.deleteApp(name)
+	})
+	token := fmt.Sprint(app["agent_token"])
+	url := fmt.Sprint(app["url"])
+	e.waitForBody(url, "Nothing here yet")
+
+	// Power off: visitors see the same page a free hostname shows
+	e.post(fmt.Sprintf("/api/apps/%s/poweroff", name), token, nil)
+	e.waitForBody(url, "deployed here")
+
+	// A /run against the powered-off container is refused, and the error says
+	// power, not something cryptic. Poll: the poweroff may still be settling.
+	status, body := e.waitForRunRefused(name, token)
+	assert.Equal(t, http.StatusConflict, status, "a run against a powered-off app is a 409; body: %s", body)
+	assert.Contains(t, strings.ToLower(body), "power", "the refusal must say the app is powered off; body: %s", body)
+
+	// Starting the app process needs the container too, so it is refused the same way
+	assert.Equal(t, http.StatusConflict, e.status("POST", fmt.Sprintf("/api/apps/%s/start", name), token))
+
+	// Power on brings the skeleton back
+	e.post(fmt.Sprintf("/api/apps/%s/poweron", name), token, nil)
+	e.waitForBody(url, "Nothing here yet")
+}
+
+// TestSnapshotListAndDelete proves ids and labels round-trip through the
+// snapshot API: two labelled snapshots list newest-first, and deleting one
+// removes exactly that one. Automatic snapshots may interleave, so the test
+// keys on its own ids rather than on absolute positions.
+func TestSnapshotListAndDelete(t *testing.T) {
+	e := newEnv(t)
+	name := uniqueName("e2e-snaps")
+	app := e.createApp(name)
+	t.Cleanup(func() {
+		e.deleteApp(name)
+	})
+	e.requireSnapshots(app)
+	token := fmt.Sprint(app["agent_token"])
+
+	// Two labelled snapshots; ids sort by second, so keep them a tick apart
+	var first, second map[string]any
+	e.doJSON("POST", fmt.Sprintf("/api/apps/%s/snapshots", name), token, map[string]string{"label": "e2e: first"}, &first, http.StatusOK)
+	time.Sleep(1500 * time.Millisecond)
+	e.doJSON("POST", fmt.Sprintf("/api/apps/%s/snapshots", name), token, map[string]string{"label": "e2e: second"}, &second, http.StatusOK)
+	firstID, secondID := fmt.Sprint(first["id"]), fmt.Sprint(second["id"])
+	require.NotEmpty(t, firstID)
+	require.NotEmpty(t, secondID)
+	require.NotEqual(t, firstID, secondID)
+
+	// The list has both, newest first, with the labels intact
+	var snaps []map[string]any
+	e.get(fmt.Sprintf("/api/apps/%s/snapshots", name), token, &snaps)
+	firstIdx, secondIdx := snapshotIndex(snaps, firstID), snapshotIndex(snaps, secondID)
+	require.GreaterOrEqual(t, firstIdx, 0, "the first snapshot must be listed")
+	require.GreaterOrEqual(t, secondIdx, 0, "the second snapshot must be listed")
+	assert.Less(t, secondIdx, firstIdx, "snapshots list newest first")
+	assert.Equal(t, "e2e: first", fmt.Sprint(snaps[firstIdx]["label"]))
+	assert.Equal(t, "e2e: second", fmt.Sprint(snaps[secondIdx]["label"]))
+
+	// Deleting one removes exactly that one
+	e.doJSON("DELETE", fmt.Sprintf("/api/apps/%s/snapshots/%s", name, firstID), token, nil, nil, http.StatusOK)
+	e.get(fmt.Sprintf("/api/apps/%s/snapshots", name), token, &snaps)
+	assert.Equal(t, -1, snapshotIndex(snaps, firstID), "the deleted snapshot must be gone")
+	assert.GreaterOrEqual(t, snapshotIndex(snaps, secondID), 0, "the other snapshot must survive")
+}
+
+// TestRenameKeepsAppAlive renames an app (POST /api/apps/{name}/rename): the
+// app answers on its NEW subdomain with all its files intact (a rename moves
+// nothing durable), and the old name is freed -- its API path 404s and its
+// subdomain shows the anonymous "nothing deployed" page.
+func TestRenameKeepsAppAlive(t *testing.T) {
+	e := newEnv(t)
+	oldName, newName := uniqueName("e2e-ren-old"), uniqueName("e2e-ren-new")
+	app := e.createApp(oldName)
+	// Best-effort cleanup under both names: the rename may or may not have happened
+	t.Cleanup(func() {
+		e.deleteApp(newName)
+		e.deleteApp(oldName)
+	})
+	token := fmt.Sprint(app["agent_token"])
+	oldURL := fmt.Sprint(app["url"])
+	e.waitForBody(oldURL, "Nothing here yet")
+
+	// Plant a marker so we can prove the rename kept the app's files
+	_, code := e.runEventually(oldName, token, "echo kept > /home/app/rename-marker.txt")
+	require.Equal(t, 0, code, "planting the marker must succeed")
+
+	// Rename; the response is the app under its new name, with its new URL
+	var renamed map[string]any
+	e.doJSON("POST", fmt.Sprintf("/api/apps/%s/rename", oldName), e.token, map[string]string{"new_name": newName}, &renamed, http.StatusOK)
+	assert.Equal(t, newName, renamed["name"])
+	newURL := fmt.Sprint(renamed["url"])
+	require.NotEqual(t, oldURL, newURL)
+
+	// Alive on the new subdomain, marker intact. The admin token runs the check:
+	// it acts on any app, so the test does not depend on how the app-scoped token
+	// migrates across a rename.
+	e.waitForBody(newURL, "Nothing here yet")
+	out, code := e.runEventually(newName, e.token, "cat /home/app/rename-marker.txt")
+	assert.Equal(t, 0, code, "the marker must survive the rename; output: %s", out)
+	assert.Contains(t, out, "kept")
+
+	// The old name is freed: API 404, and the old subdomain shows the same page
+	// a hostname that never had an app shows
+	assert.Equal(t, http.StatusNotFound, e.status("GET", "/api/apps/"+oldName, e.token))
+	e.waitForBody(oldURL, "deployed here")
+}
+
 // --- helpers ---
 
 func uniqueName(prefix string) string {
@@ -435,6 +651,64 @@ func (e *env) runEventually(name, token, command string) (string, int) {
 	return "", -1
 }
 
+// runOnce posts a single /run without retrying, returning the HTTP status and
+// raw body -- for asserting on the refusal itself rather than waiting it out.
+func (e *env) runOnce(name, token, command string) (int, string) {
+	e.t.Helper()
+	body, err := json.Marshal(map[string]any{"command": command, "timeout_seconds": 60})
+	require.NoError(e.t, err)
+	req, err := http.NewRequest("POST", e.host+fmt.Sprintf("/api/apps/%s/run", name), bytes.NewReader(body))
+	require.NoError(e.t, err)
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+	client := &http.Client{Timeout: 2 * time.Minute}
+	resp, err := client.Do(req)
+	if err != nil {
+		return 0, err.Error()
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	return resp.StatusCode, string(raw)
+}
+
+// waitForRunRefused polls /run until the server refuses it with a 4xx (a
+// poweroff may still be settling when the first call lands), returning that
+// refusal's status and body.
+func (e *env) waitForRunRefused(name, token string) (int, string) {
+	e.t.Helper()
+	deadline := time.Now().Add(appLive)
+	var lastStatus int
+	var lastBody string
+	for time.Now().Before(deadline) {
+		lastStatus, lastBody = e.runOnce(name, token, "true")
+		if lastStatus >= 400 && lastStatus < 500 {
+			return lastStatus, lastBody
+		}
+		time.Sleep(pollInterval)
+	}
+	e.t.Fatalf("run was never refused; last status %d: %s", lastStatus, truncate(lastBody, 400))
+	return 0, ""
+}
+
+// requireSnapshots skips a test that needs the btrfs-backed features (snapshots,
+// fork) on a host that does not have them; app is a fresh createApp response.
+func (e *env) requireSnapshots(app map[string]any) {
+	e.t.Helper()
+	if enabled, ok := app["snapshots_enabled"].(bool); ok && !enabled {
+		e.t.Skip("host does not support snapshots (no btrfs)")
+	}
+}
+
+// snapshotIndex finds a snapshot id in a list response, -1 if absent
+func snapshotIndex(snaps []map[string]any, id string) int {
+	for i, s := range snaps {
+		if fmt.Sprint(s["id"]) == id {
+			return i
+		}
+	}
+	return -1
+}
+
 func (e *env) status(method, path, token string) int {
 	e.t.Helper()
 	req, err := http.NewRequest(method, e.host+path, nil)
@@ -476,7 +750,18 @@ func truncate(s string, n int) string {
 
 // --- Assistant mode selection: External Claude + API models ---
 
+// skipAssistantIfOptedOut honors HOSTIT_E2E_SKIP_ASSISTANT=1: the assistant
+// tests are the suite's only metered ones (they spend real model tokens), so
+// they can be opted out wholesale without touching anything else.
+func skipAssistantIfOptedOut(t *testing.T) {
+	t.Helper()
+	if os.Getenv("HOSTIT_E2E_SKIP_ASSISTANT") == "1" {
+		t.Skip("HOSTIT_E2E_SKIP_ASSISTANT=1: skipping the metered assistant tests")
+	}
+}
+
 func TestAssistantCatalogAndPerAppModes(t *testing.T) {
+	skipAssistantIfOptedOut(t)
 	e := newEnv(t)
 	d := e.assistantDefaults()
 	require.NotEmpty(t, asSlice(d["models"]), "the API model catalog is offered")
@@ -496,6 +781,7 @@ func TestAssistantCatalogAndPerAppModes(t *testing.T) {
 }
 
 func TestAssistantGlobalDefaultsFilterModes(t *testing.T) {
+	skipAssistantIfOptedOut(t)
 	e := newEnv(t)
 	orig := e.assistantDefaults()
 	t.Cleanup(func() {
@@ -528,6 +814,7 @@ func TestAssistantGlobalDefaultsFilterModes(t *testing.T) {
 }
 
 func TestAssistantPerUserOverride(t *testing.T) {
+	skipAssistantIfOptedOut(t)
 	e := newEnv(t)
 	email := uniqueName("e2e-user") + "@example.com"
 	var u map[string]any
@@ -554,6 +841,7 @@ func TestAssistantPerUserOverride(t *testing.T) {
 // turn: the cross-backend switch the tool-id repair guards (it had 400'd on
 // duplicate tool_result ids).
 func TestAssistantEveryModelRunsATurn(t *testing.T) {
+	skipAssistantIfOptedOut(t)
 	e := newEnv(t)
 	d := e.assistantDefaults()
 
@@ -576,6 +864,58 @@ func TestAssistantEveryModelRunsATurn(t *testing.T) {
 		_, apiErr := e.assistantTurn(name, first, ask)
 		assert.Empty(t, apiErr, "switching to a model after External Claude must not fail on duplicate tool ids")
 	}
+}
+
+// TestAssistantBuildsSomething drives exactly ONE real assistant turn that
+// produces a served change: a deterministic "build this exact page and deploy"
+// prompt, verified by polling the app's URL for the sentinel text. It picks the
+// cheapest catalog model (this is the suite's one full metered build turn), and
+// skips cleanly when the server has no assistant configured.
+func TestAssistantBuildsSomething(t *testing.T) {
+	skipAssistantIfOptedOut(t)
+	e := newEnv(t)
+	d := e.assistantDefaults()
+	mode := cheapestMode(d)
+	if mode == "" {
+		t.Skip("no assistant configured on this server")
+	}
+
+	name := uniqueName("e2e-build")
+	app := e.createApp(name)
+	t.Cleanup(func() { e.deleteApp(name) })
+
+	// One turn, fully specified so the model has nothing to decide
+	const ask = "Create the file public/index.html containing exactly the text ASSISTANT-BUILT-THIS " +
+		"(nothing else, no markup). Write hostit.yml containing exactly the single line \"mode: static\". " +
+		"Then deploy the app. Do nothing else."
+	types, turnErr := e.assistantTurn(name, mode, ask)
+	assert.Emptyf(t, turnErr, "the build turn errored: %s", turnErr)
+	assert.Contains(t, types, "done", "the build turn must complete")
+
+	// The proof is the live URL, not the transcript
+	e.waitForBody(fmt.Sprint(app["url"]), "ASSISTANT-BUILT-THIS")
+}
+
+// cheapestMode picks the cheapest way to run a metered turn: the catalog has no
+// prices, so a Haiku-family model wins by naming convention, then the first
+// catalog model, then External Claude (subscription, so not metered per token).
+// Empty means no assistant is configured at all.
+func cheapestMode(d map[string]any) string {
+	models := asSlice(d["models"])
+	for _, m := range models {
+		if mm, ok := m.(map[string]any); ok && strings.Contains(strings.ToLower(fmt.Sprint(mm["id"])), "haiku") {
+			return fmt.Sprint(mm["id"])
+		}
+	}
+	if len(models) > 0 {
+		if mm, ok := models[0].(map[string]any); ok {
+			return fmt.Sprint(mm["id"])
+		}
+	}
+	if d["external_configured"] == true {
+		return "external-claude"
+	}
+	return ""
 }
 
 func (e *env) assistantDefaults() map[string]any {
