@@ -169,7 +169,7 @@ const Nav = ({ account, appHeader }) => {
   // The app detail page runs full width; the nav widens to match, so the logo and
   // links slide out to the left edge and the avatar to the right.
   const { pathname } = useLocation();
-  const wide = /^\/app\/[^/]+$/.test(pathname);
+  const wide = /^\/app\/[^/]+(\/[^/]+)?$/.test(pathname);
   // On phones the app's back+name replaces the logo, so there is a single top bar.
   const onApp = wide && appHeader;
   return (
@@ -329,7 +329,7 @@ const App = () => {
   // The popped-out terminal is its own bare, dark window: no nav, no account gate
   // (the WebSocket carries the same cookie). Rendering it before the gate keeps the
   // app chrome from flashing on a white page while the account and xterm chunk load.
-  const termPopout = window.location.pathname.match(/^\/app\/([^/]+)\/terminal\/?$/);
+  const termPopout = window.location.pathname.match(/^\/app\/([^/]+)\/terminal\/popout\/?$/);
 
   const loadedOnce = useRef(false); // have we ever loaded the account?
 

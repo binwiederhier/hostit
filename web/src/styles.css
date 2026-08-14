@@ -2668,8 +2668,10 @@ body.ws-resizing iframe { pointer-events: none; }
 /* Both panes stay mounted in the same grid cell; the modal sizes to the
    larger one, so switching tabs never resizes it. */
 .modal-tabpanes { display: grid; }
-.modal-tabpanes > .modal-tabpane { grid-area: 1 / 1; visibility: hidden; }
+.modal-tabpanes > .modal-tabpane { grid-area: 1 / 1; visibility: hidden; display: flex; flex-direction: column; }
 .modal-tabpanes > .modal-tabpane.on { visibility: visible; }
+/* The shorter pane's text box stretches to the taller pane's height. */
+.modal-tabpane .prompt-block { flex: 1 1 auto; }
 
 /* Modal helpers shared by the SSH and bring-your-own-AI dialogs */
 .modal-wide { max-width: 44rem; }

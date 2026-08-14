@@ -13,7 +13,7 @@ import { reconnectDelaySeconds, shouldReconnect } from "../reconnect";
 // Two shapes: a floating panel on the app page (draggable, minimizable, and
 // deliberately not dimming the page behind it so the live preview stays visible),
 // and a full-window page reached by the pop-out (and directly at
-// /app/<name>/terminal).
+// /app/<name>/terminal/popout).
 const AppTerminal = ({ name, onClose, onMinimize, onReady, onSessionEnd, onSsh, minimized = false, fullPage = false, embedded = false, active = true }) => {
   // embedded fills its container inline (a workspace view); fullPage is the fixed
   // full-window overlay. Both drop the floating panel's drag/minimize chrome.
@@ -209,7 +209,7 @@ const AppTerminal = ({ name, onClose, onMinimize, onReady, onSessionEnd, onSsh, 
     }
   };
   const popOut = () => {
-    window.open(`/app/${encodeURIComponent(name)}/terminal`, "_blank", "width=960,height=600");
+    window.open(`/app/${encodeURIComponent(name)}/terminal/popout`, "_blank", "width=960,height=600");
     if (onClose) {
       onClose();
     }
