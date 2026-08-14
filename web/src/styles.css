@@ -3132,7 +3132,6 @@ body.ws-resizing iframe { pointer-events: none; }
 .fork-arrow { color: var(--accent); font-size: 22px; }
 
 /* ---- App overview view (variant B): hero + two columns ---- */
-.ws-snapshotswrap, .ws-settingswrap, .ws-logswrap { overflow: visible; }
 
 /* Logs view: activity feed + a tail of the app's own output. */
 .logs-view { display: flex; flex-direction: column; gap: 22px; }
