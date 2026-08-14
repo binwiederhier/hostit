@@ -3,6 +3,8 @@ package app
 import (
 	"fmt"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -283,7 +285,36 @@ func (m *Manager) appFiles(name string) homefs.Dir {
 // appFilesByID is appFiles for the create path, where the app is not yet in the
 // store to resolve a name through.
 func (m *Manager) appFilesByID(id string) homefs.Dir {
-	return homefs.Dir{Subvolume: m.appSubvolumeByID(id), Rel: workspace.FilesDir}
+	// File I/O resolves through the raw apps view (see Manager.rawAppsDir);
+	// everything podman- and btrfs-facing keeps the real subvolume path.
+	base := m.config.AppsDir
+	if m.rawAppsDir != "" {
+		base = m.rawAppsDir
+	}
+	return homefs.Dir{Subvolume: filepath.Join(base, id), Rel: workspace.FilesDir}
+}
+
+// UseRawAppsView points the daemon's file I/O at a non-recursive bind of the
+// apps dir. serve calls this once the bind mount exists; see rawAppsDir for why.
+func (m *Manager) UseRawAppsView(dir string) {
+	m.rawAppsDir = dir
+}
+
+// MountRawAppsView establishes the raw bind at dir (idempotent) and routes the
+// daemon's file I/O through it. --bind without --rbind is deliberately
+// non-recursive: replicating the per-container idmapped overmounts would
+// recreate exactly the mapped view this exists to avoid.
+func (m *Manager) MountRawAppsView(dir string) error {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	if _, err := m.runner.Run("mountpoint", "-q", dir); err != nil {
+		if _, err := m.runner.Run("mount", "--bind", m.config.AppsDir, dir); err != nil {
+			return fmt.Errorf("cannot bind the raw apps view at %s: %w", dir, err)
+		}
+	}
+	m.UseRawAppsView(dir)
+	return nil
 }
 
 // loadConfig reads and validates an app's hostit.yml through its os.Root, so a

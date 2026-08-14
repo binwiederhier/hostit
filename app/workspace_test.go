@@ -1,6 +1,8 @@
 package app
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -37,4 +39,27 @@ func TestPruneOldWorkspaceImages(t *testing.T) {
 	assert.Contains(t, ran, "podman rmi localhost/hostit-workspace:1")
 	assert.NotContains(t, ran, "podman rmi "+current, "the image in use must survive")
 	assert.NotContains(t, ran, "debian", "only hostit's own images are ours to remove")
+}
+
+func TestRawAppsViewRoutesFileIO(t *testing.T) {
+	t.Parallel()
+	m, _, _ := newTestDeployManager(t)
+	createTestApp(t, m, "blog")
+	require.NoError(t, m.WriteFile("blog", "before.txt", []byte("via apps dir"), 0))
+
+	// While a container runs, podman's idmapped rootfs mount covers the app's
+	// subvolume path in the HOST namespace, and root writing through that view
+	// EOVERFLOWs (root is not in the mapping). The daemon therefore does all
+	// file I/O through a raw bind of the apps dir that excludes those child
+	// mounts; UseRawAppsView is what serve calls once the bind exists.
+	raw := t.TempDir()
+	id := m.appID("blog")
+	require.NoError(t, os.MkdirAll(filepath.Join(raw, id, "home", "app"), 0o755))
+	m.UseRawAppsView(raw)
+	require.NoError(t, m.WriteFile("blog", "after.txt", []byte("via raw view"), 0))
+	assert.FileExists(t, filepath.Join(raw, id, "home", "app", "after.txt"))
+
+	// The subvolume/btrfs side is untouched: podman and snapshots keep the real
+	// path (destructive ops stop the container first, clearing the overmount).
+	assert.Equal(t, filepath.Join(m.config.AppsDir, id), m.appSubvolume("blog"))
 }

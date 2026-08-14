@@ -130,6 +130,13 @@ type Manager struct {
 	homefs    *homefs.Service
 	snapshots *snapshot.Service
 	workspace *workspace.Service
+	// rawAppsDir, when set, is a non-recursive bind of AppsDir the daemon's file
+	// I/O goes through. A running container's idmapped rootfs mount covers the
+	// subvolume path in the host namespace, and root writing through that mapped
+	// view fails (EOVERFLOW: root is not in the mapping); the raw bind excludes
+	// those child mounts, so the daemon always sees the disk as it is. Empty
+	// until serve establishes the bind (tests, dry runs): AppsDir is used as-is.
+	rawAppsDir string
 
 	// memoryMB and diskMB cache per-app limits, so redeploys and quota checks
 	// keep them; the authoritative values come from the owner's limits

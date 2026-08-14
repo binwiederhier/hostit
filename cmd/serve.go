@@ -90,6 +90,12 @@ func execServe(c *cli.Context) error {
 	// Quota accounting is the mechanism behind every per-app disk budget;
 	// idempotent, so it simply runs at every start.
 	manager.EnableDiskBudgets()
+	// The daemon's file I/O goes through a raw (non-recursive) bind of the apps
+	// dir: a running container's idmapped rootfs mount covers the subvolume path
+	// in the host namespace, and root writing through that mapped view fails.
+	if err := manager.MountRawAppsView(filepath.Join(filepath.Dir(conf.SocketFile), "apps-raw")); err != nil {
+		return err
+	}
 	// One-time storage migrations, in order, before anything serves. The host
 	// states they cover: a fresh or fully migrated host records all gates as
 	// no-ops; a pre-rootfs host runs the whole chain; a host stopped mid-chain
