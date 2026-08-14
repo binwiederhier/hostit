@@ -24,6 +24,17 @@ export function previewSrc(app) {
   return app.custom_domain ? `https://${app.custom_domain}` : app.url;
 }
 
+// previewShotSrc is the periodic-screenshot URL for the card thumbnail, used
+// when the operator set app-preview: screenshot. Same previewability rules as
+// the live variant: a down or crashed app shows a placeholder, not a stale shot
+// pretending the app is fine.
+export function previewShotSrc(app) {
+  if ((app.preview_mode || "live") !== "screenshot" || !isPreviewable(app)) {
+    return null;
+  }
+  return `/api/apps/${encodeURIComponent(app.name)}/preview.png`;
+}
+
 // previewScale is the CSS transform factor that shrinks a DESKTOP_WIDTH-wide
 // iframe to fit a container of the given pixel width. It returns 0 when the width
 // is not known yet (before the ResizeObserver has measured), which hides the

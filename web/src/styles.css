@@ -1074,6 +1074,15 @@ th:last-child {
 .appcard-pill.off .appcard-dot { background: var(--faint); box-shadow: none; }
 .appcard-pill.crashed .appcard-dot { background: var(--status-down); box-shadow: none; }
 .appcard-preview { position: relative; height: 150px; border: 1px solid var(--border); border-radius: 9px; overflow: hidden; background: var(--surface-2); pointer-events: none; }
+/* The periodic screenshot (app-preview: screenshot) in place of the live frame */
+.appcard-preview-shot {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: top;
+}
+
 .appcard-preview-frame { position: absolute; top: 0; left: 0; border: 0; transform-origin: top left; pointer-events: none; }
 .appcard-preview.is-empty { display: grid; place-items: center; }
 .appcard-preview-empty { font-size: 11.5px; color: var(--faint); }
@@ -2672,20 +2681,6 @@ body.ws-resizing iframe { pointer-events: none; }
 .modal-tabpanes > .modal-tabpane.on { visibility: visible; }
 /* The shorter pane's text box stretches to the taller pane's height. */
 .modal-tabpane .prompt-block { flex: 1 1 auto; }
-
-/* Screenshot preview (app-preview: screenshot): a static shot in place of the
-   live iframe; broken (no shot yet) it falls back to the alt text. */
-.ws-preview img,
-.ed-preview img {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  object-position: top;
-  background: var(--surface-2);
-  color: var(--muted);
-  padding: 8px;
-}
 
 /* Modal helpers shared by the SSH and bring-your-own-AI dialogs */
 .modal-wide { max-width: 44rem; }

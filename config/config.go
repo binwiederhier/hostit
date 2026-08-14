@@ -10,17 +10,18 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// AppPreviewMode selects how the web app previews an app: a live iframe
-// (default), a periodic headless-chromium screenshot, or no preview at all.
+// AppPreviewMode selects how the dashboard's app cards are previewed: a live
+// iframe (default), a periodic headless-chromium screenshot, or not at all.
+// The workspace's own preview panes are always live.
 type AppPreviewMode string
 
 const (
-	// AppPreviewLive embeds the running app in a live iframe (today's behavior).
+	// AppPreviewLive embeds each running app in a scaled-down live iframe.
 	AppPreviewLive = AppPreviewMode("live")
 	// AppPreviewScreenshot shows a screenshot taken by headless chromium every
-	// few hours instead of a live iframe. Requires chromium on the host.
+	// few hours instead of the live iframe. Requires chromium on the host.
 	AppPreviewScreenshot = AppPreviewMode("screenshot")
-	// AppPreviewOff disables app previews entirely.
+	// AppPreviewOff drops the card preview entirely.
 	AppPreviewOff = AppPreviewMode("off")
 )
 

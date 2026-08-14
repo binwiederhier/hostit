@@ -3,7 +3,7 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { api, isNetworkError } from "../api";
 import { useReconnect } from "../hooks";
 import { ErrorBanner, Loading, Wordmark } from "../components";
-import { previewSrc, previewScale, DESKTOP_WIDTH, DESKTOP_HEIGHT } from "../preview";
+import { previewSrc, previewShotSrc, previewScale, DESKTOP_WIDTH, DESKTOP_HEIGHT } from "../preview";
 
 // Same rule the server enforces (app.AppNamePattern)
 const nameRe = /^[a-z]([a-z0-9-]{0,30}[a-z0-9])?$/;
@@ -127,7 +127,12 @@ const avatarStyle = (id) => {
 // crashed apps have nothing live to show, so we render a muted placeholder to
 // keep the grid's card heights even.
 const AppPreview = ({ app }) => {
-  const src = previewSrc(app);
+  // app-preview: screenshot swaps the live iframe for the sweep's periodic shot
+  // (one image instead of a whole embedded page per card); off drops the pane.
+  const mode = app.preview_mode || "live";
+  const shot = previewShotSrc(app);
+  const [shotFailed, setShotFailed] = useState(false); // no shot taken yet (404)
+  const src = mode === "live" ? previewSrc(app) : null;
   const ref = useRef(null);
   const [scale, setScale] = useState(0);
   useEffect(() => {
@@ -141,8 +146,12 @@ const AppPreview = ({ app }) => {
     ro.observe(el);
     return () => ro.disconnect();
   }, [src]);
+  if (mode === "off") {
+    return null;
+  }
+  const showShot = shot && !shotFailed;
   return (
-    <div className={"appcard-preview" + (src ? "" : " is-empty")} ref={ref} aria-hidden="true">
+    <div className={"appcard-preview" + (src || showShot ? "" : " is-empty")} ref={ref} aria-hidden="true">
       {src ? (
         <iframe
           className="appcard-preview-frame"
@@ -154,8 +163,10 @@ const AppPreview = ({ app }) => {
           sandbox="allow-scripts allow-same-origin"
           style={{ width: DESKTOP_WIDTH, height: DESKTOP_HEIGHT, transform: `scale(${scale})` }}
         />
+      ) : showShot ? (
+        <img className="appcard-preview-shot" src={shot} alt="" loading="lazy" onError={() => setShotFailed(true)} />
       ) : (
-        <span className="appcard-preview-empty">No live preview</span>
+        <span className="appcard-preview-empty">{mode === "screenshot" ? "No screenshot yet" : "No live preview"}</span>
       )}
     </div>
   );

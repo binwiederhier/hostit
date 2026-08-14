@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { isPreviewable, previewSrc, previewScale, DESKTOP_WIDTH } from "./preview";
+import { isPreviewable, previewSrc, previewShotSrc, previewScale, DESKTOP_WIDTH } from "./preview";
 
 describe("isPreviewable", () => {
   it("is true for a running app the run process is serving", () => {
@@ -43,5 +43,18 @@ describe("previewScale", () => {
   });
   it("honors an explicit desktop width", () => {
     expect(previewScale(640, 1280)).toBeCloseTo(0.5);
+  });
+});
+
+describe("previewShotSrc", () => {
+  it("returns the screenshot endpoint only in screenshot mode", () => {
+    const app = { name: "blog", running: true, app_state: "running", preview_mode: "screenshot" };
+    expect(previewShotSrc(app)).toBe("/api/apps/blog/preview.png");
+    expect(previewShotSrc({ ...app, preview_mode: "live" })).toBeNull();
+    expect(previewShotSrc({ ...app, preview_mode: undefined })).toBeNull();
+  });
+  it("shows nothing for apps that are not up", () => {
+    expect(previewShotSrc({ name: "blog", running: false, preview_mode: "screenshot" })).toBeNull();
+    expect(previewShotSrc({ name: "blog", running: true, app_state: "failed", preview_mode: "screenshot" })).toBeNull();
   });
 });
