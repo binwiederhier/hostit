@@ -2840,8 +2840,9 @@ body.ws-resizing iframe { pointer-events: none; }
 .ws-preview-ctl { border-bottom-color: transparent; }
 .ws-preview-ctl:disabled { opacity: 0.4; cursor: default; }
 /* Editor files tab: the live preview (pane, resizer and its toggle) is not useful
-   on small screens, so drop it well before the phone breakpoint. */
-@media (max-width: 768px) {
+   on small screens, so drop it at the same width the assistant view drops its
+   preview pane -- "no live preview" means the same thing on every tab. */
+@media (max-width: 820px) {
   .ed-preview { display: none; }
   .ed-view .ws-resizer { display: none; }
   .ed-ctl-preview { display: none; }
