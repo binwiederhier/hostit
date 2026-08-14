@@ -406,6 +406,7 @@ const App = () => {
           <Routes>
             <Route path="/" element={<Dashboard account={account} refreshAccount={refreshAccount} />} />
             <Route path="/app/:name" element={<AppDetail account={account} refreshAccount={refreshAccount} />} />
+            <Route path="/app/:name/:viewSlug" element={<AppDetail account={account} refreshAccount={refreshAccount} />} />
             <Route path="/profile" element={<Profile />} />
             <Route path="/admin" element={<Admin account={account} />} />
             <Route path="*" element={<Navigate to="/" replace />} />

@@ -2397,10 +2397,8 @@ main.container:has(.ws-page) {
 }
 /* Document views (settings, snapshots) grow with their content and let the whole
    page scroll, instead of trapping a scrollbar inside a fixed-height box. */
-main.container:has(.ws-page.ws-doc) {
-  height: auto;
-  min-height: calc(var(--app-vh, 100dvh) - 54px);
-}
+/* Document views used to let the whole page scroll; now they scroll inside
+   their own wrap (below), so the top bar and tab strip stay put. */
 .ws-page {
   display: flex;
   flex-direction: column;
@@ -2413,12 +2411,14 @@ main.container:has(.ws-page.ws-doc) {
   flex: 1;
   min-height: 0;
 }
-/* Document views fill when short but grow with content when long, so the page
-   scrolls instead of trapping a scrollbar inside a fixed-height box. */
+/* Document views scroll their own content: the top bar, tabs and Open app
+   stay fixed while the page body moves. */
 .ws-snapshotswrap,
 .ws-settingswrap,
 .ws-logswrap {
-  flex: 1 0 auto;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .ws-topbar {

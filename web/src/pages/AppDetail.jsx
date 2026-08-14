@@ -405,6 +405,22 @@ const ActionsMenu = ({ running, appRunning, busy, onAction, onDelete, canDelete 
   );
 };
 
+
+// The URL slug for each workspace view and back; "files" is the public name of
+// the internal "editor" view. Unknown slugs fall back to the remembered view.
+const SLUG_TO_VIEW = { assistant: "assistant", files: "editor", terminal: "terminal", snapshots: "snapshots", logs: "logs", settings: "settings" };
+const VIEW_TO_SLUG = { assistant: "assistant", editor: "files", terminal: "terminal", snapshots: "snapshots", logs: "logs", settings: "settings" };
+
+// rememberedView is the last tab this app was on (per app, across sessions).
+const rememberedView = (name) => {
+  try {
+    const v = localStorage.getItem("hostit.view." + name);
+    return v === "overview" ? "settings" : v || "assistant";
+  } catch {
+    return "assistant";
+  }
+};
+
 const NotFound = ({ name }) => (
   <div className="card">
     <h2>This app does not exist (or is not yours)</h2>
@@ -1431,7 +1447,7 @@ const SnapshotsPane = ({ name, showToast, onRolledBack, onFork, onNew, reloadSig
 };
 
 const AppDetail = ({ account, refreshAccount }) => {
-  const { name } = useParams();
+  const { name, viewSlug } = useParams();
   const navigate = useNavigate();
   const [app, setApp] = useState(null);
   const [error, setError] = useState("");
@@ -1452,14 +1468,11 @@ const AppDetail = ({ account, refreshAccount }) => {
   const [hasKeys, setHasKeys] = useState(null); // null until we know, so nothing flickers
   const [toast, setToast] = useState(""); // a 3s "Copied"/"Regenerated" snackbar
   // Remember the last view per app (also seeded by the new-app intent).
-  const [view, setView] = useState(() => {
-    try {
-      const v = localStorage.getItem("hostit.view." + name);
-      return v === "overview" ? "settings" : v || "assistant";
-    } catch {
-      return "assistant";
-    }
-  });
+  // The view lives in the URL (/app/<name>/files etc.), so every tab is deep-
+  // linkable; a bare /app/<name> falls back to the per-app remembered view.
+  // "files" is the public slug for the internal "editor" view.
+  const view = SLUG_TO_VIEW[viewSlug] || rememberedView(name);
+  const setView = (v) => navigate(`/app/${encodeURIComponent(name)}/${VIEW_TO_SLUG[v] || "assistant"}`);
   useEffect(() => {
     try {
       localStorage.setItem("hostit.view." + name, view);
