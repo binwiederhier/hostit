@@ -12,7 +12,8 @@ import (
 )
 
 // These tests exercise the Manager's file methods end to end -- the delegation to
-// the homefs service, the real appHome path resolution and the app-uid chown seam.
+// the homefs service, the real subvolume/files path resolution and the app-uid
+// chown seam.
 // The exhaustive containment suite (every escape, mode and listing edge case) lives
 // with the service it belongs to, in homefs/service_test.go.
 
@@ -100,13 +101,13 @@ func TestDescriptionIgnoresAnAbsurdConfig(t *testing.T) {
 
 // TestSymlinksCannotEscapeTheAppHome re-checks the security boundary through the
 // Manager, so the delegation to homefs cannot silently drop it: the app user owns
-// their home (bind-mounted into their container, writable over scp), so any file
+// their files dir (it is their container's home, writable over scp), so any file
 // operation the daemon performs as root must refuse to follow a link out of it.
 func TestSymlinksCannotEscapeTheAppHome(t *testing.T) {
 	t.Parallel()
 	m, _, _ := newTestDeployManager(t)
 	createTestApp(t, m, "blog")
-	home := m.appHome("blog")
+	home := m.appFiles("blog").Path()
 
 	outside := filepath.Join(t.TempDir(), "secret.txt")
 	require.NoError(t, os.WriteFile(outside, []byte("root-only secret"), 0o600))
@@ -147,6 +148,51 @@ func TestSymlinksCannotEscapeTheAppHome(t *testing.T) {
 	if err == nil {
 		_, statErr := os.Stat(outside)
 		assert.NoError(t, statErr, "deleting a link must not delete its target")
+	}
+}
+
+// TestFilesRefuseAHomeSymlinkedOutOfTheSubvolume covers the unified-layout
+// attack surface end to end through the Manager: the tenant is root inside
+// their container, whose rootfs IS the app subvolume, so they can replace home
+// (or home/app) with an absolute symlink. Every daemon read of the files dir --
+// the file API, the hostit.yml load, the agent's state breadcrumb -- must
+// refuse to follow it; a naive os.OpenRoot of the joined path would happily
+// root the daemon wherever the link points.
+func TestFilesRefuseAHomeSymlinkedOutOfTheSubvolume(t *testing.T) {
+	t.Parallel()
+	for _, plant := range []string{"home", "home/app"} {
+		t.Run(plant, func(t *testing.T) {
+			t.Parallel()
+			m, _, _ := newTestDeployManager(t)
+			createTestApp(t, m, "blog")
+			writeAppFile(t, m, "blog", "hostit.yml", "mode: static\n")
+			outside := t.TempDir()
+			// Bait everything the daemon reads: a config and a breadcrumb at the
+			// link target must NOT be what the daemon sees.
+			require.NoError(t, os.MkdirAll(filepath.Join(outside, "log"), 0o755))
+			require.NoError(t, os.WriteFile(filepath.Join(outside, "hostit.yml"), []byte("mode: static\n"), 0o644))
+			require.NoError(t, os.WriteFile(filepath.Join(outside, "log", "state"), []byte("running\n"), 0o644))
+			subvol := m.appSubvolume("blog")
+			require.NoError(t, os.RemoveAll(filepath.Join(subvol, plant)))
+			require.NoError(t, os.Symlink(outside, filepath.Join(subvol, plant)))
+
+			// The file API refuses reads and writes alike.
+			require.Error(t, m.WriteFile("blog", "x.txt", []byte("x"), 0), "writes through a planted %s link must be refused", plant)
+			_, err := m.ReadFile("blog", "hostit.yml")
+			require.Error(t, err, "reads through a planted %s link must be refused", plant)
+
+			// The config load refuses, so a deploy cannot be steered by a link.
+			_, err = m.loadConfig("blog")
+			require.Error(t, err, "loadConfig must refuse a planted %s link", plant)
+
+			// The breadcrumb read refuses: the baited "running" never surfaces.
+			state, startedAt := m.appProcessState("blog")
+			assert.Empty(t, state, "the agent breadcrumb must not be read through a planted %s link", plant)
+			assert.Zero(t, startedAt)
+
+			// Nothing landed outside the subvolume.
+			assert.NoFileExists(t, filepath.Join(outside, "x.txt"))
+		})
 	}
 }
 

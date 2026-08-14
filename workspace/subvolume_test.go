@@ -15,14 +15,15 @@ import (
 	"heckel.io/hostit/store"
 )
 
-func TestBaseAndRootfsPaths(t *testing.T) {
+func TestBaseAndAppSubvolumePaths(t *testing.T) {
 	t.Parallel()
 	svc, _, _, _ := newTestService(t)
 	// The base directory is named by the tag's content hash (the part after the
 	// colon); the full tag has "/" and ":" in it and cannot be a directory name.
 	base := svc.BasePath("localhost/hostit-workspace:abc123")
 	assert.Equal(t, filepath.Join(svc.appsDir, ".bases", "abc123"), base)
-	assert.Equal(t, filepath.Join(svc.appsDir, ".rootfs", "appid123"), svc.RootfsPath("appid123"))
+	// An app IS one subvolume, directly under the apps dir, keyed on its id.
+	assert.Equal(t, filepath.Join(svc.appsDir, "appid123"), svc.AppSubvolumePath("appid123"))
 }
 
 func TestEnsureBaseExportsOnceAndSealsReadOnly(t *testing.T) {
@@ -92,7 +93,7 @@ func TestEnsureBaseRefusesAnUnbuildableOldTag(t *testing.T) {
 	assert.Empty(t, fc.exportedTo)
 }
 
-func TestEnsureRootfsSnapshotsThePinnedBaseAndChowns(t *testing.T) {
+func TestEnsureAppSubvolumeSnapshotsThePinnedBaseAndChowns(t *testing.T) {
 	t.Parallel()
 	svc, fc, r, _ := newTestService(t)
 	// The app is pinned to an old tag whose base already exists: no image build,
@@ -100,75 +101,64 @@ func TestEnsureRootfsSnapshotsThePinnedBaseAndChowns(t *testing.T) {
 	pinned := imagePrefix + ":pinned1"
 	require.NoError(t, os.MkdirAll(svc.BasePath(pinned), 0o700))
 	a := &store.App{ID: "appid123", Name: "blog", ImageTag: pinned}
-	require.NoError(t, svc.EnsureRootfs(a, IDs{UID: 1001, GID: 1001, Count: 65536}))
+	require.NoError(t, svc.EnsureAppSubvolume(a, IDs{UID: 1001, GID: 1001, Count: 65536}))
 
-	rootfs := svc.RootfsPath("appid123")
-	assert.Contains(t, r.ran(), "btrfs subvolume snapshot "+svc.BasePath(pinned)+" "+rootfs)
-	assert.NotContains(t, r.ran(), "btrfs subvolume snapshot -r", "the rootfs is writable")
-	assert.Contains(t, r.ran(), "chown -R 1001:1001 "+rootfs)
+	subvol := svc.AppSubvolumePath("appid123")
+	assert.Contains(t, r.ran(), "btrfs subvolume snapshot "+svc.BasePath(pinned)+" "+subvol)
+	assert.NotContains(t, r.ran(), "btrfs subvolume snapshot -r", "the app subvolume is writable")
+	assert.Contains(t, r.ran(), "chown -R 1001:1001 "+subvol)
+	// The files directory exists inside the subvolume (the base may not ship
+	// /home/app), created before the chown -R so it belongs to the app too.
+	assert.DirExists(t, filepath.Join(subvol, FilesDir))
 	assert.Empty(t, fc.builds)
 	assert.Empty(t, fc.exportedTo)
 }
 
-func TestEnsureRootfsFallsBackToTheCurrentTagWhenUnpinned(t *testing.T) {
+func TestEnsureAppSubvolumeFallsBackToTheCurrentTagWhenUnpinned(t *testing.T) {
 	t.Parallel()
 	svc, _, r, _ := newTestService(t)
-	// An app from before pinning (empty tag) ran the current image, so its rootfs
-	// snapshots the CURRENT base -- never ".bases/" itself (the empty dir name).
+	// An app from before pinning (empty tag) ran the current image, so its
+	// subvolume snapshots the CURRENT base -- never ".bases/" itself (the empty
+	// dir name).
 	require.NoError(t, os.MkdirAll(svc.BasePath(ImageTag()), 0o700))
 	a := &store.App{ID: "appid123", Name: "blog"}
-	require.NoError(t, svc.EnsureRootfs(a, IDs{UID: 1001, GID: 1001, Count: 65536}))
-	assert.Contains(t, r.ran(), "btrfs subvolume snapshot "+svc.BasePath(ImageTag())+" "+svc.RootfsPath("appid123"))
+	require.NoError(t, svc.EnsureAppSubvolume(a, IDs{UID: 1001, GID: 1001, Count: 65536}))
+	assert.Contains(t, r.ran(), "btrfs subvolume snapshot "+svc.BasePath(ImageTag())+" "+svc.AppSubvolumePath("appid123"))
 	assert.NotContains(t, r.ran(), "snapshot "+filepath.Join(svc.appsDir, basesDirName)+" ")
 }
 
-func TestEnsureRootfsNeverRecreatesAnExistingRootfs(t *testing.T) {
+func TestEnsureAppSubvolumeNeverRecreatesAnExistingOne(t *testing.T) {
 	t.Parallel()
 	svc, fc, r, _ := newTestService(t)
-	// THE invariant: an app's rootfs, once created, is never recreated or reset.
-	// Even with its base missing entirely, an existing rootfs must be left alone
-	// -- everything the app installed lives there.
-	require.NoError(t, os.MkdirAll(svc.RootfsPath("appid123"), 0o700))
+	// THE invariant: an app's subvolume, once created, is never recreated or
+	// reset. Even with its base missing entirely, an existing subvolume must be
+	// left alone -- the app's files AND everything it installed live there.
+	require.NoError(t, os.MkdirAll(svc.AppSubvolumePath("appid123"), 0o700))
 	a := &store.App{ID: "appid123", Name: "blog", ImageTag: imagePrefix + ":whatever"}
-	require.NoError(t, svc.EnsureRootfs(a, IDs{UID: 1001, GID: 1001, Count: 65536}))
+	require.NoError(t, svc.EnsureAppSubvolume(a, IDs{UID: 1001, GID: 1001, Count: 65536}))
 	assert.NotContains(t, r.ran(), "btrfs subvolume snapshot")
 	assert.NotContains(t, r.ran(), "chown")
 	assert.Empty(t, fc.builds)
 	assert.Empty(t, fc.exportedTo)
 }
 
-func TestForkRootfsSnapshotsTheSourceRootfs(t *testing.T) {
+func TestForkAppSubvolumeSnapshotsTheSeedPath(t *testing.T) {
 	t.Parallel()
 	svc, _, r, _ := newTestService(t)
-	// A fork carries the source's installed packages, so it snapshots the SOURCE
-	// rootfs, not the base.
-	require.NoError(t, os.MkdirAll(svc.RootfsPath("srcid"), 0o700))
-	require.NoError(t, svc.ForkRootfs("srcid", "dstid", IDs{UID: 2001, GID: 2001, Count: 65536}))
-	assert.Contains(t, r.ran(), "btrfs subvolume snapshot "+svc.RootfsPath("srcid")+" "+svc.RootfsPath("dstid"))
-	assert.Contains(t, r.ran(), "chown -R 2001:2001 "+svc.RootfsPath("dstid"))
+	// A fork snapshots the seed subvolume -- the source app's subvolume or a
+	// whole-app snapshot -- so it carries files AND installed packages in one
+	// CoW copy, chowned to the new app's id block.
+	src := svc.AppSubvolumePath("srcid")
+	require.NoError(t, os.MkdirAll(src, 0o700))
+	require.NoError(t, svc.ForkAppSubvolume(src, "dstid", IDs{UID: 2001, GID: 2001, Count: 65536}))
+	assert.Contains(t, r.ran(), "btrfs subvolume snapshot "+src+" "+svc.AppSubvolumePath("dstid"))
+	assert.Contains(t, r.ran(), "chown -R 2001:2001 "+svc.AppSubvolumePath("dstid"))
 }
 
-func TestForkRootfsRequiresTheSource(t *testing.T) {
+func TestForkAppSubvolumeRequiresTheSeed(t *testing.T) {
 	t.Parallel()
 	svc, _, _, _ := newTestService(t)
-	require.Error(t, svc.ForkRootfs("missing", "dstid", IDs{UID: 2001, GID: 2001}))
-}
-
-func TestDeleteRootfsRemovesTheSubvolume(t *testing.T) {
-	t.Parallel()
-	svc, _, r, _ := newTestService(t)
-	require.NoError(t, svc.DeleteRootfs("appid123"))
-	assert.Contains(t, r.ran(), "btrfs subvolume delete "+svc.RootfsPath("appid123"))
-}
-
-func TestRootfsIDsListsExistingRootfsSubvolumes(t *testing.T) {
-	t.Parallel()
-	svc, _, _, _ := newTestService(t)
-	require.NoError(t, os.MkdirAll(svc.RootfsPath("one"), 0o700))
-	require.NoError(t, os.MkdirAll(svc.RootfsPath("two"), 0o700))
-	ids, err := svc.RootfsIDs()
-	require.NoError(t, err)
-	assert.ElementsMatch(t, []string{"one", "two"}, ids)
+	require.Error(t, svc.ForkAppSubvolume(svc.AppSubvolumePath("missing"), "dstid", IDs{UID: 2001, GID: 2001}))
 }
 
 func TestPruneOldBasesRefusesPinnedAndCurrentTags(t *testing.T) {

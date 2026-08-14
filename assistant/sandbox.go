@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 
+	"heckel.io/hostit/app"
 	"heckel.io/hostit/config"
 )
 
@@ -312,8 +313,8 @@ func (s *Sandbox) EnsureImage() (string, error) {
 // appIdentity resolves an app's Unix user to its uid/gid block base and its stable
 // id. The uid map scopes the daemon's peercred socket to this one app; the id keys
 // the (ephemeral) container name and the session log, so a rename never leaves a
-// mismatched or orphaned name -- the app's home is apps/<id>, so the id is the
-// home's basename.
+// mismatched or orphaned name -- the app's home is apps/<id>/home/app (inside the
+// id-keyed app subvolume), so the id comes out of the home path.
 func appIdentity(appName string) (uid, gid int, appID string, err error) {
 	u, err := user.Lookup(appName)
 	if err != nil {
@@ -321,7 +322,7 @@ func appIdentity(appName string) (uid, gid int, appID string, err error) {
 	}
 	uid, _ = strconv.Atoi(u.Uid)
 	gid, _ = strconv.Atoi(u.Gid)
-	return uid, gid, filepath.Base(u.HomeDir), nil
+	return uid, gid, app.IDFromHomeDir(u.HomeDir), nil
 }
 
 // containerName is the ephemeral sandbox container name for one turn, keyed on the

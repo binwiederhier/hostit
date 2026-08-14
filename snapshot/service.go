@@ -1,6 +1,8 @@
-// Package snapshot orchestrates app-home snapshots, rollback and retention on
-// btrfs. It composes the node-local services (btrfs, systemd, container) and the
-// store directly, and calls back into its Host (the app.Manager) for the
+// Package snapshot orchestrates whole-app snapshots, rollback and retention on
+// btrfs. A snapshot captures the app's one subvolume -- its files at home/app
+// AND the installed software around them -- so a rollback restores both
+// together. It composes the node-local services (btrfs, systemd, container) and
+// the store directly, and calls back into its Host (the app.Manager) for the
 // app-lifecycle operations a snapshot or rollback needs: taking the per-app lock,
 // bringing the app up after a rollback, running snapshot hooks, resolving the
 // id-keyed paths, names and uid of an app, and joining new subvolumes to the
@@ -28,8 +30,9 @@ const (
 	// snapshotDirMode is the mode of the .snapshots/<app> directory
 	snapshotDirMode = 0o700
 	// rollbackStagedSuffix names the writable copy of a rollback target, built
-	// beside the home before the home is touched; rollbackOldSuffix names the old
-	// home moved aside during the swap. Both are cleaned up as the rollback proceeds.
+	// beside the app subvolume before it is touched; rollbackOldSuffix names the
+	// old subvolume moved aside during the swap. Both are cleaned up as the
+	// rollback proceeds.
 	rollbackStagedSuffix = ".rollback-staged"
 	rollbackOldSuffix    = ".rollback-old"
 	// autoSnapshotLabel labels the hourly automatic snapshots, and
@@ -60,8 +63,10 @@ type Host interface {
 	// RunHook runs a snapshot hook command inside the app's container and returns
 	// its exit code. A non-nil error means the command could not be run at all.
 	RunHook(name, command string, timeout time.Duration) (exitCode int, err error)
-	// AppHome is the app's home subvolume path.
-	AppHome(name string) string
+	// AppSubvolume is the app's one subvolume: the container's whole OS tree
+	// with the files at home/app inside, which is what snapshots capture and
+	// rollback swaps.
+	AppSubvolume(name string) string
 	// SnapshotsRoot is the app's snapshots directory, <apps>/.snapshots/<id>.
 	SnapshotsRoot(name string) string
 	// SnapshotPath is one snapshot's subvolume path.
@@ -69,18 +74,18 @@ type Host interface {
 	// UnitName and ContainerName are the app's systemd unit and container names.
 	UnitName(name string) string
 	ContainerName(name string) string
-	// UIDForPort is an app's base uid, for restoring home ownership after a rollback.
+	// UIDForPort is an app's base uid, for restoring ownership after a rollback.
 	UIDForPort(port int) int
-	// Chown restores ownership of a rolled-back home to the app's uid.
+	// Chown restores ownership of a rolled-back subvolume to the app's uid.
 	Chown(path string, uid int) error
 	// AssignBudget joins a subvolume to the app's disk budget qgroup. Every
-	// subvolume this service creates must join, or extents the home shares with a
-	// snapshot become reachable outside the group and stop counting as its
-	// exclusive bytes -- home data would silently leak out of the app's cap.
+	// subvolume this service creates must join, or extents the app subvolume
+	// shares with a snapshot become reachable outside the group and stop counting
+	// as its exclusive bytes -- app data would silently leak out of the app's cap.
 	AssignBudget(name string, subvolPath string) error
 }
 
-// Service performs app-home snapshots, rollback and retention pruning.
+// Service performs whole-app snapshots, rollback and retention pruning.
 type Service struct {
 	btrfs     btrfs.Interface
 	systemd   systemd.Interface
@@ -95,10 +100,11 @@ func New(bt btrfs.Interface, sd systemd.Interface, ct container.Interface, st *s
 	return &Service{btrfs: bt, systemd: sd, container: ct, store: st, host: host}
 }
 
-// TakeSnapshot snapshots an app's home into a read-only subvolume and records it.
-// label is an optional note; auto marks automatic snapshots (which retention may
-// prune). The app's snapshot.pre hook runs first and aborts the snapshot if it
-// fails, so a torn state is never captured; snapshot.post runs after (best effort).
+// TakeSnapshot snapshots the app's whole subvolume (files AND installed
+// software) into a read-only subvolume and records it. label is an optional
+// note; auto marks automatic snapshots (which retention may prune). The app's
+// snapshot.pre hook runs first and aborts the snapshot if it fails, so a torn
+// state is never captured; snapshot.post runs after (best effort).
 func (s *Service) TakeSnapshot(name, label string, auto bool) (*store.Snapshot, error) {
 	defer s.host.LockApp(name)()
 	return s.takeSnapshot(name, label, auto)
@@ -127,8 +133,8 @@ func (s *Service) takeSnapshot(name, label string, auto bool) (*store.Snapshot, 
 	if err := os.MkdirAll(s.host.SnapshotsRoot(name), snapshotDirMode); err != nil {
 		return nil, err
 	}
-	if err := s.btrfs.Snapshot(s.host.AppHome(name), s.host.SnapshotPath(name, id), true); err != nil {
-		return nil, fmt.Errorf("cannot snapshot the app home: %w", err)
+	if err := s.btrfs.Snapshot(s.host.AppSubvolume(name), s.host.SnapshotPath(name, id), true); err != nil {
+		return nil, fmt.Errorf("cannot snapshot the app subvolume: %w", err)
 	}
 	// The snapshot joins the app's disk budget (see Host.AssignBudget); best
 	// effort, since a failed assign must not lose an otherwise good snapshot.
@@ -183,15 +189,19 @@ func (s *Service) DeleteSnapshot(name, id string) error {
 	return s.store.DeleteSnapshot(id)
 }
 
-// Rollback restores an app's home from a snapshot. The replacement is built and
-// swapped in atomically so a failure never leaves the app without a home:
+// Rollback restores an app from a snapshot: the snapshot is the whole app
+// subvolume, so the app's files AND its installed software come back together.
+// The replacement is built and swapped in atomically so a failure never leaves
+// the app without a subvolume:
 //
-//  1. stage a writable copy of the target snapshot (before touching the home, and
-//     before the safety snapshot -- whose retention prune could otherwise delete
-//     the very target being restored);
+//  1. stage a writable copy of the target snapshot (before touching the live
+//     subvolume, and before the safety snapshot -- whose retention prune could
+//     otherwise delete the very target being restored);
 //  2. take a safety snapshot of the current state (so the rollback is itself undoable);
-//  3. stop the container, then swap: move the live home aside, move the staged copy
-//     in, and only then drop the old home;
+//  3. power the container down (disable the unit and remove the container -- the
+//     subvolume being swapped IS the container's rootfs, so nothing may run it
+//     during the swap), then swap: move the live subvolume aside, move the
+//     staged copy in, and only then drop the old one;
 //  4. restore ownership and quota and bring the app back up.
 //
 // The per-app lock serializes this against concurrent deploys/snapshots on the app.
@@ -211,19 +221,19 @@ func (s *Service) Rollback(name, id string) error {
 	}
 	defer s.host.StateChanged(name)
 
-	home := s.host.AppHome(name)
-	staged := home + rollbackStagedSuffix
-	oldHome := home + rollbackOldSuffix
+	subvol := s.host.AppSubvolume(name)
+	staged := subvol + rollbackStagedSuffix
+	oldSubvol := subvol + rollbackOldSuffix
 
-	// Stage the restored home from the target first, so the live home stays intact
-	// until the replacement is ready, and the content is safely captured before the
-	// safety snapshot's retention prune (which could remove the target).
+	// Stage the restored subvolume from the target first, so the live one stays
+	// intact until the replacement is ready, and the content is safely captured
+	// before the safety snapshot's retention prune (which could remove the target).
 	_ = s.btrfs.DeleteSubvolume(staged) // clear any leftover from an aborted rollback
 	if err := s.btrfs.Snapshot(s.host.SnapshotPath(name, id), staged, false); err != nil {
 		return fmt.Errorf("cannot stage the snapshot for rollback: %w", err)
 	}
-	// The staged copy becomes the app's home after the swap below, so it joins the
-	// disk budget now; qgroup membership survives the rename.
+	// The staged copy becomes the app's subvolume after the swap below, so it joins
+	// the disk budget now; qgroup membership survives the rename.
 	if err := s.host.AssignBudget(name, staged); err != nil {
 		slog.Warn("Cannot assign staged rollback copy to the app's disk budget", "app", name, "error", err)
 	}
@@ -235,30 +245,33 @@ func (s *Service) Rollback(name, id string) error {
 		return fmt.Errorf("cannot take a safety snapshot before rolling back: %w", err)
 	}
 
-	// Stop and remove the container so nothing holds the home subvolume.
+	// Power the container down so nothing runs the subvolume being swapped: it is
+	// the container's rootfs, so the unit is stopped AND the container removed
+	// (apply recreates it against the restored subvolume on the way back up).
 	_ = s.systemd.DisableNow(s.host.UnitName(name))
 	_ = s.systemd.ResetFailed(s.host.UnitName(name))
 	_ = s.container.RemoveForce(s.host.ContainerName(name))
 
-	// Swap the staged home in. Move the old home aside first so the home always
-	// exists (old or new): if putting the new one in place fails, restore the old.
-	_ = s.btrfs.DeleteSubvolume(oldHome)
-	if err := s.btrfs.MoveSubvolume(home, oldHome); err != nil {
+	// Swap the staged subvolume in. Move the old one aside first so the app always
+	// has a subvolume (old or new): if putting the new one in place fails, restore
+	// the old.
+	_ = s.btrfs.DeleteSubvolume(oldSubvol)
+	if err := s.btrfs.MoveSubvolume(subvol, oldSubvol); err != nil {
 		_ = s.btrfs.DeleteSubvolume(staged)
-		return fmt.Errorf("cannot move the current home aside: %w", err)
+		return fmt.Errorf("cannot move the current app subvolume aside: %w", err)
 	}
-	if err := s.btrfs.MoveSubvolume(staged, home); err != nil {
-		_ = s.btrfs.MoveSubvolume(oldHome, home) // put the original home back
-		return fmt.Errorf("cannot put the restored home in place: %w", err)
+	if err := s.btrfs.MoveSubvolume(staged, subvol); err != nil {
+		_ = s.btrfs.MoveSubvolume(oldSubvol, subvol) // put the original back
+		return fmt.Errorf("cannot put the restored app subvolume in place: %w", err)
 	}
-	_ = s.btrfs.DeleteSubvolume(oldHome)
+	_ = s.btrfs.DeleteSubvolume(oldSubvol)
 
 	uid := s.host.UIDForPort(a.Port)
-	if err := s.host.Chown(home, uid); err != nil {
-		slog.Warn("Cannot restore home ownership after rollback", "app", name, "error", err)
+	if err := s.host.Chown(subvol, uid); err != nil {
+		slog.Warn("Cannot restore ownership after rollback", "app", name, "error", err)
 	}
 	// No quota to restore: the cap lives on the app's budget qgroup, and the new
-	// home was assigned to it when it was staged above.
+	// subvolume was assigned to it when it was staged above.
 	// No extra pre-deploy snapshot: we already took the safety snapshot above.
 	return s.host.Up(name)
 }
@@ -280,16 +293,17 @@ func (s *Service) pruneSnapshots(name string) {
 	}
 }
 
-// DeleteAppSubvolumes removes an app's home and all its snapshot subvolumes, used
-// when an app is deleted. On a btrfs host `btrfs subvolume delete` cleans the whole
-// subvolume; the caller then leaves an empty plain directory for userdel to remove.
+// DeleteAppSubvolumes removes an app's subvolume and all its snapshot
+// subvolumes, used when an app is deleted. On a btrfs host `btrfs subvolume
+// delete` cleans the whole subvolume; the caller then removes whatever stub
+// userdel leaves behind.
 func (s *Service) DeleteAppSubvolumes(name string) {
 	snaps, _ := s.store.Snapshots(name)
 	for _, snap := range snaps {
 		_ = s.btrfs.DeleteSubvolume(s.host.SnapshotPath(name, snap.ID))
 	}
 	_ = os.RemoveAll(s.host.SnapshotsRoot(name))
-	_ = s.btrfs.DeleteSubvolume(s.host.AppHome(name))
+	_ = s.btrfs.DeleteSubvolume(s.host.AppSubvolume(name))
 }
 
 // SnapshotLoop takes an automatic snapshot of every app on an interval (hourly),

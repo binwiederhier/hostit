@@ -84,7 +84,7 @@ func TestStatesReportsStartTimes(t *testing.T) {
 
 	// The container start time comes from podman; the app start time is the state
 	// file's mtime. Pin the mtime so the assertion is exact.
-	stateFile := filepath.Join(m.appHome("one"), "log", "state")
+	stateFile := filepath.Join(m.appFiles("one").Path(), "log", "state")
 	early := time.Unix(1786001111, 0)
 	require.NoError(t, os.Chtimes(stateFile, early, early))
 

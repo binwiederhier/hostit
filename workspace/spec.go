@@ -3,8 +3,9 @@
 // hash) and the storage those containers run -- the workspace image (its
 // Containerfile, content-derived tags, and the build/prune lifecycle in
 // Service), the per-tag base subvolumes exported from it, and the per-app
-// writable rootfs subvolumes. It is pure app-container policy with no callbacks
-// into the app orchestration.
+// subvolumes: one writable subvolume per app, the full OS tree its container
+// runs via --rootfs, with the app's files at home/app inside it. It is pure
+// app-container policy with no callbacks into the app orchestration.
 package workspace
 
 import (
@@ -26,10 +27,14 @@ const (
 	ContainerPrefix = "hostit-app-"
 	// UnitTemplate is the systemd template unit instantiated per app
 	UnitTemplate = "hostit-app@"
-	// ContainerHome is the app's home as seen from inside its container. It is a
-	// fixed path (not the app name) so a rename never has to recreate the container
-	// to fix it: the id-keyed host home is bind-mounted here and stays put.
-	ContainerHome = "/home/app"
+	// FilesDir is where an app's files live INSIDE its subvolume: the subvolume
+	// is the container's rootfs, so this host-side path and the in-container
+	// home (ContainerHome) are the same tree. It is a fixed path (not the app
+	// name) so a rename never moves anything.
+	FilesDir = "home/app"
+	// ContainerHome is the app's home as seen from inside its container: the
+	// files directory at its absolute in-container path.
+	ContainerHome = "/" + FilesDir
 	// containerPort is what an app listens on inside its own network namespace.
 	// Every app has the whole namespace to itself, so they can all use the same
 	// obvious number and never see the loopback port hostit picked outside.
@@ -40,8 +45,8 @@ const (
 	// UIDBlockSize is how many host uids each app owns: a contiguous block whose
 	// base is container-root. 65536 so the container has a full uid range (up to
 	// nobody). A single contiguous block keeps the map one uniform offset, so
-	// every in-container uid lands inside the app's own block and the rootfs is
-	// chowned to it once at creation.
+	// every in-container uid lands inside the app's own block and the app
+	// subvolume is chowned to it once at creation.
 	UIDBlockSize = 65536
 	// UIDBlockStart is the first app's base uid, high above system users; blocks
 	// are spaced UIDBlockSize apart (by port) so they never overlap.
@@ -65,7 +70,7 @@ const (
 
 // IDs is the app's contiguous host uid/gid block. Container uid 0 maps to UID on
 // the host and the block runs Count ids up from there. Being one contiguous
-// range matters: the mapping is a single uniform offset, so the app's rootfs
+// range matters: the mapping is a single uniform offset, so the app's subvolume
 // can be chowned to the block once at creation and every in-container uid stays
 // inside the app's own range (a split "0:uid:1 + 1:subuid:N" map would not).
 type IDs struct {
@@ -90,15 +95,16 @@ func UnitName(id string) string {
 // leading podman) for an app's container.
 //
 // Containers are created by the root daemon but mapped so that container root is
-// the app's unprivileged host uid: files in the bind-mounted home belong to the
+// the app's unprivileged host uid: files in the app subvolume belong to the
 // app both inside and outside, and a workload escape lands on that uid rather
 // than on root. Each app gets its own network stack (slirp4netns), so containers
 // cannot reach each other, and ports are published on loopback only.
 //
-// The container runs the app's persistent rootfs subvolume (--rootfs), not an
-// image: recreating the container (config change, daemon upgrade) keeps whatever
-// the app installed, and the rootfs is part of the app's disk budget.
-func CreateArgs(conf *appctl.AppConfig, a *store.App, home, rootfs, socketFile, hostitBin, version string, memoryMB int, ids IDs) []string {
+// The container runs the app's persistent subvolume (--rootfs), not an image:
+// the app's files live at home/app inside that same tree (no home bind mount),
+// so recreating the container (config change, daemon upgrade) keeps the files
+// and whatever the app installed, and one subvolume is the app's disk budget.
+func CreateArgs(conf *appctl.AppConfig, a *store.App, subvol, socketFile, hostitBin, version string, memoryMB int, ids IDs) []string {
 	args := []string{"create", "--name", ContainerName(a.ID), "--hostname", a.Name}
 	// conmon signals readiness to systemd, so the app's Type=notify unit only reports
 	// active once the container is actually running. Without this a deploy can race a
@@ -135,8 +141,7 @@ func CreateArgs(conf *appctl.AppConfig, a *store.App, home, rootfs, socketFile, 
 		"--env", fmt.Sprintf("PORT=%d", containerPort),
 		"--env", "HOME="+ContainerHome,
 		"--workdir", ContainerHome,
-		"--publish", fmt.Sprintf("127.0.0.1:%d:%d", a.Port, containerPort),
-		"--volume", home+":"+ContainerHome)
+		"--publish", fmt.Sprintf("127.0.0.1:%d:%d", a.Port, containerPort))
 	// conf is nil for an app with no usable hostit.yml: the container still comes
 	// up, so its owner can SSH in and fix it
 	if conf != nil {
@@ -148,7 +153,7 @@ func CreateArgs(conf *appctl.AppConfig, a *store.App, home, rootfs, socketFile, 
 	// The trailer: the rootfs, then the command podman runs in it. Everything
 	// before it is an option, so a late-added label (WithConfigLabel) goes in just
 	// ahead of it; anything AFTER --rootfs would be taken as the container command.
-	args = append(args, "--rootfs", rootfs, hostitBin, "agent")
+	args = append(args, "--rootfs", subvol, hostitBin, "agent")
 	return args
 }
 

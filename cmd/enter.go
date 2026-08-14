@@ -5,7 +5,6 @@ import (
 	"os"
 	"os/exec"
 	"os/user"
-	"path/filepath"
 	"regexp"
 	"strconv"
 	"syscall"
@@ -59,11 +58,11 @@ func execEnter(c *cli.Context) error {
 		return cli.Exit("not an app user", 1)
 	}
 	// Resolve the app's container from the caller's home directory, not its name.
-	// Containers are keyed on the app's stable id, and the app user's home IS the
-	// id-keyed path (apps/<id>), so its basename is the container key. A rename
-	// never changes it. (A pre-id app's home is still apps/<name>, whose basename
-	// matches that app's name-keyed container, so this is correct across the
-	// migration.) Everything here comes from the SUDO_UID user, never from args.
+	// Containers are keyed on the app's stable id, and the app user's home lives
+	// INSIDE the id-keyed app subvolume (apps/<id>/home/app), so the id comes out
+	// of the home path. A rename never changes it. (A pre-unification home is
+	// still apps/<id> itself, so this is correct across the migration.)
+	// Everything here comes from the SUDO_UID user, never from args.
 	containerKey, ok := containerKeyFromHome(u.HomeDir)
 	if !ok {
 		return cli.Exit("cannot resolve the app container", 1)
@@ -93,12 +92,13 @@ func execEnter(c *cli.Context) error {
 }
 
 // containerKeyFromHome turns an app user's home directory into the name of its
-// container. The container is keyed on the app's id, and the home is the id-keyed
-// path (apps/<id>), so the basename is the key; the "hostit-app-" prefix is added.
-// It returns false for a home whose basename is not a safe container key, so a
-// surprising passwd entry cannot inject podman arguments.
+// container. The container is keyed on the app's id, which app.IDFromHomeDir
+// digs out of the home path (apps/<id>/home/app, or the pre-unification
+// apps/<id>); the "hostit-app-" prefix is added. It returns false for a home
+// whose id is not a safe container key, so a surprising passwd entry cannot
+// inject podman arguments.
 func containerKeyFromHome(home string) (string, bool) {
-	base := filepath.Base(filepath.Clean(home))
+	base := app.IDFromHomeDir(home)
 	if !container.ValidName(base) {
 		return "", false
 	}

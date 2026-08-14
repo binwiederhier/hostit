@@ -39,7 +39,7 @@ const (
 // Service owns the workspace image lifecycle in the host's shared (root) image
 // store -- building the current image and pruning tags nothing references -- and
 // the btrfs storage its containers actually run: per-tag base subvolumes exported
-// from the image, and per-app writable rootfs subvolumes snapshotted from a base.
+// from the image, and the per-app subvolumes snapshotted from a base.
 type Service struct {
 	container container.Interface
 	store     *store.Store
@@ -52,9 +52,10 @@ type Service struct {
 }
 
 // New builds a workspace Service from the container runtime, the store (for the
-// pinned tags apps hold), the btrfs service and runner (for base/rootfs subvolume
-// work), the daemon's data directory (where the build context is staged) and the
-// apps directory (the btrfs pool holding .bases and .rootfs).
+// pinned tags apps hold), the btrfs service and runner (for base and app
+// subvolume work), the daemon's data directory (where the build context is
+// staged) and the apps directory (the btrfs pool holding the app subvolumes
+// and .bases).
 func New(ct container.Interface, st *store.Store, bt btrfs.Interface, runner run.Runner, dataDir, appsDir string) *Service {
 	return &Service{container: ct, store: st, btrfs: bt, runner: runner, dataDir: dataDir, appsDir: appsDir}
 }

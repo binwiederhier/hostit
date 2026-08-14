@@ -296,9 +296,9 @@ func (neverEndingReader) Read(p []byte) (int, error) {
 }
 
 // TestSymlinksCannotEscapeTheAppHome covers the whole class: the app user owns
-// their home (it is bind-mounted into their container and writable over scp),
-// so any file operation the daemon performs as root must refuse to follow a
-// link out of it. Lexical path checks alone do not see these.
+// their files dir (it is their container's home and writable over scp), so any
+// file operation the daemon performs as root must refuse to follow a link out
+// of it. Lexical path checks alone do not see these.
 func TestSymlinksCannotEscapeTheAppHome(t *testing.T) {
 	t.Parallel()
 	s, home := newTestService(t)

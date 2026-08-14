@@ -8,7 +8,8 @@ import (
 	"heckel.io/hostit/store"
 )
 
-// TakeSnapshot snapshots an app's home into a read-only subvolume and records it.
+// TakeSnapshot snapshots an app's whole subvolume (files AND installed
+// software) into a read-only subvolume and records it.
 func (m *Manager) TakeSnapshot(name, label string, auto bool) (*store.Snapshot, error) {
 	return m.snapshots.TakeSnapshot(name, label, auto)
 }
@@ -23,7 +24,8 @@ func (m *Manager) DeleteSnapshot(name, id string) error {
 	return m.snapshots.DeleteSnapshot(name, id)
 }
 
-// Rollback restores an app's home from a snapshot.
+// Rollback restores an app from a snapshot: its files AND its installed
+// software come back together, since the snapshot is the whole app subvolume.
 func (m *Manager) Rollback(name, id string) error {
 	return m.snapshots.Rollback(name, id)
 }
@@ -67,7 +69,7 @@ func (h snapshotHost) RunHook(name, command string, timeout time.Duration) (int,
 	return res.ExitCode, nil
 }
 
-func (h snapshotHost) AppHome(name string) string          { return h.m.appHome(name) }
+func (h snapshotHost) AppSubvolume(name string) string     { return h.m.appSubvolume(name) }
 func (h snapshotHost) SnapshotsRoot(name string) string    { return h.m.snapshotsRoot(name) }
 func (h snapshotHost) SnapshotPath(name, id string) string { return h.m.snapshotPath(name, id) }
 func (h snapshotHost) UnitName(name string) string         { return h.m.unitName(name) }

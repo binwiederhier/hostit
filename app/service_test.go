@@ -146,6 +146,19 @@ func TestDeleteApp(t *testing.T) {
 	require.ErrorIs(t, m.DeleteApp("blog"), store.ErrAppNotFound)
 }
 
+// A deleted app must not leave its subvolume (or the root-owned stub userdel
+// can leave where it was) behind under AppsDir.
+func TestDeleteAppRemovesAppDirectory(t *testing.T) {
+	t.Parallel()
+	m, _, _ := newTestDeployManager(t)
+	createTestApp(t, m, "blog")
+	require.NoError(t, m.WriteFile("blog", "index.html", []byte("hi"), 0))
+	require.DirExists(t, m.appSubvolume("blog"))
+
+	require.NoError(t, m.DeleteApp("blog"))
+	assert.NoDirExists(t, m.appSubvolume("blog"))
+}
+
 func TestSetKeys(t *testing.T) {
 	t.Parallel()
 	m, ops := newTestManager(t)
@@ -307,7 +320,9 @@ func (f *fakeSystem) Delete(username string) error {
 	return nil
 }
 
-func (f *fakeSystem) WriteAuthorizedKeys(username, home string, keys []string) error {
+// WriteAuthorizedKeys records the keys; the root comes from the Manager's
+// chained files-root open, which the fake does not need to touch.
+func (f *fakeSystem) WriteAuthorizedKeys(root *os.Root, username string, keys []string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.authorizedKeys[username] = keys

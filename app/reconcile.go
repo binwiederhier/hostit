@@ -52,8 +52,7 @@ func (m *Manager) ReconcileOrphans() []string {
 		removed = append(removed, id)
 	}
 	removed = append(removed, m.reconcileContainers(known)...)
-	removed = append(removed, m.reconcileHomes(known)...)
-	removed = append(removed, m.reconcileRootfs(known)...)
+	removed = append(removed, m.reconcileSubvolumes(known)...)
 	m.reconcileBudgets(apps)
 	if len(removed) > 0 {
 		slog.Info("Removed leftovers of deleted apps", "apps", removed)
@@ -88,62 +87,38 @@ func (m *Manager) reconcileBudgets(apps []*store.App) {
 	}
 }
 
-// reconcileHomes sweeps empty home directories left under AppsDir for apps no
-// longer in the registry -- e.g. the root-owned stub userdel can leave behind on
-// btrfs (see DeleteApp). A non-empty orphan is logged but kept, so a surprise is
-// surfaced for a human rather than silently deleted; hidden entries (.snapshots,
-// .backup, dotfiles) are never touched.
-func (m *Manager) reconcileHomes(known map[string]bool) []string {
+// reconcileSubvolumes removes app subvolumes left under AppsDir for apps no
+// longer in the registry -- a delete that failed halfway, an app deleted while
+// the daemon was down, or the root-owned stub userdel can leave behind (see
+// DeleteApp). A live app's subvolume is never touched (an existing subvolume is
+// never recreated, so deleting one by mistake would be data loss); the id-keyed
+// known-set is the sole gate. Hidden entries (.bases, .snapshots, dotfiles) are
+// never touched.
+func (m *Manager) reconcileSubvolumes(known map[string]bool) []string {
 	entries, err := os.ReadDir(m.config.AppsDir)
 	if err != nil {
-		slog.Warn("Cannot list app homes to reconcile", "error", err)
+		slog.Warn("Cannot list app subvolumes to reconcile", "error", err)
 		return nil
 	}
 	removed := make([]string, 0)
 	for _, e := range entries {
-		id := e.Name() // home directories are named by app id
+		id := e.Name() // app subvolumes are named by app id
 		if !e.IsDir() || strings.HasPrefix(id, ".") || known[id] {
 			continue
 		}
-		home := filepath.Join(m.config.AppsDir, id)
-		inner, err := os.ReadDir(home)
-		if err != nil {
-			slog.Warn("Cannot inspect orphaned app home", "id", id, "path", home, "error", err)
+		path := filepath.Join(m.config.AppsDir, id)
+		if err := m.btrfs.DeleteSubvolume(path); err != nil {
+			slog.Debug("Cannot delete orphaned app subvolume; trying a plain remove", "id", id, "path", path, "error", err)
+		}
+		// The userdel stub is a plain (empty) directory that subvolume delete
+		// refuses; remove it directly. If the path is still there afterwards,
+		// surface it for a human rather than deleting more aggressively.
+		_ = os.Remove(path)
+		if _, err := os.Stat(path); err == nil {
+			slog.Warn("Orphaned app subvolume still present; leaving it in place", "id", id, "path", path)
 			continue
 		}
-		if len(inner) > 0 {
-			slog.Warn("Orphaned app home is not empty; leaving it in place", "id", id, "path", home, "entries", len(inner))
-			continue
-		}
-		if err := os.Remove(home); err != nil {
-			slog.Warn("Cannot remove empty orphaned app home", "id", id, "path", home, "error", err)
-			continue
-		}
-		slog.Info("Removed empty orphaned app home", "id", id, "path", home)
-		removed = append(removed, id)
-	}
-	return removed
-}
-
-// reconcileRootfs removes rootfs subvolumes whose app is gone -- e.g. a delete
-// that failed halfway, or an app deleted while the daemon was down. A live app's
-// rootfs is never touched (an existing rootfs is never recreated, so deleting one
-// by mistake would be data loss); the id-keyed known-set is the sole gate.
-func (m *Manager) reconcileRootfs(known map[string]bool) []string {
-	ids, err := m.workspace.RootfsIDs()
-	if err != nil {
-		slog.Warn("Cannot list rootfs subvolumes to reconcile", "error", err)
-		return nil
-	}
-	removed := make([]string, 0)
-	for _, id := range ids {
-		if known[id] {
-			continue
-		}
-		if err := m.workspace.DeleteRootfs(id); err != nil {
-			slog.Warn("Cannot remove the rootfs of a deleted app", "id", id, "error", err)
-			continue
-		}
+		slog.Info("Removed orphaned app subvolume", "id", id, "path", path)
 		removed = append(removed, id)
 	}
 	return removed

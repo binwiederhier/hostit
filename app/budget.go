@@ -25,11 +25,12 @@ func (m *Manager) EnableDiskBudgets() {
 	}
 }
 
-// ensureBudget sets up an app's combined disk budget: one qgroup keyed on the
-// app's uid (stable across renames, unique per app) that its home and rootfs
-// subvolumes join, hard-capped on EXCLUSIVE bytes -- what the app itself pins,
-// with extents shared with the base charged to nobody. Ensure-style: every step
-// is idempotent, so it is safe to re-run at startup or after a partial failure.
+// ensureBudget sets up an app's disk budget: one qgroup keyed on the app's uid
+// (stable across renames, unique per app) that the app subvolume joins (its
+// snapshots join as they are taken), hard-capped on EXCLUSIVE bytes -- what the
+// app itself pins, with extents shared with the base charged to nobody.
+// Ensure-style: every step is idempotent, so it is safe to re-run at startup or
+// after a partial failure.
 func (m *Manager) ensureBudget(a *store.App) error {
 	ids, err := m.lookupIDs(a.Name)
 	if err != nil {
@@ -38,13 +39,10 @@ func (m *Manager) ensureBudget(a *store.App) error {
 	pool := m.config.AppsDir
 	group := budgetGroup(ids.UID)
 	// Create errors on an existing group; that is the common re-run case, and a
-	// real failure surfaces in the assigns right after, so it is not checked.
+	// real failure surfaces in the assign right after, so it is not checked.
 	_ = m.btrfs.QgroupCreate(pool, group)
-	if err := m.assignToGroup(m.appHome(a.Name), group); err != nil {
-		return fmt.Errorf("cannot assign home to disk budget of %s: %w", a.Name, err)
-	}
-	if err := m.assignToGroup(m.workspace.RootfsPath(a.ID), group); err != nil {
-		return fmt.Errorf("cannot assign rootfs to disk budget of %s: %w", a.Name, err)
+	if err := m.assignToGroup(m.appSubvolumeByID(a.ID), group); err != nil {
+		return fmt.Errorf("cannot assign the app subvolume to the disk budget of %s: %w", a.Name, err)
 	}
 	if err := m.btrfs.QgroupLimitExclusive(pool, group, effectiveDiskCapMB(m.diskLimit(a.Name))); err != nil {
 		return fmt.Errorf("cannot cap disk budget of %s: %w", a.Name, err)

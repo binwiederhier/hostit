@@ -20,7 +20,7 @@ func TestManagerRollbackDelegatesAndBringsAppUp(t *testing.T) {
 	m, _, r := newTestDeployManager(t)
 	r.failOn("container inspect", assert.AnError) // no container yet -> Up creates one
 	require.NoError(t, m.store.AddApp(&store.App{Name: "blog", Port: 10000, Host: store.HostLocal}))
-	require.NoError(t, os.MkdirAll(m.appHome("blog"), 0o755))
+	require.NoError(t, os.MkdirAll(m.appFiles("blog").Path(), 0o755))
 	writeAppFile(t, m, "blog", "hostit.yml", "mode: app\nrun: ./server")
 
 	target, err := m.TakeSnapshot("blog", "target", false)

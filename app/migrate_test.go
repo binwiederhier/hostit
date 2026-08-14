@@ -15,13 +15,12 @@ import (
 func TestMigrateRootfsStorage(t *testing.T) {
 	t.Parallel()
 	m, _, r := newTestDeployManager(t)
-	r.returns("inspect-internal rootid", "257\n")
 	// Two pre-rootfs apps, one from before image pinning (empty tag), one with a
 	// snapshot the owner decided not to keep across the migration.
 	require.NoError(t, m.store.AddApp(&store.App{Name: "old", Port: 10000, Host: store.HostLocal}))
 	require.NoError(t, m.store.AddApp(&store.App{Name: "blog", Port: 10001, Host: store.HostLocal, ImageTag: workspace.ImageTag()}))
-	require.NoError(t, os.MkdirAll(m.appHome("old"), 0o755))
-	require.NoError(t, os.MkdirAll(m.appHome("blog"), 0o755))
+	require.NoError(t, os.MkdirAll(m.appSubvolume("old"), 0o755))
+	require.NoError(t, os.MkdirAll(m.appSubvolume("blog"), 0o755))
 	snap, err := m.TakeSnapshot("blog", "pre-migration", false)
 	require.NoError(t, err)
 	r.reset()
@@ -35,14 +34,16 @@ func TestMigrateRootfsStorage(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, workspace.ImageTag(), old.ImageTag)
 
-	// Every app gets its rootfs (a snapshot of its base) and its budget group.
+	// Every app gets a rootfs at the LEGACY .rootfs/<id> location (a snapshot of
+	// its base, chowned to its block): the unification migration that runs right
+	// after folds the home into it and moves it onto the app subvolume.
 	for _, name := range []string{"old", "blog"} {
 		a, err := m.store.App(name)
 		require.NoError(t, err)
-		assert.Contains(t, ran, "btrfs subvolume snapshot "+m.workspace.BasePath(workspace.ImageTag())+" "+m.workspace.RootfsPath(a.ID))
-		group := testBudgetGroup(t, m, name)
-		assert.Contains(t, ran, "btrfs qgroup create "+group+" "+m.config.AppsDir)
-		assert.Contains(t, ran, fmt.Sprintf("btrfs qgroup limit -e %dM %s %s", defaultDiskCapMB, group, m.config.AppsDir))
+		assert.Contains(t, ran, "btrfs subvolume snapshot "+m.workspace.BasePath(workspace.ImageTag())+" "+m.legacyRootfsPath(a.ID))
+		ids, err := m.lookupIDs(name)
+		require.NoError(t, err)
+		assert.Contains(t, ran, fmt.Sprintf("chown -R %d:%d %s", ids.UID, ids.GID, m.legacyRootfsPath(a.ID)))
 	}
 
 	// Existing snapshots are dropped (owner's call: budgets stay predictable):
@@ -61,27 +62,29 @@ func TestMigrateRootfsStorage(t *testing.T) {
 func TestMigrateRootfsStorageLeavesExistingRootfsAlone(t *testing.T) {
 	t.Parallel()
 	m, _, r := newTestDeployManager(t)
-	r.returns("inspect-internal rootid", "257\n")
 	require.NoError(t, m.store.AddApp(&store.App{Name: "blog", Port: 10000, Host: store.HostLocal, ImageTag: workspace.ImageTag()}))
-	require.NoError(t, os.MkdirAll(m.appHome("blog"), 0o755))
+	require.NoError(t, os.MkdirAll(m.appSubvolume("blog"), 0o755))
 	a, err := m.store.App("blog")
 	require.NoError(t, err)
-	// The app already has its rootfs (e.g. the previous run was killed halfway):
-	// the invariant says it is never recreated, so the resumed migration only
-	// re-ensures the budget around it.
-	require.NoError(t, os.MkdirAll(m.workspace.RootfsPath(a.ID), 0o700))
+	// The app already has its legacy rootfs (e.g. the previous run was killed
+	// halfway): the invariant says it is never recreated, so the resumed
+	// migration leaves it alone.
+	require.NoError(t, os.MkdirAll(m.legacyRootfsPath(a.ID), 0o700))
 	r.reset()
 
 	require.NoError(t, m.MigrateRootfsStorage("v0.9.0"))
 	assert.False(t, strings.Contains(r.ran(), "btrfs subvolume snapshot"), "an existing rootfs is never recreated")
-	assert.Contains(t, r.ran(), "btrfs qgroup create "+testBudgetGroup(t, m, a.Name)+" "+m.config.AppsDir)
 }
 
-// testBudgetGroup resolves an app's budget qgroup id the way the Manager does:
-// from its (possibly fake) unix uid, not from its port.
-func testBudgetGroup(t *testing.T, m *Manager, name string) string {
-	t.Helper()
-	ids, err := m.lookupIDs(name)
-	require.NoError(t, err)
-	return fmt.Sprintf("1/%d", ids.UID)
+func TestMigrateRootfsStorageSkipsAUnifiedApp(t *testing.T) {
+	t.Parallel()
+	m, _, r := newTestDeployManager(t)
+	require.NoError(t, m.store.AddApp(&store.App{Name: "blog", Port: 10000, Host: store.HostLocal, ImageTag: workspace.ImageTag()}))
+	// The app subvolume is already a full OS tree (/usr is the marker: homes
+	// never contained one), so there is nothing left to stage or fold.
+	require.NoError(t, os.MkdirAll(m.appSubvolume("blog")+"/usr", 0o755))
+	r.reset()
+
+	require.NoError(t, m.MigrateRootfsStorage("v0.9.0"))
+	assert.NotContains(t, r.ran(), "btrfs subvolume snapshot", "a unified app needs no legacy rootfs")
 }

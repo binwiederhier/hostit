@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"path/filepath"
 	"regexp"
 	"slices"
 	"sync"
@@ -147,8 +146,8 @@ type Manager struct {
 	stateRefreshing bool
 
 	// appLocks serializes mutating lifecycle work per app (deploy, snapshot,
-	// rollback, delete), so operations on one app's home never interleave -- e.g. a
-	// rollback deleting the home while a deploy writes into it.
+	// rollback, delete), so operations on one app's subvolume never interleave --
+	// e.g. a rollback swapping the subvolume while a deploy writes into it.
 	appLocks map[string]*sync.Mutex
 
 	mu         sync.Mutex // Protects memoryMB, diskMB, reservedPorts
@@ -182,7 +181,7 @@ func NewManager(conf *config.Config, s *store.Store, svc *Services) *Manager {
 	// id-keyed lookups a snapshot or rollback needs.
 	m.snapshots = snapshot.New(m.btrfs, m.systemd, m.container, s, snapshotHost{m})
 	// The workspace Service owns the shared workspace image lifecycle (build,
-	// per-app pinned tags, prune) and the base/rootfs subvolumes app containers
+	// per-app pinned tags, prune) and the base and app subvolumes the containers
 	// run; it needs no callbacks into the Manager.
 	m.workspace = workspace.New(m.container, s, m.btrfs, m.runner, conf.DataDir, conf.AppsDir)
 	return m
@@ -190,7 +189,7 @@ func NewManager(conf *config.Config, s *store.Store, svc *Services) *Manager {
 
 // lockApp acquires the per-app lifecycle lock and returns its unlock func, so
 // deploy/snapshot/rollback/delete on one app run one at a time and never race on
-// its home subvolume. It is NOT reentrant: a method already holding the lock must
+// its subvolume. It is NOT reentrant: a method already holding the lock must
 // call the unlocked helpers (up, takeSnapshot), not the public locking ones.
 func (m *Manager) lockApp(name string) func() {
 	m.appLocksMu.Lock()
@@ -209,21 +208,24 @@ func (m *Manager) lockApp(name string) func() {
 // of the request keys and the owner's profile keys; an app with neither is fine,
 // since apps are driven through the API and SSH is opt-in.
 func (m *Manager) CreateApp(name string, opts *CreateOptions) (*store.App, error) {
-	return m.create(name, opts, "", "")
+	return m.create(name, opts, "")
 }
 
-// Fork duplicates an existing app into a new one: the new app's home is seeded
-// from a writable btrfs snapshot of the source (its files, config and data) rather
-// than the demo skeleton. snapshotID picks a specific snapshot to seed from; empty
-// means the source's current home. The fork gets its own port, Unix user, subdomain
-// and container. Requires btrfs (the snapshot primitive it relies on).
+// Fork duplicates an existing app into a new one: the new app's subvolume is
+// seeded from a writable btrfs snapshot of the source's (its files, config, data
+// AND installed packages) rather than the demo skeleton. snapshotID picks a
+// specific snapshot to seed from; empty means the source's current subvolume.
+// Snapshots are whole-app subvolumes too, so either seed carries everything
+// (old home-shaped snapshots were purged by the unification migration). The
+// fork gets its own port, Unix user, subdomain and container. Requires btrfs
+// (the snapshot primitive it relies on).
 func (m *Manager) Fork(source, newName, snapshotID string, opts *CreateOptions) (*store.App, error) {
-	src, err := m.store.App(source)
-	if err != nil {
+	if _, err := m.store.App(source); err != nil {
 		return nil, err
 	}
-	// Seed from a specific snapshot if asked, else from the source's current home.
-	seedPath := m.appHome(source)
+	// Seed from a specific snapshot if asked, else from the source's current
+	// subvolume.
+	seedPath := m.appSubvolume(source)
 	if snapshotID != "" {
 		snap, err := m.store.Snapshot(snapshotID)
 		if err != nil {
@@ -234,21 +236,22 @@ func (m *Manager) Fork(source, newName, snapshotID string, opts *CreateOptions) 
 		}
 		seedPath = m.snapshotPath(source, snapshotID)
 	}
-	// Lock the source so its home/snapshot is not rolled back or deleted mid-copy;
-	// the new app's own deploy runs under its own lock in the background.
+	// Lock the source so its subvolume/snapshot is not rolled back or deleted
+	// mid-copy; the new app's own deploy runs under its own lock in the background.
 	defer m.lockApp(source)()
-	return m.create(newName, opts, seedPath, src.ID)
+	return m.create(newName, opts, seedPath)
 }
 
-// create registers a new app. With seedPath == "" it writes the demo app's skeleton;
-// with a seedPath (a subvolume: an app's home or a snapshot) it forks -- seeding the
-// home from a writable snapshot of that path, the rootfs from the source app's
-// rootfs (seedRootfsID), and skipping the skeleton. Either way it allocates a port,
-// creates the Unix user with SSH access, registers the app and starts it in the
-// background. The authorized_keys are the union of the request keys and the owner's
-// profile keys; an app with neither is fine, since apps are driven through the API
-// and SSH is opt-in.
-func (m *Manager) create(name string, opts *CreateOptions, seedPath, seedRootfsID string) (*store.App, error) {
+// create registers a new app. With seedPath == "" it writes the demo app's
+// skeleton; with a seedPath (a subvolume: an app's subvolume or a whole-app
+// snapshot) it forks -- seeding the app subvolume from a writable snapshot of
+// that path (files AND installed packages in one CoW copy) and skipping the
+// skeleton. Either way it allocates a port, creates the Unix user with SSH
+// access, registers the app and starts it in the background. The
+// authorized_keys are the union of the request keys and the owner's profile
+// keys; an app with neither is fine, since apps are driven through the API and
+// SSH is opt-in.
+func (m *Manager) create(name string, opts *CreateOptions, seedPath string) (*store.App, error) {
 	if opts == nil {
 		opts = &CreateOptions{}
 	}
@@ -271,75 +274,57 @@ func (m *Manager) create(name string, opts *CreateOptions, seedPath, seedRootfsI
 	sshKeys := append(append([]string{}, appKeys...), opts.ProfileKeys...)
 	forking := seedPath != ""
 
-	// Mint the app's stable id up front: the home directory (and its snapshots) are
+	// Mint the app's stable id up front: the app subvolume (and its snapshots) are
 	// keyed on the id, not the name, so a later rename never moves them. The id is
 	// on the App struct that gets inserted below.
 	app := &store.App{ID: store.NewAppID(), Name: name, Port: port, Host: store.HostLocal, OwnerID: opts.OwnerID, ImageTag: workspace.ImageTag()}
 
-	// Create the user, install keys and populate the home directory. The uid is a
-	// contiguous block derived from the (unique) port, so the container maps as a
-	// single offset and the rootfs is chowned to the block once (see workspace.IDs).
-	home := m.appHomeByID(app.ID)
-	// Seed the home. A fork is a writable snapshot of the seed subvolume (an instant
-	// CoW copy of its files); a fresh app is an empty subvolume on btrfs that the
-	// skeleton then fills. Either directory is adopted by useradd, whose own mkdir
-	// is a no-op.
+	// Create the app's one subvolume: a fork snapshots the seed subvolume (an
+	// instant CoW copy of the source's whole OS tree, files included); a fresh
+	// app snapshots its pinned tag's base and gets an empty files dir at home/app
+	// that the skeleton then fills. The uid is a contiguous block derived from
+	// the (unique) port -- known before the Unix user exists -- so the container
+	// maps as a single offset and the subvolume is chowned once (see workspace.IDs).
+	subvol := m.appSubvolumeByID(app.ID)
+	ids := workspace.IDs{UID: m.uidFor(port), GID: m.uidFor(port), Count: workspace.UIDBlockSize}
 	if forking {
-		if err := m.btrfs.Snapshot(seedPath, home, false); err != nil {
+		if err := m.workspace.ForkAppSubvolume(seedPath, app.ID, ids); err != nil {
 			return nil, fmt.Errorf("cannot seed %s: %w", name, err)
 		}
 	} else {
-		if err := m.btrfs.CreateSubvolume(home); err != nil {
-			return nil, fmt.Errorf("cannot create home subvolume for %s: %w", name, err)
+		if err := m.workspace.EnsureAppSubvolume(app, ids); err != nil {
+			return nil, fmt.Errorf("cannot create app subvolume for %s: %w", name, err)
 		}
 	}
 	slog.Info("Creating app", "app", name, "port", port, "forked", forking)
-	if err := m.user.Create(name, home, m.uidFor(port)); err != nil {
-		_ = m.btrfs.DeleteSubvolume(home)
+	// The Unix account's home is the files dir INSIDE the subvolume, so
+	// scp/sftp/rsync land on the app's files; useradd's own mkdir is a no-op.
+	files := m.appFilesByID(app.ID)
+	if err := m.user.Create(name, files.Path(), m.uidFor(port)); err != nil {
+		_ = m.btrfs.DeleteSubvolume(subvol)
 		return nil, fmt.Errorf("cannot create user %s: %w", name, err)
 	}
 	cleanup := func() {
 		_ = m.user.Delete(name)
-		// Remove the id-keyed home and rootfs we just created. The app is not in the
-		// store on the early failures, so this deletes the concrete paths rather than
-		// resolving them by name; a brand-new app has no snapshots to clean up.
-		_ = m.btrfs.DeleteSubvolume(home)
-		_ = m.workspace.DeleteRootfs(app.ID)
+		// Remove the id-keyed subvolume we just created. The app is not in the
+		// store on the early failures, so this deletes the concrete path rather than
+		// resolving it by name; a brand-new app has no snapshots to clean up.
+		_ = m.btrfs.DeleteSubvolume(subvol)
 	}
-	if err := m.ssh.WriteAuthorizedKeys(name, home, sshKeys); err != nil {
+	if err := m.writeKeysIn(files, name, sshKeys); err != nil {
 		cleanup()
 		return nil, fmt.Errorf("cannot write authorized keys for %s: %w", name, err)
 	}
 	// A fork keeps the source's files; only a fresh app gets the demo skeleton.
 	if !forking {
-		if err := m.user.WriteSkeleton(name, home, skeletonFiles(name, m.URL(&store.App{Name: name, Port: port}), workspace.Runtimes)); err != nil {
+		if err := m.user.WriteSkeleton(name, files.Path(), skeletonFiles(name, m.URL(&store.App{Name: name, Port: port}), workspace.Runtimes)); err != nil {
 			cleanup()
 			return nil, fmt.Errorf("cannot write skeleton for %s: %w", name, err)
 		}
 	}
 
-	// Create the app's rootfs, so both subvolumes exist before the budget below
-	// joins them: a fork carries the source's rootfs (installed packages and all),
-	// a fresh app snapshots its pinned tag's base.
-	ids, err := m.lookupIDs(name)
-	if err != nil {
-		cleanup()
-		return nil, err
-	}
-	if forking {
-		if err := m.workspace.ForkRootfs(seedRootfsID, app.ID, ids); err != nil {
-			cleanup()
-			return nil, err
-		}
-	} else {
-		if err := m.workspace.EnsureRootfs(app, ids); err != nil {
-			cleanup()
-			return nil, err
-		}
-	}
-
 	// Register the app; roll back the user if this fails. The app was built above
-	// (id minted so the home could be created id-named); it is pinned to the
+	// (id minted so the subvolume could be created id-named); it is pinned to the
 	// workspace image it is built with, so a later Containerfile change (e.g. adding
 	// a runtime) only affects new apps, never this one.
 	if err := m.store.AddApp(app); err != nil {
@@ -354,19 +339,11 @@ func (m *Manager) create(name string, opts *CreateOptions, seedPath, seedRootfsI
 	m.SetMemoryLimit(name, opts.MemoryMB)
 	// Apply the disk budget now (create and fork alike), so a new app is capped
 	// from the start rather than only after the next daemon restart: record the
-	// limit, create the app's qgroup, join home + rootfs, cap it. Failure only
+	// limit, create the app's qgroup, join the subvolume, cap it. Failure only
 	// warns -- the app works uncapped and the next startup's ensure retries.
 	m.recordDiskLimit(name, opts.DiskMB)
 	if err := m.ensureBudget(app); err != nil {
 		slog.Warn("Cannot set up disk budget", "app", name, "error", err)
-	}
-	// The forked home is full of files owned by the source's uid; make them the new
-	// app's.
-	if forking {
-		uid := m.uidFor(port)
-		if _, err := m.runner.Run("chown", "-R", fmt.Sprintf("%d:%d", uid, uid), home); err != nil {
-			slog.Warn("Cannot chown forked home", "app", name, "error", err)
-		}
 	}
 	m.ReconcilePortRules()
 
@@ -392,8 +369,7 @@ func (m *Manager) create(name string, opts *CreateOptions, seedPath, seedRootfsI
 // directory, and removes the app from the registry
 func (m *Manager) DeleteApp(name string) error {
 	defer m.lockApp(name)() // serialize against a concurrent deploy/snapshot/rollback
-	a, err := m.store.App(name)
-	if err != nil {
+	if _, err := m.store.App(name); err != nil {
 		return err
 	}
 	// The uid keys the app's budget qgroup and is gone once the user is deleted,
@@ -408,12 +384,9 @@ func (m *Manager) DeleteApp(name string) error {
 	// systemd still knows about keeps retrying a container that is gone
 	_ = m.systemd.ResetFailed(m.unitName(name))
 	_ = m.container.RemoveForce(m.containerName(name))
-	// The home, rootfs and snapshots are subvolumes that userdel's rm -rf cannot
-	// remove, so delete them first.
+	// The app subvolume and its snapshots are subvolumes that userdel's rm -rf
+	// cannot remove, so delete them first.
 	m.snapshots.DeleteAppSubvolumes(name)
-	if err := m.workspace.DeleteRootfs(a.ID); err != nil {
-		slog.Warn("Cannot delete the app's rootfs; reconciling at next start", "app", name, "error", err)
-	}
 	// With all member subvolumes gone, drop the (now empty) budget qgroup.
 	if uidErr == nil {
 		m.destroyBudget(uid)
@@ -421,11 +394,11 @@ func (m *Manager) DeleteApp(name string) error {
 	if err := m.user.Delete(name); err != nil {
 		return fmt.Errorf("cannot delete user %s: %w", name, err)
 	}
-	// userdel --remove will not delete a home directory it does not own -- on btrfs
-	// the home was a subvolume removed above, and any recreated stub is root-owned --
-	// so remove whatever is left, or an empty home dir is orphaned under AppsDir.
-	if err := os.RemoveAll(m.appHome(name)); err != nil {
-		slog.Warn("Could not remove leftover home directory after deleting app", "app", name, "path", m.appHome(name), "error", err)
+	// userdel --remove will not delete a home directory it does not own -- the
+	// subvolume holding it was removed above, and any recreated stub is root-owned --
+	// so remove whatever is left, or an empty stub is orphaned under AppsDir.
+	if err := os.RemoveAll(m.appSubvolume(name)); err != nil {
+		slog.Warn("Could not remove leftover app directory after deleting app", "app", name, "path", m.appSubvolume(name), "error", err)
 	}
 	if err := m.store.RemoveApp(name); err != nil {
 		return err
@@ -484,7 +457,19 @@ func (m *Manager) SyncKeys(name string, profileKeys []string) error {
 
 func (m *Manager) writeKeys(name string, appKeys, profileKeys []string) error {
 	keys := append(append([]string{}, appKeys...), profileKeys...)
-	return m.ssh.WriteAuthorizedKeys(name, filepath.Join(m.config.AppsDir, name), keys)
+	return m.writeKeysIn(m.appFiles(name), name, keys)
+}
+
+// writeKeysIn writes an app's authorized_keys through its chained files root:
+// the files dir sits inside the tenant-owned subvolume, so a symlink planted at
+// home (or home/app) must not redirect root's key write out of it.
+func (m *Manager) writeKeysIn(files homefs.Dir, name string, keys []string) error {
+	root, err := m.homefs.OpenRoot(files)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	return m.ssh.WriteAuthorizedKeys(root, name, keys)
 }
 
 // App returns a registered app by name

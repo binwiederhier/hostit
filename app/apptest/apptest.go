@@ -55,7 +55,7 @@ func (nopUser) ChownIn(root *os.Root, username, rel string) error { return nil }
 // nopSSH is an ssh.Interface that does nothing
 type nopSSH struct{}
 
-func (nopSSH) WriteAuthorizedKeys(username, home string, keys []string) error { return nil }
+func (nopSSH) WriteAuthorizedKeys(root *os.Root, username string, keys []string) error { return nil }
 
 // nopFirewall is a firewall.Interface that does nothing
 type nopFirewall struct{}

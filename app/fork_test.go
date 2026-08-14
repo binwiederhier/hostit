@@ -12,43 +12,41 @@ import (
 	"heckel.io/hostit/store"
 )
 
-func TestForkSeedsHomeFromSourceAndDeploys(t *testing.T) {
+func TestForkSeedsSubvolumeFromSourceAndDeploys(t *testing.T) {
 	t.Parallel()
 	m, ops, r := newTestDeployManager(t)
 	r.returns("stat -f", "btrfs\n")
 	r.failOn("container inspect", assert.AnError) // no container yet -> Up creates one
 	require.NoError(t, m.store.AddApp(&store.App{Name: "blog", Port: 10000, Host: store.HostLocal}))
-	require.NoError(t, os.MkdirAll(m.appHome("blog"), 0o755))
-	require.NoError(t, os.MkdirAll(m.workspace.RootfsPath(m.appID("blog")), 0o700))
-	// The fake runner never touches disk, so stand in for the snapshot's on-disk
-	// effect: the forked home exists with the source's files, so the deploy resolves.
-	require.NoError(t, os.MkdirAll(m.appHome("blog2"), 0o755))
+	require.NoError(t, os.MkdirAll(m.appSubvolume("blog"), 0o755))
+	// The fake runner materializes the snapshot destination as an empty dir, so
+	// stand in for the fork's on-disk effect: the fork's files dir exists with a
+	// config, so the background deploy resolves.
+	require.NoError(t, os.MkdirAll(m.appFiles("blog2").Path(), 0o755))
 	writeAppFile(t, m, "blog2", "hostit.yml", "mode: app\nrun: ./server")
 
 	fork, err := m.Fork("blog", "blog2", "", &CreateOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, "blog2", fork.Name)
 
-	// The home is seeded from a WRITABLE snapshot of the source home, not read-only.
-	assert.Contains(t, r.ran(), "btrfs subvolume snapshot "+m.appHome("blog")+" "+m.appHome("blog2"))
-	assert.NotContains(t, r.ran(), "btrfs subvolume snapshot -r "+m.appHome("blog")+" "+m.appHome("blog2"))
-
-	// The rootfs is forked from the SOURCE's rootfs (installed packages carry
-	// over), not snapshotted fresh from the base.
-	assert.Contains(t, r.ran(), "btrfs subvolume snapshot "+m.workspace.RootfsPath(m.appID("blog"))+" "+m.workspace.RootfsPath(fork.ID))
+	// ONE snapshot seeds the fork: the source's whole subvolume (files, config,
+	// data AND installed packages), writable, not read-only.
+	assert.Contains(t, r.ran(), "btrfs subvolume snapshot "+m.appSubvolume("blog")+" "+m.appSubvolume("blog2"))
+	assert.NotContains(t, r.ran(), "btrfs subvolume snapshot -r "+m.appSubvolume("blog")+" "+m.appSubvolume("blog2"))
 
 	// A user is created, but no demo skeleton is written (the fork keeps the source's files).
 	assert.Contains(t, ops.createdUsers, "blog2")
 	assert.Empty(t, ops.skeletons["blog2"], "a fork keeps the source's files, no demo skeleton")
 
-	// The app is registered and deploys; its home is chowned to the new uid.
+	// The app is registered and deploys; the whole forked subvolume is chowned to
+	// the new uid block (the files inside included).
 	_, err = m.store.App("blog2")
 	require.NoError(t, err)
 	require.Eventually(t, func() bool {
 		return strings.Contains(r.ran(), m.unitName("blog2"))
 	}, 5*time.Second, 5*time.Millisecond, "the forked app did not deploy")
 	uid := m.uidFor(fork.Port)
-	assert.Contains(t, r.ran(), fmt.Sprintf("chown -R %d:%d %s", uid, uid, m.appHome("blog2")))
+	assert.Contains(t, r.ran(), fmt.Sprintf("chown -R %d:%d %s", uid, uid, m.appSubvolume("blog2")))
 }
 
 func TestForkFromSnapshotSeedsFromThatSnapshot(t *testing.T) {
@@ -57,9 +55,8 @@ func TestForkFromSnapshotSeedsFromThatSnapshot(t *testing.T) {
 	r.returns("stat -f", "btrfs\n")
 	r.failOn("container inspect", assert.AnError)
 	require.NoError(t, m.store.AddApp(&store.App{Name: "blog", Port: 10000, Host: store.HostLocal}))
-	require.NoError(t, os.MkdirAll(m.appHome("blog"), 0o755))
-	require.NoError(t, os.MkdirAll(m.workspace.RootfsPath(m.appID("blog")), 0o700))
-	require.NoError(t, os.MkdirAll(m.appHome("blog2"), 0o755))
+	require.NoError(t, os.MkdirAll(m.appSubvolume("blog"), 0o755))
+	require.NoError(t, os.MkdirAll(m.appFiles("blog2").Path(), 0o755))
 	writeAppFile(t, m, "blog2", "hostit.yml", "mode: app\nrun: ./server")
 
 	snap, err := m.TakeSnapshot("blog", "checkpoint", false)
@@ -68,9 +65,10 @@ func TestForkFromSnapshotSeedsFromThatSnapshot(t *testing.T) {
 	_, err = m.Fork("blog", "blog2", snap.ID, &CreateOptions{})
 	require.NoError(t, err)
 
-	// Seeded from the snapshot's subvolume, not the live home.
-	assert.Contains(t, r.ran(), "btrfs subvolume snapshot "+m.snapshotPath("blog", snap.ID)+" "+m.appHome("blog2"))
-	assert.NotContains(t, r.ran(), "btrfs subvolume snapshot "+m.appHome("blog")+" "+m.appHome("blog2"))
+	// Seeded from the snapshot's subvolume (a whole-app snapshot), not the live
+	// subvolume.
+	assert.Contains(t, r.ran(), "btrfs subvolume snapshot "+m.snapshotPath("blog", snap.ID)+" "+m.appSubvolume("blog2"))
+	assert.NotContains(t, r.ran(), "btrfs subvolume snapshot "+m.appSubvolume("blog")+" "+m.appSubvolume("blog2"))
 }
 
 func TestForkFromUnknownSnapshotFails(t *testing.T) {
@@ -87,8 +85,7 @@ func TestForkSetsDiskQuota(t *testing.T) {
 	m, _, r := newTestDeployManager(t)
 	r.returns("stat -f", "btrfs\n")
 	require.NoError(t, m.store.AddApp(&store.App{Name: "blog", Port: 10000, Host: store.HostLocal}))
-	require.NoError(t, os.MkdirAll(m.appHome("blog"), 0o755))
-	require.NoError(t, os.MkdirAll(m.workspace.RootfsPath(m.appID("blog")), 0o700))
+	require.NoError(t, os.MkdirAll(m.appSubvolume("blog"), 0o755))
 
 	fork, err := m.Fork("blog", "blog2", "", &CreateOptions{DiskMB: 256})
 	require.NoError(t, err)

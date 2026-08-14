@@ -14,7 +14,7 @@ func TestRenameAppIsCheapAndPreservesTheContainer(t *testing.T) {
 	m, ops, runner := newTestDeployManager(t)
 	a := createTestApp(t, m, "blog")
 	id := a.ID
-	oldHome := m.appHome("blog")
+	oldSubvol := m.appSubvolume("blog")
 	// Attach a token so we can prove per-app rows follow the rename.
 	require.NoError(t, m.store.AddToken(&store.Token{UserID: "u_1", Hash: "h1", AppName: "blog", Secret: "sek"}))
 	runner.reset()
@@ -31,9 +31,9 @@ func TestRenameAppIsCheapAndPreservesTheContainer(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, id, got.ID)
 
-	// Durable resources are unchanged: the id-keyed home, container and unit are the
-	// same as before, so nothing had to move.
-	assert.Equal(t, oldHome, m.appHome("shop"))
+	// Durable resources are unchanged: the id-keyed subvolume, container and unit
+	// are the same as before, so nothing had to move.
+	assert.Equal(t, oldSubvol, m.appSubvolume("shop"))
 	assert.Equal(t, workspace.ContainerName(id), m.containerName("shop"))
 	assert.Equal(t, workspace.UnitName(id), m.unitName("shop"))
 

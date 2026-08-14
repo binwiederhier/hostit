@@ -23,7 +23,7 @@ var ErrNotDirectory = errors.New(".ssh must be a directory")
 // Interface is the subset of ssh-key operations the app package depends on; the
 // concrete *Service satisfies it, so a test can substitute a fake.
 type Interface interface {
-	WriteAuthorizedKeys(username, home string, keys []string) error
+	WriteAuthorizedKeys(root *os.Root, username string, keys []string) error
 }
 
 // Service writes app users' authorized_keys as root.
@@ -49,17 +49,15 @@ func ValidateKeys(keys []string) error {
 }
 
 // WriteAuthorizedKeys updates the hostit-managed block of the app's
-// authorized_keys, leaving any key the user added by hand in place
-func (s *Service) WriteAuthorizedKeys(username, home string, keys []string) error {
+// authorized_keys, leaving any key the user added by hand in place. It takes
+// the app's already-open files root (the caller resolves the files dir inside
+// the app subvolume), so a tenant symlink on the way to it cannot walk this
+// root-owned write anywhere else.
+func (s *Service) WriteAuthorizedKeys(root *os.Root, username string, keys []string) error {
 	uid, gid, err := lookupIDs(username)
 	if err != nil {
 		return err
 	}
-	root, err := os.OpenRoot(home)
-	if err != nil {
-		return err
-	}
-	defer root.Close()
 	return writeAuthorizedKeysIn(root, keys, uid, gid)
 }
 

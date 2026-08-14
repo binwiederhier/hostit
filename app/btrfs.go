@@ -6,8 +6,8 @@ import (
 
 const (
 	// snapshotsDirName holds read-only snapshots under the apps mount, one directory
-	// per app. It sits beside the app subvolumes, not inside them, so a snapshot's
-	// space is not charged to the app's own quota.
+	// per app. It sits beside the app subvolumes, not inside them: a snapshot must
+	// not be part of the tree it captures (and the container must not see it).
 	snapshotsDirName = ".snapshots"
 )
 

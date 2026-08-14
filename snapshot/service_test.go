@@ -32,7 +32,7 @@ func TestTakeSnapshotRecordsAndSnapshotsSubvolume(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, snap.Auto)
 	assert.Equal(t, "my save", snap.Label)
-	assert.Contains(t, r.ran(), "btrfs subvolume snapshot -r "+h.AppHome("blog")+" "+h.SnapshotPath("blog", snap.ID))
+	assert.Contains(t, r.ran(), "btrfs subvolume snapshot -r "+h.AppSubvolume("blog")+" "+h.SnapshotPath("blog", snap.ID))
 	// The new subvolume joins the app's disk budget: extents shared between home
 	// and snapshot would otherwise be reachable outside the group and stop
 	// counting as the group's exclusive bytes -- home data would leak out of the cap.
@@ -65,7 +65,7 @@ func TestRollbackTakesAutoLabelledSafetySnapshot(t *testing.T) {
 	t.Parallel()
 	svc, h, _, st := newTestService(t)
 	require.NoError(t, st.AddApp(&store.App{Name: "blog", Port: 10000, Host: store.HostLocal}))
-	require.NoError(t, os.MkdirAll(h.AppHome("blog"), 0o755))
+	require.NoError(t, os.MkdirAll(h.AppSubvolume("blog"), 0o755))
 
 	target, err := svc.TakeSnapshot("blog", "target", false)
 	require.NoError(t, err)
@@ -92,7 +92,7 @@ func TestRollbackStagesTargetBeforeSafetySnapshot(t *testing.T) {
 	t.Parallel()
 	svc, h, r, st := newTestService(t)
 	require.NoError(t, st.AddApp(&store.App{Name: "blog", Port: 10000, Host: store.HostLocal}))
-	require.NoError(t, os.MkdirAll(h.AppHome("blog"), 0o755))
+	require.NoError(t, os.MkdirAll(h.AppSubvolume("blog"), 0o755))
 
 	target, err := svc.TakeSnapshot("blog", "target", false)
 	require.NoError(t, err)
@@ -100,15 +100,15 @@ func TestRollbackStagesTargetBeforeSafetySnapshot(t *testing.T) {
 	require.NoError(t, svc.Rollback("blog", target.ID))
 
 	ran := r.ran()
-	stagedIdx := strings.Index(ran, "btrfs subvolume snapshot "+h.SnapshotPath("blog", target.ID)+" "+h.AppHome("blog")+rollbackStagedSuffix)
-	safetyIdx := strings.Index(ran, "btrfs subvolume snapshot -r "+h.AppHome("blog")+" ")
+	stagedIdx := strings.Index(ran, "btrfs subvolume snapshot "+h.SnapshotPath("blog", target.ID)+" "+h.AppSubvolume("blog")+rollbackStagedSuffix)
+	safetyIdx := strings.Index(ran, "btrfs subvolume snapshot -r "+h.AppSubvolume("blog")+" ")
 	require.GreaterOrEqual(t, stagedIdx, 0, "the target must be staged into a writable copy for rollback")
 	require.GreaterOrEqual(t, safetyIdx, 0, "a safety snapshot must be taken")
 	assert.Less(t, stagedIdx, safetyIdx, "the target must be staged before the safety snapshot (which can prune it)")
 
 	// The staged writable copy becomes the app's home after the swap, so it must
 	// join the app's disk budget like every other subvolume the service creates.
-	assert.Contains(t, h.assigned, h.AppHome("blog")+rollbackStagedSuffix)
+	assert.Contains(t, h.assigned, h.AppSubvolume("blog")+rollbackStagedSuffix)
 }
 
 // A rollback should record exactly one auto snapshot (the safety one), not also a
@@ -118,7 +118,7 @@ func TestRollbackTakesExactlyOneSafetySnapshot(t *testing.T) {
 	t.Parallel()
 	svc, h, _, st := newTestService(t)
 	require.NoError(t, st.AddApp(&store.App{Name: "blog", Port: 10000, Host: store.HostLocal}))
-	require.NoError(t, os.MkdirAll(h.AppHome("blog"), 0o755))
+	require.NoError(t, os.MkdirAll(h.AppSubvolume("blog"), 0o755))
 
 	target, err := svc.TakeSnapshot("blog", "target", false) // manual, so autos are only the rollback's
 	require.NoError(t, err)
@@ -196,7 +196,7 @@ func (h *fakeHost) SnapshotHooks(string) (string, string) {
 	return h.pre, h.post
 }
 func (h *fakeHost) RunHook(string, string, time.Duration) (int, error) { return h.hookCode, h.hookErr }
-func (h *fakeHost) AppHome(name string) string                         { return filepath.Join(h.base, name) }
+func (h *fakeHost) AppSubvolume(name string) string                    { return filepath.Join(h.base, name) }
 func (h *fakeHost) SnapshotsRoot(name string) string {
 	return filepath.Join(h.base, ".snapshots", name)
 }

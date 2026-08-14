@@ -49,12 +49,12 @@ func TestUpWorkspaceModeUnchangedOnlyReloadsAgent(t *testing.T) {
 	conf := mustLoadConfig(t, m, "blog")
 	ids, err := m.lookupIDs("blog")
 	require.NoError(t, err)
-	hash := workspace.ConfigHash(workspace.CreateArgs(conf, a, m.appHome("blog"), m.workspace.RootfsPath(a.ID), m.config.SocketFile, hostitBinFile, Version, 0, ids))
+	hash := workspace.ConfigHash(workspace.CreateArgs(conf, a, m.appSubvolume("blog"), m.config.SocketFile, hostitBinFile, Version, 0, ids))
 	runner.returns("container inspect", hash)
 	runner.returns("is-active", "active")
-	// The app's rootfs already exists (steady state), so the deploy must not touch
-	// the base or export anything -- only the reload path below runs.
-	require.NoError(t, os.MkdirAll(m.workspace.RootfsPath(a.ID), 0o700))
+	// The app's subvolume already exists (steady state), so the deploy must not
+	// touch the base or export anything -- only the reload path below runs.
+	require.NoError(t, os.MkdirAll(m.appSubvolume("blog"), 0o700))
 	runner.reset()
 	msg, err := m.Up("blog")
 	require.NoError(t, err)
@@ -98,7 +98,7 @@ func TestUpRefusesASymlinkedConfig(t *testing.T) {
 	// whatever it points at, rather than dereferencing it.
 	outside := filepath.Join(t.TempDir(), "outside.yml")
 	require.NoError(t, os.WriteFile(outside, []byte("mode: static\n"), 0o600))
-	link := filepath.Join(m.appHome("blog"), "hostit.yml")
+	link := filepath.Join(m.appFiles("blog").Path(), "hostit.yml")
 	require.NoError(t, os.Remove(link)) // Drop the skeleton config, then plant the symlink
 	require.NoError(t, os.Symlink(outside, link))
 	_, err := m.Up("blog")
@@ -319,7 +319,7 @@ func createTestApp(t *testing.T, m *Manager, name string) *store.App {
 	t.Helper()
 	a, err := m.CreateApp(name, &CreateOptions{RequestKeys: []string{testPublicKey}})
 	require.NoError(t, err)
-	require.NoError(t, os.MkdirAll(m.appHome(name), 0755))
+	require.NoError(t, os.MkdirAll(m.appFiles(name).Path(), 0o755))
 	runner, ok := m.runner.(*fakeRunner)
 	if !ok {
 		return a
@@ -338,7 +338,7 @@ func createTestApp(t *testing.T, m *Manager, name string) *store.App {
 
 func writeAppFile(t *testing.T, m *Manager, name, filename, content string) {
 	t.Helper()
-	full := filepath.Join(m.appHome(name), filename)
+	full := filepath.Join(m.appFiles(name).Path(), filename)
 	require.NoError(t, os.MkdirAll(filepath.Dir(full), 0o755))
 	require.NoError(t, os.WriteFile(full, []byte(content), 0600))
 }
@@ -438,7 +438,7 @@ func TestLogsCannotBeSymlinkedToAnythingElse(t *testing.T) {
 	t.Parallel()
 	m, _, _ := newTestDeployManager(t)
 	createTestApp(t, m, "blog")
-	home := m.appHome("blog")
+	home := m.appFiles("blog").Path()
 
 	secret := filepath.Join(t.TempDir(), "server.yml")
 	require.NoError(t, os.WriteFile(secret, []byte("admin-token: hunter2\n"), 0o600))

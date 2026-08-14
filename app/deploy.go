@@ -180,18 +180,18 @@ func (m *Manager) apply(a *store.App, conf *appctl.AppConfig, allowReload bool) 
 	if err != nil {
 		return "", err
 	}
-	// Make sure the rootfs THIS app runs exists -- a snapshot of its pinned tag's
-	// base, which is only built/exported when the app actually needs it. An app
-	// whose rootfs already exists needs nothing here (the invariant: an existing
-	// rootfs is never recreated), so recreating its container never blocks on an
-	// image build or export.
-	if err := m.workspace.EnsureRootfs(a, ids); err != nil {
+	// Make sure the subvolume THIS app runs exists -- a snapshot of its pinned
+	// tag's base, which is only built/exported when the app actually needs it. An
+	// app whose subvolume already exists needs nothing here (the invariant: an
+	// existing app subvolume is never recreated), so recreating its container
+	// never blocks on an image build or export.
+	if err := m.workspace.EnsureAppSubvolume(a, ids); err != nil {
 		return "", err
 	}
 
 	// Recreate the container if the desired config differs from the running one
 	started := time.Now()
-	desired := workspace.CreateArgs(conf, a, m.appHome(name), m.workspace.RootfsPath(a.ID), m.config.SocketFile, hostitBinFile, Version, m.memoryLimit(name), ids)
+	desired := workspace.CreateArgs(conf, a, m.appSubvolume(name), m.config.SocketFile, hostitBinFile, Version, m.memoryLimit(name), ids)
 	hash := workspace.ConfigHash(desired)
 	current, err := m.container.Inspect(m.containerName(name), inspectHashFormat)
 	recreated := false
@@ -244,7 +244,7 @@ func (m *Manager) isActive(name string) bool {
 	return err == nil && strings.TrimSpace(out) == "active"
 }
 
-// appID resolves an app's stable id from its current name. The home directory and
+// appID resolves an app's stable id from its current name. The app subvolume and
 // its snapshots are keyed on the id so a rename never moves them; callers still
 // address apps by name and this is the single translation point. An unknown name
 // falls back to itself, so a stray lookup fails on a missing path rather than here.
@@ -256,20 +256,29 @@ func (m *Manager) appID(name string) string {
 	return a.ID
 }
 
-// appHome is an app's home directory, keyed on its id (see appID).
-func (m *Manager) appHome(name string) string {
-	return m.appHomeByID(m.appID(name))
+// appSubvolume is the app's one subvolume (the container's whole OS tree, with
+// the app's files at home/app inside it), keyed on its id (see appID).
+func (m *Manager) appSubvolume(name string) string {
+	return m.appSubvolumeByID(m.appID(name))
 }
 
-// appHomeByID builds a home path straight from an id, for the create path where
-// the app is not yet in the store to resolve a name through.
-func (m *Manager) appHomeByID(id string) string {
+// appSubvolumeByID builds the subvolume path straight from an id, for the create
+// path where the app is not yet in the store to resolve a name through.
+func (m *Manager) appSubvolumeByID(id string) string {
 	return filepath.Join(m.config.AppsDir, id)
 }
 
-// appFiles locates an app's files directory for the homefs service.
+// appFiles locates an app's files directory (home/app INSIDE the subvolume) for
+// the homefs service, which resolves the tenant-owned inner path within the
+// subvolume's os.Root rather than as one plain host path.
 func (m *Manager) appFiles(name string) homefs.Dir {
-	return homefs.Dir{Subvolume: m.appHome(name)}
+	return m.appFilesByID(m.appID(name))
+}
+
+// appFilesByID is appFiles for the create path, where the app is not yet in the
+// store to resolve a name through.
+func (m *Manager) appFilesByID(id string) homefs.Dir {
+	return homefs.Dir{Subvolume: m.appSubvolumeByID(id), Rel: workspace.FilesDir}
 }
 
 // loadConfig reads and validates an app's hostit.yml through its os.Root, so a
