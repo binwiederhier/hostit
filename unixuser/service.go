@@ -32,6 +32,7 @@ type Interface interface {
 	Exists(username string) bool
 	LookupUID(username string) (int, error)
 	LookupIDs(username string) (uid, gid int, err error)
+	Home(username string) (string, error)
 	Create(username, home string, uid int) error
 	SetHome(username, home string) error
 	Rename(oldName, newName string) error
@@ -74,6 +75,17 @@ func (s *Service) LookupUID(username string) (int, error) {
 // LookupIDs returns a user's uid and gid.
 func (s *Service) LookupIDs(username string) (uid, gid int, err error) {
 	return lookupIDs(username)
+}
+
+// Home returns a user's passwd home directory. Being root-maintained state, it
+// is trustworthy where paths inside an app's (tenant-owned) subvolume are not;
+// the storage migrations key on it for that reason.
+func (s *Service) Home(username string) (string, error) {
+	u, err := user.Lookup(username)
+	if err != nil {
+		return "", err
+	}
+	return u.HomeDir, nil
 }
 
 // Create creates the app user and its home directory; 0750 so other apps cannot

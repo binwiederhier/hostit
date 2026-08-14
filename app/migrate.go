@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"time"
 
 	"heckel.io/hostit/store"
 	"heckel.io/hostit/workspace"
@@ -26,6 +27,10 @@ const (
 	// legacyRootfsDirMode keeps .rootfs root-only, as the workspace service did
 	// when it owned the path.
 	legacyRootfsDirMode = 0o700
+	// migrateCopyTimeout bounds the reflink fold of a home into its rootfs. The
+	// file count is tenant-controlled; measured at ~74ms per real app, so the
+	// bound only cuts off pathological trees.
+	migrateCopyTimeout = 15 * time.Minute
 )
 
 // MigrateRootfsStorage is the one-time migration from image-backed containers to
@@ -82,7 +87,7 @@ func (m *Manager) migrateAppStorage(a *store.App) error {
 	}
 	// An already-unified app (created by newer code, or moved by the unification
 	// migration) needs no legacy rootfs; there is nothing left to fold.
-	if m.appUnified(a.ID) {
+	if m.appUnified(a) {
 		return nil
 	}
 	if err := m.ensureLegacyRootfs(a, ids); err != nil {
@@ -111,20 +116,18 @@ func (m *Manager) ensureLegacyRootfs(a *store.App, ids workspace.IDs) error {
 	if err := m.btrfs.Snapshot(m.workspace.BasePath(tag), rootfs, false); err != nil {
 		return fmt.Errorf("cannot snapshot rootfs for %s: %w", a.Name, err)
 	}
-	if _, err := m.runner.Run("chown", "-R", fmt.Sprintf("%d:%d", ids.UID, ids.GID), rootfs); err != nil {
-		return fmt.Errorf("cannot chown rootfs %s: %w", rootfs, err)
-	}
-	return nil
+	return m.workspace.ChownTree(rootfs, ids)
 }
 
 // MigrateUnifiedStorage is the one-time migration that folds each app's home
 // INTO its rootfs, leaving ONE subvolume per app: the OS tree the container
 // runs, with the files at home/app inside it. It runs after
-// MigrateRootfsStorage (a pre-rootfs host runs both, in order), is resumable
-// per app, and detects an already-unified app by marker (its subvolume has a
-// /usr; homes never contained one). Old snapshots are home-shaped and
-// incompatible with whole-app rollback, so they are dropped (owner's call).
-// Only a 100% pass records the settings gate.
+// MigrateRootfsStorage (a pre-rootfs host runs both, in order), and is
+// resumable per app: the staged .rootfs/<id> subvolume (root-owned, so a tenant
+// cannot fake it away) marks an app that still needs folding, and the passwd
+// home (root-maintained) marks one that is already unified. Old snapshots are
+// home-shaped and incompatible with whole-app rollback, so they are dropped
+// (owner's call). Only a 100% pass records the settings gate.
 func (m *Manager) MigrateUnifiedStorage(version string) error {
 	settings, err := m.store.Settings()
 	if err != nil {
@@ -159,16 +162,18 @@ func (m *Manager) MigrateUnifiedStorage(version string) error {
 // THE app subvolume. Resumable: every step either detects it already happened
 // or is idempotent, so a run killed anywhere converges on the next start.
 func (m *Manager) migrateAppUnified(a *store.App) error {
-	// Already on one subvolume (moved by an earlier partial run, or created by
-	// post-unification code before the gate was recorded): only the ensure-style
-	// tail is needed, so a run killed between the move and the account/budget
-	// updates still converges.
-	if m.appUnified(a.ID) {
-		return m.finishUnify(a)
-	}
+	// The staged rootfs is the root-controlled "still needs folding" marker: the
+	// swap below is what consumes it, so while it exists the fold has not
+	// completed, and once it is gone only the ensure-style tail can be left
+	// (moved by an earlier partial run, or created by post-unification code
+	// before the gate was recorded). Nothing INSIDE the app subvolume can decide
+	// this: in the old layout the subvolume root was the tenant's home.
 	subvol := m.appSubvolumeByID(a.ID)
 	legacy := m.legacyRootfsPath(a.ID)
 	if _, err := os.Stat(legacy); err != nil {
+		if m.appUnified(a) {
+			return m.finishUnify(a)
+		}
 		return fmt.Errorf("no rootfs to unify %s into (did the rootfs migration succeed?): %w", a.Name, err)
 	}
 	ids, err := m.lookupIDs(a.Name)
@@ -196,7 +201,7 @@ func (m *Manager) migrateAppUnified(a *store.App) error {
 		if _, err := m.runner.Run("chown", fmt.Sprintf("%d:%d", ids.UID, ids.GID), target); err != nil {
 			return fmt.Errorf("cannot chown the files dir of %s: %w", a.Name, err)
 		}
-		if _, err := m.runner.Run("cp", "-a", "--reflink=always", subvol+"/.", target+"/"); err != nil {
+		if _, err := m.runner.RunTimeout(migrateCopyTimeout, "cp", "-a", "--reflink=always", subvol+"/.", target+"/"); err != nil {
 			return fmt.Errorf("cannot copy the home of %s into its rootfs: %w", a.Name, err)
 		}
 	}
@@ -212,6 +217,13 @@ func (m *Manager) migrateAppUnified(a *store.App) error {
 		if err := m.btrfs.DeleteSubvolume(subvol); err != nil {
 			return fmt.Errorf("cannot delete the old home of %s: %w", a.Name, err)
 		}
+	}
+	// Point the passwd home inside BEFORE the move: the move consumes the staged
+	// rootfs (the "needs folding" marker), so the moment it lands, the "already
+	// unified" marker -- the root-maintained passwd home -- must already read
+	// true, or a crash between the two would strand the app in neither state.
+	if err := m.user.SetHome(a.Name, m.appFilesByID(a.ID).Path()); err != nil {
+		return err
 	}
 	if err := m.btrfs.MoveSubvolume(legacy, subvol); err != nil {
 		return fmt.Errorf("cannot move the rootfs of %s into place: %w", a.Name, err)
@@ -244,11 +256,14 @@ func (m *Manager) legacyRootfsPath(id string) string {
 	return filepath.Join(m.config.AppsDir, legacyRootfsDirName, id)
 }
 
-// appUnified reports whether an app is on the unified layout: its subvolume is
-// a full OS tree. Homes never contained /usr, so that is the marker.
-func (m *Manager) appUnified(id string) bool {
-	_, err := os.Stat(filepath.Join(m.appSubvolumeByID(id), "usr"))
-	return err == nil
+// appUnified reports whether an app is on the unified layout: its passwd home
+// points at the files dir INSIDE the subvolume. The passwd entry is
+// root-maintained state; a marker inside the subvolume (a /usr, say) would be
+// tenant-forgeable, because in the pre-unification layout the subvolume root
+// was the tenant's own home.
+func (m *Manager) appUnified(a *store.App) bool {
+	home, err := m.user.Home(a.Name)
+	return err == nil && home == m.appFilesByID(a.ID).Path()
 }
 
 // purgeSnapshots deletes every snapshot of an app, subvolume and store row. A

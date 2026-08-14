@@ -26,6 +26,11 @@ const (
 	// exportTimeout bounds a base export (podman export | tar). Measured at ~40s
 	// for the current ~860 MB image; generous headroom for a loaded small host.
 	exportTimeout = 15 * time.Minute
+	// chownTimeout bounds a recursive chown of an app tree. The inode count under
+	// it is tenant-controlled (many empty files fit in a small quota), so the walk
+	// must not be allowed to hold a request forever; measured at ~1.6s for the
+	// base's ~57k files, so the bound only cuts off pathological trees.
+	chownTimeout = 15 * time.Minute
 )
 
 // BasePath is the base subvolume for an image tag. The directory is named by the
@@ -147,7 +152,7 @@ func (s *Service) EnsureAppSubvolume(a *store.App, ids IDs) error {
 	if err := os.MkdirAll(filepath.Join(subvol, FilesDir), filesDirMode); err != nil {
 		return err
 	}
-	return s.chownSubvolume(subvol, ids)
+	return s.ChownTree(subvol, ids)
 }
 
 // ForkAppSubvolume seeds a new app's subvolume from a seed subvolume: the
@@ -165,7 +170,7 @@ func (s *Service) ForkAppSubvolume(src, dstID string, ids IDs) error {
 	if err := s.btrfs.Snapshot(src, dst, false); err != nil {
 		return fmt.Errorf("cannot fork app subvolume: %w", err)
 	}
-	return s.chownSubvolume(dst, ids)
+	return s.ChownTree(dst, ids)
 }
 
 // PruneOldBases removes base subvolumes that are neither the current tag nor
@@ -200,12 +205,14 @@ func (s *Service) PruneOldBases() {
 	}
 }
 
-// chownSubvolume hands the whole app subvolume to the app's id block; shelled
-// out because chown -R over ~57k files is what the tool is fast at, and it
-// records cleanly through the runner in tests.
-func (s *Service) chownSubvolume(path string, ids IDs) error {
-	if _, err := s.runner.Run("chown", "-R", fmt.Sprintf("%d:%d", ids.UID, ids.GID), path); err != nil {
-		return fmt.Errorf("cannot chown app subvolume %s: %w", path, err)
+// ChownTree hands a whole tree to an app's id block; shelled out because chown
+// -R over ~57k files is what the tool is fast at, and it records cleanly
+// through the runner in tests. Exported as THE recursive-chown for app trees
+// (fresh subvolumes, forks, rollbacks, migration staging), so the time bound
+// and the flag shape live in exactly one place.
+func (s *Service) ChownTree(path string, ids IDs) error {
+	if _, err := s.runner.RunTimeout(chownTimeout, "chown", "-R", fmt.Sprintf("%d:%d", ids.UID, ids.GID), path); err != nil {
+		return fmt.Errorf("cannot chown app tree %s: %w", path, err)
 	}
 	return nil
 }

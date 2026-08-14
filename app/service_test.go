@@ -297,6 +297,14 @@ func (f *fakeSystem) SetHome(username, home string) error {
 	return nil
 }
 
+// Home returns what SetHome recorded; an account nothing pointed anywhere yet
+// reads as an empty home, which no migration marker ever matches.
+func (f *fakeSystem) Home(username string) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.homes[username], nil
+}
+
 func (f *fakeSystem) KillProcesses(username string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()

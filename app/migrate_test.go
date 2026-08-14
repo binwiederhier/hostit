@@ -79,20 +79,38 @@ func TestMigrateRootfsStorageLeavesExistingRootfsAlone(t *testing.T) {
 
 func TestMigrateRootfsStorageSkipsAUnifiedApp(t *testing.T) {
 	t.Parallel()
-	m, _, r := newTestDeployManager(t)
+	m, ops, r := newTestDeployManager(t)
 	require.NoError(t, m.store.AddApp(&store.App{Name: "blog", Port: 10000, Host: store.HostLocal, ImageTag: workspace.ImageTag()}))
-	// The app subvolume is already a full OS tree (/usr is the marker: homes
-	// never contained one), so there is nothing left to stage or fold.
-	require.NoError(t, os.MkdirAll(m.appSubvolume("blog")+"/usr", 0o755))
+	// The app is already unified: its passwd home (root-maintained, so a tenant
+	// cannot fake it) points inside the subvolume. Nothing to stage or fold.
+	require.NoError(t, ops.SetHome("blog", m.appFiles("blog").Path()))
 	r.reset()
 
 	require.NoError(t, m.MigrateRootfsStorage("v0.9.0"))
 	assert.NotContains(t, r.ran(), "btrfs subvolume snapshot", "a unified app needs no legacy rootfs")
 }
 
+func TestMigrateRootfsStorageIgnoresATenantPlantedUsrMarker(t *testing.T) {
+	t.Parallel()
+	m, _, r := newTestDeployManager(t)
+	require.NoError(t, m.store.AddApp(&store.App{Name: "blog", Port: 10000, Host: store.HostLocal, ImageTag: workspace.ImageTag()}))
+	a, err := m.store.App("blog")
+	require.NoError(t, err)
+	// In the pre-unification layout the app's home WAS the subvolume root, and the
+	// tenant (root in their own container) owns it: a hostile tenant can plant a
+	// "usr" dir there before the operator upgrades. That must not read as
+	// "already unified", or the migration would skip staging the rootfs and the
+	// unification would then run against a home with no OS tree -- a bricked app.
+	require.NoError(t, os.MkdirAll(filepath.Join(m.appSubvolume("blog"), "usr"), 0o755))
+	r.reset()
+
+	require.NoError(t, m.MigrateRootfsStorage("v0.9.0"))
+	assert.Contains(t, r.ran(), "btrfs subvolume snapshot "+m.workspace.BasePath(workspace.ImageTag())+" "+m.legacyRootfsPath(a.ID))
+}
+
 // seedTwoSubvolApp lays out one pre-unification app on the real test fs: a home
 // "subvolume" at <apps>/<id> holding files (dotfiles included) and a staged
-// rootfs at .rootfs/<id> shaped like an OS tree (/usr is the unified marker).
+// rootfs at .rootfs/<id> shaped like an OS tree.
 func seedTwoSubvolApp(t *testing.T, m *Manager, name string, port int) *store.App {
 	t.Helper()
 	require.NoError(t, m.store.AddApp(&store.App{Name: name, Port: port, Host: store.HostLocal, ImageTag: workspace.ImageTag()}))
@@ -169,6 +187,23 @@ func TestMigrateUnifiedStorage(t *testing.T) {
 	assert.NotContains(t, r.ran(), "cp -a", "an already unified host must not be touched again")
 }
 
+func TestMigrateUnifiedStorageIgnoresATenantPlantedUsrMarker(t *testing.T) {
+	t.Parallel()
+	m, _, r := newTestDeployManager(t)
+	r.emulateSubvolDelete = true
+	r.returns("inspect-internal rootid", "300\n")
+	a := seedTwoSubvolApp(t, m, "blog", 10000)
+	// A tenant-planted "usr" in the old home must not pass for the unified
+	// layout: the fold must still run, or the home data would never reach
+	// home/app and the tenant-shaped subvolume would become the container rootfs.
+	require.NoError(t, os.MkdirAll(filepath.Join(m.appSubvolume("blog"), "usr"), 0o755))
+	r.reset()
+
+	require.NoError(t, m.MigrateUnifiedStorage("v0.9.1"))
+	assert.Contains(t, r.ran(), "cp -a --reflink=always "+m.appSubvolume("blog")+"/. "+m.legacyRootfsPath(a.ID)+"/home/app/")
+	assert.FileExists(t, filepath.Join(m.appSubvolume("blog"), "home", "app", "data.txt"))
+}
+
 func TestMigrateUnifiedStorageLeavesAPoweredOffAppOff(t *testing.T) {
 	t.Parallel()
 	m, _, r := newTestDeployManager(t)
@@ -213,11 +248,13 @@ func TestMigrateUnifiedStorageConvergesAnAlreadyUnifiedApp(t *testing.T) {
 	t.Parallel()
 	m, ops, r := newTestDeployManager(t)
 	r.returns("inspect-internal rootid", "300\n")
-	// Killed between the move and the account/budget tail: the subvolume is
-	// unified (usr marker) but usermod/budget never ran. The tail must still
-	// converge -- without stopping or copying anything.
+	// Killed between the move and the budget tail: the staged rootfs is consumed
+	// and the passwd home already points inside the subvolume (it is set right
+	// before the move, so this state reads as unified), but the budget never
+	// joined. The tail must still converge -- without stopping or copying.
 	require.NoError(t, m.store.AddApp(&store.App{Name: "blog", Port: 10000, Host: store.HostLocal, ImageTag: workspace.ImageTag()}))
 	require.NoError(t, os.MkdirAll(filepath.Join(m.appSubvolume("blog"), "usr"), 0o755))
+	require.NoError(t, ops.SetHome("blog", m.appFiles("blog").Path()))
 	r.reset()
 
 	require.NoError(t, m.MigrateUnifiedStorage("v0.9.1"))

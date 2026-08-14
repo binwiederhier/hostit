@@ -1,11 +1,11 @@
 package app
 
 import (
-	"fmt"
 	"time"
 
 	"heckel.io/hostit/snapshot"
 	"heckel.io/hostit/store"
+	"heckel.io/hostit/workspace"
 )
 
 // TakeSnapshot snapshots an app's whole subvolume (files AND installed
@@ -81,6 +81,5 @@ func (h snapshotHost) AssignBudget(name, subvolPath string) error {
 }
 
 func (h snapshotHost) Chown(path string, uid int) error {
-	_, err := h.m.runner.Run("chown", "-R", fmt.Sprintf("%d:%d", uid, uid), path)
-	return err
+	return h.m.workspace.ChownTree(path, workspace.IDs{UID: uid, GID: uid})
 }
