@@ -62,11 +62,6 @@ The dashboard can create, manage and delete apps and drive them in the browser
   caches the app shell (JS/CSS) but is **network-first** for `/api/*` and app previews
   so it never serves stale data. HTTPS is already in place; everything drops into
   `web/public/` and is embedded into the Go binary. No new runtime deps.
-- **Align the chat input controls across multiple lines.** In the assistant chat
-  input, when the textarea grows to multiple lines the "+" (attach) button, the model
-  selector, and the send button drift out of vertical alignment. They should stay
-  aligned (bottom-aligned to the input row) as the textarea grows. In
-  `web/src/pages/AppAssistant.jsx` (the input row) / `web/src/styles.css`.
 - **Ask host-vs-build in the new-app modal.** When creating an app, let the owner
   pick their intent: "just host my existing app" or "build one here". The choice
   sets the initial app-detail tab -- host leans on details/deploy, build opens the
