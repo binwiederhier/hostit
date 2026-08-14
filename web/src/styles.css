@@ -3088,6 +3088,9 @@ body.ws-resizing iframe { pointer-events: none; }
 .newapp-input:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--focus); }
 .newapp-dollar { padding: 0 6px 0 11px; color: var(--faint); }
 .newapp-input input { flex: 1; border: 0; background: none; color: var(--text); font: inherit; font-size: 15px; padding: 11px 11px 11px 2px; outline: none; }
+/* A create in flight: the field is disabled -- make it look it, and spin on the button */
+.newapp-input:has(input:disabled) { opacity: 0.55; }
+.newapp-spinner { display: inline-block; flex: none; width: 12px; height: 12px; margin-right: 7px; border: 2px solid rgb(255 255 255 / 0.35); border-top-color: #fff; border-radius: 50%; vertical-align: -1px; animation: asst-spin 0.7s linear infinite; }
 /* Without the $-prefix span (the snapshot label field), the input needs its own left padding */
 .newapp-input-bare input { padding: 12px 14px; }
 .newapp-input-bare { margin: 2px 0 14px; }

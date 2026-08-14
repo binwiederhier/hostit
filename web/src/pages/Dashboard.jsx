@@ -31,6 +31,7 @@ const CreateForm = ({ name, setName, onSubmit, creating, atLimit, big = false, i
           className={big ? "btn btn-primary btn-big" : "btn btn-primary"}
           disabled={atLimit || creating || !valid}
         >
+          {creating && <span className="newapp-spinner" aria-hidden="true" />}
           {creating ? "Creating..." : "Create app"}
         </button>
       </form>
@@ -82,6 +83,7 @@ const NewAppDialog = ({ name, setName, onSubmit, creating, atLimit, onCancel }) 
             Cancel
           </button>
           <button type="submit" className="btn btn-primary" disabled={creating || !valid || atLimit}>
+            {creating && <span className="newapp-spinner" aria-hidden="true" />}
             {creating ? "Creating..." : "Create app"}
           </button>
         </div>
