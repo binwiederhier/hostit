@@ -79,6 +79,7 @@ type apiAppResponse struct {
 	OwnerEmail       string `json:"owner_email,omitempty"`
 	OwnerName        string `json:"owner_name,omitempty"`
 	SnapshotsEnabled bool   `json:"snapshots_enabled"` // true when the host supports snapshots (btrfs)
+	PreviewMode      string `json:"preview_mode"`      // How the UI previews the app: "live", "screenshot" or "off"
 	AssistantEnabled bool   `json:"assistant_enabled"` // true when an Anthropic API key is configured
 	// Description is the app's own one-liner from hostit.yml, kept current by
 	// whoever builds it; empty means the app is still a stub

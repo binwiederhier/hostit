@@ -10,6 +10,20 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// AppPreviewMode selects how the web app previews an app: a live iframe
+// (default), a periodic headless-chromium screenshot, or no preview at all.
+type AppPreviewMode string
+
+const (
+	// AppPreviewLive embeds the running app in a live iframe (today's behavior).
+	AppPreviewLive = AppPreviewMode("live")
+	// AppPreviewScreenshot shows a screenshot taken by headless chromium every
+	// few hours instead of a live iframe. Requires chromium on the host.
+	AppPreviewScreenshot = AppPreviewMode("screenshot")
+	// AppPreviewOff disables app previews entirely.
+	AppPreviewOff = AppPreviewMode("off")
+)
+
 // TLSMode determines how the reverse proxy terminates TLS
 type TLSMode string
 
@@ -78,11 +92,12 @@ type Config struct {
 	PortMax         int    `yaml:"port-max"` // Upper bound of the per-app loopback port range
 
 	// Web app and user accounts
-	GoogleClientID     string   `yaml:"google-client-id"`     // Google OAuth client ID; empty disables the web login
-	GoogleClientSecret string   `yaml:"google-client-secret"` // Google OAuth client secret
-	SessionKey         string   `yaml:"session-key"`          // Secret for signing session cookies; generated if empty
-	AdminEmails        []string `yaml:"admin-emails"`         // These emails become active admins on first login
-	Breakglass         bool     `yaml:"breakglass"`           // Allow the admin token to mint a session for an admin email (no Google); for e2e/recovery
+	GoogleClientID     string         `yaml:"google-client-id"`     // Google OAuth client ID; empty disables the web login
+	GoogleClientSecret string         `yaml:"google-client-secret"` // Google OAuth client secret
+	SessionKey         string         `yaml:"session-key"`          // Secret for signing session cookies; generated if empty
+	AdminEmails        []string       `yaml:"admin-emails"`         // These emails become active admins on first login
+	Breakglass         bool           `yaml:"breakglass"`           // Allow the admin token to mint a session for an admin email (no Google); for e2e/recovery
+	AppPreview         AppPreviewMode `yaml:"app-preview"`          // "live" (iframe, default), "screenshot" (periodic headless-chromium shots) or "off"
 
 	// Built-in coding assistant (the in-browser agent). An empty API key disables it.
 	AnthropicAPIKey string `yaml:"anthropic-api-key"` // Anthropic API key for the built-in assistant; empty disables it
@@ -139,6 +154,7 @@ func NewConfig() *Config {
 		DataDir:        "/var/lib/hostit",
 		AppsDir:        "/var/lib/hostit/apps",
 		TLS:            TLSLetsEncrypt,
+		AppPreview:     AppPreviewLive,
 		PortMin:        10000,
 		PortMax:        19999,
 		AssistantModel: DefaultAssistantModel,
@@ -230,6 +246,9 @@ func (c *Config) Validate() error {
 	}
 	if c.TLS != TLSLetsEncrypt && c.TLS != TLSOff {
 		return fmt.Errorf("invalid tls mode %q, must be %q or %q", c.TLS, TLSLetsEncrypt, TLSOff)
+	}
+	if c.AppPreview != AppPreviewLive && c.AppPreview != AppPreviewScreenshot && c.AppPreview != AppPreviewOff {
+		return fmt.Errorf("invalid app-preview mode %q, must be %q, %q or %q", c.AppPreview, AppPreviewLive, AppPreviewScreenshot, AppPreviewOff)
 	}
 	if c.DNSProvider != "" && c.DNSProvider != DNSProviderRoute53 {
 		return fmt.Errorf("invalid dns-provider %q, only %q is supported", c.DNSProvider, DNSProviderRoute53)

@@ -1831,6 +1831,11 @@ const AppDetail = ({ account, refreshAccount }) => {
   // A cache-busting query on the preview URL, bumped on every reload, so a refresh
   // always fetches the live app rather than the browser's cached copy.
   const previewSrc = app.url + (app.url.includes("?") ? "&" : "?") + "hostit_preview=" + previewKey;
+  // How the operator configured previews: a live iframe, a periodic headless-
+  // chromium screenshot, or off. Off hides the preview UI everywhere.
+  const previewMode = app.preview_mode || "live";
+  const previewShown = previewOn && previewMode !== "off";
+  const screenshotSrc = `/api/apps/${encodeURIComponent(app.name)}/preview.png?hostit_preview=${previewKey}`;
 
   // A crash loop that gave up: container up, but the app failed repeatedly and
   // hostit stopped restarting it. Worth calling out in red, not the neutral amber.
@@ -2023,7 +2028,7 @@ const AppDetail = ({ account, refreshAccount }) => {
             Settings
           </button>
           {/* Preview controls: only meaningful in the assistant view, right-aligned. */}
-          {((app.assistant_enabled && view === "assistant") || view === "editor") && (
+          {previewMode !== "off" && ((app.assistant_enabled && view === "assistant") || view === "editor") && (
             <div className="ws-viewtabs-right">
               <button
                 type="button"
@@ -2091,7 +2096,7 @@ const AppDetail = ({ account, refreshAccount }) => {
         </div>
         <div className={"ws-editorwrap" + (view === "editor" ? "" : " ws-inactive")}>
           <Suspense fallback={<div className="ws-chat-loading">Loading editor...</div>}>
-            <AppEditor name={app.name} url={app.url} running={app.running} diskMB={app.disk_mb} diskLimitMB={app.disk_limit_mb} onDeploy={reloadPreview} previewOn={previewOn} previewNonce={filesPreviewNonce} />
+            <AppEditor name={app.name} url={app.url} running={app.running} diskMB={app.disk_mb} diskLimitMB={app.disk_limit_mb} onDeploy={reloadPreview} previewOn={previewShown} previewMode={previewMode} previewNonce={filesPreviewNonce} />
           </Suspense>
         </div>
         <div className={"ws-termwrap" + (view === "terminal" ? "" : " ws-inactive")}>
@@ -2105,7 +2110,7 @@ const AppDetail = ({ account, refreshAccount }) => {
           <div
             className={"ws-split" + (view === "assistant" ? "" : " ws-inactive")}
             ref={splitRef}
-            style={{ gridTemplateColumns: !previewOn ? "minmax(0, 1fr)" : `minmax(0, ${chatFrac}fr) 10px minmax(0, ${1 - chatFrac}fr)` }}
+            style={{ gridTemplateColumns: !previewShown ? "minmax(0, 1fr)" : `minmax(0, ${chatFrac}fr) 10px minmax(0, ${1 - chatFrac}fr)` }}
           >
           <div className="ws-chat">
             <Suspense fallback={<div className="ws-chat-loading">Loading assistant...</div>}>
@@ -2113,7 +2118,7 @@ const AppDetail = ({ account, refreshAccount }) => {
             </Suspense>
           </div>
 
-          {previewOn && (
+          {previewShown && (
             <>
           <div
             className="ws-resizer"
@@ -2139,14 +2144,24 @@ const AppDetail = ({ account, refreshAccount }) => {
                     on the URL forces a real fetch: Go's file server sets no
                     Cache-Control, so a plain reload would serve the browser's stale
                     copy and a "refresh" would appear to do nothing (or revert). */}
-                <iframe
-                  key={previewKey}
-                  title={`Live preview of ${app.name}`}
-                  src={previewSrc}
-                  loading="lazy"
-                  sandbox="allow-scripts allow-same-origin allow-forms"
-                  onLoad={() => setRefreshing(false)}
-                />
+                {previewMode === "screenshot" ? (
+                  <img
+                    key={previewKey}
+                    alt="No screenshot yet -- the periodic sweep takes one while the app runs."
+                    src={screenshotSrc}
+                    onLoad={() => setRefreshing(false)}
+                    onError={() => setRefreshing(false)}
+                  />
+                ) : (
+                  <iframe
+                    key={previewKey}
+                    title={`Live preview of ${app.name}`}
+                    src={previewSrc}
+                    loading="lazy"
+                    sandbox="allow-scripts allow-same-origin allow-forms"
+                    onLoad={() => setRefreshing(false)}
+                  />
+                )}
               </div>
             ) : (
               <div className="ws-preview ws-preview-off">

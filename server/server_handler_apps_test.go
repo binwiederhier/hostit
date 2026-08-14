@@ -4,10 +4,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"heckel.io/hostit/config"
+	"heckel.io/hostit/preview"
 	"heckel.io/hostit/store"
 )
 
@@ -161,4 +165,60 @@ func TestAppScopedTokenCannotTouchAnotherApp(t *testing.T) {
 	assert.Equal(t, http.StatusForbidden, request(t, s.API(), "GET", "/api/apps/wiki", "", scoped).Code)
 	// And so is the account surface, which would reveal the owner
 	assert.Equal(t, http.StatusForbidden, request(t, s.API(), "GET", "/api/account/keys", "", scoped).Code)
+}
+
+func TestAppPreviewScreenshotServed(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	s.config.AppPreview = config.AppPreviewScreenshot
+	u := newActiveTestUser(t, s, "owner@example.com")
+	token := accountToken(t, s, u)
+	a := &store.App{Name: "blog", Port: 10000, Host: store.HostLocal, OwnerID: u.ID}
+	require.NoError(t, s.apps.Store().AddApp(a))
+
+	// No shot yet: not found
+	assert.Equal(t, http.StatusNotFound, request(t, s.API(), "GET", "/api/apps/blog/preview.png", "", token).Code)
+
+	// With a stored shot, the bytes come back as a PNG
+	dir := preview.Dir(s.config.DataDir)
+	require.NoError(t, os.MkdirAll(dir, 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, a.ID+".png"), []byte("fakepng"), 0o600))
+	rr := request(t, s.API(), "GET", "/api/apps/blog/preview.png", "", token)
+	require.Equal(t, http.StatusOK, rr.Code)
+	assert.Equal(t, "image/png", rr.Header().Get("Content-Type"))
+	assert.Equal(t, "fakepng", rr.Body.String())
+
+	// A stranger gets a 404, same as any app they don't own
+	stranger := accountToken(t, s, newActiveTestUser(t, s, "other@example.com"))
+	assert.Equal(t, http.StatusNotFound, request(t, s.API(), "GET", "/api/apps/blog/preview.png", "", stranger).Code)
+}
+
+func TestAppPreviewHiddenOutsideScreenshotMode(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	u := newActiveTestUser(t, s, "owner@example.com")
+	token := accountToken(t, s, u)
+	a := &store.App{Name: "blog", Port: 10000, Host: store.HostLocal, OwnerID: u.ID}
+	require.NoError(t, s.apps.Store().AddApp(a))
+	dir := preview.Dir(s.config.DataDir)
+	require.NoError(t, os.MkdirAll(dir, 0o700))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, a.ID+".png"), []byte("fakepng"), 0o600))
+
+	// Default mode is live: the endpoint does not exist for callers
+	assert.Equal(t, http.StatusNotFound, request(t, s.API(), "GET", "/api/apps/blog/preview.png", "", token).Code)
+}
+
+func TestAppResponseCarriesPreviewMode(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	s.config.AppPreview = config.AppPreviewScreenshot
+	u := newActiveTestUser(t, s, "owner@example.com")
+	token := accountToken(t, s, u)
+	require.NoError(t, s.apps.Store().AddApp(&store.App{Name: "blog", Port: 10000, Host: store.HostLocal, OwnerID: u.ID}))
+
+	rr := request(t, s.API(), "GET", "/api/apps/blog", "", token)
+	require.Equal(t, http.StatusOK, rr.Code)
+	var resp apiAppResponse
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &resp))
+	assert.Equal(t, "screenshot", resp.PreviewMode)
 }

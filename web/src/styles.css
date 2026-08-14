@@ -2673,6 +2673,20 @@ body.ws-resizing iframe { pointer-events: none; }
 /* The shorter pane's text box stretches to the taller pane's height. */
 .modal-tabpane .prompt-block { flex: 1 1 auto; }
 
+/* Screenshot preview (app-preview: screenshot): a static shot in place of the
+   live iframe; broken (no shot yet) it falls back to the alt text. */
+.ws-preview img,
+.ed-preview img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: top;
+  background: var(--surface-2);
+  color: var(--muted);
+  padding: 8px;
+}
+
 /* Modal helpers shared by the SSH and bring-your-own-AI dialogs */
 .modal-wide { max-width: 44rem; }
 .modal-xwide { max-width: 54rem; }

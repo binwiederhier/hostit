@@ -24,7 +24,7 @@ const sortEntries = (entries) =>
     return baseName(a.path).localeCompare(baseName(b.path));
   });
 
-export default function AppEditor({ name, url, running, diskMB, diskLimitMB, onDeploy, previewOn = true, previewNonce = 0 }) {
+export default function AppEditor({ name, url, running, diskMB, diskLimitMB, onDeploy, previewOn = true, previewMode = "live", previewNonce = 0 }) {
   const [dirs, setDirs] = useState({});
   const [expanded, setExpanded] = useState(() => new Set([""]));
   const [loadingDirs, setLoadingDirs] = useState(() => new Set());
@@ -707,7 +707,11 @@ export default function AppEditor({ name, url, running, diskMB, diskLimitMB, onD
           </div>
           <div className="ed-preview" style={{ flex: `0 0 ${previewWidth}px` }}>
             {running ? (
-              <iframe key={previewKey} title={`Live preview of ${name}`} src={`${url}${url && url.includes("?") ? "&" : "?"}hostit_preview=${previewKey}`} sandbox="allow-scripts allow-same-origin allow-forms" />
+              previewMode === "screenshot" ? (
+                <img key={previewKey} alt="No screenshot yet -- the periodic sweep takes one while the app runs." src={`/api/apps/${encodeURIComponent(name)}/preview.png?hostit_preview=${previewKey}`} />
+              ) : (
+                <iframe key={previewKey} title={`Live preview of ${name}`} src={`${url}${url && url.includes("?") ? "&" : "?"}hostit_preview=${previewKey}`} sandbox="allow-scripts allow-same-origin allow-forms" />
+              )
             ) : (
               <div className="ed-empty">The app is powered off.</div>
             )}

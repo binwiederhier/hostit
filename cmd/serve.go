@@ -13,6 +13,7 @@ import (
 	"github.com/urfave/cli/v2"
 	"heckel.io/hostit/app"
 	"heckel.io/hostit/config"
+	"heckel.io/hostit/preview"
 	"heckel.io/hostit/run"
 	"heckel.io/hostit/server"
 	"heckel.io/hostit/store"
@@ -140,6 +141,26 @@ func execServe(c *cli.Context) error {
 	go manager.StateLoop(done)
 	// Hourly automatic snapshots (a no-op unless the apps filesystem is btrfs)
 	go manager.SnapshotLoop(time.Hour, done)
+	// Periodic headless-chromium screenshots of running apps (app-preview: screenshot)
+	if conf.AppPreview == config.AppPreviewScreenshot {
+		previews := preview.New(run.New(), preview.Dir(conf.DataDir), func() ([]preview.App, error) {
+			apps, err := s.Apps()
+			if err != nil {
+				return nil, err
+			}
+			names := make([]string, 0, len(apps))
+			for _, a := range apps {
+				names = append(names, a.Name)
+			}
+			states := manager.CachedStates(names)
+			out := make([]preview.App, 0, len(apps))
+			for _, a := range apps {
+				out = append(out, preview.App{ID: a.ID, Name: a.Name, URL: manager.URL(a), Running: states[a.Name].Running})
+			}
+			return out, nil
+		})
+		go previews.Loop(preview.SweepInterval, done)
+	}
 	// Retry pending/error custom domains so they verify once DNS is set up
 	go srv.DomainRetryLoop(time.Minute, done)
 

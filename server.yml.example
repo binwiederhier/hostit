@@ -52,6 +52,12 @@ admin-token: CHANGE-ME
 #   - {id: claude-sonnet-5, label: "Sonnet (balanced)"}
 #   - {id: claude-haiku-4-5, label: "Haiku (fast, cheap)"}
 
+# How the web UI previews apps: "live" embeds the running app in an iframe
+# (default), "screenshot" shows a screenshot taken by headless chromium every
+# few hours instead (requires chromium/chromium-browser/google-chrome on the
+# host), "off" disables previews entirely.
+# app-preview: live
+
 # Let the admin token mint a session cookie for an admin email without Google
 # (for end-to-end testing and recovery). Off by default.
 # breakglass: false

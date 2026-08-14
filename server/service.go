@@ -384,6 +384,7 @@ func (s *Server) appResponse(a *store.App, customDomain string) *apiAppResponse 
 		OwnerEmail:       ownerEmail,
 		OwnerName:        ownerName,
 		SnapshotsEnabled: true, // btrfs is mandatory, so snapshots are always available
+		PreviewMode:      string(s.config.AppPreview),
 		AssistantEnabled: s.assistant != nil,
 		// What the app says it is, straight from its hostit.yml; empty for a stub
 		Description: s.apps.Description(a.Name),

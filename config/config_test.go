@@ -65,6 +65,9 @@ func TestValidate(t *testing.T) {
 		{"missing admin token", func(c *Config) { c.AdminToken = "" }, "admin-token"},
 		{"bad port range", func(c *Config) { c.PortMin = 5000; c.PortMax = 4000 }, "port"},
 		{"bad tls mode", func(c *Config) { c.TLS = "wat" }, "tls"},
+		{"bad app preview mode", func(c *Config) { c.AppPreview = "movie" }, "app-preview"},
+		{"screenshot previews", func(c *Config) { c.AppPreview = AppPreviewScreenshot }, ""},
+		{"previews off", func(c *Config) { c.AppPreview = AppPreviewOff }, ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -82,6 +85,11 @@ func TestValidate(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestAppPreviewDefaultsToLive(t *testing.T) {
+	t.Parallel()
+	assert.Equal(t, AppPreviewLive, NewConfig().AppPreview)
 }
 
 func TestWildcardTLS(t *testing.T) {
