@@ -60,8 +60,7 @@ func TestReconcileOrphansRemovesEmptyStubKeepsStubborn(t *testing.T) {
 func TestReconcileOrphansSweepsStrayBudgetGroups(t *testing.T) {
 	t.Parallel()
 	m, _, runner := newTestDeployManager(t)
-	a := createTestApp(t, m, "blog") // port 10000 -> uid 1000000
-	_ = a
+	createTestApp(t, m, "blog") // port 10000 -> uid 1000000
 	// A destroy that stayed "busy" during app delete leaves the budget group
 	// behind; the reconcile sweeps any 1/<uid> group whose uid maps to no app.
 	runner.returns("btrfs qgroup show", "0/5 16384 16384\n1/1000000 100 100\n1/1065536 100 100\n")

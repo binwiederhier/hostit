@@ -14,7 +14,9 @@ import (
 
 // podman is the container runtime binary; centralized so the wrappers don't each
 // repeat the literal.
-const podman = "podman"
+const (
+	podman = "podman"
+)
 
 // Interface is the subset of podman operations the app and snapshot packages depend
 // on; the concrete *Service satisfies it, so a test can substitute a fake.

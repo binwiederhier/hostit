@@ -3,7 +3,9 @@ package app
 import (
 	"fmt"
 	"log/slog"
+	"strconv"
 
+	"heckel.io/hostit/btrfs"
 	"heckel.io/hostit/store"
 )
 
@@ -82,7 +84,7 @@ func (m *Manager) destroyBudget(uid int) {
 // budgetGroup is the app's qgroup id, keyed on its unix uid: stable across
 // renames, unique per app (a fork gets its own uid block).
 func budgetGroup(uid int) string {
-	return fmt.Sprintf("1/%d", uid)
+	return btrfs.BudgetGroupPrefix + strconv.Itoa(uid)
 }
 
 // effectiveDiskCapMB maps the stored limit to the enforced one: an unset limit

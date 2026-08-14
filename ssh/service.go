@@ -18,7 +18,9 @@ const (
 
 // ErrNotDirectory is returned when the app's .ssh exists but is not a real
 // directory (e.g. a symlink the tenant planted); hostit refuses to write into it.
-var ErrNotDirectory = errors.New(".ssh must be a directory")
+var (
+	ErrNotDirectory = errors.New(".ssh must be a directory")
+)
 
 // Interface is the subset of ssh-key operations the app package depends on; the
 // concrete *Service satisfies it, so a test can substitute a fake.

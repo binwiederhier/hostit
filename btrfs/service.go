@@ -14,6 +14,11 @@ import (
 )
 
 const (
+	// BudgetGroupPrefix is the level-1 qgroup namespace app disk budgets live in
+	// ("1/<uid>"). Exported so the app package builds group ids against the same
+	// prefix this package's ListBudgetGroups filters on -- the reconcile sweep's
+	// correctness depends on the two never drifting apart.
+	BudgetGroupPrefix = "1/"
 	// timeout bounds a btrfs command; these are metadata operations (create,
 	// snapshot, qgroup) and return quickly, but must never wedge a request.
 	timeout = 30 * time.Second
@@ -220,7 +225,7 @@ func (s *Service) ListBudgetGroups(pool string) ([]string, error) {
 	groups := make([]string, 0)
 	for _, line := range strings.Split(out, "\n") {
 		fields := strings.Fields(line)
-		if len(fields) > 0 && strings.HasPrefix(fields[0], "1/") {
+		if len(fields) > 0 && strings.HasPrefix(fields[0], BudgetGroupPrefix) {
 			groups = append(groups, fields[0])
 		}
 	}

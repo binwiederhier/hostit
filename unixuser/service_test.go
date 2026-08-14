@@ -12,9 +12,9 @@ func TestGroupNeedsRename(t *testing.T) {
 	// A group left under the old app name (an app renamed before group-rename
 	// shipped) must be renamed to match the user, or a new app of the old name
 	// collides on groupadd.
-	got, ok := groupNeedsRename("demo", "thatphilguy", "hostit-apps")
+	got, ok := groupNeedsRename("demo", "blogapp", "hostit-apps")
 	assert.True(t, ok)
-	assert.Equal(t, "thatphilguy", got)
+	assert.Equal(t, "blogapp", got)
 
 	// Already matching the user: nothing to do.
 	_, ok = groupNeedsRename("blog", "blog", "hostit-apps")
