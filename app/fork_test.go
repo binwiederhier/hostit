@@ -45,8 +45,7 @@ func TestForkSeedsSubvolumeFromSourceAndDeploys(t *testing.T) {
 	require.Eventually(t, func() bool {
 		return strings.Contains(r.ran(), m.unitName("blog2"))
 	}, 5*time.Second, 5*time.Millisecond, "the forked app did not deploy")
-	uid := m.uidFor(fork.Port)
-	assert.Contains(t, r.ran(), fmt.Sprintf("chown -R %d:%d %s", uid, uid, m.appSubvolume("blog2")))
+	assert.NotContains(t, r.ran(), "chown", "a fork stays root-owned like every subvolume")
 }
 
 func TestForkFromSnapshotSeedsFromThatSnapshot(t *testing.T) {

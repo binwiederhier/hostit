@@ -93,22 +93,23 @@ func TestEnsureBaseRefusesAnUnbuildableOldTag(t *testing.T) {
 	assert.Empty(t, fc.exportedTo)
 }
 
-func TestEnsureAppSubvolumeSnapshotsThePinnedBaseAndChowns(t *testing.T) {
+func TestEnsureAppSubvolumeSnapshotsThePinnedBase(t *testing.T) {
 	t.Parallel()
 	svc, fc, r, _ := newTestService(t)
 	// The app is pinned to an old tag whose base already exists: no image build,
-	// no export -- just a snapshot of that base, chowned to the app's id block.
+	// no export -- just a snapshot of that base. NO chown: the subvolume stays
+	// root-owned, and the container idmap-mounts it (instant creation).
 	pinned := imagePrefix + ":pinned1"
 	require.NoError(t, os.MkdirAll(svc.BasePath(pinned), 0o700))
 	a := &store.App{ID: "appid123", Name: "blog", ImageTag: pinned}
-	require.NoError(t, svc.EnsureAppSubvolume(a, IDs{UID: 1001, GID: 1001, Count: 65536}))
+	require.NoError(t, svc.EnsureAppSubvolume(a))
 
 	subvol := svc.AppSubvolumePath("appid123")
 	assert.Contains(t, r.ran(), "btrfs subvolume snapshot "+svc.BasePath(pinned)+" "+subvol)
 	assert.NotContains(t, r.ran(), "btrfs subvolume snapshot -r", "the app subvolume is writable")
-	assert.Contains(t, r.ran(), "chown -R 1001:1001 "+subvol)
+	assert.NotContains(t, r.ran(), "chown", "the subvolume stays root-owned for the idmap mount")
 	// The files directory exists inside the subvolume (the base may not ship
-	// /home/app), created before the chown -R so it belongs to the app too.
+	// /home/app), traversable so sshd can reach .ssh as the app user.
 	assert.DirExists(t, filepath.Join(subvol, FilesDir))
 	assert.Empty(t, fc.builds)
 	assert.Empty(t, fc.exportedTo)
@@ -122,7 +123,7 @@ func TestEnsureAppSubvolumeFallsBackToTheCurrentTagWhenUnpinned(t *testing.T) {
 	// dir name).
 	require.NoError(t, os.MkdirAll(svc.BasePath(ImageTag()), 0o700))
 	a := &store.App{ID: "appid123", Name: "blog"}
-	require.NoError(t, svc.EnsureAppSubvolume(a, IDs{UID: 1001, GID: 1001, Count: 65536}))
+	require.NoError(t, svc.EnsureAppSubvolume(a))
 	assert.Contains(t, r.ran(), "btrfs subvolume snapshot "+svc.BasePath(ImageTag())+" "+svc.AppSubvolumePath("appid123"))
 	assert.NotContains(t, r.ran(), "snapshot "+filepath.Join(svc.appsDir, basesDirName)+" ")
 }
@@ -135,7 +136,7 @@ func TestEnsureAppSubvolumeNeverRecreatesAnExistingOne(t *testing.T) {
 	// left alone -- the app's files AND everything it installed live there.
 	require.NoError(t, os.MkdirAll(svc.AppSubvolumePath("appid123"), 0o700))
 	a := &store.App{ID: "appid123", Name: "blog", ImageTag: imagePrefix + ":whatever"}
-	require.NoError(t, svc.EnsureAppSubvolume(a, IDs{UID: 1001, GID: 1001, Count: 65536}))
+	require.NoError(t, svc.EnsureAppSubvolume(a))
 	assert.NotContains(t, r.ran(), "btrfs subvolume snapshot")
 	assert.NotContains(t, r.ran(), "chown")
 	assert.Empty(t, fc.builds)
@@ -147,18 +148,18 @@ func TestForkAppSubvolumeSnapshotsTheSeedPath(t *testing.T) {
 	svc, _, r, _ := newTestService(t)
 	// A fork snapshots the seed subvolume -- the source app's subvolume or a
 	// whole-app snapshot -- so it carries files AND installed packages in one
-	// CoW copy, chowned to the new app's id block.
+	// CoW copy; ownership is untouched (root-owned, idmap-mounted).
 	src := svc.AppSubvolumePath("srcid")
 	require.NoError(t, os.MkdirAll(src, 0o700))
-	require.NoError(t, svc.ForkAppSubvolume(src, "dstid", IDs{UID: 2001, GID: 2001, Count: 65536}))
+	require.NoError(t, svc.ForkAppSubvolume(src, "dstid"))
 	assert.Contains(t, r.ran(), "btrfs subvolume snapshot "+src+" "+svc.AppSubvolumePath("dstid"))
-	assert.Contains(t, r.ran(), "chown -R 2001:2001 "+svc.AppSubvolumePath("dstid"))
+	assert.NotContains(t, r.ran(), "chown", "a fork stays root-owned like every subvolume")
 }
 
 func TestForkAppSubvolumeRequiresTheSeed(t *testing.T) {
 	t.Parallel()
 	svc, _, _, _ := newTestService(t)
-	require.Error(t, svc.ForkAppSubvolume(svc.AppSubvolumePath("missing"), "dstid", IDs{UID: 2001, GID: 2001}))
+	require.Error(t, svc.ForkAppSubvolume(svc.AppSubvolumePath("missing"), "dstid"))
 }
 
 func TestPruneOldBasesRefusesPinnedAndCurrentTags(t *testing.T) {
@@ -209,6 +210,12 @@ func (f *fakeRunner) RunTimeout(_ time.Duration, args ...string) (string, error)
 	return f.Run(args...)
 }
 
+func (f *fakeRunner) reset() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.commands = nil
+}
+
 func (f *fakeRunner) ran() string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -236,4 +243,25 @@ func (f *fakeContainer) RemoveForce(name string) error {
 	defer f.mu.Unlock()
 	f.removedCtrs = append(f.removedCtrs, name)
 	return nil
+}
+
+func TestEnsureBaseAddsTheMtabSymlinkToAnExistingBase(t *testing.T) {
+	t.Parallel()
+	svc, _, r, _ := newTestService(t)
+	// podman EOVERFLOWs creating /etc/mtab through an idmapped rootfs, but skips
+	// the step when the rootfs already has one. Bases exported before this fix
+	// have none, so EnsureBase retrofits it (unseal, symlink, reseal).
+	base := svc.BasePath(ImageTag())
+	require.NoError(t, os.MkdirAll(filepath.Join(base, "etc"), 0o755))
+	require.NoError(t, svc.EnsureBase(ImageTag()))
+	target, err := os.Readlink(filepath.Join(base, "etc", "mtab"))
+	require.NoError(t, err)
+	assert.Equal(t, "../proc/self/mounts", target)
+	assert.Contains(t, r.ran(), "btrfs property set "+base+" ro false")
+	assert.Contains(t, r.ran(), "btrfs property set "+base+" ro true")
+
+	// Present already: the retrofit is a no-op (no unseal churn).
+	r.reset()
+	require.NoError(t, svc.EnsureBase(ImageTag()))
+	assert.NotContains(t, r.ran(), "property set")
 }

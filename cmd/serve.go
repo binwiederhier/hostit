@@ -91,9 +91,9 @@ func execServe(c *cli.Context) error {
 	// idempotent, so it simply runs at every start.
 	manager.EnableDiskBudgets()
 	// One-time storage migrations, in order, before anything serves. The host
-	// states they cover: a fresh or fully migrated host records both gates as
-	// no-ops; a pre-rootfs host runs both; a host stopped mid-chain (rootfs
-	// staged, homes not yet folded) runs only the second. Both are ensure-style
+	// states they cover: a fresh or fully migrated host records all gates as
+	// no-ops; a pre-rootfs host runs the whole chain; a host stopped mid-chain
+	// resumes at whichever gates are unrecorded. All are ensure-style
 	// and resumable, so a failure only warns and the next start retries the apps
 	// it missed. On a pre-rootfs host the first run synchronously builds and
 	// exports the base image -- the known one-time migration outage.
@@ -102,6 +102,9 @@ func execServe(c *cli.Context) error {
 	}
 	if err := manager.MigrateUnifiedStorage(c.App.Version); err != nil {
 		slog.Warn("Unified-storage migration incomplete; retrying at next start", "error", err)
+	}
+	if err := manager.MigrateIdmapStorage(c.App.Version); err != nil {
+		slog.Warn("Idmap migration incomplete; retrying at next start", "error", err)
 	}
 	// After the budgets exist: applying a stored limit re-ensures the app's
 	// budget qgroup and its cap. Migration briefly runs on the 2048M default and

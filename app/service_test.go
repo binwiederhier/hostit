@@ -49,8 +49,8 @@ func TestCreateApp(t *testing.T) {
 	assert.Equal(t, 10000, app.Port)
 	assert.Equal(t, []string{"blog"}, ops.createdUsers)
 	assert.Equal(t, []string{testPublicKey}, ops.authorizedKeys["blog"])
-	assert.Contains(t, ops.skeletons["blog"], "hostit.yml")
-	assert.Contains(t, ops.skeletons["blog"], "README.md")
+	assert.Contains(t, ops.skeletons[m.appFiles("blog").Path()], "hostit.yml")
+	assert.Contains(t, ops.skeletons[m.appFiles("blog").Path()], "README.md")
 	stored, err := m.App("blog")
 	require.NoError(t, err)
 	assert.Equal(t, 10000, stored.Port)
@@ -348,12 +348,14 @@ func (f *fakeSystem) WriteAuthorizedKeys(root *os.Root, username string, keys []
 
 // WriteSkeleton records the skeleton AND writes it, so tests that read app
 // files (README, hostit.yml) see what a real app would have
-func (f *fakeSystem) WriteSkeleton(username, home string, files map[string]string) error {
+// WriteSkeleton records the skeleton BY HOME PATH (it no longer learns the app
+// name) AND writes it, so tests that read app files see what a real app would.
+func (f *fakeSystem) WriteSkeleton(home string, files map[string]string) error {
 	if err := os.MkdirAll(home, 0o755); err != nil {
 		return err
 	}
 	for name, content := range files {
-		f.skeletons[username] = append(f.skeletons[username], name)
+		f.skeletons[home] = append(f.skeletons[home], name)
 		full := filepath.Join(home, name)
 		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
 			return err
@@ -362,10 +364,6 @@ func (f *fakeSystem) WriteSkeleton(username, home string, files map[string]strin
 			return err
 		}
 	}
-	return nil
-}
-
-func (f *fakeSystem) ChownIn(root *os.Root, username, rel string) error {
 	return nil
 }
 

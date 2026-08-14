@@ -42,9 +42,7 @@ func TestMigrateRootfsStorage(t *testing.T) {
 		a, err := m.store.App(name)
 		require.NoError(t, err)
 		assert.Contains(t, ran, "btrfs subvolume snapshot "+m.workspace.BasePath(workspace.ImageTag())+" "+m.legacyRootfsPath(a.ID))
-		ids, err := m.lookupIDs(name)
-		require.NoError(t, err)
-		assert.Contains(t, ran, fmt.Sprintf("chown -R %d:%d %s", ids.UID, ids.GID, m.legacyRootfsPath(a.ID)))
+		assert.NotContains(t, ran, "chown -R", "staged rootfses stay root-owned; the idmap migration is the end state")
 	}
 
 	// Existing snapshots are dropped (owner's call: budgets stay predictable):
@@ -271,4 +269,112 @@ func testBudgetGroup(t *testing.T, m *Manager, name string) string {
 	ids, err := m.lookupIDs(name)
 	require.NoError(t, err)
 	return fmt.Sprintf("1/%d", ids.UID)
+}
+
+func TestShiftID(t *testing.T) {
+	t.Parallel()
+	// base+u maps back to u (container-relative); anything outside the app's
+	// block -- real root, nobody, another block -- is left alone.
+	for _, tc := range []struct {
+		id, base, count, want int
+		hit                   bool
+	}{
+		{1000000, 1000000, 65536, 0, true},        // container root
+		{1000033, 1000000, 65536, 33, true},       // www-data etc.
+		{1065535, 1000000, 65536, 65535, true},    // last of the block
+		{1065536, 1000000, 65536, 1065536, false}, // next app's block
+		{0, 1000000, 65536, 0, false},             // real root
+		{65534, 1000000, 65536, 65534, false},     // nobody
+	} {
+		got, hit := shiftID(tc.id, tc.base, tc.count)
+		assert.Equal(t, tc.want, got, "id %d", tc.id)
+		assert.Equal(t, tc.hit, hit, "id %d", tc.id)
+	}
+}
+
+func TestShiftTreeShiftsOnlyTheAppBlock(t *testing.T) {
+	t.Parallel()
+	// The walk maps base+u -> u for every inode in the app's block and leaves
+	// everything else untouched; the chown itself is injected so the test can
+	// observe it without running as root.
+	dir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "home", "app"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "home", "app", "data.txt"), []byte("x"), 0o644))
+	me := os.Getuid()
+	var calls []string
+	record := func(path string, uid, gid int) error {
+		calls = append(calls, fmt.Sprintf("%s -> %d:%d", strings.TrimPrefix(path, dir), uid, gid))
+		return nil
+	}
+	// Everything in the fixture is owned by the current user: with the block
+	// starting at exactly that uid, every inode maps to container uid 0.
+	require.NoError(t, shiftTreeToRoot(dir, me, 65536, record))
+	assert.Contains(t, calls, " -> 0:0")
+	assert.Contains(t, calls, "/home/app/data.txt -> 0:0")
+	// With a block the fixture is NOT in, nothing is touched.
+	calls = nil
+	require.NoError(t, shiftTreeToRoot(dir, 1900000, 65536, record))
+	assert.Empty(t, calls)
+}
+
+func TestMigrateIdmapStorage(t *testing.T) {
+	t.Parallel()
+	m, _, r := newTestDeployManager(t)
+	r.emulateSubvolDelete = true
+	r.returns("inspect-internal rootid", "300\n")
+	require.NoError(t, m.store.AddApp(&store.App{Name: "blog", Port: 10000, Host: store.HostLocal, ImageTag: workspace.ImageTag()}))
+	a, err := m.store.App("blog")
+	require.NoError(t, err)
+	subvol := m.appSubvolume("blog")
+	require.NoError(t, os.MkdirAll(filepath.Join(subvol, "usr"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(subvol, "home", "app"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(subvol, "home", "app", "hostit.yml"), []byte("mode: static\n"), 0o644))
+	snap, err := m.TakeSnapshot("blog", "pre-idmap", false)
+	require.NoError(t, err)
+	// The app is running: it must be stopped for the shift and brought back up.
+	r.returns("is-active", "active")
+	r.reset()
+
+	require.NoError(t, m.MigrateIdmapStorage("v0.10.0"))
+	ran := r.ran()
+
+	// The container is recreated against the idmapped rootfs (config change),
+	// and the unit was stopped -- NOT disabled -- around the shift.
+	assert.Contains(t, ran, "systemctl stop "+m.unitName("blog"))
+	assert.NotContains(t, ran, "systemctl disable")
+	assert.Contains(t, ran, "podman rm --force "+m.containerName("blog"))
+	assert.Contains(t, ran, m.appSubvolume("blog")+":idmap")
+
+	// The rootfs gains the /etc/mtab symlink podman must not have to create.
+	target, err := os.Readlink(filepath.Join(subvol, "etc", "mtab"))
+	require.NoError(t, err)
+	assert.Equal(t, "../proc/self/mounts", target)
+
+	// Pre-idmap snapshots carry uid-baked ownership rollback can no longer use.
+	assert.Contains(t, ran, "btrfs subvolume delete "+m.snapshotPath("blog", snap.ID))
+	snaps, err := m.ListSnapshots("blog")
+	require.NoError(t, err)
+	for _, s := range snaps {
+		assert.NotEqual(t, snap.ID, s.ID, "the pre-idmap snapshot must be purged")
+	}
+	_ = a
+
+	// A second run is a no-op: the settings gate remembers.
+	r.reset()
+	require.NoError(t, m.MigrateIdmapStorage("v0.10.0"))
+	assert.NotContains(t, r.ran(), "systemctl stop", "an already migrated host must not be touched again")
+}
+
+func TestMigrateIdmapStorageLeavesAPoweredOffAppOff(t *testing.T) {
+	t.Parallel()
+	m, _, r := newTestDeployManager(t)
+	require.NoError(t, m.store.AddApp(&store.App{Name: "blog", Port: 10000, Host: store.HostLocal, ImageTag: workspace.ImageTag()}))
+	require.NoError(t, os.MkdirAll(filepath.Join(m.appSubvolume("blog"), "usr"), 0o755))
+	// No is-active stub: the unit is not running (a powered-off app).
+	r.reset()
+
+	require.NoError(t, m.MigrateIdmapStorage("v0.10.0"))
+	ran := r.ran()
+	assert.NotContains(t, ran, "podman create")
+	assert.NotContains(t, ran, "enable --now")
 }

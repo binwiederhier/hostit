@@ -6,7 +6,6 @@ import (
 
 	"heckel.io/hostit/snapshot"
 	"heckel.io/hostit/store"
-	"heckel.io/hostit/workspace"
 )
 
 const (
@@ -82,14 +81,9 @@ func (h snapshotHost) SnapshotsRoot(name string) string    { return h.m.snapshot
 func (h snapshotHost) SnapshotPath(name, id string) string { return h.m.snapshotPath(name, id) }
 func (h snapshotHost) UnitName(name string) string         { return h.m.unitName(name) }
 func (h snapshotHost) ContainerName(name string) string    { return h.m.containerName(name) }
-func (h snapshotHost) UIDForPort(port int) int             { return h.m.uidFor(port) }
 
 func (h snapshotHost) AssignBudget(name, subvolPath string) error {
 	return h.m.assignBudget(name, subvolPath)
-}
-
-func (h snapshotHost) Chown(path string, uid int) error {
-	return h.m.workspace.ChownTree(path, workspace.IDs{UID: uid, GID: uid})
 }
 
 // snapshotsRoot is where an app's snapshots live: <apps>/.snapshots/<id>/. Keyed

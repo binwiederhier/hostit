@@ -2,9 +2,11 @@ package app
 
 import (
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"syscall"
 	"time"
 
 	"heckel.io/hostit/store"
@@ -19,6 +21,10 @@ const (
 	// one-time unification migration (home folded into the rootfs, one
 	// subvolume per app); any recorded value means it ran.
 	settingStorageUnified = "storage-unified"
+	// settingStorageIdmap records the hostit version that completed the one-time
+	// move to idmapped rootfs mounts (trees root-owned, ownership mapped by the
+	// runtime); any recorded value means it ran.
+	settingStorageIdmap = "storage-idmap"
 	// legacyRootfsDirName is where the pre-unification layout kept the per-app
 	// rootfs subvolumes (beside the then-separate homes). Only the migrations
 	// still know this path: MigrateRootfsStorage stages rootfses here on a
@@ -81,27 +87,23 @@ func (m *Manager) MigrateRootfsStorage(version string) error {
 // (the unification migration then folds the home into it) and drop its old
 // snapshots. Budgets are left to the unification migration that runs right after.
 func (m *Manager) migrateAppStorage(a *store.App) error {
-	ids, err := m.lookupIDs(a.Name)
-	if err != nil {
-		return err
-	}
 	// An already-unified app (created by newer code, or moved by the unification
 	// migration) needs no legacy rootfs; there is nothing left to fold.
 	if m.appUnified(a) {
 		return nil
 	}
-	if err := m.ensureLegacyRootfs(a, ids); err != nil {
+	if err := m.ensureLegacyRootfs(a); err != nil {
 		return err
 	}
 	return m.purgeSnapshots(a.Name)
 }
 
 // ensureLegacyRootfs snapshots the app's pinned base into the legacy .rootfs
-// location, chowned to the app's id block -- what the workspace service did
-// before the unified layout. It lives here because only a pre-rootfs host
-// mid-migration ever needs a rootfs at this path; the unification migration
-// moves it onto the app subvolume moments later.
-func (m *Manager) ensureLegacyRootfs(a *store.App, ids workspace.IDs) error {
+// location. It lives here because only a pre-rootfs host mid-migration ever
+// needs a rootfs at this path; the unification migration moves it onto the app
+// subvolume moments later, and the idmap migration then leaves the whole tree
+// root-owned -- so no ownership is baked in here at all.
+func (m *Manager) ensureLegacyRootfs(a *store.App) error {
 	rootfs := m.legacyRootfsPath(a.ID)
 	if _, err := os.Stat(rootfs); err == nil {
 		return nil
@@ -116,7 +118,7 @@ func (m *Manager) ensureLegacyRootfs(a *store.App, ids workspace.IDs) error {
 	if err := m.btrfs.Snapshot(m.workspace.BasePath(tag), rootfs, false); err != nil {
 		return fmt.Errorf("cannot snapshot rootfs for %s: %w", a.Name, err)
 	}
-	return m.workspace.ChownTree(rootfs, ids)
+	return nil
 }
 
 // MigrateUnifiedStorage is the one-time migration that folds each app's home
@@ -287,4 +289,108 @@ func (m *Manager) purgeSnapshots(name string) error {
 		}
 	}
 	return nil
+}
+
+// MigrateIdmapStorage is the one-time migration to idmapped rootfs mounts: the
+// container maps the root-owned subvolume through its uid mapping, so nothing
+// is ever chowned into an app tree again. Existing trees have the app's uid
+// block baked in (the pre-idmap chown -R); every inode in that block shifts
+// back to its container-relative id (base+u -> u), the /etc/mtab symlink podman
+// must not create through the idmapped view is retrofitted, and pre-idmap
+// snapshots -- whose baked-in ownership rollback can no longer use -- are
+// dropped (owner's call, like every storage migration before it). Resumable:
+// the shift and the symlink are idempotent, and only a 100% pass records the
+// settings gate.
+func (m *Manager) MigrateIdmapStorage(version string) error {
+	settings, err := m.store.Settings()
+	if err != nil {
+		return err
+	}
+	if settings[settingStorageIdmap] != "" {
+		return nil
+	}
+	apps, err := m.store.Apps()
+	if err != nil {
+		return err
+	}
+	failed := 0
+	for _, a := range apps {
+		if err := m.migrateAppIdmap(a); err != nil {
+			slog.Warn("Idmap migration failed for app", "app", a.Name, "error", err)
+			failed++
+			continue
+		}
+		slog.Info("App moved to idmapped rootfs", "app", a.Name)
+	}
+	if failed > 0 {
+		return fmt.Errorf("idmap migration incomplete: %d of %d apps failed; retrying at next start", failed, len(apps))
+	}
+	slog.Info("Idmap migration complete", "apps", len(apps), "version", version)
+	return m.store.SetSetting(settingStorageIdmap, version)
+}
+
+// migrateAppIdmap moves one app onto the idmapped layout. The container is
+// stopped for the shift (its config hash changes anyway: the rootfs gained
+// :idmap) and a previously running app comes back up; a powered-off one stays
+// off, like in every other migration.
+func (m *Manager) migrateAppIdmap(a *store.App) error {
+	subvol := m.appSubvolumeByID(a.ID)
+	if _, err := os.Stat(subvol); err != nil {
+		return fmt.Errorf("no subvolume to migrate for %s: %w", a.Name, err)
+	}
+	wasRunning := m.isActive(a.Name)
+	_ = m.systemd.Stop(workspace.UnitName(a.ID))
+	_ = m.container.RemoveForce(workspace.ContainerName(a.ID))
+	// The block base derives from the port, exactly like the container's uid map.
+	if err := shiftTreeToRoot(subvol, m.uidFor(a.Port), workspace.UIDBlockSize, os.Lchown); err != nil {
+		return fmt.Errorf("cannot shift ownership of %s: %w", a.Name, err)
+	}
+	if err := workspace.WriteMtab(subvol); err != nil {
+		return fmt.Errorf("cannot write mtab for %s: %w", a.Name, err)
+	}
+	if err := m.purgeSnapshots(a.Name); err != nil {
+		return err
+	}
+	if wasRunning {
+		if _, err := m.Up(a.Name); err != nil {
+			slog.Warn("Cannot start app after idmap migration", "app", a.Name, "error", err)
+		}
+	}
+	return nil
+}
+
+// shiftID maps one owner id out of an app's contiguous block back to its
+// container-relative value (base+u -> u); ids outside the block -- real root,
+// nobody, another app's block -- are unchanged.
+func shiftID(id, base, count int) (int, bool) {
+	if id >= base && id < base+count {
+		return id - base, true
+	}
+	return id, false
+}
+
+// shiftTreeToRoot walks a subvolume and shifts every inode owned inside the
+// app's id block back to its container-relative owner. The chown is injected so
+// tests can observe the mapping without running as root; production passes
+// os.Lchown, which never follows the (tenant-plantable) final symlink.
+func shiftTreeToRoot(root string, base, count int, lchown func(path string, uid, gid int) error) error {
+	return filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		info, err := d.Info() // Lstat semantics: symlinks are not followed
+		if err != nil {
+			return err
+		}
+		st, ok := info.Sys().(*syscall.Stat_t)
+		if !ok {
+			return nil
+		}
+		uid, uidHit := shiftID(int(st.Uid), base, count)
+		gid, gidHit := shiftID(int(st.Gid), base, count)
+		if !uidHit && !gidHit {
+			return nil
+		}
+		return lchown(path, uid, gid)
+	})
 }

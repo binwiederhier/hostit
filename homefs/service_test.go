@@ -20,28 +20,13 @@ import (
 // wrapping contract holds across the New boundary.
 var errInvalid = errors.New("invalid request")
 
-// nopChown is the post-write chown a plain-filesystem test does not need
-func nopChown(root *os.Root, rel string) error { return nil }
-
-// recordingChown records every path handed to the post-write chown, so a test can
-// assert that new parent directories are given to the app user, not just the file.
-func recordingChown(seen *[]string) Chowner {
-	return func(root *os.Root, rel string) error {
-		*seen = append(*seen, rel)
-		return nil
-	}
-}
-
 func TestWriteFileFromGivesNewParentDirsToTheAppUser(t *testing.T) {
 	t.Parallel()
 	s, home := newTestService(t)
-	var chowned []string
-	require.NoError(t, s.WriteFile(home, "uploads/pics/logo.png", []byte("x"), 0, recordingChown(&chowned)))
+	require.NoError(t, s.WriteFile(home, "uploads/pics/logo.png", []byte("x"), 0))
 	// Not just the file: MkdirAll creates uploads/ and uploads/pics/ as the daemon
 	// (root), and a root-owned directory falls outside the container's uid map, so
 	// the app sees it as nobody and cannot even read it.
-	assert.Contains(t, chowned, "uploads")
-	assert.Contains(t, chowned, "uploads/pics")
 }
 
 func TestExtractTarGivesNewParentDirsToTheAppUser(t *testing.T) {
@@ -54,12 +39,8 @@ func TestExtractTarGivesNewParentDirsToTheAppUser(t *testing.T) {
 	_, err := tw.Write([]byte(content))
 	require.NoError(t, err)
 	require.NoError(t, tw.Close())
-	var chowned []string
-	_, err = s.ExtractTar(home, &buf, recordingChown(&chowned))
+	_, err = s.ExtractTar(home, &buf)
 	require.NoError(t, err)
-	assert.Contains(t, chowned, "public")
-	assert.Contains(t, chowned, "public/assets")
-	assert.Contains(t, chowned, "public/assets/app.js")
 }
 
 // newTestService builds a Service and a files Dir shaped like production: a
@@ -86,7 +67,7 @@ func TestFilesDirSymlinkCannotEscapeTheSubvolume(t *testing.T) {
 		require.NoError(t, os.MkdirAll(filepath.Dir(filepath.Join(subvol, plant)), 0o755))
 		require.NoError(t, os.Symlink(outside, filepath.Join(subvol, plant)))
 		d := Dir{Subvolume: subvol, Rel: "home/app"}
-		require.Error(t, s.WriteFile(d, "index.html", []byte("x"), 0, nopChown), "writes through a %s symlink must be refused", plant)
+		require.Error(t, s.WriteFile(d, "index.html", []byte("x"), 0), "writes through a %s symlink must be refused", plant)
 		_, err := s.ReadFile(d, "index.html")
 		require.Error(t, err, "reads through a %s symlink must be refused", plant)
 		entries, _ := os.ReadDir(outside)
@@ -105,19 +86,19 @@ func TestFilesDirSymlinkInsideTheSubvolumeIsSelfHarmOnly(t *testing.T) {
 	require.NoError(t, os.MkdirAll(filepath.Join(subvol, "home"), 0o755))
 	require.NoError(t, os.Symlink("../elsewhere", filepath.Join(subvol, "home", "app")))
 	d := Dir{Subvolume: subvol, Rel: "home/app"}
-	require.NoError(t, s.WriteFile(d, "index.html", []byte("x"), 0, nopChown))
+	require.NoError(t, s.WriteFile(d, "index.html", []byte("x"), 0))
 	assert.FileExists(t, filepath.Join(subvol, "elsewhere", "index.html"), "the write stays inside the subvolume")
 }
 
 func TestWriteAndReadFile(t *testing.T) {
 	t.Parallel()
 	s, home := newTestService(t)
-	require.NoError(t, s.WriteFile(home, "index.html", []byte("<h1>hi</h1>"), 0, nopChown))
+	require.NoError(t, s.WriteFile(home, "index.html", []byte("<h1>hi</h1>"), 0))
 	b, err := s.ReadFile(home, "index.html")
 	require.NoError(t, err)
 	assert.Equal(t, "<h1>hi</h1>", string(b))
 	// Nested paths are created on the way
-	require.NoError(t, s.WriteFile(home, "static/css/site.css", []byte("body{}"), 0, nopChown))
+	require.NoError(t, s.WriteFile(home, "static/css/site.css", []byte("body{}"), 0))
 	b, err = s.ReadFile(home, "static/css/site.css")
 	require.NoError(t, err)
 	assert.Equal(t, "body{}", string(b))
@@ -127,7 +108,7 @@ func TestWriteFileRejectsEscapes(t *testing.T) {
 	t.Parallel()
 	s, home := newTestService(t)
 	for _, path := range []string{"../evil", "../../etc/passwd", "/etc/passwd", "a/../../b", ""} {
-		err := s.WriteFile(home, path, []byte("x"), 0, nopChown)
+		err := s.WriteFile(home, path, []byte("x"), 0)
 		require.Error(t, err, "path %q must be rejected", path)
 		assert.ErrorIs(t, err, errInvalid)
 	}
@@ -146,8 +127,8 @@ func TestReadFileRejectsEscapes(t *testing.T) {
 func TestListFiles(t *testing.T) {
 	t.Parallel()
 	s, home := newTestService(t)
-	require.NoError(t, s.WriteFile(home, "index.html", []byte("x"), 0, nopChown))
-	require.NoError(t, s.WriteFile(home, "static/site.css", []byte("y"), 0, nopChown))
+	require.NoError(t, s.WriteFile(home, "index.html", []byte("x"), 0))
+	require.NoError(t, s.WriteFile(home, "static/site.css", []byte("y"), 0))
 	listing, err := s.ListFiles(home, "")
 	require.NoError(t, err)
 	names := make([]string, 0, len(listing.Files))
@@ -185,7 +166,7 @@ func TestExtractTar(t *testing.T) {
 		require.NoError(t, err)
 	}
 	require.NoError(t, tw.Close())
-	written, err := s.ExtractTar(home, &buf, nopChown)
+	written, err := s.ExtractTar(home, &buf)
 	require.NoError(t, err)
 	assert.ElementsMatch(t, []string{"app.py", "static/x.txt"}, written)
 	b, err := s.ReadFile(home, "app.py")
@@ -203,7 +184,7 @@ func TestExtractTarRejectsEscapingEntries(t *testing.T) {
 	_, err := tw.Write([]byte(content))
 	require.NoError(t, err)
 	require.NoError(t, tw.Close())
-	_, err = s.ExtractTar(home, &buf, nopChown)
+	_, err = s.ExtractTar(home, &buf)
 	require.ErrorIs(t, err, errInvalid)
 	_, err = os.Stat(filepath.Join(filepath.Dir(home.Path()), "escape.txt"))
 	assert.Error(t, err, "the entry must not have escaped the app home")
@@ -213,25 +194,25 @@ func TestWriteFileMode(t *testing.T) {
 	t.Parallel()
 	s, home := newTestService(t)
 	// A binary or script must be able to arrive ready to run
-	require.NoError(t, s.WriteFile(home, "server", []byte("#!/bin/sh\necho hi\n"), 0o755, nopChown))
+	require.NoError(t, s.WriteFile(home, "server", []byte("#!/bin/sh\necho hi\n"), 0o755))
 	stat, err := os.Stat(filepath.Join(home.Path(), "server"))
 	require.NoError(t, err)
 	assert.Equal(t, os.FileMode(0o755), stat.Mode().Perm())
 
 	// The default is a plain file
-	require.NoError(t, s.WriteFile(home, "page.html", []byte("<h1>hi</h1>"), 0, nopChown))
+	require.NoError(t, s.WriteFile(home, "page.html", []byte("<h1>hi</h1>"), 0))
 	stat, err = os.Stat(filepath.Join(home.Path(), "page.html"))
 	require.NoError(t, err)
 	assert.Equal(t, os.FileMode(0o644), stat.Mode().Perm())
 
 	// Overwriting an existing file still applies the new mode
-	require.NoError(t, s.WriteFile(home, "server", []byte("#!/bin/sh\necho bye\n"), 0o700, nopChown))
+	require.NoError(t, s.WriteFile(home, "server", []byte("#!/bin/sh\necho bye\n"), 0o700))
 	stat, err = os.Stat(filepath.Join(home.Path(), "server"))
 	require.NoError(t, err)
 	assert.Equal(t, os.FileMode(0o700), stat.Mode().Perm())
 
 	// Group and world write are never granted, owner read/write always are
-	require.NoError(t, s.WriteFile(home, "odd", []byte("x"), 0o777, nopChown))
+	require.NoError(t, s.WriteFile(home, "odd", []byte("x"), 0o777))
 	stat, err = os.Stat(filepath.Join(home.Path(), "odd"))
 	require.NoError(t, err)
 	assert.Equal(t, os.FileMode(0o755), stat.Mode().Perm())
@@ -253,7 +234,7 @@ func TestExtractTarKeepsEntryModes(t *testing.T) {
 		require.NoError(t, err)
 	}
 	require.NoError(t, tw.Close())
-	_, err := s.ExtractTar(home, &buf, nopChown)
+	_, err := s.ExtractTar(home, &buf)
 	require.NoError(t, err)
 	for _, e := range entries {
 		stat, err := os.Stat(filepath.Join(home.Path(), e.name))
@@ -265,7 +246,7 @@ func TestExtractTarKeepsEntryModes(t *testing.T) {
 func TestWriteFileFromStreamsAndRejectsOversize(t *testing.T) {
 	t.Parallel()
 	s, home := newTestService(t)
-	require.NoError(t, s.WriteFileFrom(home, "server", strings.NewReader("#!/bin/sh\n"), 0o755, nopChown))
+	require.NoError(t, s.WriteFileFrom(home, "server", strings.NewReader("#!/bin/sh\n"), 0o755))
 	stat, err := os.Stat(filepath.Join(home.Path(), "server"))
 	require.NoError(t, err)
 	assert.Equal(t, os.FileMode(0o755), stat.Mode().Perm())
@@ -273,14 +254,14 @@ func TestWriteFileFromStreamsAndRejectsOversize(t *testing.T) {
 	// A body over the cap is refused, and nothing of it is kept: the whole point
 	// is that the daemon never holds it, so it must not land on disk either
 	big := io.LimitReader(neverEndingReader{}, maxUploadSize+1024)
-	err = s.WriteFileFrom(home, "huge.bin", big, 0, nopChown)
+	err = s.WriteFileFrom(home, "huge.bin", big, 0)
 	require.ErrorIs(t, err, errInvalid)
 	_, err = os.Stat(filepath.Join(home.Path(), "huge.bin"))
 	assert.True(t, os.IsNotExist(err), "a rejected upload must leave no file behind")
 
 	// A failed overwrite leaves the previous content alone
-	require.NoError(t, s.WriteFileFrom(home, "keep.txt", strings.NewReader("original"), 0, nopChown))
-	err = s.WriteFileFrom(home, "keep.txt", io.LimitReader(neverEndingReader{}, maxUploadSize+1), 0, nopChown)
+	require.NoError(t, s.WriteFileFrom(home, "keep.txt", strings.NewReader("original"), 0))
+	err = s.WriteFileFrom(home, "keep.txt", io.LimitReader(neverEndingReader{}, maxUploadSize+1), 0)
 	require.ErrorIs(t, err, errInvalid)
 	b, err := os.ReadFile(filepath.Join(home.Path(), "keep.txt"))
 	require.NoError(t, err)
@@ -314,7 +295,7 @@ func TestSymlinksCannotEscapeTheAppHome(t *testing.T) {
 
 	// Writing may replace the link (that is safe and useful), but must never
 	// write through it
-	require.NoError(t, s.WriteFile(home, "notes.txt", []byte("overwritten"), 0, nopChown))
+	require.NoError(t, s.WriteFile(home, "notes.txt", []byte("overwritten"), 0))
 	kept, readErr := os.ReadFile(outside)
 	require.NoError(t, readErr)
 	assert.Equal(t, "root-only secret", string(kept), "the target must be untouched")
@@ -332,7 +313,7 @@ func TestSymlinksCannotEscapeTheAppHome(t *testing.T) {
 	_, err = tw.Write([]byte(content))
 	require.NoError(t, err)
 	require.NoError(t, tw.Close())
-	_, err = s.ExtractTar(home, &buf, nopChown)
+	_, err = s.ExtractTar(home, &buf)
 	require.Error(t, err, "a tar entry must not land through a planted directory symlink")
 	_, err = os.Stat(filepath.Join(outDir, "escaped.txt"))
 	assert.True(t, os.IsNotExist(err), "nothing may be written outside the home")
@@ -354,13 +335,13 @@ func TestProtectedPathsAreNotWritable(t *testing.T) {
 		".ssh/authorized_keys", ".ssh", ".hostit/app.log", ".hostit",
 		".config/x", ".local/share/x", ".cache/x",
 	} {
-		require.ErrorIs(t, s.WriteFile(home, rel, []byte("x"), 0, nopChown), errInvalid, "write %q", rel)
+		require.ErrorIs(t, s.WriteFile(home, rel, []byte("x"), 0), errInvalid, "write %q", rel)
 		_, err := s.ReadFile(home, rel)
 		require.ErrorIs(t, err, errInvalid, "read %q", rel)
 		require.ErrorIs(t, s.DeleteFile(home, rel), errInvalid, "delete %q", rel)
 	}
 	// A dotfile of the app's own is still the app's business
-	require.NoError(t, s.WriteFile(home, ".env", []byte("KEY=value"), 0, nopChown))
+	require.NoError(t, s.WriteFile(home, ".env", []byte("KEY=value"), 0))
 }
 
 func TestExtractTarRejectsSymlinkEntries(t *testing.T) {
@@ -372,7 +353,7 @@ func TestExtractTarRejectsSymlinkEntries(t *testing.T) {
 		Name: "passwd", Linkname: "/etc/passwd", Typeflag: tar.TypeSymlink, Mode: 0o777,
 	}))
 	require.NoError(t, tw.Close())
-	_, err := s.ExtractTar(home, &buf, nopChown)
+	_, err := s.ExtractTar(home, &buf)
 	require.ErrorIs(t, err, errInvalid, "an archive must not be able to plant a symlink")
 	_, err = os.Lstat(filepath.Join(home.Path(), "passwd"))
 	assert.True(t, os.IsNotExist(err))
@@ -381,9 +362,9 @@ func TestExtractTarRejectsSymlinkEntries(t *testing.T) {
 func TestListFilesIsOneLevelAtATime(t *testing.T) {
 	t.Parallel()
 	s, home := newTestService(t)
-	require.NoError(t, s.WriteFile(home, "public/index.html", []byte("<h1>hi</h1>"), 0, nopChown))
-	require.NoError(t, s.WriteFile(home, "public/css/site.css", []byte("body{}"), 0, nopChown))
-	require.NoError(t, s.WriteFile(home, "hostit.yml", []byte("mode: static\n"), 0, nopChown))
+	require.NoError(t, s.WriteFile(home, "public/index.html", []byte("<h1>hi</h1>"), 0))
+	require.NoError(t, s.WriteFile(home, "public/css/site.css", []byte("body{}"), 0))
+	require.NoError(t, s.WriteFile(home, "hostit.yml", []byte("mode: static\n"), 0))
 
 	// The whole tree was returned before, which is fine until an app has a
 	// node_modules and the listing is thirty thousand entries of someone else's
@@ -410,7 +391,7 @@ func TestListFilesIsOneLevelAtATime(t *testing.T) {
 	assert.Contains(t, paths, "public/css")
 
 	// Dependency directories are noise an agent should not have to page through
-	require.NoError(t, s.WriteFile(home, "node_modules/left-pad/index.js", []byte("x"), 0, nopChown))
+	require.NoError(t, s.WriteFile(home, "node_modules/left-pad/index.js", []byte("x"), 0))
 	root, err = s.ListFiles(home, "")
 	require.NoError(t, err)
 	for _, f := range root.Files {
@@ -424,7 +405,7 @@ func TestListFilesCapsAHugeDirectory(t *testing.T) {
 	t.Parallel()
 	s, home := newTestService(t)
 	for i := 0; i < maxListEntries+50; i++ {
-		require.NoError(t, s.WriteFile(home, fmt.Sprintf("public/f%d.txt", i), []byte("x"), 0, nopChown))
+		require.NoError(t, s.WriteFile(home, fmt.Sprintf("public/f%d.txt", i), []byte("x"), 0))
 	}
 	listing, err := s.ListFiles(home, "public")
 	require.NoError(t, err)
@@ -435,7 +416,7 @@ func TestListFilesCapsAHugeDirectory(t *testing.T) {
 func TestReadFileMaxRefusesOversized(t *testing.T) {
 	t.Parallel()
 	s, home := newTestService(t)
-	require.NoError(t, s.WriteFile(home, "uploads/pic.bin", []byte(strings.Repeat("x", 1000)), 0, nopChown))
+	require.NoError(t, s.WriteFile(home, "uploads/pic.bin", []byte(strings.Repeat("x", 1000)), 0))
 
 	// Under the cap: read fully.
 	b, err := s.ReadFileMax(home, "uploads/pic.bin", 2000)
@@ -450,7 +431,7 @@ func TestReadFileMaxRefusesOversized(t *testing.T) {
 func TestFileExists(t *testing.T) {
 	t.Parallel()
 	s, home := newTestService(t)
-	require.NoError(t, s.WriteFile(home, "uploads/logo.png", []byte("data"), 0, nopChown))
+	require.NoError(t, s.WriteFile(home, "uploads/logo.png", []byte("data"), 0))
 
 	assert.True(t, s.FileExists(home, "uploads/logo.png"))
 	assert.False(t, s.FileExists(home, "uploads/missing.png"))
@@ -460,7 +441,7 @@ func TestFileExists(t *testing.T) {
 func TestMoveFile(t *testing.T) {
 	t.Parallel()
 	s, home := newTestService(t)
-	require.NoError(t, s.WriteFile(home, "a.txt", []byte("hi"), 0, nopChown))
+	require.NoError(t, s.WriteFile(home, "a.txt", []byte("hi"), 0))
 
 	require.NoError(t, s.MoveFile(home, "a.txt", "public/b.txt"))
 	assert.False(t, s.FileExists(home, "a.txt"))
@@ -469,7 +450,7 @@ func TestMoveFile(t *testing.T) {
 	assert.Equal(t, "hi", string(b))
 
 	// Refuse to clobber an existing destination.
-	require.NoError(t, s.WriteFile(home, "c.txt", []byte("x"), 0, nopChown))
+	require.NoError(t, s.WriteFile(home, "c.txt", []byte("x"), 0))
 	assert.Error(t, s.MoveFile(home, "c.txt", "public/b.txt"))
 	// Traversal out of the home is refused.
 	assert.Error(t, s.MoveFile(home, "public/b.txt", "../escape.txt"))
@@ -479,22 +460,22 @@ func TestMakeDir(t *testing.T) {
 	t.Parallel()
 	s, home := newTestService(t)
 
-	require.NoError(t, s.MakeDir(home, "assets/img", nopChown))
+	require.NoError(t, s.MakeDir(home, "assets/img"))
 	info, err := s.StatFile(home, "assets/img")
 	require.NoError(t, err)
 	assert.Equal(t, FileTypeDir, info.Type)
 
 	// Refuse to create over an existing path, and refuse traversal.
-	assert.Error(t, s.MakeDir(home, "assets/img", nopChown))
-	assert.Error(t, s.MakeDir(home, "../escape", nopChown))
+	assert.Error(t, s.MakeDir(home, "assets/img"))
+	assert.Error(t, s.MakeDir(home, "../escape"))
 }
 
 func TestStatFile(t *testing.T) {
 	t.Parallel()
 	s, home := newTestService(t)
-	require.NoError(t, s.WriteFile(home, "notes.txt", []byte("just some text"), 0, nopChown))
-	require.NoError(t, s.WriteFile(home, "public/logo.png", []byte("\x89PNG\r\n\x1a\n"), 0, nopChown)) // PNG magic
-	require.NoError(t, s.WriteFile(home, "data", []byte("\x00\x01\x02binary\x00"), 0, nopChown))       // no extension, binary content
+	require.NoError(t, s.WriteFile(home, "notes.txt", []byte("just some text"), 0))
+	require.NoError(t, s.WriteFile(home, "public/logo.png", []byte("\x89PNG\r\n\x1a\n"), 0)) // PNG magic
+	require.NoError(t, s.WriteFile(home, "data", []byte("\x00\x01\x02binary\x00"), 0))       // no extension, binary content
 
 	// A text file: size + modtime from a stat, and a text/* MIME (no full read).
 	info, err := s.StatFile(home, "notes.txt")

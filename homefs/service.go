@@ -6,9 +6,8 @@
 // (the container's rootfs), so callers locate it as a Dir -- the root-controlled
 // subvolume path plus the files path inside it -- and OpenRoot resolves the inner
 // path within the subvolume's own os.Root, never as a plain host path. The Service
-// is stateless per call. Giving a just-created path to the app user is a hostit
-// concern, not a plain-filesystem one, so it is injected as a Chowner callback and
-// run through the same root the write used.
+// is stateless per call. Everything it writes stays root-owned: the idmapped
+// rootfs maps disk root to container root, so ownership is never handed out.
 package homefs
 
 import (
@@ -35,10 +34,10 @@ const (
 	maxUploadSize = 64 * 1024 * 1024
 	// defaultFileMode is what an upload gets when it does not ask for a mode
 	defaultFileMode = 0o644
-	// homeMode is the app home's permissions when this package must create it
-	// defensively: the app user and hostit only. It matches the mode useradd gives
-	// the home, so a home created here looks the same as one set up elsewhere.
-	homeMode = 0o750
+	// homeMode is the files dir's permissions when this package must recreate it
+	// (a tenant deleted their own home/app): root-owned but world-traversable,
+	// matching what the workspace service creates.
+	homeMode = 0o755
 	// tempPrefix marks the scratch file an upload streams into before it is
 	// renamed into place; callers may not write names that start with it
 	tempPrefix = ".hostit-upload-"
@@ -85,13 +84,6 @@ type Listing struct {
 	Truncated bool        `json:"truncated"`
 }
 
-// Chowner gives a just-created path (relative to the app home) to the app user. It
-// is called through the same os.Root the write used, so an app owner cannot swap an
-// intermediate directory for a symlink and redirect the root daemon's chown onto a
-// host path. Injected by the caller because ownership is a hostit concern, not a
-// plain-filesystem one.
-type Chowner func(root *os.Root, rel string) error
-
 // Dir locates an app's files directory. Subvolume is the app subvolume path,
 // which only root controls; Rel is the files directory inside it ("home/app"),
 // whose path components live in the tenant-owned tree and are therefore resolved
@@ -124,17 +116,18 @@ func New(errInvalid error) *Service {
 	return &Service{errInvalid: errInvalid}
 }
 
-// WriteFile writes a file below the app's home directory, creating parent
-// directories, and gives it to the app user. A zero mode means the default;
-// anything else is used as-is, so a binary or script can arrive executable.
-func (s *Service) WriteFile(home Dir, relPath string, content []byte, mode os.FileMode, chown Chowner) error {
-	return s.WriteFileFrom(home, relPath, bytes.NewReader(content), mode, chown)
+// WriteFile writes a file below the app's files directory, creating parent
+// directories. Everything stays root-owned: the idmapped rootfs maps disk root
+// to container root, so the app sees these as its own. A zero mode means the
+// default; anything else is used as-is, so a binary can arrive executable.
+func (s *Service) WriteFile(home Dir, relPath string, content []byte, mode os.FileMode) error {
+	return s.WriteFileFrom(home, relPath, bytes.NewReader(content), mode)
 }
 
 // WriteFileFrom is WriteFile for a stream, so an upload never has to exist in
 // memory. It writes to a temporary file and renames on success: a body that
 // turns out to be too big leaves neither a partial file nor a damaged old one.
-func (s *Service) WriteFileFrom(home Dir, relPath string, r io.Reader, mode os.FileMode, chown Chowner) error {
+func (s *Service) WriteFileFrom(home Dir, relPath string, r io.Reader, mode os.FileMode) error {
 	rel, err := s.safeRel(relPath)
 	if err != nil {
 		return err
@@ -145,9 +138,6 @@ func (s *Service) WriteFileFrom(home Dir, relPath string, r io.Reader, mode os.F
 	}
 	defer root.Close()
 	if err := root.MkdirAll(path.Dir(rel), 0o755); err != nil {
-		return err
-	}
-	if err := chownParents(root, rel, chown); err != nil {
 		return err
 	}
 	tmpRel := path.Join(path.Dir(rel), tempPrefix+randomSuffix())
@@ -173,32 +163,7 @@ func (s *Service) WriteFileFrom(home Dir, relPath string, r io.Reader, mode os.F
 	if err := root.Chmod(tmpRel, fileMode(mode)); err != nil {
 		return err
 	}
-	if err := chown(root, tmpRel); err != nil {
-		return err
-	}
 	return root.Rename(tmpRel, rel)
-}
-
-// chownParents gives every parent directory of rel to the app user. MkdirAll
-// creates missing parents as the daemon (root); a root-owned directory falls
-// outside the container's uid map, so without this an upload or deploy that first
-// creates uploads/ or public/ leaves it owned by host root -- the app then sees it
-// as nobody and cannot read or even chown it. Re-chowning a parent that already
-// belonged to the app is harmless, so there is no need to track which MkdirAll
-// actually created. It runs through the same os.Root as the write, so a planted
-// symlink cannot redirect the chown out of the home.
-func chownParents(root *os.Root, rel string, chown Chowner) error {
-	dir := path.Dir(rel)
-	if dir == "." || dir == "/" {
-		return nil
-	}
-	parts := strings.Split(dir, "/")
-	for i := range parts {
-		if err := chown(root, path.Join(parts[:i+1]...)); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 // randomSuffix names an upload's scratch file; concurrent uploads of the same
@@ -310,10 +275,10 @@ func (s *Service) MoveFile(home Dir, fromRel, toRel string) error {
 	return root.Rename(from, to)
 }
 
-// MakeDir creates a directory (and any missing parents) below the app's home and
-// gives it to the app user, so the file browser can add an empty folder. It
-// refuses a path that already exists rather than silently succeeding.
-func (s *Service) MakeDir(home Dir, relPath string, chown Chowner) error {
+// MakeDir creates a directory (and any missing parents) below the app's files
+// dir, so the file browser can add an empty folder. It refuses a path that
+// already exists rather than silently succeeding.
+func (s *Service) MakeDir(home Dir, relPath string) error {
 	rel, err := s.safeRel(relPath)
 	if err != nil {
 		return err
@@ -326,10 +291,7 @@ func (s *Service) MakeDir(home Dir, relPath string, chown Chowner) error {
 	if _, err := root.Stat(rel); err == nil {
 		return fmt.Errorf("%w: %s already exists", s.errInvalid, relPath)
 	}
-	if err := root.MkdirAll(rel, 0o755); err != nil {
-		return err
-	}
-	return chown(root, rel)
+	return root.MkdirAll(rel, 0o755)
 }
 
 // StatFile returns metadata for a single file (or directory) without reading its
@@ -430,7 +392,7 @@ func (s *Service) ListFiles(home Dir, dir string) (*Listing, error) {
 
 // ExtractTar unpacks an uploaded tar archive into the app's home directory and
 // returns the paths it wrote. Entries that would escape the home are refused.
-func (s *Service) ExtractTar(home Dir, r io.Reader, chown Chowner) ([]string, error) {
+func (s *Service) ExtractTar(home Dir, r io.Reader) ([]string, error) {
 	root, err := s.OpenRoot(home)
 	if err != nil {
 		return nil, err
@@ -464,9 +426,6 @@ func (s *Service) ExtractTar(home Dir, r io.Reader, chown Chowner) ([]string, er
 			if err := root.MkdirAll(path.Dir(rel), 0o755); err != nil {
 				return nil, err
 			}
-			if err := chownParents(root, rel, chown); err != nil {
-				return nil, err
-			}
 			mode := fileMode(os.FileMode(header.Mode))
 			f, err := root.OpenFile(rel, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, mode)
 			if err != nil {
@@ -481,9 +440,6 @@ func (s *Service) ExtractTar(home Dir, r io.Reader, chown Chowner) ([]string, er
 				return nil, closeErr
 			}
 			if err := root.Chmod(rel, mode); err != nil {
-				return nil, err
-			}
-			if err := chown(root, rel); err != nil {
 				return nil, err
 			}
 			written = append(written, rel)

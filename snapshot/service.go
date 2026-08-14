@@ -74,10 +74,6 @@ type Host interface {
 	// UnitName and ContainerName are the app's systemd unit and container names.
 	UnitName(name string) string
 	ContainerName(name string) string
-	// UIDForPort is an app's base uid, for restoring ownership after a rollback.
-	UIDForPort(port int) int
-	// Chown restores ownership of a rolled-back subvolume to the app's uid.
-	Chown(path string, uid int) error
 	// AssignBudget joins a subvolume to the app's disk budget qgroup. Every
 	// subvolume this service creates must join, or extents the app subvolume
 	// shares with a snapshot become reachable outside the group and stop counting
@@ -215,8 +211,9 @@ func (s *Service) Rollback(name, id string) error {
 	if snap.AppName != name {
 		return store.ErrSnapshotNotFound
 	}
-	a, err := s.store.App(name)
-	if err != nil {
+	// The app row is only checked for existence: everything below keys on the
+	// name/id paths the host callbacks resolve.
+	if _, err := s.store.App(name); err != nil {
 		return err
 	}
 	defer s.host.StateChanged(name)
@@ -266,10 +263,8 @@ func (s *Service) Rollback(name, id string) error {
 	}
 	_ = s.btrfs.DeleteSubvolume(oldSubvol)
 
-	uid := s.host.UIDForPort(a.Port)
-	if err := s.host.Chown(subvol, uid); err != nil {
-		slog.Warn("Cannot restore ownership after rollback", "app", name, "error", err)
-	}
+	// No ownership to restore: the whole tree is root-owned and idmap-mounted,
+	// and snapshots carry that with them.
 	// No quota to restore: the cap lives on the app's budget qgroup, and the new
 	// subvolume was assigned to it when it was staged above.
 	// No extra pre-deploy snapshot: we already took the safety snapshot above.

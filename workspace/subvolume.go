@@ -20,17 +20,17 @@ const (
 	// hiddenDirMode keeps .bases root-only; apps reach their subvolume through
 	// the container runtime, never by path.
 	hiddenDirMode = 0o700
-	// filesDirMode is home/app inside a fresh app subvolume: the app user and
-	// hostit only, matching what useradd gives a home.
-	filesDirMode = 0o750
+	// filesDirMode is home/app inside a fresh app subvolume. Root-owned like the
+	// whole idmapped tree, but world-traversable: sshd, running as the app user,
+	// must reach .ssh/authorized_keys through it on the HOST side.
+	filesDirMode = 0o755
+	// mtabLink is the /etc/mtab symlink every rootfs must carry: podman skips
+	// creating it when present, and creating it through an idmapped rootfs is
+	// exactly what EOVERFLOWs on podman 4.9.
+	mtabLink = "../proc/self/mounts"
 	// exportTimeout bounds a base export (podman export | tar). Measured at ~40s
 	// for the current ~860 MB image; generous headroom for a loaded small host.
 	exportTimeout = 15 * time.Minute
-	// chownTimeout bounds a recursive chown of an app tree. The inode count under
-	// it is tenant-controlled (many empty files fit in a small quota), so the walk
-	// must not be allowed to hold a request forever; measured at ~1.6s for the
-	// base's ~57k files, so the bound only cuts off pathological trees.
-	chownTimeout = 15 * time.Minute
 )
 
 // BasePath is the base subvolume for an image tag. The directory is named by the
@@ -58,7 +58,7 @@ func (s *Service) EnsureBase(tag string) error {
 	}
 	base := s.BasePath(tag)
 	if _, err := os.Stat(base); err == nil {
-		return nil
+		return s.ensureBaseMtab(base)
 	}
 	// Make sure the image to export exists. Only the current Containerfile can be
 	// built, so a missing OLD tag is unrecoverable -- and silently exporting the
@@ -74,7 +74,7 @@ func (s *Service) EnsureBase(tag string) error {
 	s.buildMu.Lock()
 	defer s.buildMu.Unlock()
 	if _, err := os.Stat(base); err == nil {
-		return nil // Someone exported it while we waited
+		return s.ensureBaseMtab(base) // Someone exported it while we waited
 	}
 	if err := os.MkdirAll(filepath.Dir(base), hiddenDirMode); err != nil {
 		return err
@@ -108,6 +108,12 @@ func (s *Service) EnsureBase(tag string) error {
 		return fmt.Errorf("cannot export base rootfs for %s: %w", tag, err)
 	}
 	_ = s.container.RemoveForce(ctr)
+	// A created-but-never-started container has no /etc/mtab; add the symlink
+	// before sealing, so podman never has to create it through the idmapped view.
+	if err := WriteMtab(tmp); err != nil {
+		_ = s.btrfs.DeleteSubvolume(tmp)
+		return fmt.Errorf("cannot write mtab into base rootfs for %s: %w", tag, err)
+	}
 	if err := s.btrfs.SetReadOnly(tmp, true); err != nil {
 		_ = s.btrfs.DeleteSubvolume(tmp)
 		return fmt.Errorf("cannot seal base rootfs for %s: %w", tag, err)
@@ -130,7 +136,7 @@ func (s *Service) EnsureBase(tag string) error {
 // config under /etc) live in it, and new base tags affect only NEW apps. If the
 // subvolume exists, this returns without touching it -- whatever the current
 // image or base is.
-func (s *Service) EnsureAppSubvolume(a *store.App, ids IDs) error {
+func (s *Service) EnsureAppSubvolume(a *store.App) error {
 	subvol := s.AppSubvolumePath(a.ID)
 	if _, err := os.Stat(subvol); err == nil {
 		return nil
@@ -148,19 +154,15 @@ func (s *Service) EnsureAppSubvolume(a *store.App, ids IDs) error {
 	if err := s.btrfs.Snapshot(s.BasePath(tag), subvol, false); err != nil {
 		return fmt.Errorf("cannot snapshot app subvolume for %s: %w", a.Name, err)
 	}
-	// The base may not ship a /home/app; create the files dir before the chown
-	// below so it belongs to the app's block like everything else.
-	if err := os.MkdirAll(filepath.Join(subvol, FilesDir), filesDirMode); err != nil {
-		return err
-	}
-	return s.ChownTree(subvol, ids)
+	// The base may not ship a /home/app; root-owned like the rest of the tree.
+	return os.MkdirAll(filepath.Join(subvol, FilesDir), filesDirMode)
 }
 
 // ForkAppSubvolume seeds a new app's subvolume from a seed subvolume: the
 // SOURCE app's subvolume (or a whole-app snapshot of it), so a fork carries the
 // source's files and installed packages in one CoW copy. Extents shared between
 // source and fork are exclusive to neither budget until they diverge; accepted.
-func (s *Service) ForkAppSubvolume(src, dstID string, ids IDs) error {
+func (s *Service) ForkAppSubvolume(src, dstID string) error {
 	dst := s.AppSubvolumePath(dstID)
 	if _, err := os.Stat(dst); err == nil {
 		return nil
@@ -171,7 +173,7 @@ func (s *Service) ForkAppSubvolume(src, dstID string, ids IDs) error {
 	if err := s.btrfs.Snapshot(src, dst, false); err != nil {
 		return fmt.Errorf("cannot fork app subvolume: %w", err)
 	}
-	return s.ChownTree(dst, ids)
+	return nil
 }
 
 // PruneOldBases removes base subvolumes that are neither the current tag nor
@@ -206,18 +208,6 @@ func (s *Service) PruneOldBases() {
 	}
 }
 
-// ChownTree hands a whole tree to an app's id block; shelled out because chown
-// -R over ~57k files is what the tool is fast at, and it records cleanly
-// through the runner in tests. Exported as THE recursive-chown for app trees
-// (fresh subvolumes, forks, rollbacks, migration staging), so the time bound
-// and the flag shape live in exactly one place.
-func (s *Service) ChownTree(path string, ids IDs) error {
-	if _, err := s.runner.RunTimeout(chownTimeout, "chown", "-R", fmt.Sprintf("%d:%d", ids.UID, ids.GID), path); err != nil {
-		return fmt.Errorf("cannot chown app tree %s: %w", path, err)
-	}
-	return nil
-}
-
 // baseDirName is the directory a tag's base lives in: the content hash after the
 // tag's colon (unique per tag, safe as a path element).
 func baseDirName(tag string) string {
@@ -225,4 +215,32 @@ func baseDirName(tag string) string {
 		return tag[i+1:]
 	}
 	return tag
+}
+
+// ensureBaseMtab retrofits the /etc/mtab symlink into a base exported before
+// mtab shipped with the export: unseal, link, reseal. A no-op when present.
+func (s *Service) ensureBaseMtab(base string) error {
+	if _, err := os.Lstat(filepath.Join(base, "etc", "mtab")); err == nil {
+		return nil
+	}
+	if err := s.btrfs.SetReadOnly(base, false); err != nil {
+		return err
+	}
+	if err := WriteMtab(base); err != nil {
+		return err
+	}
+	return s.btrfs.SetReadOnly(base, true)
+}
+
+// WriteMtab creates the /etc/mtab convention symlink inside a rootfs; exported
+// for the idmap migration, which retrofits it into existing app subvolumes.
+func WriteMtab(rootfs string) error {
+	if err := os.MkdirAll(filepath.Join(rootfs, "etc"), 0o755); err != nil {
+		return err
+	}
+	link := filepath.Join(rootfs, "etc", "mtab")
+	if _, err := os.Lstat(link); err == nil {
+		return nil
+	}
+	return os.Symlink(mtabLink, link)
 }

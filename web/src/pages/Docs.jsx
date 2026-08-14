@@ -362,8 +362,9 @@ const InstallPage = () => (
     <p>
       hostit is a single Go binary that runs as a root daemon on one Linux host (Debian or Ubuntu). It drives podman, systemd,
       nftables and btrfs, terminates TLS, and serves everything on this page. You need a host you control, root on it, a domain,
-      and the app homes on btrfs. Both root and btrfs are required, and hostit preflights them (plus podman, nft and btrfs
-      binaries) on start, failing with one clear message if something is missing.
+      the apps directory on btrfs, podman 4.3 or newer, and crun 1.29 or newer (app containers run their subvolume through an
+      idmapped rootfs mount). All of it is preflighted on start, failing with one clear message naming exactly what to fix.
+      Most distributions ship an older crun; the README shows the two-minute static-binary drop-in.
     </p>
     <h3>1. DNS</h3>
     <p>

@@ -52,9 +52,7 @@ func (nopUser) KillProcesses(username string) error { return nil }
 
 func (nopUser) Delete(username string) error { return nil }
 
-func (nopUser) WriteSkeleton(username, home string, files map[string]string) error { return nil }
-
-func (nopUser) ChownIn(root *os.Root, username, rel string) error { return nil }
+func (nopUser) WriteSkeleton(home string, files map[string]string) error { return nil }
 
 // nopSSH is an ssh.Interface that does nothing
 type nopSSH struct{}

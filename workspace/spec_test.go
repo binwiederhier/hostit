@@ -33,9 +33,9 @@ func TestContainerCreateArgsWorkspaceMode(t *testing.T) {
 	assert.Contains(t, cmd, "--env HOME=/home/app")
 	assert.Contains(t, cmd, "--workdir /home/app")
 	assert.Contains(t, cmd, "--publish 127.0.0.1:10000:80")
-	// A single contiguous id block, container 0 -> host 1001. The app subvolume
-	// is chowned to this block at creation, so a plain --rootfs works without any
-	// idmap-mount support from the runtime.
+	// A single contiguous id block, container 0 -> host 1001. The rootfs is
+	// idmap-mounted (see the :idmap trailer), so the root-owned subvolume
+	// appears as container-root's without any chown.
 	assert.Contains(t, cmd, "--uidmap 0:1001:65536")
 	assert.Contains(t, cmd, "--gidmap 0:1001:65536")
 	assert.NotContains(t, cmd, "--uidmap 0:1001:1")
@@ -50,7 +50,7 @@ func TestContainerCreateArgsWorkspaceMode(t *testing.T) {
 	assert.NotContains(t, cmd, imagePrefix)
 	// The agent supervises the run command as PID 1; podman's flag order is
 	// load-bearing: everything after --rootfs <path> is the container command.
-	assert.True(t, strings.HasSuffix(cmd, "--rootfs /srv/hostit/apps/appid123 /usr/bin/hostit agent"), cmd)
+	assert.True(t, strings.HasSuffix(cmd, "--rootfs /srv/hostit/apps/appid123:idmap /usr/bin/hostit agent"), cmd)
 }
 
 func TestCreateArgsOptionsAllPrecedeTheRootfs(t *testing.T) {
@@ -68,7 +68,7 @@ func TestCreateArgsOptionsAllPrecedeTheRootfs(t *testing.T) {
 		}
 	}
 	require.GreaterOrEqual(t, rootfsAt, 0)
-	assert.Equal(t, []string{"--rootfs", "/apps/appid123", "/usr/bin/hostit", "agent"}, args[rootfsAt:])
+	assert.Equal(t, []string{"--rootfs", "/apps/appid123:idmap", "/usr/bin/hostit", "agent"}, args[rootfsAt:])
 	for _, arg := range args[rootfsAt+1:] {
 		assert.False(t, strings.HasPrefix(arg, "--"), "option %q after --rootfs would become the container command", arg)
 	}
@@ -251,7 +251,7 @@ func TestWithConfigLabelInsertsBeforeTheTrailer(t *testing.T) {
 	require.Len(t, labeled, len(args)+2)
 	assert.Equal(t, "--label", labeled[len(labeled)-6])
 	assert.Equal(t, "hostit.config=abc123", labeled[len(labeled)-5])
-	assert.Equal(t, []string{"--rootfs", "/apps/appid123", "/usr/bin/hostit", "agent"}, labeled[len(labeled)-4:])
+	assert.Equal(t, []string{"--rootfs", "/apps/appid123:idmap", "/usr/bin/hostit", "agent"}, labeled[len(labeled)-4:])
 	// The original args are untouched around the insertion point.
 	assert.Equal(t, args[:len(args)-4], labeled[:len(labeled)-6])
 }

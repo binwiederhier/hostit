@@ -20,7 +20,7 @@ func TestCreateAppWiresSubvolumeAndBudget(t *testing.T) {
 	// block.
 	ran := r.ran()
 	assert.Contains(t, ran, "btrfs subvolume snapshot "+m.workspace.BasePath(a.ImageTag)+" "+m.appSubvolume("blog"))
-	assert.Contains(t, ran, fmt.Sprintf("chown -R %d:%d %s", m.uidFor(a.Port), m.uidFor(a.Port), m.appSubvolume("blog")))
+	assert.NotContains(t, ran, "chown", "the subvolume stays root-owned for the idmap mount")
 
 	// The budget group is keyed on the app's uid and the ONE subvolume joins it:
 	// files, installed software and (later) snapshots share one cap.

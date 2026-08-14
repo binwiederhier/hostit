@@ -3,6 +3,10 @@
 [![CI](https://github.com/binwiederhier/hostit/actions/workflows/ci.yml/badge.svg)](https://github.com/binwiederhier/hostit/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
+> **WARNING: hostit is EXPERIMENTAL software.** It is young, it moves fast, and
+> upgrades may include one-way storage migrations. Do not host anything you
+> cannot afford to lose or rebuild, and keep backups that live outside the box.
+
 **hostit** is a tiny self-hosted mini-app platform, built to be driven by AI agents
 (or humans) over SSH and a REST API. One binary. Each app gets:
 
@@ -52,11 +56,31 @@ a request, logging in over SSH, and an agent deploying.
 
 ## Install (server)
 
-Requirements: a Linux host with systemd, sshd, `podman` (plus `uidmap`, `passt` or
-`slirp4netns`, `dbus-user-session`), `nftables`, and `btrfs-progs`. hostit must run
-as **root**, and its app homes must be on **btrfs** (both are mandatory). On start
-it preflights these: it refuses to run if it is not root, if a required command is
-missing, or if the app-homes path is not btrfs, naming exactly what to fix.
+Requirements: a Linux host with systemd, sshd, `podman` **>= 4.3** (plus `uidmap`,
+`passt` or `slirp4netns`, `dbus-user-session`), `crun` **>= 1.29**, `nftables`, and
+`btrfs-progs`. hostit must run as **root**, and its apps directory must be on
+**btrfs** (all of this is mandatory). On start it preflights everything: it refuses
+to run if it is not root, if a required command is missing, if podman or crun are
+too old, or if the apps path is not btrfs, naming exactly what to fix.
+
+App containers run their root-owned subvolume via an **idmapped rootfs mount**
+(`--rootfs <subvolume>:idmap`), which needs a newer crun than most distributions
+ship (Ubuntu 24.04 has 1.14.1, which hard-fails). The fix is a two-minute drop-in
+of the official static binary; podman is pointed at it via `containers.conf`, so
+the distribution package stays untouched:
+
+```sh
+curl -L -o /usr/local/lib/hostit-crun \
+  https://github.com/containers/crun/releases/download/1.29.1/crun-1.29.1-linux-amd64
+chmod 0755 /usr/local/lib/hostit-crun
+mkdir -p /etc/containers/containers.conf.d
+cat > /etc/containers/containers.conf.d/50-hostit-crun.conf <<'EOF'
+[engine]
+runtime = "crun"
+[engine.runtimes]
+crun = ["/usr/local/lib/hostit-crun", "/usr/bin/crun"]
+EOF
+```
 
 Via the .deb (ships the binary, `hostit-shell`, a systemd unit and an example
 config):

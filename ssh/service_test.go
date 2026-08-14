@@ -27,7 +27,7 @@ func TestWriteAuthorizedKeysRefusesASymlinkedSSHDir(t *testing.T) {
 	root, err := os.OpenRoot(home)
 	require.NoError(t, err)
 	defer root.Close()
-	err = writeAuthorizedKeysIn(root, []string{keyA}, os.Getuid(), os.Getgid())
+	err = writeAuthorizedKeysIn(root, []string{keyA})
 	require.Error(t, err, "a symlinked .ssh must be refused")
 
 	_, err = os.Stat(filepath.Join(outside, "authorized_keys"))
@@ -40,11 +40,16 @@ func TestWriteAuthorizedKeysWritesARealSSHDir(t *testing.T) {
 	root, err := os.OpenRoot(home)
 	require.NoError(t, err)
 	defer root.Close()
-	require.NoError(t, writeAuthorizedKeysIn(root, []string{keyA}, os.Getuid(), os.Getgid()))
+	require.NoError(t, writeAuthorizedKeysIn(root, []string{keyA}))
 	b, err := os.ReadFile(filepath.Join(home, ".ssh", "authorized_keys"))
 	require.NoError(t, err)
 	assert.Contains(t, string(b), keyA)
+	// Root-owned and world-readable: sshd reads the keys as the app user on the
+	// host, StrictModes allows root-owned, and public keys are not secrets.
 	stat, err := os.Stat(filepath.Join(home, ".ssh"))
 	require.NoError(t, err)
-	assert.Equal(t, os.FileMode(0o700), stat.Mode().Perm())
+	assert.Equal(t, os.FileMode(0o755), stat.Mode().Perm())
+	fstat, err := os.Stat(filepath.Join(home, ".ssh", "authorized_keys"))
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o644), fstat.Mode().Perm())
 }

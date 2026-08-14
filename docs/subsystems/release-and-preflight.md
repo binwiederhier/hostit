@@ -79,6 +79,12 @@ failing lazily on the first app operation (`cmd/serve.go:execServe` calls
   reports the missing set at once (so an operator fixes them in one pass):
   `podman, btrfs, nft, systemctl, useradd, usermod, userdel, groupadd, groupmod,
   groupdel, pkill` (`requiredBinaries`).
+- The container runtime must support idmapped rootfs mounts
+  (`checkRuntimeVersions`): podman **>= 4.3** (the `--rootfs <path>:idmap`
+  syntax) and crun **>= 1.29** (validated; Ubuntu 24.04's 1.14.1 hard-fails).
+  The crun binary is resolved *through podman* (`podman info`), so a
+  `containers.conf` override pointing at a newer static binary -- the
+  documented install path -- is exactly what gets checked.
 
 **`requireBtrfs`** (`cmd/preflight.go`): the app-homes directory must be on a
 btrfs filesystem, or the daemon refuses to start. Checked after the directory is

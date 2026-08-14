@@ -153,7 +153,10 @@ func CreateArgs(conf *appctl.AppConfig, a *store.App, subvol, socketFile, hostit
 	// The trailer: the rootfs, then the command podman runs in it. Everything
 	// before it is an option, so a late-added label (WithConfigLabel) goes in just
 	// ahead of it; anything AFTER --rootfs would be taken as the container command.
-	args = append(args, "--rootfs", subvol, hostitBin, "agent")
+	// :idmap maps the root-owned subvolume through the container's uid mapping
+	// (disk root <-> container root), so no ownership is ever baked into the tree;
+	// requires a crun new enough to idmap a rootfs (preflight enforces it).
+	args = append(args, "--rootfs", subvol+":idmap", hostitBin, "agent")
 	return args
 }
 

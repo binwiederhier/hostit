@@ -12,7 +12,6 @@ import (
 	"os/exec"
 	"os/user"
 	"path"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -38,26 +37,23 @@ type Interface interface {
 	Rename(oldName, newName string) error
 	KillProcesses(username string) error
 	Delete(username string) error
-	WriteSkeleton(username, home string, files map[string]string) error
-	ChownIn(root *os.Root, username, rel string) error
+	WriteSkeleton(home string, files map[string]string) error
 }
 
 // Service creates and removes app users. It carries the deployment settings a new
-// account needs (login shell, supplementary group, home permissions), injected so
-// the package holds no host-specific policy of its own.
+// account needs (login shell, supplementary group), injected so the package
+// holds no host-specific policy of its own.
 type Service struct {
-	shell    string
-	group    string
-	homeMode os.FileMode
+	shell string
+	group string
 }
 
 var _ Interface = (*Service)(nil)
 
-// New builds a unixuser Service. shell is the app users' login shell, group is the
-// supplementary group that grants container entry, and homeMode is the app home's
-// permissions.
-func New(shell, group string, homeMode os.FileMode) *Service {
-	return &Service{shell: shell, group: group, homeMode: homeMode}
+// New builds a unixuser Service. shell is the app users' login shell and group
+// is the supplementary group that grants container entry.
+func New(shell, group string) *Service {
+	return &Service{shell: shell, group: group}
 }
 
 // Exists reports whether a user with this name already exists.
@@ -88,17 +84,11 @@ func (s *Service) Home(username string) (string, error) {
 	return u.HomeDir, nil
 }
 
-// Create creates the app user and its home directory; 0750 so other apps cannot
-// peek, and the hostit-shell login shell so SSH sessions land in the container.
-//
-// hostit makes the directory itself rather than letting useradd do it, because
-// useradd would copy /etc/skel in with it. An app's directory should hold the
-// app's files and hostit's own, not four dotfiles from the distribution that
-// its owner never asked for and an agent has to look past.
+// Create creates the app user. The home directory itself is NOT touched: it is
+// the files dir inside the app's (root-owned, idmap-mounted) subvolume, created
+// by the workspace service before this runs; useradd gets --no-create-home so it
+// neither makes it nor copies /etc/skel into it.
 func (s *Service) Create(username, home string, uid int) error {
-	if err := os.MkdirAll(filepath.Dir(home), 0o755); err != nil {
-		return err
-	}
 	// A prior app in this uid block can leave an orphan group at this gid: an app
 	// that was renamed (usermod --login does not rename its group) and then deleted,
 	// since userdel only auto-removes a group that still shares the user's name.
@@ -113,16 +103,7 @@ func (s *Service) Create(username, home string, uid int) error {
 		return err
 	}
 	args := createUserArgs(username, home, uid, s.shell, s.group)
-	if err := run(args[0], args[1:]...); err != nil {
-		return err
-	}
-	if err := os.MkdirAll(home, s.homeMode); err != nil {
-		return err
-	}
-	if err := os.Lchown(home, uid, uid); err != nil {
-		return err
-	}
-	return os.Chmod(home, s.homeMode)
+	return run(args[0], args[1:]...)
 }
 
 // createUserArgs is the useradd command for a new app user, pinned to a specific
@@ -237,11 +218,7 @@ func (s *Service) removeGroup(name string) {
 }
 
 // WriteSkeleton writes initial files into the app home, never overwriting existing ones
-func (s *Service) WriteSkeleton(username, home string, files map[string]string) error {
-	uid, gid, err := lookupIDs(username)
-	if err != nil {
-		return err
-	}
+func (s *Service) WriteSkeleton(home string, files map[string]string) error {
 	root, err := os.OpenRoot(home)
 	if err != nil {
 		return err
@@ -251,36 +228,18 @@ func (s *Service) WriteSkeleton(username, home string, files map[string]string) 
 		if _, err := root.Lstat(name); err == nil {
 			continue
 		}
-		// Skeleton paths may be nested (public/index.html), and each directory
-		// created on the way has to belong to the app user too
+		// Skeleton paths may be nested (public/index.html); root-owned like the
+		// whole idmapped tree
 		if dir := path.Dir(name); dir != "." {
 			if err := root.MkdirAll(dir, 0o755); err != nil {
-				return err
-			}
-			if err := root.Lchown(dir, uid, gid); err != nil {
 				return err
 			}
 		}
 		if err := root.WriteFile(name, []byte(content), 0o644); err != nil {
 			return err
 		}
-		if err := root.Lchown(name, uid, gid); err != nil {
-			return err
-		}
 	}
 	return nil
-}
-
-// ChownIn gives a path (relative to the app's home) to the app user, chowning
-// *through the app's os.Root* so an app owner cannot swap an intermediate directory
-// for a symlink and redirect the root daemon's chown onto a host path. Lchown, not
-// Chown, so the final component's symlink is not followed either.
-func (s *Service) ChownIn(root *os.Root, username, rel string) error {
-	uid, gid, err := lookupIDs(username)
-	if err != nil {
-		return err
-	}
-	return root.Lchown(rel, uid, gid)
 }
 
 // primaryGroupName returns a user's primary group name, or "" if it cannot be

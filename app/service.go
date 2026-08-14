@@ -98,7 +98,7 @@ func NewSystemServices(runner run.Runner) *Services {
 		Btrfs:     btrfs.New(runner),
 		Systemd:   systemd.New(runner),
 		Container: container.New(runner),
-		User:      unixuser.New(userShellFile, AppsGroup, homeMode),
+		User:      unixuser.New(userShellFile, AppsGroup),
 		SSH:       ssh.New(),
 		Firewall:  firewall.New(),
 		Runner:    runner,
@@ -282,17 +282,15 @@ func (m *Manager) create(name string, opts *CreateOptions, seedPath string) (*st
 	// Create the app's one subvolume: a fork snapshots the seed subvolume (an
 	// instant CoW copy of the source's whole OS tree, files included); a fresh
 	// app snapshots its pinned tag's base and gets an empty files dir at home/app
-	// that the skeleton then fills. The uid is a contiguous block derived from
-	// the (unique) port -- known before the Unix user exists -- so the container
-	// maps as a single offset and the subvolume is chowned once (see workspace.IDs).
+	// that the skeleton then fills. The tree stays root-owned: the container
+	// idmap-mounts it, so creation is a metadata snapshot and nothing more.
 	subvol := m.appSubvolumeByID(app.ID)
-	ids := workspace.IDs{UID: m.uidFor(port), GID: m.uidFor(port), Count: workspace.UIDBlockSize}
 	if forking {
-		if err := m.workspace.ForkAppSubvolume(seedPath, app.ID, ids); err != nil {
+		if err := m.workspace.ForkAppSubvolume(seedPath, app.ID); err != nil {
 			return nil, fmt.Errorf("cannot seed %s: %w", name, err)
 		}
 	} else {
-		if err := m.workspace.EnsureAppSubvolume(app, ids); err != nil {
+		if err := m.workspace.EnsureAppSubvolume(app); err != nil {
 			return nil, fmt.Errorf("cannot create app subvolume for %s: %w", name, err)
 		}
 	}
@@ -317,7 +315,7 @@ func (m *Manager) create(name string, opts *CreateOptions, seedPath string) (*st
 	}
 	// A fork keeps the source's files; only a fresh app gets the demo skeleton.
 	if !forking {
-		if err := m.user.WriteSkeleton(name, files.Path(), skeletonFiles(name, m.URL(&store.App{Name: name, Port: port}), workspace.Runtimes)); err != nil {
+		if err := m.user.WriteSkeleton(files.Path(), skeletonFiles(name, m.URL(&store.App{Name: name, Port: port}), workspace.Runtimes)); err != nil {
 			cleanup()
 			return nil, fmt.Errorf("cannot write skeleton for %s: %w", name, err)
 		}

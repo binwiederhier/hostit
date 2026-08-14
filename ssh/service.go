@@ -56,22 +56,23 @@ func ValidateKeys(keys []string) error {
 // the app subvolume), so a tenant symlink on the way to it cannot walk this
 // root-owned write anywhere else.
 func (s *Service) WriteAuthorizedKeys(root *os.Root, username string, keys []string) error {
-	uid, gid, err := lookupIDs(username)
-	if err != nil {
-		return err
-	}
-	return writeAuthorizedKeysIn(root, keys, uid, gid)
+	return writeAuthorizedKeysIn(root, keys)
 }
 
 // writeAuthorizedKeysIn merges the managed keys into the app's authorized_keys.
-// Everything goes through the root, and .ssh must be a real directory: the app
-// user owns this home, and a link here would have root writing SSH keys (and
-// handing out ownership) wherever they pointed it.
-func writeAuthorizedKeysIn(root *os.Root, keys []string, uid, gid int) error {
+// Everything goes through the root, and .ssh must be a real directory: a link
+// here would have root writing SSH keys wherever the tenant pointed it.
+//
+// Ownership and modes serve two readers at once. The HOST's sshd reads the file
+// as the app user, so the path must be user-traversable and the file readable;
+// root-owned satisfies StrictModes (owner must be root or the user). And through
+// the idmapped rootfs, disk-root IS container-root, so the tenant can still
+// hand-edit their own keys in a shell. Public keys are not secrets: 0644 is fine.
+func writeAuthorizedKeysIn(root *os.Root, keys []string) error {
 	if stat, err := root.Lstat(sshDir); err == nil && !stat.IsDir() {
 		return fmt.Errorf("%w: %s", ErrNotDirectory, sshDir)
 	}
-	if err := root.MkdirAll(sshDir, 0o700); err != nil {
+	if err := root.MkdirAll(sshDir, 0o755); err != nil {
 		return err
 	}
 	filename := sshDir + "/authorized_keys"
@@ -79,16 +80,10 @@ func writeAuthorizedKeysIn(root *os.Root, keys []string, uid, gid int) error {
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
-	if err := root.WriteFile(filename, []byte(MergeAuthorizedKeys(string(existing), keys)), 0o600); err != nil {
+	if err := root.WriteFile(filename, []byte(MergeAuthorizedKeys(string(existing), keys)), 0o644); err != nil {
 		return err
 	}
-	if err := root.Chmod(sshDir, 0o700); err != nil {
-		return err
-	}
-	if err := root.Lchown(sshDir, uid, gid); err != nil {
-		return err
-	}
-	return root.Lchown(filename, uid, gid)
+	return root.Chmod(sshDir, 0o755)
 }
 
 // lookupIDs resolves an app user's uid/gid.
