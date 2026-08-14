@@ -198,7 +198,8 @@ func (s *Service) DeleteSnapshot(name, id string) error {
 //     subvolume being swapped IS the container's rootfs, so nothing may run it
 //     during the swap), then swap: move the live subvolume aside, move the
 //     staged copy in, and only then drop the old one;
-//  4. restore ownership and bring the app back up.
+//  4. bring the app back up (no ownership to restore: trees are root-owned
+//     and idmap-mounted, and snapshots carry that with them).
 //
 // The per-app lock serializes this against concurrent deploys/snapshots on the app.
 func (s *Service) Rollback(name, id string) error {

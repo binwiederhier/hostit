@@ -127,9 +127,9 @@ func (s *Service) EnsureBase(tag string) error {
 }
 
 // EnsureAppSubvolume makes sure an app's subvolume exists: a snapshot of its
-// pinned tag's base with the files directory (FilesDir) created inside, chowned
-// to the app's id block (crun on this stack cannot idmap-mount a --rootfs, so
-// ownership is baked in; ~1.6s once, and data extents stay shared with the base).
+// pinned tag's base with the files directory (FilesDir) created inside. The
+// tree stays root-owned -- the container idmap-mounts it -- so creation is a
+// metadata-only CoW snapshot, and data extents stay shared with the base.
 //
 // THE INVARIANT: an app's subvolume, once created, is NEVER recreated or reset
 // by hostit. The app's files AND everything it installed (apt packages, pip,

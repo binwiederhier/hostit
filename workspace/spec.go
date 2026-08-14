@@ -45,8 +45,8 @@ const (
 	// UIDBlockSize is how many host uids each app owns: a contiguous block whose
 	// base is container-root. 65536 so the container has a full uid range (up to
 	// nobody). A single contiguous block keeps the map one uniform offset, so
-	// every in-container uid lands inside the app's own block and the app
-	// subvolume is chowned to it once at creation.
+	// every in-container uid lands inside the app's own block and the idmapped
+	// rootfs mount is a single uniform mapping too.
 	UIDBlockSize = 65536
 	// UIDBlockStart is the first app's base uid, high above system users; blocks
 	// are spaced UIDBlockSize apart (by port) so they never overlap.
@@ -70,9 +70,9 @@ const (
 
 // IDs is the app's contiguous host uid/gid block. Container uid 0 maps to UID on
 // the host and the block runs Count ids up from there. Being one contiguous
-// range matters: the mapping is a single uniform offset, so the app's subvolume
-// can be chowned to the block once at creation and every in-container uid stays
-// inside the app's own range (a split "0:uid:1 + 1:subuid:N" map would not).
+// range matters: the mapping is a single uniform offset, so the idmapped rootfs
+// mount maps the whole root-owned tree in one rule and every in-container uid
+// stays inside the app's own range (a split "0:uid:1 + 1:subuid:N" map would not).
 type IDs struct {
 	UID   int
 	GID   int
