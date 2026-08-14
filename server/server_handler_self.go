@@ -37,7 +37,9 @@ func (s *Server) handleSelfTool(w http.ResponseWriter, r *http.Request, a *store
 	if len(body) == 0 {
 		body = []byte("{}") // a no-argument tool (deploy, list_snapshots) sends nothing
 	}
-	output, isErr := assistant.DispatchTool(&appOps{apps: s.apps}, a.Name, r.PathValue("name"), body)
+	// The changed hook feeds the debounced dashboard screenshot, same as when
+	// the built-in API loop drives these tools.
+	output, isErr := assistant.DispatchTool(&appOps{apps: s.apps, changed: s.assistantChanged}, a.Name, r.PathValue("name"), body)
 	writeJSON(w, http.StatusOK, &apiToolResponse{Output: output, IsError: isErr})
 }
 
