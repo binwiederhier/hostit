@@ -100,14 +100,25 @@ definitions and the conversation prefix are cache-marked, so repeat turns pay th
   app is a CoW snapshot (instant) plus a `chown -R` over the ~57k-file base
   tree (~2-4s on a loaded 1-core host, and the ~47 MB metadata baseline every
   app starts with), needed only because crun 1.14.1 cannot idmap-mount a
-  `--rootfs`. podman has supported `--rootfs <path>:idmap` since 4.3, so crun
-  is the sole blocker. Two paths: a newer crun on the current OS (static
-  binary or backport), or the next Ubuntu LTS, which ships a new enough
-  podman/crun pair anyway. Either way: validate `--rootfs :idmap` on btrfs on
-  stage first, then remove the chown from EnsureAppSubvolume/Fork, the
-  workspace ChownTree call sites, and the rollback re-chown. Existing apps
-  keep their baked-in ownership and keep working; only new apps get the
-  idmapped path (or a one-time re-chown migration unifies them).
+  `--rootfs`. VALIDATED on stage 2026-08-14: the static crun 1.29.1 binary
+  (official GitHub release, drop-in, no OS change) + the stock podman 4.9.3
+  runs `--rootfs <subvol>:idmap` with hostit's exact uidmap flags on a
+  root-owned, never-chowned base snapshot; container root reads and writes,
+  ownership maps disk-root <-> container-root both ways. Two wrinkles:
+  (1) podman 4.9.3 EOVERFLOWs creating its /etc/mtab symlink through the
+  idmapped view, but skips it when the rootfs already has one -- the base
+  export must add `ln -s ../proc/self/mounts etc/mtab` (a created-but-never-
+  started container has none). (2) The ownership MODEL flips: under idmap the
+  subvolume stays root-owned on disk, so everything that today bakes in or
+  expects app-uid ownership must not run for idmapped apps -- the create/fork
+  chown, the rollback re-chown, the file API's ChownIn after writes (a file
+  chowned to the app uid on disk would map to nobody in-container, the old
+  bug class inverted), and sshd's host-side authorized_keys read needs
+  checking. Existing apps keep their baked-in uid-owned trees and must NOT be
+  idmap-mounted (their files would map wrong), so the mount style has to be
+  pinned per app like the image tag, or a one-time re-chown-to-root migration
+  moves everyone over. Rollout: ship crun via ansible (containers.conf
+  [engine.runtimes] pointing at the static binary), then the hostit change.
 - **Create-app dialog: spinner + disabled input while creating.** Regardless of
   the crun change above, creating an app takes a few seconds: the dialog
   should show a spinner and disable the name text field the same way the
