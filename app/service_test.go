@@ -1,6 +1,7 @@
 package app
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -140,6 +141,7 @@ func TestDeleteApp(t *testing.T) {
 	_, err := m.CreateApp("blog", &CreateOptions{RequestKeys: []string{testPublicKey}})
 	require.NoError(t, err)
 	require.NoError(t, m.DeleteApp("blog"))
+	m.teardowns.Wait() // the user teardown runs in the background
 	assert.Equal(t, []string{"blog"}, ops.deletedUsers)
 	_, err = m.App("blog")
 	require.ErrorIs(t, err, store.ErrAppNotFound)
@@ -391,4 +393,38 @@ func TestAllocatePortReservesUntilRegistered(t *testing.T) {
 	third, err := m.allocatePort()
 	require.NoError(t, err)
 	assert.Equal(t, second, third, "a released port is free again")
+}
+
+func TestDeleteAppAnswersBeforeTeardownAndConverges(t *testing.T) {
+	t.Parallel()
+	m, ops, r := newTestDeployManager(t)
+	a := createTestApp(t, m, "blog")
+	subvol := m.appSubvolume("blog")
+	unit, container := m.unitName("blog"), m.containerName("blog")
+	group := fmt.Sprintf("1/%d", m.uidFor(a.Port))
+	r.reset()
+
+	// The API answer is immediate: the rows are gone before any host teardown
+	// (container stop, subvolume deletes, the qgroup sync ladder, userdel) --
+	// the slow parts continue in the background.
+	require.NoError(t, m.DeleteApp("blog"))
+	_, err := m.App("blog")
+	require.ErrorIs(t, err, store.ErrAppNotFound)
+
+	// The background teardown converges to exactly what the sync delete did.
+	m.teardowns.Wait()
+	joined := r.ran()
+	assert.Contains(t, joined, "systemctl disable --now "+unit)
+	assert.Contains(t, joined, "podman rm --force "+container)
+	assert.Contains(t, joined, "btrfs subvolume delete "+subvol)
+	assert.Contains(t, joined, "btrfs qgroup destroy "+group+" "+m.config.AppsDir)
+	assert.Contains(t, ops.deletedUsers, "blog")
+	assert.NoDirExists(t, subvol)
+
+	// The port (and with it the uid block) stays reserved until the teardown is
+	// done -- a new app grabbing it mid-userdel would collide -- and is free after.
+	m.mu.Lock()
+	reserved := m.reservedPorts[a.Port]
+	m.mu.Unlock()
+	assert.False(t, reserved, "the port is released once the teardown finished")
 }

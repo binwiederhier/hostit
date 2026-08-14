@@ -224,6 +224,7 @@ func TestDeleteAppStopsAppBeforeRemovingUser(t *testing.T) {
 	unit, container := m.unitName("blog"), m.containerName("blog")
 	runner.reset()
 	require.NoError(t, m.DeleteApp("blog"))
+	m.teardowns.Wait() // the host teardown runs in the background
 	joined := runner.ran()
 	// A running container keeps processes alive, which makes userdel fail
 	assert.Contains(t, joined, "systemctl disable --now "+unit)

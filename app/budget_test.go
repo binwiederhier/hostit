@@ -41,6 +41,7 @@ func TestDeleteAppRemovesSubvolumeAndBudget(t *testing.T) {
 	group := fmt.Sprintf("1/%d", m.uidFor(a.Port))
 	r.reset()
 	require.NoError(t, m.DeleteApp("blog"))
+	m.teardowns.Wait() // the subvolume/qgroup teardown runs in the background
 	assert.Contains(t, r.ran(), "btrfs subvolume delete "+subvol)
 	assert.Contains(t, r.ran(), "btrfs qgroup destroy "+group+" "+m.config.AppsDir)
 }

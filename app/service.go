@@ -142,6 +142,9 @@ type Manager struct {
 	// keep them; the authoritative values come from the owner's limits
 	memoryMB map[string]int
 	diskMB   map[string]int
+	// teardowns tracks background app-delete teardowns, so tests (and a graceful
+	// shutdown, if it ever wants to) can wait for them.
+	teardowns sync.WaitGroup
 	// reservedPorts holds ports handed out by allocatePort but not yet registered
 	// in the store, so concurrent creates never share one (see allocatePort)
 	reservedPorts map[int]bool
@@ -370,45 +373,77 @@ func (m *Manager) create(name string, opts *CreateOptions, seedPath string) (*st
 	return app, nil
 }
 
-// DeleteApp stops the app's user session, deletes the Unix user including the home
-// directory, and removes the app from the registry
+// DeleteApp removes the app from the registry and answers at once; the host
+// teardown -- container stop, subvolume and snapshot deletes (with the qgroup
+// sync ladder behind them), userdel -- takes seconds on a loaded box and
+// continues in the background. ReconcileOrphans converges any teardown the
+// daemon dies in the middle of, so the background path needs no new safety
+// net; the app's port (and with it its uid block) stays reserved until the
+// teardown finishes, so a new app cannot collide with the dying user.
 func (m *Manager) DeleteApp(name string) error {
-	defer m.lockApp(name)() // serialize against a concurrent deploy/snapshot/rollback
-	if _, err := m.store.App(name); err != nil {
+	unlock := m.lockApp(name) // serialize against a concurrent deploy/snapshot/rollback
+	a, err := m.store.App(name)
+	if err != nil {
+		unlock()
 		return err
 	}
-	// The uid keys the app's budget qgroup and is gone once the user is deleted,
-	// so resolve it up front.
+	// Everything the teardown needs is captured NOW: once the rows are gone,
+	// name-keyed lookups (paths, ids, snapshots) resolve nothing.
 	uid, uidErr := m.user.LookupUID(name)
-	// Stop the app first: a running container keeps processes alive, and
-	// userdel refuses to remove a user that still has any
-	if err := m.systemd.DisableNow(m.unitName(name)); err != nil {
-		slog.Warn("Cannot disable the app's unit; reconciling at next start", "app", name, "error", err)
-	}
-	// The unit lingers in "failed" otherwise, and a Restart=always unit that
-	// systemd still knows about keeps retrying a container that is gone
-	_ = m.systemd.ResetFailed(m.unitName(name))
-	_ = m.container.RemoveForce(m.containerName(name))
-	// The app subvolume and its snapshots are subvolumes that userdel's rm -rf
-	// cannot remove, so delete them first.
-	m.snapshots.DeleteAppSubvolumes(name)
-	// With all member subvolumes gone, drop the (now empty) budget qgroup.
-	if uidErr == nil {
-		m.destroyBudget(uid)
-	}
-	if err := m.user.Delete(name); err != nil {
-		return fmt.Errorf("cannot delete user %s: %w", name, err)
-	}
-	// userdel --remove will not delete a home directory it does not own -- the
-	// subvolume holding it was removed above, and any recreated stub is root-owned --
-	// so remove whatever is left, or an empty stub is orphaned under AppsDir.
-	if err := os.RemoveAll(m.appSubvolume(name)); err != nil {
-		slog.Warn("Could not remove leftover app directory after deleting app", "app", name, "path", m.appSubvolume(name), "error", err)
+	unit, container := m.unitName(name), m.containerName(name)
+	subvol := m.appSubvolumeByID(a.ID)
+	snapsRoot := m.snapshotsRoot(name)
+	var snapPaths []string
+	if snaps, err := m.store.Snapshots(name); err == nil {
+		for _, snap := range snaps {
+			snapPaths = append(snapPaths, m.snapshotPath(name, snap.ID))
+		}
 	}
 	if err := m.store.RemoveApp(name); err != nil {
+		unlock()
 		return err
 	}
+	m.mu.Lock()
+	m.reservedPorts[a.Port] = true
+	m.mu.Unlock()
 	m.ReconcilePortRules()
+	m.teardowns.Add(1)
+	go func() {
+		defer m.teardowns.Done()
+		defer unlock()
+		defer m.releasePort(a.Port)
+		// Stop the app first: a running container keeps processes alive, and
+		// userdel refuses to remove a user that still has any.
+		if err := m.systemd.DisableNow(unit); err != nil {
+			slog.Warn("Cannot disable the app's unit; reconciling at next start", "app", name, "error", err)
+		}
+		// The unit lingers in "failed" otherwise, and a Restart=always unit that
+		// systemd still knows about keeps retrying a container that is gone.
+		_ = m.systemd.ResetFailed(unit)
+		_ = m.container.RemoveForce(container)
+		// The app subvolume and its snapshots are subvolumes that userdel's
+		// rm -rf cannot remove, so delete them first.
+		for _, path := range snapPaths {
+			_ = m.btrfs.DeleteSubvolume(path)
+		}
+		_ = os.RemoveAll(snapsRoot)
+		_ = m.btrfs.DeleteSubvolume(subvol)
+		// With all member subvolumes gone, drop the (now empty) budget qgroup.
+		if uidErr == nil {
+			m.destroyBudget(uid)
+		}
+		if err := m.user.Delete(name); err != nil {
+			slog.Warn("Cannot delete the app's unix user; a later create at this uid cleans up", "app", name, "error", err)
+		}
+		// userdel --remove will not delete a home directory it does not own -- the
+		// subvolume holding it was removed above, and any recreated stub is
+		// root-owned -- so remove whatever is left, or an empty stub is orphaned
+		// under AppsDir.
+		if err := os.RemoveAll(subvol); err != nil {
+			slog.Warn("Could not remove leftover app directory after deleting app", "app", name, "path", subvol, "error", err)
+		}
+		slog.Info("App teardown complete", "app", name)
+	}()
 	return nil
 }
 
