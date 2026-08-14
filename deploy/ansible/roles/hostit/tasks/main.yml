@@ -21,6 +21,42 @@
     update_cache: true
     cache_valid_time: 3600
 
+# hostit runs each app container on an idmapped --rootfs (the app's root-owned
+# btrfs subvolume mapped through the container's uid map), which needs a newer
+# crun than most distributions ship. hostit's preflight refuses to start on an
+# old one (podman >= 4.3, crun >= 1.29), resolving crun through podman info --
+# so this containers.conf drop-in is exactly what it validates.
+- name: Install static crun {{ hostit_crun_version }} (idmapped rootfs support)
+  ansible.builtin.get_url:
+    url: "https://github.com/containers/crun/releases/download/{{ hostit_crun_version }}/crun-{{ hostit_crun_version }}-linux-amd64"
+    dest: "{{ hostit_crun_path }}"
+    checksum: "sha256:{{ hostit_crun_sha256 }}"
+    mode: "0755"
+    owner: root
+    group: root
+
+- name: Create containers.conf.d
+  ansible.builtin.file:
+    path: /etc/containers/containers.conf.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Point podman at the static crun
+  ansible.builtin.copy:
+    dest: /etc/containers/containers.conf.d/50-hostit-crun.conf
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      # Managed by ansible (hostit role). hostit needs crun >= 1.29 for
+      # idmapped --rootfs mounts; the distro crun stays as a fallback.
+      [engine]
+      runtime = "crun"
+      [engine.runtimes]
+      crun = ["{{ hostit_crun_path }}", "/usr/bin/crun"]
+
 - name: Fail early if required variables are unset
   ansible.builtin.assert:
     that:

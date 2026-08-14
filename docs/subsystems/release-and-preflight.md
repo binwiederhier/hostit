@@ -47,18 +47,22 @@ the shape the production deploy follows, not a vendored copy of it). The role
 (`deploy/ansible/roles/hostit/tasks/main.yml`) is one linear pass:
 
 1. Install podman and the container/network dependencies.
-2. Assert the required variables are set (`hostit_domain`, `hostit_admin_token`).
-3. Fetch the release `.deb` from GitHub (or copy a locally built one for
+2. Install the static crun release binary (hostit needs crun >= 1.29 for
+   idmapped rootfs mounts; most distributions ship an older one) and point
+   podman at it via a `containers.conf.d` drop-in -- exactly what the
+   preflight's runtime check validates.
+3. Assert the required variables are set (`hostit_domain`, `hostit_admin_token`).
+4. Fetch the release `.deb` from GitHub (or copy a locally built one for
    development), and install it with `dpkg -i --force-confold` -- `dpkg`, not the
    apt module, because same-version rebuilds are common while iterating and apt
    would treat them as already installed; `--force-confold` keeps the managed
    `/etc/hostit/server.yml` instead of prompting on upgrade.
-4. Template `/etc/hostit/server.yml` (0600).
-5. **Set up the btrfs loopback** for app homes (`btrfs.yml`, gated on
+5. Template `/etc/hostit/server.yml` (0600).
+6. **Set up the btrfs loopback** for app homes (`btrfs.yml`, gated on
    `hostit_btrfs`, on by default) -- see [storage-btrfs.md](storage-btrfs.md).
-6. **Harden sshd** for app users (drop the forwarding-stripping config) -- see
+7. **Harden sshd** for app users (drop the forwarding-stripping config) -- see
    [security-isolation.md](security-isolation.md).
-7. Enable and start the daemon.
+8. Enable and start the daemon.
 
 Secrets (admin token, OAuth secret, AI keys) are meant to live in an Ansible Vault,
 not plain vars (`deploy/ansible/roles/hostit/defaults/main.yml` documents each

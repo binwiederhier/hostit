@@ -2,7 +2,7 @@
 
 # Which hostit release to install, from the public GitHub releases:
 #   https://github.com/binwiederhier/hostit/releases
-hostit_version: "0.8.1"
+hostit_version: "0.10.1"
 
 # Development override: install a locally built .deb instead of downloading.
 #   (cd hostit && make release-snapshot -> dist/hostit_*_linux_amd64.deb)
@@ -53,4 +53,13 @@ hostit_apps_mount_unit: var-lib-hostit-apps.mount
 # The Unix group every app user belongs to; sshd uses it to strip forwarding from
 # app logins (must match app.AppsGroup in the hostit source).
 hostit_apps_group: "hostit-apps"
+
+# Static crun for idmapped rootfs mounts: hostit requires crun >= 1.29 (Ubuntu
+# 24.04 ships 1.14.1, which cannot idmap-mount a --rootfs, and hostit's preflight
+# refuses to start on it). The official static release binary is installed next
+# to the distro package and podman is pointed at it via containers.conf.d; the
+# distro crun stays as a fallback. Checksum from the release's .asc/sha256.
+hostit_crun_version: "1.29.1"
+hostit_crun_sha256: "0a5ea25cafe618bbfbf1c747871155063619f18025ccdd8ad648c97633f35d57"
+hostit_crun_path: /usr/local/lib/hostit-crun
 
