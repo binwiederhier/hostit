@@ -96,6 +96,18 @@ definitions and the conversation prefix are cache-marked, so repeat turns pay th
 
 ## Smaller things
 
+- **Bug: a fresh app's terminal is refused as "powered off" for a few seconds.**
+  `systemctl is-enabled` reports "disabled" for a template instance that was
+  simply never enabled yet, so between "App created" and the background start's
+  `enable --now`, Ensure reads a brand-new app as deliberately powered off and
+  refuses the terminal (seen on prod right after creating an app; also the
+  earlier "transient 4001 on a running app" mystery). And since the powered-off
+  refusal intentionally disables auto-reconnect, the terminal stays down until
+  a manual reconnect. Fix idea: record the powered-off intent explicitly (a
+  store flag set by poweroff, cleared by poweron) instead of inferring it from
+  systemd enablement, which conflates "never enabled yet" with "disabled on
+  purpose".
+
 - **Bug: deleted apps leave `<id>/home/app` stub directories behind.** Seen on
   stage after the unified-storage rollout: five deleted apps each left a plain
   (non-subvolume) `<id>/home/app` tree under the apps dir, all empty. Something
