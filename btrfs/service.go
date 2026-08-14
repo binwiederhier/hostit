@@ -30,8 +30,6 @@ type Interface interface {
 	MoveSubvolume(src, dst string) error
 	Snapshot(src, dst string, readonly bool) error
 	SetReadOnly(path string, readonly bool) error
-	SetQuota(home string, diskMB int) error
-	UsageMB(home string) int
 	QuotaEnable(pool string) error
 	RootID(path string) (string, error)
 	QgroupCreate(pool, groupID string) error
@@ -246,53 +244,6 @@ func (s *Service) ExclusiveUsageMB(pool, groupID string) int {
 		bytes, err := strconv.ParseInt(fields[2], 10, 64)
 		if err != nil {
 			return 0
-		}
-		return int(bytes / bytesPerMB)
-	}
-	return 0
-}
-
-// SetQuota limits the subvolume at home to diskMB via its qgroup; 0 clears the
-// limit. Quota must already be enabled on the filesystem (done once at setup).
-// This is the hard limit -- a write past it fails with EDQUOT rather than the app
-// being stopped later by a background sweep.
-func (s *Service) SetQuota(home string, diskMB int) error {
-	limit := "none"
-	if diskMB > 0 {
-		limit = strconv.Itoa(diskMB) + "M"
-	}
-	_, err := s.runner.RunTimeout(timeout, "btrfs", "qgroup", "limit", limit, home)
-	return err
-}
-
-// UsageMB returns how much the subvolume at home references, in MB, from its qgroup
-// (accurate and cheap, no directory walk). Returns 0 if it cannot read it, so
-// reporting degrades rather than fails.
-func (s *Service) UsageMB(home string) int {
-	out, err := s.runner.RunTimeout(timeout, "btrfs", "qgroup", "show", "-f", "--raw", home)
-	if err != nil {
-		return 0
-	}
-	return parseQgroupReferencedMB(out)
-}
-
-// parseQgroupReferencedMB reads the referenced bytes from `btrfs qgroup show -f
-// --raw` output and returns whole megabytes. The table looks like:
-//
-//	Qgroupid         Referenced    Exclusive  Path
-//	--------         ----------    ---------  ----
-//	0/257            134217728     134217728  blog
-//
-// We take the Referenced column of the single data row.
-func parseQgroupReferencedMB(out string) int {
-	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
-		fields := strings.Fields(line)
-		if len(fields) < 3 || !strings.Contains(fields[0], "/") {
-			continue // header, separator, or blank
-		}
-		bytes, err := strconv.ParseInt(fields[1], 10, 64)
-		if err != nil {
-			continue
 		}
 		return int(bytes / bytesPerMB)
 	}

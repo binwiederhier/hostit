@@ -92,30 +92,6 @@ func TestSubvolumeCommands(t *testing.T) {
 	assert.Contains(t, r.ran, "btrfs subvolume delete /apps/blog")
 }
 
-func TestSetQuota(t *testing.T) {
-	t.Parallel()
-	r := newFakeRunner()
-	s := New(r)
-
-	assert.NoError(t, s.SetQuota("/apps/blog", 512))
-	assert.Contains(t, r.ran, "btrfs qgroup limit 512M /apps/blog")
-
-	r.ran = nil
-	assert.NoError(t, s.SetQuota("/apps/blog", 0))
-	assert.Contains(t, r.ran, "btrfs qgroup limit none /apps/blog")
-}
-
-func TestParseQgroupReferencedMB(t *testing.T) {
-	t.Parallel()
-	out := `Qgroupid         Referenced    Exclusive  Path
---------         ----------    ---------  ----
-0/257            134217728     134217728  blog
-`
-	assert.Equal(t, 128, parseQgroupReferencedMB(out)) // 134217728 bytes = 128 MB
-	assert.Equal(t, 0, parseQgroupReferencedMB(""))
-	assert.Equal(t, 0, parseQgroupReferencedMB("garbage\nno rows here"))
-}
-
 func TestSetReadOnly(t *testing.T) {
 	t.Parallel()
 	r := newFakeRunner()
@@ -219,16 +195,6 @@ func TestExclusiveUsageMB(t *testing.T) {
 	// Missing group or unreadable output degrades to 0 rather than failing.
 	assert.Equal(t, 0, New(r).ExclusiveUsageMB("/apps", "1/9999999"))
 	assert.Equal(t, 0, New(newFakeRunner()).ExclusiveUsageMB("/apps", "1/1000000"))
-}
-
-func TestUsageMB(t *testing.T) {
-	t.Parallel()
-	r := newFakeRunner()
-	r.returns("btrfs qgroup show", `Qgroupid  Referenced  Exclusive  Path
---------  ----------  ---------  ----
-0/258     268435456   268435456  blog
-`)
-	assert.Equal(t, 256, New(r).UsageMB("/apps/blog"))
 }
 
 func TestQgroupDestroyRetriesAfterSyncWhenBusy(t *testing.T) {
