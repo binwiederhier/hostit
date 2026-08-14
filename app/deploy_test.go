@@ -673,32 +673,3 @@ func TestDownRecordsPowerOffAndPowerOnClearsIt(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, a.PoweredOff)
 }
-
-func TestBackfillPowerOffFlags(t *testing.T) {
-	t.Parallel()
-	m, _, runner := newTestDeployManager(t)
-	createTestApp(t, m, "blog")
-	createTestApp(t, m, "wiki")
-	// Hosts upgrading to the flag: a disabled unit at backfill time IS a
-	// deliberate poweroff (only poweroff disabled units before the flag existed).
-	runner.returns("is-enabled hostit-app@"+m.appID("blog"), "disabled")
-	runner.returns("is-enabled hostit-app@"+m.appID("wiki"), "enabled")
-	r2 := runner // silence unused in case
-	_ = r2
-
-	require.NoError(t, m.BackfillPowerOffFlags())
-	blog, err := m.store.App("blog")
-	require.NoError(t, err)
-	assert.True(t, blog.PoweredOff)
-	wiki, err := m.store.App("wiki")
-	require.NoError(t, err)
-	assert.False(t, wiki.PoweredOff)
-
-	// One-time: a later run must not resurrect the flag from unit state (the
-	// flag is authoritative after the backfill).
-	require.NoError(t, m.store.SetAppPoweredOff("blog", false))
-	require.NoError(t, m.BackfillPowerOffFlags())
-	blog, err = m.store.App("blog")
-	require.NoError(t, err)
-	assert.False(t, blog.PoweredOff, "the settings gate makes the backfill one-time")
-}

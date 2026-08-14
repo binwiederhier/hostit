@@ -54,11 +54,11 @@ func (s *Service) AppSubvolumePath(id string) string {
 // small host the same way two builds would.
 func (s *Service) EnsureBase(tag string) error {
 	if tag == "" {
-		tag = ImageTag() // pre-pinning fallback; historical (PinImageTags backfills every row)
+		return fmt.Errorf("cannot ensure a base for an empty image tag")
 	}
 	base := s.BasePath(tag)
 	if _, err := os.Stat(base); err == nil {
-		return s.ensureBaseMtab(base)
+		return nil
 	}
 	// Make sure the image to export exists. Only the current Containerfile can be
 	// built, so a missing OLD tag is unrecoverable -- and silently exporting the
@@ -74,7 +74,7 @@ func (s *Service) EnsureBase(tag string) error {
 	s.buildMu.Lock()
 	defer s.buildMu.Unlock()
 	if _, err := os.Stat(base); err == nil {
-		return s.ensureBaseMtab(base) // Someone exported it while we waited
+		return nil // Someone exported it while we waited
 	}
 	if err := os.MkdirAll(filepath.Dir(base), hiddenDirMode); err != nil {
 		return err
@@ -110,7 +110,7 @@ func (s *Service) EnsureBase(tag string) error {
 	_ = s.container.RemoveForce(ctr)
 	// A created-but-never-started container has no /etc/mtab; add the symlink
 	// before sealing, so podman never has to create it through the idmapped view.
-	if err := WriteMtab(tmp); err != nil {
+	if err := writeMtab(tmp); err != nil {
 		_ = s.btrfs.DeleteSubvolume(tmp)
 		return fmt.Errorf("cannot write mtab into base rootfs for %s: %w", tag, err)
 	}
@@ -141,17 +141,10 @@ func (s *Service) EnsureAppSubvolume(a *store.App) error {
 	if _, err := os.Stat(subvol); err == nil {
 		return nil
 	}
-	// An app from before pinning (empty tag) ran the current image, so that is
-	// the base its subvolume comes from -- same historical fallback as
-	// EnsureBase's; PinImageTags backfills every row before any app migrates.
-	tag := a.ImageTag
-	if tag == "" {
-		tag = ImageTag()
-	}
-	if err := s.EnsureBase(tag); err != nil {
+	if err := s.EnsureBase(a.ImageTag); err != nil {
 		return err
 	}
-	if err := s.btrfs.Snapshot(s.BasePath(tag), subvol, false); err != nil {
+	if err := s.btrfs.Snapshot(s.BasePath(a.ImageTag), subvol, false); err != nil {
 		return fmt.Errorf("cannot snapshot app subvolume for %s: %w", a.Name, err)
 	}
 	// The base may not ship a /home/app; root-owned like the rest of the tree.
@@ -217,24 +210,10 @@ func baseDirName(tag string) string {
 	return tag
 }
 
-// ensureBaseMtab retrofits the /etc/mtab symlink into a base exported before
-// mtab shipped with the export: unseal, link, reseal. A no-op when present.
-func (s *Service) ensureBaseMtab(base string) error {
-	if _, err := os.Lstat(filepath.Join(base, "etc", "mtab")); err == nil {
-		return nil
-	}
-	if err := s.btrfs.SetReadOnly(base, false); err != nil {
-		return err
-	}
-	if err := WriteMtab(base); err != nil {
-		return err
-	}
-	return s.btrfs.SetReadOnly(base, true)
-}
-
-// WriteMtab creates the /etc/mtab convention symlink inside a rootfs; exported
-// for the idmap migration, which retrofits it into existing app subvolumes.
-func WriteMtab(rootfs string) error {
+// writeMtab creates the /etc/mtab convention symlink inside a rootfs: podman
+// skips creating it when present, and creating it through the idmapped view is
+// exactly what EOVERFLOWs on podman 4.9.
+func writeMtab(rootfs string) error {
 	if err := os.MkdirAll(filepath.Join(rootfs, "etc"), 0o755); err != nil {
 		return err
 	}

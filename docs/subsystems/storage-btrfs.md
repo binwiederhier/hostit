@@ -107,7 +107,7 @@ The model has four consequences, each carried end to end:
   podman skips creating it when present, and creating it *through* the idmapped
   view is exactly what EOVERFLOWs on podman 4.9. Base exports write it before
   sealing, `EnsureBase` retrofits it into bases exported before it shipped, and
-  the idmap migration adds it to existing app subvolumes
+  every app subvolume carries it (snapshotted from the base)
   (`workspace/subvolume.go:WriteMtab` / `ensureBaseMtab`).
 - **The daemon's file I/O goes through a raw view of the apps dir.** podman
   attaches the idmapped mount OVER the subvolume path in the host namespace
@@ -223,18 +223,12 @@ nothing to enforce, because the qgroup already hard-caps writes (`app/quota.go`,
 `DiskUsageLoop` from `cmd/serve.go`).
 
 Existing apps were moved onto this model by three one-time, settings-gated
-startup migrations, run in order (`app/migrate.go`): `MigrateRootfsStorage`
-moved image-backed containers onto rootfs subvolumes; `MigrateUnifiedStorage`
-then folded each app's home INTO its rootfs (an instant reflink copy), dropped
-the old home-shaped snapshots (incompatible with whole-app rollback; owner's
-call), made the merged tree THE app subvolume at `apps/<id>`, repointed the Unix
-account's home at `home/app` inside it, and budgeted every app; and
-`MigrateIdmapStorage` (gate `storage-idmap`) finally moved every app onto
-idmapped rootfs mounts -- it shifts every inode owned inside the app's uid block
-back to its container-relative owner (`base+u -> u`), adds the `/etc/mtab`
-symlink, and purges the pre-idmap snapshots, whose baked-in ownership rollback
-can no longer use. Powered-off apps stay off through a migration (and through
-upgrades generally): `RestartStaleAgents` skips disabled units.
+startup migrations (rootfs, unified, idmap) that shipped in v0.9.x-v0.10.x and
+have since been REMOVED from the code: every supported host records their
+gates. Upgrading a host from a release older than v0.11 therefore requires
+stepping through v0.11.x first (which still carries the migrations), then
+moving on. Powered-off apps stay off through upgrades generally:
+`RestartStaleAgents` skips apps whose poweroff flag is set.
 
 ## The retention engine (pure GFS)
 
@@ -299,7 +293,6 @@ it: the preflight is the single gate, and everything downstream assumes btrfs.
 | snapshot / rollback / prune orchestration | `snapshot/service.go` (bound to the Manager in `app/snapshot.go`) |
 | budget qgroup setup (app subvolume + snapshots) | `app/budget.go` |
 | disk limit + usage accounting | `app/quota.go` |
-| the one-time storage migrations (rootfs, unified, then idmap) | `app/migrate.go` |
 | the GFS retention policy (pure, unit-tested) | `retention/retention.go` |
 | the mandatory preflight (btrfs, podman/crun versions) | `cmd/preflight.go:requireBtrfs` / `checkRuntimeVersions` |
 | loopback btrfs setup | `deploy/ansible/roles/hostit/tasks/btrfs.yml` |

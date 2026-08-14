@@ -32,9 +32,7 @@ const (
 	// key) truthful, so a later app that reuses the freed name cannot collide with a
 	// stale row. Every other per-app table keys on app_id and needs no update.
 	renameAssistantMirrorQuery = `UPDATE assistant_session SET app_name = ? WHERE app_id = (SELECT id FROM app WHERE name = ?)`
-	// Image pinning: backfill unpinned apps, and list every tag still in use so
-	// image GC never removes one an app is pinned to.
-	pinImageTagsQuery   = `UPDATE app SET image_tag = ? WHERE image_tag = ''`
+	// Every tag still in use, so image GC never removes one an app is pinned to.
 	imageTagsInUseQuery = `SELECT DISTINCT image_tag FROM app WHERE image_tag != ''`
 )
 
@@ -95,13 +93,6 @@ func (s *Store) RenameApp(oldName, newName string) error {
 		return err
 	}
 	return tx.Commit()
-}
-
-// PinImageTags backfills apps from before image pinning (empty tag) to the given
-// (current) tag; already pinned apps keep theirs.
-func (s *Store) PinImageTags(tag string) error {
-	_, err := s.db.Exec(pinImageTagsQuery, tag)
-	return err
 }
 
 // ImageTagsInUse returns the set of workspace image tags apps are pinned to, so

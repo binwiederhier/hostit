@@ -96,11 +96,6 @@ definitions and the conversation prefix are cache-marked, so repeat turns pay th
 
 ## Smaller things
 
-- **Cleanup: delete the storage migrations once every host is unified.** When
-  stage AND prod both record the `storage-rootfs-migrated` and
-  `storage-unified` settings gates, the whole of `app/migrate.go` (plus
-  `unixuser.SetHome`, whose only caller is the migration tail) can be deleted
-  in one sweep.
 - **Does the hostit daemon actually need to run as root?** It drives podman,
   systemctl, useradd/usermod, nftables and btrfs -- audit which of those truly
   require root vs could run under a dedicated user with specific capabilities or a

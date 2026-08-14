@@ -102,7 +102,7 @@ flowchart TB
     root -->|yes| dirs["mkdir data-dir (0711) + apps-dir"]
     dirs --> btr{"apps-dir on btrfs?"}
     btr -->|no| die2["refuse to start"]
-    btr -->|yes| open["open store, build Manager,<br/>enable disk budgets,<br/>one-time storage migrations"]
+    btr -->|yes| open["open store, build Manager,<br/>enable disk budgets,<br/>mount the raw apps view"]
     open --> bg["background: build workspace image + export base rootfs,<br/>RestartStaleAgents, prune old images/bases"]
     open --> rec["ReconcileOrphans (units/containers/subvolumes/budgets)"]
     open --> loops["disk / state / snapshot / domain-retry loops"]
@@ -113,15 +113,13 @@ flowchart TB
 
 After the preflight, startup opens the store (which runs any pending schema
 migrations), builds the `Manager`, enables btrfs quota accounting
-(`EnableDiskBudgets`), mounts the raw apps view the daemon's file I/O resolves
-through (`app/deploy.go:MountRawAppsView` -- a private, non-recursive bind of the
-apps dir at `<run-dir>/apps-raw`, so root file I/O sees past running containers'
-idmapped rootfs overmounts) and runs the one-time, settings-gated storage
-migrations (`app/migrate.go`: `MigrateRootfsStorage`, then
-`MigrateUnifiedStorage`, which folded each app's home into its rootfs so an app
-is one subvolume, then `MigrateIdmapStorage`, which moved every app tree onto
-root-owned, idmap-mounted storage; a partial run
-only warns and resumes at the next start). It then kicks off background work:
+(`EnableDiskBudgets`) and mounts the raw apps view the daemon's file I/O
+resolves through (`app/deploy.go:MountRawAppsView` -- a private, non-recursive
+bind of the apps dir at `<run-dir>/apps-raw`, so root file I/O sees past
+running containers' idmapped rootfs overmounts). The one-time storage
+migrations that moved pre-v0.11 hosts onto this layout have been removed;
+upgrading from an older release goes through v0.11.x first. It then kicks off
+background work:
 build the shared workspace image and export its base rootfs subvolume, restart
 stale agents, prune superseded images and unpinned bases (`cmd/serve.go`, the
 `go func`), reconcile orphaned units/containers/app-subvolumes/budget-qgroups

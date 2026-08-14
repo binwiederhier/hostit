@@ -31,9 +31,7 @@ type Interface interface {
 	Exists(username string) bool
 	LookupUID(username string) (int, error)
 	LookupIDs(username string) (uid, gid int, err error)
-	Home(username string) (string, error)
 	Create(username, home string, uid int) error
-	SetHome(username, home string) error
 	Rename(oldName, newName string) error
 	KillProcesses(username string) error
 	Delete(username string) error
@@ -73,17 +71,6 @@ func (s *Service) LookupIDs(username string) (uid, gid int, err error) {
 	return lookupIDs(username)
 }
 
-// Home returns a user's passwd home directory. Being root-maintained state, it
-// is trustworthy where paths inside an app's (tenant-owned) subvolume are not;
-// the storage migrations key on it for that reason.
-func (s *Service) Home(username string) (string, error) {
-	u, err := user.Lookup(username)
-	if err != nil {
-		return "", err
-	}
-	return u.HomeDir, nil
-}
-
 // Create creates the app user. The home directory itself is NOT touched: it is
 // the files dir inside the app's (root-owned, idmap-mounted) subvolume, created
 // by the workspace service before this runs; useradd gets --no-create-home so it
@@ -112,20 +99,6 @@ func createUserArgs(username, home string, uid int, shell, group string) []strin
 	id := strconv.Itoa(uid)
 	return []string{"useradd", "--no-create-home", "--home-dir", home, "--shell", shell,
 		"--uid", id, "--gid", id, "--groups", group, "--comment", "hostit app", username}
-}
-
-// SetHome points an account's home directory at a new path. Only the passwd
-// entry changes (no --move-home): the caller moves the files itself, which is
-// what the storage-unification migration does.
-func (s *Service) SetHome(username, home string) error {
-	args := setHomeArgs(username, home)
-	return run(args[0], args[1:]...)
-}
-
-// setHomeArgs is the usermod command SetHome runs, split out so the flag shape
-// is testable without root.
-func setHomeArgs(username, home string) []string {
-	return []string{"usermod", "--home", home, username}
 }
 
 // Rename changes a user's login name; uid, home and files are untouched, so this

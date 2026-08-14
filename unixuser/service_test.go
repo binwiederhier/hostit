@@ -29,19 +29,6 @@ func TestGroupNeedsRename(t *testing.T) {
 	assert.False(t, ok)
 }
 
-func TestSetHomeArgsChangeOnlyThePasswdEntry(t *testing.T) {
-	t.Parallel()
-	// The storage-unification migration moves the files itself (reflink copy),
-	// so usermod must only rewrite the passwd entry -- --move-home would race the
-	// migration's own copy and double-move the data.
-	args := setHomeArgs("blog", "/var/lib/hostit/apps/1d03bf4f2b2d/home/app")
-	joined := strings.Join(args, " ")
-	assert.Equal(t, "usermod", args[0])
-	assert.Contains(t, joined, "--home /var/lib/hostit/apps/1d03bf4f2b2d/home/app")
-	assert.NotContains(t, joined, "--move-home")
-	assert.Equal(t, "blog", args[len(args)-1])
-}
-
 func TestCreateUserArgsBringNoSkeleton(t *testing.T) {
 	t.Parallel()
 	// useradd copies /etc/skel into every new home: .bashrc, .profile,

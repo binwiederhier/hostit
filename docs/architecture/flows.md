@@ -19,7 +19,7 @@ flowchart TB
     bins -- all present --> dirs["mkdir DataDir 0711, AppsDir 0755"]
     dirs --> btrfs{"AppsDir on btrfs?"}
     btrfs -- no --> fail3["refuse: app homes must be btrfs"]
-    btrfs -- yes --> ok["open store, enable disk budgets,<br/>run the one-time storage migrations"]
+    btrfs -- yes --> ok["open store, enable disk budgets,<br/>mount the raw apps view"]
     ok --> bg["background: build workspace image + export base rootfs,<br/>restart stale agents, prune old images/bases"]
     ok --> rec["reconcile orphaned units/containers"]
     ok --> listen["open listeners + loops (state, disk, snapshot, domain retry)"]
@@ -35,16 +35,10 @@ hard disk quotas are core, so hostit refuses to run without them rather than sil
 degrading. So is a runtime that can idmap-mount a rootfs: the preflight refuses to
 start unless podman is >= 4.3 and crun is >= 1.29, the crun resolved through
 `podman info` so a `containers.conf` override is what gets checked
-(`cmd/preflight.go:checkRuntimeVersions`). Three settings-gated migrations run
-on this path, in order: the
-one-time move to rootfs-backed containers (`app/migrate.go:MigrateRootfsStorage`),
-the one-time unification that folded each app's home into its rootfs, leaving one
-subvolume per app (`MigrateUnifiedStorage`), and the one-time move to idmapped
-rootfs mounts (`MigrateIdmapStorage`: shift each tree's baked-in uid-block
-ownership back to container-relative ids, add the `/etc/mtab` symlink, purge
-pre-idmap snapshots). All are ensure-style and resumable,
-so a partial run only warns and retries at the next start. The other post-upgrade
-work is `RestartStaleAgents`, which brings each enabled app up on the new binary
+(`cmd/preflight.go:checkRuntimeVersions`). The one-time storage migrations
+that used to run on this path were removed once every supported host recorded
+their gates; upgrading from a pre-v0.11 release goes through v0.11.x first.
+The post-upgrade work is `RestartStaleAgents`, which brings each enabled app up on the new binary
 because a running agent keeps the behaviour of the binary it was exec'd from; a
 powered-off app stays off (`app/upgrade.go`).
 

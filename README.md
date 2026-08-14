@@ -87,6 +87,10 @@ crun = ["/usr/local/lib/hostit-crun", "/usr/bin/crun"]
 EOF
 ```
 
+Upgrading from a release older than **v0.11**: install a v0.11.x release first
+(it carries the one-time storage migrations, since removed) and start it once,
+then upgrade onward.
+
 Via the .deb (ships the binary, `hostit-shell`, a systemd unit and an example
 config):
 

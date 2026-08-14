@@ -115,17 +115,15 @@ func TestEnsureAppSubvolumeSnapshotsThePinnedBase(t *testing.T) {
 	assert.Empty(t, fc.exportedTo)
 }
 
-func TestEnsureAppSubvolumeFallsBackToTheCurrentTagWhenUnpinned(t *testing.T) {
+func TestEnsureBaseRefusesAnEmptyTag(t *testing.T) {
 	t.Parallel()
-	svc, _, r, _ := newTestService(t)
-	// An app from before pinning (empty tag) ran the current image, so its
-	// subvolume snapshots the CURRENT base -- never ".bases/" itself (the empty
-	// dir name).
-	require.NoError(t, os.MkdirAll(svc.BasePath(ImageTag()), 0o700))
-	a := &store.App{ID: "appid123", Name: "blog"}
-	require.NoError(t, svc.EnsureAppSubvolume(a))
-	assert.Contains(t, r.ran(), "btrfs subvolume snapshot "+svc.BasePath(ImageTag())+" "+svc.AppSubvolumePath("appid123"))
-	assert.NotContains(t, r.ran(), "snapshot "+filepath.Join(svc.appsDir, basesDirName)+" ")
+	svc, _, _, _ := newTestService(t)
+	// Every app row has carried a pinned tag since the (now-removed) storage
+	// migrations backfilled them; an empty tag today means a hand-edited
+	// registry, and silently building "the current" base would hand the app a
+	// rootfs it was never pinned to.
+	err := svc.EnsureBase("")
+	require.Error(t, err)
 }
 
 func TestEnsureAppSubvolumeNeverRecreatesAnExistingOne(t *testing.T) {
@@ -243,25 +241,4 @@ func (f *fakeContainer) RemoveForce(name string) error {
 	defer f.mu.Unlock()
 	f.removedCtrs = append(f.removedCtrs, name)
 	return nil
-}
-
-func TestEnsureBaseAddsTheMtabSymlinkToAnExistingBase(t *testing.T) {
-	t.Parallel()
-	svc, _, r, _ := newTestService(t)
-	// podman EOVERFLOWs creating /etc/mtab through an idmapped rootfs, but skips
-	// the step when the rootfs already has one. Bases exported before this fix
-	// have none, so EnsureBase retrofits it (unseal, symlink, reseal).
-	base := svc.BasePath(ImageTag())
-	require.NoError(t, os.MkdirAll(filepath.Join(base, "etc"), 0o755))
-	require.NoError(t, svc.EnsureBase(ImageTag()))
-	target, err := os.Readlink(filepath.Join(base, "etc", "mtab"))
-	require.NoError(t, err)
-	assert.Equal(t, "../proc/self/mounts", target)
-	assert.Contains(t, r.ran(), "btrfs property set "+base+" ro false")
-	assert.Contains(t, r.ran(), "btrfs property set "+base+" ro true")
-
-	// Present already: the retrofit is a no-op (no unseal churn).
-	r.reset()
-	require.NoError(t, svc.EnsureBase(ImageTag()))
-	assert.NotContains(t, r.ran(), "property set")
 }

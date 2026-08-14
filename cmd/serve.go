@@ -96,27 +96,6 @@ func execServe(c *cli.Context) error {
 	if err := manager.MountRawAppsView(filepath.Join(filepath.Dir(conf.SocketFile), "apps-raw")); err != nil {
 		return err
 	}
-	// One-time storage migrations, in order, before anything serves. The host
-	// states they cover: a fresh or fully migrated host records all gates as
-	// no-ops; a pre-rootfs host runs the whole chain; a host stopped mid-chain
-	// resumes at whichever gates are unrecorded. All are ensure-style
-	// and resumable, so a failure only warns and the next start retries the apps
-	// it missed. On a pre-rootfs host the first run synchronously builds and
-	// exports the base image -- the known one-time migration outage.
-	if err := manager.MigrateRootfsStorage(c.App.Version); err != nil {
-		slog.Warn("Storage migration incomplete; retrying at next start", "error", err)
-	}
-	if err := manager.MigrateUnifiedStorage(c.App.Version); err != nil {
-		slog.Warn("Unified-storage migration incomplete; retrying at next start", "error", err)
-	}
-	if err := manager.MigrateIdmapStorage(c.App.Version); err != nil {
-		slog.Warn("Idmap migration incomplete; retrying at next start", "error", err)
-	}
-	// Seed the poweroff flag from unit state once; the flag is authoritative
-	// after this (a never-enabled fresh unit also reads "disabled").
-	if err := manager.BackfillPowerOffFlags(); err != nil {
-		slog.Warn("Cannot backfill poweroff flags; retrying at next start", "error", err)
-	}
 	// After the budgets exist: applying a stored limit re-ensures the app's
 	// budget qgroup and its cap. Migration briefly runs on the 2048M default and
 	// this corrects every group to the owner's real limit.

@@ -39,11 +39,7 @@ func (nopUser) LookupUID(username string) (int, error) { return 1001, nil }
 
 func (nopUser) LookupIDs(username string) (uid, gid int, err error) { return 1001, 1001, nil }
 
-func (nopUser) Home(username string) (string, error) { return "", nil }
-
 func (nopUser) Create(username, home string, uid int) error { return nil }
-
-func (nopUser) SetHome(username, home string) error { return nil }
 
 func (nopUser) Rename(oldName, newName string) error { return nil }
 
