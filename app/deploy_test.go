@@ -499,6 +499,27 @@ func TestRestartStaleAgents(t *testing.T) {
 	assert.Equal(t, []string{"blog"}, restarted)
 }
 
+func TestRestartStaleAgentsLeavesPoweredOffAppsOff(t *testing.T) {
+	t.Parallel()
+	m, _, runner := newTestDeployManager(t)
+	createTestApp(t, m, "blog")
+	writeAppFile(t, m, "blog", "hostit.yml", "mode: static")
+
+	// The app was deliberately powered off (its unit disabled). An upgrade --
+	// including the storage migration's config-hash change that makes every
+	// container stale -- must not resurrect it: Up would recreate the container
+	// and enable the unit.
+	runner.returns("is-enabled", "disabled")
+	runner.reset()
+	restarted, err := m.RestartStaleAgents("v0.3.0")
+	require.NoError(t, err)
+	assert.Empty(t, restarted)
+	joined := runner.ran()
+	assert.NotContains(t, joined, "enable --now", "a powered-off app must not be re-enabled by an upgrade")
+	assert.NotContains(t, joined, "systemctl restart")
+	assert.NotContains(t, joined, "podman create")
+}
+
 func TestExecInApp(t *testing.T) {
 	t.Parallel()
 	m, _, runner := newTestDeployManager(t)

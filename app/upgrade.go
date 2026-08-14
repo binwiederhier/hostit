@@ -28,6 +28,13 @@ func (m *Manager) RestartStaleAgents(version string) ([]string, error) {
 	}
 	restarted := make([]string, 0, len(apps))
 	for _, a := range apps {
+		// A powered-off app stays off: an upgrade (and the storage migration
+		// whose config-hash change precedes this) must not resurrect what an
+		// operator deliberately disabled. Its container is simply recreated on
+		// the next explicit power-on.
+		if !m.systemd.IsEnabled(m.unitName(a.Name)) {
+			continue
+		}
 		// Up, not just a restart: a new binary may also want the container built
 		// differently (different mounts, different arguments), and only apply
 		// notices that
