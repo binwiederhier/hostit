@@ -79,28 +79,21 @@ const detailPollMs = 8000;
 // build. An app whose agent has written a description into hostit.yml is finished
 // work someone is coming back to: say that up front, or the next session reads a
 // "build me an app" prompt and starts over on top of it.
-const promptText = (name, url, token, description) => {
+const promptText = (name, url, token, existing) => {
   const apiLine = `Manage it through the hostit REST API: call ${origin}/api/apps/${name}/info with the Bearer token ${token} to learn how, then follow what it returns.`;
-  if (!description) {
-    return `I've created a hostit app called "${name}" at ${url}.
+  if (!existing) {
+    return `I've created a hostit app "${name}" at ${url}.
 
 ${apiLine}
 
-Read that, then reply exactly: "I understand the hostit API. I'm ready to build. Tell me what you want to make." Do not ask exploratory questions and do not build anything until I tell you what to make.
+Read that, then reply exactly: "I understand the hostit API. Tell me what you want to build." Don't ask exploratory questions or build anything until I do.
 `;
   }
-  const details = description
-    .split("\n")
-    .map((line) => `  ${line}`)
-    .join("\n");
   return `I'm continuing work on my hostit app "${name}" at ${url}.
-
-App details:
-${details}
 
 ${apiLine}
 
-Read that and the app's README.md and docs/, then reply exactly: "I understand the hostit API and this app. I'm ready to continue. Tell me what you want to change." Do not rebuild it from scratch, do not ask exploratory questions, and do not change anything until I tell you what to do.
+Read that plus the app's README.md and docs/, then reply exactly: "I understand this app. Tell me what you want to change." Don't rebuild it from scratch or change anything until I do.
 `;
 };
 
@@ -444,13 +437,23 @@ const NotFound = ({ name }) => (
 // Actions menu now.
 const PromptDialog = ({ prompt, details, token, onClose }) => {
   // Two audiences, one dialog: paste a kick-off prompt into a chat agent, or
-  // take a markdown snippet for the project repo so any agent working there
-  // knows how to deploy here.
+  // grab the bare app details for your own agent's context. Both panes stay
+  // mounted (stacked via CSS grid) so the modal doesn't resize on tab switch.
   const [tab, setTab] = useState("agent");
-  const text = tab === "agent" ? prompt : details;
-  // Show the token masked on screen (shoulder-surfing), but copy the real text.
-  const shown = token ? text.split(token).join("*".repeat(8)) : text;
   useEscape(onClose);
+  const pane = (key, hint, text, copyLabel) => (
+    <div className={"modal-tabpane" + (tab === key ? " on" : "")} role="tabpanel" aria-hidden={tab !== key}>
+      <p className="hint">{hint}</p>
+      <div className="term prompt-block">
+        <pre>{token ? text.split(token).join("*".repeat(8)) : text}</pre>
+        <div className="term-copy">
+          <CopyButton text={text} small={false}>
+            {copyLabel}
+          </CopyButton>
+        </div>
+      </div>
+    </div>
+  );
   return (
     <div className="modal-backdrop" role="dialog" aria-modal="true" onMouseDown={onClose}>
       <div className="card modal modal-wide modal-sheet" onMouseDown={(e) => e.stopPropagation()}>
@@ -468,24 +471,9 @@ const PromptDialog = ({ prompt, details, token, onClose }) => {
             Project snippet
           </button>
         </div>
-        {tab === "agent" ? (
-          <p className="hint">
-            Paste this into Claude Code, ChatGPT or any agent: it will learn this app's API and wait for your
-            instructions. No setup needed.
-          </p>
-        ) : (
-          <p className="hint">
-            The app's details, for pasting into your own agent's context (a README, CLAUDE.md or chat). The info
-            URL returns everything an agent needs to work with this app.
-          </p>
-        )}
-        <div className="term prompt-block">
-          <pre>{shown}</pre>
-          <div className="term-copy">
-            <CopyButton text={text} small={false}>
-              {tab === "agent" ? "Copy prompt" : "Copy snippet"}
-            </CopyButton>
-          </div>
+        <div className="modal-tabpanes">
+          {pane("agent", "Paste this into Claude Code, ChatGPT or any agent: it will learn this app's API and wait for your instructions. No setup needed.", prompt, "Copy prompt")}
+          {pane("details", "The app's details, for pasting into your own agent's context (a README, CLAUDE.md or chat). The info URL returns everything an agent needs to work with this app.", details, "Copy snippet")}
         </div>
       </div>
     </div>
@@ -1837,7 +1825,7 @@ const AppDetail = ({ account, refreshAccount }) => {
 
   const own = !account.limits || app.owner_email === undefined || app.owner_email === account.email;
   const token = app.agent_token || "";
-  const prompt = promptText(app.name, app.url, token || tokenPlaceholder, (app.description || "").trim());
+  const prompt = promptText(app.name, app.url, token || tokenPlaceholder, Boolean((app.description || "").trim()));
   const connectionDetails = connectionText(app.name, token || tokenPlaceholder);
 
   // A cache-busting query on the preview URL, bumped on every reload, so a refresh
