@@ -232,6 +232,7 @@ type fakeSystem struct {
 	authorizedKeys map[string][]string
 	skeletons      map[string][]string
 	uids           map[string]int
+	homes          map[string]string // Account home paths set via SetHome
 	portRules      [][]firewall.Rule
 	createUserErr  error
 
@@ -249,6 +250,7 @@ func newFakeSystem() *fakeSystem {
 		authorizedKeys: make(map[string][]string),
 		skeletons:      make(map[string][]string),
 		uids:           make(map[string]int),
+		homes:          make(map[string]string),
 	}
 }
 
@@ -285,6 +287,13 @@ func (f *fakeSystem) Create(username, home string, uid int) error {
 	}
 	f.createdUsers = append(f.createdUsers, username)
 	f.uids[username] = uid
+	return nil
+}
+
+func (f *fakeSystem) SetHome(username, home string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.homes[username] = home
 	return nil
 }
 

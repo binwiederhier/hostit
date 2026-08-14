@@ -33,6 +33,7 @@ type Interface interface {
 	LookupUID(username string) (int, error)
 	LookupIDs(username string) (uid, gid int, err error)
 	Create(username, home string, uid int) error
+	SetHome(username, home string) error
 	Rename(oldName, newName string) error
 	KillProcesses(username string) error
 	Delete(username string) error
@@ -118,6 +119,20 @@ func createUserArgs(username, home string, uid int, shell, group string) []strin
 	id := strconv.Itoa(uid)
 	return []string{"useradd", "--no-create-home", "--home-dir", home, "--shell", shell,
 		"--uid", id, "--gid", id, "--groups", group, "--comment", "hostit app", username}
+}
+
+// SetHome points an account's home directory at a new path. Only the passwd
+// entry changes (no --move-home): the caller moves the files itself, which is
+// what the storage-unification migration does.
+func (s *Service) SetHome(username, home string) error {
+	args := setHomeArgs(username, home)
+	return run(args[0], args[1:]...)
+}
+
+// setHomeArgs is the usermod command SetHome runs, split out so the flag shape
+// is testable without root.
+func setHomeArgs(username, home string) []string {
+	return []string{"usermod", "--home", home, username}
 }
 
 // Rename changes a user's login name; uid, home and files are untouched, so this

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -358,7 +359,12 @@ type fakeRunner struct {
 	outputs  map[string]string
 	errs     map[string]error
 	built    map[string]bool // Image tags the fake store "has" (built or seeded)
-	mu       sync.Mutex      // Protects commands; the demo app deploys in the background
+	// emulateSubvolDelete makes "btrfs subvolume delete" actually remove the
+	// path, for the migration tests that need the real on-disk result. Off by
+	// default: the reconcile tests rely on the fake delete NOT touching disk
+	// (standing in for the real tool refusing a plain directory).
+	emulateSubvolDelete bool
+	mu                  sync.Mutex // Protects commands; the demo app deploys in the background
 }
 
 var _ run.Runner = (*fakeRunner)(nil)
@@ -409,11 +415,21 @@ func (f *fakeRunner) Run(args ...string) (string, error) {
 	}
 	// The base export publishes via a rename (MoveSubvolume); emulate it so the
 	// base actually appears at its final path and a second ensure is a no-op.
-	// ONLY for .bases paths: the rollback home-swap also moves subvolumes, but the
-	// fake snapshot above materializes empty dirs, so a faithful mv there would
-	// swap a populated test home for an empty one.
-	if len(args) == 3 && args[0] == "mv" && strings.Contains(args[1], "/.bases/") {
+	// ONLY for .bases and .rootfs paths (the latter is the unification
+	// migration's staged rootfs moving into place): the rollback swap also moves
+	// subvolumes, but the fake snapshot above materializes empty dirs, so a
+	// faithful mv there would swap a populated test subvolume for an empty one.
+	if len(args) == 3 && args[0] == "mv" && (strings.Contains(args[1], "/.bases/") || strings.Contains(args[1], "/.rootfs/")) {
 		_ = os.Rename(args[1], args[2])
+	}
+	// The unification migration reflink-copies the home into the staged rootfs;
+	// emulate with a plain cp -a (the test fs is not CoW, and the copy's effect
+	// is what the migration tests observe).
+	if len(args) == 5 && args[0] == "cp" && args[1] == "-a" && args[2] == "--reflink=always" {
+		_ = exec.Command("cp", "-a", args[3], args[4]).Run()
+	}
+	if f.emulateSubvolDelete && len(args) == 4 && args[0] == "btrfs" && args[1] == "subvolume" && args[2] == "delete" {
+		_ = os.RemoveAll(args[3])
 	}
 	if len(args) == 4 && args[0] == "podman" && args[1] == "image" && args[2] == "exists" {
 		if !f.built[args[3]] {

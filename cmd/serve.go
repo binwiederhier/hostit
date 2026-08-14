@@ -96,6 +96,12 @@ func execServe(c *cli.Context) error {
 	if err := manager.MigrateRootfsStorage(c.App.Version); err != nil {
 		slog.Warn("Storage migration incomplete; retrying at next start", "error", err)
 	}
+	// One-time unification of each app's home into its rootfs (one subvolume per
+	// app), gated separately and run AFTER the rootfs migration: a pre-rootfs
+	// host runs both, in order. Same failure contract: warn and retry next start.
+	if err := manager.MigrateUnifiedStorage(c.App.Version); err != nil {
+		slog.Warn("Unified-storage migration incomplete; retrying at next start", "error", err)
+	}
 	// After the budgets exist: applying a stored limit also caps the app's qgroup,
 	// which warns into the log if the group is not there yet. Migration briefly runs
 	// on the 2048M default and this corrects every group to the owner's real limit.
