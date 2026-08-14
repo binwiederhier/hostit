@@ -21,8 +21,9 @@ import (
 )
 
 const (
-	testToken     = "secr3t"
-	testPublicKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIC24brF98CyUY18aeOGGQY3+wILYYnUUBQqICmMTvTGL test@host"
+	testToken      = "secr3t"
+	testPublicKey  = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIC24brF98CyUY18aeOGGQY3+wILYYnUUBQqICmMTvTGL test@host"
+	testPublicKey2 = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEARLXvgHdnZfqNlXFEr2sf0hTWutnDbJjDTfWjKO08k test2@host"
 )
 
 func TestAPIHealth(t *testing.T) {

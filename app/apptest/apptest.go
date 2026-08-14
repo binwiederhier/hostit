@@ -5,13 +5,12 @@
 package apptest
 
 import (
-	"os"
-
 	"heckel.io/hostit/app"
 	"heckel.io/hostit/btrfs"
 	"heckel.io/hostit/container"
 	"heckel.io/hostit/firewall"
 	"heckel.io/hostit/run"
+	"heckel.io/hostit/ssh"
 	"heckel.io/hostit/systemd"
 )
 
@@ -25,7 +24,7 @@ func NewNopServices() *app.Services {
 		Systemd:   systemd.New(runner),
 		Container: container.New(runner),
 		User:      nopUser{},
-		SSH:       nopSSH{},
+		SSH:       ssh.New(), // real: post-idmap it only writes plain files, test-safe
 		Firewall:  nopFirewall{},
 		Runner:    runner,
 	}
@@ -53,11 +52,6 @@ func (nopUser) KillProcesses(username string) error { return nil }
 func (nopUser) Delete(username string) error { return nil }
 
 func (nopUser) WriteSkeleton(home string, files map[string]string) error { return nil }
-
-// nopSSH is an ssh.Interface that does nothing
-type nopSSH struct{}
-
-func (nopSSH) WriteAuthorizedKeys(root *os.Root, username string, keys []string) error { return nil }
 
 // nopFirewall is a firewall.Interface that does nothing
 type nopFirewall struct{}

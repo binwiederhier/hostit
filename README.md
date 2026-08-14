@@ -21,6 +21,11 @@
 - a workspace with **python3, go, Node.js (with npm), PHP and sqlite3**
   preinstalled (and root, so `apt-get install` anything else you need)
 
+Apps can be shared: the owner adds **collaborators** (existing users, by email)
+in the app's Settings, who get full working access -- deploy, files, terminal,
+assistant, SSH with their own keys -- while delete/rename and the collaborator
+list stay owner-only.
+
 Multi-user: people sign in with Google, an admin approves them from a small web
 app, and each user gets their own apps within admin-adjustable limits (app count,
 container memory, hard disk cap). Per-user API tokens make the same REST API and

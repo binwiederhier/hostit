@@ -332,7 +332,7 @@ const MenuItem = ({ icon, label, onClick, disabled, danger }) => (
 // delete -- dividers between the groups. Only one app verb is ever the sensible
 // next move, and when the container is off there is no app to act on, so that
 // group is dropped.
-const ActionsMenu = ({ running, appRunning, busy, onAction, onDelete }) => {
+const ActionsMenu = ({ running, appRunning, busy, onAction, onDelete, canDelete = true }) => {
   const { open, setOpen, ref } = useDropdown();
 
   const run = (action) => {
@@ -383,9 +383,12 @@ const ActionsMenu = ({ running, appRunning, busy, onAction, onDelete }) => {
           ) : (
             <MenuItem icon={<PowerIcon />} label="Power on" onClick={() => run("poweron")} />
           )}
-          <div className="menu-sep" />
-
-          <MenuItem icon={<TrashIcon />} label="Delete app" onClick={pick(onDelete)} danger />
+          {canDelete && (
+            <>
+              <div className="menu-sep" />
+              <MenuItem icon={<TrashIcon />} label="Delete app" onClick={pick(onDelete)} danger />
+            </>
+          )}
         </div>
       )}
     </div>
@@ -831,6 +834,9 @@ const AppSettings = ({ app, showToast, onCopyToken, onRegenerateToken, hasToken,
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [confirmId, setConfirmId] = useState(null);
+  const [collabs, setCollabs] = useState(null);
+  const [collabInput, setCollabInput] = useState("");
+  const isOwner = !!app.is_owner;
 
   const pct = (u, l) => (l ? Math.min(100, Math.round((u / l) * 100)) : 0);
   const mb = (u, l) => (l ? `${u} / ${l} MB` : `${u} MB`);
@@ -870,6 +876,12 @@ const AppSettings = ({ app, showToast, onCopyToken, onRegenerateToken, hasToken,
     } catch (err) {
       setError(err.message);
       setDomains([]);
+    }
+    try {
+      const people = await api.get(`/api/apps/${encodeURIComponent(name)}/collaborators`);
+      setCollabs(Array.isArray(people) ? people : []);
+    } catch {
+      setCollabs([]); // the list is a nicety; the section still renders
     }
   }, [name]);
   useEffect(() => {
@@ -913,6 +925,37 @@ const AppSettings = ({ app, showToast, onCopyToken, onRegenerateToken, hasToken,
       setBusy(false);
     }
   };
+  const addCollaborator = async (e) => {
+    e.preventDefault();
+    const email = collabInput.trim().toLowerCase();
+    if (busy || !email) return;
+    setBusy(true);
+    setError("");
+    try {
+      await api.post(`/api/apps/${encodeURIComponent(name)}/collaborators`, { email });
+      setCollabInput("");
+      showToast("Collaborator added");
+      await load();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const removeCollaborator = async (id) => {
+    if (busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      await api.del(`/api/apps/${encodeURIComponent(name)}/collaborators/${encodeURIComponent(id)}`);
+      showToast("Collaborator removed");
+      await load();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
   const removeDomain = async (domain) => {
     if (busy) return;
     setConfirmId(null);
@@ -940,12 +983,14 @@ const AppSettings = ({ app, showToast, onCopyToken, onRegenerateToken, hasToken,
             <span className="ov-k">Name</span>
             <span className="ov-v">{name}</span>
             <CopyMini text={name} label="Copy app name" />
-            <button type="button" className="copy-mini" onClick={() => setShowRename(true)} title="Rename app" aria-label="Rename app">
-              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <path d="M11.5 2.5l2 2L6 12l-2.6.6L4 10z" />
-                <path d="M10.5 3.5l2 2" />
-              </svg>
-            </button>
+            {isOwner && (
+              <button type="button" className="copy-mini" onClick={() => setShowRename(true)} title="Rename app" aria-label="Rename app">
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M11.5 2.5l2 2L6 12l-2.6.6L4 10z" />
+                  <path d="M10.5 3.5l2 2" />
+                </svg>
+              </button>
+            )}
           </div>
           <div className="ov-line">
             <span className="ov-k">{urls.length > 1 ? "URLs" : "URL"}</span>
@@ -1005,6 +1050,41 @@ const AppSettings = ({ app, showToast, onCopyToken, onRegenerateToken, hasToken,
             {savingDesc ? "Saving..." : "Save description"}
           </button>
         </div>
+      </section>
+
+      <section className="ov-section">
+        <h3>Collaborators</h3>
+        <p className="hint">
+          People who can work on <span className="mono">{name}</span> with you: deploy, edit files, use the terminal and assistant, SSH in with their own keys.
+          {isOwner ? " Only you (the owner) can delete or rename the app, or change this list." : " Only the owner can change this list."}
+        </p>
+        {isOwner && (
+          <form className="domain-add" onSubmit={addCollaborator}>
+            <input type="email" value={collabInput} onChange={(e) => setCollabInput(e.target.value)} placeholder="teammate@example.com" aria-label="Collaborator email" />
+            <button type="submit" className="btn btn-primary btn-small" disabled={busy || !collabInput.trim()}>Add collaborator</button>
+          </form>
+        )}
+        {collabs === null ? (
+          <p className="hint">Loading...</p>
+        ) : collabs.length === 0 ? (
+          <p className="hint">No collaborators yet.{isOwner ? " Add an existing user by their email." : ""}</p>
+        ) : (
+          <div className="domain-list">
+            {collabs.map((u) => (
+              <div className="domain-row" key={u.id}>
+                <div className="domain-head">
+                  <span className="domain-name">{u.email}</span>
+                  {u.name && <span className="hint">{u.name}</span>}
+                  {isOwner && (
+                    <span className="domain-actions">
+                      <button type="button" className="btn btn-small" onClick={() => removeCollaborator(u.id)} disabled={busy}>Remove</button>
+                    </span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </section>
 
       <section className="ov-section">
@@ -1665,6 +1745,7 @@ const AppDetail = ({ account, refreshAccount }) => {
                 busy={!!pending}
                 onAction={lifecycle}
                 onDelete={() => setConfirmDelete(true)}
+                canDelete={!!app.is_owner}
               />
               <a className="btn btn-primary ws-open" href={app.custom_domain ? `https://${app.custom_domain}` : app.url} target="_blank" rel="noreferrer" title="Open app">
                 <span className="ws-open-label">Open app</span>

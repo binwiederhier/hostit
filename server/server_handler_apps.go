@@ -55,7 +55,7 @@ func (s *Server) handleAppsCreate(w http.ResponseWriter, r *http.Request, c *cal
 	}
 	slog.Info("App created", "app", a.Name, "port", a.Port, "owner", c.userID())
 	s.logAction(c, a.Name, "created", "App created")
-	resp := s.appResponse(a, s.firstActiveDomain(a.Name))
+	resp := s.appResponseFor(c, a, s.firstActiveDomain(a.Name))
 	resp.AgentToken = s.agentToken(a) // Created with the app, never a separate step
 	writeJSON(w, http.StatusCreated, resp)
 }
@@ -100,7 +100,7 @@ func (s *Server) handleAppsFork(w http.ResponseWriter, r *http.Request, c *calle
 	}
 	slog.Info("App forked", "source", source.Name, "app", a.Name, "owner", c.userID())
 	s.logAction(c, a.Name, "created", "Forked from "+source.Name)
-	resp := s.appResponse(a, s.firstActiveDomain(a.Name))
+	resp := s.appResponseFor(c, a, s.firstActiveDomain(a.Name))
 	resp.AgentToken = s.agentToken(a)
 	writeJSON(w, http.StatusCreated, resp)
 }
@@ -122,7 +122,7 @@ func (s *Server) handleAppsSetDescription(w http.ResponseWriter, r *http.Request
 		return
 	}
 	s.logAction(c, a.Name, "description", "Updated the description")
-	writeJSON(w, http.StatusOK, s.appResponse(a, s.firstActiveDomain(a.Name))) // appResponse re-reads the description from the file
+	writeJSON(w, http.StatusOK, s.appResponseFor(c, a, s.firstActiveDomain(a.Name))) // appResponse re-reads the description from the file
 }
 
 // handleAppsRename changes an app's name. Everything durable keys on the app id,
@@ -130,7 +130,7 @@ func (s *Server) handleAppsSetDescription(w http.ResponseWriter, r *http.Request
 // nothing (home, snapshots, container) moves. The custom-domain routing cache is
 // refreshed so a domain follows the app to its new name.
 func (s *Server) handleAppsRename(w http.ResponseWriter, r *http.Request, c *caller) {
-	a, err := s.ownedApp(c, r.PathValue("name"))
+	a, err := s.ownerApp(c, r.PathValue("name"))
 	if err != nil {
 		writeAppError(w, err)
 		return
@@ -147,7 +147,7 @@ func (s *Server) handleAppsRename(w http.ResponseWriter, r *http.Request, c *cal
 	}
 	s.reloadDomains() // a custom domain's routing keys on the name; follow it
 	s.logAction(c, renamed.Name, "rename", "Renamed from "+a.Name)
-	resp := s.appResponse(renamed, s.firstActiveDomain(renamed.Name))
+	resp := s.appResponseFor(c, renamed, s.firstActiveDomain(renamed.Name))
 	writeJSON(w, http.StatusOK, s.withState([]*apiAppResponse{resp})[0])
 }
 
@@ -164,7 +164,7 @@ func (s *Server) handleAppsList(w http.ResponseWriter, r *http.Request, c *calle
 	}
 	resp := make([]*apiAppResponse, 0, len(apps))
 	for _, a := range apps {
-		resp = append(resp, s.appResponse(a, activeDomains[a.Name]))
+		resp = append(resp, s.appResponseFor(c, a, activeDomains[a.Name]))
 	}
 	writeJSON(w, http.StatusOK, s.withState(resp))
 }
@@ -175,7 +175,7 @@ func (s *Server) handleAppsGet(w http.ResponseWriter, r *http.Request, c *caller
 		writeAppError(w, err)
 		return
 	}
-	resp := s.appResponse(a, s.firstActiveDomain(a.Name))
+	resp := s.appResponseFor(c, a, s.firstActiveDomain(a.Name))
 	resp.AgentToken = s.agentToken(a)
 	writeJSON(w, http.StatusOK, s.withState([]*apiAppResponse{resp})[0])
 }
@@ -193,7 +193,7 @@ func (s *Server) handleAppsRotateToken(w http.ResponseWriter, r *http.Request, c
 		return
 	}
 	s.logAction(c, a.Name, "token", "Regenerated the API token")
-	resp := s.appResponse(a, s.firstActiveDomain(a.Name))
+	resp := s.appResponseFor(c, a, s.firstActiveDomain(a.Name))
 	resp.AgentToken = token
 	// Through withState like every other app response, or rotating a token would
 	// hand the web app an app with no live state and flip its status dot to stopped.
@@ -212,7 +212,7 @@ func (s *Server) agentToken(a *store.App) string {
 }
 
 func (s *Server) handleAppsDelete(w http.ResponseWriter, r *http.Request, c *caller) {
-	a, err := s.ownedApp(c, r.PathValue("name"))
+	a, err := s.ownerApp(c, r.PathValue("name"))
 	if err != nil {
 		writeAppError(w, err)
 		return
@@ -239,7 +239,8 @@ func (s *Server) handleAppsSetKeys(w http.ResponseWriter, r *http.Request, c *ca
 		writeAppError(w, err)
 		return
 	}
-	profileKeys, err := s.users.KeyStrings(a.OwnerID)
+	// The full standing set: the owner's profile keys plus every collaborator's.
+	profileKeys, err := s.appProfileKeys(a)
 	if err != nil {
 		writeAppError(w, err)
 		return
@@ -248,7 +249,7 @@ func (s *Server) handleAppsSetKeys(w http.ResponseWriter, r *http.Request, c *ca
 		writeAppError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, s.withState([]*apiAppResponse{s.appResponse(a, s.firstActiveDomain(a.Name))})[0])
+	writeJSON(w, http.StatusOK, s.withState([]*apiAppResponse{s.appResponseFor(c, a, s.firstActiveDomain(a.Name))})[0])
 }
 
 // listedApps returns the caller's own apps, or every app when an admin asks for
@@ -260,7 +261,16 @@ func (s *Server) listedApps(c *caller, all bool) ([]*store.App, error) {
 		if c.user == nil {
 			return s.apps.Apps() // The global admin token owns nothing, so "own" means all
 		}
-		return s.apps.Store().AppsByOwner(c.user.ID)
+		owned, err := s.apps.Store().AppsByOwner(c.user.ID)
+		if err != nil {
+			return nil, err
+		}
+		shared, err := s.apps.Store().AppsByCollaborator(c.user.ID)
+		if err != nil {
+			return nil, err
+		}
+		// Owned first, then collaborated; both are name-sorted already.
+		return append(owned, shared...), nil
 	}
 	if !c.isAdmin() {
 		return nil, ErrForbidden
@@ -268,14 +278,30 @@ func (s *Server) listedApps(c *caller, all bool) ([]*store.App, error) {
 	return s.apps.Apps()
 }
 
-// ownedApp fetches an app the caller may act on (own app, or any app for admins)
+// ownedApp fetches an app the caller may act on: their own, one they hold a
+// collaborator grant on, or any app for admins. Ownership acts (delete,
+// rename, collaborator management) go through ownerApp instead.
 func (s *Server) ownedApp(c *caller, name string) (*store.App, error) {
 	a, err := s.apps.App(name)
 	if err != nil {
 		return nil, err
 	}
-	if !c.isAdmin() && a.OwnerID != c.userID() {
+	if !c.isAdmin() && a.OwnerID != c.userID() && !s.apps.Store().IsAppCollaborator(a.ID, c.userID()) {
 		return nil, store.ErrAppNotFound // Don't leak the existence of other people's apps
+	}
+	return a, nil
+}
+
+// ownerApp is ownedApp restricted to the ownership acts: the owner or an
+// admin. A collaborator knows the app exists, so they get a plain forbidden
+// rather than a 404.
+func (s *Server) ownerApp(c *caller, name string) (*store.App, error) {
+	a, err := s.ownedApp(c, name)
+	if err != nil {
+		return nil, err
+	}
+	if !c.isAdmin() && a.OwnerID != c.userID() {
+		return nil, fmt.Errorf("%w: only the app's owner may do this", ErrForbidden)
 	}
 	return a, nil
 }

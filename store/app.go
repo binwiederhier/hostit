@@ -203,6 +203,9 @@ func (s *Store) RemoveApp(name string) error {
 	if _, err := s.db.Exec(deleteAppUsageQuery, app.ID); err != nil {
 		return err
 	}
+	if _, err := s.db.Exec(deleteCollaboratorsByAppQuery, app.ID); err != nil {
+		return err
+	}
 	if _, err := s.db.Exec(deleteAppAssistantQuery, app.ID); err != nil {
 		return err
 	}

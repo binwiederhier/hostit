@@ -221,6 +221,17 @@ var migrations = []string{
 	// were refused). The daemon backfills existing apps from unit state once.
 	`
 		ALTER TABLE app ADD COLUMN powered_off INTEGER NOT NULL DEFAULT 0;
+	`, // 17: per-app collaborator grants -- users who may work on an app they do
+	// not own (everything but delete/rename/collaborator management). Their
+	// profile SSH keys join the app's managed authorized_keys while granted.
+	`
+		CREATE TABLE app_collaborator (
+			app_id TEXT NOT NULL,
+			user_id TEXT NOT NULL,
+			created_at INTEGER NOT NULL,
+			PRIMARY KEY (app_id, user_id)
+		);
+		CREATE INDEX idx_app_collaborator_user ON app_collaborator (user_id);
 	`,
 }
 

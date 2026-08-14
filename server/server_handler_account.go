@@ -156,22 +156,24 @@ func (s *Server) accountResponse(c *caller) (*apiAccountResponse, error) {
 	}, nil
 }
 
-// syncUserAppKeys rewrites authorized_keys for all apps a user owns, so profile
-// key changes take effect immediately
+// syncUserAppKeys rewrites authorized_keys for every app a user has standing
+// access to -- owned AND collaborated -- so profile key changes take effect
+// immediately everywhere. Each app gets its full profile-key set (owner plus
+// all collaborators), never just this user's keys.
 func (s *Server) syncUserAppKeys(userID string) error {
 	if userID == "" {
 		return nil
 	}
-	apps, err := s.apps.Store().AppsByOwner(userID)
+	owned, err := s.apps.Store().AppsByOwner(userID)
 	if err != nil {
 		return err
 	}
-	userKeys, err := s.users.KeyStrings(userID)
+	shared, err := s.apps.Store().AppsByCollaborator(userID)
 	if err != nil {
 		return err
 	}
-	for _, a := range apps {
-		if err := s.apps.SyncKeys(a.Name, userKeys); err != nil {
+	for _, a := range append(owned, shared...) {
+		if err := s.resyncAppKeys(a); err != nil {
 			return err
 		}
 	}

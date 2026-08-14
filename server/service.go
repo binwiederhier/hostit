@@ -364,6 +364,15 @@ func (s *Server) firstActiveDomain(name string) string {
 	return ""
 }
 
+// appResponseFor is appResponse plus the caller-dependent bits (IsOwner), for
+// the authenticated API surface; the unix-socket self API keeps plain
+// appResponse (the container is the app, ownership does not apply there).
+func (s *Server) appResponseFor(c *caller, a *store.App, customDomain string) *apiAppResponse {
+	resp := s.appResponse(a, customDomain)
+	resp.IsOwner = c.isAdmin() || a.OwnerID == c.userID()
+	return resp
+}
+
 func (s *Server) appResponse(a *store.App, customDomain string) *apiAppResponse {
 	resp := &apiAppResponse{
 		ID:               a.ID,

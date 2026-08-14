@@ -15,6 +15,18 @@ type apiCreateAppRequest struct {
 	SSHKeys []string `json:"ssh_keys"`
 }
 
+// apiCollaboratorResponse is one collaborator row: enough for a settings list.
+type apiCollaboratorResponse struct {
+	ID    string `json:"id"`
+	Email string `json:"email"`
+	Name  string `json:"name"`
+}
+
+// apiAddCollaboratorRequest is the body of POST /api/apps/{name}/collaborators.
+type apiAddCollaboratorRequest struct {
+	Email string `json:"email"`
+}
+
 // apiSetKeysRequest is the body of PUT /api/apps/{name}/keys
 type apiSetKeysRequest struct {
 	SSHKeys []string `json:"ssh_keys"`
@@ -46,6 +58,9 @@ type apiSSHInfo struct {
 
 // apiAppResponse is returned for all app-related endpoints
 type apiAppResponse struct {
+	// IsOwner says whether the CALLER owns the app (or is an admin): a
+	// collaborator's dashboard shows the app but not the ownership acts.
+	IsOwner     bool   `json:"is_owner"`
 	ID          string `json:"id"` // Stable opaque id; the UI derives an app's avatar colour from it
 	Name        string `json:"name"`
 	URL         string `json:"url"`
