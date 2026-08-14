@@ -26,7 +26,8 @@ const (
 	// dataDirMode lets app users traverse /var/lib/hostit to their own home
 	// without reading it; the registry inside is 0600
 	dataDirMode = 0o711
-	// appsDirMode is the directory holding the app homes, each 0750 in turn
+	// appsDirMode is the directory holding the app subvolumes; app users traverse
+	// it to reach their own files dir (home/app) inside their subvolume
 	appsDirMode = 0o755
 )
 

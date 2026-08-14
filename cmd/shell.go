@@ -11,6 +11,7 @@ import (
 	"golang.org/x/term"
 	"heckel.io/hostit/agent"
 	"heckel.io/hostit/appctl"
+	"heckel.io/hostit/workspace"
 )
 
 const (
@@ -98,7 +99,7 @@ func loginBanner(self *appctl.SelfInfo) string {
 		"\n" +
 		"  App:    " + self.Name + "\n" +
 		"  URL:    " + self.URL + "\n" +
-		"  Files:  " + containerHome(self.Name) + " (upload with scp/rsync, or via the REST API)\n" +
+		"  Files:  " + workspace.ContainerHome + " (upload with scp/rsync, or via the REST API)\n" +
 		"\n" +
 		"  Configure the app in hostit.yml (mode: static, or mode: app with run:), then:\n" +
 		"\n" +
@@ -112,14 +113,6 @@ func loginBanner(self *appctl.SelfInfo) string {
 		"  \"hostit guide\" explains the rest (where files go, what is installed).\n" +
 		"  README.md is this app's own file: what it is, and what you changed.\n" +
 		"\n"
-}
-
-// containerHome is where the app's files appear once the session is inside the
-// container. The banner is printed on the host, where $HOME is the host-side
-// path, and quoting that would send people looking for a directory they cannot
-// reach.
-func containerHome(name string) string {
-	return "/home/" + name
 }
 
 func execAgent(_ *cli.Context) error {
