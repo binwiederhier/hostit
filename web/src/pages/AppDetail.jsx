@@ -312,13 +312,14 @@ const TerminalSplitButton = ({ active, connecting, onWebShell, onSsh }) => {
 };
 
 // MenuItem is one dropdown row: a small leading icon and a label.
-const MenuItem = ({ icon, label, onClick, disabled, danger }) => (
+const MenuItem = ({ icon, label, onClick, disabled, danger, title }) => (
   <button
     type="button"
     role="menuitem"
     className={danger ? "menu-item-danger" : undefined}
     onClick={onClick}
     disabled={disabled}
+    title={title}
   >
     <span className="menu-ico" aria-hidden="true">
       {icon}
@@ -332,7 +333,7 @@ const MenuItem = ({ icon, label, onClick, disabled, danger }) => (
 // delete -- dividers between the groups. Only one app verb is ever the sensible
 // next move, and when the container is off there is no app to act on, so that
 // group is dropped.
-const ActionsMenu = ({ running, appRunning, busy, onAction, onDelete, canDelete = true }) => {
+const ActionsMenu = ({ running, appRunning, busy, onAction, onDelete, canDelete = true, onSsh, onByoa, onFork }) => {
   const { open, setOpen, ref } = useDropdown();
 
   const run = (action) => {
@@ -366,6 +367,12 @@ const ActionsMenu = ({ running, appRunning, busy, onAction, onDelete, canDelete 
       </button>
       {open && (
         <div className="menu-items" role="menu">
+          <div className="menu-narrow-only">
+            <MenuItem icon={<SshMenuIcon />} label="Connect via SSH" onClick={pick(onSsh)} />
+            <MenuItem icon={<SparkleIcon />} label="Use your own AI agent" onClick={pick(onByoa)} />
+            <MenuItem icon={<ForkIcon />} label="Fork app" onClick={pick(onFork)} />
+            <div className="menu-sep" />
+          </div>
           {running && (
             <>
               {appVerbs.map((a) => (
@@ -383,12 +390,15 @@ const ActionsMenu = ({ running, appRunning, busy, onAction, onDelete, canDelete 
           ) : (
             <MenuItem icon={<PowerIcon />} label="Power on" onClick={() => run("poweron")} />
           )}
-          {canDelete && (
-            <>
-              <div className="menu-sep" />
-              <MenuItem icon={<TrashIcon />} label="Delete app" onClick={pick(onDelete)} danger />
-            </>
-          )}
+          <div className="menu-sep" />
+          <MenuItem
+            icon={<TrashIcon />}
+            label="Delete app"
+            onClick={pick(onDelete)}
+            danger
+            disabled={!canDelete}
+            title={canDelete ? undefined : "Only the owner can delete the app"}
+          />
         </div>
       )}
     </div>
@@ -733,6 +743,14 @@ const ForkDialog = ({ name, snapshotId, onClose, onForked }) => {
 // RenameDialog changes an app's name in place. The app keeps running and nothing
 // moves: its home, container, snapshots and custom domains all follow it. Only the
 // built-in <name>.<base> subdomain and the SSH login change. Reached from the
+// SshMenuIcon is the ">_" terminal glyph for the SSH connect button/menu item.
+const SshMenuIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M4 6l5 5-5 5" />
+    <path d="M12 17h8" />
+  </svg>
+);
+
 // Rename icon next to "App name" in the Settings view.
 // TransferDialog hands the app to another user. The current owner stays on as
 // a collaborator, so transferring never locks anyone out of their own work.
@@ -902,7 +920,6 @@ const AppSettings = ({ app, showToast, onCopyToken, onRegenerateToken, hasToken,
 
   const pct = (u, l) => (l ? Math.min(100, Math.round((u / l) * 100)) : 0);
   const mb = (u, l) => (l ? `${u} / ${l} MB` : `${u} MB`);
-  const created = app.created_at ? new Date(app.created_at).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }) : "";
   // The app's own URL plus any verified custom domain, all as clickable links.
   const urls = [app.url, ...(domains || []).filter((d) => d.status === "active").map((d) => "https://" + d.domain)];
   // "user@host", from the ready-made ssh command without its leading "ssh ".
@@ -1045,14 +1062,20 @@ const AppSettings = ({ app, showToast, onCopyToken, onRegenerateToken, hasToken,
             <span className="ov-k">Name</span>
             <span className="ov-v">{name}</span>
             <CopyMini text={name} label="Copy app name" />
-            {isOwner && (
-              <button type="button" className="copy-mini" onClick={() => setShowRename(true)} title="Rename app" aria-label="Rename app">
-                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="M11.5 2.5l2 2L6 12l-2.6.6L4 10z" />
-                  <path d="M10.5 3.5l2 2" />
-                </svg>
-              </button>
-            )}
+            <button
+              type="button"
+              className="copy-mini"
+              onClick={() => isOwner && setShowRename(true)}
+              disabled={!isOwner}
+              title={isOwner ? "Rename app" : "Only the owner can rename the app"}
+              aria-label="Rename app"
+            >
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M11.5 2.5l2 2L6 12l-2.6.6L4 10z" />
+                <path d="M10.5 3.5l2 2" />
+              </svg>
+            </button>
+            {app.id && <span className="ov-appid">(App ID: {app.id})</span>}
           </div>
           <div className="ov-line">
             <span className="ov-k">{urls.length > 1 ? "URLs" : "URL"}</span>
@@ -1095,28 +1118,22 @@ const AppSettings = ({ app, showToast, onCopyToken, onRegenerateToken, hasToken,
           {app.owner_email && (
             <div className="ov-line">
               <span className="ov-k">Owner</span>
-              <span className="ov-v">{app.owner_email}</span>
-              {isOwner && (
-                <button type="button" className="copy-mini" onClick={() => setShowTransfer(true)} title="Transfer ownership" aria-label="Transfer ownership">
-                  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                    <path d="M2.5 5.5h9M9 3l2.5 2.5L9 8" />
-                    <path d="M13.5 10.5h-9M7 8l-2.5 2.5L7 13" />
-                  </svg>
-                </button>
-              )}
+              <span className="ov-v">{app.owner_name && app.owner_name !== app.owner_email ? `${app.owner_name} (${app.owner_email})` : app.owner_email}</span>
+              <button
+                type="button"
+                className="copy-mini"
+                onClick={() => isOwner && setShowTransfer(true)}
+                disabled={!isOwner}
+                title={isOwner ? "Transfer ownership" : "Only the owner can transfer ownership"}
+                aria-label="Transfer ownership"
+              >
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M2.5 5.5h9M9 3l2.5 2.5L9 8" />
+                  <path d="M13.5 10.5h-9M7 8l-2.5 2.5L7 13" />
+                </svg>
+              </button>
             </div>
           )}
-          {app.id && (
-            <div className="ov-line">
-              <span className="ov-k">App ID</span>
-              <span className="ov-v mono">{app.id}</span>
-              <CopyMini text={app.id} label="Copy app ID" />
-            </div>
-          )}
-          <div className="ov-line">
-            <span className="ov-k">Created</span>
-            <span className="ov-v">{created}</span>
-          </div>
         </div>
         <div>
           <h3>Resources &amp; meta</h3>
@@ -1140,9 +1157,7 @@ const AppSettings = ({ app, showToast, onCopyToken, onRegenerateToken, hasToken,
       <section className="ov-section">
         <h3>Collaborators</h3>
         <p className="hint">
-          {!isOwner && app.owner_email && (
-            <>This app is owned by <b>{app.owner_name && app.owner_name !== app.owner_email ? `${app.owner_name} (${app.owner_email})` : app.owner_email}</b>. </>
-          )}
+          {!isOwner && app.owner_email && <>This app is owned by <b>{app.owner_name || app.owner_email}</b>. </>}
           Collaborators can deploy, edit files, use the terminal and assistant, and SSH in with their own keys.
           {isOwner ? " Only you (the owner) can delete or rename the app, or change this list." : " Only the owner can change this list."}
         </p>
@@ -1820,7 +1835,16 @@ const AppDetail = ({ account, refreshAccount }) => {
             <div className="ws-topacts">
               <button
                 type="button"
-                className="btn btn-icon btn-sparkle"
+                className="btn btn-icon ws-collapsible"
+                onClick={() => setShowSsh(true)}
+                title="Connect via SSH"
+                aria-label="Connect via SSH"
+              >
+                <SshMenuIcon />
+              </button>
+              <button
+                type="button"
+                className="btn btn-icon btn-sparkle ws-collapsible"
                 onClick={() => setShowPrompt(true)}
                 title="Use your own AI agent"
                 aria-label="Use your own AI agent"
@@ -1829,7 +1853,7 @@ const AppDetail = ({ account, refreshAccount }) => {
               </button>
               <button
                 type="button"
-                className="btn btn-icon"
+                className="btn btn-icon ws-collapsible"
                 onClick={() => {
                   setForkSnapshotId(null);
                   setShowFork(true);
@@ -1846,6 +1870,12 @@ const AppDetail = ({ account, refreshAccount }) => {
                 onAction={lifecycle}
                 onDelete={() => setConfirmDelete(true)}
                 canDelete={!!app.is_owner}
+                onSsh={() => setShowSsh(true)}
+                onByoa={() => setShowPrompt(true)}
+                onFork={() => {
+                  setForkSnapshotId(null);
+                  setShowFork(true);
+                }}
               />
               <a className="btn btn-primary ws-open" href={app.custom_domain ? `https://${app.custom_domain}` : app.url} target="_blank" rel="noreferrer" title="Open app">
                 <span className="ws-open-label">Open app</span>

@@ -2453,6 +2453,13 @@ a.ws-open { display: inline-flex; align-items: center; gap: 9px; }
 /* The right cluster: live resources next to the controls, vertically centred */
 .ws-topright { margin-left: auto; display: flex; align-items: center; gap: 18px; flex: none; }
 .ws-topacts { display: flex; gap: 8px; align-items: center; position: relative; }
+/* Below this width the three header actions (SSH, own AI, fork) collapse into
+   the 3-dot menu's narrow-only group instead. */
+.menu-narrow-only { display: none; }
+@media (max-width: 700px) {
+  .ws-topacts .ws-collapsible { display: none; }
+  .menu-narrow-only { display: block; }
+}
 
 /* The Actions kebab sits mid-row (Open app is to its right), so anchor its menu to
    the right edge of the controls row instead of the button, or it drifts left. */
@@ -3090,6 +3097,7 @@ body.ws-resizing iframe { pointer-events: none; }
 .newapp-input input { flex: 1; border: 0; background: none; color: var(--text); font: inherit; font-size: 15px; padding: 11px 11px 11px 2px; outline: none; }
 /* A create in flight: the field is disabled -- make it look it, and spin on the button */
 .newapp-input:has(input:disabled) { opacity: 0.55; }
+.ov-appid { color: var(--faint); font-size: 12px; margin-left: 2px; white-space: nowrap; }
 .collab-name { color: var(--faint); font-size: 12px; line-height: 1; align-self: center; }
 .newapp-spinner { display: inline-block; flex: none; width: 12px; height: 12px; margin-right: 7px; border: 2px solid rgb(255 255 255 / 0.35); border-top-color: #fff; border-radius: 50%; vertical-align: -1px; animation: asst-spin 0.7s linear infinite; }
 /* Without the $-prefix span (the snapshot label field), the input needs its own left padding */
