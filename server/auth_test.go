@@ -307,6 +307,7 @@ func TestAppTokenCannotReachTheAccountSurface(t *testing.T) {
 	s := newTestServer(t)
 	u := newActiveTestUser(t, s, "owner@example.com")
 	require.NoError(t, s.apps.Store().AddApp(&store.App{Name: "blog", Port: 10000, Host: store.HostLocal, OwnerID: u.ID}))
+	seedAppSubvolume(t, s, "blog")
 	token, _, err := s.users.CreateAppToken(u.ID, "blog", "agent")
 	require.NoError(t, err)
 
@@ -397,6 +398,7 @@ func TestAppTokenIsScopedByPathPrefix(t *testing.T) {
 	// A name that has blog's name as a string prefix: the scope check must not be
 	// fooled into treating "blogsy" as inside "blog".
 	require.NoError(t, s.apps.Store().AddApp(&store.App{Name: "blogsy", Port: 10002, Host: store.HostLocal, OwnerID: u.ID}))
+	seedAppSubvolume(t, s, "blog")
 	token, _, err := s.users.CreateAppToken(u.ID, "blog", "agent")
 	require.NoError(t, err)
 

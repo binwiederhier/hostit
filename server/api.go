@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"net/http"
 
 	"heckel.io/hostit/app"
@@ -131,6 +132,10 @@ func writeAppError(w http.ResponseWriter, err error) {
 	case errors.Is(err, store.ErrAppDomainExists):
 		writeError(w, http.StatusConflict, err)
 	case errors.Is(err, store.ErrAppDomainNotFound):
+		writeError(w, http.StatusNotFound, err)
+	case errors.Is(err, fs.ErrNotExist):
+		// A file or directory the caller named is not there (the web editor
+		// probes hostit.yml and README.md eagerly): their 404, not our 500.
 		writeError(w, http.StatusNotFound, err)
 	default:
 		writeUserError(w, err)

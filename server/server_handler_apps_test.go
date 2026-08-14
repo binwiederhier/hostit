@@ -64,6 +64,7 @@ func TestAppSetDescription(t *testing.T) {
 	u := newActiveTestUser(t, s, "owner@example.com")
 	token := accountToken(t, s, u)
 	require.NoError(t, s.apps.Store().AddApp(&store.App{Name: "blog", Port: 10000, Host: store.HostLocal, OwnerID: u.ID}))
+	seedAppSubvolume(t, s, "blog")
 
 	rr := request(t, s.API(), "PUT", "/api/apps/blog/description", `{"description":"A tiny blog"}`, token)
 	require.Equal(t, http.StatusOK, rr.Code)

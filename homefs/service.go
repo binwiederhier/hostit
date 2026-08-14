@@ -524,11 +524,12 @@ func (s *Service) ReadCapped(root *os.Root, rel string, max int64) ([]byte, erro
 // absolute one is refused by os.Root, and a link that stays inside the
 // subvolume can at worst redirect their own file API within their own tree.
 func (s *Service) OpenRoot(d Dir) (*os.Root, error) {
-	// The workspace service creates the real subvolume; this MkdirAll exists so
-	// file operations work in tests, where no subvolume was ever snapshotted
-	if err := os.MkdirAll(d.Subvolume, homeMode); err != nil {
-		return nil, err
-	}
+	// The subvolume is created by the workspace service and by NOTHING else: a
+	// missing one is an error to surface, never a path to materialize. Creating
+	// it here would mask a gone app as an empty one -- and a file poll racing a
+	// delete or migration would plant a plain directory where the subvolume
+	// belongs (the v0.9.0 unification then mv'd the real subvolume INSIDE such
+	// a racily-created directory instead of onto the path).
 	subvol, err := os.OpenRoot(d.Subvolume)
 	if err != nil {
 		return nil, err

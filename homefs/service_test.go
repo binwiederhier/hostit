@@ -521,3 +521,17 @@ func TestStatFile(t *testing.T) {
 	_, err = s.StatFile(home, "../../etc/passwd")
 	assert.Error(t, err)
 }
+
+func TestOpenRootRefusesAMissingSubvolume(t *testing.T) {
+	t.Parallel()
+	// The subvolume is created by the workspace service (a btrfs snapshot of the
+	// base) and by nothing else. OpenRoot materializing the path here would mask
+	// a missing subvolume as an empty app -- and it is exactly how a file poll
+	// racing a migration or delete turned the app path into a plain directory
+	// (the v0.9.0 prod incident: mv then moved the real subvolume INSIDE it).
+	s := New(errInvalid)
+	d := Dir{Subvolume: filepath.Join(t.TempDir(), "gone"), Rel: "home/app"}
+	_, err := s.OpenRoot(d)
+	require.Error(t, err)
+	assert.NoDirExists(t, d.Subvolume, "a missing subvolume must never be created here")
+}

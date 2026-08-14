@@ -404,6 +404,17 @@ func TestAgentUnauthenticated(t *testing.T) {
 }
 
 // newAppToken creates an app owned by a fresh user plus a token scoped to it
+// seedAppSubvolume materializes the on-disk subvolume of an app that was added
+// straight to the store, the way create() would have. File endpoints surface a
+// missing subvolume as an error rather than conjure it, so a store-only
+// fixture that touches files needs its directories for real.
+func seedAppSubvolume(t *testing.T, s *Server, name string) {
+	t.Helper()
+	a, err := s.apps.Store().App(name)
+	require.NoError(t, err)
+	require.NoError(t, os.MkdirAll(filepath.Join(s.config.AppsDir, a.ID, "home", "app"), 0o755))
+}
+
 func newAppToken(t *testing.T, s *Server, appName string) string {
 	t.Helper()
 	u := newActiveTestUser(t, s, appName+"-owner@example.com")
@@ -662,4 +673,16 @@ func TestAgentRunEndpoint(t *testing.T) {
 	other := newAppToken(t, s, "other")
 	rr = request(t, s.API(), "POST", "/api/apps/blog/run", `{"command":"whoami"}`, other)
 	assert.Equal(t, http.StatusForbidden, rr.Code)
+}
+
+func TestMissingFileIsA404NotA500(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	token := newAppToken(t, s, "blog")
+	// Reading or stat-ing a file that is not there is the caller's mistake (the
+	// web editor probes hostit.yml and README.md eagerly), not a server fault:
+	// 404, never a 500. Same for listing a directory that does not exist.
+	assert.Equal(t, http.StatusNotFound, request(t, s.API(), "GET", "/api/apps/blog/files/nope.txt", "", token).Code)
+	assert.Equal(t, http.StatusNotFound, request(t, s.API(), "GET", "/api/apps/blog/files/nope.txt?stat=1", "", token).Code)
+	assert.Equal(t, http.StatusNotFound, request(t, s.API(), "GET", "/api/apps/blog/files?path=nope", "", token).Code)
 }
