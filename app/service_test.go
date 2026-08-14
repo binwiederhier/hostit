@@ -142,7 +142,7 @@ func TestDeleteApp(t *testing.T) {
 	_, err := m.CreateApp("blog", &CreateOptions{RequestKeys: []string{testPublicKey}})
 	require.NoError(t, err)
 	require.NoError(t, m.DeleteApp("blog"))
-	m.teardowns.Wait() // the user teardown runs in the background
+	m.background.Wait() // the user teardown runs in the background
 	assert.Equal(t, []string{"blog"}, ops.deletedUsers)
 	_, err = m.App("blog")
 	require.ErrorIs(t, err, store.ErrAppNotFound)
@@ -206,7 +206,14 @@ func newTestManagerDeps(t *testing.T) (*config.Config, *store.Store, *fakeSystem
 func newTestManager(t *testing.T) (*Manager, *fakeSystem) {
 	t.Helper()
 	conf, s, ops := newTestManagerDeps(t)
-	return NewManager(conf, s, testServices(ops, newFakeRunner())), ops
+	m := NewManager(conf, s, testServices(ops, newFakeRunner()))
+	// Cleanups run LIFO: registered after the store-close cleanup, this waits
+	// out the manager's background goroutines (post-create starts, delete
+	// teardowns) BEFORE the db closes and the temp dirs vanish under them --
+	// the source of the "database is closed" noise and a flaky TempDir
+	// "directory not empty" failure in CI.
+	t.Cleanup(m.background.Wait)
+	return m, ops
 }
 
 // testServices bundles the fake privileged services (users, ssh keys, firewall)
@@ -400,7 +407,7 @@ func TestDeleteAppAnswersBeforeTeardownAndConverges(t *testing.T) {
 	require.ErrorIs(t, err, store.ErrAppNotFound)
 
 	// The background teardown converges to exactly what the sync delete did.
-	m.teardowns.Wait()
+	m.background.Wait()
 	joined := r.ran()
 	assert.Contains(t, joined, "systemctl disable --now "+unit)
 	assert.Contains(t, joined, "podman rm --force "+container)

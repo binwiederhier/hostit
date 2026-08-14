@@ -150,11 +150,12 @@ type Manager struct {
 	// keep them; the authoritative values come from the owner's limits
 	memoryMB map[string]int
 	diskMB   map[string]int
-	// teardowns tracks background app-delete teardowns, so tests (and a graceful
-	// shutdown, if it ever wants to) can wait for them; tearingDown holds the
-	// names in flight, so a same-name create can wait for the dying user
-	// instead of failing on the collision.
-	teardowns   sync.WaitGroup
+	// background tracks the manager's fire-and-forget goroutines -- delete
+	// teardowns and the post-create start -- so tests (and a graceful shutdown,
+	// if it ever wants to) can wait for them instead of racing their I/O.
+	// tearingDown holds the app names with a teardown in flight, so a same-name
+	// create can wait for the dying user instead of failing on the collision.
+	background  sync.WaitGroup
 	tearingDown map[string]bool
 	// reservedPorts holds ports handed out by allocatePort but not yet registered
 	// in the store, so concurrent creates never share one (see allocatePort)
@@ -370,7 +371,9 @@ func (m *Manager) create(name string, opts *CreateOptions, seedPath string) (*st
 	// Start the app in the background, so the URL serves something without the API
 	// call waiting for a container (and, on the app user's first app, an image
 	// build) to come up
+	m.background.Add(1)
 	go func() {
+		defer m.background.Done()
 		// How long this took is the question asked whenever an app "would not
 		// start": the API returns at once, and the wait is podman's queue behind
 		// whatever else the host is doing
@@ -383,6 +386,13 @@ func (m *Manager) create(name string, opts *CreateOptions, seedPath string) (*st
 		slog.Info("App started", "app", name, "forked", forking, "took", time.Since(started).Round(time.Second))
 	}()
 	return app, nil
+}
+
+// WaitBackground blocks until the manager's fire-and-forget goroutines (post-
+// create starts, delete teardowns) have finished: what a graceful shutdown or
+// a test harness waits on before pulling the store away from under them.
+func (m *Manager) WaitBackground() {
+	m.background.Wait()
 }
 
 // DeleteApp removes the app from the registry and answers at once; the host
@@ -420,9 +430,9 @@ func (m *Manager) DeleteApp(name string) error {
 	m.tearingDown[name] = true
 	m.mu.Unlock()
 	m.ReconcilePortRules()
-	m.teardowns.Add(1)
+	m.background.Add(1)
 	go func() {
-		defer m.teardowns.Done()
+		defer m.background.Done()
 		defer unlock()
 		defer m.releasePort(a.Port)
 		defer func() {

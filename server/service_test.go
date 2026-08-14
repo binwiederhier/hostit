@@ -459,6 +459,9 @@ func newTestServer(t *testing.T) *Server {
 		_ = s.Close()
 	})
 	manager := app.NewManager(conf, s, apptest.NewNopServices())
+	// LIFO: registered after the store-close cleanup, so background goroutines
+	// (post-create starts, delete teardowns) finish before the db closes.
+	t.Cleanup(manager.WaitBackground)
 	return New(conf, manager, user.NewManager(conf, s))
 }
 

@@ -224,7 +224,7 @@ func TestDeleteAppStopsAppBeforeRemovingUser(t *testing.T) {
 	unit, container := m.unitName("blog"), m.containerName("blog")
 	runner.reset()
 	require.NoError(t, m.DeleteApp("blog"))
-	m.teardowns.Wait() // the host teardown runs in the background
+	m.background.Wait() // the host teardown runs in the background
 	joined := runner.ran()
 	// A running container keeps processes alive, which makes userdel fail
 	assert.Contains(t, joined, "systemctl disable --now "+unit)
@@ -312,7 +312,9 @@ func newTestDeployManager(t *testing.T) (*Manager, *fakeSystem, *fakeRunner) {
 	t.Helper()
 	conf, s, ops := newTestManagerDeps(t)
 	runner := newFakeRunner()
-	return NewManager(conf, s, testServices(ops, runner)), ops, runner
+	m := NewManager(conf, s, testServices(ops, runner))
+	t.Cleanup(m.background.Wait) // see newTestManager: before db close and TempDir removal
+	return m, ops, runner
 }
 
 // createTestApp creates an app and waits for the background demo deploy to
