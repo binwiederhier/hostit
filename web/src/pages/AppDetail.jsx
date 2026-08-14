@@ -1236,7 +1236,7 @@ const SnapshotsPane = ({ name, showToast, onRolledBack, onFork, onNew, reloadSig
       )}
       {confirm?.type === "rollback" && (
         <ConfirmDialog title="Roll back to this snapshot?" confirmLabel="Roll back" busy={busy} onConfirm={doRollback} onCancel={() => setConfirm(null)}>
-          <span className="mono">{name}</span>'s files will be restored to {new Date(confirm.snap.created_at).toLocaleString()}. A snapshot of the current state is taken first, so this is reversible.
+          <span className="mono">{name}</span>'s files and installed software will be restored to {new Date(confirm.snap.created_at).toLocaleString()}. A snapshot of the current state is taken first, so this is reversible.
         </ConfirmDialog>
       )}
       {confirm?.type === "delete" && (

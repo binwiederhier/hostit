@@ -35,8 +35,8 @@ func (m *Manager) recordDiskLimit(name string, diskMB int) {
 	m.diskMB[name] = diskMB
 }
 
-// diskLimit returns the recorded disk quota of an app
-func (m *Manager) diskLimit(name string) int {
+// DiskLimit returns the recorded disk quota of an app.
+func (m *Manager) DiskLimit(name string) int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.diskMB[name]

@@ -138,3 +138,23 @@ func TestDeleteUserRefusesAnUnusableTransfer(t *testing.T) {
 	_, err := s.users.User(leaving.ID)
 	assert.NoError(t, err)
 }
+
+func TestUpdateUserAppliesLimitsToTheirAppsLive(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	owner := newActiveTestUser(t, s, "owner@example.com")
+	other := newActiveTestUser(t, s, "other@example.com")
+	require.NoError(t, s.apps.Store().AddApp(&store.App{Name: "blog", Port: 10000, Host: store.HostLocal, OwnerID: owner.ID}))
+	require.NoError(t, s.apps.Store().AddApp(&store.App{Name: "wiki", Port: 10001, Host: store.HostLocal, OwnerID: owner.ID}))
+	require.NoError(t, s.apps.Store().AddApp(&store.App{Name: "docs", Port: 10002, Host: store.HostLocal, OwnerID: other.ID}))
+
+	// A limit change must reach the owner's apps NOW, not at the next daemon
+	// restart: the qgroup cap and the container memory cap key off what the
+	// manager has recorded, and applyStoredLimits only runs at startup.
+	rr := request(t, s.API(), "PATCH", "/api/users/"+owner.ID, `{"memory_mb":1024,"disk_mb":4096}`, testToken)
+	require.Equal(t, http.StatusOK, rr.Code)
+	assert.Equal(t, 1024, s.apps.MemoryLimit("blog"))
+	assert.Equal(t, 4096, s.apps.DiskLimit("blog"))
+	assert.Equal(t, 1024, s.apps.MemoryLimit("wiki"))
+	assert.Equal(t, 0, s.apps.MemoryLimit("docs"), "another owner's apps are untouched")
+}

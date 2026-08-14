@@ -189,7 +189,7 @@ func (m *Manager) apply(a *store.App, conf *appctl.AppConfig, allowReload bool) 
 
 	// Recreate the container if the desired config differs from the running one
 	started := time.Now()
-	desired := workspace.CreateArgs(conf, a, m.appSubvolume(name), m.config.SocketFile, hostitBinFile, Version, m.memoryLimit(name), ids)
+	desired := workspace.CreateArgs(conf, a, m.appSubvolume(name), m.config.SocketFile, hostitBinFile, Version, m.MemoryLimit(name), ids)
 	hash := workspace.ConfigHash(desired)
 	current, err := m.container.Inspect(m.containerName(name), inspectHashFormat)
 	recreated := false
@@ -304,8 +304,8 @@ func (m *Manager) SetMemoryLimit(name string, memoryMB int) {
 	m.memoryMB[name] = memoryMB
 }
 
-// memoryLimit returns the recorded memory cap of an app
-func (m *Manager) memoryLimit(name string) int {
+// MemoryLimit returns the recorded memory cap of an app.
+func (m *Manager) MemoryLimit(name string) int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.memoryMB[name]

@@ -153,6 +153,15 @@ func (s *Server) handleUsersUpdate(w http.ResponseWriter, r *http.Request, c *ca
 		writeAppError(w, err)
 		return
 	}
+	// A limit change must reach the user's running apps now: the qgroup cap and
+	// the container memory cap key off what the manager has recorded, and
+	// applyStoredLimits only re-syncs at daemon startup.
+	if req.MemoryMBSet || req.DiskMBSet {
+		if err := s.applyUserLimits(u); err != nil {
+			writeAppError(w, err)
+			return
+		}
+	}
 	count, err := s.apps.Store().AppCountByOwner(u.ID)
 	if err != nil {
 		writeAppError(w, err)
@@ -161,6 +170,24 @@ func (s *Server) handleUsersUpdate(w http.ResponseWriter, r *http.Request, c *ca
 	resp := newUserResponse(u, count)
 	s.fillUserAssistant(resp, u.ID)
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// applyUserLimits pushes a user's effective memory and disk limits onto each of
+// their apps, mirroring what applyStoredLimits does for every app at startup.
+func (s *Server) applyUserLimits(u *store.User) error {
+	limits, err := s.users.Limits(u)
+	if err != nil {
+		return err
+	}
+	apps, err := s.apps.Store().AppsByOwner(u.ID)
+	if err != nil {
+		return err
+	}
+	for _, a := range apps {
+		s.apps.SetMemoryLimit(a.Name, limits.MemoryMB)
+		s.apps.SetDiskLimit(a.Name, limits.DiskMB)
+	}
+	return nil
 }
 
 // handleUsersDelete removes a user and all of their apps (including the Unix

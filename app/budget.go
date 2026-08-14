@@ -46,7 +46,7 @@ func (m *Manager) ensureBudget(a *store.App) error {
 	if err := m.assignToGroup(m.appSubvolumeByID(a.ID), group); err != nil {
 		return fmt.Errorf("cannot assign the app subvolume to the disk budget of %s: %w", a.Name, err)
 	}
-	if err := m.btrfs.QgroupLimitExclusive(pool, group, effectiveDiskCapMB(m.diskLimit(a.Name))); err != nil {
+	if err := m.btrfs.QgroupLimitExclusive(pool, group, effectiveDiskCapMB(m.DiskLimit(a.Name))); err != nil {
 		return fmt.Errorf("cannot cap disk budget of %s: %w", a.Name, err)
 	}
 	return nil
