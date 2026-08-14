@@ -612,3 +612,17 @@ func TestUpRefusesAnAppThatWasDeletedMeanwhile(t *testing.T) {
 	require.Error(t, err)
 	assert.NotContains(t, runner.ran(), "podman create", "a deleted app must not get a container")
 }
+
+func TestStartAppRefusesAPoweredOffApp(t *testing.T) {
+	t.Parallel()
+	m, _, runner := newTestDeployManager(t)
+	createTestApp(t, m, "blog")
+	// Starting the app process needs the container, and a deliberately
+	// powered-off app must be refused with ErrPoweredOff (the API's 409, same
+	// as every other container-needing call), not a generic invalid error.
+	runner.returns("is-enabled", "disabled")
+	runner.reset()
+	err := m.StartApp("blog")
+	require.ErrorIs(t, err, appctl.ErrPoweredOff)
+	assert.NotContains(t, runner.ran(), "podman kill", "no signal is sent to a powered-off app")
+}

@@ -114,6 +114,12 @@ func (m *Manager) signalAgent(name, signal string) error {
 	if _, err := m.store.App(name); err != nil {
 		return err
 	}
+	// A deliberately powered-off app gets the same 409 as every other
+	// container-needing call; only an enabled app with a dead container falls
+	// through to the generic hint below.
+	if !m.systemd.IsEnabled(m.unitName(name)) {
+		return appctl.ErrPoweredOff
+	}
 	if err := m.container.Kill(m.containerName(name), signal); err != nil {
 		return fmt.Errorf("%w: the container is not running (power it on first)", ErrInvalid)
 	}
