@@ -374,13 +374,15 @@ func (s *Server) appResponseFor(c *caller, a *store.App, customDomain string) *a
 }
 
 func (s *Server) appResponse(a *store.App, customDomain string) *apiAppResponse {
+	ownerEmail, ownerName := s.ownerIdentity(a.OwnerID)
 	resp := &apiAppResponse{
 		ID:               a.ID,
 		Name:             a.Name,
 		URL:              s.apps.URL(a),
 		Port:             a.Port,
 		DiskMB:           a.DiskMB,
-		OwnerEmail:       s.ownerEmail(a.OwnerID),
+		OwnerEmail:       ownerEmail,
+		OwnerName:        ownerName,
 		SnapshotsEnabled: true, // btrfs is mandatory, so snapshots are always available
 		AssistantEnabled: s.assistant != nil,
 		// What the app says it is, straight from its hostit.yml; empty for a stub
@@ -398,17 +400,18 @@ func (s *Server) appResponse(a *store.App, customDomain string) *apiAppResponse 
 	return resp
 }
 
-// ownerEmail resolves an owner ID to an email for display; unowned apps (created
-// before user accounts existed, or via the global admin token) return empty
-func (s *Server) ownerEmail(ownerID string) string {
+// ownerIdentity resolves an owner ID to an email and name for display; unowned
+// apps (created before user accounts existed, or via the global admin token)
+// return empties
+func (s *Server) ownerIdentity(ownerID string) (email, name string) {
 	if ownerID == "" {
-		return ""
+		return "", ""
 	}
 	u, err := s.users.User(ownerID)
 	if err != nil {
-		return ""
+		return "", ""
 	}
-	return u.Email
+	return u.Email, u.Name
 }
 
 // usernameForUID is the production UID-to-username mapping via the user database

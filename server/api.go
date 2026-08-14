@@ -69,6 +69,7 @@ func (s *Server) newAPIHandler() http.Handler {
 	route(mux, "GET", "/apps/{name}/collaborators", s.requireActive(s.handleCollaboratorsList))
 	route(mux, "POST", "/apps/{name}/collaborators", s.requireActive(s.handleCollaboratorsAdd))
 	route(mux, "DELETE", "/apps/{name}/collaborators/{id}", s.requireActive(s.handleCollaboratorsRemove))
+	route(mux, "POST", "/apps/{name}/transfer", s.requireActive(s.handleAppsTransfer))
 	route(mux, "GET", "/apps/{name}/events", s.requireActive(s.handleAppEvents))
 	route(mux, "GET", "/apps/{name}/domains", s.requireActive(s.handleAppDomainsList))
 	route(mux, "POST", "/apps/{name}/domains", s.requireActive(s.handleAppDomainAdd))

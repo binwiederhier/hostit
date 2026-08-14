@@ -734,6 +734,65 @@ const ForkDialog = ({ name, snapshotId, onClose, onForked }) => {
 // moves: its home, container, snapshots and custom domains all follow it. Only the
 // built-in <name>.<base> subdomain and the SSH login change. Reached from the
 // Rename icon next to "App name" in the Settings view.
+// TransferDialog hands the app to another user. The current owner stays on as
+// a collaborator, so transferring never locks anyone out of their own work.
+const TransferDialog = ({ name, onClose, onTransferred }) => {
+  useEscape(onClose);
+  const [email, setEmail] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const valid = /.+@.+/.test(email.trim());
+
+  const transfer = async (e) => {
+    e.preventDefault();
+    if (busy || !valid) return;
+    setBusy(true);
+    setError("");
+    try {
+      await api.post(`/api/apps/${encodeURIComponent(name)}/transfer`, { email: email.trim().toLowerCase() });
+      onTransferred();
+    } catch (err) {
+      setError(err.message);
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true" onMouseDown={onClose}>
+      <form className="card modal modal-sheet" onSubmit={transfer} onMouseDown={(e) => e.stopPropagation()}>
+        <button type="button" className="modal-x" onClick={onClose} title="Close" aria-label="Close">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
+        </button>
+        <h2>Transfer {name}</h2>
+        <p className="hint" style={{ marginBottom: "5px" }}>
+          The new owner must be an existing, approved user. The app keeps running and nothing else changes; you stay on as a <b>collaborator</b> with full working access, but only the new owner can delete or rename it, or manage collaborators.
+        </p>
+        <ErrorBanner message={error} onDismiss={() => setError("")} />
+        <div className="newapp-input newapp-input-bare">
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="new-owner@example.com"
+            aria-label="New owner email"
+            autoFocus
+            disabled={busy}
+          />
+        </div>
+        <div className="btn-row">
+          <button type="button" className="btn" onClick={onClose} disabled={busy}>
+            Cancel
+          </button>
+          <button type="submit" className="btn btn-primary" disabled={busy || !valid}>
+            {busy && <span className="newapp-spinner" aria-hidden="true" />}
+            {busy ? "Transferring..." : "Transfer ownership"}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+};
+
 const RenameDialog = ({ name, onClose, onRenamed }) => {
   useEscape(onClose);
   const [newName, setNewName] = useState(name);
@@ -838,6 +897,7 @@ const AppSettings = ({ app, showToast, onCopyToken, onRegenerateToken, hasToken,
   const [confirmId, setConfirmId] = useState(null);
   const [collabs, setCollabs] = useState(null);
   const [collabInput, setCollabInput] = useState("");
+  const [showTransfer, setShowTransfer] = useState(false);
   const isOwner = !!app.is_owner;
 
   const pct = (u, l) => (l ? Math.min(100, Math.round((u / l) * 100)) : 0);
@@ -939,7 +999,7 @@ const AppSettings = ({ app, showToast, onCopyToken, onRegenerateToken, hasToken,
       showToast("Collaborator added");
       await load();
     } catch (err) {
-      setError(err.message);
+      showToast(err.message); // e.g. "no active user ..." -- a toast, not a banner
     } finally {
       setBusy(false);
     }
@@ -1032,14 +1092,37 @@ const AppSettings = ({ app, showToast, onCopyToken, onRegenerateToken, hasToken,
               </svg>
             </button>
           </div>
+          {app.owner_email && (
+            <div className="ov-line">
+              <span className="ov-k">Owner</span>
+              <span className="ov-v">{app.owner_email}</span>
+              {isOwner && (
+                <button type="button" className="copy-mini" onClick={() => setShowTransfer(true)} title="Transfer ownership" aria-label="Transfer ownership">
+                  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M2.5 5.5h9M9 3l2.5 2.5L9 8" />
+                    <path d="M13.5 10.5h-9M7 8l-2.5 2.5L7 13" />
+                  </svg>
+                </button>
+              )}
+            </div>
+          )}
+          {app.id && (
+            <div className="ov-line">
+              <span className="ov-k">App ID</span>
+              <span className="ov-v mono">{app.id}</span>
+              <CopyMini text={app.id} label="Copy app ID" />
+            </div>
+          )}
+          <div className="ov-line">
+            <span className="ov-k">Created</span>
+            <span className="ov-v">{created}</span>
+          </div>
         </div>
         <div>
           <h3>Resources &amp; meta</h3>
           <div className="ov-metric"><div className="ov-mt"><span>CPU</span><span className="mono">{app.cpu_percent || 0}%</span></div><div className="ov-bar"><i style={{ width: `${app.cpu_percent || 0}%` }} /></div></div>
           <div className="ov-metric"><div className="ov-mt"><span>RAM</span><span className="mono">{mb(app.memory_mb, app.memory_limit_mb)}</span></div><div className="ov-bar"><i style={{ width: `${pct(app.memory_mb, app.memory_limit_mb)}%` }} /></div></div>
           <div className="ov-metric"><div className="ov-mt"><span>Disk</span><span className="mono">{mb(app.disk_mb, app.disk_limit_mb)}</span></div><div className="ov-bar"><i style={{ width: `${pct(app.disk_mb, app.disk_limit_mb)}%` }} /></div></div>
-          {app.id && <div className="ov-meta"><span>App ID</span><span className="mono">{app.id}</span></div>}
-          <div className="ov-meta"><span>Created</span><span className="mono">{created}</span></div>
         </div>
       </div>
 
@@ -1057,7 +1140,10 @@ const AppSettings = ({ app, showToast, onCopyToken, onRegenerateToken, hasToken,
       <section className="ov-section">
         <h3>Collaborators</h3>
         <p className="hint">
-          People who can work on <span className="mono">{name}</span> with you: deploy, edit files, use the terminal and assistant, SSH in with their own keys.
+          {!isOwner && app.owner_email && (
+            <>This app is owned by <b>{app.owner_name && app.owner_name !== app.owner_email ? `${app.owner_name} (${app.owner_email})` : app.owner_email}</b>. </>
+          )}
+          Collaborators can deploy, edit files, use the terminal and assistant, and SSH in with their own keys.
           {isOwner ? " Only you (the owner) can delete or rename the app, or change this list." : " Only the owner can change this list."}
         </p>
         {isOwner && (
@@ -1076,7 +1162,7 @@ const AppSettings = ({ app, showToast, onCopyToken, onRegenerateToken, hasToken,
               <div className="domain-row" key={u.id}>
                 <div className="domain-head">
                   <span className="domain-name">{u.email}</span>
-                  {u.name && <span className="hint">{u.name}</span>}
+                  {u.name && u.name !== u.email && <span className="collab-name">{u.name}</span>}
                   {isOwner && (
                     <span className="domain-actions">
                       <button type="button" className="btn btn-small" onClick={() => removeCollaborator(u.id)} disabled={busy}>Remove</button>
@@ -1138,6 +1224,18 @@ const AppSettings = ({ app, showToast, onCopyToken, onRegenerateToken, hasToken,
       </section>
 
       {showRename && <RenameDialog name={name} onClose={() => setShowRename(false)} onRenamed={onRenamed} />}
+      {showTransfer && (
+        <TransferDialog
+          name={name}
+          onClose={() => setShowTransfer(false)}
+          onTransferred={() => {
+            setShowTransfer(false);
+            showToast("Ownership transferred; you are now a collaborator");
+            if (onSaved) onSaved();
+            load();
+          }}
+        />
+      )}
     </div>
   );
 };

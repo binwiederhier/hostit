@@ -45,7 +45,7 @@ func (s *Server) handleCollaboratorsAdd(w http.ResponseWriter, r *http.Request, 
 	// Only existing, approved accounts: no invite flow, no pending states.
 	u, err := s.users.UserByEmail(req.Email)
 	if err != nil || u.Status != store.StatusActive {
-		writeError(w, http.StatusBadRequest, fmt.Errorf("no active account for %q; collaborators must be existing, approved users", req.Email))
+		writeError(w, http.StatusBadRequest, fmt.Errorf("no active user %q", req.Email))
 		return
 	}
 	if u.ID == a.OwnerID {
@@ -121,4 +121,63 @@ func (s *Server) resyncAppKeys(a *store.App) error {
 		return err
 	}
 	return s.apps.SyncKeys(a.Name, profileKeys)
+}
+
+// handleAppsTransfer moves the app to a new owner (an existing, approved
+// user). The old owner stays on as a collaborator, so a transfer never locks
+// anyone out of their own work; if the recipient was a collaborator, that
+// grant dissolves into ownership. Ownership counts against the recipient's
+// app limit from then on, so a full account is refused.
+func (s *Server) handleAppsTransfer(w http.ResponseWriter, r *http.Request, c *caller) {
+	a, err := s.ownerApp(c, r.PathValue("name"))
+	if err != nil {
+		writeAppError(w, err)
+		return
+	}
+	var req apiAddCollaboratorRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	u, err := s.users.UserByEmail(req.Email)
+	if err != nil || u.Status != store.StatusActive {
+		writeError(w, http.StatusBadRequest, fmt.Errorf("no active user %q", req.Email))
+		return
+	}
+	if u.ID == a.OwnerID {
+		writeError(w, http.StatusBadRequest, errors.New("that user already owns this app"))
+		return
+	}
+	limits, err := s.users.Limits(u)
+	if err != nil {
+		writeAppError(w, err)
+		return
+	}
+	if limits.AppLimit > 0 {
+		count, err := s.apps.Store().AppCountByOwner(u.ID)
+		if err != nil {
+			writeAppError(w, err)
+			return
+		}
+		if count >= limits.AppLimit {
+			writeError(w, http.StatusForbidden, fmt.Errorf("%q is at their app limit", req.Email))
+			return
+		}
+	}
+	oldOwner := a.OwnerID
+	if err := s.apps.Store().SetAppOwner(a.Name, u.ID); err != nil {
+		writeAppError(w, err)
+		return
+	}
+	_ = s.apps.Store().RemoveAppCollaborator(a.ID, u.ID) // ownership absorbs the grant
+	if oldOwner != "" {
+		_ = s.apps.Store().AddAppCollaborator(a.ID, oldOwner)
+	}
+	a.OwnerID = u.ID
+	if err := s.resyncAppKeys(a); err != nil {
+		writeAppError(w, err)
+		return
+	}
+	s.logAction(c, a.Name, "transferred", "Transferred ownership to "+u.Email)
+	writeJSON(w, http.StatusOK, &apiMessageResponse{Message: "ownership transferred"})
 }

@@ -109,3 +109,52 @@ func appAuthorizedKeys(t *testing.T, s *Server, name string) []string {
 	}
 	return keys
 }
+
+// Ownership transfer: the app moves to another active user; the old owner
+// stays on as a collaborator so nobody gets locked out of their own work.
+func TestTransferOwnership(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	owner := newActiveTestUser(t, s, "owner@example.com")
+	next := newActiveTestUser(t, s, "next@example.com")
+	ownerToken := accountToken(t, s, owner)
+	nextToken := accountToken(t, s, next)
+	rr := request(t, s.API(), "POST", "/api/apps", `{"name":"blog"}`, ownerToken)
+	require.Equal(t, http.StatusCreated, rr.Code, rr.Body.String())
+
+	// Only the owner may transfer; unknown recipients are rejected.
+	assert.Equal(t, http.StatusNotFound, request(t, s.API(), "POST", "/api/apps/blog/transfer", `{"email":"owner@example.com"}`, nextToken).Code)
+	assert.Equal(t, http.StatusBadRequest, request(t, s.API(), "POST", "/api/apps/blog/transfer", `{"email":"ghost@example.com"}`, ownerToken).Code)
+	assert.Equal(t, http.StatusBadRequest, request(t, s.API(), "POST", "/api/apps/blog/transfer", `{"email":"owner@example.com"}`, ownerToken).Code, "transferring to yourself is a no-op mistake")
+
+	require.Equal(t, http.StatusOK, request(t, s.API(), "POST", "/api/apps/blog/transfer", `{"email":"next@example.com"}`, ownerToken).Code)
+
+	// The recipient now owns it; the old owner is a collaborator with working
+	// access but no ownership acts.
+	a, err := s.apps.Store().App("blog")
+	require.NoError(t, err)
+	assert.Equal(t, next.ID, a.OwnerID)
+	assert.True(t, s.apps.Store().IsAppCollaborator(a.ID, owner.ID), "the old owner stays on as a collaborator")
+	assert.Equal(t, http.StatusOK, request(t, s.API(), "GET", "/api/apps/blog", "", ownerToken).Code)
+	assert.Equal(t, http.StatusForbidden, request(t, s.API(), "DELETE", "/api/apps/blog", "", ownerToken).Code)
+	assert.Equal(t, http.StatusOK, request(t, s.API(), "DELETE", "/api/apps/blog", "", nextToken).Code)
+}
+
+// Transferring to someone already at their app limit is refused: ownership
+// counts against the recipient from then on.
+func TestTransferRespectsTheRecipientsAppLimit(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	owner := newActiveTestUser(t, s, "owner@example.com")
+	full := newActiveTestUser(t, s, "full@example.com")
+	limit := 1
+	full.AppLimit = &limit
+	require.NoError(t, s.users.Update(full))
+	ownerToken := accountToken(t, s, owner)
+	fullToken := accountToken(t, s, full)
+	require.Equal(t, http.StatusCreated, request(t, s.API(), "POST", "/api/apps", `{"name":"blog"}`, ownerToken).Code)
+	require.Equal(t, http.StatusCreated, request(t, s.API(), "POST", "/api/apps", `{"name":"theirs"}`, fullToken).Code)
+
+	rr := request(t, s.API(), "POST", "/api/apps/blog/transfer", `{"email":"full@example.com"}`, ownerToken)
+	assert.Equal(t, http.StatusForbidden, rr.Code, rr.Body.String())
+}

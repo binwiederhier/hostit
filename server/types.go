@@ -77,6 +77,7 @@ type apiAppResponse struct {
 	StartedAt        int64  `json:"started_at"`     // Unix seconds the container last started
 	AppStartedAt     int64  `json:"app_started_at"` // Unix millis the run: process last changed state
 	OwnerEmail       string `json:"owner_email,omitempty"`
+	OwnerName        string `json:"owner_name,omitempty"`
 	SnapshotsEnabled bool   `json:"snapshots_enabled"` // true when the host supports snapshots (btrfs)
 	AssistantEnabled bool   `json:"assistant_enabled"` // true when an Anthropic API key is configured
 	// Description is the app's own one-liner from hostit.yml, kept current by

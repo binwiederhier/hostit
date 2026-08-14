@@ -27,7 +27,8 @@ func (s *Server) recordEvent(appName, actor, level, action, detail string) {
 // logAction records a user action, attributed to the caller's email (empty for the
 // global admin token).
 func (s *Server) logAction(c *caller, appName, action, detail string) {
-	s.recordEvent(appName, s.ownerEmail(c.userID()), "info", action, detail)
+	email, _ := s.ownerIdentity(c.userID())
+	s.recordEvent(appName, email, "info", action, detail)
 }
 
 // handleAppEvents returns an app's recent activity log, newest first, for the

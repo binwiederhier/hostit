@@ -27,6 +27,7 @@ const (
 	updateAppPoweredOffQuery   = `UPDATE app SET powered_off = ? WHERE name = ?`
 	deleteAppQuery             = `DELETE FROM app WHERE name = ?`
 	renameAppQuery             = `UPDATE app SET name = ? WHERE name = ?`
+	setAppOwnerQuery           = `UPDATE app SET owner_id = ? WHERE name = ?`
 	// After the app is renamed, keep assistant_session's name mirror (its primary
 	// key) truthful, so a later app that reuses the freed name cannot collide with a
 	// stale row. Every other per-app table keys on app_id and needs no update.
@@ -54,6 +55,13 @@ func (s *Store) AddApp(app *App) error {
 		app.ID = randomID()
 	}
 	_, err := s.db.Exec(insertAppQuery, app.ID, app.Name, app.Port, app.Host, app.OwnerID, app.CreatedAt.Unix(), app.ImageTag)
+	return err
+}
+
+// SetAppOwner moves an app to a new owner; collaborator grants are the
+// caller's concern (the server keeps the old owner on as a collaborator).
+func (s *Store) SetAppOwner(name, ownerID string) error {
+	_, err := s.db.Exec(setAppOwnerQuery, ownerID, name)
 	return err
 }
 
