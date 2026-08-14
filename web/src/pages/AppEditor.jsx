@@ -630,7 +630,7 @@ export default function AppEditor({ name, url, running, diskMB, diskLimitMB, onD
               <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z" />
               <circle cx="12" cy="12" r="3" />
             </svg>
-            Preview
+            {previewOn ? "Hide preview" : "Show preview"}
           </button>
         </div>
 
