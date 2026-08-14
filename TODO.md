@@ -96,6 +96,18 @@ definitions and the conversation prefix are cache-marked, so repeat turns pay th
 
 ## Smaller things
 
+- **Instant app creation: drop the chown -R via idmapped --rootfs.** Creating an
+  app is a CoW snapshot (instant) plus a `chown -R` over the ~57k-file base
+  tree (~2-4s on a loaded 1-core host, and the ~47 MB metadata baseline every
+  app starts with), needed only because crun 1.14.1 cannot idmap-mount a
+  `--rootfs`. podman has supported `--rootfs <path>:idmap` since 4.3, so crun
+  is the sole blocker. Two paths: a newer crun on the current OS (static
+  binary or backport), or the next Ubuntu LTS, which ships a new enough
+  podman/crun pair anyway. Either way: validate `--rootfs :idmap` on btrfs on
+  stage first, then remove the chown from EnsureAppSubvolume/Fork, the
+  workspace ChownTree call sites, and the rollback re-chown. Existing apps
+  keep their baked-in ownership and keep working; only new apps get the
+  idmapped path (or a one-time re-chown migration unifies them).
 - **Bug: a fresh app's terminal is refused as "powered off" for a few seconds.**
   `systemctl is-enabled` reports "disabled" for a template instance that was
   simply never enabled yet, so between "App created" and the background start's
