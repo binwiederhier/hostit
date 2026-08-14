@@ -109,9 +109,14 @@ flowchart TB
 
 After the preflight, startup opens the store (which runs any pending schema
 migrations), builds the `Manager`, enables btrfs quota accounting
-(`EnableDiskBudgets`) and runs the one-time, settings-gated storage migrations
-(`app/migrate.go`: `MigrateRootfsStorage`, then `MigrateUnifiedStorage`, which
-folded each app's home into its rootfs so an app is one subvolume; a partial run
+(`EnableDiskBudgets`), mounts the raw apps view the daemon's file I/O resolves
+through (`app/deploy.go:MountRawAppsView` -- a private, non-recursive bind of the
+apps dir at `<run-dir>/apps-raw`, so root file I/O sees past running containers'
+idmapped rootfs overmounts) and runs the one-time, settings-gated storage
+migrations (`app/migrate.go`: `MigrateRootfsStorage`, then
+`MigrateUnifiedStorage`, which folded each app's home into its rootfs so an app
+is one subvolume, then `MigrateIdmapStorage`, which moved every app tree onto
+root-owned, idmap-mounted storage; a partial run
 only warns and resumes at the next start). It then kicks off background work:
 build the shared workspace image and export its base rootfs subvolume, restart
 stale agents, prune superseded images and unpinned bases (`cmd/serve.go`, the
@@ -163,8 +168,10 @@ and a foot-gun. What remains is:
   one-shot.
 - **Settings-gated, ensure-style data migrations** for the rare genuinely one-time
   transform. The current examples are the storage migrations
-  (`app/migrate.go:MigrateRootfsStorage` and `MigrateUnifiedStorage`, which folded
-  each app's home into its rootfs, leaving one subvolume per app): every step is
+  (`app/migrate.go:MigrateRootfsStorage`, `MigrateUnifiedStorage`, which folded
+  each app's home into its rootfs leaving one subvolume per app, and
+  `MigrateIdmapStorage`, which shifted each tree's baked-in ownership back to
+  container-relative ids for the idmapped rootfs mounts): every step is
   idempotent, only a fully successful pass records the settings gate, and later
   starts skip on it -- so a run killed halfway resumes safely, and once complete it
   costs a single settings read per start until it is eventually removed.

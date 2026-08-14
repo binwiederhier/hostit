@@ -51,7 +51,7 @@ sequenceDiagram
     Server->>Server: checkAppLimit(caller)
     Server->>Manager: CreateApp(name, opts)
     Manager->>Manager: validateName, allocatePort, mint app id
-    Manager->>Manager: EnsureAppSubvolume (snapshot of the pinned tag's base, chown)
+    Manager->>Manager: EnsureAppSubvolume (instant snapshot of the pinned tag's base)
     Manager->>OS: CreateUser (home = the files dir inside the subvolume), keys, skeleton
     Manager->>Manager: AddApp, SetMemory/DiskLimit, budget qgroup, ReconcilePortRules
     Manager-->>Server: *store.App (+ background Up)
@@ -88,11 +88,15 @@ sequenceDiagram
 - **Create** flows `CreateApp` -> `create` (`app/service.go:create`, shared with
   fork). It validates the name (`validateName`), allocates the lowest free port in
   the configured range (`allocatePort`), mints `store.NewAppID`, creates the app's
-  one id-keyed subvolume (a snapshot of its pinned image tag's base, chowned to
-  the uid block; a fork snapshots the source's subvolume instead), creates the
+  one id-keyed subvolume (an instant, metadata-only snapshot of its pinned image
+  tag's base -- root-owned, mapped through the container's uid block via the
+  idmapped `--rootfs` mount; a fork snapshots the source's subvolume instead),
+  creates the
   Unix user (`CreateUser`) at a uid derived from the port
   (`uidFor`: a contiguous 65536-wide block per app) with its home at the files dir
-  inside the subvolume (`apps/<id>/home/app`), writes `authorized_keys` (the
+  inside the subvolume (`<id>/home/app`, reached through the raw apps view so the
+  daemon and sshd see past a running container's idmapped overmount), writes
+  `authorized_keys` (the
   union of request keys and the owner's profile keys) and the skeleton
   (`app/skeleton.go`, see [deploy.md](deploy.md)/[placeholder.md](placeholder.md)),
   inserts the row (`store.AddApp`), records memory/disk limits and sets up the disk

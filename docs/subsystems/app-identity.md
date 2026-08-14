@@ -62,7 +62,7 @@ the Unix login name, and the app row's `name` column. `app/rename.go:RenameApp`:
    already taken).
 2. Rename the Unix login: `unixuser.Interface.Rename` -> `usermod --login`
    (`app/rename.go`). **The uid and home are unchanged** (the home is the
-   id-keyed `apps/<id>/home/app`, which a rename never touches) -- this is the
+   id-keyed `<id>/home/app` files path, which a rename never touches) -- this is the
    only OS mutation a rename needs.
 3. Flip the name in the store in one transaction (`store/app.go:RenameApp`), which
    updates `app.name` and the `assistant_session` name mirror; **every other

@@ -11,13 +11,13 @@ hostit identifies it by that uid.
 flowchart TB
     subgraph one["One app: blog"]
         user["Unix user 'blog' (base uid 1000000)<br/>shell: /usr/bin/hostit-shell<br/>group: hostit-apps"]
-        subvol["/var/lib/hostit/apps/&lt;id&gt;<br/>the app's one subvolume, chowned to its uid block<br/>files at home/app inside (= /home/app in the container)"]
+        subvol["/var/lib/hostit/apps/&lt;id&gt;<br/>the app's one subvolume, root-owned, idmap-mounted<br/>files at home/app inside (= /home/app in the container)"]
 
         subgraph container["podman container hostit-app-&lt;id&gt;"]
             direction TB
             idmap["--uidmap 0:1000000:65536<br/><i>container root IS the app's base uid</i>"]
             pid1["PID 1: hostit agent<br/>supervises the run: command"]
-            rootfs["--rootfs apps/&lt;id&gt;<br/><i>the app's persistent filesystem, home included</i>"]
+            rootfs["--rootfs apps/&lt;id&gt;:idmap<br/><i>the app's persistent filesystem, home included</i>"]
             mounts["/usr/bin/hostit  (the binary)<br/>/run/hostit      (the daemon socket dir)<br/><i>the only mounts; no home bind mount</i>"]
             net["own netns (slirp4netns)<br/>no peers, no host loopback"]
         end
@@ -50,15 +50,18 @@ Each app owns a **65536-wide contiguous uid/gid block**: `uidFor(port) = 1000000
 constants). The container is created by the root daemon but mapped
 `--uidmap 0:<base>:65536` (and the matching `--gidmap`), so container root *is* the
 app's unprivileged host uid and the whole block maps one-to-one
-(`workspace/spec.go:CreateArgs`). Files in the app's subvolume belong to the app
-inside and outside the container alike, and a workload escape lands on that uid,
-never on host root.
+(`workspace/spec.go:CreateArgs`). Through the idmapped rootfs mount, files in
+the app's subvolume appear as the app's inside and outside the container alike
+(on disk the tree is root-owned; the mapping does the rest), and a workload
+escape lands on that uid, never on host root.
 
-Contiguity is load-bearing: the mapping is a single uniform offset, so the app's
-one persistent subvolume is chowned to the block once at creation
-(`workspace/subvolume.go:EnsureAppSubvolume`) and every uid a workload uses stays
-inside the app's own range. Subvolumes are keyed on the app's stable id, so there
-is no uid-migration step; older single-uid schemes are gone.
+Contiguity is load-bearing: the mapping is a single uniform offset, and the app's
+one persistent subvolume is run as `--rootfs <path>:idmap` -- the tree stays
+root-owned on disk and the runtime maps disk-root to container-root through that
+same uid map (`workspace/spec.go:CreateArgs`), so no ownership is ever baked into
+it and every uid a workload uses stays inside the app's own range. Subvolumes are
+keyed on the app's stable id, so there is no uid-migration step; older single-uid
+schemes are gone.
 
 ### Network namespace
 
@@ -108,7 +111,7 @@ socket, ensures the container is up, prints the banner, then hands off to a narr
 sudoers grant, `sudo -n hostit-enter` (`cmd/shell.go:execShell`). The privileged
 `hostit enter` half runs as root but derives the target container from `SUDO_UID`
 (the app's id, dug out of the caller's home directory path,
-`apps/<id>/home/app`), **never** from its
+its `<id>/home/app` tail), **never** from its
 arguments, so an app user who invokes it directly with someone else's name still lands
 in their own container (`cmd/enter.go:execEnter`). The caller's arguments only ever
 become the command run *inside* their own container, and the privileged exec runs with

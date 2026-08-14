@@ -32,10 +32,17 @@ flowchart TB
 
 btrfs is mandatory (`cmd/preflight.go:requireBtrfs`): snapshots, rollback, fork and
 hard disk quotas are core, so hostit refuses to run without them rather than silently
-degrading. Two settings-gated migrations run on this path, in order: the one-time
-move to rootfs-backed containers (`app/migrate.go:MigrateRootfsStorage`) and the
-one-time unification that folded each app's home into its rootfs, leaving one
-subvolume per app (`MigrateUnifiedStorage`). Both are ensure-style and resumable,
+degrading. So is a runtime that can idmap-mount a rootfs: the preflight refuses to
+start unless podman is >= 4.3 and crun is >= 1.29, the crun resolved through
+`podman info` so a `containers.conf` override is what gets checked
+(`cmd/preflight.go:checkRuntimeVersions`). Three settings-gated migrations run
+on this path, in order: the
+one-time move to rootfs-backed containers (`app/migrate.go:MigrateRootfsStorage`),
+the one-time unification that folded each app's home into its rootfs, leaving one
+subvolume per app (`MigrateUnifiedStorage`), and the one-time move to idmapped
+rootfs mounts (`MigrateIdmapStorage`: shift each tree's baked-in uid-block
+ownership back to container-relative ids, add the `/etc/mtab` symlink, purge
+pre-idmap snapshots). All are ensure-style and resumable,
 so a partial run only warns and retries at the next start. The other post-upgrade
 work is `RestartStaleAgents`, which brings each enabled app up on the new binary
 because a running agent keeps the behaviour of the binary it was exec'd from; a
@@ -59,8 +66,8 @@ sequenceDiagram
     U->>D: POST /api/apps {"name":"blog"}
     D->>D: validate name, check the owner's app limit
     D->>S: allocate a free port
-    D->>OS: app subvolume (id-keyed): snapshot the pinned tag's base, chown to the uid block
-    D->>OS: useradd --no-create-home, home = apps/<id>/home/app
+    D->>OS: app subvolume (id-keyed): snapshot the pinned tag's base (root-owned, idmap-mounted)
+    D->>OS: useradd --no-create-home, home = <id>/home/app via the raw apps view
     D->>OS: write authorized_keys (owner's profile keys)
     D->>OS: write skeleton hostit.yml, README.md, .hushlogin
     D->>S: register app + mint an app-scoped token
@@ -162,7 +169,7 @@ sequenceDiagram
     D-->>AG: prior built-in-assistant work, rendered as markdown
 
     AG->>D: PUT /api/apps/blog/files/bin/server?mode=755
-    D->>H: stream to a temp file inside the app's os.OpenRoot, chown, rename
+    D->>H: stream to a temp file inside the app's os.OpenRoot, rename
     AG->>D: PUT /api/apps/blog/files/hostit.yml
     AG->>D: POST /api/apps/blog/deploy
 

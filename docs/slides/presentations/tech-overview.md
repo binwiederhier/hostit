@@ -273,8 +273,8 @@ sequenceDiagram
     User->>S: POST /api/apps {name}
     S->>M: CreateApp
     M->>M: allocate port, derive uid block, mint id
-    M->>M: app subvolume: snapshot the image tag's base, chown to the block
-    M->>Sys: create Unix user + group (home = apps/<id>/home/app)
+    M->>M: app subvolume: snapshot the image tag's base (root-owned, idmap-mounted)
+    M->>Sys: create Unix user + group (home = the id-keyed files dir)
     M->>M: write skeleton (hostit.yml: mode static, public/index.html)
     M->>M: budget qgroup 1/<uid> over the subvolume
     M-->>S: app (running), agent token
@@ -392,7 +392,7 @@ flowchart LR
     a["stage a writable<br/>copy of the target"] --> b["safety snapshot of the<br/>live app subvolume"]
     b --> c["power down: stop unit,<br/>remove the container"]
     c --> d["swap subvolumes<br/>(rename)"]
-    d --> e["chown to the<br/>app's uid block"]
+    d --> e["drop the old<br/>subvolume"]
     e --> f["Up: bring the<br/>app back"]
   end
 ```

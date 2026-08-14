@@ -43,9 +43,13 @@ qgroup**, hard-capped on exclusive bytes -- see
 ## One subvolume per app
 
 An app is **one writable subvolume** at `apps/<id>`: the full OS tree its
-container runs (`podman create ... --rootfs`), snapshotted from the read-only
-base of its pinned image tag and chowned once to the app's uid block
-(`workspace/subvolume.go:EnsureAppSubvolume`). The app's files live INSIDE it at
+container runs (`podman create ... --rootfs <path>:idmap`), snapshotted from the
+read-only base of its pinned image tag
+(`workspace/subvolume.go:EnsureAppSubvolume`) -- a metadata-only CoW snapshot, so
+creating an app is ~instant. The tree stays **root-owned on disk**; the runtime
+maps it through the container's uid mapping (see
+[the idmap section](#idmapped-rootfs-mounts-and-the-raw-apps-view) below), so no
+ownership is ever baked into it. The app's files live INSIDE it at
 `home/app` (`workspace.FilesDir`), so the host path `apps/<id>/home/app` and the
 in-container `/home/app` are the same tree -- there is no home bind mount
 (containers mount only the hostit binary and the daemon's socket directory,
@@ -63,12 +67,11 @@ App containers do not run from podman's image store. The workspace image is
 still **built** there (it is the build input, and it still hosts the assistant
 sandbox), but it is then **exported once per tag** into a read-only base
 subvolume at `.bases/<tag>` (`workspace/subvolume.go:EnsureBase`: a never-started
-container, `podman export | tar -x` into a temp subvolume, sealed read-only and
-atomically renamed into place -- ~40s per tag, one time). Each app's subvolume is
-an instant snapshot of its pinned tag's base, chowned once to the app's uid block
-(this crun cannot idmap-mount a `--rootfs`), passed to podman as plain
-`podman create ... --rootfs <path>` (`workspace/subvolume.go:EnsureAppSubvolume`,
-`workspace/spec.go:CreateArgs`).
+container, `podman export | tar -x` into a temp subvolume, `/etc/mtab` symlink
+written in, sealed read-only and atomically renamed into place -- ~40s per tag,
+one time). Each app's subvolume is an instant snapshot of its pinned tag's base,
+passed to podman as `podman create ... --rootfs <path>:idmap`
+(`workspace/subvolume.go:EnsureAppSubvolume`, `workspace/spec.go:CreateArgs`).
 
 **The invariant: an app's subvolume, once created, is never recreated or reset
 by hostit.** Container recreates (config change, daemon upgrade) keep the
@@ -80,6 +83,55 @@ shared with every pinned app, and deleting it would silently convert them into
 each app's exclusive bytes (`workspace/subvolume.go:PruneOldBases`). A fork's
 subvolume is snapshotted from the *source's* subvolume, not the base, so files
 and installed packages carry over together (`ForkAppSubvolume`).
+
+## Idmapped rootfs mounts and the raw apps view
+
+App containers run their subvolume as `--rootfs <path>:idmap`
+(`workspace/spec.go:CreateArgs`): the tree is **root-owned on disk**, and the
+runtime maps it through the container's uid mapping, so disk-root IS
+container-root and disk uid `u` is container uid `u`. Ownership is never baked
+into an app tree -- there is **no chown anywhere**: not at create, not at fork,
+not after rollback, not for uploads. That is what makes app creation a
+metadata-only snapshot (the old create-time `chown -R` over the ~57k-file base,
+and the ~47 MB of metadata it dirtied per app, are gone with it).
+
+The model has four consequences, each carried end to end:
+
+- **The runtime must support it.** The startup preflight refuses to launch
+  unless podman is **>= 4.3** (the `--rootfs <path>:idmap` syntax) and the OCI
+  runtime is a crun **>= 1.29** -- resolved *through* `podman info`, so a
+  `containers.conf` override pointing at a newer static binary is exactly what
+  gets checked (`cmd/preflight.go:checkRuntimeVersions`). See
+  [release-and-preflight.md](release-and-preflight.md).
+- **Every rootfs must carry an `/etc/mtab` symlink** (`../proc/self/mounts`):
+  podman skips creating it when present, and creating it *through* the idmapped
+  view is exactly what EOVERFLOWs on podman 4.9. Base exports write it before
+  sealing, `EnsureBase` retrofits it into bases exported before it shipped, and
+  the idmap migration adds it to existing app subvolumes
+  (`workspace/subvolume.go:WriteMtab` / `ensureBaseMtab`).
+- **The daemon's file I/O goes through a raw view of the apps dir.** podman
+  attaches the idmapped mount OVER the subvolume path in the host namespace
+  while the container runs, so a host-side access to `apps/<id>` sees the
+  MAPPED view -- and the root daemon writing through it fails with EOVERFLOW
+  (root is not in the mapping). At startup the daemon therefore binds the apps
+  dir **non-recursively** (child overmounts excluded) at `<run-dir>/apps-raw`
+  and resolves all file I/O through that raw view
+  (`app/deploy.go:MountRawAppsView`, called from `cmd/serve.go`;
+  `appFilesByID`). The bind is made **private**: the apps mount is shared by
+  default, so a container overmount created after a plain bind would propagate
+  into it anyway; a leftover bind from the previous run is torn down (made
+  rprivate first, so the unmounts cannot propagate back onto running
+  containers' mounts) and rebuilt. podman and btrfs keep the real path:
+  destructive subvolume ops (delete, rollback swap) already stop the container
+  first, which clears the overmount, and snapshotting through the overmount
+  targets the same subvolume anyway. The Unix account's home in passwd points
+  at the raw view path of the files dir, so scp/sftp/rsync land there too.
+- **`.ssh` and `authorized_keys` are root-owned and world-readable**
+  (0755/0644, `ssh/service.go:writeAuthorizedKeysIn`): the host's sshd reads
+  them as the app user (StrictModes accepts root-owned), and through the idmap
+  disk-root IS container-root, so tenants can still hand-edit their own keys.
+  Public keys are not secrets. The files dir (`home/app`) is 0755 for the same
+  sshd traversal.
 
 ## Read-only snapshots
 
@@ -118,9 +170,10 @@ partway (`snapshot/service.go:Rollback`):
    (`MoveSubvolume`, a same-fs metadata rename), move the staged copy in, and only
    then drop the old one. If putting the new one in place fails, the old one is
    moved back.
-4. Restore ownership (`chown -R` to the app uid) and start the app. There is no
-   quota to restore: the cap lives on the app's budget qgroup, and the staged copy
-   joined it at stage time (qgroup membership survives the rename).
+4. Start the app. There is **no ownership to restore**: app trees are root-owned
+   and idmap-mounted, and snapshots carry that root-owned tree with them. There is
+   no quota to restore either: the cap lives on the app's budget qgroup, and the
+   staged copy joined it at stage time (qgroup membership survives the rename).
 
 The per-app lifecycle lock (`app/service.go:lockApp`, `appLocks`) serializes
 deploy/snapshot/rollback/delete, so these subvolume operations never interleave on
@@ -135,8 +188,9 @@ whole-app snapshot of it; either way the fork carries the source's files, config
 data AND installed packages in one instant, space-shared copy
 (`workspace/subvolume.go:ForkAppSubvolume` --
 `btrfs.Snapshot(seedPath, dst, false)`, readonly=false makes it writable). The
-forked subvolume is then chowned to the new app's uid block (it arrives owned by
-the source's), and the new app gets its own port, uid block, user, subdomain,
+forked subvolume needs no ownership fixup -- app trees are root-owned, and the
+fork's container maps the same root-owned tree through the new app's own uid
+block -- and the new app gets its own port, uid block, user, subdomain,
 container, disk budget and a fresh agent token. Fork is built on the btrfs
 snapshot primitive, which the mandatory-btrfs preflight guarantees.
 
@@ -161,20 +215,26 @@ start. Quota accounting itself is enabled once per start
 Usage accounting reads the same group (`app/quota.go:measureDiskMB` ->
 `btrfs.ExclusiveUsageMB`, parsing `btrfs qgroup show --raw`): the app's exclusive
 bytes, i.e. what deleting it would free -- accurate and cheap, no directory walk.
-A fresh app shows ~47 MB, the metadata cost of chowning its subvolume snapshot.
+A fresh app shows next to nothing: its subvolume is a metadata-only snapshot of
+the base (the ~47 MB baseline the old create-time `chown -R` used to dirty per
+app is gone with the chown itself).
 `RefreshDiskUsage` runs on an interval purely for the dashboard -- there is
 nothing to enforce, because the qgroup already hard-caps writes (`app/quota.go`,
 `DiskUsageLoop` from `cmd/serve.go`).
 
-Existing apps were moved onto this model by two one-time, settings-gated startup
-migrations (`app/migrate.go`): `MigrateRootfsStorage` moved image-backed
-containers onto rootfs subvolumes, and `MigrateUnifiedStorage` then folded each
-app's home INTO its rootfs (an instant reflink copy), dropped the old home-shaped
-snapshots (incompatible with whole-app rollback; owner's call), made the merged
-tree THE app subvolume at `apps/<id>`, repointed the Unix account's home at
-`home/app` inside it, and budgeted every app. Powered-off apps stay off through a
-migration (and through upgrades generally): `RestartStaleAgents` skips disabled
-units.
+Existing apps were moved onto this model by three one-time, settings-gated
+startup migrations, run in order (`app/migrate.go`): `MigrateRootfsStorage`
+moved image-backed containers onto rootfs subvolumes; `MigrateUnifiedStorage`
+then folded each app's home INTO its rootfs (an instant reflink copy), dropped
+the old home-shaped snapshots (incompatible with whole-app rollback; owner's
+call), made the merged tree THE app subvolume at `apps/<id>`, repointed the Unix
+account's home at `home/app` inside it, and budgeted every app; and
+`MigrateIdmapStorage` (gate `storage-idmap`) finally moved every app onto
+idmapped rootfs mounts -- it shifts every inode owned inside the app's uid block
+back to its container-relative owner (`base+u -> u`), adds the `/etc/mtab`
+symlink, and purges the pre-idmap snapshots, whose baked-in ownership rollback
+can no longer use. Powered-off apps stay off through a migration (and through
+upgrades generally): `RestartStaleAgents` skips disabled units.
 
 ## The retention engine (pure GFS)
 
@@ -232,13 +292,15 @@ it: the preflight is the single gate, and everything downstream assumes btrfs.
 |---|---|
 | btrfs CLI wrappers (subvolume, snapshot, qgroup) | `btrfs/service.go` |
 | snapshot path layout (keyed on app id) | `app/btrfs.go` |
-| base export + per-app subvolume lifecycle | `workspace/subvolume.go` |
+| base export + per-app subvolume lifecycle (+ `/etc/mtab`) | `workspace/subvolume.go` |
+| the idmapped `--rootfs <path>:idmap` create args | `workspace/spec.go:CreateArgs` |
+| the raw (non-idmapped) apps view bind | `app/deploy.go:MountRawAppsView` |
 | file I/O inside the files dir (chained `os.Root`) | `homefs/service.go` |
 | snapshot / rollback / prune orchestration | `snapshot/service.go` (bound to the Manager in `app/snapshot.go`) |
 | budget qgroup setup (app subvolume + snapshots) | `app/budget.go` |
 | disk limit + usage accounting | `app/quota.go` |
-| the one-time storage migrations (rootfs, then unified) | `app/migrate.go` |
+| the one-time storage migrations (rootfs, unified, then idmap) | `app/migrate.go` |
 | the GFS retention policy (pure, unit-tested) | `retention/retention.go` |
-| the mandatory preflight | `cmd/preflight.go:requireBtrfs` |
+| the mandatory preflight (btrfs, podman/crun versions) | `cmd/preflight.go:requireBtrfs` / `checkRuntimeVersions` |
 | loopback btrfs setup | `deploy/ansible/roles/hostit/tasks/btrfs.yml` |
 | snapshot metadata rows | `snapshot` table, `store/snapshot.go` |

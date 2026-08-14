@@ -56,7 +56,7 @@ sequenceDiagram
     Mgr->>Mgr: resolve seed path (source subvolume, or snapshot subvolume)
     Mgr->>Mgr: lock source (no rollback/delete mid-copy)
     Mgr->>Btrfs: writable snapshot of seed -> new app subvolume
-    Mgr->>Mgr: chown subvolume to new uid, create user, keys, register app, budget
+    Mgr->>Mgr: create user, keys, register app, budget
     Mgr-->>API: *store.App (+ background Up)
     API-->>UI: 201 {app, agent_token}
     User->>UI: navigate to the new app
@@ -93,8 +93,9 @@ sequenceDiagram
     files AND installed packages.
   - It skips `WriteSkeleton` (a fork keeps the source's files, including its
     `hostit.yml`, `README.md` and data).
-  - `ForkAppSubvolume` `chown -R`s the forked subvolume to the new app's uid
-    block (`uidFor(port)`), because the copied files are owned by the source's.
+  - No ownership fixup is needed: app trees are root-owned and idmap-mounted, so
+    the fork's container maps the same root-owned tree through the new app's own
+    uid block.
   - Everything else is identical to a fresh create: port allocation, uid block, Unix
     user (its home is the files dir inside the new subvolume), `authorized_keys`
     (request + profile keys), memory/disk limits, its own disk budget qgroup,

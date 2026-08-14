@@ -2,7 +2,7 @@
 
 `app.Manager` is the orchestrator: it creates and deletes apps and everything
 that belongs to them. Doing that for real means `useradd`, `podman`, `systemctl`,
-`nft`, `btrfs`, `chown` -- all root, all touching the host. Yet `app.Manager` is
+`nft`, `btrfs` -- all root, all touching the host. Yet `app.Manager` is
 unit-tested without root and without a container runtime. That is possible because
 every host interaction goes through one of two injected seams, and the same seams
 are what a future control/app-node split would remote.
@@ -16,8 +16,8 @@ dependencies (`app/service.go:NewManager`):
 flowchart TB
     mgr["app.Manager<br/>decides WHAT an app needs"]
     subgraph seams["injected seams"]
-        ops["SystemOps<br/>useradd, usermod, chown,<br/>authorized_keys, nftables"]
-        runner["run.Runner<br/>raw exec: podman, systemctl, btrfs, mv, chown"]
+        ops["SystemOps<br/>useradd, usermod,<br/>authorized_keys, nftables"]
+        runner["run.Runner<br/>raw exec: podman, systemctl, btrfs, mv, mount"]
     end
     subgraph svc["service packages (built on run.Runner)"]
         btrfs["btrfs.Service"]
@@ -39,7 +39,7 @@ flowchart TB
 - **`SystemOps`** (`app/service.go:SystemOps`) -- the root-privileged operations
   that are not a simple command wrapper: `CreateUser`, `RenameUser`,
   `KillUserProcesses`, `DeleteUser`, `WriteAuthorizedKeys`, `WriteSkeleton`,
-  `ChownToUserIn`, `ApplyPortRules`, and the lookups. The real implementation
+  `ApplyPortRules`, and the lookups. The real implementation
   (`app/system.go:systemOps`, from `NewSystemOps`) is a thin facade that composes
   the tool-scoped service packages `unixuser`, `ssh`, and `firewall`, converting
   app-level types at the boundary. It must run as root; `NewManager` takes it as an

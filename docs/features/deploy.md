@@ -121,7 +121,8 @@ sequenceDiagram
   `mode:`/`prepare:`/`run:` changes only reload.
 - **The workspace container** (`workspace/spec.go`): `CreateArgs` builds a
   `podman create` invocation. The container runs the app's one persistent
-  subvolume (`--rootfs`, chowned once to the app's uid block), not an image; the
+  subvolume (`--rootfs <path>:idmap`: the root-owned tree mapped through the
+  container's uid mapping), not an image; the
   app's files live at `home/app` inside that same tree, so there is **no home
   bind mount** -- the only mounts are the hostit binary and the daemon socket
   dir, both read-only. Each app gets its own network namespace

@@ -64,7 +64,7 @@ Manual and rollback:
    retention.
 3. To roll back, the owner/agent picks a snapshot and restores it; hostit stages
    the target, takes a safety snapshot, powers the container down, swaps the
-   subvolume in, restores ownership, and brings the app back up (the staged copy
+   subvolume in, and brings the app back up (the staged copy
    joined the app's disk budget at stage time).
 
 ```mermaid
@@ -81,7 +81,7 @@ sequenceDiagram
     hostit->>btrfs: move subvol -> subvol.rollback-old
     hostit->>btrfs: move staged -> subvol
     hostit->>btrfs: delete subvol.rollback-old
-    hostit->>hostit: chown subvol, bring app up
+    hostit->>hostit: bring app up (no ownership to restore)
     hostit-->>User: rolled back (and undoable via the safety snapshot)
 ```
 
@@ -160,10 +160,11 @@ HTTP surface:
 - The safety snapshot taken before a rollback is itself `auto`, so retention will
   eventually prune it; it is labelled "Before rolling back to snapshot <id>".
 - Rollback stops and removes the container (the subvolume being swapped is its
-  rootfs, so nothing may run it) and then restores ownership (`chown -R`), because
-  the swapped-in subvolume arrives owned as the snapshot was; the disk cap needs no
-  restoring, since it lives on the app's budget qgroup, which the staged copy
-  joined.
+  rootfs, so nothing may run it). There is no ownership to restore afterwards:
+  app trees are root-owned and idmap-mounted, and snapshots carry that
+  root-owned tree with them. The disk cap needs no
+  restoring either, since it lives on the app's budget qgroup, which the staged
+  copy joined.
 - Snapshot ids are second-precision plus a random suffix, so multiple snapshots in
   the same second do not collide and still sort chronologically.
 - `snapshot.pre` / `snapshot.post` hooks come from `hostit.yml`; a failing `pre`

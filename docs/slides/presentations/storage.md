@@ -6,8 +6,9 @@ info: |
   tenant writes, how the phase-1 plan (btrfs storage driver) was skipped, and the
   from-scratch target shape (one subvolume per app, podman as a pure runtime) --
   which is what shipped, and was then unified further: the home was folded into
-  the rootfs, so an app is ONE subvolume. All mechanisms shown were validated
-  live on stage on 2026-08-13.
+  the rootfs, so an app is ONE subvolume, since idmap-mounted (root-owned trees,
+  no per-app chown). All mechanisms shown were validated live on stage on
+  2026-08-13.
 layout: cover
 background: https://cover.sli.dev
 class: text-center
@@ -309,13 +310,14 @@ path `apps/<id>/home/app` IS the container's `/home/app`:
 ```console
 $ btrfs subvolume snapshot apps/.bases/1a3027527a55 apps/<id>              # instant CoW
 $ podman create --uidmap 0:1196608:65536 --network slirp4netns ... \
-    --rootfs /var/lib/hostit/apps/<id> hostit agent                       # same isolation
+    --rootfs /var/lib/hostit/apps/<id>:idmap hostit agent                 # same isolation
 ```
 
 <div class="mt-4 text-sm opacity-60">
 The base is built once from the Containerfile and exported (atomically: temp
 subvolume, sealed read-only, renamed into place); every app's subvolume is a free
-snapshot of it, chowned once to the app's uid block. Apps were already pinned to
+snapshot of it, root-owned on disk and mapped through the container's uid block
+by the idmapped <code>--rootfs</code> mount. Apps were already pinned to
 image tags -- the pin now means "which base subvolume". Flag order matters:
 everything after <code>--rootfs</code> is the container command. (The first cut
 kept the home as a separate subvolume beside a <code>.rootfs/&lt;id&gt;</code>;
@@ -459,11 +461,12 @@ flowchart LR
 
 <div class="mt-2 text-sm opacity-60">
 The budget semantics decided for phase 1 carried to the target unchanged -- only
-where the tenant's bytes live differs. Shipped with two one-time startup
+where the tenant's bytes live differs. Shipped with three one-time startup
 migrations: first keep each app's home state, drop pre-existing snapshots, build
 the rootfs from the pinned tag, budget every app; then fold each home INTO its
-rootfs (an instant reflink copy), leaving one subvolume per app. Powered-off
-apps stay off through both.
+rootfs (an instant reflink copy), leaving one subvolume per app; then shift each
+tree's baked-in ownership back to container-relative ids for the idmapped
+mounts. Powered-off apps stay off through all three.
 </div>
 
 ---
@@ -484,13 +487,16 @@ Going straight to the target quietly drops phase 1's riskiest parts:
 
 <div class="mt-4 text-sm opacity-60">
 The open question was <code>--rootfs</code> with an id-mapped mount under the
-per-app userns. The stage spike <b>failed</b> on this crun (uid_map EINVAL, then
-/etc/mtab EOVERFLOW) -- resolved with the chown fallback: snapshot the base, then
-<code>chown -R</code> the rootfs to the app's uid block once (1.6s for 57k files,
-~47MB exclusive metadata; data extents stay shared), then plain
-<code>--rootfs</code>. Direct was still the better deal, and it is the path that
-shipped: nothing thrown away, no driver migration, apt persistence landed with
-the cap.
+per-app userns. The stage spike <b>failed</b> on Ubuntu 24.04's crun 1.14
+(uid_map EINVAL, then /etc/mtab EOVERFLOW), so this first shipped with a chown
+fallback: snapshot the base, then <code>chown -R</code> the rootfs to the app's
+uid block once (1.6s for 57k files, ~47MB exclusive metadata), then plain
+<code>--rootfs</code>. Since superseded: with crun &gt;= 1.29
+(preflight-enforced) the rootfs IS idmap-mounted
+(<code>--rootfs &lt;path&gt;:idmap</code>), trees stay root-owned, and the chown
+-- and its ~47MB per-app baseline -- is gone, making app creation a pure metadata
+snapshot. Direct was still the better deal, and it is the path that shipped:
+nothing thrown away, no driver migration, apt persistence landed with the cap.
 </div>
 
 ---

@@ -129,8 +129,10 @@ sequenceDiagram
 - **Usage accounting** (`app/quota.go:RefreshDiskUsage` / `DiskUsageLoop`,
   `measureDiskMB`): reads the budget group's exclusive bytes
   (`btrfs.ExclusiveUsageMB`, cheap and accurate, no directory walk) -- the true
-  bytes the app pins, i.e. what deleting it would free. A fresh app shows ~47 MB,
-  the metadata cost of chowning its subvolume snapshot. The measured value is
+  bytes the app pins, i.e. what deleting it would free. A fresh app shows next
+  to nothing: its subvolume is a metadata-only snapshot of the base, and the
+  ~47 MB baseline the old create-time `chown -R` dirtied is gone with the chown
+  itself. The measured value is
   stored via `Store.UpdateAppUsage` into `app.disk_mb` for the dashboard. The loop
   is pure accounting -- the qgroup already enforces the cap, so there is nothing
   here to stop.

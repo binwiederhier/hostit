@@ -70,17 +70,18 @@ base uid**, and the whole range up to `nobody` maps one-to-one above it.
 
 ### Why contiguity is load-bearing
 
-The container runs the app's one persistent subvolume (`--rootfs`, an
-instant snapshot of the shared read-only base, with the app's files at `home/app`
-inside it -- see [storage-btrfs.md](storage-btrfs.md)), and that subvolume is
-**chowned once to the app's block** at creation, because this crun cannot
-idmap-mount a `--rootfs`.
-A single contiguous range keeps the mapping one uniform offset, so that one-time
-chown is all it takes: every uid a workload uses inside the container lands
-inside the app's own block, across the whole subvolume, home included. A
-split map like `0:uid:1` plus `1:subuid:N` would break that correspondence. This
-is documented on the `IDs` type (`workspace/spec.go:IDs`), which carries
-`{UID, GID, Count}` into the create args. Keep the block contiguous.
+The container runs the app's one persistent subvolume
+(`--rootfs <path>:idmap`, an instant snapshot of the shared read-only base, with
+the app's files at `home/app` inside it -- see
+[storage-btrfs.md](storage-btrfs.md)). The subvolume stays **root-owned on
+disk**; the `:idmap` option makes the runtime map it through the container's uid
+mapping, so disk-root IS container-root and no ownership is ever baked into the
+tree. A single contiguous range keeps that mapping one uniform offset: every uid
+a workload uses inside the container lands inside the app's own block on the
+host side, across the whole subvolume, home included. A split map like `0:uid:1`
+plus `1:subuid:N` would break that correspondence. The `IDs` type
+(`workspace/spec.go:IDs`) carries `{UID, GID, Count}` into the create args. Keep
+the block contiguous.
 
 ## App vs host: what an escape lands as
 
@@ -167,18 +168,28 @@ files `Dir` via `OpenRoot` and operate through it. Belt and braces:
   itself is still the root's job; this just fails fast and clearly.
 - `WriteFileFrom` streams to a temp file inside the root and renames on success,
   so an over-cap body leaves neither a partial file nor a damaged old one.
-- The chown that gives a new file to the app user goes **through the same
-  `os.Root`** (the injected `homefs.Chowner`, `app/files.go:chowner`), so a
-  tenant cannot swap an intermediate directory for a symlink and redirect the
-  chown onto a host path.
+- There is **no chown to redirect**: files the daemon writes stay root-owned
+  like the whole idmap-mounted tree, and through the mapped view the app sees
+  them as its own (disk-root IS container-root). The old
+  chown-through-the-root plumbing is gone with the ownership model.
 - `ExtractTar` refuses symlink and device entries outright, and every regular
   entry is validated with `safeRel` before it is written.
 
+One wrinkle the idmap model adds: while a container runs, podman's idmapped
+mount covers the subvolume path in the host namespace, and the root daemon
+writing through that mapped view would fail (root is not in the mapping). The
+daemon therefore opens app files through a **raw, private, non-recursive bind**
+of the apps dir at `<run-dir>/apps-raw` (`app/deploy.go:MountRawAppsView`) --
+same chained-`os.Root` containment, just anchored on the un-overmounted view.
+
 The same discipline lives in the SSH key writer
 (`ssh/service.go:WriteAuthorizedKeys`): it takes the app's chained files root,
-refuses a non-directory `.ssh` (a symlink the tenant planted), and writes/chowns
-`authorized_keys` only through the root -- because otherwise root would be handing
-out SSH keys, and ownership, wherever a link pointed.
+refuses a non-directory `.ssh` (a symlink the tenant planted), and writes
+`authorized_keys` only through the root -- because otherwise root would be
+handing out SSH keys wherever a link pointed. The keys are written root-owned
+and world-readable (0755 `.ssh`, 0644 `authorized_keys`): the host's sshd reads
+them as the app user (StrictModes accepts root-owned), and through the idmap the
+tenant can still hand-edit them; public keys are not secrets.
 
 ## Tenant vs operator: SSH lands in the container
 
@@ -217,7 +228,7 @@ sequenceDiagram
   `%hostit-apps ALL=(root) NOPASSWD: /usr/bin/hostit-enter`). It **ignores its
   arguments when choosing a target**: it derives the caller from `SUDO_UID`,
   resolves that user's home, and digs the app id out of the home path
-  (`apps/<id>/home/app`, `cmd/enter.go:containerKeyFromHome` ->
+  (its `<id>/home/app` tail, `cmd/enter.go:containerKeyFromHome` ->
   `app.IDFromHomeDir`). So an app user who calls `hostit-enter`
   directly with someone else's name still lands in their own container. The
   caller contributes only `$TERM` (regex-validated) and a single command string,

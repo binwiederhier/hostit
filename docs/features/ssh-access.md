@@ -31,9 +31,10 @@ block into each app user's `authorized_keys`. Two boundaries make that safe. The
 managed block is delimited by markers so a key someone `scp`'d in by hand
 survives every profile change hostit makes. And every write into the app's home
 goes through chained `os.OpenRoot` handles (the app's subvolume root, then
-`home/app` resolved inside it), because the app user owns that whole tree; a
+`home/app` resolved inside it), because the tenant controls that whole tree
+(they are root inside the container it backs); a
 tenant who replaced `.ssh` -- or `home/app` itself -- with a symlink must not be
-able to redirect the root daemon's key writes (or its `chown`) onto a host path.
+able to redirect the root daemon's key writes onto a host path.
 
 The one thing `sshd` offers that would reach *past* the container is forwarding.
 An app user logs in for exactly one reason -- to reach their own container -- so
@@ -80,11 +81,15 @@ sequenceDiagram
 
 Key management (the daemon side):
 
-- `ssh/service.go:Service.WriteAuthorizedKeys` resolves the app user's uid/gid
-  and writes through the chained files root the caller hands it
+- `ssh/service.go:Service.WriteAuthorizedKeys` writes through the chained files
+  root the caller hands it
   (`app/service.go:writeKeysIn` opens it via `homefs.Service.OpenRoot`); it
-  refuses if `.ssh` is not a real directory (`ssh/service.go:ErrNotDirectory`)
-  and `Lchown`s the results back to the app user.
+  refuses if `.ssh` is not a real directory (`ssh/service.go:ErrNotDirectory`).
+  The results stay root-owned and world-readable (0755 `.ssh`, 0644
+  `authorized_keys`): the host's `sshd` reads them as the app user (StrictModes
+  accepts root-owned files), and through the container's idmapped rootfs
+  disk-root IS container-root, so the tenant can still hand-edit their own keys.
+  Public keys are not secrets.
 - `ssh/keys.go:MergeAuthorizedKeys` rewrites only the delimited managed block
   (`managedBeginMarker`/`managedEndMarker`), preserving hand-added keys;
   `ssh/keys.go:keyMaterial` compares type+key so the same key with a different
@@ -121,7 +126,7 @@ The login path (what happens on connect):
   It must run as root, derives the caller from `SUDO_UID` (never from
   arguments), and resolves the target container from the caller's *home
   directory path* via `containerKeyFromHome` (`app.IDFromHomeDir` digs the id
-  out of `apps/<id>/home/app`) -- containers are keyed on the app's stable id,
+  out of the `<id>/home/app` tail) -- containers are keyed on the app's stable id,
   and the app user's home is the id-keyed path, so a rename
   never changes it. It builds the `podman exec` argv itself, passing only a
   validated `TERM` and an optional single `-c` command, and runs with
