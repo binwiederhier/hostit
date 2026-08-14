@@ -300,18 +300,26 @@ func (m *Manager) UseRawAppsView(dir string) {
 	m.rawAppsDir = dir
 }
 
-// MountRawAppsView establishes the raw bind at dir (idempotent) and routes the
-// daemon's file I/O through it. --bind without --rbind is deliberately
-// non-recursive: replicating the per-container idmapped overmounts would
-// recreate exactly the mapped view this exists to avoid.
+// MountRawAppsView establishes the raw bind at dir and routes the daemon's
+// file I/O through it. --bind without --rbind is deliberately non-recursive
+// (replicating the per-container idmapped overmounts would recreate exactly
+// the mapped view this exists to avoid), and the bind is made PRIVATE: the
+// apps mount is shared by default, so a container overmount created after a
+// plain bind would propagate into it anyway. A leftover bind from the previous
+// run is torn down first -- made rprivate before the unmount, so the unmounts
+// cannot propagate back onto the running containers' mounts.
 func (m *Manager) MountRawAppsView(dir string) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	if _, err := m.runner.Run("mountpoint", "-q", dir); err != nil {
-		if _, err := m.runner.Run("mount", "--bind", m.config.AppsDir, dir); err != nil {
-			return fmt.Errorf("cannot bind the raw apps view at %s: %w", dir, err)
-		}
+	// Best effort: nothing to tear down on a fresh boot.
+	_, _ = m.runner.Run("mount", "--make-rprivate", dir)
+	_, _ = m.runner.Run("umount", "-R", dir)
+	if _, err := m.runner.Run("mount", "--bind", m.config.AppsDir, dir); err != nil {
+		return fmt.Errorf("cannot bind the raw apps view at %s: %w", dir, err)
+	}
+	if _, err := m.runner.Run("mount", "--make-private", dir); err != nil {
+		return fmt.Errorf("cannot make the raw apps view private: %w", err)
 	}
 	m.UseRawAppsView(dir)
 	return nil

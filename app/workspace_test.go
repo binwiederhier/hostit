@@ -63,3 +63,21 @@ func TestRawAppsViewRoutesFileIO(t *testing.T) {
 	// path (destructive ops stop the container first, clearing the overmount).
 	assert.Equal(t, filepath.Join(m.config.AppsDir, id), m.appSubvolume("blog"))
 }
+
+func TestMountRawAppsViewBindsPrivate(t *testing.T) {
+	t.Parallel()
+	m, _, r := newTestDeployManager(t)
+	raw := filepath.Join(t.TempDir(), "apps-raw")
+	r.reset()
+	require.NoError(t, m.MountRawAppsView(raw))
+	ran := r.ran()
+	// The apps mount is shared by default, so overmounts created after a plain
+	// bind would PROPAGATE into it (seen on stage: every container start put its
+	// idmapped mount into the raw view too). The bind must be private -- and an
+	// existing bind is torn down and rebuilt, made rprivate FIRST so the
+	// unmounts cannot propagate back onto the running containers' mounts.
+	assert.Contains(t, ran, "mount --make-rprivate "+raw)
+	assert.Contains(t, ran, "umount -R "+raw)
+	assert.Contains(t, ran, "mount --bind "+m.config.AppsDir+" "+raw)
+	assert.Contains(t, ran, "mount --make-private "+raw)
+}
