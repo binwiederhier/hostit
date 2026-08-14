@@ -2457,7 +2457,7 @@ a.ws-open { display: inline-flex; align-items: center; gap: 9px; }
    the 3-dot menu's narrow-only group instead. */
 .menu-narrow-only { display: none; }
 @media (max-width: 700px) {
-  .ws-topacts .ws-collapsible { display: none; }
+  .ws-topacts .btn.ws-collapsible { display: none !important; }
   .menu-narrow-only { display: block; }
 }
 
