@@ -615,6 +615,7 @@ const NewSnapshotDialog = ({ name, onClose, onCreated, showToast }) => {
             aria-label="Snapshot name"
             maxLength={200}
             autoFocus
+            disabled={busy}
           />
         </div>
         <div className="btn-row">
@@ -622,6 +623,7 @@ const NewSnapshotDialog = ({ name, onClose, onCreated, showToast }) => {
             Cancel
           </button>
           <button type="submit" className="btn btn-primary" disabled={busy}>
+            {busy && <span className="newapp-spinner" aria-hidden="true" />}
             {busy ? "Saving..." : "Take snapshot"}
           </button>
         </div>
