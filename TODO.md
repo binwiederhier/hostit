@@ -96,65 +96,11 @@ definitions and the conversation prefix are cache-marked, so repeat turns pay th
 
 ## Smaller things
 
-- **Deploy the idmapped-rootfs storage (shipped 2026-08-14) to prod.** Apps run
-  `--rootfs <subvol>:idmap` on root-owned trees: creation is a metadata
-  snapshot (~0.6s, was ~4s), the chown machinery is gone, and the one-time
-  `storage-idmap` migration shifts existing trees and purges pre-idmap
-  snapshots. Validated on stage end to end (19/19 e2e, SSH/scp/apt/file API by
-  hand). Prod needs the ansible run (ships static crun 1.29.1 + the
-  containers.conf drop-in) and will drop prod's snapshots during migration.
-- **Create-app dialog: spinner + disabled input while creating.** Regardless of
-  the crun change above, creating an app takes a few seconds: the dialog
-  should show a spinner and disable the name text field the same way the
-  button is disabled, so a slow create reads as working, not stuck.
-- **Make app delete feel instant (it takes 4-10s).** Measured on stage: ~2s of
-  graceful container stop (SIGTERM to the agent, systemd unit teardown), then
-  ~2s of btrfs teardown -- deleting the app subvolume and every snapshot, plus
-  the qgroup destroy ladder whose middle rung is a `btrfs filesystem sync`
-  that waits out a transaction commit (longer on prod's loaded disk and with
-  more snapshots; userdel itself is instant). Fix idea: make DeleteApp
-  asynchronous -- drop the registry row and answer immediately, run the
-  container/subvolume/qgroup/user teardown in the background. ReconcileOrphans
-  already converges any teardown the daemon dies in the middle of, so the
-  background path needs no new safety net.
-- **Bug: a fresh app's terminal is refused as "powered off" for a few seconds.**
-  `systemctl is-enabled` reports "disabled" for a template instance that was
-  simply never enabled yet, so between "App created" and the background start's
-  `enable --now`, Ensure reads a brand-new app as deliberately powered off and
-  refuses the terminal (seen on prod right after creating an app; also the
-  earlier "transient 4001 on a running app" mystery). And since the powered-off
-  refusal intentionally disables auto-reconnect, the terminal stays down until
-  a manual reconnect. Fix idea: record the powered-off intent explicitly (a
-  store flag set by poweroff, cleared by poweron) instead of inferring it from
-  systemd enablement, which conflates "never enabled yet" with "disabled on
-  purpose".
-
-- **Bug: deleted apps leave `<id>/home/app` stub directories behind.** Seen on
-  stage after the unified-storage rollout: five deleted apps each left a plain
-  (non-subvolume) `<id>/home/app` tree under the apps dir, all empty. Something
-  recreates the path AFTER DeleteApp removed the subvolume -- the prime suspect
-  is the defensive MkdirAll in homefs.OpenRoot (it exists for tests, but in
-  production it materializes a plain dir where a subvolume belongs). The
-  reconciler then cannot clean them up: `btrfs subvolume delete` refuses a
-  plain dir and its `os.Remove` fallback refuses a non-empty one, so it warns
-  "still present; leaving it in place" on every start. Find the creator, and
-  consider letting the reconciler remove empty orphan trees.
 - **Cleanup: delete the storage migrations once every host is unified.** When
   stage AND prod both record the `storage-rootfs-migrated` and
   `storage-unified` settings gates, the whole of `app/migrate.go` (plus
   `unixuser.SetHome`, whose only caller is the migration tail) can be deleted
   in one sweep.
-- **Share apps with other users or groups.** Today an app has exactly one owner,
-  and only that owner (or an admin) can see or manage it. Add collaborators: grant
-  another user, or a group of users, access to an app so it shows up on their
-  dashboard and they can deploy, edit, SSH in and drive its API. Involves an
-  ownership/ACL model beyond the single `OwnerID` (a per-app grants table, roles
-  like viewer/editor), fanning that out to the dashboard listing, the SSH
-  `authorized_keys` (a collaborator's profile keys join the app's), the app-scoped
-  tokens, and the "own app" checks in the server. Groups would layer on top: a
-  named set of users an app can be shared with at once. Ties into the future
-  multi-node work only loosely; mostly a registry + authorization change.
-
 - **Does the hostit daemon actually need to run as root?** It drives podman,
   systemctl, useradd/usermod, nftables and btrfs -- audit which of those truly
   require root vs could run under a dedicated user with specific capabilities or a
@@ -200,6 +146,22 @@ definitions and the conversation prefix are cache-marked, so repeat turns pay th
 ## Done (recent)
 
 Kept briefly for context; prune when stale.
+
+- **Idmapped-rootfs storage shipped end to end (v0.10.0, 2026-08-14).** Apps run
+  `--rootfs <subvol>:idmap` on root-owned trees; creation is a ~0.3-0.6s
+  metadata snapshot (was ~4s + 47MB metadata); the chown machinery is gone;
+  crun >= 1.29 / podman >= 4.3 preflighted; deployed to stage AND prod with the
+  one-time `storage-idmap` migration.
+- **Delete answers instantly; churn is safe (v0.10.2 era, 2026-08-14).** Rows
+  first, teardown in background; the port/uid stays reserved until done; the
+  gentle qgroup destroy never syncs the pool (a sync stalled concurrent creates
+  ~12s); a same-name recreate waits out the dying unix user instead of 409ing.
+- **Poweroff is recorded intent (store flag), not inferred from systemd** -- a
+  never-enabled fresh unit also reads "disabled", which made brand-new apps
+  look powered off for their first seconds (terminal refused, no reconnect).
+  One-time backfill seeds the flag on upgrade.
+- **Create dialog spins; deleted apps leave nothing behind** (the stub-dir
+  creator was homefs's defensive MkdirAll, removed with the idmap work).
 
 - **Unified app storage: one subvolume per app.** The separate home subvolume was
   merged INTO the rootfs: an app is now ONE btrfs subvolume at `apps/<id>` -- the
