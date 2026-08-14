@@ -598,12 +598,12 @@ const NewSnapshotDialog = ({ name, onClose, onCreated, showToast }) => {
           </div>
           <div>
             <h2>New snapshot</h2>
-            <p className="newapp-sub">A restorable point-in-time copy of <span className="mono">{name}</span>'s files.</p>
+            <p className="newapp-sub">A restorable point-in-time copy of <span className="mono">{name}</span> (files and installed software).</p>
           </div>
         </div>
         <ErrorBanner message={error} onDismiss={() => setError("")} />
         <label className="newapp-label">Label <span className="newapp-optional">(optional)</span></label>
-        <div className="newapp-input">
+        <div className="newapp-input newapp-input-bare">
           <input
             type="text"
             value={label}
@@ -613,18 +613,6 @@ const NewSnapshotDialog = ({ name, onClose, onCreated, showToast }) => {
             maxLength={200}
             autoFocus
           />
-        </div>
-        <div className="newapp-willbe">
-          <div className="row">
-            <span className="ico">{"\u{1F4F8}"}</span>
-            <span className="lab">Captures</span>
-            <span className="val"><b>{name}</b>'s files, right now</span>
-          </div>
-          <div className="row">
-            <span className="ico">{"\u{21A9}\u{FE0F}"}</span>
-            <span className="lab">Roll back</span>
-            <span className="val">anytime -- the current state is saved first</span>
-          </div>
         </div>
         <div className="btn-row">
           <button type="button" className="btn" onClick={onClose} disabled={busy}>

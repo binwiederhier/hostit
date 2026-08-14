@@ -3085,6 +3085,9 @@ body.ws-resizing iframe { pointer-events: none; }
 .newapp-input:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--focus); }
 .newapp-dollar { padding: 0 6px 0 11px; color: var(--faint); }
 .newapp-input input { flex: 1; border: 0; background: none; color: var(--text); font: inherit; font-size: 15px; padding: 11px 11px 11px 2px; outline: none; }
+/* Without the $-prefix span (the snapshot label field), the input needs its own left padding */
+.newapp-input-bare input { padding: 12px 14px; }
+.newapp-input-bare { margin: 2px 0 14px; }
 .newapp-willbe { border: 1px solid var(--border); border-radius: 11px; overflow: hidden; margin-bottom: 8px; }
 .newapp-willbe .row { display: flex; align-items: center; gap: 10px; padding: 10px 13px; font-size: 13px; }
 .newapp-willbe .row + .row { border-top: 1px solid var(--border); }
