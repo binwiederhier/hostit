@@ -446,13 +446,6 @@ func (m *Manager) DeleteApp(name string) error {
 		}
 		_ = os.RemoveAll(snapsRoot)
 		_ = m.btrfs.DeleteSubvolume(subvol)
-		// With all member subvolumes gone, drop the (now empty) budget qgroup --
-		// gently: the full ladder's filesystem sync stalls every concurrent btrfs
-		// operation on the pool (a create's snapshot waited ~12s behind it), so
-		// the teardown polls a plain destroy and leaves stragglers to reconcile.
-		if uidErr == nil {
-			m.destroyBudgetGently(uid)
-		}
 		if err := m.user.Delete(name); err != nil {
 			slog.Warn("Cannot delete the app's unix user; a later create at this uid cleans up", "app", name, "error", err)
 		}
@@ -462,6 +455,19 @@ func (m *Manager) DeleteApp(name string) error {
 		// under AppsDir.
 		if err := os.RemoveAll(subvol); err != nil {
 			slog.Warn("Could not remove leftover app directory after deleting app", "app", name, "path", subvol, "error", err)
+		}
+		// The name is reusable the moment the unix user is gone: release it
+		// BEFORE the qgroup polling below, which can wait a while for the
+		// deleted subvolumes to commit -- a same-name recreate must not.
+		m.mu.Lock()
+		delete(m.tearingDown, name)
+		m.mu.Unlock()
+		// Drop the (now empty) budget qgroup -- gently: the full ladder's
+		// filesystem sync stalls every concurrent btrfs operation on the pool
+		// (a create's snapshot waited ~12s behind it), so the teardown polls a
+		// plain destroy and leaves stragglers to the startup reconcile.
+		if uidErr == nil {
+			m.destroyBudgetGently(uid)
 		}
 		slog.Info("App teardown complete", "app", name)
 	}()
