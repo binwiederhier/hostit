@@ -2845,7 +2845,6 @@ body.ws-resizing iframe { pointer-events: none; }
 @media (max-width: 820px) {
   .ed-preview { display: none; }
   .ed-view .ws-resizer { display: none; }
-  .ed-ctl-preview { display: none !important; }
 }
 .ws-viewtab {
   display: inline-flex;
@@ -2966,7 +2965,6 @@ body.ws-resizing iframe { pointer-events: none; }
   .ed-tree-backdrop { display: block; position: absolute; inset: 0; z-index: 25; background: rgba(0, 0, 0, 0.45); }
   .ed-view .ws-resizer { display: none; }
   .ed-preview { display: none; }
-  .ed-ctl { display: none !important; } /* the preview toggle is pointless with no preview pane */
   .ed-rail { width: 44px; }
 }
 
@@ -2997,13 +2995,6 @@ body.ws-resizing iframe { pointer-events: none; }
 /* Tab strip with the preview toggle on the right. */
 .ed-tabbar { display: flex; align-items: stretch; background: var(--surface-2); border-bottom: 1px solid var(--border); }
 .ed-tabs { flex: 1; min-width: 0; border-bottom: 0; }
-.ed-ctl { flex: none; display: inline-flex; align-items: center; gap: 6px; font: inherit; font-size: 12px; color: var(--muted); background: none; border: 0; border-left: 1px solid var(--border); padding: 0 12px; cursor: pointer; }
-.ed-ctl svg { width: 15px; height: 15px; }
-.ed-ctl:hover { color: var(--text); }
-.ed-ctl:disabled { opacity: 0.4; cursor: default; }
-/* Like the assistant view's preview controls: the on-state lights the icon, not the text */
-.ed-ctl.on { color: var(--text); }
-.ed-ctl.on svg { color: var(--accent); }
 
 /* Syntax highlighting: a coloured <pre> under a transparent <textarea>. */
 .ed-code { display: grid; grid-template-columns: auto 1fr; min-height: 0; }

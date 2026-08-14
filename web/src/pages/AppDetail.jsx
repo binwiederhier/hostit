@@ -1530,6 +1530,10 @@ const AppDetail = ({ account, refreshAccount }) => {
   // and never reuse a value a cache might still hold; increments keep it changing.
   const [previewKey, setPreviewKey] = useState(() => Date.now());
   const [previewHidden, setPreviewHidden] = useState(false); // collapse the preview pane, giving the chat full width
+  // The files view's preview pane, controlled by the same strip buttons; the
+  // editor only receives the state (one set of controls for both views).
+  const [filesPreviewOn, setFilesPreviewOn] = useState(() => !(typeof window !== "undefined" && window.matchMedia("(max-width: 640px)").matches));
+  const [filesPreviewNonce, setFilesPreviewNonce] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
   const lastAppStart = useRef(null);
   const refreshTimer = useRef(null);
@@ -1973,9 +1977,15 @@ const AppDetail = ({ account, refreshAccount }) => {
             Settings
           </button>
           {/* Preview controls: only meaningful in the assistant view, right-aligned. */}
-          {app.assistant_enabled && view === "assistant" && (
+          {((app.assistant_enabled && view === "assistant") || view === "files") && (
             <div className="ws-viewtabs-right">
-              <button type="button" className="ws-viewtab ws-preview-ctl" onClick={reloadPreview} title="Refresh the preview" disabled={previewHidden}>
+              <button
+                type="button"
+                className="ws-viewtab ws-preview-ctl"
+                onClick={view === "assistant" ? reloadPreview : () => setFilesPreviewNonce((n) => n + 1)}
+                title="Refresh the preview"
+                disabled={view === "assistant" ? previewHidden : !filesPreviewOn}
+              >
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
                   <path d="M20 11a8 8 0 1 0-.6 4" />
                   <path d="M20 5v6h-6" />
@@ -1984,16 +1994,16 @@ const AppDetail = ({ account, refreshAccount }) => {
               </button>
               <button
                 type="button"
-                className={"ws-viewtab ws-preview-ctl" + (previewHidden ? "" : " on")}
-                onClick={() => setPreviewHidden((v) => !v)}
-                aria-pressed={!previewHidden}
-                title={previewHidden ? "Show the preview" : "Hide the preview"}
+                className={"ws-viewtab ws-preview-ctl" + ((view === "assistant" ? !previewHidden : filesPreviewOn) ? " on" : "")}
+                onClick={view === "assistant" ? () => setPreviewHidden((v) => !v) : () => setFilesPreviewOn((v) => !v)}
+                aria-pressed={view === "assistant" ? !previewHidden : filesPreviewOn}
+                title={(view === "assistant" ? !previewHidden : filesPreviewOn) ? "Hide the preview" : "Show the preview"}
               >
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
                   <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z" />
                   <circle cx="12" cy="12" r="2.5" />
                 </svg>
-                {previewHidden ? "Show preview" : "Hide preview"}
+                {(view === "assistant" ? !previewHidden : filesPreviewOn) ? "Hide preview" : "Show preview"}
               </button>
             </div>
           )}
@@ -2035,7 +2045,7 @@ const AppDetail = ({ account, refreshAccount }) => {
         </div>
         <div className={"ws-editorwrap" + (view === "editor" ? "" : " ws-inactive")}>
           <Suspense fallback={<div className="ws-chat-loading">Loading editor...</div>}>
-            <AppEditor name={app.name} url={app.url} running={app.running} diskMB={app.disk_mb} diskLimitMB={app.disk_limit_mb} onDeploy={reloadPreview} />
+            <AppEditor name={app.name} url={app.url} running={app.running} diskMB={app.disk_mb} diskLimitMB={app.disk_limit_mb} onDeploy={reloadPreview} previewOn={filesPreviewOn} previewNonce={filesPreviewNonce} />
           </Suspense>
         </div>
         <div className={"ws-termwrap" + (view === "terminal" ? "" : " ws-inactive")}>
