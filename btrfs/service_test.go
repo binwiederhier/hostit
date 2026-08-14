@@ -255,3 +255,22 @@ func TestQgroupDestroyRemovesStaleMembersWhenStillBusy(t *testing.T) {
 	// destroy attempted: initial, post-sync, post-removal
 	assert.Equal(t, 3, strings.Count(joined, "btrfs qgroup destroy 1/1262144 /apps"))
 }
+
+func TestQgroupTryDestroyNeverSyncs(t *testing.T) {
+	t.Parallel()
+	// The gentle single attempt for background teardowns: a filesystem sync
+	// forces a full transaction commit and stalls every concurrent btrfs
+	// operation on the pool (an app create's snapshot waited ~12s behind one),
+	// so the teardown path polls this instead and leaves the heavy ladder to
+	// the startup reconcile.
+	r := newFakeRunner()
+	r.returns("btrfs qgroup destroy", "ERROR: unable to destroy quota group: Device or resource busy\n")
+	r.fails("btrfs qgroup destroy", assert.AnError)
+	err := New(r).QgroupTryDestroy("/apps", "1/1000000")
+	assert.Error(t, err, "busy surfaces so the caller can poll")
+	joined := strings.Join(r.ran, "\n")
+	assert.Contains(t, joined, "btrfs qgroup destroy 1/1000000 /apps")
+	assert.NotContains(t, joined, "filesystem sync", "the gentle path must never force a commit")
+	assert.NotContains(t, joined, "qgroup remove")
+	assert.Equal(t, 1, strings.Count(joined, "btrfs qgroup destroy"), "one attempt, no ladder")
+}

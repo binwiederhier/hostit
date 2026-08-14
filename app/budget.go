@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strconv"
+	"time"
 
 	"heckel.io/hostit/btrfs"
 	"heckel.io/hostit/store"
@@ -78,6 +79,26 @@ func (m *Manager) assignToGroup(subvolPath, group string) error {
 func (m *Manager) destroyBudget(uid int) {
 	if err := m.btrfs.QgroupDestroy(m.config.AppsDir, budgetGroup(uid)); err != nil {
 		slog.Warn("Cannot destroy disk budget qgroup", "uid", uid, "error", err)
+	}
+}
+
+// destroyBudgetGently is destroyBudget for the background teardown: the full
+// ladder's filesystem sync forces a transaction commit that stalls every
+// concurrent btrfs operation on the pool, so this polls a plain destroy until
+// the deleted member subvolumes have committed on their own. A group that
+// outlasts the patience is left for the startup reconcile's sweep.
+func (m *Manager) destroyBudgetGently(uid int) {
+	deadline := time.Now().Add(budgetDestroyWait)
+	for {
+		err := m.btrfs.QgroupTryDestroy(m.config.AppsDir, budgetGroup(uid))
+		if err == nil {
+			return
+		}
+		if !time.Now().Before(deadline) {
+			slog.Warn("Budget qgroup still busy after teardown; the startup reconcile sweeps it", "uid", uid, "error", err)
+			return
+		}
+		time.Sleep(budgetDestroyPoll)
 	}
 }
 

@@ -47,6 +47,14 @@ const (
 	// a DNS label. Exported because the enter helper applies the same rule without
 	// importing this package's machinery.
 	AppNamePattern = `^[a-z]([a-z0-9-]{0,30}[a-z0-9])?$`
+
+	// teardownWait bounds how long a create waits for a same-name background
+	// teardown (delete-then-recreate); teardownPoll is its check interval, and
+	// budgetDestroyWait/Poll pace the teardown's gentle qgroup destroy.
+	teardownWait      = 30 * time.Second
+	teardownPoll      = 200 * time.Millisecond
+	budgetDestroyWait = 60 * time.Second
+	budgetDestroyPoll = 5 * time.Second
 )
 
 var (
@@ -143,8 +151,11 @@ type Manager struct {
 	memoryMB map[string]int
 	diskMB   map[string]int
 	// teardowns tracks background app-delete teardowns, so tests (and a graceful
-	// shutdown, if it ever wants to) can wait for them.
-	teardowns sync.WaitGroup
+	// shutdown, if it ever wants to) can wait for them; tearingDown holds the
+	// names in flight, so a same-name create can wait for the dying user
+	// instead of failing on the collision.
+	teardowns   sync.WaitGroup
+	tearingDown map[string]bool
 	// reservedPorts holds ports handed out by allocatePort but not yet registered
 	// in the store, so concurrent creates never share one (see allocatePort)
 	reservedPorts map[int]bool
@@ -183,6 +194,7 @@ func NewManager(conf *config.Config, s *store.Store, svc *Services) *Manager {
 		memoryMB:      make(map[string]int),
 		diskMB:        make(map[string]int),
 		reservedPorts: make(map[int]bool),
+		tearingDown:   make(map[string]bool),
 		stateCache:    make(map[string]State),
 		appLocks:      make(map[string]*sync.Mutex),
 	}
@@ -405,6 +417,7 @@ func (m *Manager) DeleteApp(name string) error {
 	}
 	m.mu.Lock()
 	m.reservedPorts[a.Port] = true
+	m.tearingDown[name] = true
 	m.mu.Unlock()
 	m.ReconcilePortRules()
 	m.teardowns.Add(1)
@@ -412,6 +425,11 @@ func (m *Manager) DeleteApp(name string) error {
 		defer m.teardowns.Done()
 		defer unlock()
 		defer m.releasePort(a.Port)
+		defer func() {
+			m.mu.Lock()
+			delete(m.tearingDown, name)
+			m.mu.Unlock()
+		}()
 		// Stop the app first: a running container keeps processes alive, and
 		// userdel refuses to remove a user that still has any.
 		if err := m.systemd.DisableNow(unit); err != nil {
@@ -428,9 +446,12 @@ func (m *Manager) DeleteApp(name string) error {
 		}
 		_ = os.RemoveAll(snapsRoot)
 		_ = m.btrfs.DeleteSubvolume(subvol)
-		// With all member subvolumes gone, drop the (now empty) budget qgroup.
+		// With all member subvolumes gone, drop the (now empty) budget qgroup --
+		// gently: the full ladder's filesystem sync stalls every concurrent btrfs
+		// operation on the pool (a create's snapshot waited ~12s behind it), so
+		// the teardown polls a plain destroy and leaves stragglers to reconcile.
 		if uidErr == nil {
-			m.destroyBudget(uid)
+			m.destroyBudgetGently(uid)
 		}
 		if err := m.user.Delete(name); err != nil {
 			slog.Warn("Cannot delete the app's unix user; a later create at this uid cleans up", "app", name, "error", err)
@@ -549,9 +570,31 @@ func (m *Manager) validateName(name string) error {
 		return err
 	}
 	if m.user.Exists(name) {
-		return ErrAppExists
+		// The unix user of a just-deleted same-name app dies in the background;
+		// waiting the teardown out turns an instant delete-then-recreate from a
+		// spurious "already exists" into a create that simply takes a moment.
+		if !m.waitForTeardown(name) {
+			return ErrAppExists
+		}
 	}
 	return nil
+}
+
+// waitForTeardown waits (bounded) for an in-flight background teardown of this
+// name to release the unix user; false when none is running or it ran out of
+// patience -- the name really is taken then.
+func (m *Manager) waitForTeardown(name string) bool {
+	deadline := time.Now().Add(teardownWait)
+	for time.Now().Before(deadline) {
+		m.mu.Lock()
+		inFlight := m.tearingDown[name]
+		m.mu.Unlock()
+		if !inFlight {
+			return !m.user.Exists(name)
+		}
+		time.Sleep(teardownPoll)
+	}
+	return false
 }
 
 // allocatePort returns the lowest free port in the configured range

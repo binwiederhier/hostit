@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -332,10 +333,14 @@ func (f *fakeSystem) Rename(oldName, newName string) error {
 	return nil
 }
 
+// Delete records the deletion AND removes the account, like the real userdel:
+// Exists must flip to false, or a delete-then-recreate would wait forever.
 func (f *fakeSystem) Delete(username string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.deletedUsers = append(f.deletedUsers, username)
+	f.existingUsers = slices.DeleteFunc(f.existingUsers, func(u string) bool { return u == username })
+	f.createdUsers = slices.DeleteFunc(f.createdUsers, func(u string) bool { return u == username })
 	return nil
 }
 
@@ -427,4 +432,16 @@ func TestDeleteAppAnswersBeforeTeardownAndConverges(t *testing.T) {
 	reserved := m.reservedPorts[a.Port]
 	m.mu.Unlock()
 	assert.False(t, reserved, "the port is released once the teardown finished")
+}
+
+func TestDeleteThenRecreateSameNameWaitsForTheTeardown(t *testing.T) {
+	t.Parallel()
+	m, _, _ := newTestDeployManager(t)
+	createTestApp(t, m, "blog")
+	require.NoError(t, m.DeleteApp("blog"))
+	// The unix user dies in the background; an immediate same-name create must
+	// wait that out rather than fail with "already exists".
+	a, err := m.CreateApp("blog", &CreateOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, "blog", a.Name)
 }

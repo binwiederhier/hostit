@@ -41,6 +41,7 @@ type Interface interface {
 	QgroupAssign(pool, subvolQgroup, groupID string) error
 	QgroupLimitExclusive(pool, groupID string, diskMB int) error
 	QgroupDestroy(pool, groupID string) error
+	QgroupTryDestroy(pool, groupID string) error
 	ExclusiveUsageMB(pool, groupID string) int
 	ListBudgetGroups(pool string) ([]string, error)
 }
@@ -172,6 +173,16 @@ func (s *Service) QgroupLimitExclusive(pool, groupID string, diskMB int) error {
 // member subvolumes were deleted, destroy fails with "Device or resource busy"
 // until the btrfs transaction commits -- a filesystem sync forces that commit,
 // so one sync+retry turns the common app-delete case into a clean destroy.
+// QgroupTryDestroy is a single gentle destroy attempt for background
+// teardowns: no filesystem sync (which forces a full transaction commit and
+// stalls every concurrent operation on the pool -- an app create's snapshot
+// waited many seconds behind one), no member surgery. The caller polls it;
+// the startup reconcile still runs the full ladder for stragglers.
+func (s *Service) QgroupTryDestroy(pool, groupID string) error {
+	_, err := s.runner.RunTimeout(timeout, "btrfs", "qgroup", "destroy", groupID, pool)
+	return err
+}
+
 func (s *Service) QgroupDestroy(pool, groupID string) error {
 	out, err := s.runner.RunTimeout(timeout, "btrfs", "qgroup", "destroy", groupID, pool)
 	if err == nil || !strings.Contains(out+err.Error(), "busy") {
