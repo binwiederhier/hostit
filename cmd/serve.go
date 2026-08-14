@@ -134,6 +134,9 @@ func execServe(c *cli.Context) error {
 	done := make(chan struct{})
 	defer close(done)
 	go manager.DiskUsageLoop(done)
+	// Presume recorded intent until the first real measurement lands, so the
+	// first page load after a restart does not see every app as stopped
+	manager.SeedStates()
 	go manager.StateLoop(done)
 	// Hourly automatic snapshots (a no-op unless the apps filesystem is btrfs)
 	go manager.SnapshotLoop(time.Hour, done)

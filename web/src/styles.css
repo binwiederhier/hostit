@@ -2840,6 +2840,8 @@ body.ws-resizing iframe { pointer-events: none; }
 /* ---- Workspace view switcher (Assistant / Editor) ---- */
 .ws-viewtabs {
   display: flex;
+  /* Never let the flex column squeeze the strip when a doc view overflows */
+  flex-shrink: 0;
   gap: 2px;
   margin-bottom: 10px;
   border-bottom: 1px solid var(--border);

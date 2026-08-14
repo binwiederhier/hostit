@@ -8,6 +8,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"heckel.io/hostit/appctl"
 )
 
 func TestStatesReadsRunningAndMemory(t *testing.T) {
@@ -131,6 +132,35 @@ func TestCachedStatesAnswerFromMemory(t *testing.T) {
 	assert.Equal(t, 7, states["one"].MemoryMB)
 	assert.NotContains(t, runner.ran(), "podman", "the request path must not shell out")
 	assert.NotContains(t, runner.ran(), "systemctl")
+}
+
+func TestSeedStatesFromRecordedIntent(t *testing.T) {
+	t.Parallel()
+	m, _, _ := newTestDeployManager(t)
+	createTestApp(t, m, "up")
+	createTestApp(t, m, "off")
+	require.NoError(t, m.store.SetAppPoweredOff("off", true))
+
+	// Before the first real measurement lands, the seed presumes an app is
+	// running unless its poweroff was recorded -- no red dot on a fresh start.
+	m.SeedStates()
+	states := m.CachedStates([]string{"up", "off"})
+	assert.True(t, states["up"].Running)
+	assert.True(t, states["up"].AppRunning)
+	assert.Equal(t, appctl.AppStateRunning, states["up"].AppState)
+	assert.False(t, states["off"].Running, "a recorded poweroff seeds as down")
+}
+
+func TestSeedStatesNeverClobbersAMeasurement(t *testing.T) {
+	t.Parallel()
+	m, _, runner := newTestDeployManager(t)
+	createTestApp(t, m, "one")
+	runner.returns("systemctl is-active", "inactive\n")
+	m.RefreshStates()
+
+	// The app was measured as down; a later seed must not resurrect it.
+	m.SeedStates()
+	assert.False(t, m.CachedStates([]string{"one"})["one"].Running)
 }
 
 func TestCachedStatesRefreshInBackgroundWhenStale(t *testing.T) {

@@ -75,6 +75,32 @@ func (m *Manager) CachedStates(names []string) map[string]State {
 	return cached
 }
 
+// SeedStates pre-fills the cache from recorded intent, before the first real
+// measurement: an app is presumed running unless its poweroff was recorded.
+// Serving starts before the first podman/systemd round trip completes, and an
+// empty cache would report every app as stopped for a moment after a daemon
+// restart (a red status dot on the first page load). Real numbers replace the
+// seed as soon as the first refresh lands; existing entries are never touched.
+func (m *Manager) SeedStates() {
+	apps, err := m.store.Apps()
+	if err != nil {
+		slog.Warn("Cannot list apps to seed states", "error", err)
+		return
+	}
+	m.stateMu.Lock()
+	defer m.stateMu.Unlock()
+	for _, a := range apps {
+		if _, ok := m.stateCache[a.Name]; ok {
+			continue
+		}
+		state := State{}
+		if !a.PoweredOff {
+			state = State{Running: true, AppRunning: true, AppState: appctl.AppStateRunning}
+		}
+		m.stateCache[a.Name] = state
+	}
+}
+
 // stateChanged is called when an app was just started, stopped or replaced. It
 // drops what the cache knew, and looks again shortly after.
 //
