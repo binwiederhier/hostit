@@ -53,10 +53,11 @@ admin-token: CHANGE-ME
 #   - {id: claude-haiku-4-5, label: "Haiku (fast, cheap)"}
 
 # How the dashboard's app cards are previewed: "live" embeds each running app
-# in a scaled-down iframe (default), "screenshot" shows a screenshot taken by
-# headless chromium every few hours instead (requires chromium/chromium-browser/
-# google-chrome on the host), "off" drops the card preview. The workspace's
-# assistant/files preview panes are always live, regardless of this setting.
+# in a scaled-down iframe (default), "screenshot" shows a headless-chrome
+# screenshot instead (re-shot every few hours, and shortly after assistant
+# changes; runs in a sandboxed podman container, pulled on first use), "off"
+# drops the card preview. The workspace's assistant/files preview panes are
+# always live, regardless of this setting.
 # app-preview: live
 
 # Let the admin token mint a session cookie for an admin email without Google

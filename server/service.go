@@ -23,6 +23,7 @@ import (
 	"heckel.io/hostit/app"
 	"heckel.io/hostit/assistant"
 	"heckel.io/hostit/config"
+	"heckel.io/hostit/preview"
 	"heckel.io/hostit/store"
 	"heckel.io/hostit/user"
 )
@@ -67,6 +68,10 @@ type Server struct {
 
 	servers []*http.Server // Running HTTP servers, for Stop
 
+	// previews schedules dashboard screenshots after assistant changes; nil
+	// unless app-preview is "screenshot" (see SetPreviews)
+	previews *preview.Manager
+
 	domainMu sync.RWMutex // Protects domainCache and issuing
 }
 
@@ -85,7 +90,7 @@ func New(conf *config.Config, apps *app.Manager, users *user.Manager) *Server {
 	// subscription (a sandboxed claude -p). Its tools are the app's own operations,
 	// so it is confined to one app the way an agent token is.
 	if conf.AssistantAvailable() {
-		s.assistant = assistant.NewManager(assistant.NewClient(conf.AnthropicAPIKey), &appOps{apps: apps}, &appTranscripts{store: apps.Store()}, conf.AssistantModel)
+		s.assistant = assistant.NewManager(assistant.NewClient(conf.AnthropicAPIKey), &appOps{apps: apps, changed: s.assistantChanged}, &appTranscripts{store: apps.Store()}, conf.AssistantModel)
 		// Wire the Claude Max (subscription) backend whenever its token is configured,
 		// so selecting "Claude.ai" actually uses the subscription. Its presence is the
 		// whole switch; there is no separate backend setting. (Previously the option
@@ -367,6 +372,21 @@ func (s *Server) firstActiveDomain(name string) string {
 // appResponseFor is appResponse plus the caller-dependent bits (IsOwner), for
 // the authenticated API surface; the unix-socket self API keeps plain
 // appResponse (the container is the app, ownership does not apply there).
+// SetPreviews wires the screenshot manager (app-preview: screenshot), so
+// assistant changes schedule a debounced dashboard shot.
+func (s *Server) SetPreviews(previews *preview.Manager) {
+	s.previews = previews
+}
+
+// assistantChanged records that the assistant just modified the app; with
+// screenshot previews on, that arms the app's debounced shot.
+func (s *Server) assistantChanged(name string) {
+	if s.previews == nil {
+		return
+	}
+	s.previews.Schedule(name)
+}
+
 func (s *Server) appResponseFor(c *caller, a *store.App, customDomain string) *apiAppResponse {
 	resp := s.appResponse(a, customDomain)
 	resp.IsOwner = c.isAdmin() || a.OwnerID == c.userID()

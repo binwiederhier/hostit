@@ -18,8 +18,9 @@ type AppPreviewMode string
 const (
 	// AppPreviewLive embeds each running app in a scaled-down live iframe.
 	AppPreviewLive = AppPreviewMode("live")
-	// AppPreviewScreenshot shows a screenshot taken by headless chromium every
-	// few hours instead of the live iframe. Requires chromium on the host.
+	// AppPreviewScreenshot shows a headless-chrome screenshot instead of the
+	// live iframe, re-shot periodically and shortly after assistant changes.
+	// Shots run in a sandboxed podman container; no host browser needed.
 	AppPreviewScreenshot = AppPreviewMode("screenshot")
 	// AppPreviewOff drops the card preview entirely.
 	AppPreviewOff = AppPreviewMode("off")

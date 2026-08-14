@@ -3,7 +3,6 @@ package preview
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -14,7 +13,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// fakeRunner records commands and writes the file chromium would have written.
+// fakeRunner records commands and, for a podman screenshot run, writes the
+// file chrome would have written into the bind-mounted work dir.
 type fakeRunner struct {
 	fail bool
 	cmds [][]string
@@ -27,19 +27,53 @@ func (r *fakeRunner) Run(args ...string) (string, error) {
 
 func (r *fakeRunner) RunTimeout(_ time.Duration, args ...string) (string, error) {
 	r.mu.Lock()
-	defer r.mu.Unlock()
 	r.cmds = append(r.cmds, args)
-	if r.fail {
-		return "", fmt.Errorf("chromium exploded")
+	fail := r.fail
+	r.mu.Unlock()
+	if fail {
+		return "", fmt.Errorf("chrome exploded")
 	}
+	// Find the -v <host>:/out:U mount and the --screenshot=/out/<file> flag,
+	// and write the file where the real container would have.
+	var hostDir, file string
 	for _, a := range args {
-		if p, ok := strings.CutPrefix(a, "--screenshot="); ok {
-			if err := os.WriteFile(p, []byte("png"), 0o600); err != nil {
-				return "", err
-			}
+		if h, ok := strings.CutSuffix(a, ":/out:U"); ok {
+			hostDir = h
+		}
+		if p, ok := strings.CutPrefix(a, "--screenshot=/out/"); ok {
+			file = p
+		}
+	}
+	if hostDir != "" && file != "" {
+		if err := os.WriteFile(filepath.Join(hostDir, file), []byte("png"), 0o600); err != nil {
+			return "", err
 		}
 	}
 	return "", nil
+}
+
+// shots counts completed screenshot container runs.
+func (r *fakeRunner) shots() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	n := 0
+	for _, c := range r.cmds {
+		if len(c) > 1 && c[0] == "podman" && c[1] == "run" {
+			n++
+		}
+	}
+	return n
+}
+
+func (r *fakeRunner) lastShot() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for i := len(r.cmds) - 1; i >= 0; i-- {
+		if len(r.cmds[i]) > 1 && r.cmds[i][0] == "podman" && r.cmds[i][1] == "run" {
+			return r.cmds[i]
+		}
+	}
+	return nil
 }
 
 func newTestManager(t *testing.T, runner *fakeRunner, apps []App) *Manager {
@@ -47,11 +81,14 @@ func newTestManager(t *testing.T, runner *fakeRunner, apps []App) *Manager {
 	m := New(runner, filepath.Join(t.TempDir(), "previews"), func() ([]App, error) {
 		return apps, nil
 	})
-	m.lookPath = func(string) (string, error) { return "/usr/bin/chromium", nil }
+	m.debounce = 20 * time.Millisecond
+	done := make(chan struct{})
+	t.Cleanup(func() { close(done) })
+	go m.worker(done)
 	return m
 }
 
-func TestSweepScreenshotsRunningApps(t *testing.T) {
+func TestSweepScreenshotsRunningAppsInAContainer(t *testing.T) {
 	t.Parallel()
 	runner := &fakeRunner{}
 	m := newTestManager(t, runner, []App{
@@ -59,21 +96,19 @@ func TestSweepScreenshotsRunningApps(t *testing.T) {
 		{ID: "bbb", Name: "down", URL: "https://down.example.com", Running: false},
 	})
 	m.Sweep()
-
-	// Only the running app was shot, and its file is in place
+	require.Eventually(t, func() bool { return runner.shots() == 1 }, 5*time.Second, 5*time.Millisecond)
 	assert.FileExists(t, m.File("aaa"))
 	assert.NoFileExists(t, m.File("bbb"))
-	require.Len(t, runner.cmds, 1)
-	cmd := strings.Join(runner.cmds[0], " ")
+
+	// The shot runs inside a locked-down podman container, not on the host: the
+	// page content is untrusted, so the container is the sandbox.
+	cmd := strings.Join(runner.lastShot(), " ")
+	assert.Contains(t, cmd, "podman run")
+	assert.Contains(t, cmd, "--userns=auto")
+	assert.Contains(t, cmd, "--cap-drop=ALL")
+	assert.Contains(t, cmd, "--security-opt=no-new-privileges")
+	assert.Contains(t, cmd, image)
 	assert.Contains(t, cmd, "https://up.example.com")
-	assert.Contains(t, cmd, "--headless")
-	// Chrome validates the --screenshot extension and silently (exit 0!) writes
-	// nothing for anything but an image suffix, so the temp file must be a .png
-	for _, arg := range runner.cmds[0] {
-		if p, ok := strings.CutPrefix(arg, "--screenshot="); ok {
-			assert.True(t, strings.HasSuffix(p, ".png"), "temp screenshot path %q must end in .png", p)
-		}
-	}
 }
 
 func TestSweepPrunesShotsOfDeletedApps(t *testing.T) {
@@ -86,22 +121,11 @@ func TestSweepPrunesShotsOfDeletedApps(t *testing.T) {
 	require.NoError(t, os.WriteFile(m.File("zzz"), []byte("old"), 0o600))
 	m.Sweep()
 	assert.NoFileExists(t, m.File("zzz"), "the shot of a deleted app is pruned")
+	require.Eventually(t, func() bool { return runner.shots() == 1 }, 5*time.Second, 5*time.Millisecond)
 	assert.FileExists(t, m.File("aaa"))
 }
 
-func TestSweepWithoutChromiumDoesNothing(t *testing.T) {
-	t.Parallel()
-	runner := &fakeRunner{}
-	m := newTestManager(t, runner, []App{
-		{ID: "aaa", Name: "up", URL: "https://up.example.com", Running: true},
-	})
-	m.lookPath = func(string) (string, error) { return "", exec.ErrNotFound }
-	m.Sweep()
-	assert.Empty(t, runner.cmds)
-	assert.NoFileExists(t, m.File("aaa"))
-}
-
-func TestSweepKeepsTheOldShotWhenChromiumFails(t *testing.T) {
+func TestFailedShotKeepsTheOldOne(t *testing.T) {
 	t.Parallel()
 	runner := &fakeRunner{fail: true}
 	m := newTestManager(t, runner, []App{
@@ -110,7 +134,68 @@ func TestSweepKeepsTheOldShotWhenChromiumFails(t *testing.T) {
 	require.NoError(t, os.MkdirAll(m.dir, 0o700))
 	require.NoError(t, os.WriteFile(m.File("aaa"), []byte("previous"), 0o600))
 	m.Sweep()
+	require.Eventually(t, func() bool { return runner.shots() >= 1 }, 5*time.Second, 5*time.Millisecond)
 	b, err := os.ReadFile(m.File("aaa"))
 	require.NoError(t, err)
 	assert.Equal(t, "previous", string(b), "a failed shot must not clobber the last good one")
+}
+
+func TestScheduleShootsOnceAfterTheQuietPeriod(t *testing.T) {
+	t.Parallel()
+	runner := &fakeRunner{}
+	m := newTestManager(t, runner, []App{
+		{ID: "aaa", Name: "up", URL: "https://up.example.com", Running: true},
+	})
+	// A burst of assistant changes collapses into ONE shot, taken after the
+	// debounce window of quiet.
+	m.Schedule("up")
+	m.Schedule("up")
+	m.Schedule("up")
+	require.Eventually(t, func() bool { return runner.shots() == 1 }, 5*time.Second, 5*time.Millisecond)
+	time.Sleep(3 * m.debounce)
+	assert.Equal(t, 1, runner.shots(), "three quick changes must produce one shot")
+}
+
+func TestScheduleIgnoresUnknownAndStoppedApps(t *testing.T) {
+	t.Parallel()
+	runner := &fakeRunner{}
+	m := newTestManager(t, runner, []App{
+		{ID: "bbb", Name: "down", URL: "https://down.example.com", Running: false},
+	})
+	m.Schedule("down")
+	m.Schedule("ghost")
+	time.Sleep(4 * m.debounce)
+	assert.Zero(t, runner.shots())
+}
+
+func TestScheduleIsRateLimitedPerApp(t *testing.T) {
+	t.Parallel()
+	runner := &fakeRunner{}
+	m := newTestManager(t, runner, []App{
+		{ID: "aaa", Name: "up", URL: "https://up.example.com", Running: true},
+	})
+	m.debounce = time.Millisecond
+	for i := 0; i < bucketCapacity+2; i++ {
+		m.Schedule("up")
+		time.Sleep(10 * time.Millisecond)
+	}
+	require.Eventually(t, func() bool { return runner.shots() == bucketCapacity }, 5*time.Second, 5*time.Millisecond)
+	time.Sleep(50 * time.Millisecond)
+	assert.Equal(t, bucketCapacity, runner.shots(), "the bucket caps assistant-triggered shots")
+}
+
+func TestTokenBucketRefillsOverTime(t *testing.T) {
+	t.Parallel()
+	m := New(&fakeRunner{}, t.TempDir(), func() ([]App, error) { return nil, nil })
+	now := time.Now()
+	m.now = func() time.Time { return now }
+	for i := 0; i < bucketCapacity; i++ {
+		assert.True(t, m.takeToken("aaa"))
+	}
+	assert.False(t, m.takeToken("aaa"), "the bucket is empty")
+	assert.True(t, m.takeToken("bbb"), "buckets are per app")
+	// One refill interval later there is exactly one token again
+	now = now.Add(time.Hour / bucketCapacity)
+	assert.True(t, m.takeToken("aaa"))
+	assert.False(t, m.takeToken("aaa"))
 }

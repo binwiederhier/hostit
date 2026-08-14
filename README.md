@@ -64,9 +64,10 @@ a request, logging in over SSH, and an agent deploying.
 Requirements: a Linux host with systemd, sshd, `podman` **>= 4.3** (plus `uidmap`,
 `passt` or `slirp4netns`, `dbus-user-session`), `crun` **>= 1.29**, `nftables`, and
 `btrfs-progs`. hostit must run as **root**, and its apps directory must be on
-**btrfs** (all of this is mandatory). Optional: `chromium` (or `chromium-browser`
-or `google-chrome`) if you set `app-preview: screenshot`, which replaces the
-dashboard cards' live iframes with a periodic headless-chromium screenshot. On start it preflights everything: it refuses
+**btrfs** (all of this is mandatory). Optional: `app-preview: screenshot`
+replaces the dashboard cards' live iframes with periodic headless-chrome
+screenshots, taken in a sandboxed podman container (the image is pulled on
+first use; no host browser needed). On start it preflights everything: it refuses
 to run if it is not root, if a required command is missing, if podman or crun are
 too old, or if the apps path is not btrfs, naming exactly what to fix.
 

@@ -64,6 +64,17 @@ func (t *appTranscripts) RecordUsage(app string, u assistant.Usage) error {
 // only place the assistant package meets the app package.
 type appOps struct {
 	apps *app.Manager
+	// changed is called after every successful mutating tool call (file write,
+	// exec, deploy, rollback); it feeds the debounced dashboard screenshot.
+	// Optional: nil when nothing cares about changes.
+	changed func(name string)
+}
+
+// notifyChanged reports a successful mutation to the optional listener.
+func (o *appOps) notifyChanged(name string) {
+	if o.changed != nil {
+		o.changed(name)
+	}
 }
 
 var _ assistant.AppOps = (*appOps)(nil)
@@ -100,7 +111,11 @@ func (o *appOps) ReadFile(name, path string) (string, error) {
 }
 
 func (o *appOps) WriteFile(name, path, content string) error {
-	return o.apps.WriteFile(name, path, []byte(content), 0)
+	if err := o.apps.WriteFile(name, path, []byte(content), 0); err != nil {
+		return err
+	}
+	o.notifyChanged(name)
+	return nil
 }
 
 func (o *appOps) Exec(name, command string, timeoutSeconds int) (assistant.ExecResult, error) {
@@ -108,6 +123,9 @@ func (o *appOps) Exec(name, command string, timeoutSeconds int) (assistant.ExecR
 	if err != nil {
 		return assistant.ExecResult{}, err
 	}
+	// A command may or may not have mutated anything; assume it did (the
+	// debounce and rate limit make over-reporting cheap)
+	o.notifyChanged(name)
 	return assistant.ExecResult{
 		Output:    res.Output,
 		ExitCode:  res.ExitCode,
@@ -121,7 +139,12 @@ func (o *appOps) Logs(name string, lines int) (string, error) {
 }
 
 func (o *appOps) Deploy(name string) (string, error) {
-	return o.apps.Up(name)
+	out, err := o.apps.Up(name)
+	if err != nil {
+		return "", err
+	}
+	o.notifyChanged(name)
+	return out, nil
 }
 
 func (o *appOps) Snapshot(name, label string) (string, error) {
@@ -136,6 +159,7 @@ func (o *appOps) Rollback(name, id string) (string, error) {
 	if err := o.apps.Rollback(name, id); err != nil {
 		return "", err
 	}
+	o.notifyChanged(name)
 	return "rolled back to " + id, nil
 }
 

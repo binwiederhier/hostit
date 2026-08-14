@@ -121,7 +121,32 @@ func execServe(c *cli.Context) error {
 		// Once the apps are on the current image, its predecessors are dead weight
 		manager.PruneOldWorkspaceImages()
 	}()
+	// Dashboard screenshot previews (app-preview: screenshot): a slow sweep
+	// plus debounced shots after assistant changes, one at a time, each in a
+	// locked-down podman container (the page content is untrusted).
+	var previews *preview.Manager
+	if conf.AppPreview == config.AppPreviewScreenshot {
+		previews = preview.New(run.New(), preview.Dir(conf.DataDir), func() ([]preview.App, error) {
+			apps, err := s.Apps()
+			if err != nil {
+				return nil, err
+			}
+			names := make([]string, 0, len(apps))
+			for _, a := range apps {
+				names = append(names, a.Name)
+			}
+			states := manager.CachedStates(names)
+			out := make([]preview.App, 0, len(apps))
+			for _, a := range apps {
+				out = append(out, preview.App{ID: a.ID, Name: a.Name, URL: manager.URL(a), Running: states[a.Name].Running})
+			}
+			return out, nil
+		})
+	}
 	srv := server.New(conf, manager, users)
+	if previews != nil {
+		srv.SetPreviews(previews)
+	}
 
 	// The registry is the source of truth: an app deleted while the daemon was
 	// down, or whose unit outlived it, leaves systemd retrying something that no
@@ -141,24 +166,8 @@ func execServe(c *cli.Context) error {
 	go manager.StateLoop(done)
 	// Hourly automatic snapshots (a no-op unless the apps filesystem is btrfs)
 	go manager.SnapshotLoop(time.Hour, done)
-	// Periodic headless-chromium screenshots of running apps (app-preview: screenshot)
-	if conf.AppPreview == config.AppPreviewScreenshot {
-		previews := preview.New(run.New(), preview.Dir(conf.DataDir), func() ([]preview.App, error) {
-			apps, err := s.Apps()
-			if err != nil {
-				return nil, err
-			}
-			names := make([]string, 0, len(apps))
-			for _, a := range apps {
-				names = append(names, a.Name)
-			}
-			states := manager.CachedStates(names)
-			out := make([]preview.App, 0, len(apps))
-			for _, a := range apps {
-				out = append(out, preview.App{ID: a.ID, Name: a.Name, URL: manager.URL(a), Running: states[a.Name].Running})
-			}
-			return out, nil
-		})
+	// Screenshot previews: the sweep loop plus the single shot worker
+	if previews != nil {
 		go previews.Loop(preview.SweepInterval, done)
 	}
 	// Retry pending/error custom domains so they verify once DNS is set up
