@@ -15,9 +15,13 @@ export function reduceChatEvent(items, ev, model) {
       if (next[i].kind === "tool" && next[i].output == null) {
         const tool = next[i].tool;
         next[i] = { ...next[i], output: ev.output ?? "", isError: ev.is_error };
-        // The new content is live only now that the deploy/refresh finished (and did
-        // not error), so this is the moment to reload the preview.
-        if (!ev.is_error && (tool === "deploy" || tool === "refresh_preview")) {
+        // The new content is live only now that the tool finished (and did not
+        // error), so this is the moment to reload the preview. Every mutating
+        // tool counts: a static app's content changes the moment write_file
+        // lands -- no deploy follows, so waiting for one leaves the preview
+        // stale (and the assistant telling people to refresh their browser).
+        const mutating = ["deploy", "refresh_preview", "write_file", "run_command", "rollback"];
+        if (!ev.is_error && mutating.includes(tool)) {
           refreshPreview = true;
         }
         break;

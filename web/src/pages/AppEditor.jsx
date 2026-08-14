@@ -618,7 +618,14 @@ export default function AppEditor({ name, url, running, diskMB, diskLimitMB, onD
               </div>
             ))}
           </div>
-          <button type="button" className={"ed-ctl ed-ctl-preview" + (previewOn ? " on" : "")} onClick={() => setPreviewOn((v) => !v)} title={previewOn ? "Hide preview" : "Show live preview"}>
+          <button type="button" className="ed-ctl ed-ctl-preview" onClick={() => setPreviewKey((k) => k + 1)} title="Refresh the preview" disabled={!previewOn}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+              <path d="M20 11a8 8 0 1 0-.6 4" />
+              <path d="M20 5v6h-6" />
+            </svg>
+            Refresh
+          </button>
+          <button type="button" className={"ed-ctl ed-ctl-preview" + (previewOn ? " on" : "")} onClick={() => setPreviewOn((v) => !v)} aria-pressed={previewOn} title={previewOn ? "Hide the preview" : "Show the preview"}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
               <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z" />
               <circle cx="12" cy="12" r="3" />

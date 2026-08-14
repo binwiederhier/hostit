@@ -492,6 +492,13 @@ const AppAssistant = ({ name, onClose, embedded = false, onPreviewRefresh }) => 
     if (ev.type === "done") {
       setBusy(false);
       loadTranscript(); // reconcile every watcher to the committed transcript
+      // One guaranteed refresh at the end of every turn, whatever the tools
+      // were: the per-tool refreshes above are best-effort liveliness, this is
+      // the backstop that makes "the preview shows what the assistant built"
+      // always true -- static apps included.
+      if (onPreviewRefresh) {
+        onPreviewRefresh();
+      }
       return;
     }
     if (ev.type === "error") {

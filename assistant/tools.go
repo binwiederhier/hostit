@@ -82,7 +82,7 @@ func toolDefs() []Tool {
 		},
 		{
 			Name:        toolRefreshPreview,
-			Description: "Reload the live preview shown next to this chat in the owner's browser. Call this after a content change that does not need a deploy (e.g. editing a static file the app already serves) so the owner sees the result. A deploy reloads the preview on its own; use this only when nothing else would.",
+			Description: "Reload the live preview shown next to this chat in the owner's browser. The preview already refreshes on its own after every file change, deploy and at the end of your turn -- NEVER tell the owner to refresh their browser. Use this only mid-turn, when you want the owner to see an intermediate state before you continue.",
 			InputSchema: schema(`{"type":"object","properties":{}}`),
 		},
 		{

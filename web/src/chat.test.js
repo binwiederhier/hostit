@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, test, expect } from "vitest";
 import { reduceChatEvent, filesFromClipboard } from "./chat";
 
 describe("filesFromClipboard", () => {
@@ -111,4 +111,24 @@ describe("formatDuration", () => {
   it("shows hours and minutes past an hour", () => {
     expect(formatDuration(3723)).toBe("1h 2m");
   });
+});
+
+test("mutating tools refresh the preview, read-only ones do not", () => {
+  // A static app's content changes the moment write_file lands -- no deploy
+  // follows, so waiting for one leaves the preview stale (and the assistant
+  // telling people to refresh their browser by hand).
+  for (const tool of ["write_file", "run_command", "rollback", "deploy", "refresh_preview"]) {
+    const items = [{ id: 0, kind: "tool", tool, input: {}, output: null }];
+    const { refreshPreview } = reduceChatEvent(items, { type: "tool_result", output: "ok", is_error: false }, "m");
+    expect(refreshPreview, tool).toBe(true);
+  }
+  for (const tool of ["read_file", "list_files", "read_logs", "snapshot", "list_snapshots"]) {
+    const items = [{ id: 0, kind: "tool", tool, input: {}, output: null }];
+    const { refreshPreview } = reduceChatEvent(items, { type: "tool_result", output: "ok", is_error: false }, "m");
+    expect(refreshPreview, tool).toBe(false);
+  }
+  // A failed mutation refreshes nothing.
+  const items = [{ id: 0, kind: "tool", tool: "write_file", input: {}, output: null }];
+  const { refreshPreview } = reduceChatEvent(items, { type: "tool_result", output: "boom", is_error: true }, "m");
+  expect(refreshPreview).toBe(false);
 });
