@@ -1,6 +1,7 @@
 package app
 
 import (
+	"io/fs"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -111,9 +112,15 @@ func (m *Manager) reconcileSubvolumes(known map[string]bool) []string {
 			slog.Debug("Cannot delete orphaned app subvolume; trying a plain remove", "id", id, "path", path, "error", err)
 		}
 		// The userdel stub is a plain (empty) directory that subvolume delete
-		// refuses; remove it directly. If the path is still there afterwards,
-		// surface it for a human rather than deleting more aggressively.
+		// refuses; remove it directly. A deleted app can also leave a file-less
+		// tree behind (<id>/home/app, recreated by a state or file read racing
+		// the delete): holding no files, clearing it cannot lose anything. A
+		// tree with anything else in it is surfaced for a human rather than
+		// deleted more aggressively.
 		_ = os.Remove(path)
+		if _, err := os.Stat(path); err == nil && filelessTree(path) {
+			_ = os.RemoveAll(path)
+		}
 		if _, err := os.Stat(path); err == nil {
 			slog.Warn("Orphaned app subvolume still present; leaving it in place", "id", id, "path", path)
 			continue
@@ -160,4 +167,19 @@ func idFromUnit(fields []string) (string, bool) {
 		return "", false
 	}
 	return id, true
+}
+
+// filelessTree reports whether path holds directories and nothing else, so that
+// removing it cannot lose data. Any file, symlink or unreadable entry makes it
+// false, and the tree is then left for a human.
+func filelessTree(path string) bool {
+	fileless := true
+	_ = filepath.WalkDir(path, func(_ string, d fs.DirEntry, err error) error {
+		if err != nil || !d.IsDir() {
+			fileless = false
+			return filepath.SkipAll
+		}
+		return nil
+	})
+	return fileless
 }

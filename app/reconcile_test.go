@@ -57,6 +57,28 @@ func TestReconcileOrphansRemovesEmptyStubKeepsStubborn(t *testing.T) {
 	assert.DirExists(t, stubborn, "a path that will not go away is surfaced, not force-deleted")
 }
 
+// A deleted app can leave a file-less directory tree behind (<id>/home/app,
+// recreated by a state or file read racing the delete -- see TODO.md). Holding
+// no files, clearing it cannot lose anything, so the sweep removes it instead
+// of warning on every start; a tree with any file in it is still surfaced.
+func TestReconcileOrphansRemovesFileLessStubTree(t *testing.T) {
+	t.Parallel()
+	m, _, r := newTestDeployManager(t)
+	createTestApp(t, m, "blog")
+	stub := filepath.Join(m.config.AppsDir, "stubtree")
+	require.NoError(t, os.MkdirAll(filepath.Join(stub, "home", "app"), 0o750))
+	withFile := filepath.Join(m.config.AppsDir, "keeptree")
+	require.NoError(t, os.MkdirAll(filepath.Join(withFile, "home", "app"), 0o750))
+	require.NoError(t, os.WriteFile(filepath.Join(withFile, "home", "app", "data"), []byte("x"), 0o644))
+	r.reset()
+
+	removed := m.ReconcileOrphans()
+	assert.Contains(t, removed, "stubtree")
+	assert.NoDirExists(t, stub)
+	assert.NotContains(t, removed, "keeptree")
+	assert.DirExists(t, withFile, "a tree holding files is surfaced, never force-deleted")
+}
+
 func TestReconcileOrphansSweepsStrayBudgetGroups(t *testing.T) {
 	t.Parallel()
 	m, _, runner := newTestDeployManager(t)
