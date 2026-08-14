@@ -2845,7 +2845,7 @@ body.ws-resizing iframe { pointer-events: none; }
 @media (max-width: 820px) {
   .ed-preview { display: none; }
   .ed-view .ws-resizer { display: none; }
-  .ed-ctl-preview { display: none; }
+  .ed-ctl-preview { display: none !important; }
 }
 .ws-viewtab {
   display: inline-flex;
@@ -2966,7 +2966,7 @@ body.ws-resizing iframe { pointer-events: none; }
   .ed-tree-backdrop { display: block; position: absolute; inset: 0; z-index: 25; background: rgba(0, 0, 0, 0.45); }
   .ed-view .ws-resizer { display: none; }
   .ed-preview { display: none; }
-  .ed-ctl { display: none; } /* the preview toggle is pointless with no preview pane */
+  .ed-ctl { display: none !important; } /* the preview toggle is pointless with no preview pane */
   .ed-rail { width: 44px; }
 }
 
