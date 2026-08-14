@@ -54,13 +54,15 @@ func (m *Manager) up(name string, snapshot bool) (string, error) {
 // container up so there is something to exec into, but refuses a deliberately
 // powered-off one. A login must not resurrect a powered-off app -- that would
 // defeat poweroff, and the web terminal auto-reconnecting after the drop would
-// fight the operator. A crashed or fresh-reboot app is still enabled, so it starts
-// as before; only an explicit PowerOn clears a poweroff.
+// fight the operator. The intent is the store's recorded flag, NOT systemd's
+// is-enabled: a never-enabled fresh unit also reads "disabled", and inferring
+// from it made a brand-new app look powered off for its first seconds.
 func (m *Manager) Ensure(name string) (string, error) {
-	if _, err := m.store.App(name); err != nil {
+	a, err := m.store.App(name)
+	if err != nil {
 		return "", err
 	}
-	if !m.systemd.IsEnabled(m.unitName(name)) {
+	if a.PoweredOff {
 		return "", appctl.ErrPoweredOff
 	}
 	return m.powerOn(name)
@@ -78,6 +80,11 @@ func (m *Manager) PowerOn(name string) (string, error) {
 // provisions an idle workspace.
 func (m *Manager) powerOn(name string) (string, error) {
 	defer m.stateChanged(name)
+	// Clear any recorded poweroff: reaching here means the app is meant to run
+	// (an explicit PowerOn, or a login on an app that was never powered off).
+	if err := m.store.SetAppPoweredOff(name, false); err != nil {
+		return "", err
+	}
 	a, err := m.store.App(name)
 	if err != nil {
 		return "", err
@@ -113,13 +120,14 @@ func (m *Manager) StartApp(name string) error { return m.signalAgent(name, "USR2
 // container); it needs the container running, since it acts on the process.
 func (m *Manager) signalAgent(name, signal string) error {
 	defer m.stateChanged(name) // The app process just moved; drop the cache and re-measure
-	if _, err := m.store.App(name); err != nil {
+	a, err := m.store.App(name)
+	if err != nil {
 		return err
 	}
 	// A deliberately powered-off app gets the same 409 as every other
-	// container-needing call; only an enabled app with a dead container falls
+	// container-needing call; only a running app with a dead container falls
 	// through to the generic hint below.
-	if !m.systemd.IsEnabled(m.unitName(name)) {
+	if a.PoweredOff {
 		return appctl.ErrPoweredOff
 	}
 	if err := m.container.Kill(m.containerName(name), signal); err != nil {
@@ -128,10 +136,14 @@ func (m *Manager) signalAgent(name, signal string) error {
 	return nil
 }
 
-// Down stops the app and disables it at boot
+// Down powers the app off: the intent is recorded first (the flag is what
+// Ensure and Exec refuse on), then the unit is stopped and disabled at boot.
 func (m *Manager) Down(name string) error {
 	defer m.stateChanged(name)
 	if _, err := m.store.App(name); err != nil {
+		return err
+	}
+	if err := m.store.SetAppPoweredOff(name, true); err != nil {
 		return err
 	}
 	return m.systemd.DisableNow(m.unitName(name))

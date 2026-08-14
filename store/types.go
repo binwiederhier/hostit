@@ -47,6 +47,10 @@ type App struct {
 	// ImageTag pins the app to the workspace image it was built with; empty until
 	// the daemon backfills it (apps created before image pinning).
 	ImageTag string `json:"image_tag"`
+	// PoweredOff records a deliberate poweroff (cleared by poweron). Recorded
+	// here, not inferred from systemd, where a never-enabled unit also reads
+	// "disabled" and a fresh app would look powered off.
+	PoweredOff bool `json:"powered_off"`
 }
 
 // Snapshot is one point-in-time btrfs snapshot of an app's home. Auto records how

@@ -112,6 +112,11 @@ func execServe(c *cli.Context) error {
 	if err := manager.MigrateIdmapStorage(c.App.Version); err != nil {
 		slog.Warn("Idmap migration incomplete; retrying at next start", "error", err)
 	}
+	// Seed the poweroff flag from unit state once; the flag is authoritative
+	// after this (a never-enabled fresh unit also reads "disabled").
+	if err := manager.BackfillPowerOffFlags(); err != nil {
+		slog.Warn("Cannot backfill poweroff flags; retrying at next start", "error", err)
+	}
 	// After the budgets exist: applying a stored limit re-ensures the app's
 	// budget qgroup and its cap. Migration briefly runs on the 2048M default and
 	// this corrects every group to the owner's real limit.

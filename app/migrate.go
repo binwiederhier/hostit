@@ -25,6 +25,9 @@ const (
 	// move to idmapped rootfs mounts (trees root-owned, ownership mapped by the
 	// runtime); any recorded value means it ran.
 	settingStorageIdmap = "storage-idmap"
+	// settingPowerOffBackfill records that the poweroff store flag was seeded
+	// from systemd unit state once; after that, the flag is authoritative.
+	settingPowerOffBackfill = "poweroff-flag-backfill"
 	// legacyRootfsDirName is where the pre-unification layout kept the per-app
 	// rootfs subvolumes (beside the then-separate homes). Only the migrations
 	// still know this path: MigrateRootfsStorage stages rootfses here on a
@@ -393,4 +396,34 @@ func shiftTreeToRoot(root string, base, count int, lchown func(path string, uid,
 		}
 		return lchown(path, uid, gid)
 	})
+}
+
+// BackfillPowerOffFlags seeds the poweroff store flag from systemd once: before
+// the flag existed, only a deliberate poweroff ever disabled a unit, so a
+// disabled unit at backfill time IS recorded intent. One-time and gated -- after
+// this, the flag is authoritative and unit state is never consulted again (a
+// never-enabled fresh unit also reads "disabled", which is exactly the
+// ambiguity the flag exists to remove).
+func (m *Manager) BackfillPowerOffFlags() error {
+	settings, err := m.store.Settings()
+	if err != nil {
+		return err
+	}
+	if settings[settingPowerOffBackfill] != "" {
+		return nil
+	}
+	apps, err := m.store.Apps()
+	if err != nil {
+		return err
+	}
+	for _, a := range apps {
+		if m.systemd.IsEnabled(workspace.UnitName(a.ID)) {
+			continue
+		}
+		if err := m.store.SetAppPoweredOff(a.Name, true); err != nil {
+			return err
+		}
+		slog.Info("Recorded existing poweroff", "app", a.Name)
+	}
+	return m.store.SetSetting(settingPowerOffBackfill, "done")
 }

@@ -172,10 +172,10 @@ func TestEnsureRefusesAPoweredOffApp(t *testing.T) {
 	t.Parallel()
 	m, _, runner := newTestDeployManager(t)
 	createTestApp(t, m, "blog")
-	// A poweroff disables the unit. A login (SSH or the web terminal) must not
-	// power it back on -- otherwise poweroff never sticks, and an auto-reconnecting
-	// terminal fights the operator.
-	runner.returns("is-enabled", "disabled")
+	// A poweroff records intent in the store. A login (SSH or the web terminal)
+	// must not power it back on -- otherwise poweroff never sticks, and an
+	// auto-reconnecting terminal fights the operator.
+	require.NoError(t, m.store.SetAppPoweredOff("blog", true))
 	runner.reset()
 	_, err := m.Ensure("blog")
 	require.ErrorIs(t, err, appctl.ErrPoweredOff)
@@ -505,11 +505,11 @@ func TestRestartStaleAgentsLeavesPoweredOffAppsOff(t *testing.T) {
 	createTestApp(t, m, "blog")
 	writeAppFile(t, m, "blog", "hostit.yml", "mode: static")
 
-	// The app was deliberately powered off (its unit disabled). An upgrade --
+	// The app was deliberately powered off (recorded intent). An upgrade --
 	// including the storage migration's config-hash change that makes every
 	// container stale -- must not resurrect it: Up would recreate the container
 	// and enable the unit.
-	runner.returns("is-enabled", "disabled")
+	require.NoError(t, m.store.SetAppPoweredOff("blog", true))
 	runner.reset()
 	restarted, err := m.RestartStaleAgents("v0.3.0")
 	require.NoError(t, err)
@@ -620,9 +620,84 @@ func TestStartAppRefusesAPoweredOffApp(t *testing.T) {
 	// Starting the app process needs the container, and a deliberately
 	// powered-off app must be refused with ErrPoweredOff (the API's 409, same
 	// as every other container-needing call), not a generic invalid error.
-	runner.returns("is-enabled", "disabled")
+	require.NoError(t, m.store.SetAppPoweredOff("blog", true))
 	runner.reset()
 	err := m.StartApp("blog")
 	require.ErrorIs(t, err, appctl.ErrPoweredOff)
 	assert.NotContains(t, runner.ran(), "podman kill", "no signal is sent to a powered-off app")
+}
+
+func TestEnsureStartsAFreshAppWhoseUnitWasNeverEnabled(t *testing.T) {
+	t.Parallel()
+	m, _, runner := newTestDeployManager(t)
+	createTestApp(t, m, "blog")
+	// THE fresh-app blip: a template instance that was never enabled reads
+	// "disabled" from systemctl is-enabled, exactly like a deliberate poweroff.
+	// Poweroff intent is recorded in the store now, so a brand-new app (flag
+	// unset) must start on login -- even while its unit still reads "disabled".
+	runner.returns("is-enabled", "disabled")
+	runner.returns("container inspect", "whatever") // Exists
+	runner.returns("is-active", "inactive")
+	runner.reset()
+	_, err := m.Ensure("blog")
+	require.NoError(t, err)
+	assert.Contains(t, runner.ran(), "enable --now", "a never-enabled fresh app must start on login")
+}
+
+func TestDownRecordsPowerOffAndPowerOnClearsIt(t *testing.T) {
+	t.Parallel()
+	m, _, runner := newTestDeployManager(t)
+	createTestApp(t, m, "blog")
+
+	require.NoError(t, m.Down("blog"))
+	a, err := m.store.App("blog")
+	require.NoError(t, err)
+	assert.True(t, a.PoweredOff, "poweroff is recorded intent")
+	assert.Contains(t, runner.ran(), "systemctl disable --now "+m.unitName("blog"))
+
+	// Ensure (a login) refuses on the FLAG -- no is-enabled stub involved.
+	_, err = m.Ensure("blog")
+	require.ErrorIs(t, err, appctl.ErrPoweredOff)
+	// StartApp and Exec refuse the same way.
+	require.ErrorIs(t, m.StartApp("blog"), appctl.ErrPoweredOff)
+	_, err = m.Exec("blog", "echo hi", 0)
+	require.ErrorIs(t, err, appctl.ErrPoweredOff)
+
+	// PowerOn clears the intent and starts the app.
+	runner.returns("container inspect", "whatever")
+	runner.returns("is-active", "inactive")
+	_, err = m.PowerOn("blog")
+	require.NoError(t, err)
+	a, err = m.store.App("blog")
+	require.NoError(t, err)
+	assert.False(t, a.PoweredOff)
+}
+
+func TestBackfillPowerOffFlags(t *testing.T) {
+	t.Parallel()
+	m, _, runner := newTestDeployManager(t)
+	createTestApp(t, m, "blog")
+	createTestApp(t, m, "wiki")
+	// Hosts upgrading to the flag: a disabled unit at backfill time IS a
+	// deliberate poweroff (only poweroff disabled units before the flag existed).
+	runner.returns("is-enabled hostit-app@"+m.appID("blog"), "disabled")
+	runner.returns("is-enabled hostit-app@"+m.appID("wiki"), "enabled")
+	r2 := runner // silence unused in case
+	_ = r2
+
+	require.NoError(t, m.BackfillPowerOffFlags())
+	blog, err := m.store.App("blog")
+	require.NoError(t, err)
+	assert.True(t, blog.PoweredOff)
+	wiki, err := m.store.App("wiki")
+	require.NoError(t, err)
+	assert.False(t, wiki.PoweredOff)
+
+	// One-time: a later run must not resurrect the flag from unit state (the
+	// flag is authoritative after the backfill).
+	require.NoError(t, m.store.SetAppPoweredOff("blog", false))
+	require.NoError(t, m.BackfillPowerOffFlags())
+	blog, err = m.store.App("blog")
+	require.NoError(t, err)
+	assert.False(t, blog.PoweredOff, "the settings gate makes the backfill one-time")
 }

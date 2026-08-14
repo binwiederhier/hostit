@@ -10,20 +10,21 @@ import (
 const (
 	insertAppQuery = `INSERT INTO app (id, name, port, host, owner_id, created_at, image_tag) VALUES (?, ?, ?, ?, ?, ?, ?)`
 	selectAppQuery = `
-		SELECT id, name, port, host, owner_id, disk_mb, created_at, image_tag
+		SELECT id, name, port, host, owner_id, disk_mb, created_at, image_tag, powered_off
 		FROM app WHERE name = ?
 	`
 	selectAppsQuery = `
-		SELECT id, name, port, host, owner_id, disk_mb, created_at, image_tag
+		SELECT id, name, port, host, owner_id, disk_mb, created_at, image_tag, powered_off
 		FROM app ORDER BY name
 	`
 	selectAppsByOwnerQuery = `
-		SELECT id, name, port, host, owner_id, disk_mb, created_at, image_tag
+		SELECT id, name, port, host, owner_id, disk_mb, created_at, image_tag, powered_off
 		FROM app WHERE owner_id = ? ORDER BY name
 	`
 	selectAppCountByOwnerQuery = `SELECT COUNT(*) FROM app WHERE owner_id = ?`
 	selectPortsQuery           = `SELECT port FROM app ORDER BY port`
 	updateAppUsageQuery        = `UPDATE app SET disk_mb = ? WHERE name = ?`
+	updateAppPoweredOffQuery   = `UPDATE app SET powered_off = ? WHERE name = ?`
 	deleteAppQuery             = `DELETE FROM app WHERE name = ?`
 	renameAppQuery             = `UPDATE app SET name = ? WHERE name = ?`
 	// After the app is renamed, keep assistant_session's name mirror (its primary
@@ -53,6 +54,12 @@ func (s *Store) AddApp(app *App) error {
 		app.ID = randomID()
 	}
 	_, err := s.db.Exec(insertAppQuery, app.ID, app.Name, app.Port, app.Host, app.OwnerID, app.CreatedAt.Unix(), app.ImageTag)
+	return err
+}
+
+// SetAppPoweredOff records (or clears) an app's deliberate poweroff.
+func (s *Store) SetAppPoweredOff(name string, off bool) error {
+	_, err := s.db.Exec(updateAppPoweredOffQuery, off, name)
 	return err
 }
 
@@ -112,7 +119,7 @@ func (s *Store) ImageTagsInUse() (map[string]bool, error) {
 func (s *Store) App(name string) (*App, error) {
 	var app App
 	var createdAt int64
-	err := s.db.QueryRow(selectAppQuery, name).Scan(&app.ID, &app.Name, &app.Port, &app.Host, &app.OwnerID, &app.DiskMB, &createdAt, &app.ImageTag)
+	err := s.db.QueryRow(selectAppQuery, name).Scan(&app.ID, &app.Name, &app.Port, &app.Host, &app.OwnerID, &app.DiskMB, &createdAt, &app.ImageTag, &app.PoweredOff)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrAppNotFound
 	} else if err != nil {
@@ -212,7 +219,7 @@ func (s *Store) queryApps(query string, args ...any) ([]*App, error) {
 	for rows.Next() {
 		var app App
 		var createdAt int64
-		if err := rows.Scan(&app.ID, &app.Name, &app.Port, &app.Host, &app.OwnerID, &app.DiskMB, &createdAt, &app.ImageTag); err != nil {
+		if err := rows.Scan(&app.ID, &app.Name, &app.Port, &app.Host, &app.OwnerID, &app.DiskMB, &createdAt, &app.ImageTag, &app.PoweredOff); err != nil {
 			return nil, err
 		}
 		app.CreatedAt = time.Unix(createdAt, 0)

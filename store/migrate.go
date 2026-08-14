@@ -215,6 +215,12 @@ var migrations = []string{
 			app_id TEXT PRIMARY KEY,
 			mode TEXT NOT NULL DEFAULT ''
 		);
+	`, // 16: poweroff is explicit, recorded intent. systemd's is-enabled cannot
+	// carry it: a template instance that was never enabled reads "disabled" too,
+	// so a brand-new app's first seconds looked powered off (and logins/terminals
+	// were refused). The daemon backfills existing apps from unit state once.
+	`
+		ALTER TABLE app ADD COLUMN powered_off INTEGER NOT NULL DEFAULT 0;
 	`,
 }
 

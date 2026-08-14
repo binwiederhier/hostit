@@ -32,7 +32,7 @@ func (m *Manager) RestartStaleAgents(version string) ([]string, error) {
 		// whose config-hash change precedes this) must not resurrect what an
 		// operator deliberately disabled. Its container is simply recreated on
 		// the next explicit power-on.
-		if !m.systemd.IsEnabled(m.unitName(a.Name)) {
+		if a.PoweredOff {
 			continue
 		}
 		// Up, not just a restart: a new binary may also want the container built
