@@ -230,7 +230,8 @@ func TestRootfsPersistsAcrossDeploy(t *testing.T) {
 	e.post(fmt.Sprintf("/api/apps/%s/deploy", name), token, nil)
 	e.waitForBody(fmt.Sprint(app["url"]), "Nothing here yet")
 
-	// Plant a marker OUTSIDE the bind-mounted home: only the rootfs holds it.
+	// Plant a marker OUTSIDE the home directory: only the (rootfs) subvolume
+	// holds it, so surviving proves the container's filesystem persists.
 	_, code := e.runEventually(name, token, "touch /usr/local/persist-marker")
 	require.Equal(t, 0, code, "planting the marker must succeed")
 
@@ -243,6 +244,43 @@ func TestRootfsPersistsAcrossDeploy(t *testing.T) {
 	out, code := e.runEventually(name, token, "ls /usr/local/persist-marker")
 	assert.Equal(t, 0, code, "the marker must survive the container recreate; ls said: %s", out)
 	assert.Contains(t, out, "persist-marker")
+}
+
+// TestRollbackRestoresInstalledSoftware proves snapshots capture the WHOLE app
+// subvolume, not just the home: software installed outside the home (a marker
+// in /usr/local, standing in for an apt package) comes back on rollback. This
+// is the unified-layout promise -- rollback restores data AND installed
+// software together.
+func TestRollbackRestoresInstalledSoftware(t *testing.T) {
+	e := newEnv(t)
+	name := uniqueName("e2e-rollb")
+	app := e.createApp(name)
+	t.Cleanup(func() {
+		e.deleteApp(name)
+	})
+	token := fmt.Sprint(app["agent_token"])
+	e.put(fmt.Sprintf("/api/apps/%s/files/hostit.yml", name), token, "mode: static\n")
+	e.post(fmt.Sprintf("/api/apps/%s/deploy", name), token, nil)
+	e.waitForBody(fmt.Sprint(app["url"]), "Nothing here yet")
+
+	// "Install" something outside the home, then snapshot the whole app.
+	_, code := e.runEventually(name, token, "touch /usr/local/rollback-marker")
+	require.Equal(t, 0, code, "planting the marker must succeed")
+	var snap map[string]any
+	e.doJSON("POST", fmt.Sprintf("/api/apps/%s/snapshots", name), token, map[string]string{"label": "with marker"}, &snap, http.StatusOK)
+	snapID := fmt.Sprint(snap["id"])
+	require.NotEmpty(t, snapID)
+
+	// Lose the "installed software", then roll back. The rollback swaps the
+	// whole subvolume with the container powered down, so give it (and the app
+	// coming back up) the same generous window as everything else here.
+	_, code = e.runEventually(name, token, "rm /usr/local/rollback-marker")
+	require.Equal(t, 0, code, "removing the marker must succeed")
+	e.post(fmt.Sprintf("/api/apps/%s/snapshots/%s/restore", name, snapID), token, nil)
+
+	out, code := e.runEventually(name, token, "ls /usr/local/rollback-marker")
+	assert.Equal(t, 0, code, "the marker must be back after rollback; ls said: %s", out)
+	assert.Contains(t, out, "rollback-marker")
 }
 
 // TestDiskHardCap proves the combined disk budget is a filesystem-enforced hard
