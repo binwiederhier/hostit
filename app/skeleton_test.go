@@ -28,7 +28,7 @@ func TestSkeletonFiles(t *testing.T) {
 	// The README must describe what the skeleton ACTUALLY is. It used to claim the
 	// old Go-stub era's `mode: app` + `run: hostit placeholder` -- a command that
 	// does not exist -- and agents trusting it wrote that run: line into
-	// hostit.yml, crash-looping their apps (seen on prod: emojo, golf).
+	// hostit.yml, crash-looping their apps (seen in production).
 	assert.NotContains(t, readme, "hostit placeholder")
 	assert.NotContains(t, readme, "mode: app`")
 	assert.Contains(t, readme, "mode: static")
