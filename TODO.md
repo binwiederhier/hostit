@@ -108,6 +108,20 @@ definitions and the conversation prefix are cache-marked, so repeat turns pay th
   workspace ChownTree call sites, and the rollback re-chown. Existing apps
   keep their baked-in ownership and keep working; only new apps get the
   idmapped path (or a one-time re-chown migration unifies them).
+- **Create-app dialog: spinner + disabled input while creating.** Regardless of
+  the crun change above, creating an app takes a few seconds: the dialog
+  should show a spinner and disable the name text field the same way the
+  button is disabled, so a slow create reads as working, not stuck.
+- **Make app delete feel instant (it takes 4-10s).** Measured on stage: ~2s of
+  graceful container stop (SIGTERM to the agent, systemd unit teardown), then
+  ~2s of btrfs teardown -- deleting the app subvolume and every snapshot, plus
+  the qgroup destroy ladder whose middle rung is a `btrfs filesystem sync`
+  that waits out a transaction commit (longer on prod's loaded disk and with
+  more snapshots; userdel itself is instant). Fix idea: make DeleteApp
+  asynchronous -- drop the registry row and answer immediately, run the
+  container/subvolume/qgroup/user teardown in the background. ReconcileOrphans
+  already converges any teardown the daemon dies in the middle of, so the
+  background path needs no new safety net.
 - **Bug: a fresh app's terminal is refused as "powered off" for a few seconds.**
   `systemctl is-enabled` reports "disabled" for a template instance that was
   simply never enabled yet, so between "App created" and the background start's
