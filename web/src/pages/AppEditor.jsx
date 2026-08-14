@@ -40,7 +40,9 @@ export default function AppEditor({ name, url, running, diskMB, diskLimitMB, onD
   const isNarrow = () => typeof window !== "undefined" && window.matchMedia("(max-width: 640px)").matches;
   const [treeCollapsed, setTreeCollapsed] = useState(isNarrow);
   const [treeWidth, setTreeWidth] = useState(240);
-  const [previewOn, setPreviewOn] = useState(false);
+  // The live preview pane is on by default (except on narrow screens, where it
+  // would crowd out the editor); the toggle stays for anyone who wants the room.
+  const [previewOn, setPreviewOn] = useState(() => !isNarrow());
   const [previewWidth, setPreviewWidth] = useState(440);
   // Seed with a timestamp so preview URLs are unique per session (see AppDetail).
   const [previewKey, setPreviewKey] = useState(() => Date.now());

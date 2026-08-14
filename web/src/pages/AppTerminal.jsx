@@ -106,6 +106,10 @@ const AppTerminal = ({ name, onClose, onMinimize, onReady, onSessionEnd, onSsh, 
       ws.binaryType = "arraybuffer";
       ws.onopen = () => {
         attempt = 0; // a clean connect resets the backoff
+        // Every socket is a fresh login session: reset the screen so the new
+        // banner does not stack under dead output -- in particular the yellow
+        // "powered off" note a reconnect-after-poweron would otherwise keep.
+        term.reset();
         stoppedRef.current = false;
         setStopped(false);
         sendSize();
