@@ -1529,10 +1529,28 @@ const AppDetail = ({ account, refreshAccount }) => {
   // Seed the key with a timestamp (not 0) so preview URLs are unique per session
   // and never reuse a value a cache might still hold; increments keep it changing.
   const [previewKey, setPreviewKey] = useState(() => Date.now());
-  const [previewHidden, setPreviewHidden] = useState(false); // collapse the preview pane, giving the chat full width
+  // ONE preview-visibility state for the assistant AND files views (the strip
+  // has one toggle; the panes must agree), remembered per app across sessions.
+  // Default: visible, except on narrow screens where the pane would crowd out
+  // the work surface.
+  const [previewOn, setPreviewOn] = useState(() => {
+    try {
+      const saved = localStorage.getItem("hostit.preview." + name);
+      if (saved !== null) return saved === "1";
+    } catch {
+      /* storage unavailable */
+    }
+    return !(typeof window !== "undefined" && window.matchMedia("(max-width: 640px)").matches);
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem("hostit.preview." + name, previewOn ? "1" : "0");
+    } catch {
+      /* storage unavailable */
+    }
+  }, [name, previewOn]);
   // The files view's preview pane, controlled by the same strip buttons; the
   // editor only receives the state (one set of controls for both views).
-  const [filesPreviewOn, setFilesPreviewOn] = useState(() => !(typeof window !== "undefined" && window.matchMedia("(max-width: 640px)").matches));
   const [filesPreviewNonce, setFilesPreviewNonce] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
   const lastAppStart = useRef(null);
@@ -1984,7 +2002,7 @@ const AppDetail = ({ account, refreshAccount }) => {
                 className="ws-viewtab ws-preview-ctl"
                 onClick={view === "assistant" ? reloadPreview : () => setFilesPreviewNonce((n) => n + 1)}
                 title="Refresh the preview"
-                disabled={view === "assistant" ? previewHidden : !filesPreviewOn}
+                disabled={!previewOn}
               >
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
                   <path d="M20 11a8 8 0 1 0-.6 4" />
@@ -1994,16 +2012,16 @@ const AppDetail = ({ account, refreshAccount }) => {
               </button>
               <button
                 type="button"
-                className={"ws-viewtab ws-preview-ctl" + ((view === "assistant" ? !previewHidden : filesPreviewOn) ? " on" : "")}
-                onClick={view === "assistant" ? () => setPreviewHidden((v) => !v) : () => setFilesPreviewOn((v) => !v)}
-                aria-pressed={view === "assistant" ? !previewHidden : filesPreviewOn}
-                title={(view === "assistant" ? !previewHidden : filesPreviewOn) ? "Hide the preview" : "Show the preview"}
+                className={"ws-viewtab ws-preview-ctl" + (previewOn ? " on" : "")}
+                onClick={() => setPreviewOn((v) => !v)}
+                aria-pressed={previewOn}
+                title={previewOn ? "Hide the preview" : "Show the preview"}
               >
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
                   <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z" />
                   <circle cx="12" cy="12" r="2.5" />
                 </svg>
-                {(view === "assistant" ? !previewHidden : filesPreviewOn) ? "Hide preview" : "Show preview"}
+                {previewOn ? "Hide preview" : "Show preview"}
               </button>
             </div>
           )}
@@ -2045,7 +2063,7 @@ const AppDetail = ({ account, refreshAccount }) => {
         </div>
         <div className={"ws-editorwrap" + (view === "editor" ? "" : " ws-inactive")}>
           <Suspense fallback={<div className="ws-chat-loading">Loading editor...</div>}>
-            <AppEditor name={app.name} url={app.url} running={app.running} diskMB={app.disk_mb} diskLimitMB={app.disk_limit_mb} onDeploy={reloadPreview} previewOn={filesPreviewOn} previewNonce={filesPreviewNonce} />
+            <AppEditor name={app.name} url={app.url} running={app.running} diskMB={app.disk_mb} diskLimitMB={app.disk_limit_mb} onDeploy={reloadPreview} previewOn={previewOn} previewNonce={filesPreviewNonce} />
           </Suspense>
         </div>
         <div className={"ws-termwrap" + (view === "terminal" ? "" : " ws-inactive")}>
@@ -2059,7 +2077,7 @@ const AppDetail = ({ account, refreshAccount }) => {
           <div
             className={"ws-split" + (view === "assistant" ? "" : " ws-inactive")}
             ref={splitRef}
-            style={{ gridTemplateColumns: previewHidden ? "minmax(0, 1fr)" : `minmax(0, ${chatFrac}fr) 10px minmax(0, ${1 - chatFrac}fr)` }}
+            style={{ gridTemplateColumns: !previewOn ? "minmax(0, 1fr)" : `minmax(0, ${chatFrac}fr) 10px minmax(0, ${1 - chatFrac}fr)` }}
           >
           <div className="ws-chat">
             <Suspense fallback={<div className="ws-chat-loading">Loading assistant...</div>}>
@@ -2067,7 +2085,7 @@ const AppDetail = ({ account, refreshAccount }) => {
             </Suspense>
           </div>
 
-          {!previewHidden && (
+          {previewOn && (
             <>
           <div
             className="ws-resizer"
