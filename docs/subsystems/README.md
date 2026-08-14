@@ -24,9 +24,10 @@ pages zoom in on one mechanism each.
   SSE event stream, per-turn usage/cost accounting, and the Claude Max
   subscription sandbox (`claude -p` in a locked-down container, tools mediated
   MCP-over-peercred-socket). Why a credential's *presence* is the whole switch.
-- [storage-btrfs.md](storage-btrfs.md) -- the btrfs storage model: per-app home
-  and rootfs subvolumes (containers run `--rootfs`, not an image; per-tag base
-  subvolumes; installs survive recreates), read-only CoW snapshots, reflink fork,
+- [storage-btrfs.md](storage-btrfs.md) -- the btrfs storage model: one subvolume
+  per app (the container runs it via `--rootfs`, not an image; the app's files
+  live at `home/app` inside it; per-tag base subvolumes; installs survive
+  recreates), whole-app read-only CoW snapshots, reflink fork,
   the per-app budget qgroup hard-capped on exclusive bytes (EDQUOT),
   the pure retention/GFS engine, and why btrfs is now mandatory.
 - [release-and-preflight.md](release-and-preflight.md) -- how hostit is built,

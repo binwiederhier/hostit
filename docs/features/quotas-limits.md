@@ -6,7 +6,8 @@ hostit caps three resources so one app -- or one user -- cannot starve the rest 
 node:
 
 - **Disk budget** (`disk_mb`, per app): how much the app may pin on disk, across its
-  home, its container's root filesystem and its snapshots combined. It is a hard cap
+  one subvolume (the container's whole filesystem, files and installed software
+  alike) and its snapshots combined. It is a hard cap
   enforced by one btrfs qgroup per app -- a write past it fails immediately with
   `EDQUOT` ("Disk quota exceeded"), wherever the app writes. A `disk_mb` of 0 means
   the platform default (2048 MB); nothing is unlimited.
@@ -57,7 +58,7 @@ sequenceDiagram
     API->>UM: Limits(user) -> {AppLimit, MemoryMB, DiskMB}
     API->>AM: CreateApp(name, {MemoryMB, DiskMB, ...})
     AM->>AM: SetMemoryLimit (applied on container create)
-    AM->>Btrfs: budget qgroup 1/<uid>: home + rootfs join, limit -e <DiskMB>M
+    AM->>Btrfs: budget qgroup 1/<uid>: the app subvolume joins, limit -e <DiskMB>M
     Note over Btrfs: later writes past the limit fail with EDQUOT
     loop background
         AM->>AM: RefreshDiskUsage (record disk_mb for the dashboard)
@@ -110,47 +111,46 @@ sequenceDiagram
 
 - Each app has one hierarchical qgroup, `1/<uid>` (`app/budget.go:budgetGroup`,
   keyed on the app's unix uid: stable across renames, unique per app). Its members
-  are the app's home subvolume, its rootfs subvolume, and every snapshot subvolume
+  are the app's one subvolume and every snapshot subvolume
   (`app/budget.go:ensureBudget`; the snapshot service joins each subvolume it
   creates via `snapshot.Host.AssignBudget`).
 - The group is capped on **exclusive bytes** (`btrfs/service.go:QgroupLimitExclusive`
   -> `btrfs qgroup limit -e <MB>M`): the app pays for what it alone pins, while data
-  still shared with the read-only base rootfs is charged to nobody. This is a
-  **hard** limit: a write past it fails with `EDQUOT` -- in the home or anywhere
+  still shared with the read-only base is charged to nobody. This is a
+  **hard** limit: a write past it fails with `EDQUOT` -- in `/home/app` or anywhere
   else inside the container. Quota accounting is enabled at every start
   (`app/budget.go:EnableDiskBudgets`).
 - A stored `disk_mb` of 0 (or less) is enforced as the 2048 MB default
   (`app/budget.go:effectiveDiskCapMB`); nothing is unlimited.
 - Recorded per app in `Manager.diskMB` (`app/quota.go:SetDiskLimit` / `diskLimit`);
   `SetDiskLimit` re-caps the budget group. The budget is set up at create/fork and
-  re-ensured at startup; a rollback needs no re-application, because the staged home
-  joins the group before the swap and qgroup membership survives the rename.
+  re-ensured at startup; a rollback needs no re-application, because the staged
+  copy joins the group before the swap and qgroup membership survives the rename.
 - **Usage accounting** (`app/quota.go:RefreshDiskUsage` / `DiskUsageLoop`,
   `measureDiskMB`): reads the budget group's exclusive bytes
   (`btrfs.ExclusiveUsageMB`, cheap and accurate, no directory walk) -- the true
   bytes the app pins, i.e. what deleting it would free. A fresh app shows ~47 MB,
-  the metadata cost of chowning its rootfs snapshot. The measured value is stored
-  via `Store.UpdateAppUsage` into `app.disk_mb` for the dashboard. The loop is pure
-  accounting -- the qgroup already enforces the cap, so there is nothing here to
-  stop.
+  the metadata cost of chowning its subvolume snapshot. The measured value is
+  stored via `Store.UpdateAppUsage` into `app.disk_mb` for the dashboard. The loop
+  is pure accounting -- the qgroup already enforces the cap, so there is nothing
+  here to stop.
 - Snapshots are stored **beside** the app subvolumes, under `.snapshots/<id>/`
-  (`app/btrfs.go:snapshotsDirName`), not inside the home, but they are members of
-  the budget group: under exclusive accounting a snapshot only costs budget for
-  data that has since diverged from the live home.
+  (`app/btrfs.go:snapshotsDirName`), not inside the tree they capture, but they are
+  members of the budget group: under exclusive accounting a snapshot only costs
+  budget for data that has since diverged from the live subvolume.
 
-### btrfs detection
+### btrfs is a given
 
-- `app/btrfs.go:btrfsEnabled` caches whether `AppsDir` is btrfs (via
-  `btrfs.Filesystem` -> `stat -f`). With the mandatory preflight
-  (`cmd/preflight.go:requireBtrfs`) it is always true in a real deployment; the
-  guards remain as defense in depth and for the fake-ops unit tests. See the note in
+- The startup preflight (`cmd/preflight.go:requireBtrfs`) refuses to run unless
+  `AppsDir` is btrfs, so everything downstream simply assumes it; the old runtime
+  `btrfsEnabled()` guards are gone. See
   [storage-btrfs.md](../subsystems/storage-btrfs.md).
 
 ## Other notes
 
-- **The budget spans the whole app.** Home, rootfs and snapshots are one number: an
-  `apt-get install` (rootfs) competes with uploaded files (home) and retained
-  snapshot divergence for the same `disk_mb`. Treat the code (`app/budget.go`,
+- **The budget spans the whole app.** The one subvolume and its snapshots are one
+  number: an `apt-get install` competes with uploaded files and retained snapshot
+  divergence for the same `disk_mb`. Treat the code (`app/budget.go`,
   `app/quota.go`) as authoritative.
 - **The disk budget is shared** by everything in the app (the app process, builds,
   logs, uploaded files, dependencies, installed packages). A build that fans out

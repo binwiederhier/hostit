@@ -3,10 +3,11 @@ theme: seriph
 title: hostit storage -- hard caps
 info: |
   The hostit storage redesign: a filesystem-enforced hard cap on everything a
-  tenant writes (home, snapshots, container rootfs), how the phase-1 plan (btrfs
-  storage driver) was skipped, and the from-scratch target shape (per-app rootfs
-  subvolumes, podman as a pure runtime) -- which is what shipped. All mechanisms
-  shown were validated live on stage on 2026-08-13.
+  tenant writes, how the phase-1 plan (btrfs storage driver) was skipped, and the
+  from-scratch target shape (one subvolume per app, podman as a pure runtime) --
+  which is what shipped, and was then unified further: the home was folded into
+  the rootfs, so an app is ONE subvolume. All mechanisms shown were validated
+  live on stage on 2026-08-13.
 layout: cover
 background: https://cover.sli.dev
 class: text-center
@@ -187,20 +188,27 @@ Locked 2026-08-13 -- and these budget semantics are exactly what shipped.
 flowchart LR
   subgraph appgroup["qgroup 1/&lt;uid&gt; -- limit = disk_mb (exclusive) -- inside the one bounded apps.btrfs pool"]
     direction LR
-    home["home subvol<br/>apps/&lt;id&gt;"] ~~~ snaps["snapshot subvols<br/>.snapshots/&lt;id&gt;/*"] ~~~ layer["rootfs subvol<br/>.rootfs/&lt;id&gt;"]
+    subvol["THE app subvol apps/&lt;id&gt;<br/>(full OS tree, files at home/app)"] ~~~ snaps["snapshot subvols<br/>.snapshots/&lt;id&gt;/*"]
   end
   appgroup ~~~ images["shared base subvols .bases/&lt;tag&gt;<br/>(outside every group: free)"]
   style appgroup fill:#04785722,stroke:#059669
 ```
 
-- **One shared pool** -- homes + rootfs + bases; the pool itself bounds total
+- **One shared pool** -- app subvolumes + bases; the pool itself bounds total
   damage, so the root fs and the daemon's SQLite are safe even before per-app caps
-- **One combined budget** -- `disk_mb` covers home + snapshots + rootfs via a
-  hierarchical qgroup; bytes shared with the base are free (exclusive accounting)
+- **One combined budget** -- `disk_mb` covers the app's one subvolume + its
+  snapshots via a hierarchical qgroup; bytes shared with the base are free
+  (exclusive accounting)
 - **Snapshots count** -- the budget is the true bytes an app pins; a churning app
   pays for its retention history
 - **No more unlimited** -- `disk_mb: 0` now means the platform default (**2 GB**);
   admins set a big explicit number instead
+
+<div class="mt-2 text-sm opacity-60">
+(As decided this was three subvols per app -- home, rootfs, snapshots; the later
+unification merged home into rootfs, simplifying the group to one subvolume plus
+its snapshots. Same semantics, simpler membership.)
+</div>
 
 ---
 
@@ -210,10 +218,10 @@ Everywhere they can write, the budget is the budget:
 
 ```console
 root@myapp:~# dd if=/dev/zero of=/home/app/big bs=1M count=4000
-dd: error writing '/home/app/big': Disk quota exceeded          # home: EDQUOT
+dd: error writing '/home/app/big': Disk quota exceeded          # EDQUOT
 
 root@myapp:~# dd if=/dev/zero of=/usr/bin/evil bs=1M count=4000
-dd: error writing '/usr/bin/evil': Disk quota exceeded          # rootfs: EDQUOT
+dd: error writing '/usr/bin/evil': Disk quota exceeded          # same subvolume, same budget
 
 root@myapp:~# apt-get install imagemagick                        # fine -- within budget
 ```
@@ -283,33 +291,35 @@ the implementation.
 
 ---
 
-# The target shape, as built: an app is subvolumes
+# The target shape, as built: an app is ONE subvolume
 
 ```
-apps/  (the existing loop pool; homes never moved)
-  <id>/                   # home subvols -- exactly where they were
+apps/  (the existing loop pool)
+  <id>/                   # THE app subvolume: the full OS tree its container runs,
+                          #   with the app's files at <id>/home/app inside it
   .bases/
     <tag>/                # workspace rootfs, exported once per pinned tag (read-only)
-  .rootfs/
-    <id>/                 # container rootfs: snapshot of .bases/<tag>, chowned once
   .snapshots/
-    <id>/*                # home snapshots -- all join the app's qgroup 1/<uid>
+    <id>/*                # whole-app snapshots -- all join the app's qgroup 1/<uid>
 ```
 
-No image/layer storage for app containers at all:
+No image/layer storage for app containers, and no home bind mount -- the host
+path `apps/<id>/home/app` IS the container's `/home/app`:
 
 ```console
-$ btrfs subvolume snapshot apps/.bases/1a3027527a55 apps/.rootfs/<id>      # instant CoW
+$ btrfs subvolume snapshot apps/.bases/1a3027527a55 apps/<id>              # instant CoW
 $ podman create --uidmap 0:1196608:65536 --network slirp4netns ... \
-    --rootfs /var/lib/hostit/apps/.rootfs/<id> hostit agent               # same isolation
+    --rootfs /var/lib/hostit/apps/<id> hostit agent                       # same isolation
 ```
 
 <div class="mt-4 text-sm opacity-60">
 The base is built once from the Containerfile and exported (atomically: temp
-subvolume, sealed read-only, renamed into place); every app's rootfs is a free
-snapshot of it. Apps were already pinned to image tags -- the pin now means
-"which base subvolume". Flag order matters: everything after <code>--rootfs</code>
-is the container command.
+subvolume, sealed read-only, renamed into place); every app's subvolume is a free
+snapshot of it, chowned once to the app's uid block. Apps were already pinned to
+image tags -- the pin now means "which base subvolume". Flag order matters:
+everything after <code>--rootfs</code> is the container command. (The first cut
+kept the home as a separate subvolume beside a <code>.rootfs/&lt;id&gt;</code>;
+a follow-up migration folded it in, landing on this one-subvolume shape.)
 </div>
 
 ---
@@ -332,8 +342,8 @@ In the image-backed world every recreate threw away the writable layer:
 <code>apt-get install</code> lived in that layer, so packages silently vanished on
 the next deploy or upgrade -- a long-standing open TODO. Recreation is fine for
 hostit (containers are cattle); it was the <b>layer dying with them</b> that hurt.
-The rootfs model fixes exactly this: <b>a rootfs, once created, is never recreated
-or reset</b> -- recreates keep the filesystem.
+The subvolume model fixes exactly this: <b>an app's subvolume, once created, is
+never recreated or reset</b> -- recreates keep the filesystem.
 </div>
 
 ---
@@ -363,10 +373,10 @@ bash: ffmpeg: command not found   # gone
 
 ```console
 root@myapp:~# apt-get install ffmpeg
-# ... lands in .rootfs/<id>
+# ... lands in the app's subvolume
 
 $ # deploy -> recreate: podman gets the
-$ # SAME rootfs subvolume back
+$ # SAME subvolume back
 
 root@myapp:~# ffmpeg -version
 ffmpeg version 6.1.1 ...          # still there
@@ -376,10 +386,11 @@ ffmpeg version 6.1.1 ...          # still there
 </div>
 
 <div class="mt-6 text-sm opacity-60">
-The rootfs is the app's own persistent subvolume: the container process is
+The subvolume is the app's own persistent filesystem: the container process is
 disposable, its filesystem is not. Recreates (config change, upgrades) are
 lossless, and the never-rebuild-on-image-change pin is unchanged -- the app's
-rootfs came from its pinned base and stays put.
+subvolume came from its pinned base and stays put. Snapshots capture it whole,
+so a rollback restores the ffmpeg install as readily as the files.
 </div>
 
 ---
@@ -389,23 +400,24 @@ rootfs came from its pinned base and stays put.
 <div class="grid grid-cols-2 gap-6 mt-4">
 <div v-click class="p-4 rounded border border-gray-400 border-opacity-30">
 
-**apt-get survives** -- the rootfs is a persistent subvolume, so installed
+**apt-get survives** -- the app's subvolume is persistent, so installed
 packages live through container recreation. (A long-open TODO, closed as a side
 effect.)
 
 </div>
 <div v-click class="p-4 rounded border border-gray-400 border-opacity-30">
 
-**Rollback stays home-scoped (for now)** -- snapshots and rollback cover the
-home; the rootfs simply persists through them. Snapshotting it alongside the
-home is a natural extension, not built yet.
+**Rollback covers everything** -- snapshots capture the app's one subvolume, so
+data AND installed software roll back together. A bricked rootfs (bad apt,
+deleted system files) is a rollback away. (Was home-scoped in the first cut;
+resolved by the unification.)
 
 </div>
 <div v-click class="p-4 rounded border border-gray-400 border-opacity-30">
 
-**Multi-node migration is `btrfs send`** -- an app is a handful of subvolumes.
-Moving it to another hosting node is send/receive + start. The cleanest possible
-primitive for the `hostit-node` split.
+**Multi-node migration is `btrfs send`** -- an app is one subvolume (plus its
+snapshots). Moving it to another hosting node is send/receive + start. The
+cleanest possible primitive for the `hostit-node` split.
 
 </div>
 <div v-click class="p-4 rounded border border-gray-400 border-opacity-30">
@@ -418,7 +430,7 @@ graph driver never became load-bearing.
 </div>
 
 <div class="mt-4 text-sm opacity-60">
-Cost: hostit now owns the base-rootfs lifecycle (export once per tag, GC only
+Cost: hostit now owns the base-subvolume lifecycle (export once per tag, GC only
 unpinned bases -- a pinned base is never deleted, its extents are shared with
 every pinned app) and leaves the standard image/layer world for app containers.
 The image store remains the build input and the assistant sandbox host.
@@ -438,17 +450,20 @@ flowchart LR
 
 | | Phase 1 (skipped) | Target (shipped) |
 |---|---|---|
-| Layer lives | podman graphroot (btrfs driver) | `.rootfs/<id>` subvolume |
-| Budget | hierarchical qgroup (home+snaps+layer) | same semantics, `1/<uid>` |
+| Layer lives | podman graphroot (btrfs driver) | the ONE app subvolume `apps/<id>` (files at `home/app` inside) |
+| Budget | hierarchical qgroup (home+snaps+layer) | same semantics, `1/<uid>` over subvolume + snapshots |
 | Image flow | unchanged (build + pinned tags) | build input; base subvolume per tag |
 | apt persistence | no | **yes** |
+| Rollback scope | home only | **whole app: files + installed software** |
 | Node migration | home only | **whole app: btrfs send** |
 
 <div class="mt-2 text-sm opacity-60">
 The budget semantics decided for phase 1 carried to the target unchanged -- only
-the layer's physical home differs. Shipped with a one-time startup migration:
-keep each app's home state, drop pre-existing snapshots, build the rootfs from
-the pinned tag, budget every app.
+where the tenant's bytes live differs. Shipped with two one-time startup
+migrations: first keep each app's home state, drop pre-existing snapshots, build
+the rootfs from the pinned tag, budget every app; then fold each home INTO its
+rootfs (an instant reflink copy), leaving one subvolume per app. Powered-off
+apps stay off through both.
 </div>
 
 ---
@@ -490,5 +505,5 @@ One pool, one budget per app, enforced at write time.
 </div>
 
 <div class="mt-10 text-sm opacity-50">
-plans/260813-hostit-disk-hard-cap.md &middot; validated on stage 2026-08-13 &middot; implemented (rootfs storage target)
+plans/260813-hostit-disk-hard-cap.md &middot; validated on stage 2026-08-13 &middot; implemented (one subvolume per app)
 </div>

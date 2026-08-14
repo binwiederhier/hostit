@@ -27,5 +27,4 @@ snapshots) see [`../subsystems/`](../subsystems/); for the per-feature catalog s
 - Diagrams are [Mermaid](https://mermaid.js.org/) fenced code blocks so they render
   on GitHub and in the slides.
 - Code is referenced as `path/file.go:symbol`, kept current with the code.
-</content>
 </invoke>

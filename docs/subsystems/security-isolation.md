@@ -12,7 +12,8 @@ them together.
 
 ## The four boundaries
 
-Each app is created as four things together: a Unix user, a home directory, a
+Each app is created as four things together: a Unix user, a btrfs subvolume (the
+container's whole filesystem, with the app's files at `home/app` inside it), a
 podman container, and a loopback port with an nftables rule (`app/service.go:create`).
 Each boundary does one job.
 
@@ -30,7 +31,7 @@ flowchart TB
         nft["nftables inet hostit<br/>per-port skuid rules"]
         subgraph blog["app 'blog' (uid block @1000000)"]
             c1["container hostit-app-&lt;id&gt;<br/>uidmap 0:1000000:65536<br/>own netns (slirp4netns)"]
-            h1["home apps/&lt;id&gt; (0750)<br/>bind-mounted to /home/app"]
+            h1["subvolume apps/&lt;id&gt; (the container's --rootfs)<br/>files at home/app inside = /home/app"]
         end
         subgraph stats["app 'stats' (uid block @1065536)"]
             c2["container hostit-app-&lt;id&gt;<br/>uidmap 0:1065536:65536"]
@@ -69,13 +70,14 @@ base uid**, and the whole range up to `nobody` maps one-to-one above it.
 
 ### Why contiguity is load-bearing
 
-The container runs the app's own persistent rootfs subvolume (`--rootfs`, an
-instant snapshot of the shared read-only base -- see
-[storage-btrfs.md](storage-btrfs.md)), and that rootfs is **chowned once to the
-app's block** at creation, because this crun cannot idmap-mount a `--rootfs`.
+The container runs the app's one persistent subvolume (`--rootfs`, an
+instant snapshot of the shared read-only base, with the app's files at `home/app`
+inside it -- see [storage-btrfs.md](storage-btrfs.md)), and that subvolume is
+**chowned once to the app's block** at creation, because this crun cannot
+idmap-mount a `--rootfs`.
 A single contiguous range keeps the mapping one uniform offset, so that one-time
 chown is all it takes: every uid a workload uses inside the container lands
-inside the app's own block, on the rootfs and the bind-mounted home alike. A
+inside the app's own block, across the whole subvolume, home included. A
 split map like `0:uid:1` plus `1:subuid:N` would break that correspondence. This
 is documented on the `IDs` type (`workspace/spec.go:IDs`), which carries
 `{UID, GID, Count}` into the create args. Keep the block contiguous.
@@ -136,37 +138,44 @@ the port rule are two halves of the same boundary.
 
 ## File operations: os.OpenRoot containment
 
-The daemon writes into app homes as **root**, on behalf of tenant requests (an
+The daemon writes into app files as **root**, on behalf of tenant requests (an
 agent `PUT`ing a file, the assistant's `write_file`, a scp'd upload the daemon
-later touches). The app user owns that home, it is bind-mounted into their
-container, and it is writable over scp -- so the tenant can plant a **symlink**
-inside it (say `data -> /etc`) and try to walk the root daemon out of the home.
+later touches). The files directory sits **inside the tenant-owned subvolume**
+(the tenant is root inside the container whose rootfs it is, and it is writable
+over scp) -- so the tenant can plant a **symlink** anywhere in that tree, even at
+`home` or `home/app` itself, and try to walk the root daemon out of the
+subvolume.
 
-hostit closes this with `os.OpenRoot`, kernel-enforced containment
-(`app/files.go:appRoot`): every file operation opens the app's home as an
-`*os.Root` and resolves paths through it, so the **kernel refuses to follow a
-symlink out of the opened root**. This is not a string check; it is TOCTOU-safe
-and symlink-safe because the kernel evaluates the real path.
+hostit closes this with chained `os.OpenRoot`s, kernel-enforced containment
+(`homefs/service.go:OpenRoot`): the subvolume root is opened first (its path only
+root controls), the files directory `home/app` is then resolved **inside** that
+root, and every file operation goes through the returned `*os.Root`'s
+path-contained methods, so the **kernel refuses to follow a symlink out of the
+opened root**. This is not a string check; it is TOCTOU-safe and symlink-safe
+because the kernel evaluates the real path. A symlink planted at `home/app` is
+refused (absolute) or at worst redirects the tenant's own file API within their
+own subvolume.
 
-The pattern is uniform across `app/files.go`: `WriteFileFrom`, `ReadFile`,
-`ReadFileMax`, `DeleteFile`, `MoveFile`, `MakeDir`, `StatFile`, `ListFiles`,
-`ExtractTar` all open `appRoot(name)` and operate through it. Belt and braces:
+The pattern is uniform across `homefs/service.go` (bound to apps in
+`app/files.go`): `WriteFileFrom`, `ReadFile`, `ReadFileMax`, `DeleteFile`,
+`MoveFile`, `MakeDir`, `StatFile`, `ListFiles`, `ExtractTar` all open the app's
+files `Dir` via `OpenRoot` and operate through it. Belt and braces:
 
-- `app/files.go:safeRel` rejects the obvious escapes early (absolute paths, any
-  `..` segment) with a useful message, and refuses `protectedDirs` (`.hostit/`,
-  `.ssh/`, `.config/`, ...) and the upload temp prefix. Containment itself is
-  still the root's job; this just fails fast and clearly.
+- `homefs/service.go:safeRel` rejects the obvious escapes early (absolute paths,
+  any `..` segment) with a useful message, and refuses `protectedDirs`
+  (`.hostit/`, `.ssh/`, `.config/`, ...) and the upload temp prefix. Containment
+  itself is still the root's job; this just fails fast and clearly.
 - `WriteFileFrom` streams to a temp file inside the root and renames on success,
   so an over-cap body leaves neither a partial file nor a damaged old one.
 - The chown that gives a new file to the app user goes **through the same
-  `os.Root`** (`app/files.go:chownToApp` -> `SystemOps.ChownToUserIn`), so a
+  `os.Root`** (the injected `homefs.Chowner`, `app/files.go:chowner`), so a
   tenant cannot swap an intermediate directory for a symlink and redirect the
   chown onto a host path.
 - `ExtractTar` refuses symlink and device entries outright, and every regular
   entry is validated with `safeRel` before it is written.
 
 The same discipline lives in the SSH key writer
-(`ssh/service.go:writeAuthorizedKeysIn`): it opens the home as an `os.Root`,
+(`ssh/service.go:WriteAuthorizedKeys`): it takes the app's chained files root,
 refuses a non-directory `.ssh` (a symlink the tenant planted), and writes/chowns
 `authorized_keys` only through the root -- because otherwise root would be handing
 out SSH keys, and ownership, wherever a link pointed.
@@ -207,8 +216,9 @@ sequenceDiagram
   only through a narrow sudoers grant (`hostit.sudoers`:
   `%hostit-apps ALL=(root) NOPASSWD: /usr/bin/hostit-enter`). It **ignores its
   arguments when choosing a target**: it derives the caller from `SUDO_UID`,
-  resolves that user's home, and takes the container key from the home's basename
-  (`cmd/enter.go:containerKeyFromHome`). So an app user who calls `hostit-enter`
+  resolves that user's home, and digs the app id out of the home path
+  (`apps/<id>/home/app`, `cmd/enter.go:containerKeyFromHome` ->
+  `app.IDFromHomeDir`). So an app user who calls `hostit-enter`
   directly with someone else's name still lands in their own container. The
   caller contributes only `$TERM` (regex-validated) and a single command string,
   passed as individual argv, never through a shell on the root side; podman runs

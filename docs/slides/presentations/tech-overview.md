@@ -121,8 +121,8 @@ Each wraps exactly one host tool. `app.Manager` calls them; none call each other
 | `firewall` | nftables per-app loopback rules |
 | `run` | the shared `Runner` that shells out |
 | `retention` | pure GFS snapshot policy (no I/O) |
-| `snapshot` | orchestrates snapshot + rollback |
-| `workspace` | container spec (`--rootfs` + uid map) and its storage: image build (input), per-tag bases, per-app rootfs |
+| `snapshot` | orchestrates whole-app snapshot + rollback |
+| `workspace` | container spec (`--rootfs` + uid map) and its storage: image build (input), per-tag bases, one subvolume per app (files at `home/app` inside) |
 | `agent` &middot; `appctl` &middot; `assistant` | in-container supervisor &middot; the `hostit.yml` contract + app-side client &middot; the in-browser AI agent |
 
 </div>
@@ -199,13 +199,12 @@ colocated <code>_test.go</code> and the suite runs anywhere.
 
 ---
 
-# An app is five host resources, keyed by id
+# An app is four host resources, keyed by id
 
 ```mermaid
 flowchart LR
   A["app<br/><i>opaque id</i>"] --> U["Unix user<br/>unixuser"]
-  A --> H["home subvolume<br/>apps/&lt;id&gt; (btrfs)"]
-  A --> R["rootfs subvolume<br/>.rootfs/&lt;id&gt; (persistent)"]
+  A --> S["THE app subvolume<br/>apps/&lt;id&gt; (btrfs, persistent)<br/>files at home/app inside"]
   A --> C["podman container<br/>runs --rootfs, root mapped to the uid"]
   A --> P["loopback port<br/>nftables pins it to the uid"]
 ```
@@ -274,10 +273,10 @@ sequenceDiagram
     User->>S: POST /api/apps {name}
     S->>M: CreateApp
     M->>M: allocate port, derive uid block, mint id
-    M->>Sys: create Unix user + group
-    M->>M: create btrfs subvolume home
+    M->>M: app subvolume: snapshot the image tag's base, chown to the block
+    M->>Sys: create Unix user + group (home = apps/<id>/home/app)
     M->>M: write skeleton (hostit.yml: mode static, public/index.html)
-    M->>M: rootfs: snapshot the image tag's base, chown; budget qgroup
+    M->>M: budget qgroup 1/<uid> over the subvolume
     M-->>S: app (running), agent token
     S-->>User: 201 + URL, already serving the placeholder
 ```
@@ -301,8 +300,8 @@ sequenceDiagram
     Dev->>S: POST /api/apps/{app}/deploy
     S->>M: Up
     M->>M: loadConfig (read hostit.yml via os.Root)
-    M->>M: pre-deploy snapshot (btrfs)
-    M->>M: EnsureRootfs (no-op if it exists), compute config hash
+    M->>M: pre-deploy snapshot (btrfs, whole app)
+    M->>M: EnsureAppSubvolume (no-op if it exists), compute config hash
     alt config hash changed (or no container)
         M->>Pod: recreate container (--rootfs persists), restart unit
     else only run:/prepare:/mode: changed
@@ -313,9 +312,9 @@ sequenceDiagram
 
 <div class="mt-2 text-sm opacity-60">
 <code>app/deploy.go:apply</code> is the convergence step. Recreate is disruptive (ends
-SSH sessions) but lossless -- the container runs the app's persistent rootfs
-subvolume, so installed packages survive. A reload just re-runs the command. The
-hash decides which.
+SSH sessions) but lossless -- the container runs the app's one persistent
+subvolume, so files and installed packages survive. A reload just re-runs the
+command. The hash decides which.
 </div>
 
 ---
@@ -383,16 +382,17 @@ zoom: 0.92
 
 # Flow: snapshot and rollback
 
-Snapshots are cheap btrfs subvolumes; rollback is a crash-safe staged swap.
+Snapshots are cheap btrfs subvolumes of the whole app (files AND installed
+software); rollback is a crash-safe staged swap.
 
 ```mermaid {scale: 0.58}
 flowchart LR
   subgraph rb["Rollback (snapshot/service.go)"]
     direction LR
-    a["stage a writable<br/>copy of the target"] --> b["safety snapshot<br/>of the live home"]
-    b --> c["stop + remove<br/>the container"]
-    c --> d["swap homes<br/>(rename)"]
-    d --> e["chown + restore<br/>quota"]
+    a["stage a writable<br/>copy of the target"] --> b["safety snapshot of the<br/>live app subvolume"]
+    b --> c["power down: stop unit,<br/>remove the container"]
+    c --> d["swap subvolumes<br/>(rename)"]
+    d --> e["chown to the<br/>app's uid block"]
     e --> f["Up: bring the<br/>app back"]
   end
 ```

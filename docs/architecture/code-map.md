@@ -12,7 +12,9 @@ all of these; which commands it offers depends on where it runs (see
 | `app` | an app's whole lifecycle; composes the service packages below and holds naming, ports and identity |
 | `btrfs` | subvolumes, read-only snapshots, reflink copies, qgroup disk budgets |
 | `container` | podman: create, exec, remove, image build/list, rootfs export |
-| `workspace` | the app-container spec (`CreateArgs`, `--rootfs` + uid map, config hash) and its storage: the workspace image (build input), per-tag base subvolumes, per-app persistent rootfs subvolumes |
+| `workspace` | the app-container spec (`CreateArgs`, `--rootfs` + uid map, config hash) and its storage: the workspace image (build input), per-tag base subvolumes, and the per-app subvolumes (one writable subvolume per app: the container's whole OS tree, files at `home/app` inside) |
+| `homefs` | file I/O inside an app's files directory, every path resolved through chained `os.Root`s (the subvolume root, then `home/app` inside it) |
+| `snapshot` | whole-app snapshot, rollback and retention orchestration |
 | `systemd` | per-app unit lifecycle (enable, start, restart, reset-failed) |
 | `unixuser` | Unix user and home creation, rename, teardown; skeleton writes |
 | `ssh` | an app's `authorized_keys` (managed-block merge, root-scoped write) and SSH public-key validation |
@@ -102,4 +104,3 @@ Code is split per concern into small files rather than a few grab-bags:
   with the router, middleware and response helpers in `api.go`, `auth.go`,
   `headers.go` and `socket.go`, and the proxy in `proxy.go`.
 - Tests are colocated with the package they test (`foo.go` next to `foo_test.go`).
-</content>

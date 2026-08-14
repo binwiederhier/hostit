@@ -1,6 +1,7 @@
 # Isolation: what stops an app escaping
 
-Each app is created as four things at once: a Unix user, a home directory, a podman
+Each app is created as four things at once: a Unix user, a btrfs subvolume (the
+container's whole filesystem, with the app's files inside it), a podman
 container, and a loopback port with a firewall rule (`app/service.go:create`). Each
 of those carries one boundary, and the daemon holds all the privilege; nothing an app
 does escalates, because it starts as an unprivileged uid and every path back into
@@ -10,22 +11,22 @@ hostit identifies it by that uid.
 flowchart TB
     subgraph one["One app: blog"]
         user["Unix user 'blog' (base uid 1000000)<br/>shell: /usr/bin/hostit-shell<br/>group: hostit-apps"]
-        home["/var/lib/hostit/apps/&lt;id&gt;<br/>mode 0750, owned by blog"]
+        subvol["/var/lib/hostit/apps/&lt;id&gt;<br/>the app's one subvolume, chowned to its uid block<br/>files at home/app inside (= /home/app in the container)"]
 
         subgraph container["podman container hostit-app-&lt;id&gt;"]
             direction TB
             idmap["--uidmap 0:1000000:65536<br/><i>container root IS the app's base uid</i>"]
             pid1["PID 1: hostit agent<br/>supervises the run: command"]
-            rootfs["--rootfs .rootfs/&lt;id&gt;<br/><i>the app's persistent root filesystem</i>"]
-            mounts["/home/blog       (the home, bind-mounted)<br/>/usr/bin/hostit  (the binary)<br/>/run/hostit      (the daemon socket dir)"]
+            rootfs["--rootfs apps/&lt;id&gt;<br/><i>the app's persistent filesystem, home included</i>"]
+            mounts["/usr/bin/hostit  (the binary)<br/>/run/hostit      (the daemon socket dir)<br/><i>the only mounts; no home bind mount</i>"]
             net["own netns (slirp4netns)<br/>no peers, no host loopback"]
         end
 
         port["published 127.0.0.1:10000<br/>nftables: uid 0 and the app's base uid only"]
     end
 
-    user --- home
-    home --- container
+    user --- subvol
+    subvol --- container
     container --- port
 
     style container fill:#eceff1,stroke:#047857
@@ -39,7 +40,7 @@ flowchart TB
 | App vs app | separate uid, container, netns | reading files, seeing processes, reaching ports |
 | App vs host | uidmap so container root is an unprivileged host uid | an escape landing as root |
 | App vs daemon | `SO_PEERCRED` on the socket; app-scoped tokens on the API | acting as another app |
-| Daemon vs app files | every write goes through `os.OpenRoot` on the app home | a planted symlink walking the daemon out of the home |
+| Daemon vs app files | every write goes through chained `os.OpenRoot`s: the subvolume root, then `home/app` inside it | a planted symlink walking the daemon out of the subvolume |
 | Tenant vs operator | `hostit-shell` login shell + sshd forwarding hardening | getting a host shell, tunnelling out, reaching host services |
 
 ### Per-app Unix user and uid-block idmap
@@ -49,15 +50,15 @@ Each app owns a **65536-wide contiguous uid/gid block**: `uidFor(port) = 1000000
 constants). The container is created by the root daemon but mapped
 `--uidmap 0:<base>:65536` (and the matching `--gidmap`), so container root *is* the
 app's unprivileged host uid and the whole block maps one-to-one
-(`workspace/spec.go:CreateArgs`). Files in the bind-mounted home belong to the app
+(`workspace/spec.go:CreateArgs`). Files in the app's subvolume belong to the app
 inside and outside the container alike, and a workload escape lands on that uid,
 never on host root.
 
 Contiguity is load-bearing: the mapping is a single uniform offset, so the app's
-persistent rootfs subvolume is chowned to the block once at creation
-(`workspace/rootfs.go:EnsureRootfs`) and every uid a workload uses stays inside the
-app's own range. Homes are keyed on the app's stable id, so there is no
-uid-migration step; older single-uid schemes are gone.
+one persistent subvolume is chowned to the block once at creation
+(`workspace/subvolume.go:EnsureAppSubvolume`) and every uid a workload uses stays
+inside the app's own range. Subvolumes are keyed on the app's stable id, so there
+is no uid-migration step; older single-uid schemes are gone.
 
 ### Network namespace
 
@@ -87,14 +88,17 @@ ruleset is rebuilt from the registry (the source of truth) whenever apps change
 
 ### `os.OpenRoot` file containment
 
-The daemon writes into app homes as root, and a tenant owns their home, so a symlink
-they plant could otherwise trick the daemon into writing outside it. Every file
-operation resolves through `os.OpenRoot` on the app's home and uses the returned
-`*os.Root`'s path-contained methods, so a symlink cannot walk the daemon out
-(`app/files.go`, `ssh/service.go:writeAuthorizedKeysIn`). The `.ssh` directory must be
-a real directory, not a link, or the write is refused (`ssh.ErrNotDirectory`) --
-otherwise root would be writing SSH keys, and handing out ownership, wherever the link
-pointed.
+The daemon writes into app files as root, and the tenant owns the whole subvolume
+(they are root inside the container it backs), so a symlink they plant -- even at
+`home` or `home/app` itself -- could otherwise trick the daemon into writing
+outside it. Every file operation resolves through chained `os.OpenRoot`s: the
+subvolume root is opened first (its path only root controls), then `home/app` is
+resolved INSIDE that root, and all I/O uses the returned `*os.Root`'s
+path-contained methods, so a symlink cannot walk the daemon out of the subvolume
+(`homefs/service.go:OpenRoot`, `ssh/service.go:WriteAuthorizedKeys`). The `.ssh`
+directory must be a real directory, not a link, or the write is refused
+(`ssh.ErrNotDirectory`) -- otherwise root would be writing SSH keys, and handing
+out ownership, wherever the link pointed.
 
 ### The `hostit-shell` login shell
 
@@ -103,7 +107,8 @@ App users' login shell is `/usr/bin/hostit-shell` (set at user creation,
 socket, ensures the container is up, prints the banner, then hands off to a narrow
 sudoers grant, `sudo -n hostit-enter` (`cmd/shell.go:execShell`). The privileged
 `hostit enter` half runs as root but derives the target container from `SUDO_UID`
-(the caller's home directory basename, which is the app's id), **never** from its
+(the app's id, dug out of the caller's home directory path,
+`apps/<id>/home/app`), **never** from its
 arguments, so an app user who invokes it directly with someone else's name still lands
 in their own container (`cmd/enter.go:execEnter`). The caller's arguments only ever
 become the command run *inside* their own container, and the privileged exec runs with
@@ -131,4 +136,3 @@ kernel-supplied uid, so it can only ever name itself; the daemon holds every
 privileged capability and never takes an app-supplied identity. An escape from the
 container therefore lands as an ordinary unprivileged user with no path to another
 app's files, processes, ports, or to host root.
-</content>

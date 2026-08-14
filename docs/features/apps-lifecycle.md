@@ -24,7 +24,7 @@ snapshots, files, domains) is a separate concern layered on top.
 
 A key design decision runs through the whole lifecycle: **an app has a stable id
 minted at birth (`store.NewAppID`), and every durable resource keys on that id, not
-on the name.** The home directory, its btrfs snapshots, the container, the systemd
+on the name.** The app subvolume, its btrfs snapshots, the container, the systemd
 unit, tokens and all per-app database rows are id-keyed. The name is just a mutable
 label plus the Unix login. This is what makes rename cheap (nothing moves) and what
 lets the daemon translate a caller's name into node-local state at exactly one
@@ -51,8 +51,8 @@ sequenceDiagram
     Server->>Server: checkAppLimit(caller)
     Server->>Manager: CreateApp(name, opts)
     Manager->>Manager: validateName, allocatePort, mint app id
-    Manager->>OS: CreateUser, WriteAuthorizedKeys, WriteSkeleton
-    Manager->>Manager: EnsureRootfs (snapshot of the pinned tag's base)
+    Manager->>Manager: EnsureAppSubvolume (snapshot of the pinned tag's base, chown)
+    Manager->>OS: CreateUser (home = the files dir inside the subvolume), keys, skeleton
     Manager->>Manager: AddApp, SetMemory/DiskLimit, budget qgroup, ReconcilePortRules
     Manager-->>Server: *store.App (+ background Up)
     Server-->>Dashboard: 201 {app, agent_token}
@@ -87,16 +87,16 @@ sequenceDiagram
   nft), and injected `btrfs`/`systemd`/`container` services.
 - **Create** flows `CreateApp` -> `create` (`app/service.go:create`, shared with
   fork). It validates the name (`validateName`), allocates the lowest free port in
-  the configured range (`allocatePort`), mints `store.NewAppID`, builds the
-  id-keyed home (a btrfs subvolume), creates the
+  the configured range (`allocatePort`), mints `store.NewAppID`, creates the app's
+  one id-keyed subvolume (a snapshot of its pinned image tag's base, chowned to
+  the uid block; a fork snapshots the source's subvolume instead), creates the
   Unix user (`CreateUser`) at a uid derived from the port
-  (`uidFor`: a contiguous 65536-wide block per app), writes `authorized_keys` (the
+  (`uidFor`: a contiguous 65536-wide block per app) with its home at the files dir
+  inside the subvolume (`apps/<id>/home/app`), writes `authorized_keys` (the
   union of request keys and the owner's profile keys) and the skeleton
   (`app/skeleton.go`, see [deploy.md](deploy.md)/[placeholder.md](placeholder.md)),
-  creates the app's rootfs (a snapshot of its pinned image tag's base subvolume,
-  chowned to the uid block; a fork snapshots the source's rootfs instead),
   inserts the row (`store.AddApp`), records memory/disk limits and sets up the disk
-  budget qgroup (home + rootfs, capped on exclusive bytes), reconciles the
+  budget qgroup (the subvolume, capped on exclusive bytes), reconciles the
   per-app loopback firewall rules, and starts the app in a goroutine (`Up`).
 - **Data model** (`store/app.go`): the `app` table is
   `(id, name UNIQUE, port UNIQUE, host, owner_id, disk_mb, created_at, image_tag)`.
@@ -116,8 +116,8 @@ sequenceDiagram
   follows the app to its new name.
 - **Delete** (`app/service.go:DeleteApp`): serialized by the per-app lock, it
   disables the unit, resets its failed state, force-removes the container, deletes
-  the app's btrfs subvolumes (home + rootfs + snapshots), destroys its budget
-  qgroup, deletes the Unix
+  the app's btrfs subvolumes (the app subvolume + its snapshots), destroys its
+  budget qgroup, deletes the Unix
   user, removes any leftover home dir, and finally `store.RemoveApp` (which cascades
   keys, snapshots, domains, events, usage, tokens, assistant session). The server
   also drops the app's assistant session (`handleAppsDelete`).
@@ -139,7 +139,7 @@ sequenceDiagram
   [quotas-limits.md](quotas-limits.md).
 - **Non-btrfs hosts do not run.** The startup preflight refuses to start unless the
   apps directory is on btrfs (`cmd/preflight.go:requireBtrfs`): snapshots, rollback,
-  fork, the rootfs model and hard disk caps are core, not optional.
+  fork, the subvolume-per-app model and hard disk caps are core, not optional.
 - **Related features:** [deploy.md](deploy.md) (what happens after create),
   [fork.md](fork.md) (create seeded from another app), [logs.md](logs.md) (the
   activity feed records create/rename/delete), and the SSH/custom-domain/token

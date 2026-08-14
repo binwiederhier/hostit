@@ -48,8 +48,9 @@ The dotted line is the only way in from an app: a unix socket where the kernel, 
 the caller, says which uid is calling (`server/socket.go:socketConnContext`). An app
 can therefore ask about itself and act on itself, and cannot name another app.
 
-Container and home directories are keyed on each app's stable id (`hostit-app-<id>`,
-`apps/<id>`), not its name, so a rename never moves anything on disk
+Containers and app subvolumes are keyed on each app's stable id (`hostit-app-<id>`,
+`apps/<id>` -- the app's files live at `home/app` inside its subvolume), not its
+name, so a rename never moves anything on disk
 (`app/service.go:create`, `cmd/enter.go:containerKeyFromHome`).
 
 ## What each listener serves
@@ -102,9 +103,9 @@ three non-negotiable prerequisites hold: it is root, every external binary it dr
 is installed, and the app-homes directory is on btrfs
 (`cmd/preflight.go:checkHostRequirements`, `requireBtrfs`). btrfs is mandatory:
 snapshots, rollback, fork and hard disk quotas are core, not optional. Only then does
-it open the store, enable btrfs quota accounting and run the one-time rootfs storage
-migration (`app/migrate.go`), apply the stored disk limits, build the workspace image
-and export its base rootfs in the background, restart any app whose agent predates
-this build, reconcile orphans, and start the listeners. The full sequence is in
+it open the store, enable btrfs quota accounting and run the one-time storage
+migrations (`app/migrate.go`), apply the stored disk limits, build the workspace image
+and export its base rootfs in the background, restart any enabled app whose agent
+predates this build (a powered-off app stays off), reconcile orphans, and start the
+listeners. The full sequence is in
 [`flows.md`](flows.md).
-</content>

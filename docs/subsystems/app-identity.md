@@ -16,8 +16,7 @@ flowchart LR
     end
     subgraph stable["Stable (the id) -- everything durable"]
         id["id: a1b2c3d4..."]
-        home["home apps/&lt;id&gt;"]
-        rootfs["rootfs .rootfs/&lt;id&gt;"]
+        subvol["subvolume apps/&lt;id&gt;<br/>(files at home/app inside)"]
         snaps["snapshots .snapshots/&lt;id&gt;/"]
         cont["container hostit-app-&lt;id&gt;"]
         unit["unit hostit-app@&lt;id&gt;"]
@@ -30,17 +29,17 @@ flowchart LR
 ## What keys on the id
 
 The id is minted at create time and put on the `App` struct before anything is
-built (`app/service.go:create`, `ID: store.NewAppID()`), specifically so the home
-can be created id-named. From then on:
+built (`app/service.go:create`, `ID: store.NewAppID()`), specifically so the app
+subvolume can be created id-named. From then on:
 
-- **Home directory:** `apps/<id>` (`app/deploy.go:appHomeByID`, and `appHome`
-  which resolves a name to its id first via `app/deploy.go:appID`).
-- **Container rootfs:** `apps/.rootfs/<id>` (`workspace/rootfs.go:RootfsPath`) --
-  the app's persistent root filesystem, keyed on the id like the home, so a
-  rename never moves it.
+- **App subvolume:** `apps/<id>` (`workspace/subvolume.go:AppSubvolumePath`,
+  reached via `app/deploy.go:appSubvolumeByID` and `appSubvolume`, which resolves
+  a name to its id first via `app/deploy.go:appID`) -- the app's one persistent
+  filesystem, the container's `--rootfs`, with the files at `home/app` inside it
+  (the Unix account's home directory, `appFilesByID`).
 - **Snapshots:** `apps/.snapshots/<id>/<snapshot-id>`
-  (`app/btrfs.go:snapshotsRoot`, `snapshotPath`) -- keyed on the id like the home,
-  so a rename does not move them.
+  (`app/btrfs.go:snapshotsRoot`, `snapshotPath`) -- keyed on the id like the
+  subvolume, so a rename does not move them.
 - **Container:** `hostit-app-<id>` (`workspace/spec.go:ContainerName`).
 - **systemd unit:** `hostit-app@<id>.service` (`workspace/spec.go:UnitName`),
   the per-app instance of `hostit-app@.service`.
@@ -61,9 +60,10 @@ the Unix login name, and the app row's `name` column. `app/rename.go:RenameApp`:
 
 1. Validate the new name exactly as create does (charset, reserved words, not
    already taken).
-2. Rename the Unix login: `SystemOps.RenameUser` -> `usermod --login`
-   (`app/rename.go:renameUser`). **The uid and home are unchanged** -- this is the
-   only OS mutation a rename needs (`app/service.go:SystemOps.RenameUser` doc).
+2. Rename the Unix login: `unixuser.Interface.Rename` -> `usermod --login`
+   (`app/rename.go`). **The uid and home are unchanged** (the home is the
+   id-keyed `apps/<id>/home/app`, which a rename never touches) -- this is the
+   only OS mutation a rename needs.
 3. Flip the name in the store in one transaction (`store/app.go:RenameApp`), which
    updates `app.name` and the `assistant_session` name mirror; **every other
    per-app table keys on `app_id` and needs no update.**
@@ -72,10 +72,10 @@ the Unix login name, and the app row's `name` column. `app/rename.go:RenameApp`:
    move.
 
 No data move. No container recreate. The app keeps whatever state it built up (its
-rootfs, installed packages), because the container is the same one -- it is
+files, installed packages), because the container is the same one -- it is
 addressed by id, which did not change. (Even a recreate would keep that state now:
-the rootfs is a persistent id-keyed subvolume; not recreating is about avoiding the
-restart, not about data.)
+the app's whole filesystem is a persistent id-keyed subvolume; not recreating is
+about avoiding the restart, not about data.)
 
 ```mermaid
 sequenceDiagram
@@ -121,7 +121,7 @@ request.
 The container keeps the `--hostname` it was created with (`app/rename.go`, closing
 comment): podman drops `CAP_SYS_ADMIN`, so a running container's hostname cannot
 change without recreating it (a needless restart that kicks every SSH/terminal
-session -- the filesystem itself would survive, since the rootfs persists) or
+session -- the filesystem itself would survive, since the app subvolume persists) or
 granting a near-root capability. So the bare `hostname` command and the shell's
 `\h` prompt show the old name until the next deploy recreates the container; the
 SSH login banner shows the current name regardless (it comes from the daemon).
@@ -165,9 +165,9 @@ truthful so a later app reusing the freed name cannot collide with a stale row
 
 Deletion and reconciliation also work by id: `store/app.go:RemoveApp` looks the app
 up first so it knows the id, then cascades the per-app deletes by `app_id` (with a
-name fallback), and `app/reconcile.go` matches leftover units, containers and home
-directories to the registry by id (`known` is a set of ids; `idFromUnit`,
-`reconcileContainers`, `reconcileHomes` all parse or compare ids). Backfill of
+name fallback), and `app/reconcile.go` matches leftover units, containers and app
+subvolumes to the registry by id (`known` is a set of ids; `idFromUnit`,
+`reconcileContainers`, `reconcileSubvolumes` all parse or compare ids). Backfill of
 `app_id`/`image_tag` for pre-id rows happens in Go on startup, since SQL cannot
 generate the ids.
 

@@ -153,21 +153,35 @@ definitions and the conversation prefix are cache-marked, so repeat turns pay th
 
 Kept briefly for context; prune when stale.
 
+- **Unified app storage: one subvolume per app.** The separate home subvolume was
+  merged INTO the rootfs: an app is now ONE btrfs subvolume at `apps/<id>` -- the
+  full OS tree its container runs (`--rootfs`), with the app's files at
+  `home/app` inside it (host path == container `/home/app`; the home bind mount
+  is gone, containers mount only the hostit binary and the socket dir). Snapshots
+  and rollback therefore cover the WHOLE app -- data and installed software
+  together -- and fork copies both in one CoW snapshot. The Unix account's home
+  is `apps/<id>/home/app`, daemon file access goes through chained `os.Root`s
+  (subvolume root, then `home/app` inside it), and the budget qgroup `1/<uid>`
+  spans the one subvolume + snapshots. A second settings-gated migration
+  ("storage-unified") reflink-copied each home into its rootfs, dropped the old
+  home-shaped snapshots, and renamed the rootfs to `apps/<id>`; powered-off apps
+  stay off (`RestartStaleAgents` skips disabled units).
 - **Hard disk cap + rootfs storage (fixes the full-disk wedge reported
-  2026-08-12).** App containers now run a persistent per-app btrfs rootfs
-  subvolume (`.rootfs/<id>`, snapshotted from a read-only per-image-tag base in
+  2026-08-12).** App containers run a persistent per-app btrfs rootfs
+  subvolume (snapshotted from a read-only per-image-tag base in
   `.bases/<tag>`; plain podman `--rootfs`, the image store is only the build
-  input), and every app has one hierarchical budget qgroup (`1/<uid>`) over
-  home + rootfs + snapshots, hard-capped on **exclusive** bytes at `disk_mb` --
+  input), and every app has one hierarchical budget qgroup (`1/<uid>`),
+  hard-capped on **exclusive** bytes at `disk_mb` --
   a write past the cap fails with EDQUOT wherever the tenant writes (`/home/app`
   or `/usr` alike), and `disk_mb: 0` now means a 2 GB default, so nothing is
   unlimited. A one-time, settings-gated startup migration moved existing apps
   (kept home state, dropped pre-existing snapshots, built each rootfs, budgeted
-  every app). Remaining, accepted: budgets can oversubscribe the (bounded) apps
+  every app); the unification above then folded the home in. Remaining, accepted:
+  budgets can oversubscribe the (bounded) apps
   pool; the host root fs and the daemon's SQLite live outside it and stay safe.
   Design: `plans/260813-hostit-disk-hard-cap.md` section 3c.
 - **Persist apt-installed packages across a container recreate.** Solved by the
-  rootfs work above: an app's rootfs, once created, is never recreated or reset,
+  rootfs work above: an app's subvolume, once created, is never recreated or reset,
   so `apt-get install`s survive deploys, reboots and daemon upgrades. A
   Containerfile change mints a new base for new apps only.
 
@@ -231,10 +245,10 @@ Kept briefly for context; prune when stale.
   recorded per app (keyed by app id) and summed per user with a dollar cost in the
   admin user list. Only the built-in assistant, not a tenant's own agent.
 
-- Btrfs storage model: per-app home subvolumes, snapshots (manual + auto), rollback
+- Btrfs storage model: per-app subvolumes, snapshots (manual + auto), rollback
   (atomic, safety-snapshotted), hard qgroup disk quotas (EDQUOT), GFS retention,
-  `hostit.yml` snapshot hooks, and **fork** (duplicate an app from a snapshot of its
-  home). API + CLI + assistant tools + snapshot dialog.
+  `hostit.yml` snapshot hooks, and **fork** (duplicate an app from a snapshot).
+  API + CLI + assistant tools + snapshot dialog.
 - Web: in-browser terminal, built-in assistant, dark mode toggle, Apps switcher,
   mobile top-bar fold.
 - Custom domains: attach an owner's hostname to an app, with DNS-01 (CNAME-delegated)

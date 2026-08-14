@@ -5,7 +5,7 @@
 Deploying is how an app goes from "files in a home directory" to "a running web
 service on its subdomain". The owner (or their agent) describes how the app runs in
 a single file, `hostit.yml`, then triggers a deploy. hostit reads the config,
-makes sure the app's rootfs exists, (re)creates the container when the
+makes sure the app's subvolume exists, (re)creates the container when the
 configuration changed, and starts (or reloads) the app.
 
 `hostit.yml` has two modes:
@@ -47,8 +47,8 @@ recreating tears down the container (and any SSH/terminal session in it) and is 
 done when something load-bearing changed; a changed `run:`/`prepare:`/`mode:` only
 signals the in-container agent to restart the command. This keeps iterating on an
 app fast and non-disruptive. Even a recreate keeps the app's filesystem: the
-container runs the app's persistent rootfs subvolume, so `apt-get` installs and
-anything else written outside the home survive it.
+container runs the app's one persistent subvolume, so `apt-get` installs and
+anything else written anywhere in it survive it.
 
 ## User flows
 
@@ -63,7 +63,7 @@ sequenceDiagram
     API->>Mgr: Up(app)
     Mgr->>Mgr: loadConfig (read+validate hostit.yml via os.Root)
     Mgr->>Mgr: pre-deploy snapshot (btrfs, best effort)
-    Mgr->>Mgr: EnsureRootfs (snapshot the pinned tag's base if missing)
+    Mgr->>Mgr: EnsureAppSubvolume (snapshot the pinned tag's base if missing)
     Mgr->>Mgr: CreateArgs -> config hash vs running
     alt config changed (or no container)
         Mgr->>Podman: recreate container, restart unit
@@ -95,17 +95,18 @@ sequenceDiagram
   string. The agent parses leniently (`ParseAppConfig`) and simply idles on a
   half-written config.
 - **Reading the config safely** (`app/deploy.go:loadConfig`): the daemon reads
-  `hostit.yml` through the app's `os.Root` (`app/files.go:appRoot`), so a symlink the
-  tenant planted cannot walk the root daemon out of the home, and the read is capped
-  (`maxConfigSize`).
+  `hostit.yml` through the app's chained `os.Root` (`homefs.Service.OpenRoot`: the
+  subvolume root first, then `home/app` resolved inside it), so a symlink the
+  tenant planted cannot walk the root daemon out of the subvolume, and the read is
+  capped (`maxConfigSize`).
 - **Deploy entry points** (`app/deploy.go`): `Up` (locks the app, takes a pre-deploy
   snapshot, then `apply`), `up` (unlocked variant for rollback), `Ensure` (used on
   SSH login: makes sure the container exists and runs, never recreates a live
   container, falls back to an idle workspace without a valid config).
 - **`apply`** (`app/deploy.go:apply`) is the convergence step. It ensures the app's
-  rootfs exists (`workspace/rootfs.go:EnsureRootfs` -- a snapshot of its pinned
-  tag's base subvolume, a no-op for an existing rootfs, which is **never**
-  recreated), computes the desired container create args
+  subvolume exists (`workspace/subvolume.go:EnsureAppSubvolume` -- a snapshot of
+  its pinned tag's base subvolume, a no-op for an existing subvolume, which is
+  **never** recreated), computes the desired container create args
   (`workspace/spec.go:CreateArgs`) and a config hash
   (`ConfigHash`), compares to the running container's stored
   `hostit.config` label (`inspectHashFormat`), and:
@@ -119,16 +120,17 @@ sequenceDiagram
   recreates the container (ending SSH sessions in it, but keeping the filesystem);
   `mode:`/`prepare:`/`run:` changes only reload.
 - **The workspace container** (`workspace/spec.go`): `CreateArgs` builds a
-  `podman create` invocation. The container runs the app's persistent rootfs
-  subvolume (`--rootfs`, chowned once to the app's uid block), not an image. Each
-  app gets its own network namespace
+  `podman create` invocation. The container runs the app's one persistent
+  subvolume (`--rootfs`, chowned once to the app's uid block), not an image; the
+  app's files live at `home/app` inside that same tree, so there is **no home
+  bind mount** -- the only mounts are the hostit binary and the daemon socket
+  dir, both read-only. Each app gets its own network namespace
   (`--network slirp4netns`, loopback publish `127.0.0.1:port:80`), a contiguous uid
   map (`0:UID:65536`, so container-root is the app's unprivileged host uid),
   `--pids-limit 512`, `--security-opt
   no-new-privileges`, `--security-opt apparmor=unconfined` (podman's AppArmor
   profile otherwise blocks the multithreaded Go agent's SIGKILL to children),
-  memory limit if set, the app's env, the home bind-mounted at `/home/app`, and the
-  hostit binary + daemon socket dir mounted read-only. The container command is
+  memory limit if set, and the app's env. The container command is
   `<hostitBin> agent` (after `--rootfs`, since podman treats everything past it as
   the command).
 - **The in-container agent** (`agent/service.go`) is PID 1. It loads `hostit.yml`,
@@ -144,9 +146,9 @@ sequenceDiagram
   (`workspace.ImageTag`), so editing that file yields a new image; each app is
   pinned to the tag it was built with (`store.App.ImageTag`). The built image is
   exported once per tag into a read-only base subvolume
-  (`workspace/rootfs.go:EnsureBase`), and every app's rootfs is an instant snapshot
-  of its pinned tag's base -- so a Containerfile change only affects new apps, and
-  an existing app's rootfs is never touched.
+  (`workspace/subvolume.go:EnsureBase`), and every app's subvolume is an instant
+  snapshot of its pinned tag's base -- so a Containerfile change only affects new
+  apps, and an existing app's subvolume is never touched.
 - **CLI static server:** `cmd/app.go:execStatic` (`hostit static`) serves `~/public`
   with `appctl.StaticHandler`; this is what a `mode: static` app runs, including a
   brand-new app (whose skeleton ships `public/index.html`, the placeholder).

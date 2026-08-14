@@ -36,9 +36,10 @@ One binary, running as root, is the whole control plane: it terminates TLS,
 proxies each subdomain to its app, serves the web app and REST API, and creates
 the Unix users and containers behind them.
 
-Each app is four things created together: a Unix user, a home directory, a
-podman container whose root is mapped to that user's unprivileged uid, and a
-loopback port that nftables restricts to that uid. SSH logins are handed to
+Each app is four things created together: a Unix user, a btrfs subvolume that is
+the container's entire filesystem (the app's files live at `/home/app` inside
+it), a podman container whose root is mapped to that user's unprivileged uid, and
+a loopback port that nftables restricts to that uid. SSH logins are handed to
 `/usr/bin/hostit-shell`, which execs the session into the app's container, so
 users never get a host shell, and an escape inside the container lands on the
 app's own uid rather than on root.
@@ -144,11 +145,13 @@ What each boundary is, so it is clear what hostit does and does not promise:
   (container root is mapped to it), so an escape lands on that uid, not on root.
   `/var/lib/hostit` is root-only: it holds every app's agent token in the clear
   (deliberately, so the app's page can show it again) and the session signing key.
-- **Between an app's files and the daemon.** The app owns its home directory, so
-  every file operation hostit performs there as root goes through `os.OpenRoot`:
-  a symlink out of the home is refused by the kernel rather than followed. That
-  includes reading `hostit.yml` itself, which the tenant controls -- so pointing
-  it at a symlink cannot walk the daemon out of the app.
+- **Between an app's files and the daemon.** The app owns its whole subvolume
+  (its files live at `/home/app` inside it), so every file operation hostit
+  performs there as root goes through chained `os.OpenRoot`s -- the subvolume
+  root first, then `/home/app` resolved inside it: a symlink out of the subvolume
+  is refused by the kernel rather than followed. That includes reading
+  `hostit.yml` itself, which the tenant controls -- so pointing it at a symlink
+  cannot walk the daemon out of the app.
 - **Between tenants and the web app.** Apps are subdomains of the web app, which
   `SameSite=Lax` does not separate, so cookie-authenticated writes require a
   same-origin signal and the session cookie carries the `__Host-` prefix. Files
@@ -194,7 +197,7 @@ accounts already approved under it -- revoking access stays a per-user decision.
 
 Limits are `app_limit` (enforced at create), `memory_mb` (podman `--memory`,
 cgroup-enforced) and `disk_mb`. Disk is a **hard** cap: one btrfs qgroup per app
-covers its home, its root filesystem and its snapshots combined, and a write past
+covers its whole subvolume and its snapshots combined, and a write past
 the cap fails with "Disk quota exceeded" inside the container -- wherever the app
 writes, `/home/app` and `/usr` alike. A `disk_mb` of 0 means the platform default
 (2 GB); nothing is unlimited.
@@ -481,13 +484,15 @@ prompt, so the browser assistant and an external Claude Code are interchangeable
 
 ## Snapshots, rollback and quotas
 
-When the app-homes filesystem is **btrfs**, each app's home is a copy-on-write
-subvolume, which unlocks two things:
+Each app is one copy-on-write **btrfs** subvolume (the filesystem is mandatory),
+which unlocks two things:
 
 - **Snapshots and rollback.** A snapshot is an instant, space-shared copy of the
-  app's files. hostit takes one automatically before every deploy, before every
-  assistant turn, and hourly; you (or an agent) can also take a labelled one on
-  purpose. Rolling back restores the home to a snapshot -- and takes a safety
+  whole app: its files AND everything it installed. hostit takes one automatically
+  before every deploy, before every assistant turn, and hourly; you (or an agent)
+  can also take a labelled one on purpose. Rolling back restores the app to a
+  snapshot -- data and installed software together, so a broken `apt` run or a
+  deleted system file is undone the same way as a bad edit -- and takes a safety
   snapshot of the current state first, so a rollback is itself undoable. All
   snapshots are thinned by a grandfather-father-son policy (the last 50, plus daily
   for a week, weekly for a month, monthly for a quarter) -- none is kept forever.
@@ -512,8 +517,9 @@ subvolume, which unlocks two things:
     post: "rm -f data/app.snap.db"                              # clean up after
   ```
 
-- **Fork.** Duplicate an app into a new one, seeding its home from a copy of the
-  source's files -- either its current state or a specific snapshot. The fork gets its
+- **Fork.** Duplicate an app into a new one, seeding it from a copy of the
+  source's entire filesystem -- files, data and installed packages, either its
+  current state or a specific snapshot. The fork gets its
   own subdomain, Unix user and container, and the two run independently from there.
   Reached from the snapshot menu on the app page (including a per-snapshot "Fork"),
   the CLI, or the REST API:
@@ -527,7 +533,7 @@ subvolume, which unlocks two things:
   snapshot id is optional.)
 
 - **Hard disk quotas.** The app's `disk_mb` limit is enforced by one btrfs qgroup
-  per app spanning its home, its root filesystem and its snapshots, capped on the
+  per app spanning its subvolume and its snapshots, capped on the
   bytes the app itself pins (data shared with the base image is free). A write past
   the cap fails immediately (EDQUOT) -- in the home or anywhere else in the
   container -- instead of the app being stopped later by a periodic sweep. A

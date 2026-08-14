@@ -59,7 +59,7 @@ constructs them with the injected runner). So the entire host-touching surface o
 
 The division is deliberate (`app/service.go` package doc): `app.Manager` decides
 *what* an app needs (allocate a port, create a user with this uid, apply these
-port rules, snapshot this home) and delegates the *how* to the service that owns
+port rules, snapshot this app) and delegates the *how* to the service that owns
 each tool. Keeping the services separable is the point.
 
 ## Testing without root
@@ -105,7 +105,7 @@ proxy, the assistant) from **node-local** work (everything `Manager` reaches
 through `SystemOps` and `run.Runner`, plus the direct `os.OpenRoot` file layer and
 the btrfs syscalls). The node-local half is exactly what touches a specific
 machine's filesystem, kernel, and container runtime -- and it already forms a
-coherent unit that owns the uid, home, container, and port together.
+coherent unit that owns the uid, subvolume, container, and port together.
 
 The multi-node design (`plans/260807-hostit-multinode.md`) promotes that unit to a
 `NodeAgent` interface with two implementations:

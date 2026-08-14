@@ -30,9 +30,10 @@ distribution is the only thing hostit owns, and it owns it by writing a managed
 block into each app user's `authorized_keys`. Two boundaries make that safe. The
 managed block is delimited by markers so a key someone `scp`'d in by hand
 survives every profile change hostit makes. And every write into the app's home
-goes through an `os.OpenRoot` handle, because the app user owns that home; a
-tenant who replaced `.ssh` with a symlink must not be able to redirect the root
-daemon's key writes (or its `chown`) onto a host path.
+goes through chained `os.OpenRoot` handles (the app's subvolume root, then
+`home/app` resolved inside it), because the app user owns that whole tree; a
+tenant who replaced `.ssh` -- or `home/app` itself -- with a symlink must not be
+able to redirect the root daemon's key writes (or its `chown`) onto a host path.
 
 The one thing `sshd` offers that would reach *past* the container is forwarding.
 An app user logs in for exactly one reason -- to reach their own container -- so
@@ -79,8 +80,9 @@ sequenceDiagram
 
 Key management (the daemon side):
 
-- `ssh/service.go:Service.WriteAuthorizedKeys` resolves the app user's uid/gid,
-  opens the home via `os.OpenRoot`, and calls `writeAuthorizedKeysIn`, which
+- `ssh/service.go:Service.WriteAuthorizedKeys` resolves the app user's uid/gid
+  and writes through the chained files root the caller hands it
+  (`app/service.go:writeKeysIn` opens it via `homefs.Service.OpenRoot`); it
   refuses if `.ssh` is not a real directory (`ssh/service.go:ErrNotDirectory`)
   and `Lchown`s the results back to the app user.
 - `ssh/keys.go:MergeAuthorizedKeys` rewrites only the delimited managed block
@@ -118,8 +120,9 @@ The login path (what happens on connect):
 - `hostit-enter` (`cmd/enter.go:cmdEnter` / `execEnter`) is the privileged half.
   It must run as root, derives the caller from `SUDO_UID` (never from
   arguments), and resolves the target container from the caller's *home
-  directory basename* via `containerKeyFromHome` -- containers are keyed on the
-  app's stable id, and the app user's home is the id-keyed path, so a rename
+  directory path* via `containerKeyFromHome` (`app.IDFromHomeDir` digs the id
+  out of `apps/<id>/home/app`) -- containers are keyed on the app's stable id,
+  and the app user's home is the id-keyed path, so a rename
   never changes it. It builds the `podman exec` argv itself, passing only a
   validated `TERM` and an optional single `-c` command, and runs with
   `minimalEnv()` (the caller's environment is not inherited).

@@ -252,18 +252,22 @@ const SnapshotsPage = () => (
     <h2>Snapshots, rollback and fork</h2>
     <Figure src={snapshotsShot} alt="The Snapshots tab listing snapshots" caption="The Snapshots tab: take one now, roll back, or fork a new app from any snapshot." />
     <p>
-      hostit snapshots your app's files before every deploy and hourly, so you can always go back. Snapshots are instant and
-      cheap; take one yourself anytime from the Snapshots tab, <span className="mono">hostit apps snapshot</span>, or the API.
+      hostit snapshots your whole app -- its files and everything it installed -- before every deploy and hourly, so you can
+      always go back. Snapshots are instant and cheap; take one yourself anytime from the Snapshots tab,{" "}
+      <span className="mono">hostit apps snapshot</span>, or the API.
     </p>
     <h3>Rollback</h3>
     <p>
       Roll back to any snapshot from the chat, the Snapshots tab, <span className="mono">hostit apps rollback</span>, or{" "}
-      <span className="mono">POST /api/apps/&#123;app&#125;/snapshots/&#123;id&#125;/restore</span>. Rollback is reversible: the
-      current state is snapshotted first, so you can undo an undo.
+      <span className="mono">POST /api/apps/&#123;app&#125;/snapshots/&#123;id&#125;/restore</span>. Rollback restores
+      everything together: your files and the installed software around them, so a broken{" "}
+      <span className="mono">apt-get</span> run or a deleted system file is undone the same way as a bad edit. It is also
+      reversible: the current state is snapshotted first, so you can undo an undo.
     </p>
     <h3>Fork</h3>
     <p>
-      <strong>Fork</strong> an app into a new one seeded from a copy of its files (its own subdomain, user and container). Use
+      <strong>Fork</strong> an app into a new one seeded from a copy of its entire filesystem -- files, data and installed
+      packages (its own subdomain, user and container). Use
       the snapshot menu on the app page, <span className="mono">hostit apps fork</span>, or{" "}
       <span className="mono">POST /api/apps/&#123;app&#125;/fork</span>. Fork the current state, or a specific snapshot.
     </p>
@@ -525,7 +529,7 @@ const TroubleshootingPage = () => (
     <h2>Troubleshooting</h2>
     <p>
       When something looks wrong, you can inspect every piece of an app's state directly on the host. Run these as root. The
-      one thing to know first: durable resources (container, unit, home, rootfs, snapshots) are keyed by an app's stable{" "}
+      one thing to know first: durable resources (container, unit, subvolume, snapshots) are keyed by an app's stable{" "}
       <strong>id</strong>, not its name, so start by mapping the name to its id.
     </p>
 
@@ -564,12 +568,13 @@ journalctl -u 'hostit-app@<id>.service' -n 100 --no-pager`}
 
     <h3>The app process (inside the container)</h3>
     <p>
-      The in-container agent (PID 1) writes a breadcrumb and the app's output into the home at{" "}
-      <span className="mono">/var/lib/hostit/apps/&lt;id&gt;/</span>:
+      The in-container agent (PID 1) writes a breadcrumb and the app's output into the app's files at{" "}
+      <span className="mono">/var/lib/hostit/apps/&lt;id&gt;/home/app/</span> (the <span className="mono">/home/app</span>{" "}
+      inside the app's subvolume):
     </p>
     <Snippet
-      text={`cat  /var/lib/hostit/apps/<id>/log/state      # running | stopped | crashed | failed | idle
-tail -f /var/lib/hostit/apps/<id>/log/app.log # the run: command's output`}
+      text={`cat  /var/lib/hostit/apps/<id>/home/app/log/state      # running | stopped | crashed | failed | idle
+tail -f /var/lib/hostit/apps/<id>/home/app/log/app.log # the run: command's output`}
     />
     <p className="hint">
       A <span className="mono">failed</span> state means the command crash-looped and hostit gave up restarting it (the UI shows
@@ -580,17 +585,20 @@ tail -f /var/lib/hostit/apps/<id>/log/app.log # the run: command's output`}
 
     <h3>Storage and snapshots (btrfs)</h3>
     <p>
-      Each app's container runs a persistent root filesystem subvolume under <span className="mono">.rootfs/&lt;id&gt;</span>,
-      snapshotted from the read-only base of its image tag under <span className="mono">.bases/&lt;tag&gt;</span>; it is never
-      recreated, which is why installed packages survive container recreates. An app's disk budget is the qgroup{" "}
-      <span className="mono">1/&lt;uid&gt;</span> spanning its home, rootfs and snapshots, capped on exclusive bytes -- a{" "}
-      "Disk quota exceeded" inside an app means it hit that budget.
+      Each app is ONE subvolume at <span className="mono">/var/lib/hostit/apps/&lt;id&gt;</span>: the entire root filesystem
+      its container runs, snapshotted from the read-only base of its image tag under{" "}
+      <span className="mono">.bases/&lt;tag&gt;</span>, with the app's files at <span className="mono">home/app</span> inside
+      it. It is never recreated, which is why installed packages survive container recreates. Snapshots under{" "}
+      <span className="mono">.snapshots/&lt;id&gt;/</span> are whole-app copies (files and installed software), so rollback
+      restores both. An app's disk budget is the qgroup <span className="mono">1/&lt;uid&gt;</span> spanning its subvolume and
+      snapshots, capped on exclusive bytes -- a "Disk quota exceeded" inside an app means it hit that budget.
     </p>
     <Snippet
-      text={`btrfs subvolume list /var/lib/hostit/apps          # every home/rootfs/base/snapshot subvolume
-ls /var/lib/hostit/apps/.rootfs/                   # per-app container root filesystems, by id
+      text={`btrfs subvolume list /var/lib/hostit/apps          # every app/base/snapshot subvolume
+ls /var/lib/hostit/apps/                           # one subvolume per app, by id (plus .bases, .snapshots)
+ls /var/lib/hostit/apps/<id>/home/app/             # the app's files inside its subvolume
 ls /var/lib/hostit/apps/.bases/                    # read-only base rootfs, one per image tag
-ls /var/lib/hostit/apps/.snapshots/<id>/           # an app's snapshots, by id
+ls /var/lib/hostit/apps/.snapshots/<id>/           # an app's whole-app snapshots, by id
 btrfs qgroup show -re /var/lib/hostit/apps         # disk budgets: 1/<uid> rows, exclusive bytes vs cap`}
     />
 
