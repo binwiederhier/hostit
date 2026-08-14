@@ -201,7 +201,7 @@ type usage struct {
 // app restart, which otherwise looks identical to no change. Anything unreadable
 // means "" -- not serving, the safe default (the app is not up).
 func (m *Manager) appProcessState(name string) (state string, startedAt int64) {
-	root, err := m.homefs.OpenRoot(m.appHome(name))
+	root, err := m.homefs.OpenRoot(m.appFiles(name))
 	if err != nil {
 		return "", 0
 	}

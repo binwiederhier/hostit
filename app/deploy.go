@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"heckel.io/hostit/appctl"
+	"heckel.io/hostit/homefs"
 	"heckel.io/hostit/store"
 	"heckel.io/hostit/workspace"
 )
@@ -158,7 +159,7 @@ func (m *Manager) Logs(name string, lines int) (string, error) {
 	}
 	// Through the app's root: log/ lives in a directory the app user owns,
 	// so the log file can be a symlink to anything the daemon can read
-	root, err := m.homefs.OpenRoot(m.appHome(name))
+	root, err := m.homefs.OpenRoot(m.appFiles(name))
 	if err != nil {
 		return "", err
 	}
@@ -266,11 +267,16 @@ func (m *Manager) appHomeByID(id string) string {
 	return filepath.Join(m.config.AppsDir, id)
 }
 
+// appFiles locates an app's files directory for the homefs service.
+func (m *Manager) appFiles(name string) homefs.Dir {
+	return homefs.Dir{Subvolume: m.appHome(name)}
+}
+
 // loadConfig reads and validates an app's hostit.yml through its os.Root, so a
 // symlink the tenant planted there cannot walk the root daemon out of the home,
 // and the file is capped rather than read unbounded.
 func (m *Manager) loadConfig(name string) (*appctl.AppConfig, error) {
-	root, err := m.homefs.OpenRoot(m.appHome(name))
+	root, err := m.homefs.OpenRoot(m.appFiles(name))
 	if err != nil {
 		return nil, err
 	}

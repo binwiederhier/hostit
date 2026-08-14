@@ -62,9 +62,51 @@ func TestExtractTarGivesNewParentDirsToTheAppUser(t *testing.T) {
 	assert.Contains(t, chowned, "public/assets/app.js")
 }
 
-func newTestService(t *testing.T) (*Service, string) {
+// newTestService builds a Service and a files Dir shaped like production: a
+// subvolume with the files directory at home/app inside it. The files dir is
+// pre-created so tests can plant files and symlinks in it directly.
+func newTestService(t *testing.T) (*Service, Dir) {
 	t.Helper()
-	return New(errInvalid), t.TempDir()
+	d := Dir{Subvolume: t.TempDir(), Rel: "home/app"}
+	require.NoError(t, os.MkdirAll(d.Path(), 0o755))
+	return New(errInvalid), d
+}
+
+// TestFilesDirSymlinkCannotEscapeTheSubvolume covers the unified-layout attack:
+// the tenant is root inside their container, whose rootfs IS the app subvolume,
+// so they can replace home (or home/app) with a symlink. Opening the files dir
+// as one plain host path would follow that link as the root daemon; the chained
+// open (subvolume root first, files dir resolved inside it) must refuse an
+// absolute link out of the subvolume.
+func TestFilesDirSymlinkCannotEscapeTheSubvolume(t *testing.T) {
+	t.Parallel()
+	s := New(errInvalid)
+	for _, plant := range []string{"home", "home/app"} {
+		subvol, outside := t.TempDir(), t.TempDir()
+		require.NoError(t, os.MkdirAll(filepath.Dir(filepath.Join(subvol, plant)), 0o755))
+		require.NoError(t, os.Symlink(outside, filepath.Join(subvol, plant)))
+		d := Dir{Subvolume: subvol, Rel: "home/app"}
+		require.Error(t, s.WriteFile(d, "index.html", []byte("x"), 0, nopChown), "writes through a %s symlink must be refused", plant)
+		_, err := s.ReadFile(d, "index.html")
+		require.Error(t, err, "reads through a %s symlink must be refused", plant)
+		entries, _ := os.ReadDir(outside)
+		assert.Empty(t, entries, "nothing may land outside the subvolume via %s", plant)
+	}
+}
+
+// A link that stays inside the subvolume may resolve (os.Root allows it), which
+// is the accepted worst case: the tenant redirects their own file API into
+// another directory of their OWN subvolume. Nothing may leave the subvolume.
+func TestFilesDirSymlinkInsideTheSubvolumeIsSelfHarmOnly(t *testing.T) {
+	t.Parallel()
+	s := New(errInvalid)
+	subvol := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(subvol, "elsewhere"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(subvol, "home"), 0o755))
+	require.NoError(t, os.Symlink("../elsewhere", filepath.Join(subvol, "home", "app")))
+	d := Dir{Subvolume: subvol, Rel: "home/app"}
+	require.NoError(t, s.WriteFile(d, "index.html", []byte("x"), 0, nopChown))
+	assert.FileExists(t, filepath.Join(subvol, "elsewhere", "index.html"), "the write stays inside the subvolume")
 }
 
 func TestWriteAndReadFile(t *testing.T) {
@@ -90,7 +132,7 @@ func TestWriteFileRejectsEscapes(t *testing.T) {
 		assert.ErrorIs(t, err, errInvalid)
 	}
 	// Nothing escaped the app home
-	_, err := os.Stat(filepath.Join(filepath.Dir(home), "evil"))
+	_, err := os.Stat(filepath.Join(filepath.Dir(home.Path()), "evil"))
 	assert.Error(t, err)
 }
 
@@ -116,9 +158,9 @@ func TestListFiles(t *testing.T) {
 	assert.Contains(t, names, "static")
 	// Neither hostit's state nor the shell dotfiles useradd copies from
 	// /etc/skel belong in what an agent sees
-	require.NoError(t, os.WriteFile(filepath.Join(home, ".bashrc"), []byte("x"), 0644))
-	require.NoError(t, os.MkdirAll(filepath.Join(home, ".ssh"), 0700))
-	require.NoError(t, os.WriteFile(filepath.Join(home, ".ssh", "authorized_keys"), []byte("k"), 0600))
+	require.NoError(t, os.WriteFile(filepath.Join(home.Path(), ".bashrc"), []byte("x"), 0644))
+	require.NoError(t, os.MkdirAll(filepath.Join(home.Path(), ".ssh"), 0700))
+	require.NoError(t, os.WriteFile(filepath.Join(home.Path(), ".ssh", "authorized_keys"), []byte("k"), 0600))
 	listing, err = s.ListFiles(home, "")
 	require.NoError(t, err)
 	names = names[:0]
@@ -163,7 +205,7 @@ func TestExtractTarRejectsEscapingEntries(t *testing.T) {
 	require.NoError(t, tw.Close())
 	_, err = s.ExtractTar(home, &buf, nopChown)
 	require.ErrorIs(t, err, errInvalid)
-	_, err = os.Stat(filepath.Join(filepath.Dir(home), "escape.txt"))
+	_, err = os.Stat(filepath.Join(filepath.Dir(home.Path()), "escape.txt"))
 	assert.Error(t, err, "the entry must not have escaped the app home")
 }
 
@@ -172,25 +214,25 @@ func TestWriteFileMode(t *testing.T) {
 	s, home := newTestService(t)
 	// A binary or script must be able to arrive ready to run
 	require.NoError(t, s.WriteFile(home, "server", []byte("#!/bin/sh\necho hi\n"), 0o755, nopChown))
-	stat, err := os.Stat(filepath.Join(home, "server"))
+	stat, err := os.Stat(filepath.Join(home.Path(), "server"))
 	require.NoError(t, err)
 	assert.Equal(t, os.FileMode(0o755), stat.Mode().Perm())
 
 	// The default is a plain file
 	require.NoError(t, s.WriteFile(home, "page.html", []byte("<h1>hi</h1>"), 0, nopChown))
-	stat, err = os.Stat(filepath.Join(home, "page.html"))
+	stat, err = os.Stat(filepath.Join(home.Path(), "page.html"))
 	require.NoError(t, err)
 	assert.Equal(t, os.FileMode(0o644), stat.Mode().Perm())
 
 	// Overwriting an existing file still applies the new mode
 	require.NoError(t, s.WriteFile(home, "server", []byte("#!/bin/sh\necho bye\n"), 0o700, nopChown))
-	stat, err = os.Stat(filepath.Join(home, "server"))
+	stat, err = os.Stat(filepath.Join(home.Path(), "server"))
 	require.NoError(t, err)
 	assert.Equal(t, os.FileMode(0o700), stat.Mode().Perm())
 
 	// Group and world write are never granted, owner read/write always are
 	require.NoError(t, s.WriteFile(home, "odd", []byte("x"), 0o777, nopChown))
-	stat, err = os.Stat(filepath.Join(home, "odd"))
+	stat, err = os.Stat(filepath.Join(home.Path(), "odd"))
 	require.NoError(t, err)
 	assert.Equal(t, os.FileMode(0o755), stat.Mode().Perm())
 }
@@ -214,7 +256,7 @@ func TestExtractTarKeepsEntryModes(t *testing.T) {
 	_, err := s.ExtractTar(home, &buf, nopChown)
 	require.NoError(t, err)
 	for _, e := range entries {
-		stat, err := os.Stat(filepath.Join(home, e.name))
+		stat, err := os.Stat(filepath.Join(home.Path(), e.name))
 		require.NoError(t, err)
 		assert.Equal(t, os.FileMode(e.mode), stat.Mode().Perm(), "entry %s", e.name)
 	}
@@ -224,7 +266,7 @@ func TestWriteFileFromStreamsAndRejectsOversize(t *testing.T) {
 	t.Parallel()
 	s, home := newTestService(t)
 	require.NoError(t, s.WriteFileFrom(home, "server", strings.NewReader("#!/bin/sh\n"), 0o755, nopChown))
-	stat, err := os.Stat(filepath.Join(home, "server"))
+	stat, err := os.Stat(filepath.Join(home.Path(), "server"))
 	require.NoError(t, err)
 	assert.Equal(t, os.FileMode(0o755), stat.Mode().Perm())
 
@@ -233,14 +275,14 @@ func TestWriteFileFromStreamsAndRejectsOversize(t *testing.T) {
 	big := io.LimitReader(neverEndingReader{}, maxUploadSize+1024)
 	err = s.WriteFileFrom(home, "huge.bin", big, 0, nopChown)
 	require.ErrorIs(t, err, errInvalid)
-	_, err = os.Stat(filepath.Join(home, "huge.bin"))
+	_, err = os.Stat(filepath.Join(home.Path(), "huge.bin"))
 	assert.True(t, os.IsNotExist(err), "a rejected upload must leave no file behind")
 
 	// A failed overwrite leaves the previous content alone
 	require.NoError(t, s.WriteFileFrom(home, "keep.txt", strings.NewReader("original"), 0, nopChown))
 	err = s.WriteFileFrom(home, "keep.txt", io.LimitReader(neverEndingReader{}, maxUploadSize+1), 0, nopChown)
 	require.ErrorIs(t, err, errInvalid)
-	b, err := os.ReadFile(filepath.Join(home, "keep.txt"))
+	b, err := os.ReadFile(filepath.Join(home.Path(), "keep.txt"))
 	require.NoError(t, err)
 	assert.Equal(t, "original", string(b))
 }
@@ -263,7 +305,7 @@ func TestSymlinksCannotEscapeTheAppHome(t *testing.T) {
 
 	outside := filepath.Join(t.TempDir(), "secret.txt")
 	require.NoError(t, os.WriteFile(outside, []byte("root-only secret"), 0o600))
-	require.NoError(t, os.Symlink(outside, filepath.Join(home, "notes.txt")))
+	require.NoError(t, os.Symlink(outside, filepath.Join(home.Path(), "notes.txt")))
 
 	// Reading through the link must not hand back the target
 	b, err := s.ReadFile(home, "notes.txt")
@@ -276,13 +318,13 @@ func TestSymlinksCannotEscapeTheAppHome(t *testing.T) {
 	kept, readErr := os.ReadFile(outside)
 	require.NoError(t, readErr)
 	assert.Equal(t, "root-only secret", string(kept), "the target must be untouched")
-	stat, err := os.Lstat(filepath.Join(home, "notes.txt"))
+	stat, err := os.Lstat(filepath.Join(home.Path(), "notes.txt"))
 	require.NoError(t, err)
 	assert.Zero(t, stat.Mode()&os.ModeSymlink, "the link must have been replaced by a real file")
 
 	// A tar entry needs no symlink of its own: a planted directory link is enough
 	outDir := t.TempDir()
-	require.NoError(t, os.Symlink(outDir, filepath.Join(home, "link")))
+	require.NoError(t, os.Symlink(outDir, filepath.Join(home.Path(), "link")))
 	var buf bytes.Buffer
 	tw := tar.NewWriter(&buf)
 	content := "escaped"
@@ -332,7 +374,7 @@ func TestExtractTarRejectsSymlinkEntries(t *testing.T) {
 	require.NoError(t, tw.Close())
 	_, err := s.ExtractTar(home, &buf, nopChown)
 	require.ErrorIs(t, err, errInvalid, "an archive must not be able to plant a symlink")
-	_, err = os.Lstat(filepath.Join(home, "passwd"))
+	_, err = os.Lstat(filepath.Join(home.Path(), "passwd"))
 	assert.True(t, os.IsNotExist(err))
 }
 

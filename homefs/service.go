@@ -1,11 +1,14 @@
-// Package homefs owns the file I/O inside an app's home directory. Every path is
-// resolved within the home through os.OpenRoot, so a symlink the app owner planted
-// (their home is bind-mounted into their container and writable over scp) cannot walk
-// the root daemon out of the home: the kernel refuses the traversal, not a lexical
-// string check. The Service is stateless per call -- it opens os.OpenRoot(home) each
-// time -- so a caller only ever hands it an app's absolute home path. Giving a
-// just-created path to the app user is a hostit concern, not a plain-filesystem one,
-// so it is injected as a Chowner callback and run through the same root the write used.
+// Package homefs owns the file I/O inside an app's files directory. Every path is
+// resolved within that directory through os.Root, so a symlink the app owner planted
+// (the directory is their container's home and writable over scp) cannot walk the
+// root daemon out of it: the kernel refuses the traversal, not a lexical string
+// check. The files directory itself sits INSIDE the tenant-owned app subvolume
+// (the container's rootfs), so callers locate it as a Dir -- the root-controlled
+// subvolume path plus the files path inside it -- and OpenRoot resolves the inner
+// path within the subvolume's own os.Root, never as a plain host path. The Service
+// is stateless per call. Giving a just-created path to the app user is a hostit
+// concern, not a plain-filesystem one, so it is injected as a Chowner callback and
+// run through the same root the write used.
 package homefs
 
 import (
@@ -21,6 +24,7 @@ import (
 	"net/http"
 	"os"
 	"path"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -88,8 +92,26 @@ type Listing struct {
 // plain-filesystem one.
 type Chowner func(root *os.Root, rel string) error
 
-// Service performs file I/O within an app's home, resolving every path through
-// os.OpenRoot so symlinks cannot escape the home.
+// Dir locates an app's files directory. Subvolume is the app subvolume path,
+// which only root controls; Rel is the files directory inside it ("home/app"),
+// whose path components live in the tenant-owned tree and are therefore resolved
+// INSIDE the subvolume's os.Root by OpenRoot -- never as one plain host path,
+// which would follow a tenant-planted symlink as root. An empty Rel means the
+// subvolume root itself.
+type Dir struct {
+	Subvolume string
+	Rel       string
+}
+
+// Path is the files directory as a plain path, for callers that only name it
+// (useradd's home dir, tests); actual path resolution always goes through
+// OpenRoot instead.
+func (d Dir) Path() string {
+	return filepath.Join(d.Subvolume, d.Rel)
+}
+
+// Service performs file I/O within an app's files directory, resolving every
+// path through os.Root so symlinks cannot escape it.
 type Service struct {
 	// errInvalid is wrapped by every rejection the caller reports as a bad request
 	// (a traversing path, an oversized upload). Injected so it matches the caller's
@@ -106,14 +128,14 @@ func New(errInvalid error) *Service {
 // WriteFile writes a file below the app's home directory, creating parent
 // directories, and gives it to the app user. A zero mode means the default;
 // anything else is used as-is, so a binary or script can arrive executable.
-func (s *Service) WriteFile(home, relPath string, content []byte, mode os.FileMode, chown Chowner) error {
+func (s *Service) WriteFile(home Dir, relPath string, content []byte, mode os.FileMode, chown Chowner) error {
 	return s.WriteFileFrom(home, relPath, bytes.NewReader(content), mode, chown)
 }
 
 // WriteFileFrom is WriteFile for a stream, so an upload never has to exist in
 // memory. It writes to a temporary file and renames on success: a body that
 // turns out to be too big leaves neither a partial file nor a damaged old one.
-func (s *Service) WriteFileFrom(home, relPath string, r io.Reader, mode os.FileMode, chown Chowner) error {
+func (s *Service) WriteFileFrom(home Dir, relPath string, r io.Reader, mode os.FileMode, chown Chowner) error {
 	rel, err := s.safeRel(relPath)
 	if err != nil {
 		return err
@@ -201,7 +223,7 @@ func fileMode(mode os.FileMode) os.FileMode {
 }
 
 // ReadFile reads a file from the app's home directory
-func (s *Service) ReadFile(home, relPath string) ([]byte, error) {
+func (s *Service) ReadFile(home Dir, relPath string) ([]byte, error) {
 	rel, err := s.safeRel(relPath)
 	if err != nil {
 		return nil, err
@@ -216,7 +238,7 @@ func (s *Service) ReadFile(home, relPath string) ([]byte, error) {
 
 // ReadFileMax reads a file up to max bytes, refusing (not truncating) anything
 // larger, so a caller reading an app-controlled file cannot blow up memory.
-func (s *Service) ReadFileMax(home, relPath string, max int64) ([]byte, error) {
+func (s *Service) ReadFileMax(home Dir, relPath string, max int64) ([]byte, error) {
 	rel, err := s.safeRel(relPath)
 	if err != nil {
 		return nil, err
@@ -230,7 +252,7 @@ func (s *Service) ReadFileMax(home, relPath string, max int64) ([]byte, error) {
 }
 
 // FileExists reports whether a file exists in the app's home directory.
-func (s *Service) FileExists(home, relPath string) bool {
+func (s *Service) FileExists(home Dir, relPath string) bool {
 	rel, err := s.safeRel(relPath)
 	if err != nil {
 		return false
@@ -249,7 +271,7 @@ func (s *Service) FileExists(home, relPath string) bool {
 // DeleteFile removes a file (or a directory and its contents) from the app's
 // home directory. RemoveAll so deleting a folder from the file browser works and
 // so a repeated delete is idempotent.
-func (s *Service) DeleteFile(home, relPath string) error {
+func (s *Service) DeleteFile(home Dir, relPath string) error {
 	rel, err := s.safeRel(relPath)
 	if err != nil {
 		return err
@@ -266,7 +288,7 @@ func (s *Service) DeleteFile(home, relPath string) error {
 // another folder, or renaming it in place. Both paths stay inside the home
 // (safeRel), the destination's parent is created if needed, and an existing
 // destination is refused rather than silently clobbered.
-func (s *Service) MoveFile(home, fromRel, toRel string) error {
+func (s *Service) MoveFile(home Dir, fromRel, toRel string) error {
 	from, err := s.safeRel(fromRel)
 	if err != nil {
 		return err
@@ -292,7 +314,7 @@ func (s *Service) MoveFile(home, fromRel, toRel string) error {
 // MakeDir creates a directory (and any missing parents) below the app's home and
 // gives it to the app user, so the file browser can add an empty folder. It
 // refuses a path that already exists rather than silently succeeding.
-func (s *Service) MakeDir(home, relPath string, chown Chowner) error {
+func (s *Service) MakeDir(home Dir, relPath string, chown Chowner) error {
 	rel, err := s.safeRel(relPath)
 	if err != nil {
 		return err
@@ -315,7 +337,7 @@ func (s *Service) MakeDir(home, relPath string, chown Chowner) error {
 // whole contents: size, modtime, type, and a best-effort MIME type. The editor
 // uses it to tell a text file (worth opening in the editor) from a binary one
 // (show a details card) without downloading the file just to find out.
-func (s *Service) StatFile(home, relPath string) (*FileInfo, error) {
+func (s *Service) StatFile(home Dir, relPath string) (*FileInfo, error) {
 	rel, err := s.safeRel(relPath)
 	if err != nil {
 		return nil, err
@@ -360,7 +382,7 @@ func detectMime(root *os.Root, rel string) string {
 // in memory, on the endpoint an agent calls first. Directories come back as
 // entries to descend into, and an overlong directory is cut with Truncated set
 // rather than silently shortened.
-func (s *Service) ListFiles(home, dir string) (*Listing, error) {
+func (s *Service) ListFiles(home Dir, dir string) (*Listing, error) {
 	rel := ""
 	if strings.TrimSpace(dir) != "" && strings.Trim(dir, "./") != "" {
 		var err error
@@ -409,7 +431,7 @@ func (s *Service) ListFiles(home, dir string) (*Listing, error) {
 
 // ExtractTar unpacks an uploaded tar archive into the app's home directory and
 // returns the paths it wrote. Entries that would escape the home are refused.
-func (s *Service) ExtractTar(home string, r io.Reader, chown Chowner) ([]string, error) {
+func (s *Service) ExtractTar(home Dir, r io.Reader, chown Chowner) ([]string, error) {
 	root, err := s.OpenRoot(home)
 	if err != nil {
 		return nil, err
@@ -493,17 +515,33 @@ func (s *Service) ReadCapped(root *os.Root, rel string, max int64) ([]byte, erro
 	return io.ReadAll(io.LimitReader(f, max))
 }
 
-// OpenRoot opens the app's home as a rooted filesystem. The app user owns that
-// directory -- it is bind-mounted into their container and writable over scp --
+// OpenRoot opens the app's files directory as a rooted filesystem. The app user
+// owns that directory -- it is their container's home and writable over scp --
 // so every path the daemon touches as root must be resolved by the kernel with
-// symlinks refused, not merely checked as a string.
-func (s *Service) OpenRoot(home string) (*os.Root, error) {
+// symlinks refused, not merely checked as a string. The subvolume is opened
+// first (its path only root controls) and the files directory is then resolved
+// INSIDE that root: the tenant is root in their container, whose rootfs is the
+// subvolume, so they can replace home (or home/app) with a symlink -- an
+// absolute one is refused by os.Root, and a link that stays inside the
+// subvolume can at worst redirect their own file API within their own tree.
+func (s *Service) OpenRoot(d Dir) (*os.Root, error) {
 	// CreateUser makes this directory; create it anyway so file operations still
 	// work for an app whose Unix user was set up elsewhere (and in tests)
-	if err := os.MkdirAll(home, homeMode); err != nil {
+	if err := os.MkdirAll(d.Subvolume, homeMode); err != nil {
 		return nil, err
 	}
-	return os.OpenRoot(home)
+	subvol, err := os.OpenRoot(d.Subvolume)
+	if err != nil {
+		return nil, err
+	}
+	if d.Rel == "" {
+		return subvol, nil
+	}
+	defer subvol.Close()
+	if err := subvol.MkdirAll(d.Rel, homeMode); err != nil {
+		return nil, err
+	}
+	return subvol.OpenRoot(d.Rel)
 }
 
 // safeRel validates a client-supplied path and returns it cleaned and relative,
