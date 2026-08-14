@@ -112,7 +112,9 @@ func (m *Manager) Sweep() {
 // screenshot shoots one app into a temp file and moves it into place, so a
 // failed or half-written shot never replaces the last good one.
 func (m *Manager) screenshot(binary string, a App) error {
-	tmp := m.File(a.ID) + ".tmp"
+	// The temp name must keep the .png suffix: chrome validates the extension
+	// and writes nothing (exiting 0) for an unknown one
+	tmp := filepath.Join(m.dir, a.ID+".tmp.png")
 	defer os.Remove(tmp)
 	_, err := m.runner.RunTimeout(screenshotTimeout, binary,
 		"--headless=new", "--no-sandbox", "--disable-gpu", "--hide-scrollbars",

@@ -67,6 +67,13 @@ func TestSweepScreenshotsRunningApps(t *testing.T) {
 	cmd := strings.Join(runner.cmds[0], " ")
 	assert.Contains(t, cmd, "https://up.example.com")
 	assert.Contains(t, cmd, "--headless")
+	// Chrome validates the --screenshot extension and silently (exit 0!) writes
+	// nothing for anything but an image suffix, so the temp file must be a .png
+	for _, arg := range runner.cmds[0] {
+		if p, ok := strings.CutPrefix(arg, "--screenshot="); ok {
+			assert.True(t, strings.HasSuffix(p, ".png"), "temp screenshot path %q must end in .png", p)
+		}
+	}
 }
 
 func TestSweepPrunesShotsOfDeletedApps(t *testing.T) {
