@@ -96,6 +96,21 @@ definitions and the conversation prefix are cache-marked, so repeat turns pay th
 
 ## Smaller things
 
+- **Bug: deleted apps leave `<id>/home/app` stub directories behind.** Seen on
+  stage after the unified-storage rollout: five deleted apps each left a plain
+  (non-subvolume) `<id>/home/app` tree under the apps dir, all empty. Something
+  recreates the path AFTER DeleteApp removed the subvolume -- the prime suspect
+  is the defensive MkdirAll in homefs.OpenRoot (it exists for tests, but in
+  production it materializes a plain dir where a subvolume belongs). The
+  reconciler then cannot clean them up: `btrfs subvolume delete` refuses a
+  plain dir and its `os.Remove` fallback refuses a non-empty one, so it warns
+  "still present; leaving it in place" on every start. Find the creator, and
+  consider letting the reconciler remove empty orphan trees.
+- **Cleanup: delete the storage migrations once every host is unified.** When
+  stage AND prod both record the `storage-rootfs-migrated` and
+  `storage-unified` settings gates, the whole of `app/migrate.go` (plus
+  `unixuser.SetHome`, whose only caller is the migration tail) can be deleted
+  in one sweep.
 - **Share apps with other users or groups.** Today an app has exactly one owner,
   and only that owner (or an admin) can see or manage it. Add collaborators: grant
   another user, or a group of users, access to an app so it shows up on their
