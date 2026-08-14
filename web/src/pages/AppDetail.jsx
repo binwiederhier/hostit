@@ -104,6 +104,26 @@ Read that and the app's README.md and docs/, then reply exactly: "I understand t
 `;
 };
 
+// connectionText is the "put this in your repo" variant: a compact markdown
+// block for a README / CLAUDE.md / agent rules file, so any agent working on
+// the project knows this app is where it deploys and how to drive it.
+const connectionText = (name, url, token, sshCommand) => {
+  const api = `${origin}/api/apps/${name}`;
+  return `## Deployment: hostit app "${name}"
+
+This project deploys to the hostit app "${name}": ${url}
+
+- REST API base: ${api} -- authenticate every call with the header
+  "Authorization: Bearer ${token}"
+- START HERE: GET ${api}/info returns the full API and app-layout reference;
+  read it before deploying.
+- Common calls: PUT ${api}/files/<path> (upload a file), POST ${api}/deploy
+  (apply hostit.yml and (re)start), GET ${api}/logs, POST ${api}/run with
+  {"command": "..."} (run a shell command inside the app container),
+  POST ${api}/snapshots with {"label": "..."} (restorable snapshot).
+${sshCommand ? `- SSH/scp/rsync: ${sshCommand} (lands inside the app container)\n` : ""}`;
+};
+
 // A small svg icon set, so the top bar reads as buttons, not a wall of words.
 const TerminalIcon = () => (
   <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -436,9 +456,14 @@ const NotFound = ({ name }) => (
 // "Bring your own Claude": just the ready-to-paste prompt (which already carries
 // the app's URL and token). The token's own copy/regenerate controls live in the
 // Actions menu now.
-const PromptDialog = ({ prompt, token, onClose }) => {
-  // Show the token masked on screen (shoulder-surfing), but copy the real prompt.
-  const shown = token ? prompt.split(token).join("*".repeat(8)) : prompt;
+const PromptDialog = ({ prompt, details, token, onClose }) => {
+  // Two audiences, one dialog: paste a kick-off prompt into a chat agent, or
+  // take a markdown snippet for the project repo so any agent working there
+  // knows how to deploy here.
+  const [tab, setTab] = useState("agent");
+  const text = tab === "agent" ? prompt : details;
+  // Show the token masked on screen (shoulder-surfing), but copy the real text.
+  const shown = token ? text.split(token).join("*".repeat(8)) : text;
   useEscape(onClose);
   return (
     <div className="modal-backdrop" role="dialog" aria-modal="true" onMouseDown={onClose}>
@@ -449,15 +474,30 @@ const PromptDialog = ({ prompt, token, onClose }) => {
         <div className="modal-head">
           <h2>Use your own AI agent</h2>
         </div>
-        <p className="hint">
-          Prefer Claude Code or another agent over the built-in chat? Paste this prompt and it will learn this app's
-          API and wait for your instructions.
-        </p>
+        <div className="modal-tabs" role="tablist">
+          <button type="button" role="tab" aria-selected={tab === "agent"} className={"modal-tab" + (tab === "agent" ? " on" : "")} onClick={() => setTab("agent")}>
+            Start an agent
+          </button>
+          <button type="button" role="tab" aria-selected={tab === "details"} className={"modal-tab" + (tab === "details" ? " on" : "")} onClick={() => setTab("details")}>
+            Project snippet
+          </button>
+        </div>
+        {tab === "agent" ? (
+          <p className="hint">
+            Paste this into Claude Code, ChatGPT or any agent: it will learn this app's API and wait for your
+            instructions. No setup needed.
+          </p>
+        ) : (
+          <p className="hint">
+            Drop this into your project's README, CLAUDE.md or agent rules: it tells any agent working on that
+            codebase how this app is deployed and how to drive it.
+          </p>
+        )}
         <div className="term prompt-block">
           <pre>{shown}</pre>
           <div className="term-copy">
-            <CopyButton text={prompt} small={false}>
-              Copy prompt
+            <CopyButton text={text} small={false}>
+              {tab === "agent" ? "Copy prompt" : "Copy snippet"}
             </CopyButton>
           </div>
         </div>
@@ -1812,6 +1852,7 @@ const AppDetail = ({ account, refreshAccount }) => {
   const own = !account.limits || app.owner_email === undefined || app.owner_email === account.email;
   const token = app.agent_token || "";
   const prompt = promptText(app.name, app.url, token || tokenPlaceholder, (app.description || "").trim());
+  const connectionDetails = connectionText(app.name, app.url, token || tokenPlaceholder, app.ssh && app.ssh.command);
 
   // A cache-busting query on the preview URL, bumped on every reload, so a refresh
   // always fetches the live app rather than the browser's cached copy.
@@ -2148,7 +2189,7 @@ const AppDetail = ({ account, refreshAccount }) => {
       </div>
 
       {showSsh && <SshDialog app={app} hasKeys={hasKeys} onClose={() => setShowSsh(false)} />}
-      {showPrompt && <PromptDialog prompt={prompt} token={token} onClose={() => setShowPrompt(false)} />}
+      {showPrompt && <PromptDialog prompt={prompt} details={connectionDetails} token={token} onClose={() => setShowPrompt(false)} />}
       {showNewSnapshot && (
         <NewSnapshotDialog
           name={app.name}

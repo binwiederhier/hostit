@@ -2658,6 +2658,13 @@ body.ws-resizing iframe { pointer-events: none; }
   .ws-topacts .btn-primary { padding: 0 11px; }
 }
 
+/* Tabs inside a modal (the bring-your-own-AI dialog): same idiom as the
+   workspace view tabs, scaled down. */
+.modal-tabs { display: flex; gap: 2px; margin: 0 0 10px; border-bottom: 1px solid var(--border); }
+.modal-tab { display: inline-flex; align-items: center; font: inherit; font-size: 13px; color: var(--muted); background: none; border: 0; border-bottom: 2px solid transparent; padding: 7px 11px 8px; margin-bottom: -1px; cursor: pointer; }
+.modal-tab:hover { color: var(--text); }
+.modal-tab.on { color: var(--text); border-bottom-color: var(--accent); }
+
 /* Modal helpers shared by the SSH and bring-your-own-AI dialogs */
 .modal-wide { max-width: 44rem; }
 .modal-xwide { max-width: 54rem; }
