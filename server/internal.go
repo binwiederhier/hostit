@@ -10,6 +10,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -28,6 +29,9 @@ import (
 var errTLSNotManaged = errors.New("tls is not managed here")
 
 const (
+	// internalCertTimeout bounds one cert lookup, including a possible on-demand
+	// issuance for a not-yet-seen custom domain
+	internalCertTimeout = 90 * time.Second
 	// internalPollInterval is how often a blocked routes long-poll re-checks
 	// for changes; the table is tiny, so recomputing is cheaper than threading
 	// change hooks through every mutation site.
@@ -146,7 +150,8 @@ func (s *Server) handleInternalCert(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sni := r.URL.Query().Get("sni")
-	cert, err := s.tlsGetCert(&tls.ClientHelloInfo{ServerName: sni})
+	// A non-nil Conn: certmagic inspects the hello's connection addresses.
+	cert, err := s.tlsGetCert(&tls.ClientHelloInfo{ServerName: sni, Conn: internalHelloConn{}})
 	if err != nil {
 		writeError(w, http.StatusNotFound, err)
 		return
@@ -196,3 +201,21 @@ func (s *Server) listenInternal() error {
 	}()
 	return nil
 }
+
+// internalHelloConn is the synthetic connection behind the internal cert
+// endpoint's ClientHelloInfo -- certmagic dereferences the hello's Conn for
+// addresses, so it must not be nil.
+type internalHelloConn struct{}
+
+func (internalHelloConn) Read([]byte) (int, error)  { return 0, io.EOF }
+func (internalHelloConn) Write([]byte) (int, error) { return 0, io.EOF }
+func (internalHelloConn) Close() error              { return nil }
+func (internalHelloConn) LocalAddr() net.Addr {
+	return &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 443}
+}
+func (internalHelloConn) RemoteAddr() net.Addr {
+	return &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 0}
+}
+func (internalHelloConn) SetDeadline(time.Time) error      { return nil }
+func (internalHelloConn) SetReadDeadline(time.Time) error  { return nil }
+func (internalHelloConn) SetWriteDeadline(time.Time) error { return nil }

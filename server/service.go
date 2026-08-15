@@ -291,8 +291,17 @@ func (s *Server) setupCertmagic() (*tls.Config, *certmagic.ACMEIssuer, error) {
 		}
 	}
 	// The internal cert endpoint hands this exact lookup to hostit-proxy, so
-	// the data plane serves the same certificates control manages.
-	s.tlsGetCert = tlsConfig.GetCertificate
+	// the data plane serves the same certificates control manages. It uses the
+	// context-taking variants: the endpoint synthesizes the ClientHelloInfo,
+	// and certmagic dereferences hello.Conn/ctx on the plain GetCertificate path.
+	s.tlsGetCert = func(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
+		ctx, cancel := context.WithTimeout(context.Background(), internalCertTimeout)
+		defer cancel()
+		if cert, err := magic.GetCertificateWithContext(ctx, hello); err == nil {
+			return cert, nil
+		}
+		return s.domainMagic.GetCertificateWithContext(ctx, hello)
+	}
 	return tlsConfig, issuer, nil
 }
 
