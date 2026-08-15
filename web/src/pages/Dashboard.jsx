@@ -173,7 +173,7 @@ const AppPreview = ({ app }) => {
 };
 
 // One app as a card: identity, live status, preview, description, bars, actions.
-const AppCard = ({ app }) => {
+const AppCard = ({ app, onToast }) => {
   const running = app.running;
   // A crash loop that gave up shows red "crashed", not the green "running" its
   // still-up container would otherwise imply.
@@ -182,7 +182,6 @@ const AppCard = ({ app }) => {
   // Prefer a verified custom domain over the default subdomain for the link.
   const publicUrl = app.custom_domain ? `https://${app.custom_domain}` : app.url;
   const publicHost = app.custom_domain || app.url.replace(/^https?:\/\//, "");
-  const [toast, setToast] = useState("");
   // Manual screenshot refresh: fire-and-forget, just queues a shot and flashes a
   // toast. The card does not update live (the new shot appears on the next load).
   const canRefresh = (app.preview_mode || "live") === "screenshot" && running;
@@ -191,11 +190,10 @@ const AppCard = ({ app }) => {
     e.stopPropagation();
     try {
       await api.post(`/api/apps/${encodeURIComponent(app.name)}/preview`);
-      setToast("Screenshot queued");
+      onToast("Screenshot queued");
     } catch {
-      setToast("Couldn't queue screenshot");
+      onToast("Couldn't queue screenshot");
     }
-    setTimeout(() => setToast(""), 2500);
   };
   return (
     <div className="appcard">
@@ -231,11 +229,6 @@ const AppCard = ({ app }) => {
       <div className="appcard-foot">
         <a className="btn btn-small btn-primary" href={publicUrl} target="_blank" rel="noreferrer">Open app</a>
       </div>
-      {toast && (
-        <div className="snackbar" role="status" aria-live="polite">
-          {toast}
-        </div>
-      )}
     </div>
   );
 };
@@ -262,7 +255,16 @@ const Dashboard = ({ account, refreshAccount }) => {
   const [name, setName] = useState("");
   const [creating, setCreating] = useState(false);
   const [adding, setAdding] = useState(false);
+  const [toast, setToast] = useState("");
+  const toastTimer = useRef(null);
   const inputRef = useRef(null);
+  // A single page-level snackbar (not per card): the cards lift with a transform
+  // on hover, which would otherwise trap a fixed-position toast inside the card.
+  const showToast = useCallback((message) => {
+    setToast(message);
+    clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(""), 2500);
+  }, []);
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -360,13 +362,18 @@ const Dashboard = ({ account, refreshAccount }) => {
           <AppsSummary apps={apps} />
           <div className="dash-grid">
             {apps.map((app) => (
-              <AppCard key={app.name} app={app} />
+              <AppCard key={app.name} app={app} onToast={showToast} />
             ))}
           </div>
         </>
       )}
       {adding && (
         <NewAppDialog name={name} setName={setName} onSubmit={create} creating={creating} atLimit={atLimit} onCancel={cancelAdding} />
+      )}
+      {toast && (
+        <div className="snackbar" role="status" aria-live="polite">
+          {toast}
+        </div>
       )}
     </>
   );
