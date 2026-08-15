@@ -34,3 +34,18 @@ func TestBackfillUIDsFillsOnlyZeroRows(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 42, done.UID, "an already-recorded uid is left alone")
 }
+
+func TestAllocatePortRotatesInsteadOfReusingImmediately(t *testing.T) {
+	t.Parallel()
+	m, _, _ := newTestDeployManager(t)
+	a := createTestApp(t, m, "first")
+	require.NoError(t, m.DeleteApp("first"))
+	m.background.Wait()
+
+	// The freed port's uid still owns a budget qgroup whose phantom bytes may
+	// not have committed yet; immediate reuse started brand-new apps over their
+	// disk cap (EDQUOT on the first mkdir). Rotate instead.
+	b := createTestApp(t, m, "second")
+	assert.NotEqual(t, a.Port, b.Port, "a just-freed port must not be handed out immediately")
+	assert.Greater(t, b.Port, a.Port)
+}

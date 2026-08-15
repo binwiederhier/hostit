@@ -156,6 +156,8 @@ type Manager struct {
 	// create can wait for the dying user instead of failing on the collision.
 	background  sync.WaitGroup
 	tearingDown map[string]bool
+	// nextPort rotates allocation through the range (see allocatePort)
+	nextPort int
 	// reservedPorts holds ports handed out by allocatePort but not yet registered
 	// in the store, so concurrent creates never share one (see allocatePort)
 	reservedPorts map[int]bool
@@ -546,9 +548,22 @@ func (m *Manager) allocatePort() (int, error) {
 	// the same port -- the second useradd then failed on the taken uid.
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	for port := m.config.PortMin; port <= m.config.PortMax; port++ {
+	// Rotate through the range instead of always taking the lowest free port: a
+	// just-deleted app's port maps to a uid whose budget qgroup may still hold
+	// the dying subvolume's uncommitted bytes (the teardown destroys it gently,
+	// without a filesystem sync), and immediate reuse started brand-new apps
+	// over their disk cap -- EDQUOT on the container's first mkdir. Scanning
+	// upward from the last grant leaves freed uids fallow until the wrap-around;
+	// the qgroup sweep collects their leftovers long before that.
+	span := m.config.PortMax - m.config.PortMin + 1
+	if m.nextPort < m.config.PortMin || m.nextPort > m.config.PortMax {
+		m.nextPort = m.config.PortMin
+	}
+	for i := 0; i < span; i++ {
+		port := m.config.PortMin + (m.nextPort-m.config.PortMin+i)%span
 		if !slices.Contains(used, port) && !m.reservedPorts[port] {
 			m.reservedPorts[port] = true
+			m.nextPort = port + 1
 			return port, nil
 		}
 	}
