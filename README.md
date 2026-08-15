@@ -67,7 +67,10 @@ Requirements: a Linux host with systemd, sshd, `podman` **>= 4.3** (plus `uidmap
 **btrfs** (all of this is mandatory). Optional: `app-preview: screenshot`
 replaces the dashboard cards' live iframes with periodic headless-chrome
 screenshots, taken in a sandboxed podman container (the image is pulled on
-first use; no host browser needed). On start it preflights everything: it refuses
+first use; no host browser needed). By default the shot container's egress is
+confined to the target app's resolved IP and the public internet
+(`app-preview-isolation: strict`), so a malicious app page cannot reach the
+host, the LAN/VPC or the cloud metadata endpoint. On start it preflights everything: it refuses
 to run if it is not root, if a required command is missing, if podman or crun are
 too old, or if the apps path is not btrfs, naming exactly what to fix.
 

@@ -2,6 +2,7 @@ package preview
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,9 +17,11 @@ import (
 // fakeRunner records commands and, for a podman screenshot run, writes the
 // file chrome would have written into the bind-mounted work dir.
 type fakeRunner struct {
-	fail bool
-	cmds [][]string
-	mu   sync.Mutex // Protects cmds
+	fail     bool
+	failNft  bool
+	cmds     [][]string
+	nftRules string     // Contents of every nft -f ruleset applied
+	mu       sync.Mutex // Protects cmds, nftRules
 }
 
 func (r *fakeRunner) Run(args ...string) (string, error) {
@@ -32,6 +35,23 @@ func (r *fakeRunner) RunTimeout(_ time.Duration, args ...string) (string, error)
 	r.mu.Unlock()
 	if fail {
 		return "", fmt.Errorf("chrome exploded")
+	}
+	if len(args) > 0 && args[0] == "nft" {
+		r.mu.Lock()
+		fn := r.failNft
+		r.mu.Unlock()
+		if fn {
+			return "", fmt.Errorf("nft blew up")
+		}
+		// Capture the ruleset content (nft -f <path>) so tests can inspect it
+		if len(args) == 3 && args[1] == "-f" {
+			if b, err := os.ReadFile(args[2]); err == nil {
+				r.mu.Lock()
+				r.nftRules += string(b)
+				r.mu.Unlock()
+			}
+		}
+		return "", nil
 	}
 	// Find the -v <host>:/out:U mount and the --screenshot=/out/<file> flag,
 	// and write the file where the real container would have.
@@ -74,6 +94,21 @@ func (r *fakeRunner) lastShot() []string {
 		}
 	}
 	return nil
+}
+
+// ran reports whether any recorded command, or applied nft ruleset, contains sub.
+func (r *fakeRunner) ran(sub string) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if strings.Contains(r.nftRules, sub) {
+		return true
+	}
+	for _, c := range r.cmds {
+		if strings.Contains(strings.Join(c, " "), sub) {
+			return true
+		}
+	}
+	return false
 }
 
 func newTestManager(t *testing.T, runner *fakeRunner, apps []App) *Manager {
@@ -200,4 +235,88 @@ func TestTokenBucketRefillsOverTime(t *testing.T) {
 	now = now.Add(time.Hour / bucketCapacity)
 	assert.True(t, m.takeToken("aaa"))
 	assert.False(t, m.takeToken("aaa"))
+}
+
+// strictManager is a manager in strict isolation with a fixed resolver.
+func strictManager(t *testing.T, runner *fakeRunner, apps []App, ips ...string) *Manager {
+	t.Helper()
+	m := newTestManager(t, runner, apps)
+	resolved := make([]net.IP, 0, len(ips))
+	for _, ip := range ips {
+		resolved = append(resolved, net.ParseIP(ip))
+	}
+	m.SetIsolation(true, nil)
+	m.lookupIP = func(string) ([]net.IP, error) { return resolved, nil }
+	return m
+}
+
+func TestStrictShotResolvesPinsAndFirewalls(t *testing.T) {
+	t.Parallel()
+	runner := &fakeRunner{}
+	m := strictManager(t, runner, []App{
+		{ID: "aaa", Name: "up", URL: "https://up.example.com", Running: true},
+	}, "203.0.113.5")
+	m.Sweep()
+	require.Eventually(t, func() bool { return runner.shots() == 1 }, 5*time.Second, 5*time.Millisecond)
+	// The egress firewall was set before the shot, allowing exactly the resolved IP
+	assert.True(t, runner.ran("nft -f"), "an nft ruleset is applied")
+	assert.True(t, runner.ran("203.0.113.5"), "the resolved app IP is in the ruleset")
+	// The container is put on the isolated network, pinned to that IP, with public DNS
+	cmd := strings.Join(runner.lastShot(), " ")
+	assert.Contains(t, cmd, "--network hostit-preview")
+	assert.Contains(t, cmd, "--add-host up.example.com:203.0.113.5")
+	assert.Contains(t, cmd, "--dns")
+}
+
+func TestStrictAllowsExtraCIDRs(t *testing.T) {
+	t.Parallel()
+	runner := &fakeRunner{}
+	m := newTestManager(t, runner, []App{
+		{ID: "aaa", Name: "up", URL: "https://up.example.com", Running: true},
+	})
+	m.SetIsolation(true, []string{"192.0.2.0/24"})
+	m.lookupIP = func(string) ([]net.IP, error) { return []net.IP{net.ParseIP("198.51.100.7")}, nil }
+	m.Sweep()
+	require.Eventually(t, func() bool { return runner.shots() == 1 }, 5*time.Second, 5*time.Millisecond)
+	assert.True(t, runner.ran("192.0.2.0/24"), "the operator's extra allow CIDR is in the ruleset")
+}
+
+func TestStrictFailsClosedWhenFirewallFails(t *testing.T) {
+	t.Parallel()
+	runner := &fakeRunner{failNft: true}
+	m := strictManager(t, runner, []App{
+		{ID: "aaa", Name: "up", URL: "https://up.example.com", Running: true},
+	}, "203.0.113.5")
+	m.Sweep()
+	require.Eventually(t, func() bool { return runner.ran("nft -f") }, 5*time.Second, 5*time.Millisecond)
+	time.Sleep(100 * time.Millisecond)
+	assert.Zero(t, runner.shots(), "no container runs if the egress firewall could not be applied")
+	assert.NoFileExists(t, m.File("aaa"))
+}
+
+func TestStrictSkipsWhenResolveFails(t *testing.T) {
+	t.Parallel()
+	runner := &fakeRunner{}
+	m := newTestManager(t, runner, []App{
+		{ID: "aaa", Name: "up", URL: "https://up.example.com", Running: true},
+	})
+	m.SetIsolation(true, nil)
+	m.lookupIP = func(string) ([]net.IP, error) { return nil, fmt.Errorf("nxdomain") }
+	m.Sweep()
+	time.Sleep(300 * time.Millisecond)
+	assert.Zero(t, runner.shots(), "an unresolvable app is not shot")
+	assert.False(t, runner.ran("nft -f"))
+}
+
+func TestOffModeRunsWithoutIsolation(t *testing.T) {
+	t.Parallel()
+	runner := &fakeRunner{}
+	m := newTestManager(t, runner, []App{
+		{ID: "aaa", Name: "up", URL: "https://up.example.com", Running: true},
+	})
+	// Default is off: no firewall, no isolated network
+	m.Sweep()
+	require.Eventually(t, func() bool { return runner.shots() == 1 }, 5*time.Second, 5*time.Millisecond)
+	assert.False(t, runner.ran("nft -f"))
+	assert.NotContains(t, strings.Join(runner.lastShot(), " "), "--network hostit-preview")
 }

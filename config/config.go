@@ -4,6 +4,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"strings"
 
@@ -24,6 +25,21 @@ const (
 	AppPreviewScreenshot = AppPreviewMode("screenshot")
 	// AppPreviewOff drops the card preview entirely.
 	AppPreviewOff = AppPreviewMode("off")
+)
+
+// AppPreviewIsolationMode selects how the screenshot container's network is
+// confined. Strict (the default) lets it reach only the target app's resolved
+// IP and the public internet, blocking the host, the LAN/VPC and the cloud
+// metadata endpoint; off applies no egress filter.
+type AppPreviewIsolationMode string
+
+const (
+	// AppPreviewIsolationStrict allows only the app's resolved IP plus the
+	// public internet (minus RFC1918/link-local/CGNAT). The default.
+	AppPreviewIsolationStrict = AppPreviewIsolationMode("strict")
+	// AppPreviewIsolationOff applies no egress filter to shot containers. Only
+	// safe on a network the operator fully trusts.
+	AppPreviewIsolationOff = AppPreviewIsolationMode("off")
 )
 
 // TLSMode determines how the reverse proxy terminates TLS
@@ -94,12 +110,14 @@ type Config struct {
 	PortMax         int    `yaml:"port-max"` // Upper bound of the per-app loopback port range
 
 	// Web app and user accounts
-	GoogleClientID     string         `yaml:"google-client-id"`     // Google OAuth client ID; empty disables the web login
-	GoogleClientSecret string         `yaml:"google-client-secret"` // Google OAuth client secret
-	SessionKey         string         `yaml:"session-key"`          // Secret for signing session cookies; generated if empty
-	AdminEmails        []string       `yaml:"admin-emails"`         // These emails become active admins on first login
-	Breakglass         bool           `yaml:"breakglass"`           // Allow the admin token to mint a session for an admin email (no Google); for e2e/recovery
-	AppPreview         AppPreviewMode `yaml:"app-preview"`          // "live" (iframe, default), "screenshot" (periodic headless-chromium shots) or "off"
+	GoogleClientID       string                  `yaml:"google-client-id"`        // Google OAuth client ID; empty disables the web login
+	GoogleClientSecret   string                  `yaml:"google-client-secret"`    // Google OAuth client secret
+	SessionKey           string                  `yaml:"session-key"`             // Secret for signing session cookies; generated if empty
+	AdminEmails          []string                `yaml:"admin-emails"`            // These emails become active admins on first login
+	Breakglass           bool                    `yaml:"breakglass"`              // Allow the admin token to mint a session for an admin email (no Google); for e2e/recovery
+	AppPreview           AppPreviewMode          `yaml:"app-preview"`             // "live" (iframe, default), "screenshot" (periodic headless-chromium shots) or "off"
+	AppPreviewIsolation  AppPreviewIsolationMode `yaml:"app-preview-isolation"`   // "strict" (default) or "off"; how the shot container's network is confined
+	AppPreviewAllowCIDRs []string                `yaml:"app-preview-allow-cidrs"` // Extra destination CIDRs the shot container may reach in strict mode
 
 	// Built-in coding assistant (the in-browser agent). An empty API key disables it.
 	AnthropicAPIKey string `yaml:"anthropic-api-key"` // Anthropic API key for the built-in assistant; empty disables it
@@ -150,16 +168,17 @@ func (c *Config) IsAdminEmail(email string) bool {
 // NewConfig returns a Config with all defaults set; BaseDomain and AdminToken must be filled in
 func NewConfig() *Config {
 	return &Config{
-		ListenHTTP:     ":80",
-		ListenHTTPS:    ":443",
-		SocketFile:     "/run/hostit/hostit.sock",
-		DataDir:        "/var/lib/hostit",
-		AppsDir:        "/var/lib/hostit/apps",
-		TLS:            TLSLetsEncrypt,
-		AppPreview:     AppPreviewLive,
-		PortMin:        10000,
-		PortMax:        19999,
-		AssistantModel: DefaultAssistantModel,
+		ListenHTTP:          ":80",
+		ListenHTTPS:         ":443",
+		SocketFile:          "/run/hostit/hostit.sock",
+		DataDir:             "/var/lib/hostit",
+		AppsDir:             "/var/lib/hostit/apps",
+		TLS:                 TLSLetsEncrypt,
+		AppPreview:          AppPreviewLive,
+		AppPreviewIsolation: AppPreviewIsolationStrict,
+		PortMin:             10000,
+		PortMax:             19999,
+		AssistantModel:      DefaultAssistantModel,
 		AssistantModels: []ModelOption{
 			{ID: "claude-sonnet-5", Label: "Sonnet 5"},
 			{ID: "claude-opus-5", Label: "Opus 5"},
@@ -251,6 +270,14 @@ func (c *Config) Validate() error {
 	}
 	if c.AppPreview != AppPreviewLive && c.AppPreview != AppPreviewScreenshot && c.AppPreview != AppPreviewOff {
 		return fmt.Errorf("invalid app-preview mode %q, must be %q, %q or %q", c.AppPreview, AppPreviewLive, AppPreviewScreenshot, AppPreviewOff)
+	}
+	if c.AppPreviewIsolation != AppPreviewIsolationStrict && c.AppPreviewIsolation != AppPreviewIsolationOff {
+		return fmt.Errorf("invalid app-preview-isolation %q, must be %q or %q", c.AppPreviewIsolation, AppPreviewIsolationStrict, AppPreviewIsolationOff)
+	}
+	for _, cidr := range c.AppPreviewAllowCIDRs {
+		if _, _, err := net.ParseCIDR(cidr); err != nil {
+			return fmt.Errorf("invalid app-preview-allow-cidrs entry %q: %w", cidr, err)
+		}
 	}
 	if c.DNSProvider != "" && c.DNSProvider != DNSProviderRoute53 {
 		return fmt.Errorf("invalid dns-provider %q, only %q is supported", c.DNSProvider, DNSProviderRoute53)

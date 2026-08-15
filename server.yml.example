@@ -59,6 +59,18 @@ admin-token: CHANGE-ME
 # drops the card preview. The workspace's assistant/files preview panes are
 # always live, regardless of this setting.
 # app-preview: live
+#
+# In screenshot mode the shot container's network is confined: "strict" (the
+# default) lets it reach only the target app's resolved IP and the public
+# internet, blocking the host, the LAN/VPC and the cloud metadata endpoint;
+# "off" applies no filter (only safe on a fully trusted network). This works
+# whether the app resolves to a public or a private IP.
+# app-preview-isolation: strict
+#
+# Extra destination CIDRs the shot container may additionally reach in strict
+# mode, e.g. an internal asset/CDN host your apps load from.
+# app-preview-allow-cidrs:
+#   - 10.20.0.0/24
 
 # Let the admin token mint a session cookie for an admin email without Google
 # (for end-to-end testing and recovery). Off by default.

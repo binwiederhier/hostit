@@ -8,13 +8,24 @@
 // renderer exploit), so chrome never runs on the host: every shot runs the
 // headless-shell image in a locked-down rootful podman container (its own
 // user namespace via an explicit high uid/gid mapping, all capabilities
-// dropped, no privilege escalation, memory and pid caps). Chrome's own sandbox is off inside; the
-// container is the sandbox. One shot runs at a time, through a single queue.
+// dropped, no privilege escalation, memory and pid caps). Chrome's own sandbox
+// is off inside; the container is the sandbox. One shot runs at a time, through
+// a single queue.
+//
+// In strict isolation (the default) the shot container is put on a dedicated
+// podman network and an nftables egress filter, rebuilt per shot, lets it reach
+// only the target app's resolved IP (pinned via --add-host) and the public
+// internet -- the host, the LAN/VPC and the cloud metadata endpoint are dropped.
+// The app's IP may itself be private (self-hosted installs), so the allow rule
+// keys on the resolved address, not on it being public. If the filter cannot be
+// applied, the shot is skipped (fail closed).
 package preview
 
 import (
 	"fmt"
 	"log/slog"
+	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -57,6 +68,20 @@ const (
 	// directly (rootful podman needs no /etc/subuid for explicit maps).
 	userNSBase = 3000000
 	userNSSize = 2000000
+	// networkName/previewSubnet is the dedicated podman network the shot runs on
+	// in strict isolation; the subnet is what the egress nft rules match as source
+	networkName   = "hostit-preview"
+	previewSubnet = "10.89.0.0/24"
+	// nftTable holds the per-shot egress chain
+	nftTable = "hostit_preview"
+	// internalDropCIDRs are the destinations a shot may never reach: link-local
+	// (covers 169.254.169.254 cloud metadata), all RFC1918, and CGNAT. The app's
+	// own resolved IP is allowed ahead of this, so a private-IP app still loads.
+	internalDropCIDRs = "169.254.0.0/16, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 100.64.0.0/10"
+	// publicDNS is pinned on the container so name resolution of third-party
+	// (public) assets does not depend on -- or leak to -- an internal resolver
+	publicDNS1 = "1.1.1.1"
+	publicDNS2 = "8.8.8.8"
 )
 
 // App is one candidate for a screenshot.
@@ -76,15 +101,18 @@ type bucket struct {
 
 // Manager shoots apps through a single worker queue.
 type Manager struct {
-	runner   run.Runner
-	dir      string
-	apps     func() ([]App, error) // Current apps, running or not
-	debounce time.Duration
-	queue    chan App
-	timers   map[string]*time.Timer // Pending debounce per app name
-	buckets  map[string]*bucket     // Rate limit per app id
-	now      func() time.Time       // Injectable clock for the bucket tests
-	mu       sync.Mutex             // Protects timers, buckets
+	runner     run.Runner
+	dir        string
+	apps       func() ([]App, error) // Current apps, running or not
+	debounce   time.Duration
+	queue      chan App
+	timers     map[string]*time.Timer         // Pending debounce per app name
+	buckets    map[string]*bucket             // Rate limit per app id
+	now        func() time.Time               // Injectable clock for the bucket tests
+	isolate    bool                           // Strict egress isolation (default off; on in screenshot mode)
+	allowCIDRs []string                       // Extra destinations allowed in strict mode
+	lookupIP   func(string) ([]net.IP, error) // Injectable resolver for the target app
+	mu         sync.Mutex                     // Protects timers, buckets
 }
 
 // Dir returns where shots live for a given daemon data dir.
@@ -103,7 +131,15 @@ func New(runner run.Runner, dir string, apps func() ([]App, error)) *Manager {
 		timers:   make(map[string]*time.Timer),
 		buckets:  make(map[string]*bucket),
 		now:      time.Now,
+		lookupIP: net.LookupIP,
 	}
+}
+
+// SetIsolation turns on strict egress isolation and records the operator's
+// extra allowed destination CIDRs.
+func (m *Manager) SetIsolation(on bool, allowCIDRs []string) {
+	m.isolate = on
+	m.allowCIDRs = allowCIDRs
 }
 
 // File returns the screenshot path for an app id; the file may not exist yet.
@@ -118,6 +154,15 @@ func (m *Manager) Loop(interval time.Duration, done <-chan struct{}) {
 	defer slog.Info("Stopping app preview screenshot loop")
 	if _, err := m.runner.RunTimeout(pullTimeout, "podman", "pull", "-q", image); err != nil {
 		slog.Warn("Cannot pull the preview screenshot image; shots will fail until it is available", "image", image, "error", err)
+	}
+	if m.isolate {
+		// Idempotent: create the isolated network once. If it is missing, strict
+		// shots fail closed (podman run --network errors, so no chrome starts).
+		if _, err := m.runner.Run("podman", "network", "inspect", networkName); err != nil {
+			if _, err := m.runner.Run("podman", "network", "create", "--subnet", previewSubnet, networkName); err != nil {
+				slog.Warn("Cannot create the isolated preview network; strict shots will be skipped", "network", networkName, "error", err)
+			}
+		}
 	}
 	go m.worker(done)
 	m.Sweep()
@@ -249,14 +294,31 @@ func (m *Manager) shoot(a App) error {
 	defer os.RemoveAll(workDir)
 	container := containerPrefix + a.ID
 	userns := fmt.Sprintf("0:%d:%d", userNSBase, userNSSize)
-	_, err := m.runner.RunTimeout(screenshotTimeout, "podman", "run", "--rm", "--replace", "--name", container,
-		"--uidmap="+userns, "--gidmap="+userns,
+	args := []string{"podman", "run", "--rm", "--replace", "--name", container,
+		"--uidmap=" + userns, "--gidmap=" + userns,
 		"--cap-drop=ALL", "--security-opt=no-new-privileges",
-		"--memory=1g", "--pids-limit=256", "--shm-size=256m",
-		"-v", workDir+":/out:U", image,
+		"--memory=1g", "--pids-limit=256", "--shm-size=256m"}
+	if m.isolate {
+		// Resolve the target, install an egress filter that allows only that IP
+		// (plus the public internet), and pin the hostname to the resolved IP so
+		// chrome and the firewall agree. Any failure here skips the shot.
+		host, ips, err := m.resolveTarget(a.URL)
+		if err != nil {
+			return err
+		}
+		if err := m.applyEgress(ips); err != nil {
+			return fmt.Errorf("preview egress firewall: %w", err)
+		}
+		args = append(args, "--network", networkName, "--dns", publicDNS1, "--dns", publicDNS2)
+		for _, ip := range ips {
+			args = append(args, "--add-host", host+":"+ip.String())
+		}
+	}
+	args = append(args, "-v", workDir+":/out:U", image,
 		"--headless", "--no-sandbox", "--disable-gpu", "--hide-scrollbars",
 		"--window-size="+windowSize, "--virtual-time-budget=10000",
 		"--screenshot=/out/"+shotFile, a.URL)
+	_, err := m.runner.RunTimeout(screenshotTimeout, args...)
 	if err != nil {
 		// A timeout kills the podman client, not necessarily the container; make
 		// sure nothing keeps rendering (and holding the name) behind our back.
@@ -264,6 +326,61 @@ func (m *Manager) shoot(a App) error {
 		return err
 	}
 	return os.Rename(filepath.Join(workDir, shotFile), m.File(a.ID))
+}
+
+// resolveTarget parses the app URL and resolves its host to IPv4 addresses (the
+// shot network is v4-only). It errors rather than shoot blind if nothing resolves.
+func (m *Manager) resolveTarget(rawURL string) (string, []net.IP, error) {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return "", nil, err
+	}
+	host := u.Hostname()
+	ips, err := m.lookupIP(host)
+	if err != nil {
+		return "", nil, err
+	}
+	var v4 []net.IP
+	for _, ip := range ips {
+		if ip4 := ip.To4(); ip4 != nil {
+			v4 = append(v4, ip4)
+		}
+	}
+	if len(v4) == 0 {
+		return "", nil, fmt.Errorf("no IPv4 address for %s", host)
+	}
+	return host, v4, nil
+}
+
+// applyEgress rebuilds the per-shot nftables egress chain: allow the app's
+// resolved IP (on 80/443) and the operator's extra CIDRs, drop everything
+// internal, and let the rest (the public internet) fall through. Since one shot
+// runs at a time, one dynamic allow rule is always correct.
+func (m *Manager) applyEgress(ips []net.IP) error {
+	strs := make([]string, len(ips))
+	for i, ip := range ips {
+		strs[i] = ip.String()
+	}
+	var b strings.Builder
+	// add-then-delete-then-add replaces the table atomically whether or not it existed
+	fmt.Fprintf(&b, "add table inet %s\n", nftTable)
+	fmt.Fprintf(&b, "delete table inet %s\n", nftTable)
+	fmt.Fprintf(&b, "add table inet %s\n", nftTable)
+	fmt.Fprintf(&b, "add chain inet %s forward { type filter hook forward priority -10 ; policy accept ; }\n", nftTable)
+	fmt.Fprintf(&b, "add rule inet %s forward ip saddr %s ip daddr { %s } tcp dport { 80, 443 } accept\n", nftTable, previewSubnet, strings.Join(strs, ", "))
+	if len(m.allowCIDRs) > 0 {
+		fmt.Fprintf(&b, "add rule inet %s forward ip saddr %s ip daddr { %s } accept\n", nftTable, previewSubnet, strings.Join(m.allowCIDRs, ", "))
+	}
+	fmt.Fprintf(&b, "add rule inet %s forward ip saddr %s ip daddr { %s } drop\n", nftTable, previewSubnet, internalDropCIDRs)
+	path := filepath.Join(m.dir, workDirName, "egress.nft")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return err
+	}
+	if err := os.WriteFile(path, []byte(b.String()), 0o600); err != nil {
+		return err
+	}
+	_, err := m.runner.Run("nft", "-f", path)
+	return err
 }
 
 // prune removes shots that belong to no current app (deleted apps).

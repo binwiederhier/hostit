@@ -68,6 +68,10 @@ func TestValidate(t *testing.T) {
 		{"bad app preview mode", func(c *Config) { c.AppPreview = "movie" }, "app-preview"},
 		{"screenshot previews", func(c *Config) { c.AppPreview = AppPreviewScreenshot }, ""},
 		{"previews off", func(c *Config) { c.AppPreview = AppPreviewOff }, ""},
+		{"bad preview isolation", func(c *Config) { c.AppPreviewIsolation = "loose" }, "app-preview-isolation"},
+		{"preview isolation off", func(c *Config) { c.AppPreviewIsolation = AppPreviewIsolationOff }, ""},
+		{"bad preview allow cidr", func(c *Config) { c.AppPreviewAllowCIDRs = []string{"nope"} }, "app-preview-allow-cidrs"},
+		{"good preview allow cidr", func(c *Config) { c.AppPreviewAllowCIDRs = []string{"192.0.2.0/24"} }, ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -90,6 +94,7 @@ func TestValidate(t *testing.T) {
 func TestAppPreviewDefaultsToLive(t *testing.T) {
 	t.Parallel()
 	assert.Equal(t, AppPreviewLive, NewConfig().AppPreview)
+	assert.Equal(t, AppPreviewIsolationStrict, NewConfig().AppPreviewIsolation)
 }
 
 func TestWildcardTLS(t *testing.T) {

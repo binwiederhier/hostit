@@ -142,6 +142,9 @@ func execServe(c *cli.Context) error {
 			}
 			return out, nil
 		})
+		// Strict egress isolation by default: the shot container reaches only the
+		// app's resolved IP and the public internet, not the host/LAN/metadata.
+		previews.SetIsolation(conf.AppPreviewIsolation != config.AppPreviewIsolationOff, conf.AppPreviewAllowCIDRs)
 	}
 	srv := server.New(conf, manager, users)
 	if previews != nil {
