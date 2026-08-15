@@ -383,11 +383,15 @@ func TestAllocatePortReservesUntilRegistered(t *testing.T) {
 	second, err := m.allocatePort()
 	require.NoError(t, err)
 	assert.NotEqual(t, first, second, "an unregistered port must not be handed out twice")
-	// Released ports become allocatable again (the failed-create path).
+	// Released ports become allocatable again (the failed-create path) -- but
+	// not immediately: allocation rotates past them (their uid's budget qgroup
+	// may still hold uncommitted bytes), so the released port comes back only
+	// after the range wraps around.
 	m.releasePort(second)
 	third, err := m.allocatePort()
 	require.NoError(t, err)
-	assert.Equal(t, second, third, "a released port is free again")
+	assert.NotEqual(t, first, third, "a reserved port must never be handed out")
+	assert.NotEqual(t, second, third, "a just-released port is skipped, not reused immediately")
 }
 
 func TestDeleteAppAnswersBeforeTeardownAndConverges(t *testing.T) {
