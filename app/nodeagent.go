@@ -22,8 +22,11 @@ import (
 // compositions like Readme/Description/ListSnapshots -- those assemble on the
 // control plane from these primitives.
 type NodeAgent interface {
-	// Lifecycle. Fork is not a separate verb: a fork is a provision whose spec
-	// carries the seed subvolume (the reflink is node-local either way).
+	// Provisioning: build/tear down the app on this machine. Fork is not a
+	// separate verb: a fork is a provision whose spec carries the seed
+	// subvolume (the reflink is node-local either way).
+	Provision(spec *ProvisionSpec) error
+	Deprovision(spec *DeprovisionSpec)
 	Ensure(name string) (string, error)
 	Up(name string) (string, error)
 	Down(name string) error

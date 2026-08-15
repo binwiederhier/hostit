@@ -3,6 +3,7 @@ package node
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"os"
@@ -119,4 +120,23 @@ func (f *fakeAgentFull) ReadFile(name, relPath string) ([]byte, error) {
 		return nil, errors.New("no such file")
 	}
 	return b, nil
+}
+
+func TestRPCProvisionRoundTrips(t *testing.T) {
+	t.Parallel()
+	agent := &fakeAgentFull{written: map[string][]byte{}}
+	remote := startRPC(t, agent)
+	require.NoError(t, remote.Provision(&app.ProvisionSpec{ID: "aaa", Name: "blog", Port: 10000}))
+	assert.Contains(t, agent.calls, "provision:blog:10000")
+	remote.Deprovision(&app.DeprovisionSpec{Name: "blog", Subvol: "/x"})
+	assert.Contains(t, agent.calls, "deprovision:blog")
+}
+
+func (f *fakeAgentFull) Provision(spec *app.ProvisionSpec) error {
+	f.calls = append(f.calls, fmt.Sprintf("provision:%s:%d", spec.Name, spec.Port))
+	return nil
+}
+
+func (f *fakeAgentFull) Deprovision(spec *app.DeprovisionSpec) {
+	f.calls = append(f.calls, "deprovision:"+spec.Name)
 }

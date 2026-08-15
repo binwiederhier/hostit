@@ -304,7 +304,7 @@ func (m *Manager) create(name string, opts *CreateOptions, seedPath string) (*st
 
 	// Build the app on this machine (subvolume, user, keys, skeleton) -- the
 	// node-local half; everything after this is registry bookkeeping.
-	spec := &provisionSpec{
+	spec := &ProvisionSpec{
 		ID:       app.ID,
 		Name:     name,
 		Port:     port,
@@ -312,7 +312,7 @@ func (m *Manager) create(name string, opts *CreateOptions, seedPath string) (*st
 		SeedPath: seedPath,
 		URL:      m.URL(&store.App{Name: name, Port: port}),
 	}
-	if err := m.provision(spec); err != nil {
+	if err := m.Provision(spec); err != nil {
 		return nil, err
 	}
 
@@ -368,7 +368,7 @@ func (m *Manager) DeleteApp(name string) error {
 	// Everything the teardown needs is captured NOW: once the rows are gone,
 	// name-keyed lookups (paths, ids, snapshots) resolve nothing.
 	uid, uidErr := m.user.LookupUID(name)
-	spec := &deprovisionSpec{
+	spec := &DeprovisionSpec{
 		Name:      name,
 		Port:      a.Port,
 		UID:       uid,
@@ -402,7 +402,7 @@ func (m *Manager) DeleteApp(name string) error {
 			delete(m.tearingDown, name)
 			m.mu.Unlock()
 		}()
-		m.deprovision(spec)
+		m.Deprovision(spec)
 	}()
 	return nil
 }

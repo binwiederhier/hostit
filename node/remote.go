@@ -243,3 +243,29 @@ func (a *remoteAgent) Heartbeat() *app.Heartbeat {
 	}
 	return resp.Heartbeat
 }
+
+// Provision/Deprovision cross the wire as their full spec envelopes.
+func (a *remoteAgent) Provision(spec *app.ProvisionSpec) error {
+	return a.postJSON("provision", spec)
+}
+
+func (a *remoteAgent) Deprovision(spec *app.DeprovisionSpec) {
+	_ = a.postJSON("deprovision", spec)
+}
+
+func (a *remoteAgent) postJSON(verb string, payload any) error {
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	httpResp, err := a.c.Post("http://node/v1/"+verb, "application/json", bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("node rpc %s: %w", verb, err)
+	}
+	defer httpResp.Body.Close()
+	var resp rpcResp
+	if err := json.NewDecoder(httpResp.Body).Decode(&resp); err != nil {
+		return fmt.Errorf("node rpc %s: %w", verb, err)
+	}
+	return decodeErr(&resp)
+}

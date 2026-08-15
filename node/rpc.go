@@ -119,6 +119,24 @@ func RPCHandler(agent app.NodeAgent) http.Handler {
 		return &rpcResp{OK: true}
 	}
 
+	mux.HandleFunc("POST /v1/provision", func(w http.ResponseWriter, r *http.Request) {
+		var spec app.ProvisionSpec
+		if err := json.NewDecoder(r.Body).Decode(&spec); err != nil {
+			writeRPC(w, &rpcResp{Err: "bad request: " + err.Error()})
+			return
+		}
+		err := agent.Provision(&spec)
+		writeRPC(w, &rpcResp{OK: err == nil, Err: errString(err), ErrCode: errCode(err)})
+	})
+	mux.HandleFunc("POST /v1/deprovision", func(w http.ResponseWriter, r *http.Request) {
+		var spec app.DeprovisionSpec
+		if err := json.NewDecoder(r.Body).Decode(&spec); err != nil {
+			writeRPC(w, &rpcResp{Err: "bad request: " + err.Error()})
+			return
+		}
+		agent.Deprovision(&spec)
+		writeRPC(w, &rpcResp{OK: true})
+	})
 	verb("ensure", func(q *rpcReq) *rpcResp { return okOut(agent.Ensure(q.Name)) })
 	verb("up", func(q *rpcReq) *rpcResp { return okOut(agent.Up(q.Name)) })
 	verb("poweron", func(q *rpcReq) *rpcResp { return okOut(agent.PowerOn(q.Name)) })

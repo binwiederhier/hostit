@@ -17,9 +17,9 @@ import (
 // plans/260815-hostit-nodeagent.md: specs carry everything the node half
 // needs, so it never reads the registry.
 
-// provisionSpec is everything the node half needs to build an app on this
+// ProvisionSpec is everything the node half needs to build an app on this
 // machine, resolved by the control side.
-type provisionSpec struct {
+type ProvisionSpec struct {
 	ID       string   // Stable app id; subvolume and container are keyed on it
 	Name     string   // Unix account name (today: the app name)
 	Port     int      // Loopback port; the uid block derives from it
@@ -28,10 +28,10 @@ type provisionSpec struct {
 	URL      string   // The app's public URL, for the skeleton's welcome page
 }
 
-// provision builds the app on this machine: subvolume (fresh or fork seed),
+// Provision builds the app on this machine: subvolume (fresh or fork seed),
 // unix user, authorized keys, and -- for a fresh app -- the demo skeleton. On
 // failure it rolls back its own partial work and the machine is clean again.
-func (m *Manager) provision(spec *provisionSpec) error {
+func (m *Manager) Provision(spec *ProvisionSpec) error {
 	forking := spec.SeedPath != ""
 	// Create the app's one subvolume: a fork snapshots the seed subvolume (an
 	// instant CoW copy of the source's whole OS tree, files included); a fresh
@@ -74,7 +74,7 @@ func (m *Manager) provision(spec *provisionSpec) error {
 // the id-keyed subvolume go away. The app is not in the store on these early
 // failures, so this deletes the concrete path rather than resolving it by
 // name; a brand-new app has no snapshots to clean up.
-func (m *Manager) provisionRollback(spec *provisionSpec) {
+func (m *Manager) provisionRollback(spec *ProvisionSpec) {
 	_ = m.user.Delete(spec.Name)
 	_ = m.btrfs.DeleteSubvolume(m.appSubvolumeByID(spec.ID))
 }
@@ -98,10 +98,10 @@ func (m *Manager) startInBackground(name string, forking bool) {
 	}()
 }
 
-// deprovisionSpec is everything the teardown needs, captured by the control
+// DeprovisionSpec is everything the teardown needs, captured by the control
 // side BEFORE the registry rows are gone: once they are, name-keyed lookups
 // (paths, ids, snapshots) resolve nothing.
-type deprovisionSpec struct {
+type DeprovisionSpec struct {
 	Name      string
 	Port      int
 	UID       int // The budget qgroup key; UIDKnown guards a failed lookup
@@ -113,9 +113,9 @@ type deprovisionSpec struct {
 	SnapPaths []string
 }
 
-// deprovision tears the app down on this machine; it runs in the background
+// Deprovision tears the app down on this machine; it runs in the background
 // (the caller holds the app lock and the port/name reservations until done).
-func (m *Manager) deprovision(spec *deprovisionSpec) {
+func (m *Manager) Deprovision(spec *DeprovisionSpec) {
 	// Stop the app first: a running container keeps processes alive, and
 	// userdel refuses to remove a user that still has any.
 	if err := m.systemd.DisableNow(spec.Unit); err != nil {
