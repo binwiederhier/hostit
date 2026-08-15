@@ -77,6 +77,11 @@ type Server struct {
 	// unless app-preview is "screenshot" (see SetPreviews)
 	previews *preview.Manager
 
+	// routesHash/routesSeq version the internal routing table (see internal.go)
+	routesHash string
+	routesSeq  int64
+	routesMu   sync.Mutex // Protects routesHash, routesSeq
+
 	domainMu sync.RWMutex // Protects domainCache and issuing
 }
 
