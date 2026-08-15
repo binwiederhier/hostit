@@ -118,14 +118,14 @@ process, leaves the state breadcrumb, handles start/stop/restart signals.
 
 # Why the node half cannot just be "remoted"
 
-The tempting shortcut -- keep `app.Manager` on the proxy, SSH the commands over --
+The tempting shortcut -- keep `app.Manager` on the control plane, SSH the commands over --
 throws away the safety model.
 
 <v-clicks>
 
 - **`os.OpenRoot` needs the real path on the real machine.** Its guarantee is the
   kernel refusing to follow a symlink out of the opened root. A "remote open" is
-  just a string the proxy hopes the node honored.
+  just a string the control plane hopes the node honored.
 - **btrfs is local syscalls.** A snapshot is a reflink on one filesystem; a quota
   is an `EDQUOT` at write time. There is nothing to call remotely -- the operation
   *is* the filesystem.
@@ -230,15 +230,16 @@ erDiagram
 
 - **Nodes own local resources; the registry records the outcome.** Only the node
   can see its own free ports and uid blocks, so `Provision` allocates and
-  *returns* them; the proxy writes `(host, port, uid)` into the app row.
+  *returns* them; control writes `(host, port, uid)` into the app row.
 - **Snapshot subvolumes are node-local, metadata is central**: the id/label rows
-  live in the `snapshot` table; retention policy runs on the proxy and drives
+  live in the `snapshot` table; retention policy runs on control and drives
   `SnapshotDelete` on the node.
-- **Reconciliation over consensus.** Proxy restart: reload the `node` table,
-  resume heartbeats -- containers never stopped serving. Node restart: the agent
+- **Reconciliation over consensus.** Control restart: reload the `node` table,
+  resume heartbeats -- containers never stopped serving (and the proxy keeps
+  routing from its cache). Node restart: the agent
   comes up stateless, runs its reconcile loops, and desired state is re-asserted
   lazily by the next `Ensure`/`Deploy`.
-- **Drift surfaces, then heals**: `States()` feeds the proxy's state cache, so a
+- **Drift surfaces, then heals**: `States()` feeds control's state cache, so a
   mismatch shows on the dashboard and is corrected by the next lifecycle call --
   no distributed protocol.
 
@@ -248,7 +249,7 @@ erDiagram
 
 # Flow: creating an app
 
-Placement picks a node; the node allocates and builds; the proxy records what
+Placement picks a node; the node allocates and builds; control records what
 came back. The node is stateless -- the registry is the only durable record.
 
 ```mermaid {scale: 0.36}
@@ -346,7 +347,7 @@ sequenceDiagram
 
 # Flow: file write + deploy across the wire
 
-The proxy is a pass-through; the bytes land through `os.OpenRoot` **on the
+Control is a pass-through; the bytes land through `os.OpenRoot` **on the
 node**, where that guarantee actually exists.
 
 ```mermaid {scale: 0.36}
@@ -377,7 +378,7 @@ resolves the app's node first.
 
 ---
 
-# Flow: snapshot -- node cuts, proxy records
+# Flow: snapshot -- node cuts, control records
 
 ```mermaid {scale: 0.34}
 sequenceDiagram
