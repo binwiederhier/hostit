@@ -417,7 +417,7 @@ on every call; the node keeps nothing between calls.
 <div>
 
 **Lifecycle**
-`Provision(spec) -> {port, uid}` &middot; `Deprovision` &middot; `Fork` (same-node reflink)
+`Provision(spec) -> {port, uid}` &middot; `Deprovision` &middot; `Fork` (always placed on the source node)
 
 **Deploy & process control**
 `Deploy` / `Up` &middot; `Ensure` &middot; `Down` &middot; `Start` / `Stop` / `Restart` &middot;
@@ -483,8 +483,9 @@ on every call; the node keeps nothing between calls.
 - **A down node takes its apps offline** -- capacity, not HA. Must be explicit in
   the dashboard. Optional later: "evacuate" from last snapshots (a data-loss
   window decision).
-- **Cross-node fork/move is a copy**, not a reflink -- send/receive or tar. The
-  UI must not imply it is instant.
+- **Forks always land on the source node** (reflink = local); a hot node can
+  accumulate forks until move/rebalance exists. A cross-node move is a full
+  copy, never implied instant.
 - **Network partition**: control marks the node `down` and the proxies drop its
   routes, even though its containers are fine. Heartbeat thresholds must
   tolerate blips; RPC timeouts must never wedge a control goroutine.
