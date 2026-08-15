@@ -64,8 +64,10 @@ const (
 	workDirName = ".work"
 	// shotFile is the file name inside the container's output mount
 	shotFile = "shot.png"
-	// containerPrefix names shot containers, so leftovers are recognizable
-	containerPrefix = "hostit-preview-"
+	// containerName is the single fixed name for the shot container. One shot
+	// runs at a time, so a fixed name plus --replace means a new shot always
+	// clears any leftover from a prior one (e.g. a daemon restart mid-shot).
+	containerName = "hostit-screenshot"
 	// userNSBase/userNSSize is the explicit uid/gid mapping for the shot
 	// container's user namespace: a high, otherwise-unused host range, mapped
 	// directly (rootful podman needs no /etc/subuid for explicit maps).
@@ -158,6 +160,9 @@ func (m *Manager) Loop(interval time.Duration, done <-chan struct{}) {
 	if _, err := m.runner.RunTimeout(pullTimeout, "podman", "pull", "-q", image); err != nil {
 		slog.Warn("Cannot pull the preview screenshot image; shots will fail until it is available", "image", image, "error", err)
 	}
+	// Clear any shot container orphaned by a previous run (a daemon restart
+	// mid-shot leaves conmon holding it, since --rm only fires on clean exit).
+	_, _ = m.runner.Run("podman", "rm", "-f", "-t", "0", containerName)
 	if m.isolate {
 		// Idempotent: create the isolated network once. If it is missing, strict
 		// shots fail closed (podman run --network errors, so no chrome starts).
@@ -315,7 +320,7 @@ func (m *Manager) shoot(a App) error {
 		return err
 	}
 	defer os.RemoveAll(workDir)
-	container := containerPrefix + a.ID
+	container := containerName
 	userns := fmt.Sprintf("0:%d:%d", userNSBase, userNSSize)
 	args := []string{"podman", "run", "--rm", "--replace", "--name", container,
 		"--uidmap=" + userns, "--gidmap=" + userns,
