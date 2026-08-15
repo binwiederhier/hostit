@@ -18,8 +18,8 @@ mdc: true
 ### One front door, many machines
 
 <div class="mt-8 opacity-60">
-Splitting the all-in-one daemon into a proxy node and stateless hosting nodes --
-while a single box stays exactly what it is today
+Four services -- control, node, proxy, and the in-container agent --
+colocatable on one host or split across machines
 </div>
 
 <div class="abs-br m-6 text-sm opacity-40">
@@ -64,37 +64,50 @@ inert until a second node joins. hostit must stay deployable on a $6 droplet.
 
 ---
 
-# Responsibilities: two roles, one binary
+# Four binaries, four services
 
-Which role a process plays is a subcommand -- `hostit serve` vs `hostit agent`.
+One host (the default) or split out. `hostit-node` and `hostit-proxy` **dial control**.
 
-<div class="grid grid-cols-2 gap-6 mt-4">
+<div class="grid grid-cols-2 gap-3 mt-2 text-xs">
 
-<div class="p-4 border border-emerald-700 rounded">
+<div class="p-2 border border-emerald-700 rounded">
 
-### Proxy node (control plane)
+#### `hostit-control` -- control plane
 
-- **TLS + certs**: wildcard and custom domains (certmagic); nodes never see keys
-- **Reverse proxy**: host &rarr; app &rarr; node
-- **Registry**: SQLite, single writer -- apps, users, tokens, snapshots metadata, domains, nodes
-- **Web app + REST API**, name validation, app limits
-- **Placement**: least-loaded eligible node
-- **Assistant**: Anthropic loop, SSE, rate limits
-- Owns **no** app homes, runs **no** app containers
+Serves the **web app + REST API**, **owns the SQLite database** (apps, users,
+tokens, snapshot metadata, domains, nodes), name validation and limits,
+placement, cert management, the assistant. Accepts node/proxy connections.
 
 </div>
 
-<div class="p-4 border border-sky-700 rounded">
+<div class="p-2 border border-sky-700 rounded">
 
-### Hosting node (`hostit-agent`)
+#### `hostit-node` -- the machine half
 
-- **Stateless**: no registry, knows nothing of other nodes
-- Unix users + homes (useradd, managed authorized_keys)
-- Containers + units (podman, systemd), workspace image
-- btrfs subvolumes, snapshots, qgroup quotas
-- Port + uid allocation **on its own machine**
-- nftables port rules; `os.OpenRoot` file layer
-- Self-maintenance loops: reconciles, state, disk usage, qgroup sweep, preview shots
+Dials control; executes every node-local operation on its own machine: Unix
+users + homes, containers + units, btrfs subvolumes/snapshots/quotas, port +
+uid allocation, nft rules, `os.OpenRoot` files, self-maintenance loops.
+**Stateless** about the platform.
+
+</div>
+
+<div class="p-2 border border-amber-700 rounded">
+
+#### `hostit-proxy` -- dumb data plane
+
+Dials control, caches the **routing table** (`<app>.<base>` &rarr;
+`<node-ip>:port`, dashboard &rarr; control) and cert material, and serves from
+the cache -- **apps keep serving while control or a node daemon restarts**.
+N proxies on different hosts, or one colocated with control (most likely).
+
+</div>
+
+<div class="p-2 border border-violet-700 rounded">
+
+#### `hostit-agent` -- inside the container
+
+Unchanged meaning: the PID-1 binary in every app container -- runs the app
+process, leaves the state breadcrumb, handles start/stop/restart signals.
 
 </div>
 
@@ -132,45 +145,50 @@ with a `localNodeAgent` (today's in-process code) and a `remoteNodeAgent`
 
 # Target architecture
 
-```mermaid {scale: 0.5}
+```mermaid {scale: 0.45}
 flowchart TB
     browser[Browser / agent / ssh]
 
-    subgraph proxy["Proxy node (control plane)"]
-        daemon["hostit serve"]
+    subgraph edge["Data plane"]
+        proxy["hostit-proxy<br/><i>cached routes + certs</i>"]
+    end
+
+    subgraph ctrl["Control plane host"]
+        control["hostit-control<br/><i>web app, API, placement</i>"]
         store[("SQLite registry")]
-        localnode["localNodeAgent<br/><i>in-process</i>"]
     end
 
     subgraph nodeA["Hosting node A"]
-        agentA["hostit-agent"]
-        a1["hostit-app-blog<br/>port 10000"]
+        nodeDA["hostit-node"]
+        a1["container: hostit-agent<br/>app blog, port 10000"]
     end
 
     subgraph nodeB["Hosting node B"]
-        agentB["hostit-agent"]
-        a2["hostit-app-stats<br/>port 10000"]
+        nodeDB["hostit-node"]
+        a2["container: hostit-agent<br/>app stats, port 10000"]
     end
 
-    browser -->|"HTTPS :443 / SSH :22"| daemon
-    daemon --> store
-    daemon -.->|in-process call| localnode
-    daemon -->|"NodeAgent RPC<br/>HTTP+JSON + node token"| agentA
-    daemon -->|"NodeAgent RPC"| agentB
-    daemon -->|"proxy to nodeB:10000"| a2
-    agentA --> a1
-    agentB --> a2
+    browser -->|"HTTPS :443"| proxy
+    proxy -->|"dashboard/API"| control
+    proxy -->|"nodeA:10000"| a1
+    proxy -->|"nodeB:10000"| a2
+    control --> store
+    nodeDA -. "dials control<br/>join token" .-> control
+    nodeDB -. "dials control" .-> control
+    proxy -. "dials control<br/>routes + certs" .-> control
+    nodeDA --> a1
+    nodeDB --> a2
 
-    style daemon fill:#047857,color:#fff
+    style control fill:#047857,color:#fff
     style store fill:#1f252d,color:#fff
-    style localnode fill:#065f46,color:#fff
-    style agentA fill:#0369a1,color:#fff
-    style agentB fill:#0369a1,color:#fff
+    style proxy fill:#b45309,color:#fff
+    style nodeDA fill:#0369a1,color:#fff
+    style nodeDB fill:#0369a1,color:#fff
 ```
 
-Dashed = in-process Go call. On a single box only the proxy subgraph exists and
-there are **no RPC lines at all**: `host == "local"` resolves to the in-process
-agent, today's exact code path.
+Dashed = dialed control connections (join token / subscription). App traffic
+never traverses control -- the proxy serves node targets from its **local
+cache**, so control and node daemons restart without dropping a request.
 
 ---
 
@@ -235,9 +253,9 @@ came back. The node is stateless -- the registry is the only durable record.
 ```mermaid {scale: 0.36}
 sequenceDiagram
     participant U as Browser / agent
-    participant P as Proxy
+    participant P as hostit-control
     participant S as SQLite registry
-    participant N as hostit-agent (node B)
+    participant N as hostit-node (node B)
 
     U->>P: POST /api/apps {"name":"blog"}
     P->>P: validate name, check owner's app limit
@@ -257,19 +275,19 @@ sequenceDiagram
 
 # Flow: serving an HTTP request
 
-The only change from today's `proxyTo`: the target `127.0.0.1:port` becomes
-`node.address:port`. No 502 path -- a down node looks like a free name, as today.
+The proxy serves from its locally cached routing table -- no control-plane
+round trip on the hot path, and no interruption while control restarts.
 
 ```mermaid {scale: 0.45}
 sequenceDiagram
     participant V as Visitor
-    participant P as Proxy (:443)
+    participant P as hostit-proxy (:443)
     participant S as SQLite registry
     participant A as App container (node B)
 
     V->>P: GET https://blog.apps.example.com/
-    P->>P: TLS (wildcard cert)
-    P->>S: resolve host: app blog, host=node-b, port=10000
+    P->>P: TLS (cert material synced from control)
+    P->>P: cached route: blog -> node-b:10000
     alt app exists and its node is up
         P->>A: proxy to nodeB.addr:10000
         A-->>V: the app's response
@@ -289,8 +307,8 @@ For a `local` app there is no jump -- `podman exec` in-process, exactly today.
 sequenceDiagram
     participant U as User
     participant PD as sshd on the proxy
-    participant SH as hostit-shell (proxy)
-    participant P as Proxy control plane
+    participant SH as hostit-shell
+    participant P as hostit-control
     participant ND as sshd on node B
     participant C as Container on node B
 
@@ -333,8 +351,8 @@ node**, where that guarantee actually exists.
 ```mermaid {scale: 0.36}
 sequenceDiagram
     participant AG as Agent / assistant
-    participant P as Proxy (REST API)
-    participant N as hostit-agent (node B)
+    participant P as hostit-control (REST API)
+    participant N as hostit-node (node B)
     participant H as App home on node B
     participant C as Container agent (PID 1)
 
@@ -363,8 +381,8 @@ resolves the app's node first.
 ```mermaid {scale: 0.34}
 sequenceDiagram
     participant U as Owner / assistant
-    participant P as Proxy
-    participant N as hostit-agent (node B)
+    participant P as hostit-control
+    participant N as hostit-node (node B)
     participant FS as btrfs on node B
     participant S as SQLite registry
 
@@ -434,7 +452,10 @@ on every call; the agent keeps nothing between calls.
 <v-clicks>
 
 - **Dedicated internal RPC**: the `NodeAgent` interface over HTTP+JSON, streamed
-  for file bodies and logs. Listens on a **private interface / VPN only**.
+  for file bodies and logs, on a **private interface / VPN only**.
+- **Nodes and proxies dial control**, not the other way around: control accepts,
+  a node needs no public listener, and commands multiplex over the node's own
+  connection. The proxy's channel is a subscription: routing table + certs.
 - **Not the public agent REST API, structurally.** The internal surface is a
   superset with the most privileged verbs on the platform -- `Provision` creates
   a Unix user, `SetKeys` rewrites `authorized_keys`, `Deprovision` deletes a
@@ -479,9 +500,10 @@ on every call; the agent keeps nothing between calls.
   `uid` column + backfill; split create/delete into control-plane vs
   `provision`/`deprovision`; define `NodeAgent` + `localNodeAgent`; route every
   caller through a one-entry `{"local": ...}` map. Single box byte-identical.
-- **Phase 2 -- the wire**: `remoteNodeAgent` (HTTP+JSON), the `hostit-agent`
-  subcommand wrapping a `localNodeAgent`, the `node` table, `hostit node add`,
-  token auth. Join one node, place by hand.
+- **Phase 2 -- the binary split, one host**: `hostit-control`, `hostit-node`,
+  `hostit-proxy` as separate systemd services over a localhost socket; the
+  proxy serves from its cached routes. Then **2b**: the `node` table, join
+  tokens, a second machine dials in; place by hand.
 - **Phase 3 -- invisible multi-node**: heartbeats, least-loaded placement,
   SSH ProxyJump.
 - **Phase 4 -- move & rebalance**: snapshot-ship-provision-flip; optional
@@ -492,11 +514,11 @@ on every call; the agent keeps nothing between calls.
 <v-click>
 
 <div class="mt-4 p-3 border border-emerald-700 rounded text-sm">
-New code lives per the existing layout: <code>app</code> (NodeAgent + local),
-new <code>node</code> package (RPC client + server), <code>server</code>
-(routing, placement, jump), <code>store</code> (node table), <code>cmd</code>
-(<code>hostit agent</code>, <code>hostit node add/list/remove</code>). Same
-binary, role by subcommand.
+Four binaries, four systemd services: <code>hostit-control</code>,
+<code>hostit-node</code>, <code>hostit-proxy</code> -- colocatable on one host
+-- plus the unchanged in-container <code>hostit-agent</code>. New
+<code>node</code> package for the dial-in RPC; <code>app</code> keeps
+NodeAgent + the local implementation.
 </div>
 
 </v-click>
