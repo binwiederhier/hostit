@@ -50,6 +50,28 @@ The chosen shape and the decisions behind it:
   per-app qgroup usage reads currently assume everything is on this box; they
   move behind the agent's heartbeat/report path.
 
+## Resource allocation
+
+Today an app's RAM/disk caps are fixed at creation from the owner's defaults
+(user.memory_mb / user.disk_mb -> container --memory and the btrfs budget
+qgroup), CPU is uncapped, and nothing exposes any of it for editing.
+
+- **Per-app resource editing.** There is no way to change an app's RAM, disk or
+  CPU allocation after creation. Add PATCH-able per-app limits (memory_mb,
+  disk_mb, cpu) in the API and the app Settings view. The plumbing mostly
+  exists: SetMemoryLimit recreates the container with the new cap, SetDiskLimit
+  re-caps the budget qgroup live; CPU needs a new --cpus/CPUWeight knob on the
+  container.
+- **Per-user RAM and disk pool.** Replace (or back) the per-app defaults with a
+  per-user POOL: a user has, say, 2 GB RAM and 10 GB disk total, and their apps
+  draw from it. Creating an app (or raising its limits) reserves from the pool;
+  the create/edit is refused when the pool is exhausted. Registry: pool columns
+  on the user row; enforcement at create/edit time (containers and qgroups keep
+  enforcing per app at runtime).
+- **User-editable within the pool.** The owner can edit each app's allocation
+  themselves in the app's Settings, as long as the user's pool covers it --
+  admins set pools, users divide them. Admin UI keeps setting pools per user.
+
 ## Web app
 
 The dashboard can create, manage and delete apps and drive them in the browser
