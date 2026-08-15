@@ -117,7 +117,7 @@ make web && make build && sudo make install
 sudo mkdir -p /etc/hostit
 sudo cp server.yml.example /etc/hostit/server.yml
 sudo $EDITOR /etc/hostit/server.yml
-sudo cp hostit.service /etc/systemd/system/ && sudo cp hostit-shell /usr/bin/
+sudo cp hostit-control.service /etc/systemd/system/ && sudo cp hostit-shell /usr/bin/
 sudo systemctl daemon-reload && sudo systemctl enable --now hostit
 ```
 

@@ -23,6 +23,20 @@ builds:
       - "-s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}}"
     goos: [ linux ]
     goarch: [ amd64 ]
+  - id: hostit_control_linux_amd64
+    binary: hostit-control
+    main: ./hostit-control-bin
+    ldflags:
+      - "-s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}}"
+    goos: [ linux ]
+    goarch: [ amd64 ]
+  - id: hostit_control_linux_arm64
+    binary: hostit-control
+    main: ./hostit-control-bin
+    ldflags:
+      - "-s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}}"
+    goos: [ linux ]
+    goarch: [ arm64 ]
   - id: hostit_node_linux_amd64
     binary: hostit-node
     main: ./hostit-node-bin
@@ -66,8 +80,8 @@ nfpms:
     contents:
       - src: server.yml.example
         dst: /etc/hostit/server.yml.example
-      - src: hostit.service
-        dst: /lib/systemd/system/hostit.service
+      - src: hostit-control.service
+        dst: /lib/systemd/system/hostit-control.service
       - src: hostit-proxy.service
         dst: /lib/systemd/system/hostit-proxy.service
       - src: hostit-node.service
@@ -99,6 +113,8 @@ archives:
       - hostit_linux_arm64
       - hostit_proxy_linux_amd64
       - hostit_proxy_linux_arm64
+      - hostit_control_linux_amd64
+      - hostit_control_linux_arm64
       - hostit_node_linux_amd64
       - hostit_node_linux_arm64
     wrap_in_directory: true

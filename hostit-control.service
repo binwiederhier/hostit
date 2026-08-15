@@ -1,14 +1,15 @@
-# systemd unit for the hostit daemon. The .deb installs this to
-# /lib/systemd/system/hostit.service; for manual installs copy it to
+# systemd unit for hostit-control, the control plane: web app, REST API,
+# registry, placement, certificates. The .deb installs this to
+# /lib/systemd/system/hostit-control.service; for manual installs copy it to
 # /etc/systemd/system/, then: systemctl daemon-reload && systemctl enable --now hostit
 [Unit]
-Description=hostit mini-app platform
+Description=hostit control plane
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=exec
-ExecStart=/usr/bin/hostit serve
+ExecStart=/usr/bin/hostit-control serve
 Restart=on-failure
 RestartSec=2
 

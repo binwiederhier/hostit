@@ -15,11 +15,15 @@ func TestNewCommands(t *testing.T) {
 	for _, c := range app.Commands {
 		names = append(names, c.Name)
 	}
-	// On the host: run the daemon, and drive apps over the API. The commands that
-	// act on "this app" need a container to be in, so they are not offered here.
-	for _, expected := range []string{"serve", "apps"} {
+	// On the host: drive apps over the API. The daemon moved to the
+	// hostit-control binary (NewControl); the commands that act on "this app"
+	// need a container to be in, so they are not offered here.
+	for _, expected := range []string{"apps"} {
 		assert.Contains(t, names, expected)
 	}
+	assert.NotContains(t, names, "serve", "the daemon is hostit-control's job now")
+	control := NewControl()
+	require.NotNil(t, control.Command("serve"))
 	for _, hidden := range []string{"deploy", "start", "restart", "poweroff", "status", "logs", "guide"} {
 		assert.NotContains(t, names, hidden, "%q cannot work outside a container", hidden)
 	}

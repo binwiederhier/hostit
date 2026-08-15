@@ -21,7 +21,7 @@ func New() *cli.App {
 	// on this app through the daemon's socket, which identifies the caller by its
 	// uid; on the host there is no app to be, so those commands cannot work and
 	// listing them only invites the question.
-	commands := []*cli.Command{cmdServe, cmdApps, cmdShell, cmdEnter, cmdInternal}
+	commands := []*cli.Command{cmdApps, cmdShell, cmdEnter, cmdInternal}
 	usage := "self-hosted mini-app platform: isolated apps with SSH access, subdomains and TLS"
 	if insideContainer() {
 		commands = []*cli.Command{cmdDeploy, cmdStart, cmdStop, cmdRestart, cmdPowerOn, cmdPowerOff, cmdReboot, cmdStatus, cmdLogs, cmdInfo, cmdGuide, cmdStatic, cmdAgent, cmdMCP}
@@ -46,4 +46,16 @@ func insideContainer() bool {
 		}
 	}
 	return os.Getenv("container") != ""
+}
+
+// NewControl creates the hostit-control CLI: the control plane as its own
+// binary and systemd service (the four-service split). The daemon that used
+// to be "hostit serve" lives here; the hostit binary keeps the CLI and the
+// in-container agent.
+func NewControl() *cli.App {
+	return &cli.App{
+		Name:     "hostit-control",
+		Usage:    "hostit's control plane: web app, REST API, registry, placement, certificates",
+		Commands: []*cli.Command{cmdServe},
+	}
 }

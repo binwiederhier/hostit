@@ -28,8 +28,8 @@ if [ "$1" = "configure" ] || [ "$1" -ge 1 ] 2>/dev/null; then
 
   if command -v systemctl >/dev/null 2>&1; then
     systemctl daemon-reload || true
-    if systemctl is-active --quiet hostit 2>/dev/null; then
-      systemctl restart hostit || true
+    if systemctl is-active --quiet hostit-control 2>/dev/null; then
+      systemctl restart hostit-control || true
     fi
   fi
   if [ ! -f /etc/hostit/server.yml ]; then
