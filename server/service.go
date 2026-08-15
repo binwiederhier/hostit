@@ -77,6 +77,10 @@ type Server struct {
 	// unless app-preview is "screenshot" (see SetPreviews)
 	previews *preview.Manager
 
+	// tlsGetCert is the combined certificate lookup (wildcard + custom
+	// domains), captured for the internal cert endpoint; nil until Run wires TLS
+	tlsGetCert func(*tls.ClientHelloInfo) (*tls.Certificate, error)
+
 	// routesHash/routesSeq version the internal routing table (see internal.go)
 	routesHash string
 	routesSeq  int64
@@ -259,6 +263,9 @@ func (s *Server) runTLSServers(g *errgroup.Group) error {
 			return domainGetCert(hello)
 		}
 	}
+	// The internal cert endpoint hands this exact lookup to hostit-proxy, so
+	// the data plane serves the same certificates control manages.
+	s.tlsGetCert = tlsConfig.GetCertificate
 
 	// HTTP: ACME challenges + redirect everything else to HTTPS
 	httpServer := &http.Server{

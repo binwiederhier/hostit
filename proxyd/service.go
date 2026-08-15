@@ -7,6 +7,7 @@
 package proxyd
 
 import (
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -15,6 +16,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -57,6 +59,8 @@ type Proxy struct {
 	table   atomic.Value // *Table
 	control *httputil.ReverseProxy
 	client  *http.Client
+	certs   map[string]*tls.Certificate
+	certMu  sync.Mutex // Protects certs
 }
 
 // New builds a Proxy; call WatchRoutes to start the table subscription.
@@ -65,7 +69,7 @@ func New(conf *Config) *Proxy {
 	if err != nil {
 		controlURL = &url.URL{Scheme: "http", Host: "127.0.0.1"}
 	}
-	p := &Proxy{conf: conf, client: &http.Client{Timeout: pollTimeout + 10*time.Second}}
+	p := &Proxy{conf: conf, client: &http.Client{Timeout: pollTimeout + 10*time.Second}, certs: map[string]*tls.Certificate{}}
 	p.table.Store(&Table{})
 	p.control = &httputil.ReverseProxy{
 		Rewrite: func(r *httputil.ProxyRequest) {

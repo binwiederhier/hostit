@@ -1,9 +1,14 @@
 package server
 
 import (
+	"bytes"
 	"crypto/sha256"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/hex"
 	"encoding/json"
+	"encoding/pem"
+	"errors"
 	"fmt"
 	"net/http"
 	"sort"
@@ -15,6 +20,8 @@ import (
 // consume over the internal listener -- never the public one. It carries no
 // tenant auth; the transport is the boundary (a root-only unix socket when
 // colocated, mTLS across hosts).
+
+var errTLSNotManaged = errors.New("tls is not managed here")
 
 const (
 	// internalPollInterval is how often a blocked routes long-poll re-checks
@@ -40,6 +47,7 @@ type routeEntry struct {
 func (s *Server) Internal() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /internal/routes", s.handleInternalRoutes)
+	mux.HandleFunc("GET /internal/cert", s.handleInternalCert)
 	return mux
 }
 
@@ -116,4 +124,40 @@ func (s *Server) currentRoutes() (*routeTable, error) {
 		s.routesSeq++
 	}
 	return &routeTable{Seq: s.routesSeq, Routes: routes}, nil
+}
+
+// certMaterial is what the proxy needs to terminate TLS for one SNI name.
+type certMaterial struct {
+	CertPEM string `json:"cert_pem"` // full chain
+	KeyPEM  string `json:"key_pem"`
+}
+
+// handleInternalCert hands the data plane the certificate for one SNI name,
+// through the exact combined lookup control's own TLS would use -- including
+// on-demand issuance for not-yet-seen custom domains. Nodes never see keys;
+// proxies must, since they terminate.
+func (s *Server) handleInternalCert(w http.ResponseWriter, r *http.Request) {
+	if s.tlsGetCert == nil {
+		writeError(w, http.StatusServiceUnavailable, errTLSNotManaged)
+		return
+	}
+	sni := r.URL.Query().Get("sni")
+	cert, err := s.tlsGetCert(&tls.ClientHelloInfo{ServerName: sni})
+	if err != nil {
+		writeError(w, http.StatusNotFound, err)
+		return
+	}
+	var chain bytes.Buffer
+	for _, der := range cert.Certificate {
+		_ = pem.Encode(&chain, &pem.Block{Type: "CERTIFICATE", Bytes: der})
+	}
+	keyDER, err := x509.MarshalPKCS8PrivateKey(cert.PrivateKey)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	var key bytes.Buffer
+	_ = pem.Encode(&key, &pem.Block{Type: "PRIVATE KEY", Bytes: keyDER})
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(&certMaterial{CertPEM: chain.String(), KeyPEM: key.String()})
 }

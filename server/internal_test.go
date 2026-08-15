@@ -1,6 +1,7 @@
 package server
 
 import (
+	"crypto/tls"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"heckel.io/hostit/node"
 	"heckel.io/hostit/store"
 )
 
@@ -66,4 +68,31 @@ func TestInternalRoutesIncludeActiveCustomDomains(t *testing.T) {
 	}
 	assert.Equal(t, "127.0.0.1:10000", hosts["blog.apps.example.com"])
 	assert.Equal(t, "127.0.0.1:10000", hosts["www.phil.example"], "an active custom domain routes to the same app")
+}
+
+func TestInternalCertServesPEMThroughTheCombinedLookup(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	// Without TLS wired (the test default), the endpoint says so
+	rr := httptest.NewRecorder()
+	s.Internal().ServeHTTP(rr, httptest.NewRequest("GET", "/internal/cert?sni=blog.apps.example.com", nil))
+	assert.Equal(t, http.StatusServiceUnavailable, rr.Code)
+
+	// With a lookup wired (self-signed here), PEM chain + key come back
+	ca, err := node.NewCA()
+	require.NoError(t, err)
+	cert, err := ca.Issue("blog.apps.example.com")
+	require.NoError(t, err)
+	s.tlsGetCert = func(*tls.ClientHelloInfo) (*tls.Certificate, error) { return &cert, nil }
+	rr = httptest.NewRecorder()
+	s.Internal().ServeHTTP(rr, httptest.NewRequest("GET", "/internal/cert?sni=blog.apps.example.com", nil))
+	require.Equal(t, http.StatusOK, rr.Code)
+	var mat struct {
+		CertPEM string `json:"cert_pem"`
+		KeyPEM  string `json:"key_pem"`
+	}
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &mat))
+	pair, err := tls.X509KeyPair([]byte(mat.CertPEM), []byte(mat.KeyPEM))
+	require.NoError(t, err, "the PEM material must load as a working key pair")
+	require.NotEmpty(t, pair.Certificate)
 }
