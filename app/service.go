@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"os"
 	"regexp"
 	"slices"
 	"sync"
@@ -294,7 +293,6 @@ func (m *Manager) create(name string, opts *CreateOptions, seedPath string) (*st
 	defer m.releasePort(port)
 
 	appKeys := opts.RequestKeys
-	sshKeys := append(append([]string{}, appKeys...), opts.ProfileKeys...)
 	forking := seedPath != ""
 
 	// Mint the app's stable id up front: the app subvolume (and its snapshots) are
@@ -302,46 +300,18 @@ func (m *Manager) create(name string, opts *CreateOptions, seedPath string) (*st
 	// on the App struct that gets inserted below.
 	app := &store.App{ID: store.NewAppID(), Name: name, Port: port, Host: store.HostLocal, OwnerID: opts.OwnerID, ImageTag: workspace.ImageTag(), UID: m.uidFor(port)}
 
-	// Create the app's one subvolume: a fork snapshots the seed subvolume (an
-	// instant CoW copy of the source's whole OS tree, files included); a fresh
-	// app snapshots its pinned tag's base and gets an empty files dir at home/app
-	// that the skeleton then fills. The tree stays root-owned: the container
-	// idmap-mounts it, so creation is a metadata snapshot and nothing more.
-	subvol := m.appSubvolumeByID(app.ID)
-	if forking {
-		if err := m.workspace.ForkAppSubvolume(seedPath, app.ID); err != nil {
-			return nil, fmt.Errorf("cannot seed %s: %w", name, err)
-		}
-	} else {
-		if err := m.workspace.EnsureAppSubvolume(app); err != nil {
-			return nil, fmt.Errorf("cannot create app subvolume for %s: %w", name, err)
-		}
+	// Build the app on this machine (subvolume, user, keys, skeleton) -- the
+	// node-local half; everything after this is registry bookkeeping.
+	spec := &provisionSpec{
+		ID:       app.ID,
+		Name:     name,
+		Port:     port,
+		SSHKeys:  append(append([]string{}, appKeys...), opts.ProfileKeys...),
+		SeedPath: seedPath,
+		URL:      m.URL(&store.App{Name: name, Port: port}),
 	}
-	slog.Info("Creating app", "app", name, "port", port, "forked", forking)
-	// The Unix account's home is the files dir INSIDE the subvolume, so
-	// scp/sftp/rsync land on the app's files; useradd's own mkdir is a no-op.
-	files := m.appFilesByID(app.ID)
-	if err := m.user.Create(name, files.Path(), m.uidFor(port)); err != nil {
-		_ = m.btrfs.DeleteSubvolume(subvol)
-		return nil, fmt.Errorf("cannot create user %s: %w", name, err)
-	}
-	cleanup := func() {
-		_ = m.user.Delete(name)
-		// Remove the id-keyed subvolume we just created. The app is not in the
-		// store on the early failures, so this deletes the concrete path rather than
-		// resolving it by name; a brand-new app has no snapshots to clean up.
-		_ = m.btrfs.DeleteSubvolume(subvol)
-	}
-	if err := m.writeKeysIn(files, name, sshKeys); err != nil {
-		cleanup()
-		return nil, fmt.Errorf("cannot write authorized keys for %s: %w", name, err)
-	}
-	// A fork keeps the source's files; only a fresh app gets the demo skeleton.
-	if !forking {
-		if err := m.user.WriteSkeleton(files.Path(), skeletonFiles(name, m.URL(&store.App{Name: name, Port: port}), workspace.Runtimes)); err != nil {
-			cleanup()
-			return nil, fmt.Errorf("cannot write skeleton for %s: %w", name, err)
-		}
+	if err := m.provision(spec); err != nil {
+		return nil, err
 	}
 
 	// Register the app; roll back the user if this fails. The app was built above
@@ -349,11 +319,11 @@ func (m *Manager) create(name string, opts *CreateOptions, seedPath string) (*st
 	// workspace image it is built with, so a later Containerfile change (e.g. adding
 	// a runtime) only affects new apps, never this one.
 	if err := m.store.AddApp(app); err != nil {
-		cleanup()
+		m.provisionRollback(spec)
 		return nil, err
 	}
 	if err := m.store.SetAppKeys(name, appKeys); err != nil {
-		cleanup()
+		m.provisionRollback(spec)
 		_ = m.store.RemoveApp(name)
 		return nil, err
 	}
@@ -368,23 +338,7 @@ func (m *Manager) create(name string, opts *CreateOptions, seedPath string) (*st
 	}
 	m.ReconcilePortRules()
 
-	// Start the app in the background, so the URL serves something without the API
-	// call waiting for a container (and, on the app user's first app, an image
-	// build) to come up
-	m.background.Add(1)
-	go func() {
-		defer m.background.Done()
-		// How long this took is the question asked whenever an app "would not
-		// start": the API returns at once, and the wait is podman's queue behind
-		// whatever else the host is doing
-		started := time.Now()
-		if _, err := m.Up(name); err != nil {
-			slog.Warn("Cannot start app; it exists but serves nothing yet",
-				"app", name, "took", time.Since(started).Round(time.Second), "error", err)
-			return
-		}
-		slog.Info("App started", "app", name, "forked", forking, "took", time.Since(started).Round(time.Second))
-	}()
+	m.startInBackground(name, forking)
 	return app, nil
 }
 
@@ -412,13 +366,19 @@ func (m *Manager) DeleteApp(name string) error {
 	// Everything the teardown needs is captured NOW: once the rows are gone,
 	// name-keyed lookups (paths, ids, snapshots) resolve nothing.
 	uid, uidErr := m.user.LookupUID(name)
-	unit, container := m.unitName(name), m.containerName(name)
-	subvol := m.appSubvolumeByID(a.ID)
-	snapsRoot := m.snapshotsRoot(name)
-	var snapPaths []string
+	spec := &deprovisionSpec{
+		Name:      name,
+		Port:      a.Port,
+		UID:       uid,
+		UIDKnown:  uidErr == nil,
+		Unit:      m.unitName(name),
+		Container: m.containerName(name),
+		Subvol:    m.appSubvolumeByID(a.ID),
+		SnapsRoot: m.snapshotsRoot(name),
+	}
 	if snaps, err := m.store.Snapshots(name); err == nil {
 		for _, snap := range snaps {
-			snapPaths = append(snapPaths, m.snapshotPath(name, snap.ID))
+			spec.SnapPaths = append(spec.SnapPaths, m.snapshotPath(name, snap.ID))
 		}
 	}
 	if err := m.store.RemoveApp(name); err != nil {
@@ -440,46 +400,7 @@ func (m *Manager) DeleteApp(name string) error {
 			delete(m.tearingDown, name)
 			m.mu.Unlock()
 		}()
-		// Stop the app first: a running container keeps processes alive, and
-		// userdel refuses to remove a user that still has any.
-		if err := m.systemd.DisableNow(unit); err != nil {
-			slog.Warn("Cannot disable the app's unit; reconciling at next start", "app", name, "error", err)
-		}
-		// The unit lingers in "failed" otherwise, and a Restart=always unit that
-		// systemd still knows about keeps retrying a container that is gone.
-		_ = m.systemd.ResetFailed(unit)
-		_ = m.container.RemoveForce(container)
-		// The app subvolume and its snapshots are subvolumes that userdel's
-		// rm -rf cannot remove, so delete them first.
-		for _, path := range snapPaths {
-			_ = m.btrfs.DeleteSubvolume(path)
-		}
-		_ = os.RemoveAll(snapsRoot)
-		_ = m.btrfs.DeleteSubvolume(subvol)
-		if err := m.user.Delete(name); err != nil {
-			slog.Warn("Cannot delete the app's unix user; a later create at this uid cleans up", "app", name, "error", err)
-		}
-		// userdel --remove will not delete a home directory it does not own -- the
-		// subvolume holding it was removed above, and any recreated stub is
-		// root-owned -- so remove whatever is left, or an empty stub is orphaned
-		// under AppsDir.
-		if err := os.RemoveAll(subvol); err != nil {
-			slog.Warn("Could not remove leftover app directory after deleting app", "app", name, "path", subvol, "error", err)
-		}
-		// The name is reusable the moment the unix user is gone: release it
-		// BEFORE the qgroup polling below, which can wait a while for the
-		// deleted subvolumes to commit -- a same-name recreate must not.
-		m.mu.Lock()
-		delete(m.tearingDown, name)
-		m.mu.Unlock()
-		// Drop the (now empty) budget qgroup -- gently: the full ladder's
-		// filesystem sync stalls every concurrent btrfs operation on the pool
-		// (a create's snapshot waited ~12s behind it), so the teardown polls a
-		// plain destroy and leaves stragglers to the startup reconcile.
-		if uidErr == nil {
-			m.destroyBudgetGently(uid)
-		}
-		slog.Info("App teardown complete", "app", name)
+		m.deprovision(spec)
 	}()
 	return nil
 }
