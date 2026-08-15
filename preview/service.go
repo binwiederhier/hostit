@@ -8,7 +8,9 @@
 // renderer exploit), so chrome never runs on the host: every shot runs the
 // headless-shell image in a locked-down rootful podman container (its own
 // user namespace via an explicit high uid/gid mapping, all capabilities
-// dropped, no privilege escalation, memory and pid caps). Chrome's own sandbox
+// dropped, no privilege escalation, memory and pid caps -- swap pinned equal to
+// the memory cap so a heavy page OOM-kills its own shot instead of thrashing the
+// host into a freeze). Chrome's own sandbox
 // is off inside; the container is the sandbox. One shot runs at a time, through
 // a single queue.
 //
@@ -325,7 +327,7 @@ func (m *Manager) shoot(a App) error {
 	args := []string{"podman", "run", "--rm", "--replace", "--name", container,
 		"--uidmap=" + userns, "--gidmap=" + userns,
 		"--cap-drop=ALL", "--security-opt=no-new-privileges",
-		"--memory=1g", "--pids-limit=256", "--shm-size=256m"}
+		"--memory=512m", "--memory-swap=512m", "--pids-limit=256", "--shm-size=128m"}
 	if m.isolate {
 		// Resolve the target, install an egress filter that allows only that IP
 		// (plus the public internet), and pin the hostname to the resolved IP so
