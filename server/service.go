@@ -435,6 +435,12 @@ func (s *Server) firstActiveDomain(name string) string {
 // appResponseFor is appResponse plus the caller-dependent bits (IsOwner), for
 // the authenticated API surface; the unix-socket self API keeps plain
 // appResponse (the container is the app, ownership does not apply there).
+// SetNode points the per-app machine operations at a (remote) NodeAgent:
+// what split mode calls when a hostit-node dials in.
+func (s *Server) SetNode(node app.NodeAgent) {
+	s.node = node
+}
+
 // SetPreviews wires the screenshot manager (app-preview: screenshot), so
 // assistant changes schedule a debounced dashboard shot.
 func (s *Server) SetPreviews(previews *preview.Manager) {

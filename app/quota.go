@@ -27,6 +27,13 @@ func (m *Manager) SetDiskLimit(name string, diskMB int) {
 	}
 }
 
+// RecordDiskLimit caches the stored limit for display without touching the
+// qgroup: what control uses in split mode, where the machine half happens on
+// the node.
+func (m *Manager) RecordDiskLimit(name string, diskMB int) {
+	m.recordDiskLimit(name, diskMB)
+}
+
 // recordDiskLimit caches the stored limit without touching the qgroup, for the
 // create path where the budget group does not exist yet (ensureBudget applies it).
 func (m *Manager) recordDiskLimit(name string, diskMB int) {

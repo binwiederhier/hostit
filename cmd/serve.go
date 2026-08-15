@@ -88,24 +88,38 @@ func execServe(c *cli.Context) error {
 	if err := ensureSessionKey(conf, s); err != nil {
 		return err
 	}
+	// Split mode: a hostit-node owns this machine's app work; this daemon is
+	// control-only and skips every machine-touching startup step and loop.
+	splitNode := conf.ListenNode != ""
 	// Quota accounting is the mechanism behind every per-app disk budget;
 	// idempotent, so it simply runs at every start.
-	manager.EnableDiskBudgets()
+	if !splitNode {
+		manager.EnableDiskBudgets()
+	}
 	// The daemon's file I/O goes through a raw (non-recursive) bind of the apps
 	// dir: a running container's idmapped rootfs mount covers the subvolume path
 	// in the host namespace, and root writing through that mapped view fails.
-	if err := manager.MountRawAppsView(filepath.Join(filepath.Dir(conf.SocketFile), "apps-raw")); err != nil {
-		return err
+	if !splitNode {
+		if err := manager.MountRawAppsView(filepath.Join(filepath.Dir(conf.SocketFile), "apps-raw")); err != nil {
+			return err
+		}
+	} else {
+		// The node mounts the raw view; this process still reads app files
+		// through the same path when colocated.
+		manager.UseRawAppsView(filepath.Join(filepath.Dir(conf.SocketFile), "apps-raw"))
 	}
 	// After the budgets exist: applying a stored limit re-ensures the app's
 	// budget qgroup and its cap. Migration briefly runs on the 2048M default and
 	// this corrects every group to the owner's real limit.
-	if err := applyStoredLimits(s, manager, users); err != nil {
+	if err := applyStoredLimits(s, manager, users, splitNode); err != nil {
 		return err
 	}
 	// Build the workspace image and export its base rootfs once. This runs in the
 	// background: it takes minutes on a small host, and the proxy must not wait.
 	go func() {
+		if splitNode {
+			return // the node builds images and restarts agents
+		}
 		if err := manager.EnsureWorkspaceBase(); err != nil {
 			slog.Warn("Cannot prepare workspace base rootfs; the first app deploy will retry", "error", err)
 		}
@@ -154,26 +168,36 @@ func execServe(c *cli.Context) error {
 	// The registry is the source of truth: an app deleted while the daemon was
 	// down, or whose unit outlived it, leaves systemd retrying something that no
 	// longer exists
-	if removed := manager.ReconcileOrphans(); len(removed) > 0 {
-		slog.Info("Cleaned up leftovers of apps that no longer exist", "apps", removed)
+	if !splitNode {
+		if removed := manager.ReconcileOrphans(); len(removed) > 0 {
+			slog.Info("Cleaned up leftovers of apps that no longer exist", "apps", removed)
+		}
 	}
 
 	// Periodically measure disk usage for the dashboard (btrfs qgroups do the
 	// actual enforcement at write time)
 	done := make(chan struct{})
 	defer close(done)
-	go manager.DiskUsageLoop(done)
 	// Presume recorded intent until the first real measurement lands, so the
 	// first page load after a restart does not see every app as stopped
 	manager.SeedStates()
 	// One-time: record uid block bases for rows created before the uid column
 	manager.BackfillUIDs()
-	go manager.StateLoop(done)
-	// Hourly automatic snapshots (a no-op unless the apps filesystem is btrfs)
-	go manager.SnapshotLoop(time.Hour, done)
-	// Sweep stale qgroups (deleted subvolumes/apps whose gentle destroy lost its
-	// race); enough of them slow quota rescans until app creates time out
-	go manager.QgroupSweepLoop(6*time.Hour, done)
+	if !splitNode {
+		go manager.DiskUsageLoop(done)
+		go manager.StateLoop(done)
+		// Hourly automatic snapshots (a no-op unless the apps filesystem is btrfs)
+		go manager.SnapshotLoop(time.Hour, done)
+		// Sweep stale qgroups (deleted subvolumes/apps whose gentle destroy lost
+		// its race); enough of them slow quota rescans until app creates time out
+		go manager.QgroupSweepLoop(6*time.Hour, done)
+	} else {
+		// Accept the node's dial-in: its RPC becomes this process's NodeAgent,
+		// its States feed the cache, and every (re)connect runs the rejoin sweep.
+		if err := listenForNode(conf, manager, srv, done); err != nil {
+			return err
+		}
+	}
 	// Screenshot previews: the sweep loop plus the single shot worker
 	if previews != nil {
 		go previews.Loop(preview.SweepInterval, done)
@@ -215,7 +239,7 @@ func ensureSessionKey(conf *config.Config, s *store.Store) error {
 
 // applyStoredLimits primes the app manager with each app owner's memory and disk
 // limits, which live in the user records rather than in the app registry
-func applyStoredLimits(s *store.Store, apps *app.Manager, users *user.Manager) error {
+func applyStoredLimits(s *store.Store, apps *app.Manager, users *user.Manager, recordOnly bool) error {
 	registered, err := s.Apps()
 	if err != nil {
 		return err
@@ -234,8 +258,12 @@ func applyStoredLimits(s *store.Store, apps *app.Manager, users *user.Manager) e
 				}
 			}
 		}
-		apps.SetMemoryLimit(a.Name, limits.MemoryMB)
-		apps.SetDiskLimit(a.Name, limits.DiskMB)
+		apps.SetMemoryLimit(a.Name, limits.MemoryMB) // record-only either way
+		if recordOnly {
+			apps.RecordDiskLimit(a.Name, limits.DiskMB)
+		} else {
+			apps.SetDiskLimit(a.Name, limits.DiskMB)
+		}
 	}
 	return nil
 }

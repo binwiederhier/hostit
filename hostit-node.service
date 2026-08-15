@@ -1,0 +1,18 @@
+# systemd unit for hostit-node, hostit's machine half: owns this host's app
+# containers, unix users, btrfs subvolumes and firewall rules, and serves
+# control's NodeAgent RPC over one mTLS connection it dials itself.
+[Unit]
+Description=hostit node (machine half)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+ExecStart=/usr/bin/hostit-node serve
+Restart=on-failure
+RestartSec=2
+CPUWeight=10000
+IOWeight=1000
+
+[Install]
+WantedBy=multi-user.target

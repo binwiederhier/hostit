@@ -351,3 +351,12 @@ func (m *Manager) Heartbeat() *Heartbeat {
 		BtrfsCapable: m.btrfs.IsBtrfs(m.config.AppsDir),
 	}
 }
+
+// IngestStates replaces the state cache with externally measured states: what
+// control does in split mode, where the node measures and reports.
+func (m *Manager) IngestStates(states map[string]State) {
+	m.stateMu.Lock()
+	defer m.stateMu.Unlock()
+	m.stateCache = states
+	m.stateFresh = time.Now()
+}

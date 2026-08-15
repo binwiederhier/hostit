@@ -7,6 +7,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/pem"
 	"math/big"
 	"time"
 )
@@ -112,4 +113,17 @@ func ClientTLS(cert tls.Certificate, rootCAs *x509.CertPool) *tls.Config {
 		ServerName: "control",
 		MinVersion: tls.VersionTLS13,
 	}
+}
+
+// CertPEM/KeyPEM render the CA itself for persistence.
+func (c *CA) CertPEM() string {
+	return string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: c.cert.Raw}))
+}
+
+func (c *CA) KeyPEM() string {
+	der, err := x509.MarshalPKCS8PrivateKey(c.key)
+	if err != nil {
+		return ""
+	}
+	return string(pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der}))
 }

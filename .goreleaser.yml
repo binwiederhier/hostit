@@ -23,6 +23,20 @@ builds:
       - "-s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}}"
     goos: [ linux ]
     goarch: [ amd64 ]
+  - id: hostit_node_linux_amd64
+    binary: hostit-node
+    main: ./hostit-node-bin
+    ldflags:
+      - "-s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}}"
+    goos: [ linux ]
+    goarch: [ amd64 ]
+  - id: hostit_node_linux_arm64
+    binary: hostit-node
+    main: ./hostit-node-bin
+    ldflags:
+      - "-s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}}"
+    goos: [ linux ]
+    goarch: [ arm64 ]
   - id: hostit_proxy_linux_arm64
     binary: hostit-proxy
     main: ./hostit-proxy-bin
@@ -56,6 +70,8 @@ nfpms:
         dst: /lib/systemd/system/hostit.service
       - src: hostit-proxy.service
         dst: /lib/systemd/system/hostit-proxy.service
+      - src: hostit-node.service
+        dst: /lib/systemd/system/hostit-node.service
       - src: proxy.yml.example
         dst: /etc/hostit/proxy.yml.example
       - src: hostit-shell
@@ -83,6 +99,8 @@ archives:
       - hostit_linux_arm64
       - hostit_proxy_linux_amd64
       - hostit_proxy_linux_arm64
+      - hostit_node_linux_amd64
+      - hostit_node_linux_arm64
     wrap_in_directory: true
     files:
       - README.md
