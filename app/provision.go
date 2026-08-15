@@ -89,7 +89,7 @@ func (m *Manager) startInBackground(name string, forking bool) {
 		// start": the API returns at once, and the wait is podman's queue behind
 		// whatever else the host is doing
 		started := time.Now()
-		if _, err := m.Up(name); err != nil {
+		if _, err := m.node.Up(name); err != nil {
 			slog.Warn("Cannot start app; it exists but serves nothing yet",
 				"app", name, "took", time.Since(started).Round(time.Second), "error", err)
 			return
@@ -153,7 +153,13 @@ func (m *Manager) Deprovision(spec *DeprovisionSpec) {
 	// (a create's snapshot waited ~12s behind it), so the teardown polls a
 	// plain destroy and leaves stragglers to the startup reconcile.
 	if spec.UIDKnown {
-		m.destroyBudgetGently(spec.UID)
+		// In its own background: the gentle polling can take up to a minute, and
+		// Deprovision's return is what releases the app's name for reuse.
+		m.background.Add(1)
+		go func() {
+			defer m.background.Done()
+			m.destroyBudgetGently(spec.UID)
+		}()
 	}
 	slog.Info("App teardown complete", "app", spec.Name)
 }

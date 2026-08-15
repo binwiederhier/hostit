@@ -115,6 +115,13 @@ definitions and the conversation prefix are cache-marked, so repeat turns pay th
 
 ## Smaller things
 
+- **There are a lot of zombie processes.** Find who is not reaping: suspects
+  are the in-container agent (PID 1 must reap everything -- check its SIGCHLD
+  handling around run:/exec/terminal children), podman exec sessions from the
+  web terminal, the assistant sandbox containers, and the preview screenshot
+  runs. `ps -eo stat,ppid,comm | grep ^Z` on stage/prod, group by PPID, then
+  fix the parent.
+
 - **Why does a read-only snapshot on prod take >2 minutes?** Taking a manual
   snapshot should be a metadata CoW operation (sub-second on an idle pool; the
   create path proves it). Suspects, in likely order: the snapshot waits on the

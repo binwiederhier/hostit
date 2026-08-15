@@ -341,9 +341,8 @@ func (m *Manager) create(name string, opts *CreateOptions, seedPath string) (*st
 	// limit, create the app's qgroup, join the subvolume, cap it. Failure only
 	// warns -- the app works uncapped and the next startup's ensure retries.
 	m.recordDiskLimit(name, opts.DiskMB)
-	if err := m.ensureBudget(app); err != nil {
-		slog.Warn("Cannot set up disk budget", "app", name, "error", err)
-	}
+	// The machine half (qgroup create/join/cap) runs where the subvolume lives.
+	m.node.SetDiskLimit(name, m.DiskLimit(name))
 	m.ReconcilePortRules()
 
 	m.startInBackground(name, forking)
