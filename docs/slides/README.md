@@ -7,6 +7,10 @@ Three [Sli.dev](https://sli.dev/) presentations live in [`presentations/`](prese
   distilled tour of `docs/`; when those docs change, update the deck too.
 - **`intro.md`** -- an **introduction** for a general audience: who made it, then a
   feature-by-feature tour of what hostit can do. Text only, no screenshots.
+- **`multinode.md`** -- the **multi-node design**: proxy vs hosting-node
+  responsibilities, the node registry schema, the key flows as sequence diagrams,
+  and the internal NodeAgent RPC with its auth model. Companion to
+  `plans/260807-hostit-multinode.md` and `plans/260815-hostit-nodeagent.md`.
 - **`storage.md`** -- the **storage redesign**: the disk-full incident, the validated
   hard-cap mechanisms, the decided phase-1 plan (btrfs storage driver + hierarchical
   qgroups) and the from-scratch target shape (per-app subtrees, podman as a pure
