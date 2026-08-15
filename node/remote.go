@@ -231,7 +231,7 @@ func (a *remoteAgent) Rollback(name, id string) error {
 func (a *remoteAgent) States(names []string) map[string]app.State {
 	resp, err := a.call("states", &rpcReq{Names: names})
 	if err != nil {
-		return map[string]app.State{}
+		return nil // nil = "could not measure"; callers must not ingest it
 	}
 	return resp.States
 }

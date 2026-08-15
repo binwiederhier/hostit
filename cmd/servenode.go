@@ -27,14 +27,21 @@ func listenForNode(conf *config.Config, manager *app.Manager, srv *server.Server
 	if err != nil {
 		return err
 	}
+	// Each registration supersedes the previous connection's poll loop: without
+	// this, a stale loop against a dead session raced the live one for the cache.
+	var supersede chan struct{}
 	httpSrv := &http.Server{
 		Addr:      conf.ListenNode,
 		TLSConfig: tlsConf,
 		Handler: node.ConnectHandler(func(nodeID string, remote app.NodeAgent) {
 			slog.Info("Node connected", "node", nodeID)
+			if supersede != nil {
+				close(supersede)
+			}
+			supersede = make(chan struct{})
 			manager.SetNodeAgent(remote)
 			srv.SetNode(remote)
-			go pollNodeStates(manager, remote, done)
+			go pollNodeStates(manager, remote, done, supersede)
 			go rejoin(manager, remote)
 		}),
 	}
@@ -49,10 +56,12 @@ func listenForNode(conf *config.Config, manager *app.Manager, srv *server.Server
 
 // pollNodeStates feeds the node's measurements into control's state cache, so
 // dashboards and placement read memory, never the wire, per request.
-func pollNodeStates(manager *app.Manager, remote app.NodeAgent, done <-chan struct{}) {
+func pollNodeStates(manager *app.Manager, remote app.NodeAgent, done, superseded <-chan struct{}) {
 	for {
 		select {
 		case <-done:
+			return
+		case <-superseded:
 			return
 		case <-time.After(nodeStatePoll):
 		}
