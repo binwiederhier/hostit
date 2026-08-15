@@ -441,6 +441,7 @@ const AppAssistant = ({ name, onClose, embedded = false, onPreviewRefresh }) => 
   const taRef = useRef(null);
   const fileRef = useRef(null);
   const itemsRef = useRef(items); // mirrors items, so same-tick events chain correctly
+  const turnMutatedRef = useRef(false); // did this turn change the app (drives the end-of-turn preview refresh)
   useEffect(() => {
     itemsRef.current = items;
   }, [items]);
@@ -491,14 +492,27 @@ const AppAssistant = ({ name, onClose, embedded = false, onPreviewRefresh }) => 
   const handleEvent = useCallback((ev) => {
     if (ev.type === "done") {
       setBusy(false);
-      loadTranscript(); // reconcile every watcher to the committed transcript
-      // One guaranteed refresh at the end of every turn, whatever the tools
-      // were: the per-tool refreshes above are best-effort liveliness, this is
-      // the backstop that makes "the preview shows what the assistant built"
-      // always true -- static apps included.
-      if (onPreviewRefresh) {
-        onPreviewRefresh();
-      }
+      const mutated = turnMutatedRef.current;
+      turnMutatedRef.current = false;
+      // Reconcile to the committed transcript, then -- only if this turn actually
+      // changed the app -- reload the preview ONCE and show it as an explicit
+      // "Refreshing preview" action. We deliberately do not reload mid-turn: a
+      // burst of file writes would otherwise reload the preview out from under
+      // someone testing the app. The action is a client-only UI affordance, not
+      // part of the model's transcript, so it is added after the reconcile.
+      loadTranscript().then(() => {
+        if (!mutated) {
+          return;
+        }
+        setItems((cur) => {
+          const next = [...cur, { id: cur.length, kind: "tool", tool: "refresh_preview", input: "{}", output: "" }];
+          itemsRef.current = next;
+          return next;
+        });
+        if (onPreviewRefresh) {
+          onPreviewRefresh();
+        }
+      });
       return;
     }
     if (ev.type === "error") {
@@ -521,6 +535,7 @@ const AppAssistant = ({ name, onClose, embedded = false, onPreviewRefresh }) => 
       // Which model is answering this turn; tag the replies that follow with it.
       currentModelRef.current = ev.text || "";
       setTurnTokens(0); // a new turn is starting; reset the counter
+      turnMutatedRef.current = false; // ...and its "did anything change" flag
       setBusy(true);
       return;
     }
@@ -534,10 +549,9 @@ const AppAssistant = ({ name, onClose, embedded = false, onPreviewRefresh }) => 
     const { items: next, refreshPreview } = reduceChatEvent(itemsRef.current, ev, currentModelRef.current);
     itemsRef.current = next;
     setItems(next);
-    // Reload the live preview only once a deploy/refresh has finished (tool_result),
-    // so it shows the new content and not a mid-deploy snapshot.
-    if (refreshPreview && onPreviewRefresh) {
-      onPreviewRefresh();
+    // Note a successful mutating tool; the reload itself waits for end of turn.
+    if (refreshPreview) {
+      turnMutatedRef.current = true;
     }
   }, [loadTranscript, onPreviewRefresh]);
 
