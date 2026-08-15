@@ -49,8 +49,9 @@ type Table struct {
 
 // Config wires a Proxy: where control is, and where to persist the cache.
 type Config struct {
-	ControlURL string // e.g. http://127.0.0.1:2900 or the internal socket URL
-	CacheDir   string
+	ControlURL  string // control's local HTTP listener: dashboard/API + unknown-host fallback
+	InternalURL string // control's internal listener (routes + certs); defaults to ControlURL
+	CacheDir    string
 }
 
 // Proxy serves from its cached table and keeps it fresh via long-polls.
@@ -68,6 +69,9 @@ func New(conf *Config) *Proxy {
 	controlURL, err := url.Parse(conf.ControlURL)
 	if err != nil {
 		controlURL = &url.URL{Scheme: "http", Host: "127.0.0.1"}
+	}
+	if conf.InternalURL == "" {
+		conf.InternalURL = conf.ControlURL
 	}
 	p := &Proxy{conf: conf, client: &http.Client{Timeout: pollTimeout + 10*time.Second}, certs: map[string]*tls.Certificate{}}
 	p.table.Store(&Table{})
@@ -147,7 +151,7 @@ func (p *Proxy) WatchRoutes(done <-chan struct{}) {
 }
 
 func (p *Proxy) fetch(since int64) (*Table, error) {
-	resp, err := p.client.Get(fmt.Sprintf("%s/internal/routes?since=%d", p.conf.ControlURL, since))
+	resp, err := p.client.Get(fmt.Sprintf("%s/internal/routes?since=%d", p.conf.InternalURL, since))
 	if err != nil {
 		return nil, err
 	}

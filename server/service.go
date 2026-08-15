@@ -164,7 +164,24 @@ func (s *Server) Run() error {
 		})
 	}
 
-	// Public proxy: TLS via certmagic, or plain HTTP if TLS is off
+	// Public proxy: behind hostit-proxy (plain HTTP on a local address, cert
+	// management still here), TLS via certmagic, or plain HTTP if TLS is off.
+	if s.config.BehindProxy {
+		_, issuer, err := s.setupCertmagic()
+		if err != nil {
+			return err
+		}
+		// The full public handler on the local address hostit-proxy forwards to.
+		// ACME HTTP-01 challenges for custom domains arrive here through the
+		// proxy's :80 pass-through, so the challenge middleware wraps everything.
+		httpServer := &http.Server{Addr: s.config.ListenHTTP, Handler: issuer.HTTPChallengeHandler(s.proxy), ReadHeaderTimeout: readHeaderTimeout}
+		s.servers = append(s.servers, httpServer)
+		g.Go(func() error {
+			slog.Info("Listening for HTTP behind hostit-proxy", "addr", s.config.ListenHTTP)
+			return ignoreServerClosed(httpServer.ListenAndServe())
+		})
+		return g.Wait()
+	}
 	if s.config.TLS == config.TLSOff {
 		httpServer := &http.Server{Addr: s.config.ListenHTTP, Handler: s.proxy, ReadHeaderTimeout: readHeaderTimeout}
 		s.servers = append(s.servers, httpServer)
@@ -193,14 +210,19 @@ func (s *Server) Stop() {
 // HTTP listener that answers ACME challenges and redirects to HTTPS. With a DNS
 // provider configured, one wildcard certificate covers every app; otherwise each
 // app's certificate is issued on demand on its first request.
-func (s *Server) runTLSServers(g *errgroup.Group) error {
+// setupCertmagic wires certificate management (wildcard and/or on-demand,
+// custom domains, the combined lookup the internal cert endpoint hands to
+// hostit-proxy) WITHOUT starting any public listener -- shared by the
+// standalone TLS mode and the behind-proxy mode, where hostit-proxy
+// terminates with the material control manages here.
+func (s *Server) setupCertmagic() (*tls.Config, *certmagic.ACMEIssuer, error) {
 	certmagic.Default.Storage = &certmagic.FileStorage{Path: filepath.Join(s.config.DataDir, "certs")}
 	certmagic.DefaultACME.Agreed = true
 	certmagic.DefaultACME.Email = s.config.LetsEncryptEmail
 	if s.config.WildcardTLS() {
 		solver, err := dnsSolver(s.config)
 		if err != nil {
-			return err
+			return nil, nil, err
 		}
 		certmagic.DefaultACME.DNS01Solver = solver
 		certmagic.DefaultACME.DisableHTTPChallenge = true
@@ -225,7 +247,7 @@ func (s *Server) runTLSServers(g *errgroup.Group) error {
 	if s.config.WildcardTLS() {
 		domainSolver, err := dnsSolver(s.config)
 		if err != nil {
-			return err
+			return nil, nil, err
 		}
 		domainSolver.OverrideDomain = s.domainChallengeName()
 		domainACME := certmagic.DefaultACME
@@ -251,7 +273,7 @@ func (s *Server) runTLSServers(g *errgroup.Group) error {
 		names := s.config.CertNames()
 		slog.Info("Managing wildcard certificate", "names", names, "dns_provider", s.config.DNSProvider)
 		if err := magic.ManageAsync(context.Background(), names); err != nil {
-			return fmt.Errorf("cannot manage wildcard certificate: %w", err)
+			return nil, nil, fmt.Errorf("cannot manage wildcard certificate: %w", err)
 		}
 	}
 	tlsConfig := magic.TLSConfig()
@@ -271,6 +293,15 @@ func (s *Server) runTLSServers(g *errgroup.Group) error {
 	// The internal cert endpoint hands this exact lookup to hostit-proxy, so
 	// the data plane serves the same certificates control manages.
 	s.tlsGetCert = tlsConfig.GetCertificate
+	return tlsConfig, issuer, nil
+}
+
+// runTLSServers is the standalone mode: control terminates TLS itself.
+func (s *Server) runTLSServers(g *errgroup.Group) error {
+	tlsConfig, issuer, err := s.setupCertmagic()
+	if err != nil {
+		return err
+	}
 
 	// HTTP: ACME challenges + redirect everything else to HTTPS
 	httpServer := &http.Server{

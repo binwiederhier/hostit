@@ -1,0 +1,22 @@
+# systemd unit for hostit-proxy, hostit's data plane: terminates TLS with
+# certificate material managed by hostit-control and routes each request
+# straight to its app from a locally cached table -- so apps keep serving
+# while control or a node daemon restarts.
+[Unit]
+Description=hostit proxy (data plane)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+ExecStart=/usr/bin/hostit-proxy serve
+Restart=on-failure
+RestartSec=2
+
+# The data plane must never lose the CPU to a runaway app; same rationale as
+# the hostit daemon's weights.
+CPUWeight=10000
+IOWeight=1000
+
+[Install]
+WantedBy=multi-user.target

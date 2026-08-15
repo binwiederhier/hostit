@@ -56,7 +56,7 @@ func nearExpiry(cert *tls.Certificate) bool {
 }
 
 func (p *Proxy) fetchCert(sni string) (*tls.Certificate, error) {
-	resp, err := p.client.Get(p.conf.ControlURL + "/internal/cert?sni=" + url.QueryEscape(sni))
+	resp, err := p.client.Get(p.conf.InternalURL + "/internal/cert?sni=" + url.QueryEscape(sni))
 	if err != nil {
 		return nil, err
 	}

@@ -1,0 +1,20 @@
+# hostit-proxy configuration. The proxy is the data plane: it terminates TLS
+# with certificate material managed by hostit-control and routes requests
+# straight to apps from a locally cached table, so apps keep serving while
+# control restarts. It dials control; control never dials it.
+
+# Where hostit-control's local HTTP listener is (its listen-http when running
+# with behind-proxy: true): the dashboard/API and the unknown-host fallback.
+control-url: http://127.0.0.1:2910
+
+# Control's internal surface (its listen-internal): the routing table and cert
+# material. Defaults to control-url when unset.
+internal-url: http://127.0.0.1:2920
+
+# Public listeners (defaults shown)
+# listen-https: ":443"
+# listen-http: ":80"
+
+# Where the routing table and certificate material persist, so a proxy restart
+# during a control outage still serves. Default shown.
+# cache-dir: /var/lib/hostit-proxy

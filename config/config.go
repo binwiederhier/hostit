@@ -115,6 +115,13 @@ type Config struct {
 	SessionKey         string   `yaml:"session-key"`          // Secret for signing session cookies; generated if empty
 	AdminEmails        []string `yaml:"admin-emails"`         // These emails become active admins on first login
 	Breakglass         bool     `yaml:"breakglass"`           // Allow the admin token to mint a session for an admin email (no Google); for e2e/recovery
+	// BehindProxy serves the full public handler as plain HTTP on ListenHTTP (a
+	// local address) instead of terminating TLS: hostit-proxy sits in front and
+	// terminates with the cert material this daemon still manages (certmagic +
+	// the internal cert endpoint). Session cookies stay Secure -- the browser
+	// speaks TLS to the proxy.
+	BehindProxy bool `yaml:"behind-proxy"`
+
 	// ListenInternal is where the internal surface (routing table, cert
 	// material for hostit-proxy; node enrollment later) listens: a unix socket
 	// path ("unix:/run/hostit/internal.sock") or a host:port. Empty disables it.
