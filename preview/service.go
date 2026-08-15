@@ -241,7 +241,12 @@ func (m *Manager) Refresh(name string) {
 		return
 	}
 	for _, a := range apps {
-		if a.Name == name && a.Running {
+		if a.Name == name {
+			// Deliberately NO Running check: the state cache lags a brand-new app
+			// by a few seconds, and a manual refresh silently dropped on stale
+			// state looks broken (the API already said 202). Worst case the shot
+			// captures a down app's error page -- which the dashboard does not
+			// show for a non-previewable app anyway.
 			m.enqueue(a)
 			return
 		}

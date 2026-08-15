@@ -320,3 +320,15 @@ func TestOffModeRunsWithoutIsolation(t *testing.T) {
 	assert.False(t, runner.ran("nft -f"))
 	assert.NotContains(t, strings.Join(runner.lastShot(), " "), "--network hostit-preview")
 }
+
+func TestRefreshEnqueuesEvenWhenTheCacheSaysStopped(t *testing.T) {
+	t.Parallel()
+	runner := &fakeRunner{}
+	// The state cache lags a brand-new app by a few seconds: Running=false here
+	// even though the app is up. A manual refresh must not be silently dropped.
+	m := newTestManager(t, runner, []App{
+		{ID: "aaa", Name: "fresh", URL: "https://fresh.example.com", Running: false},
+	})
+	m.Refresh("fresh")
+	require.Eventually(t, func() bool { return runner.shots() == 1 }, 5*time.Second, 5*time.Millisecond)
+}
