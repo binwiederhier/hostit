@@ -14,7 +14,8 @@ help:
 	@echo "Test/check:"
 	@echo "  make check              - Run tests, formatting checks and vetting"
 	@echo "  make test               - Run tests"
-	@echo "  make e2e                - Run end-to-end tests against a running server"
+	@echo "  make e2e                - Run end-to-end tests against a running server (RUN=... to select)"
+	@echo "  make e2e-smoke          - Fast e2e smoke subset (~4 min)"
 	@echo "  make vet                - Run 'go vet'"
 	@echo "  make fmt                - Run 'gofmt -s -w'"
 	@echo "  make fmt-check          - Run 'gofmt', but don't change anything"
@@ -62,11 +63,19 @@ test:
 	$(GO) test ./...
 
 # End-to-end tests against a RUNNING server; they create and delete e2e-* apps,
-# so point them at a test instance:
+# so point them at a test instance. RUN= selects tests (go test -run syntax):
 #   HOSTIT_HOST=https://hostit.apps.example.com HOSTIT_TOKEN=... make e2e
+#   HOSTIT_HOST=... HOSTIT_TOKEN=... make e2e RUN='TestFork|TestChurn'
+RUN ?= .
 e2e:
 	@test -n "$(HOSTIT_HOST)" || { echo "set HOSTIT_HOST and HOSTIT_TOKEN"; exit 1; }
-	$(GO) test -tags e2e -count 1 -timeout 30m -v ./e2e/
+	$(GO) test -tags e2e -count 1 -timeout 30m -run '$(RUN)' -v ./e2e/
+
+# A fast smoke subset (~4 min): one full create-deploy-serve journey, the token
+# scoping boundary, and the preview contract. For quick confidence between full runs.
+e2e-smoke:
+	@test -n "$(HOSTIT_HOST)" || { echo "set HOSTIT_HOST and HOSTIT_TOKEN"; exit 1; }
+	$(GO) test -tags e2e -count 1 -timeout 10m -run 'TestAgentCanBuildAnAppFromNothing|TestAppTokenCannotLeaveItsApp|TestAppPreviewModeContract' -v ./e2e/
 
 vet:
 	$(GO) vet ./...
