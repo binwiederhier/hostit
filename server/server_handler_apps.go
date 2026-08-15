@@ -245,7 +245,7 @@ func (s *Server) handleAppsSetKeys(w http.ResponseWriter, r *http.Request, c *ca
 		writeAppError(w, err)
 		return
 	}
-	if err := s.apps.SetKeys(a.Name, req.SSHKeys, profileKeys); err != nil {
+	if err := s.node.SetKeys(a.Name, req.SSHKeys, profileKeys); err != nil {
 		writeAppError(w, err)
 		return
 	}

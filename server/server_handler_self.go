@@ -39,7 +39,7 @@ func (s *Server) handleSelfTool(w http.ResponseWriter, r *http.Request, a *store
 	}
 	// The changed hook feeds the debounced dashboard screenshot, same as when
 	// the built-in API loop drives these tools.
-	output, isErr := assistant.DispatchTool(&appOps{apps: s.apps, changed: s.assistantChanged}, a.Name, r.PathValue("name"), body)
+	output, isErr := assistant.DispatchTool(&appOps{apps: s.apps, node: s.node, changed: s.assistantChanged}, a.Name, r.PathValue("name"), body)
 	writeJSON(w, http.StatusOK, &apiToolResponse{Output: output, IsError: isErr})
 }
 
@@ -50,7 +50,7 @@ func (s *Server) handleSelf(w http.ResponseWriter, r *http.Request, a *store.App
 }
 
 func (s *Server) handleSelfEnsure(w http.ResponseWriter, r *http.Request, a *store.App) {
-	msg, err := s.apps.Ensure(a.Name)
+	msg, err := s.node.Ensure(a.Name)
 	if err != nil {
 		writeAppError(w, err)
 		return
@@ -61,7 +61,7 @@ func (s *Server) handleSelfEnsure(w http.ResponseWriter, r *http.Request, a *sto
 // handleSelfPowerOn is the explicit power-on verb: unlike Ensure (the login path)
 // it clears a prior poweroff rather than refusing a powered-off app.
 func (s *Server) handleSelfPowerOn(w http.ResponseWriter, r *http.Request, a *store.App) {
-	msg, err := s.apps.PowerOn(a.Name)
+	msg, err := s.node.PowerOn(a.Name)
 	if err != nil {
 		writeAppError(w, err)
 		return
@@ -71,7 +71,7 @@ func (s *Server) handleSelfPowerOn(w http.ResponseWriter, r *http.Request, a *st
 
 // handleSelfDeploy applies hostit.yml and (re)starts the app
 func (s *Server) handleSelfDeploy(w http.ResponseWriter, r *http.Request, a *store.App) {
-	msg, err := s.apps.Up(a.Name)
+	msg, err := s.node.Up(a.Name)
 	if err != nil {
 		writeAppError(w, err)
 		return
@@ -81,24 +81,24 @@ func (s *Server) handleSelfDeploy(w http.ResponseWriter, r *http.Request, a *sto
 
 // The app-process verbs: they move the run: command, leaving the container up.
 func (s *Server) handleSelfStart(w http.ResponseWriter, r *http.Request, a *store.App) {
-	s.selfAction(w, s.apps.StartApp(a.Name), "app started")
+	s.selfAction(w, s.node.StartApp(a.Name), "app started")
 }
 
 func (s *Server) handleSelfStop(w http.ResponseWriter, r *http.Request, a *store.App) {
-	s.selfAction(w, s.apps.StopApp(a.Name), "app stopped")
+	s.selfAction(w, s.node.StopApp(a.Name), "app stopped")
 }
 
 func (s *Server) handleSelfRestart(w http.ResponseWriter, r *http.Request, a *store.App) {
-	s.selfAction(w, s.apps.RestartApp(a.Name), "app restarted")
+	s.selfAction(w, s.node.RestartApp(a.Name), "app restarted")
 }
 
 // The container verbs: they move the whole app container.
 func (s *Server) handleSelfPowerOff(w http.ResponseWriter, r *http.Request, a *store.App) {
-	s.selfAction(w, s.apps.Down(a.Name), "powered off")
+	s.selfAction(w, s.node.Down(a.Name), "powered off")
 }
 
 func (s *Server) handleSelfReboot(w http.ResponseWriter, r *http.Request, a *store.App) {
-	s.selfAction(w, s.apps.Restart(a.Name), "rebooting")
+	s.selfAction(w, s.node.Restart(a.Name), "rebooting")
 }
 
 // selfAction writes a lifecycle result: the error, or a success message
@@ -111,7 +111,7 @@ func (s *Server) selfAction(w http.ResponseWriter, err error, ok string) {
 }
 
 func (s *Server) handleSelfStatus(w http.ResponseWriter, r *http.Request, a *store.App) {
-	out, err := s.apps.Status(a.Name)
+	out, err := s.node.Status(a.Name)
 	if err != nil {
 		writeAppError(w, err)
 		return
@@ -126,7 +126,7 @@ func (s *Server) handleSelfLogs(w http.ResponseWriter, r *http.Request, a *store
 			lines = n
 		}
 	}
-	out, err := s.apps.Logs(a.Name, lines)
+	out, err := s.node.Logs(a.Name, lines)
 	if err != nil {
 		writeAppError(w, err)
 		return

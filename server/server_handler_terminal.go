@@ -41,7 +41,7 @@ func (s *Server) handleTerminal(w http.ResponseWriter, r *http.Request, c *calle
 		writeAppError(w, err)
 		return
 	}
-	prog, args, err := s.apps.TerminalCommand(a.Name)
+	prog, args, err := s.node.TerminalCommand(a.Name)
 	if err != nil {
 		writeAppError(w, err)
 		return
@@ -60,7 +60,7 @@ func (s *Server) handleTerminal(w http.ResponseWriter, r *http.Request, c *calle
 	// would fight the operator. Ensure gates that: it starts a crashed/enabled app
 	// as before, but returns ErrPoweredOff for a disabled one, which we relay with a
 	// distinct close code so the client stops reconnecting.
-	if _, err := s.apps.Ensure(a.Name); err != nil {
+	if _, err := s.node.Ensure(a.Name); err != nil {
 		// Logged, not just closed: the browser only sees a close code, and a
 		// wrongly-refused terminal (seen once on stage, cause invisible) is
 		// undiagnosable without the server-side reason.

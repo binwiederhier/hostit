@@ -47,7 +47,7 @@ func (s *Server) handleAgentSnapshotTake(w http.ResponseWriter, r *http.Request,
 	if r.Body != nil {
 		_ = json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req)
 	}
-	snap, err := s.apps.TakeSnapshot(a.Name, req.Label, false)
+	snap, err := s.node.TakeSnapshot(a.Name, req.Label, false)
 	if err != nil {
 		writeSnapshotError(w, err)
 		return
@@ -64,7 +64,7 @@ func (s *Server) handleAgentSnapshotTake(w http.ResponseWriter, r *http.Request,
 // the current state first).
 func (s *Server) handleAgentRestore(w http.ResponseWriter, r *http.Request, c *caller, a *store.App) {
 	id := r.PathValue("id")
-	if err := s.apps.Rollback(a.Name, id); err != nil {
+	if err := s.node.Rollback(a.Name, id); err != nil {
 		writeSnapshotError(w, err)
 		return
 	}
@@ -75,7 +75,7 @@ func (s *Server) handleAgentRestore(w http.ResponseWriter, r *http.Request, c *c
 // handleAgentSnapshotDelete removes a single snapshot by id (subvolume and record).
 func (s *Server) handleAgentSnapshotDelete(w http.ResponseWriter, r *http.Request, _ *caller, a *store.App) {
 	id := r.PathValue("id")
-	if err := s.apps.DeleteSnapshot(a.Name, id); err != nil {
+	if err := s.node.DeleteSnapshot(a.Name, id); err != nil {
 		writeSnapshotError(w, err)
 		return
 	}

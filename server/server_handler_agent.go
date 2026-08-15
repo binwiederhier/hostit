@@ -86,13 +86,13 @@ func (s *Server) handleAgentAppInfo(w http.ResponseWriter, _ *http.Request, c *c
 		writeAppError(w, err)
 		return
 	}
-	files, err := s.apps.ListFiles(a.Name, "")
+	files, err := s.node.ListFiles(a.Name, "")
 	if err != nil {
 		writeAppError(w, err)
 		return
 	}
-	hostitYml, _ := s.apps.ReadFile(a.Name, "hostit.yml") // Absent is fine; the agent writes one
-	status, _ := s.apps.Status(a.Name)
+	hostitYml, _ := s.node.ReadFile(a.Name, "hostit.yml") // Absent is fine; the agent writes one
+	status, _ := s.node.Status(a.Name)
 	writeJSON(w, http.StatusOK, &apiAgentAppResponse{
 		Name:      a.Name,
 		URL:       s.apps.URL(a),
@@ -120,7 +120,7 @@ func (s *Server) handleAgentRun(w http.ResponseWriter, r *http.Request, c *calle
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	res, err := s.apps.Exec(a.Name, req.Command, time.Duration(req.TimeoutSeconds)*time.Second)
+	res, err := s.node.Exec(a.Name, req.Command, time.Duration(req.TimeoutSeconds)*time.Second)
 	if err != nil {
 		writeAppError(w, err)
 		return
@@ -156,7 +156,7 @@ func (s *Server) handleAgentAssistant(w http.ResponseWriter, _ *http.Request, c 
 }
 
 func (s *Server) handleAgentLogs(w http.ResponseWriter, r *http.Request, c *caller, a *store.App) {
-	out, err := s.apps.Logs(a.Name, logLines(r.URL.Query().Get("lines")))
+	out, err := s.node.Logs(a.Name, logLines(r.URL.Query().Get("lines")))
 	if err != nil {
 		writeJSON(w, http.StatusOK, &apiOutputResponse{Output: "(no logs yet: " + err.Error() + ")"})
 		return
@@ -165,7 +165,7 @@ func (s *Server) handleAgentLogs(w http.ResponseWriter, r *http.Request, c *call
 }
 
 func (s *Server) handleAgentDeploy(w http.ResponseWriter, _ *http.Request, c *caller, a *store.App) {
-	msg, err := s.apps.Up(a.Name)
+	msg, err := s.node.Up(a.Name)
 	if err != nil {
 		writeAppError(w, err)
 		return
@@ -179,7 +179,7 @@ func (s *Server) handleAgentDeploy(w http.ResponseWriter, _ *http.Request, c *ca
 // tearing the whole container down.
 
 func (s *Server) handleAgentPowerOn(w http.ResponseWriter, _ *http.Request, c *caller, a *store.App) {
-	msg, err := s.apps.PowerOn(a.Name)
+	msg, err := s.node.PowerOn(a.Name)
 	if err != nil {
 		writeAppError(w, err)
 		return
@@ -189,7 +189,7 @@ func (s *Server) handleAgentPowerOn(w http.ResponseWriter, _ *http.Request, c *c
 }
 
 func (s *Server) handleAgentPowerOff(w http.ResponseWriter, _ *http.Request, c *caller, a *store.App) {
-	if err := s.apps.Down(a.Name); err != nil {
+	if err := s.node.Down(a.Name); err != nil {
 		writeAppError(w, err)
 		return
 	}
@@ -198,7 +198,7 @@ func (s *Server) handleAgentPowerOff(w http.ResponseWriter, _ *http.Request, c *
 }
 
 func (s *Server) handleAgentReboot(w http.ResponseWriter, _ *http.Request, c *caller, a *store.App) {
-	if err := s.apps.Restart(a.Name); err != nil {
+	if err := s.node.Restart(a.Name); err != nil {
 		writeAppError(w, err)
 		return
 	}
@@ -207,7 +207,7 @@ func (s *Server) handleAgentReboot(w http.ResponseWriter, _ *http.Request, c *ca
 }
 
 func (s *Server) handleAgentStart(w http.ResponseWriter, _ *http.Request, c *caller, a *store.App) {
-	if err := s.apps.StartApp(a.Name); err != nil {
+	if err := s.node.StartApp(a.Name); err != nil {
 		writeAppError(w, err)
 		return
 	}
@@ -216,7 +216,7 @@ func (s *Server) handleAgentStart(w http.ResponseWriter, _ *http.Request, c *cal
 }
 
 func (s *Server) handleAgentStop(w http.ResponseWriter, _ *http.Request, c *caller, a *store.App) {
-	if err := s.apps.StopApp(a.Name); err != nil {
+	if err := s.node.StopApp(a.Name); err != nil {
 		writeAppError(w, err)
 		return
 	}
@@ -225,7 +225,7 @@ func (s *Server) handleAgentStop(w http.ResponseWriter, _ *http.Request, c *call
 }
 
 func (s *Server) handleAgentRestart(w http.ResponseWriter, _ *http.Request, c *caller, a *store.App) {
-	if err := s.apps.RestartApp(a.Name); err != nil {
+	if err := s.node.RestartApp(a.Name); err != nil {
 		writeAppError(w, err)
 		return
 	}

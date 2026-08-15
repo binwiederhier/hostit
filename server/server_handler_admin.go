@@ -184,8 +184,8 @@ func (s *Server) applyUserLimits(u *store.User) error {
 		return err
 	}
 	for _, a := range apps {
-		s.apps.SetMemoryLimit(a.Name, limits.MemoryMB)
-		s.apps.SetDiskLimit(a.Name, limits.DiskMB)
+		s.node.SetMemoryLimit(a.Name, limits.MemoryMB)
+		s.node.SetDiskLimit(a.Name, limits.DiskMB)
 	}
 	return nil
 }

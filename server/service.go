@@ -68,6 +68,11 @@ type Server struct {
 
 	servers []*http.Server // Running HTTP servers, for Stop
 
+	// node is the NodeAgent the per-app machine operations go through: today
+	// always the in-process Manager ("local"); the multi-node split resolves an
+	// app's host to a remote agent here instead.
+	node app.NodeAgent
+
 	// previews schedules dashboard screenshots after assistant changes; nil
 	// unless app-preview is "screenshot" (see SetPreviews)
 	previews *preview.Manager
@@ -80,6 +85,7 @@ func New(conf *config.Config, apps *app.Manager, users *user.Manager) *Server {
 	s := &Server{
 		config:         conf,
 		apps:           apps,
+		node:           apps,
 		users:          users,
 		sessions:       newSessionManager(conf.SessionKey),
 		usernameForUID: usernameForUID,
@@ -90,7 +96,7 @@ func New(conf *config.Config, apps *app.Manager, users *user.Manager) *Server {
 	// subscription (a sandboxed claude -p). Its tools are the app's own operations,
 	// so it is confined to one app the way an agent token is.
 	if conf.AssistantAvailable() {
-		s.assistant = assistant.NewManager(assistant.NewClient(conf.AnthropicAPIKey), &appOps{apps: apps, changed: s.assistantChanged}, &appTranscripts{store: apps.Store()}, conf.AssistantModel)
+		s.assistant = assistant.NewManager(assistant.NewClient(conf.AnthropicAPIKey), &appOps{apps: apps, node: apps, changed: s.assistantChanged}, &appTranscripts{store: apps.Store()}, conf.AssistantModel)
 		// Wire the Claude Max (subscription) backend whenever its token is configured,
 		// so selecting "Claude.ai" actually uses the subscription. Its presence is the
 		// whole switch; there is no separate backend setting. (Previously the option

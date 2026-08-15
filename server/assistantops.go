@@ -63,7 +63,8 @@ func (t *appTranscripts) RecordUsage(app string, u assistant.Usage) error {
 // tool calls into the app manager's operations, scoped to one app. This is the
 // only place the assistant package meets the app package.
 type appOps struct {
-	apps *app.Manager
+	apps *app.Manager  // Control-plane compositions (snapshot listing)
+	node app.NodeAgent // The machine half: files, exec, deploy, snapshots
 	// changed is called after every successful mutating tool call (file write,
 	// exec, deploy, rollback); it feeds the debounced dashboard screenshot.
 	// Optional: nil when nothing cares about changes.
@@ -80,7 +81,7 @@ func (o *appOps) notifyChanged(name string) {
 var _ assistant.AppOps = (*appOps)(nil)
 
 func (o *appOps) ListFiles(name, path string) (string, error) {
-	listing, err := o.apps.ListFiles(name, path)
+	listing, err := o.node.ListFiles(name, path)
 	if err != nil {
 		return "", err
 	}
@@ -100,7 +101,7 @@ func (o *appOps) ListFiles(name, path string) (string, error) {
 }
 
 func (o *appOps) ReadFile(name, path string) (string, error) {
-	b, err := o.apps.ReadFile(name, path)
+	b, err := o.node.ReadFile(name, path)
 	if err != nil {
 		return "", err
 	}
@@ -111,7 +112,7 @@ func (o *appOps) ReadFile(name, path string) (string, error) {
 }
 
 func (o *appOps) WriteFile(name, path, content string) error {
-	if err := o.apps.WriteFile(name, path, []byte(content), 0); err != nil {
+	if err := o.node.WriteFile(name, path, []byte(content), 0); err != nil {
 		return err
 	}
 	o.notifyChanged(name)
@@ -119,7 +120,7 @@ func (o *appOps) WriteFile(name, path, content string) error {
 }
 
 func (o *appOps) Exec(name, command string, timeoutSeconds int) (assistant.ExecResult, error) {
-	res, err := o.apps.Exec(name, command, secondsToDuration(timeoutSeconds))
+	res, err := o.node.Exec(name, command, secondsToDuration(timeoutSeconds))
 	if err != nil {
 		return assistant.ExecResult{}, err
 	}
@@ -135,11 +136,11 @@ func (o *appOps) Exec(name, command string, timeoutSeconds int) (assistant.ExecR
 }
 
 func (o *appOps) Logs(name string, lines int) (string, error) {
-	return o.apps.Logs(name, lines)
+	return o.node.Logs(name, lines)
 }
 
 func (o *appOps) Deploy(name string) (string, error) {
-	out, err := o.apps.Up(name)
+	out, err := o.node.Up(name)
 	if err != nil {
 		return "", err
 	}
@@ -148,7 +149,7 @@ func (o *appOps) Deploy(name string) (string, error) {
 }
 
 func (o *appOps) Snapshot(name, label string) (string, error) {
-	snap, err := o.apps.TakeSnapshot(name, label, false)
+	snap, err := o.node.TakeSnapshot(name, label, false)
 	if err != nil {
 		return "", err
 	}
@@ -156,7 +157,7 @@ func (o *appOps) Snapshot(name, label string) (string, error) {
 }
 
 func (o *appOps) Rollback(name, id string) (string, error) {
-	if err := o.apps.Rollback(name, id); err != nil {
+	if err := o.node.Rollback(name, id); err != nil {
 		return "", err
 	}
 	o.notifyChanged(name)

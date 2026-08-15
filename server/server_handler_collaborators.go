@@ -120,7 +120,7 @@ func (s *Server) resyncAppKeys(a *store.App) error {
 	if err != nil {
 		return err
 	}
-	return s.apps.SyncKeys(a.Name, profileKeys)
+	return s.node.SyncKeys(a.Name, profileKeys)
 }
 
 // handleAppsTransfer moves the app to a new owner (an existing, approved

@@ -20,7 +20,7 @@ import (
 // app's root. It is not the whole tree: an app with dependencies installed would
 // otherwise answer with tens of thousands of entries.
 func (s *Server) handleAgentFileList(w http.ResponseWriter, r *http.Request, c *caller, a *store.App) {
-	listing, err := s.apps.ListFiles(a.Name, r.URL.Query().Get("path"))
+	listing, err := s.node.ListFiles(a.Name, r.URL.Query().Get("path"))
 	if err != nil {
 		writeAppError(w, err)
 		return
@@ -32,7 +32,7 @@ func (s *Server) handleAgentFileGet(w http.ResponseWriter, r *http.Request, c *c
 	// ?stat=1 returns metadata (size, modtime, MIME) instead of the bytes, so the
 	// editor can tell text from binary without downloading the whole file.
 	if r.URL.Query().Has("stat") {
-		info, err := s.apps.StatFile(a.Name, r.PathValue("path"))
+		info, err := s.node.StatFile(a.Name, r.PathValue("path"))
 		if err != nil {
 			writeAppError(w, err)
 			return
@@ -40,7 +40,7 @@ func (s *Server) handleAgentFileGet(w http.ResponseWriter, r *http.Request, c *c
 		writeJSON(w, http.StatusOK, info)
 		return
 	}
-	b, err := s.apps.ReadFile(a.Name, r.PathValue("path"))
+	b, err := s.node.ReadFile(a.Name, r.PathValue("path"))
 	if err != nil {
 		writeAppError(w, err)
 		return
@@ -63,7 +63,7 @@ func (s *Server) handleAgentFilePut(w http.ResponseWriter, r *http.Request, c *c
 	// Straight from the socket to disk: a body big enough to matter must never
 	// be held in the daemon, which shares a small box with every app container
 	relPath := r.PathValue("path")
-	if err := s.apps.WriteFileFrom(a.Name, relPath, r.Body, mode); err != nil {
+	if err := s.node.WriteFileFrom(a.Name, relPath, r.Body, mode); err != nil {
 		writeAppError(w, err)
 		return
 	}
@@ -95,7 +95,7 @@ func (s *Server) handleAgentMove(w http.ResponseWriter, r *http.Request, c *call
 		writeError(w, http.StatusBadRequest, errors.New("both from and to are required"))
 		return
 	}
-	if err := s.apps.MoveFile(a.Name, req.From, req.To); err != nil {
+	if err := s.node.MoveFile(a.Name, req.From, req.To); err != nil {
 		writeAppError(w, err)
 		return
 	}
@@ -114,7 +114,7 @@ func (s *Server) handleAgentMkdir(w http.ResponseWriter, r *http.Request, c *cal
 		writeError(w, http.StatusBadRequest, errors.New("path is required"))
 		return
 	}
-	if err := s.apps.MakeDir(a.Name, req.Path); err != nil {
+	if err := s.node.MakeDir(a.Name, req.Path); err != nil {
 		writeAppError(w, err)
 		return
 	}
@@ -122,7 +122,7 @@ func (s *Server) handleAgentMkdir(w http.ResponseWriter, r *http.Request, c *cal
 }
 
 func (s *Server) handleAgentFileDelete(w http.ResponseWriter, r *http.Request, c *caller, a *store.App) {
-	if err := s.apps.DeleteFile(a.Name, r.PathValue("path")); err != nil {
+	if err := s.node.DeleteFile(a.Name, r.PathValue("path")); err != nil {
 		writeAppError(w, err)
 		return
 	}
@@ -130,7 +130,7 @@ func (s *Server) handleAgentFileDelete(w http.ResponseWriter, r *http.Request, c
 }
 
 func (s *Server) handleAgentFileUpload(w http.ResponseWriter, r *http.Request, c *caller, a *store.App) {
-	written, err := s.apps.ExtractTar(a.Name, io.LimitReader(r.Body, maxTarUpload))
+	written, err := s.node.ExtractTar(a.Name, io.LimitReader(r.Body, maxTarUpload))
 	if err != nil {
 		writeAppError(w, err)
 		return

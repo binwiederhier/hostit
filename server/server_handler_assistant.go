@@ -67,7 +67,7 @@ func (s *Server) handleAssistant(w http.ResponseWriter, r *http.Request, c *call
 		}
 		att := assistant.Attachment{Path: at.Path, MediaType: at.MediaType}
 		if strings.HasPrefix(at.MediaType, "image/") {
-			if b, err := s.apps.ReadFileMax(a.Name, at.Path, maxAttachmentBytes); err == nil {
+			if b, err := s.node.ReadFileMax(a.Name, at.Path, maxAttachmentBytes); err == nil {
 				att.Data = base64.StdEncoding.EncodeToString(b)
 			}
 		}
@@ -144,7 +144,7 @@ func (s *Server) handleAssistantUpload(w http.ResponseWriter, r *http.Request, c
 		}
 		name := s.uniqueUploadName(a.Name, sanitizeUploadName(fh.Filename), used)
 		path := "uploads/" + name
-		if err := s.apps.WriteFile(a.Name, path, data, 0); err != nil {
+		if err := s.node.WriteFile(a.Name, path, data, 0); err != nil {
 			writeAppError(w, err)
 			return
 		}
@@ -176,7 +176,7 @@ func (s *Server) handleAssistantUploadDelete(w http.ResponseWriter, r *http.Requ
 		writeError(w, http.StatusBadRequest, errors.New("only files under uploads/ can be removed here"))
 		return
 	}
-	if err := s.apps.DeleteFile(a.Name, path); err != nil {
+	if err := s.node.DeleteFile(a.Name, path); err != nil {
 		writeAppError(w, err)
 		return
 	}
@@ -187,7 +187,7 @@ func (s *Server) handleAssistantUploadDelete(w http.ResponseWriter, r *http.Requ
 // before the extension when the name is already taken in this request or on disk, so
 // two files with the same name do not clobber each other (or an existing file).
 func (s *Server) uniqueUploadName(app, base string, used map[string]bool) string {
-	free := func(n string) bool { return !used[n] && !s.apps.FileExists(app, "uploads/"+n) }
+	free := func(n string) bool { return !used[n] && !s.node.FileExists(app, "uploads/"+n) }
 	if free(base) {
 		used[base] = true
 		return base
