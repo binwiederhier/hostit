@@ -166,6 +166,8 @@ func execServe(c *cli.Context) error {
 	// Presume recorded intent until the first real measurement lands, so the
 	// first page load after a restart does not see every app as stopped
 	manager.SeedStates()
+	// One-time: record uid block bases for rows created before the uid column
+	manager.BackfillUIDs()
 	go manager.StateLoop(done)
 	// Hourly automatic snapshots (a no-op unless the apps filesystem is btrfs)
 	go manager.SnapshotLoop(time.Hour, done)

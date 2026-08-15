@@ -8,23 +8,24 @@ import (
 )
 
 const (
-	insertAppQuery = `INSERT INTO app (id, name, port, host, owner_id, created_at, image_tag) VALUES (?, ?, ?, ?, ?, ?, ?)`
+	insertAppQuery = `INSERT INTO app (id, name, port, host, owner_id, created_at, image_tag, uid) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
 	selectAppQuery = `
-		SELECT id, name, port, host, owner_id, disk_mb, created_at, image_tag, powered_off
+		SELECT id, name, port, host, owner_id, disk_mb, created_at, image_tag, powered_off, uid
 		FROM app WHERE name = ?
 	`
 	selectAppsQuery = `
-		SELECT id, name, port, host, owner_id, disk_mb, created_at, image_tag, powered_off
+		SELECT id, name, port, host, owner_id, disk_mb, created_at, image_tag, powered_off, uid
 		FROM app ORDER BY name
 	`
 	selectAppsByOwnerQuery = `
-		SELECT id, name, port, host, owner_id, disk_mb, created_at, image_tag, powered_off
+		SELECT id, name, port, host, owner_id, disk_mb, created_at, image_tag, powered_off, uid
 		FROM app WHERE owner_id = ? ORDER BY name
 	`
 	selectAppCountByOwnerQuery = `SELECT COUNT(*) FROM app WHERE owner_id = ?`
 	selectPortsQuery           = `SELECT port FROM app ORDER BY port`
 	updateAppUsageQuery        = `UPDATE app SET disk_mb = ? WHERE name = ?`
 	updateAppPoweredOffQuery   = `UPDATE app SET powered_off = ? WHERE name = ?`
+	updateAppUIDQuery          = `UPDATE app SET uid = ? WHERE name = ?`
 	deleteAppQuery             = `DELETE FROM app WHERE name = ?`
 	renameAppQuery             = `UPDATE app SET name = ? WHERE name = ?`
 	setAppOwnerQuery           = `UPDATE app SET owner_id = ? WHERE name = ?`
@@ -52,7 +53,14 @@ func (s *Store) AddApp(app *App) error {
 	if app.ID == "" {
 		app.ID = randomID()
 	}
-	_, err := s.db.Exec(insertAppQuery, app.ID, app.Name, app.Port, app.Host, app.OwnerID, app.CreatedAt.Unix(), app.ImageTag)
+	_, err := s.db.Exec(insertAppQuery, app.ID, app.Name, app.Port, app.Host, app.OwnerID, app.CreatedAt.Unix(), app.ImageTag, app.UID)
+	return err
+}
+
+// SetAppUID records the base uid the hosting node allocated for the app; used
+// by the one-time backfill for rows created before uid recording.
+func (s *Store) SetAppUID(name string, uid int) error {
+	_, err := s.db.Exec(updateAppUIDQuery, uid, name)
 	return err
 }
 
@@ -118,7 +126,7 @@ func (s *Store) ImageTagsInUse() (map[string]bool, error) {
 func (s *Store) App(name string) (*App, error) {
 	var app App
 	var createdAt int64
-	err := s.db.QueryRow(selectAppQuery, name).Scan(&app.ID, &app.Name, &app.Port, &app.Host, &app.OwnerID, &app.DiskMB, &createdAt, &app.ImageTag, &app.PoweredOff)
+	err := s.db.QueryRow(selectAppQuery, name).Scan(&app.ID, &app.Name, &app.Port, &app.Host, &app.OwnerID, &app.DiskMB, &createdAt, &app.ImageTag, &app.PoweredOff, &app.UID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrAppNotFound
 	} else if err != nil {
@@ -221,7 +229,7 @@ func (s *Store) queryApps(query string, args ...any) ([]*App, error) {
 	for rows.Next() {
 		var app App
 		var createdAt int64
-		if err := rows.Scan(&app.ID, &app.Name, &app.Port, &app.Host, &app.OwnerID, &app.DiskMB, &createdAt, &app.ImageTag, &app.PoweredOff); err != nil {
+		if err := rows.Scan(&app.ID, &app.Name, &app.Port, &app.Host, &app.OwnerID, &app.DiskMB, &createdAt, &app.ImageTag, &app.PoweredOff, &app.UID); err != nil {
 			return nil, err
 		}
 		app.CreatedAt = time.Unix(createdAt, 0)

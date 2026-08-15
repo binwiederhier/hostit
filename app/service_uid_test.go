@@ -1,0 +1,36 @@
+package app
+
+import (
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"heckel.io/hostit/store"
+)
+
+func TestCreateRecordsTheAppUID(t *testing.T) {
+	t.Parallel()
+	m, _, _ := newTestDeployManager(t)
+	a := createTestApp(t, m, "blog")
+	assert.Equal(t, m.uidFor(a.Port), a.UID, "the allocated uid block base is recorded on the row")
+	row, err := m.store.App("blog")
+	require.NoError(t, err)
+	assert.Equal(t, m.uidFor(a.Port), row.UID)
+}
+
+func TestBackfillUIDsFillsOnlyZeroRows(t *testing.T) {
+	t.Parallel()
+	m, _, _ := newTestDeployManager(t)
+	// A pre-uid-column row (uid 0) and a row that already has one
+	require.NoError(t, m.store.AddApp(&store.App{Name: "old", Port: 10007, Host: store.HostLocal}))
+	require.NoError(t, m.store.AddApp(&store.App{Name: "done", Port: 10008, Host: store.HostLocal, UID: 42}))
+
+	m.BackfillUIDs()
+
+	old, err := m.store.App("old")
+	require.NoError(t, err)
+	assert.Equal(t, m.uidFor(10007), old.UID, "a zero uid is backfilled from the port")
+	done, err := m.store.App("done")
+	require.NoError(t, err)
+	assert.Equal(t, 42, done.UID, "an already-recorded uid is left alone")
+}

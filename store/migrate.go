@@ -232,6 +232,12 @@ var migrations = []string{
 			PRIMARY KEY (app_id, user_id)
 		);
 		CREATE INDEX idx_app_collaborator_user ON app_collaborator (user_id);
+	`, // 18: the base uid of the app's block on its hosting node, allocated by the
+	// node and recorded centrally (multi-node prep: the control plane must reason
+	// about an app without asking the node). The daemon backfills existing rows
+	// from uidFor(port) once.
+	`
+		ALTER TABLE app ADD COLUMN uid INTEGER NOT NULL DEFAULT 0;
 	`,
 }
 

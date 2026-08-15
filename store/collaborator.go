@@ -11,7 +11,7 @@ const (
 		WHERE c.app_id = ? ORDER BY u.email
 	`
 	selectAppsByCollaboratorQuery = `
-		SELECT a.id, a.name, a.port, a.host, a.owner_id, a.disk_mb, a.created_at, a.image_tag, a.powered_off
+		SELECT a.id, a.name, a.port, a.host, a.owner_id, a.disk_mb, a.created_at, a.image_tag, a.powered_off, a.uid
 		FROM app_collaborator c JOIN app a ON a.id = c.app_id
 		WHERE c.user_id = ? ORDER BY a.name
 	`

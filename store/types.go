@@ -47,6 +47,11 @@ type App struct {
 	// ImageTag pins the app to the workspace image it was built with; empty until
 	// the daemon backfills it (apps created before image pinning).
 	ImageTag string `json:"image_tag"`
+	// UID is the base of the app's contiguous uid block on its hosting node,
+	// allocated there and recorded here so the control plane can reason about
+	// the app without asking the node. 0 until the daemon backfills it (apps
+	// created before uid recording).
+	UID int `json:"uid"`
 	// PoweredOff records a deliberate poweroff (cleared by poweron). Recorded
 	// here, not inferred from systemd, where a never-enabled unit also reads
 	// "disabled" and a fresh app would look powered off.

@@ -300,7 +300,7 @@ func (m *Manager) create(name string, opts *CreateOptions, seedPath string) (*st
 	// Mint the app's stable id up front: the app subvolume (and its snapshots) are
 	// keyed on the id, not the name, so a later rename never moves them. The id is
 	// on the App struct that gets inserted below.
-	app := &store.App{ID: store.NewAppID(), Name: name, Port: port, Host: store.HostLocal, OwnerID: opts.OwnerID, ImageTag: workspace.ImageTag()}
+	app := &store.App{ID: store.NewAppID(), Name: name, Port: port, Host: store.HostLocal, OwnerID: opts.OwnerID, ImageTag: workspace.ImageTag(), UID: m.uidFor(port)}
 
 	// Create the app's one subvolume: a fork snapshots the seed subvolume (an
 	// instant CoW copy of the source's whole OS tree, files included); a fresh
@@ -641,6 +641,24 @@ func (m *Manager) releasePort(port int) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	delete(m.reservedPorts, port)
+}
+
+// BackfillUIDs records the uid block base for rows created before the uid
+// column existed (uid 0); rows that already have one are left alone. Run once
+// at startup, like the other backfills.
+func (m *Manager) BackfillUIDs() {
+	apps, err := m.store.Apps()
+	if err != nil {
+		return
+	}
+	for _, a := range apps {
+		if a.UID != 0 {
+			continue
+		}
+		if err := m.store.SetAppUID(a.Name, m.uidFor(a.Port)); err != nil {
+			slog.Warn("Cannot backfill app uid", "app", a.Name, "error", err)
+		}
+	}
 }
 
 // uidFor is an app's base uid: a contiguous workspace.UIDBlockSize-wide block, one per
