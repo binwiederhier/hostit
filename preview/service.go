@@ -159,7 +159,10 @@ func (m *Manager) Loop(interval time.Duration, done <-chan struct{}) {
 		// Idempotent: create the isolated network once. If it is missing, strict
 		// shots fail closed (podman run --network errors, so no chrome starts).
 		if _, err := m.runner.Run("podman", "network", "inspect", networkName); err != nil {
-			if _, err := m.runner.Run("podman", "network", "create", "--subnet", previewSubnet, networkName); err != nil {
+			// --disable-dns: without it the container's resolver is the gateway
+			// (10.89.0.1), which the egress drop blocks; disabling aardvark-dns lets
+			// the pinned --dns (public) resolver take effect in resolv.conf instead.
+			if _, err := m.runner.Run("podman", "network", "create", "--disable-dns", "--subnet", previewSubnet, networkName); err != nil {
 				slog.Warn("Cannot create the isolated preview network; strict shots will be skipped", "network", networkName, "error", err)
 			}
 		}
