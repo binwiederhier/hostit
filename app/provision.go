@@ -26,6 +26,7 @@ type ProvisionSpec struct {
 	SSHKeys  []string // Full authorized_keys set (request + profile keys)
 	SeedPath string   // Fork seed subvolume; "" builds a fresh app with the skeleton
 	URL      string   // The app's public URL, for the skeleton's welcome page
+	DiskMB   int      // Resolved disk cap; the budget qgroup is created and capped BEFORE the subvolume
 }
 
 // Provision builds the app on this machine: subvolume (fresh or fork seed),
@@ -33,6 +34,15 @@ type ProvisionSpec struct {
 // failure it rolls back its own partial work and the machine is clean again.
 func (m *Manager) Provision(spec *ProvisionSpec) error {
 	forking := spec.SeedPath != ""
+	// The budget qgroup exists and is capped BEFORE the subvolume, which is then
+	// snapshotted INTO it (-i): membership is atomic at creation, so the cap
+	// enforces from the app's first byte. A later "qgroup assign" would leave
+	// the group unenforced until a quota rescan completes.
+	group := budgetGroup(m.uidFor(spec.Port))
+	_ = m.btrfs.QgroupCreate(m.config.AppsDir, group)
+	if err := m.btrfs.QgroupLimitExclusive(m.config.AppsDir, group, effectiveDiskCapMB(spec.DiskMB)); err != nil {
+		slog.Warn("Cannot cap the new app's disk budget", "app", spec.Name, "error", err)
+	}
 	// Create the app's one subvolume: a fork snapshots the seed subvolume (an
 	// instant CoW copy of the source's whole OS tree, files included); a fresh
 	// app snapshots its pinned tag's base and gets an empty files dir at home/app
@@ -40,11 +50,11 @@ func (m *Manager) Provision(spec *ProvisionSpec) error {
 	// idmap-mounts it, so creation is a metadata snapshot and nothing more.
 	subvol := m.appSubvolumeByID(spec.ID)
 	if forking {
-		if err := m.workspace.ForkAppSubvolume(spec.SeedPath, spec.ID); err != nil {
+		if err := m.workspace.ForkAppSubvolume(spec.SeedPath, spec.ID, group); err != nil {
 			return fmt.Errorf("cannot seed %s: %w", spec.Name, err)
 		}
 	} else {
-		if err := m.workspace.EnsureAppSubvolume(&store.App{ID: spec.ID, ImageTag: workspace.ImageTag()}); err != nil {
+		if err := m.workspace.EnsureAppSubvolume(&store.App{ID: spec.ID, ImageTag: workspace.ImageTag()}, group); err != nil {
 			return fmt.Errorf("cannot create app subvolume for %s: %w", spec.Name, err)
 		}
 	}

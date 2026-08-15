@@ -37,7 +37,7 @@ type Interface interface {
 	CreateSubvolume(path string) error
 	DeleteSubvolume(path string) error
 	MoveSubvolume(src, dst string) error
-	Snapshot(src, dst string, readonly bool) error
+	Snapshot(src, dst string, readonly bool, qgroup string) error
 	SetReadOnly(path string, readonly bool) error
 	QuotaEnable(pool string) error
 	RootID(path string) (string, error)
@@ -101,11 +101,18 @@ func (s *Service) MoveSubvolume(src, dst string) error {
 }
 
 // Snapshot snapshots src to dst; readonly makes a stable, immutable snapshot (what
-// we keep) versus a writable copy (what a rollback or fork starts from).
-func (s *Service) Snapshot(src, dst string, readonly bool) error {
+// we keep) versus a writable copy (what a rollback or fork starts from). A
+// non-empty qgroup adds the new subvolume to that group AT CREATION (-i):
+// membership is atomic and accounting stays consistent, so the budget enforces
+// from the first byte -- a later "qgroup assign" marks the group inconsistent
+// and the kernel does not enforce limits until a rescan completes.
+func (s *Service) Snapshot(src, dst string, readonly bool, qgroup string) error {
 	args := []string{"btrfs", "subvolume", "snapshot"}
 	if readonly {
 		args = append(args, "-r")
+	}
+	if qgroup != "" {
+		args = append(args, "-i", qgroup)
 	}
 	args = append(args, src, dst)
 	_, err := s.runner.RunTimeout(timeout, args...)

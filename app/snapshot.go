@@ -82,8 +82,12 @@ func (h snapshotHost) SnapshotPath(name, id string) string { return h.m.snapshot
 func (h snapshotHost) UnitName(name string) string         { return h.m.unitName(name) }
 func (h snapshotHost) ContainerName(name string) string    { return h.m.containerName(name) }
 
-func (h snapshotHost) AssignBudget(name, subvolPath string) error {
-	return h.m.assignBudget(name, subvolPath)
+func (h snapshotHost) BudgetGroup(name string) string {
+	ids, err := h.m.lookupIDs(name)
+	if err != nil {
+		return "" // unbudgeted beats failing the snapshot
+	}
+	return budgetGroup(ids.UID)
 }
 
 // snapshotsRoot is where an app's snapshots live: <apps>/.snapshots/<id>/. Keyed

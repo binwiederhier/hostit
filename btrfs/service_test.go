@@ -73,11 +73,11 @@ func TestSubvolumeCommands(t *testing.T) {
 	assert.Contains(t, r.ran, "btrfs subvolume create /apps/blog")
 
 	r.ran = nil
-	assert.NoError(t, s.Snapshot("/apps/blog", "/apps/.snapshots/blog/x", true))
-	assert.Contains(t, r.ran, "btrfs subvolume snapshot -r /apps/blog /apps/.snapshots/blog/x")
+	assert.NoError(t, s.Snapshot("/apps/blog", "/apps/.snapshots/blog/x", true, "1/1000"))
+	assert.Contains(t, r.ran, "btrfs subvolume snapshot -r -i 1/1000 /apps/blog /apps/.snapshots/blog/x")
 
 	r.ran = nil
-	assert.NoError(t, s.Snapshot("/apps/.snapshots/blog/x", "/apps/blog", false))
+	assert.NoError(t, s.Snapshot("/apps/.snapshots/blog/x", "/apps/blog", false, ""))
 	assert.Contains(t, r.ran, "btrfs subvolume snapshot /apps/.snapshots/blog/x /apps/blog")
 	for _, cmd := range r.ran {
 		assert.NotContains(t, cmd, "-r", "a rollback/fork copy is writable")

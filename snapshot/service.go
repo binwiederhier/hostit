@@ -74,11 +74,13 @@ type Host interface {
 	// UnitName and ContainerName are the app's systemd unit and container names.
 	UnitName(name string) string
 	ContainerName(name string) string
-	// AssignBudget joins a subvolume to the app's disk budget qgroup. Every
+	// BudgetGroup returns the app's disk budget qgroup id ("1/<uid>"), or ""
+	// when it cannot be resolved -- the snapshot is then created unbudgeted
+	// rather than failing. Every
 	// subvolume this service creates must join, or extents the app subvolume
 	// shares with a snapshot become reachable outside the group and stop counting
 	// as its exclusive bytes -- app data would silently leak out of the app's cap.
-	AssignBudget(name string, subvolPath string) error
+	BudgetGroup(name string) string
 }
 
 // Service performs whole-app snapshots, rollback and retention pruning.
@@ -129,13 +131,8 @@ func (s *Service) takeSnapshot(name, label string, auto bool) (*store.Snapshot, 
 	if err := os.MkdirAll(s.host.SnapshotsRoot(name), snapshotDirMode); err != nil {
 		return nil, err
 	}
-	if err := s.btrfs.Snapshot(s.host.AppSubvolume(name), s.host.SnapshotPath(name, id), true); err != nil {
+	if err := s.btrfs.Snapshot(s.host.AppSubvolume(name), s.host.SnapshotPath(name, id), true, s.host.BudgetGroup(name)); err != nil {
 		return nil, fmt.Errorf("cannot snapshot the app subvolume: %w", err)
-	}
-	// The snapshot joins the app's disk budget (see Host.AssignBudget); best
-	// effort, since a failed assign must not lose an otherwise good snapshot.
-	if err := s.host.AssignBudget(name, s.host.SnapshotPath(name, id)); err != nil {
-		slog.Warn("Cannot assign snapshot to the app's disk budget", "app", name, "id", id, "error", err)
 	}
 	snap := &store.Snapshot{ID: id, AppName: name, Label: label, CreatedAt: now, Auto: auto}
 	if err := s.store.AddSnapshot(snap); err != nil {
@@ -227,14 +224,11 @@ func (s *Service) Rollback(name, id string) error {
 	// intact until the replacement is ready, and the content is safely captured
 	// before the safety snapshot's retention prune (which could remove the target).
 	_ = s.btrfs.DeleteSubvolume(staged) // clear any leftover from an aborted rollback
-	if err := s.btrfs.Snapshot(s.host.SnapshotPath(name, id), staged, false); err != nil {
+	if err := s.btrfs.Snapshot(s.host.SnapshotPath(name, id), staged, false, s.host.BudgetGroup(name)); err != nil {
 		return fmt.Errorf("cannot stage the snapshot for rollback: %w", err)
 	}
-	// The staged copy becomes the app's subvolume after the swap below, so it joins
-	// the disk budget now; qgroup membership survives the rename.
-	if err := s.host.AssignBudget(name, staged); err != nil {
-		slog.Warn("Cannot assign staged rollback copy to the app's disk budget", "app", name, "error", err)
-	}
+	// The staged copy was created inside the disk budget (-i above) and becomes
+	// the app's subvolume after the swap; qgroup membership survives the rename.
 
 	// The safety snapshot is itself automatic (retention prunes it in time) and
 	// labelled so the owner can see what it captured.

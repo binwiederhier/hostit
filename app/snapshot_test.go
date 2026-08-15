@@ -44,10 +44,10 @@ func TestManagerRollbackDelegatesAndBringsAppUp(t *testing.T) {
 	assert.Contains(t, r.ran(), "systemctl enable --now "+m.unitName("blog"), "the app is brought back up after rollback")
 }
 
-// Snapshot subvolumes join the app's budget group through the Host.AssignBudget
-// callback: the Manager resolves the subvolume's qgroup and assigns it, or home
-// bytes shared with the snapshot would stop counting as the group's exclusive.
-func TestTakeSnapshotAssignsTheSubvolumeToTheBudget(t *testing.T) {
+// Snapshot subvolumes are created straight into the app's budget group (-i,
+// resolved through the Host.BudgetGroup callback), or home bytes shared with
+// the snapshot would stop counting as the group's exclusive.
+func TestTakeSnapshotCreatesTheSubvolumeInsideTheBudget(t *testing.T) {
 	t.Parallel()
 	m, _, r := newTestDeployManager(t)
 	r.returns("inspect-internal rootid", "300\n")
@@ -55,6 +55,8 @@ func TestTakeSnapshotAssignsTheSubvolumeToTheBudget(t *testing.T) {
 	r.reset()
 	snap, err := m.TakeSnapshot("blog", "save", false)
 	require.NoError(t, err)
-	assert.Contains(t, r.ran(), "btrfs inspect-internal rootid "+m.snapshotPath("blog", snap.ID))
-	assert.Contains(t, r.ran(), fmt.Sprintf("btrfs qgroup assign 0/300 1/%d %s", m.uidFor(a.Port), m.config.AppsDir))
+	// Created INTO the budget group (-i): atomic membership, no post-hoc assign
+	// (which would leave the group unenforced until a rescan).
+	assert.Contains(t, r.ran(), fmt.Sprintf("btrfs subvolume snapshot -r -i 1/%d %s %s", m.uidFor(a.Port), m.appSubvolume("blog"), m.snapshotPath("blog", snap.ID)))
+	assert.NotContains(t, r.ran(), "qgroup assign")
 }

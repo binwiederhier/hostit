@@ -54,17 +54,6 @@ func (m *Manager) ensureBudget(a *store.App) error {
 	return nil
 }
 
-// assignBudget joins one subvolume (a snapshot, a staged rollback copy) to the
-// app's budget group; the snapshot service calls this for every subvolume it
-// creates, through the snapshot.Host callback.
-func (m *Manager) assignBudget(name, subvolPath string) error {
-	ids, err := m.lookupIDs(name)
-	if err != nil {
-		return err
-	}
-	return m.assignToGroup(subvolPath, budgetGroup(ids.UID))
-}
-
 // assignToGroup resolves a subvolume's own qgroup (0/<rootid>) and makes it a
 // member of the app's budget group.
 func (m *Manager) assignToGroup(subvolPath, group string) error {

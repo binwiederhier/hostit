@@ -136,7 +136,7 @@ func (s *Service) EnsureBase(tag string) error {
 // config under /etc) live in it, and new base tags affect only NEW apps. If the
 // subvolume exists, this returns without touching it -- whatever the current
 // image or base is.
-func (s *Service) EnsureAppSubvolume(a *store.App) error {
+func (s *Service) EnsureAppSubvolume(a *store.App, qgroup string) error {
 	subvol := s.AppSubvolumePath(a.ID)
 	if _, err := os.Stat(subvol); err == nil {
 		return nil
@@ -144,7 +144,7 @@ func (s *Service) EnsureAppSubvolume(a *store.App) error {
 	if err := s.EnsureBase(a.ImageTag); err != nil {
 		return err
 	}
-	if err := s.btrfs.Snapshot(s.BasePath(a.ImageTag), subvol, false); err != nil {
+	if err := s.btrfs.Snapshot(s.BasePath(a.ImageTag), subvol, false, qgroup); err != nil {
 		return fmt.Errorf("cannot snapshot app subvolume for %s: %w", a.Name, err)
 	}
 	// The base may not ship a /home/app; root-owned like the rest of the tree.
@@ -155,7 +155,7 @@ func (s *Service) EnsureAppSubvolume(a *store.App) error {
 // SOURCE app's subvolume (or a whole-app snapshot of it), so a fork carries the
 // source's files and installed packages in one CoW copy. Extents shared between
 // source and fork are exclusive to neither budget until they diverge; accepted.
-func (s *Service) ForkAppSubvolume(src, dstID string) error {
+func (s *Service) ForkAppSubvolume(src, dstID, qgroup string) error {
 	dst := s.AppSubvolumePath(dstID)
 	if _, err := os.Stat(dst); err == nil {
 		return nil
@@ -163,7 +163,7 @@ func (s *Service) ForkAppSubvolume(src, dstID string) error {
 	if _, err := os.Stat(src); err != nil {
 		return fmt.Errorf("cannot fork app subvolume: seed %s does not exist: %w", src, err)
 	}
-	if err := s.btrfs.Snapshot(src, dst, false); err != nil {
+	if err := s.btrfs.Snapshot(src, dst, false, qgroup); err != nil {
 		return fmt.Errorf("cannot fork app subvolume: %w", err)
 	}
 	return nil

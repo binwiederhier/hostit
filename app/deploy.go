@@ -203,7 +203,7 @@ func (m *Manager) apply(a *store.App, conf *appctl.AppConfig, allowReload bool) 
 	// app whose subvolume already exists needs nothing here (the invariant: an
 	// existing app subvolume is never recreated), so recreating its container
 	// never blocks on an image build or export.
-	if err := m.workspace.EnsureAppSubvolume(a); err != nil {
+	if err := m.workspace.EnsureAppSubvolume(a, budgetGroup(m.uidFor(a.Port))); err != nil {
 		return "", err
 	}
 

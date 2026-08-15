@@ -16,17 +16,14 @@ func TestCreateAppWiresSubvolumeAndBudget(t *testing.T) {
 	pool := m.config.AppsDir
 	group := fmt.Sprintf("1/%d", m.uidFor(a.Port))
 
-	// The app subvolume is a writable snapshot of the base, chowned to the app's
-	// block.
+	// The budget group exists and is capped FIRST, and the app subvolume is
+	// snapshotted INTO it (-i): membership is atomic, so the cap enforces from
+	// the first byte (a post-hoc assign leaves the group unenforced until a
+	// quota rescan completes).
 	ran := r.ran()
-	assert.Contains(t, ran, "btrfs subvolume snapshot "+m.workspace.BasePath(a.ImageTag)+" "+m.appSubvolume("blog"))
-	assert.NotContains(t, ran, "chown", "the subvolume stays root-owned for the idmap mount")
-
-	// The budget group is keyed on the app's uid and the ONE subvolume joins it:
-	// files, installed software and (later) snapshots share one cap.
 	assert.Contains(t, ran, "btrfs qgroup create "+group+" "+pool)
-	assert.Contains(t, ran, "btrfs inspect-internal rootid "+m.appSubvolume("blog"))
-	assert.Contains(t, ran, "btrfs qgroup assign 0/257 "+group+" "+pool)
+	assert.Contains(t, ran, "btrfs subvolume snapshot -i "+group+" "+m.workspace.BasePath(a.ImageTag)+" "+m.appSubvolume("blog"))
+	assert.NotContains(t, ran, "chown", "the subvolume stays root-owned for the idmap mount")
 
 	// DiskMB 0 no longer means unlimited: nothing is ever uncapped anymore (an
 	// uncapped app once filled the whole host), so 0 falls back to the default.

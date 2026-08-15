@@ -102,10 +102,10 @@ func TestEnsureAppSubvolumeSnapshotsThePinnedBase(t *testing.T) {
 	pinned := imagePrefix + ":pinned1"
 	require.NoError(t, os.MkdirAll(svc.BasePath(pinned), 0o700))
 	a := &store.App{ID: "appid123", Name: "blog", ImageTag: pinned}
-	require.NoError(t, svc.EnsureAppSubvolume(a))
+	require.NoError(t, svc.EnsureAppSubvolume(a, "1/1000000"))
 
 	subvol := svc.AppSubvolumePath("appid123")
-	assert.Contains(t, r.ran(), "btrfs subvolume snapshot "+svc.BasePath(pinned)+" "+subvol)
+	assert.Contains(t, r.ran(), "btrfs subvolume snapshot -i 1/1000000 "+svc.BasePath(pinned)+" "+subvol)
 	assert.NotContains(t, r.ran(), "btrfs subvolume snapshot -r", "the app subvolume is writable")
 	assert.NotContains(t, r.ran(), "chown", "the subvolume stays root-owned for the idmap mount")
 	// The files directory exists inside the subvolume (the base may not ship
@@ -134,7 +134,7 @@ func TestEnsureAppSubvolumeNeverRecreatesAnExistingOne(t *testing.T) {
 	// left alone -- the app's files AND everything it installed live there.
 	require.NoError(t, os.MkdirAll(svc.AppSubvolumePath("appid123"), 0o700))
 	a := &store.App{ID: "appid123", Name: "blog", ImageTag: imagePrefix + ":whatever"}
-	require.NoError(t, svc.EnsureAppSubvolume(a))
+	require.NoError(t, svc.EnsureAppSubvolume(a, "1/1000000"))
 	assert.NotContains(t, r.ran(), "btrfs subvolume snapshot")
 	assert.NotContains(t, r.ran(), "chown")
 	assert.Empty(t, fc.builds)
@@ -149,15 +149,15 @@ func TestForkAppSubvolumeSnapshotsTheSeedPath(t *testing.T) {
 	// CoW copy; ownership is untouched (root-owned, idmap-mounted).
 	src := svc.AppSubvolumePath("srcid")
 	require.NoError(t, os.MkdirAll(src, 0o700))
-	require.NoError(t, svc.ForkAppSubvolume(src, "dstid"))
-	assert.Contains(t, r.ran(), "btrfs subvolume snapshot "+src+" "+svc.AppSubvolumePath("dstid"))
+	require.NoError(t, svc.ForkAppSubvolume(src, "dstid", "1/1000000"))
+	assert.Contains(t, r.ran(), "btrfs subvolume snapshot -i 1/1000000 "+src+" "+svc.AppSubvolumePath("dstid"))
 	assert.NotContains(t, r.ran(), "chown", "a fork stays root-owned like every subvolume")
 }
 
 func TestForkAppSubvolumeRequiresTheSeed(t *testing.T) {
 	t.Parallel()
 	svc, _, _, _ := newTestService(t)
-	require.Error(t, svc.ForkAppSubvolume(svc.AppSubvolumePath("missing"), "dstid"))
+	require.Error(t, svc.ForkAppSubvolume(svc.AppSubvolumePath("missing"), "dstid", "1/1000000"))
 }
 
 func TestPruneOldBasesRefusesPinnedAndCurrentTags(t *testing.T) {

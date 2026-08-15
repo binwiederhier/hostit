@@ -310,6 +310,7 @@ func (m *Manager) create(name string, opts *CreateOptions, seedPath string) (*st
 
 	// Build the app on this machine (subvolume, user, keys, skeleton) -- the
 	// node-local half; everything after this is registry bookkeeping.
+	m.recordDiskLimit(name, opts.DiskMB)
 	spec := &ProvisionSpec{
 		ID:       app.ID,
 		Name:     name,
@@ -317,6 +318,7 @@ func (m *Manager) create(name string, opts *CreateOptions, seedPath string) (*st
 		SSHKeys:  append(append([]string{}, appKeys...), opts.ProfileKeys...),
 		SeedPath: seedPath,
 		URL:      m.URL(&store.App{Name: name, Port: port}),
+		DiskMB:   m.DiskLimit(name),
 	}
 	if err := m.node.Provision(spec); err != nil {
 		return nil, err
@@ -340,8 +342,8 @@ func (m *Manager) create(name string, opts *CreateOptions, seedPath string) (*st
 	// from the start rather than only after the next daemon restart: record the
 	// limit, create the app's qgroup, join the subvolume, cap it. Failure only
 	// warns -- the app works uncapped and the next startup's ensure retries.
-	m.recordDiskLimit(name, opts.DiskMB)
-	// The machine half (qgroup create/join/cap) runs where the subvolume lives.
+	// Provision created and capped the budget; SetDiskLimit re-asserts it
+	// ensure-style (idempotent) now that the registry row exists.
 	m.node.SetDiskLimit(name, m.DiskLimit(name))
 	m.ReconcilePortRules()
 

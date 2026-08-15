@@ -30,9 +30,11 @@ func TestForkSeedsSubvolumeFromSourceAndDeploys(t *testing.T) {
 	assert.Equal(t, "blog2", fork.Name)
 
 	// ONE snapshot seeds the fork: the source's whole subvolume (files, config,
-	// data AND installed packages), writable, not read-only.
-	assert.Contains(t, r.ran(), "btrfs subvolume snapshot "+m.appSubvolume("blog")+" "+m.appSubvolume("blog2"))
-	assert.NotContains(t, r.ran(), "btrfs subvolume snapshot -r "+m.appSubvolume("blog")+" "+m.appSubvolume("blog2"))
+	// data AND installed packages), writable, not read-only, created straight
+	// into the fork's budget group (-i).
+	group := fmt.Sprintf("1/%d", m.uidFor(fork.Port))
+	assert.Contains(t, r.ran(), "btrfs subvolume snapshot -i "+group+" "+m.appSubvolume("blog")+" "+m.appSubvolume("blog2"))
+	assert.NotContains(t, r.ran(), "btrfs subvolume snapshot -r ", "the fork seed is writable")
 
 	// A user is created, but no demo skeleton is written (the fork keeps the source's files).
 	assert.Contains(t, ops.createdUsers, "blog2")
@@ -61,12 +63,12 @@ func TestForkFromSnapshotSeedsFromThatSnapshot(t *testing.T) {
 	snap, err := m.TakeSnapshot("blog", "checkpoint", false)
 	require.NoError(t, err)
 	r.reset()
-	_, err = m.Fork("blog", "blog2", snap.ID, &CreateOptions{})
+	fork, err := m.Fork("blog", "blog2", snap.ID, &CreateOptions{})
 	require.NoError(t, err)
 
 	// Seeded from the snapshot's subvolume (a whole-app snapshot), not the live
-	// subvolume.
-	assert.Contains(t, r.ran(), "btrfs subvolume snapshot "+m.snapshotPath("blog", snap.ID)+" "+m.appSubvolume("blog2"))
+	// subvolume, and joined to the NEW app's budget group at birth (-i).
+	assert.Contains(t, r.ran(), "btrfs subvolume snapshot -i "+fmt.Sprintf("1/%d", m.uidFor(fork.Port))+" "+m.snapshotPath("blog", snap.ID)+" "+m.appSubvolume("blog2"))
 	assert.NotContains(t, r.ran(), "btrfs subvolume snapshot "+m.appSubvolume("blog")+" "+m.appSubvolume("blog2"))
 }
 
