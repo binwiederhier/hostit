@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/http/httptest"
+	"net/url"
 	"os"
 	"strings"
 	"testing"
@@ -139,4 +141,38 @@ func (f *fakeAgentFull) Provision(spec *app.ProvisionSpec) error {
 
 func (f *fakeAgentFull) Deprovision(spec *app.DeprovisionSpec) {
 	f.calls = append(f.calls, "deprovision:"+spec.Name)
+}
+
+// TestDialInRegistersARemoteAgent is the control-side accept path: a node
+// dials, the connection upgrades to the duplex, and control gets a working
+// NodeAgent keyed by the node's identity.
+func TestDialInRegistersARemoteAgent(t *testing.T) {
+	t.Parallel()
+	agent := &fakeAgentFull{written: map[string][]byte{}}
+	registered := make(chan string, 1)
+	var got app.NodeAgent
+	srv := httptest.NewServer(ConnectHandler(func(nodeID string, remote app.NodeAgent) {
+		got = remote
+		registered <- nodeID
+	}))
+	defer srv.Close()
+
+	// The node side: plain TCP here (the mTLS identity is the transport's
+	// concern, tested in transport_test.go); DialControl upgrades and serves.
+	u, _ := url.Parse(srv.URL)
+	conn, err := net.Dial("tcp", u.Host)
+	require.NoError(t, err)
+	go func() {
+		require.NoError(t, ServeAgent(conn, "node-b", agent))
+	}()
+
+	select {
+	case id := <-registered:
+		assert.Equal(t, "node-b", id)
+	case <-time.After(3 * time.Second):
+		t.Fatal("control never registered the dialed node")
+	}
+	out, err := got.Ensure("blog")
+	require.NoError(t, err)
+	assert.Equal(t, "up", out)
 }
