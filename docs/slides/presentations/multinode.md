@@ -2,8 +2,8 @@
 theme: seriph
 title: hostit multi-node -- one front door, many machines
 info: |
-  The multi-node design: splitting the all-in-one daemon into a proxy/control
-  node and stateless hosting nodes. Responsibilities, database structure, the
+  The multi-node design: splitting the all-in-one daemon into four services --
+  hostit-control, hostit-node, hostit-proxy, and the in-container hostit-agent. Responsibilities, database structure, the
   key flows as sequence diagrams, and the internal RPC and its auth model.
   Companion to plans/260807-hostit-multinode.md and 260815-hostit-nodeagent.md.
 layout: cover
@@ -195,7 +195,7 @@ cache**, so control and node daemons restart without dropping a request.
 
 # Database structure
 
-The registry stays central and single-writer on the proxy. One new table, two
+The registry stays central and single-writer on `hostit-control`. One new table, two
 app columns.
 
 ```mermaid {scale: 0.34}
@@ -210,7 +210,7 @@ erDiagram
         int  free_disk_mb "from last heartbeat"
         int  app_count "from last heartbeat"
         bool btrfs_capable "snapshots and quotas available"
-        text version "agent build, for upgrade ordering"
+        text version "node build, for upgrade ordering"
         text health "up, degraded, down"
         text last_seen "heartbeat timestamp"
     }
@@ -236,7 +236,7 @@ erDiagram
   `SnapshotDelete` on the node.
 - **Reconciliation over consensus.** Control restart: reload the `node` table,
   resume heartbeats -- containers never stopped serving (and the proxy keeps
-  routing from its cache). Node restart: the agent
+  routing from its cache). Node restart: `hostit-node`
   comes up stateless, runs its reconcile loops, and desired state is re-asserted
   lazily by the next `Ensure`/`Deploy`.
 - **Drift surfaces, then heals**: `States()` feeds control's state cache, so a
@@ -302,13 +302,14 @@ sequenceDiagram
 
 # Flow: SSH via one front door
 
-One SSH endpoint (the proxy). The login shell looks up the node and jumps.
+One SSH endpoint: the front door host (where the proxy lives). The login shell
+asks control which node hosts the app, then jumps.
 For a `local` app there is no jump -- `podman exec` in-process, exactly today.
 
 ```mermaid {scale: 0.38}
 sequenceDiagram
     participant U as User
-    participant PD as sshd on the proxy
+    participant PD as sshd on the front door
     participant SH as hostit-shell
     participant P as hostit-control
     participant ND as sshd on node B
@@ -333,11 +334,11 @@ sequenceDiagram
 - The **tenant's keys never move**: the managed `authorized_keys` lives where the
   app user lives -- on the node, written by `SetKeys`. That authenticates the end
   user, same as today.
-- The **proxy needs its own hop credential** to reach each node's container-exec
-  path: a proxy-held key trusted by each node's sshd (or the RPC's mTLS
-  identity). The user never sees it.
+- The **front door needs its own hop credential** to reach each node's
+  container-exec path: a key trusted by each node's sshd (or the same mTLS
+  identity as the RPC channel). The user never sees it.
 - This credential is a **new trust edge**: scoped to container exec (never a node
-  root shell), rotatable, and guarded like the RPC token. Compromising the proxy
+  root shell), rotatable, and guarded like the node join tokens. Compromising the front door
   was already game-over on one box; multi-node widens that blast radius to every
   node's containers.
 
@@ -409,7 +410,7 @@ sequenceDiagram
 # IPC: the NodeAgent RPC surface
 
 ~25 primitives -- the node-local half of `app.Manager` as verbs. The spec travels
-on every call; the agent keeps nothing between calls.
+on every call; the node keeps nothing between calls.
 
 <div class="grid grid-cols-2 gap-4 mt-2 text-sm">
 
@@ -437,11 +438,11 @@ on every call; the agent keeps nothing between calls.
 
 **Node-level**
 `Heartbeat -> {freeMem, freeDisk, appCount, btrfsCapable, version, health}` &middot;
-`States(names)` (batch, feeds the proxy's state cache)
+`States(names)` (batch, feeds control's state cache)
 
 **Deliberately NOT on the wire**
 `Readme` / `Description` / `SetDescription` / `ListSnapshots` -- compositions of
-`ReadFile`/`WriteFile` + the registry, assembled on the proxy
+`ReadFile`/`WriteFile` + the registry, assembled on control
 
 </div>
 
@@ -484,11 +485,11 @@ on every call; the agent keeps nothing between calls.
   window decision).
 - **Cross-node fork/move is a copy**, not a reflink -- send/receive or tar. The
   UI must not imply it is instant.
-- **Network partition**: proxy marks the node `down` and stops routing even
-  though its containers are fine. Heartbeat thresholds must tolerate blips;
-  RPC timeouts must never wedge a proxy goroutine.
-- **TLS stays only on the proxy** -- deliberate (nodes never hold private keys),
-  but it is the single ingress bottleneck.
+- **Network partition**: control marks the node `down` and the proxies drop its
+  routes, even though its containers are fine. Heartbeat thresholds must
+  tolerate blips; RPC timeouts must never wedge a control goroutine.
+- **Certs are managed only by control, terminated only by proxies** -- hosting
+  nodes never hold private keys. The proxy tier is the ingress bottleneck.
 
 </v-clicks>
 
