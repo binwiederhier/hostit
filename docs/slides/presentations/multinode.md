@@ -55,9 +55,10 @@ made of.
 <v-click>
 
 <div class="mt-6 p-4 border border-emerald-700 rounded">
-<b>Non-negotiable:</b> a one-machine install keeps <b>zero</b> network hops, zero
-serialization, zero behavior change. The multi-node machinery is present but
-inert until a second node joins. hostit must stay deployable on a $6 droplet.
+<b>Non-negotiable:</b> hostit stays deployable on <b>one server</b> (a $6
+droplet): all four services colocated, zero extra configuration.
+Localhost-network hops between them are fine -- the one-server story is the
+requirement, not zero hops.
 </div>
 
 </v-click>
