@@ -8,47 +8,30 @@ everything imaginable -- if it is not written down here it is not planned.
 - is "hostit apps" api really necessary?
 - what is v1/self and why is it not just the same api as the main api?
 
-## Multi-node: a proxy node and hosting nodes
+## Multi-node: the four-service split (IN PROGRESS on the multinode branch)
 
-Today one machine is everything: it terminates TLS, proxies, holds the registry,
-and runs every app. The next step is separating the two roles, so apps can spread
-across machines while keeping one front door and one dashboard. The full design,
-with flow and sequence diagrams and a 4-phase rollout, is in
-`plans/260807-hostit-multinode.md`; this is the summary.
+Decided design (2026-08-16): FOUR binaries, each its own systemd service,
+colocatable on one host -- `hostit-control` (web app + API, owns the SQLite
+registry, placement, certs, assistant), `hostit-node` (dials control; all
+machine-local ops: users, containers, btrfs, ports, os.OpenRoot files),
+`hostit-proxy` (dials control; dumb data plane serving <app>.<base> ->
+<node-ip>:port from a locally cached routing table, so apps keep serving while
+control/node restart), and `hostit-agent` (unchanged: PID 1 in the app
+container). mTLS REQUIRED for cross-host IPC (per-node CN certs from a
+control-owned CA; one-time join token; no steady-state bearer token); unix
+sockets for colocated services; transport is raw TLS + yamux carrying HTTP
+both ways over the node-dialed connection. Full design incl. rejoin handshake
+and route propagation: `plans/260807-hostit-multinode.md`; execution plan:
+`plans/260815-hostit-nodeagent.md`; slides:
+`docs/slides/presentations/multinode.md`.
 
-- **Proxy node**: TLS, the web app, the REST API, the registry, placement, and the
-  assistant. Owns which app lives where, and proxies to the node hosting it
-  instead of to loopback.
-- **Hosting nodes**: run a `hostit-agent` that creates Unix users and containers,
-  runs apps, and reports state. No public listener of their own.
-
-The chosen shape and the decisions behind it:
-
-- **`NodeAgent` interface, local + remote.** The node-local half of `app.Manager`
-  (everything touching `Runner`, `SystemOps`, the `os.OpenRoot` file layer, and
-  btrfs) becomes a `NodeAgent` interface with two implementations: `localNodeAgent`
-  (today's in-process code) and `remoteNodeAgent` (RPC to another box). A single-box
-  install is proxy + one `local` node in the same process -- zero network, no
-  behavior change. This is why the split cannot just remote the `Runner`:
-  `os.OpenRoot` containment, btrfs reflinks and podman all require the operation to
-  happen where the app physically lives, so the whole node-local unit must move.
-- **Transport: dedicated internal RPC** (HTTP+JSON behind the `NodeAgent`
-  interface, per-node token or mTLS), NOT the public agent REST API -- the internal
-  surface is a superset that includes root-level verbs (create a user, rewrite
-  authorized_keys, delete a home) that must never be tenant-reachable.
-- **Node registry.** `store.App.Host` (today always `store.HostLocal`) becomes a
-  node identifier; a new `node` table records address, capacity and health via
-  heartbeats. Placement is least-loaded (free memory, disk, app count).
-- **Registry stays central; agents are stateless.** The proxy's SQLite store is the
-  single source of truth; at create time the hosting node allocates its own local
-  port/uid and returns them. Snapshot subvolumes are node-local but the metadata
-  lives in the central registry. The app's stable **id** (already built; see Done
-  below) is the natural registry key: name -> id -> (node, port).
-- **SSH routing: single front door + ProxyJump.** One SSH endpoint on the proxy;
-  `hostit-shell` looks up the app's node and jumps into the right container.
-- **State and quota collection** become cross-node: the state cache and the
-  per-app qgroup usage reads currently assume everything is on this box; they
-  move behind the agent's heartbeat/report path.
+Done so far (multinode branch): Phase 1 complete -- app.uid column, the
+provision/deprovision seam, the NodeAgent interface with the Manager as the
+in-process implementation, all callers routed through it, e2e-gated on stage.
+Phase 2 in progress: node package (CA + duplex transport + NodeAgent RPC with
+sentinel-preserving errors) done; next are the three binaries + serve
+subcommands, enrollment, the proxy route cache, the rejoin handshake, ansible
+units, and the stage cutover over localhost mTLS.
 
 ## Resource allocation
 
