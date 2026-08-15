@@ -1030,3 +1030,70 @@ func TestChurnDeleteRecreate(t *testing.T) {
 	assert.Less(t, recreateTook, 45*time.Second, "a same-name recreate waits out the teardown, bounded")
 	e.waitForBody(fmt.Sprint(app["url"]), "Nothing here yet")
 }
+
+// TestAppPreviewModeContract checks the dashboard preview endpoints honor the
+// server's configured app-preview mode. It is mode-agnostic: on a "screenshot"
+// server a manual refresh is accepted and produces a PNG shortly after; on a
+// "live"/"off" server the endpoints do not exist for callers. So it passes
+// against both stage (screenshot) and a default (live) install.
+func TestAppPreviewModeContract(t *testing.T) {
+	e := newEnv(t)
+	name := uniqueName("e2e-preview")
+	app := e.createApp(name)
+	t.Cleanup(func() { e.deleteApp(name) })
+	token, _ := app["agent_token"].(string)
+
+	// Serve real content so a screenshot has something to capture, and so we know
+	// TLS + the app are actually up before we ask for a shot.
+	e.put(fmt.Sprintf("/api/apps/%s/files/public/index.html", name), token, "<h1>preview e2e</h1>")
+	e.put(fmt.Sprintf("/api/apps/%s/files/hostit.yml", name), token, "mode: static\n")
+	e.post(fmt.Sprintf("/api/apps/%s/deploy", name), token, nil)
+	e.waitForBody(fmt.Sprint(app["url"]), "preview e2e")
+
+	// The app response advertises the server's preview mode
+	var got map[string]any
+	e.get("/api/apps/"+name, e.token, &got)
+	mode := fmt.Sprint(got["preview_mode"])
+	require.Contains(t, []string{"live", "screenshot", "off"}, mode, "preview_mode must be a known mode")
+
+	previewPath := fmt.Sprintf("/api/apps/%s/preview.png", name)
+	refreshPath := fmt.Sprintf("/api/apps/%s/preview", name)
+
+	if mode != "screenshot" {
+		// Not in screenshot mode: neither endpoint exists for callers
+		assert.Equal(t, http.StatusNotFound, e.status("GET", previewPath, e.token), "preview.png only exists in screenshot mode")
+		assert.Equal(t, http.StatusNotFound, e.status("POST", refreshPath, e.token), "manual refresh only exists in screenshot mode")
+		return
+	}
+
+	// Screenshot mode: a manual refresh is accepted, then a PNG appears shortly
+	assert.Equal(t, http.StatusAccepted, e.status("POST", refreshPath, e.token), "a manual refresh is queued")
+	ct := e.waitForImage(previewPath, e.token)
+	assert.Equal(t, "image/png", ct, "the stored shot is served as a PNG")
+}
+
+// waitForImage polls an authed endpoint until it returns a non-empty 200, then
+// reports its Content-Type. Fails after the app-live deadline.
+func (e *env) waitForImage(path, token string) string {
+	e.t.Helper()
+	deadline := time.Now().Add(appLive)
+	lastStatus := 0
+	for time.Now().Before(deadline) {
+		req, err := http.NewRequest("GET", e.host+path, nil)
+		require.NoError(e.t, err)
+		req.Header.Set("Authorization", "Bearer "+token)
+		resp, err := http.DefaultClient.Do(req)
+		if err == nil {
+			lastStatus = resp.StatusCode
+			ct := resp.Header.Get("Content-Type")
+			b, _ := io.ReadAll(resp.Body)
+			_ = resp.Body.Close()
+			if resp.StatusCode == http.StatusOK && len(b) > 0 {
+				return ct
+			}
+		}
+		time.Sleep(pollInterval)
+	}
+	e.t.Fatalf("%s never returned a 200 image (last status %d)", path, lastStatus)
+	return ""
+}

@@ -169,6 +169,9 @@ func execServe(c *cli.Context) error {
 	go manager.StateLoop(done)
 	// Hourly automatic snapshots (a no-op unless the apps filesystem is btrfs)
 	go manager.SnapshotLoop(time.Hour, done)
+	// Sweep stale qgroups (deleted subvolumes/apps whose gentle destroy lost its
+	// race); enough of them slow quota rescans until app creates time out
+	go manager.QgroupSweepLoop(6*time.Hour, done)
 	// Screenshot previews: the sweep loop plus the single shot worker
 	if previews != nil {
 		go previews.Loop(preview.SweepInterval, done)

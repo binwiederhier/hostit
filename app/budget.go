@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strconv"
+	"strings"
 	"time"
 
 	"heckel.io/hostit/btrfs"
@@ -115,4 +116,74 @@ func effectiveDiskCapMB(diskMB int) int {
 		return defaultDiskCapMB
 	}
 	return diskMB
+}
+
+// SweepStaleQgroups destroys leftover qgroups: the 0/<rootid> group of a
+// deleted subvolume and the 1/<uid> budget of a deleted app. Deletes destroy
+// their qgroups gently (single attempt, never a filesystem sync, so creates
+// stay fast), and a lost race leaves the group behind forever. Enough stale
+// groups make every quota rescan slow -- and snapshot creation waits on
+// rescans, so app creates eventually blow their deadline. This sweep is the
+// backstop that keeps the pool lean.
+func (m *Manager) SweepStaleQgroups() {
+	pool := m.config.AppsDir
+	groups, err := m.btrfs.ListQgroups(pool)
+	if err != nil {
+		return // No quotas on the pool (or no btrfs): nothing to sweep
+	}
+	subvols, err := m.btrfs.SubvolumeIDs(pool)
+	if err != nil {
+		slog.Warn("Cannot list subvolumes for the qgroup sweep", "error", err)
+		return
+	}
+	live := make(map[string]bool, len(subvols))
+	for _, id := range subvols {
+		live[id] = true
+	}
+	live["5"] = true // The filesystem root: not listed by "subvolume list", never stale
+	apps, err := m.store.Apps()
+	if err != nil {
+		slog.Warn("Cannot list apps for the qgroup sweep", "error", err)
+		return
+	}
+	// A budget group is only stale if EVERY app's uid resolved; a failed lookup
+	// must not get a live app's budget destroyed.
+	budgets := make(map[string]bool, len(apps))
+	budgetsComplete := true
+	for _, a := range apps {
+		ids, err := m.lookupIDs(a.Name)
+		if err != nil {
+			budgetsComplete = false
+			continue
+		}
+		budgets[budgetGroup(ids.UID)] = true
+	}
+	destroyed := 0
+	for _, g := range groups {
+		stale := false
+		if id, ok := strings.CutPrefix(g, "0/"); ok {
+			stale = !live[id]
+		} else if strings.HasPrefix(g, btrfs.BudgetGroupPrefix) {
+			stale = budgetsComplete && !budgets[g]
+		}
+		if stale && m.btrfs.QgroupTryDestroy(pool, g) == nil {
+			destroyed++
+		}
+	}
+	if destroyed > 0 {
+		slog.Info("Destroyed stale qgroups", "count", destroyed)
+	}
+}
+
+// QgroupSweepLoop sweeps at start and then every interval, until done closes.
+func (m *Manager) QgroupSweepLoop(interval time.Duration, done <-chan struct{}) {
+	m.SweepStaleQgroups()
+	for {
+		select {
+		case <-time.After(interval):
+		case <-done:
+			return
+		}
+		m.SweepStaleQgroups()
+	}
 }

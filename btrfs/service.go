@@ -42,6 +42,8 @@ type Interface interface {
 	QgroupLimitExclusive(pool, groupID string, diskMB int) error
 	QgroupDestroy(pool, groupID string) error
 	QgroupTryDestroy(pool, groupID string) error
+	ListQgroups(pool string) ([]string, error)
+	SubvolumeIDs(pool string) ([]string, error)
 	ExclusiveUsageMB(pool, groupID string) int
 	ListBudgetGroups(pool string) ([]string, error)
 }
@@ -230,6 +232,21 @@ func (s *Service) groupMembers(pool, groupID string) []string {
 // pool -- the app budget groups. Used by the orphan reconcile to sweep groups
 // whose app is gone (a destroy that stayed busy leaves one behind).
 func (s *Service) ListBudgetGroups(pool string) ([]string, error) {
+	groups, err := s.ListQgroups(pool)
+	if err != nil {
+		return nil, err
+	}
+	budgets := make([]string, 0, len(groups))
+	for _, g := range groups {
+		if strings.HasPrefix(g, BudgetGroupPrefix) {
+			budgets = append(budgets, g)
+		}
+	}
+	return budgets, nil
+}
+
+// ListQgroups returns every qgroup id on the pool ("0/256", "1/1000", ...).
+func (s *Service) ListQgroups(pool string) ([]string, error) {
 	out, err := s.runner.RunTimeout(timeout, "btrfs", "qgroup", "show", pool)
 	if err != nil {
 		return nil, err
@@ -237,11 +254,28 @@ func (s *Service) ListBudgetGroups(pool string) ([]string, error) {
 	groups := make([]string, 0)
 	for _, line := range strings.Split(out, "\n") {
 		fields := strings.Fields(line)
-		if len(fields) > 0 && strings.HasPrefix(fields[0], BudgetGroupPrefix) {
+		if len(fields) > 0 && strings.Contains(fields[0], "/") {
 			groups = append(groups, fields[0])
 		}
 	}
 	return groups, nil
+}
+
+// SubvolumeIDs returns the root id of every subvolume on the pool; a
+// subvolume's own qgroup is "0/<rootid>".
+func (s *Service) SubvolumeIDs(pool string) ([]string, error) {
+	out, err := s.runner.RunTimeout(timeout, "btrfs", "subvolume", "list", pool)
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]string, 0)
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) >= 2 && fields[0] == "ID" {
+			ids = append(ids, fields[1])
+		}
+	}
+	return ids, nil
 }
 
 // ExclusiveUsageMB returns a group's exclusive bytes in MB from `btrfs qgroup
