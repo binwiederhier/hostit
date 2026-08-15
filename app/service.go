@@ -125,6 +125,11 @@ type CreateOptions struct {
 // Manager creates and deletes apps and everything that belongs to them, and
 // runs their containers as root with per-app uid mappings
 type Manager struct {
+	// node is where this manager's ORCHESTRATION sends machine work (provision,
+	// deprovision): itself by default (single process), or a remote node agent
+	// when control and node run as separate services (SetNodeAgent).
+	node NodeAgent
+
 	config    *config.Config
 	store     *store.Store
 	runner    run.Runner
@@ -200,6 +205,7 @@ func NewManager(conf *config.Config, s *store.Store, svc *Services) *Manager {
 		stateCache:    make(map[string]State),
 		appLocks:      make(map[string]*sync.Mutex),
 	}
+	m.node = m // single process: orchestration and machine work are the same
 	// The snapshot Service reuses the Manager's node-local services and store, and
 	// calls back into it through snapshotHost for the app-lifecycle operations and
 	// id-keyed lookups a snapshot or rollback needs.
@@ -312,7 +318,7 @@ func (m *Manager) create(name string, opts *CreateOptions, seedPath string) (*st
 		SeedPath: seedPath,
 		URL:      m.URL(&store.App{Name: name, Port: port}),
 	}
-	if err := m.Provision(spec); err != nil {
+	if err := m.node.Provision(spec); err != nil {
 		return nil, err
 	}
 
@@ -342,6 +348,13 @@ func (m *Manager) create(name string, opts *CreateOptions, seedPath string) (*st
 
 	m.startInBackground(name, forking)
 	return app, nil
+}
+
+// SetNodeAgent points this manager's orchestration at a (remote) node agent:
+// what control calls once a hostit-node dials in. Default is the manager
+// itself (single process).
+func (m *Manager) SetNodeAgent(node NodeAgent) {
+	m.node = node
 }
 
 // WaitBackground blocks until the manager's fire-and-forget goroutines (post-
@@ -402,7 +415,7 @@ func (m *Manager) DeleteApp(name string) error {
 			delete(m.tearingDown, name)
 			m.mu.Unlock()
 		}()
-		m.Deprovision(spec)
+		m.node.Deprovision(spec)
 	}()
 	return nil
 }
