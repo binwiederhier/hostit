@@ -94,6 +94,25 @@ definitions and the conversation prefix are cache-marked, so repeat turns pay th
   warns (or soft-stops the built-in chat) at a threshold, turning the usage data
   into cost control, not just visibility.
 
+## Snapshots and quotas
+
+- **Evaluate btrfs simple quotas (squotas).** Snapshots take forever under
+  classic qgroups (see the >2min prod snapshot item below): every snapshot
+  create/delete drags quota accounting through the transaction. Simple quotas
+  (kernel 6.7+) charge extents to their ORIGINAL owner only -- much cheaper
+  accounting, no rescans -- at the cost of shared-extent precision (a
+  snapshot's unshared growth bills the original subvolume). Evaluate: kernel
+  availability on stage/prod, whether exclusive-bytes budgets still make
+  sense under squota semantics, migration (quotas must be re-enabled in
+  squota mode on an empty accounting state).
+- **Default snapshot cadence: every 3 hours, spread across apps.** Hourly
+  auto-snapshots of every app at once spike the pool (and the cleaner);
+  default to 3h per app instead and STAGGER apps across the interval so
+  snapshot load is flat. Make the interval configurable per app in hostit.yml
+  (snapshot.interval; 0 disables) and editable in the app Settings UI, next
+  to the existing snapshot.pre/post hook commands -- surface those hooks in
+  the UI too.
+
 ## Smaller things
 
 - **Why does a read-only snapshot on prod take >2 minutes?** Taking a manual
