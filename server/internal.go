@@ -10,9 +10,13 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"log/slog"
+	"net"
 	"net/http"
+	"os"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -160,4 +164,35 @@ func (s *Server) handleInternalCert(w http.ResponseWriter, r *http.Request) {
 	_ = pem.Encode(&key, &pem.Block{Type: "PRIVATE KEY", Bytes: keyDER})
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(&certMaterial{CertPEM: chain.String(), KeyPEM: key.String()})
+}
+
+// listenInternal starts the internal surface on a unix socket (colocated
+// default: root-only by mode) or a TCP address (private interfaces / mTLS
+// fronting in later phases).
+func (s *Server) listenInternal() error {
+	addr := s.config.ListenInternal
+	srv := &http.Server{Handler: s.Internal()}
+	if path, ok := strings.CutPrefix(addr, "unix:"); ok {
+		_ = os.Remove(path)
+		ln, err := net.Listen("unix", path)
+		if err != nil {
+			return fmt.Errorf("internal listener: %w", err)
+		}
+		if err := os.Chmod(path, 0o600); err != nil {
+			return err
+		}
+		s.servers = append(s.servers, srv)
+		go func() {
+			slog.Info("Listening for internal API", "socket", path)
+			_ = srv.Serve(ln)
+		}()
+		return nil
+	}
+	srv.Addr = addr
+	s.servers = append(s.servers, srv)
+	go func() {
+		slog.Info("Listening for internal API", "addr", addr)
+		_ = srv.ListenAndServe()
+	}()
+	return nil
 }

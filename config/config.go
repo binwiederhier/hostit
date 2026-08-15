@@ -110,11 +110,17 @@ type Config struct {
 	PortMax         int    `yaml:"port-max"` // Upper bound of the per-app loopback port range
 
 	// Web app and user accounts
-	GoogleClientID       string                  `yaml:"google-client-id"`        // Google OAuth client ID; empty disables the web login
-	GoogleClientSecret   string                  `yaml:"google-client-secret"`    // Google OAuth client secret
-	SessionKey           string                  `yaml:"session-key"`             // Secret for signing session cookies; generated if empty
-	AdminEmails          []string                `yaml:"admin-emails"`            // These emails become active admins on first login
-	Breakglass           bool                    `yaml:"breakglass"`              // Allow the admin token to mint a session for an admin email (no Google); for e2e/recovery
+	GoogleClientID     string   `yaml:"google-client-id"`     // Google OAuth client ID; empty disables the web login
+	GoogleClientSecret string   `yaml:"google-client-secret"` // Google OAuth client secret
+	SessionKey         string   `yaml:"session-key"`          // Secret for signing session cookies; generated if empty
+	AdminEmails        []string `yaml:"admin-emails"`         // These emails become active admins on first login
+	Breakglass         bool     `yaml:"breakglass"`           // Allow the admin token to mint a session for an admin email (no Google); for e2e/recovery
+	// ListenInternal is where the internal surface (routing table, cert
+	// material for hostit-proxy; node enrollment later) listens: a unix socket
+	// path ("unix:/run/hostit/internal.sock") or a host:port. Empty disables it.
+	// Never a public address -- the transport is the auth boundary.
+	ListenInternal string `yaml:"listen-internal"`
+
 	AppPreview           AppPreviewMode          `yaml:"app-preview"`             // "live" (iframe, default), "screenshot" (periodic headless-chromium shots) or "off"
 	AppPreviewIsolation  AppPreviewIsolationMode `yaml:"app-preview-isolation"`   // "strict" (default) or "off"; how the shot container's network is confined
 	AppPreviewAllowCIDRs []string                `yaml:"app-preview-allow-cidrs"` // Extra destination CIDRs the shot container may reach in strict mode

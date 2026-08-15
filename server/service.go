@@ -150,6 +150,11 @@ func (s *Server) Run() error {
 	})
 
 	// Optional plain-HTTP admin API listener (e.g. 127.0.0.1:2900)
+	if s.config.ListenInternal != "" {
+		if err := s.listenInternal(); err != nil {
+			return err
+		}
+	}
 	if s.config.ListenAPI != "" {
 		apiServer := &http.Server{Addr: s.config.ListenAPI, Handler: s.api, ReadHeaderTimeout: readHeaderTimeout}
 		s.servers = append(s.servers, apiServer)
