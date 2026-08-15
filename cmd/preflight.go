@@ -131,3 +131,12 @@ func requireBtrfs(appsDir string) error {
 	}
 	return nil
 }
+
+// Preflight is the host check for any machine-half daemon (the fused daemon
+// and hostit-node): root, required commands, runtime versions, btrfs.
+func Preflight(appsDir string) error {
+	if err := checkHostRequirements(); err != nil {
+		return err
+	}
+	return requireBtrfs(appsDir)
+}

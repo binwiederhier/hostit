@@ -17,10 +17,12 @@ import (
 
 	"github.com/urfave/cli/v2"
 	"heckel.io/hostit/app"
+	"heckel.io/hostit/cmd"
 	"heckel.io/hostit/config"
 	"heckel.io/hostit/node"
 	"heckel.io/hostit/run"
 	"heckel.io/hostit/store"
+	"heckel.io/hostit/user"
 )
 
 const (
@@ -54,6 +56,9 @@ func execServe(c *cli.Context) error {
 	if err := conf.Validate(); err != nil {
 		return err
 	}
+	if err := cmd.Preflight(conf.AppsDir); err != nil {
+		return err
+	}
 	s, err := store.NewStore(filepath.Join(conf.DataDir, "hostit.db"))
 	if err != nil {
 		return err
@@ -64,6 +69,11 @@ func execServe(c *cli.Context) error {
 
 	// The node-local startup, same order as the fused daemon's.
 	manager.EnableDiskBudgets()
+	// The machine half of every stored limit (control only records them in
+	// split mode): re-cap each app's budget qgroup to its owner's limit.
+	if err := applyLimits(s, manager, conf); err != nil {
+		return err
+	}
 	if err := manager.MountRawAppsView(filepath.Join(filepath.Dir(conf.SocketFile), "apps-raw")); err != nil {
 		return err
 	}
@@ -130,3 +140,30 @@ func interrupted() bool {
 }
 
 var sigCh = make(chan os.Signal, 1)
+
+// applyLimits applies each app owner's stored memory/disk limits on this
+// machine -- the split-mode counterpart of the fused daemon's startup step.
+func applyLimits(s *store.Store, manager *app.Manager, conf *config.Config) error {
+	users := user.NewManager(conf, s)
+	apps, err := s.Apps()
+	if err != nil {
+		return err
+	}
+	defaults, err := users.Defaults()
+	if err != nil {
+		return err
+	}
+	for _, a := range apps {
+		limits := defaults
+		if a.OwnerID != "" {
+			if owner, err := users.User(a.OwnerID); err == nil {
+				if limits, err = users.Limits(owner); err != nil {
+					return err
+				}
+			}
+		}
+		manager.SetMemoryLimit(a.Name, limits.MemoryMB)
+		manager.SetDiskLimit(a.Name, limits.DiskMB)
+	}
+	return nil
+}
