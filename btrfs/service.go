@@ -20,8 +20,12 @@ const (
 	// correctness depends on the two never drifting apart.
 	BudgetGroupPrefix = "1/"
 	// timeout bounds a btrfs command; these are metadata operations (create,
-	// snapshot, qgroup) and return quickly, but must never wedge a request.
-	timeout = 30 * time.Second
+	// snapshot, qgroup) and return in well under a second on an idle pool -- but
+	// they must wait for the current transaction, and on a small host the kernel
+	// cleaner (processing deleted subvolumes) or a quota rescan can hold that
+	// for tens of seconds. Generous on purpose: a slow create beats a failed
+	// one; the point of the bound is only to never wedge a request forever.
+	timeout = 2 * time.Minute
 	// bytesPerMB converts qgroup byte counts to the MB unit used everywhere else.
 	bytesPerMB = 1024 * 1024
 )
