@@ -65,12 +65,14 @@ Requirements: a Linux host with systemd, sshd, `podman` **>= 4.3** (plus `uidmap
 `passt` or `slirp4netns`, `dbus-user-session`), `crun` **>= 1.29**, `nftables`, and
 `btrfs-progs`. hostit must run as **root**, and its apps directory must be on
 **btrfs** (all of this is mandatory). Optional: `app-preview: screenshot`
-replaces the dashboard cards' live iframes with periodic headless-chrome
-screenshots, taken in a sandboxed podman container (the image is pulled on
-first use; no host browser needed). By default the shot container's egress is
-confined to the target app's resolved IP and the public internet
-(`app-preview-isolation: strict`), so a malicious app page cannot reach the
-host, the LAN/VPC or the cloud metadata endpoint. On start it preflights everything: it refuses
+replaces the dashboard cards' live iframes with headless-chrome screenshots,
+taken in a sandboxed podman container (the image is pulled on first use; no
+host browser needed). Each running app is re-shot every 6 hours, plus about a
+minute after the assistant last changes it (capped at 5/hour per app), plus on
+demand from the refresh button on the card; shots run one at a time. By default
+the shot container's egress is confined to the target app's resolved IP and the
+public internet (`app-preview-isolation: strict`), so a malicious app page
+cannot reach the host, the LAN/VPC or the cloud metadata endpoint. On start it preflights everything: it refuses
 to run if it is not root, if a required command is missing, if podman or crun are
 too old, or if the apps path is not btrfs, naming exactly what to fix.
 

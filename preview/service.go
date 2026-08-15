@@ -53,8 +53,11 @@ const (
 	bucketCapacity = 5
 	// queueSize bounds the shot queue; beyond it, requests are dropped with a warning
 	queueSize = 64
-	// windowSize is the shot's viewport, matching the dashboard card's ratio
-	windowSize = "1280,800"
+	// windowSize is the shot's layout viewport (desktop), matching the dashboard
+	// card's ratio; deviceScaleFactor then renders it at half resolution so the
+	// stored PNG is ~1/4 the pixels (the card shows it small anyway).
+	windowSize        = "1280,800"
+	deviceScaleFactor = "0.5"
 	// dirName is where shots live, under the daemon's data dir; workDirName is
 	// the per-shot scratch space inside it that gets bind-mounted into the container
 	dirName     = "previews"
@@ -221,6 +224,23 @@ func (m *Manager) fire(name string) {
 	}
 }
 
+// Refresh queues a shot of the named app right now (the dashboard's manual
+// refresh button), bypassing the debounce and the rate limit. It still goes
+// through the single queue, so it runs one at a time like every other shot.
+func (m *Manager) Refresh(name string) {
+	apps, err := m.apps()
+	if err != nil {
+		slog.Warn("Cannot list apps for a manual preview refresh", "app", name, "error", err)
+		return
+	}
+	for _, a := range apps {
+		if a.Name == name && a.Running {
+			m.enqueue(a)
+			return
+		}
+	}
+}
+
 // takeToken consumes one token from the app's hourly bucket; false means the
 // budget is used up for now.
 func (m *Manager) takeToken(id string) bool {
@@ -319,7 +339,8 @@ func (m *Manager) shoot(a App) error {
 	}
 	args = append(args, "-v", workDir+":/out:U", image,
 		"--headless", "--no-sandbox", "--disable-gpu", "--hide-scrollbars",
-		"--window-size="+windowSize, "--virtual-time-budget=10000",
+		"--window-size="+windowSize, "--force-device-scale-factor="+deviceScaleFactor,
+		"--virtual-time-budget=10000",
 		"--screenshot=/out/"+shotFile, a.URL)
 	_, err := m.runner.RunTimeout(screenshotTimeout, args...)
 	if err != nil {

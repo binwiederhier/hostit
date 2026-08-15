@@ -54,10 +54,13 @@ admin-token: CHANGE-ME
 
 # How the dashboard's app cards are previewed: "live" embeds each running app
 # in a scaled-down iframe (default), "screenshot" shows a headless-chrome
-# screenshot instead (re-shot every few hours, and shortly after assistant
-# changes; runs in a sandboxed podman container, pulled on first use), "off"
-# drops the card preview. The workspace's assistant/files preview panes are
-# always live, regardless of this setting.
+# screenshot instead, "off" drops the card preview. The workspace's
+# assistant/files preview panes are always live, regardless of this setting.
+#
+# In screenshot mode each running app is re-shot every 6 hours, plus ~1 minute
+# after the assistant last changes it (max 5/hour per app), plus on demand from
+# the card's refresh button. Shots run one at a time in a sandboxed podman
+# container (image pulled on first use).
 # app-preview: live
 #
 # In screenshot mode the shot container's network is confined: "strict" (the

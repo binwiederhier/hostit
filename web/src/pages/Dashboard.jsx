@@ -182,6 +182,21 @@ const AppCard = ({ app }) => {
   // Prefer a verified custom domain over the default subdomain for the link.
   const publicUrl = app.custom_domain ? `https://${app.custom_domain}` : app.url;
   const publicHost = app.custom_domain || app.url.replace(/^https?:\/\//, "");
+  const [toast, setToast] = useState("");
+  // Manual screenshot refresh: fire-and-forget, just queues a shot and flashes a
+  // toast. The card does not update live (the new shot appears on the next load).
+  const canRefresh = (app.preview_mode || "live") === "screenshot" && running;
+  const refreshShot = async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    try {
+      await api.post(`/api/apps/${encodeURIComponent(app.name)}/preview`);
+      setToast("Screenshot queued");
+    } catch {
+      setToast("Couldn't queue screenshot");
+    }
+    setTimeout(() => setToast(""), 2500);
+  };
   return (
     <div className="appcard">
       <div className="appcard-top">
@@ -192,10 +207,20 @@ const AppCard = ({ app }) => {
           <a className="appcard-url" href={publicUrl} target="_blank" rel="noreferrer">{publicHost}</a>
         </div>
       </div>
-      <span className={"appcard-pill" + (crashed ? " crashed" : running ? "" : " off")}>
-        <span className="appcard-dot" />
-        {status}
-      </span>
+      <div className="appcard-statusrow">
+        <span className={"appcard-pill" + (crashed ? " crashed" : running ? "" : " off")}>
+          <span className="appcard-dot" />
+          {status}
+        </span>
+        {canRefresh && (
+          <button type="button" className="appcard-refresh" onClick={refreshShot} title="Queue a new screenshot" aria-label="Queue a new screenshot">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M20 11a8 8 0 1 0-.6 4" />
+              <path d="M20 5v6h-6" />
+            </svg>
+          </button>
+        )}
+      </div>
       <AppPreview app={app} />
       <div className="appcard-desc">{app.description || <span className="appcard-nodesc">No description yet</span>}</div>
       <div className="appcard-bars">
@@ -206,6 +231,11 @@ const AppCard = ({ app }) => {
       <div className="appcard-foot">
         <a className="btn btn-small btn-primary" href={publicUrl} target="_blank" rel="noreferrer">Open app</a>
       </div>
+      {toast && (
+        <div className="snackbar" role="status" aria-live="polite">
+          {toast}
+        </div>
+      )}
     </div>
   );
 };

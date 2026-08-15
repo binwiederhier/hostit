@@ -1073,6 +1073,13 @@ th:last-child {
 .appcard-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--accent); box-shadow: 0 0 0 3px var(--focus); }
 .appcard-pill.off .appcard-dot { background: var(--faint); box-shadow: none; }
 .appcard-pill.crashed .appcard-dot { background: var(--status-down); box-shadow: none; }
+/* Status row: the running pill on the left, a hover-only screenshot refresh on the right */
+.appcard-statusrow { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.appcard-refresh { position: relative; z-index: 3; display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; padding: 0; border: 1px solid var(--border); border-radius: 7px; background: var(--surface); color: var(--muted); cursor: pointer; opacity: 0; transition: opacity 0.12s, color 0.12s, border-color 0.12s; }
+.appcard:hover .appcard-refresh, .appcard-refresh:focus-visible { opacity: 1; }
+.appcard-refresh:hover { color: var(--text); border-color: var(--accent); }
+.appcard-refresh svg { width: 14px; height: 14px; }
+
 .appcard-preview { position: relative; height: 150px; border: 1px solid var(--border); border-radius: 9px; overflow: hidden; background: var(--surface-2); pointer-events: none; }
 /* The periodic screenshot (app-preview: screenshot) in place of the live frame */
 .appcard-preview-shot {

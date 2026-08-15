@@ -208,6 +208,26 @@ func TestAppPreviewHiddenOutsideScreenshotMode(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, request(t, s.API(), "GET", "/api/apps/blog/preview.png", "", token).Code)
 }
 
+func TestAppPreviewRefreshQueuesOrRejects(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	s.config.AppPreview = config.AppPreviewScreenshot
+	u := newActiveTestUser(t, s, "owner@example.com")
+	token := accountToken(t, s, u)
+	require.NoError(t, s.apps.Store().AddApp(&store.App{Name: "blog", Port: 10000, Host: store.HostLocal, OwnerID: u.ID}))
+
+	// Not wired (no preview manager in the test server) -> treated as not-found
+	assert.Equal(t, http.StatusNotFound, request(t, s.API(), "POST", "/api/apps/blog/preview", "", token).Code)
+
+	// A stranger cannot even see the app
+	stranger := accountToken(t, s, newActiveTestUser(t, s, "other@example.com"))
+	assert.Equal(t, http.StatusNotFound, request(t, s.API(), "POST", "/api/apps/blog/preview", "", stranger).Code)
+
+	// With a preview manager wired, the owner's refresh is accepted
+	s.SetPreviews(preview.New(nil, t.TempDir(), func() ([]preview.App, error) { return nil, nil }))
+	assert.Equal(t, http.StatusAccepted, request(t, s.API(), "POST", "/api/apps/blog/preview", "", token).Code)
+}
+
 func TestAppResponseCarriesPreviewMode(t *testing.T) {
 	t.Parallel()
 	s := newTestServer(t)
