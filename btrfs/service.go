@@ -46,6 +46,7 @@ type Interface interface {
 	QgroupLimitExclusive(pool, groupID string, diskMB int) error
 	QgroupDestroy(pool, groupID string) error
 	QgroupTryDestroy(pool, groupID string) error
+	IsBtrfs(dir string) bool
 	ListQgroups(pool string) ([]string, error)
 	SubvolumeIDs(pool string) ([]string, error)
 	ExclusiveUsageMB(pool, groupID string) int

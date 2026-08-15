@@ -341,3 +341,13 @@ func (m *Manager) nameByID() map[string]string {
 	}
 	return byID
 }
+
+// Heartbeat reports this node's build and capabilities: the placement and
+// health inputs of the multi-node design. Grown in later phases (free
+// memory/disk, app count).
+func (m *Manager) Heartbeat() *Heartbeat {
+	return &Heartbeat{
+		Version:      Version,
+		BtrfsCapable: m.btrfs.IsBtrfs(m.config.AppsDir),
+	}
+}
