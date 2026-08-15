@@ -96,6 +96,20 @@ definitions and the conversation prefix are cache-marked, so repeat turns pay th
 
 ## Smaller things
 
+- **Why does a read-only snapshot on prod take >2 minutes?** Taking a manual
+  snapshot should be a metadata CoW operation (sub-second on an idle pool; the
+  create path proves it). Suspects, in likely order: the snapshot waits on the
+  current btrfs transaction, which the kernel cleaner (processing deleted
+  subvolumes) or a quota rescan can hold for a long time on 1 vCPU (the stage
+  e2e post-mortems measured 45s under a rescan backlog); qgroup accounting on
+  snapshot create with many qgroups; or the pre/post snapshot hooks in the
+  container, which run synchronously. Measure on prod: time a bare `btrfs
+  subvolume snapshot -r` next to the API call, check `btrfs quota rescan -s`,
+  the cleaner's CPU time, and qgroup counts (the stale-qgroup sweep from the
+  multinode branch is not on prod yet -- prod may be carrying the same debt
+  stage had). Is btrfs "that bad"? No -- but quotas + churn debt make its
+  transaction commits that bad.
+
 - **Does the hostit daemon actually need to run as root?** It drives podman,
   systemctl, useradd/usermod, nftables and btrfs -- audit which of those truly
   require root vs could run under a dedicated user with specific capabilities or a
