@@ -26,8 +26,9 @@ const (
 	quotaModeQgroup = "qgroup"
 	quotaModeOff    = "off"
 	// btrfsIocQuotaCtl is BTRFS_IOC_QUOTA_CTL: _IOWR(0x94, 40, struct
-	// btrfs_ioctl_quota_ctl_args{u64 cmd; u64 status}).
-	btrfsIocQuotaCtl = 0xC0109440
+	// btrfs_ioctl_quota_ctl_args{u64 cmd; u64 status}) = 3<<30 | 16<<16 |
+	// 0x94<<8 | 40.
+	btrfsIocQuotaCtl = 0xC0109428
 	// btrfsQuotaCtlEnableSimple is BTRFS_QUOTA_CTL_ENABLE_SIMPLE_QUOTA. Issued
 	// directly (not via btrfs-progs) because `quota enable --simple` needs
 	// progs 6.7+ while every other operation works with much older tools.
