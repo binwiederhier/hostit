@@ -69,6 +69,11 @@ type NodeAgent interface {
 	// BEFORE any verb that reads rows on the node.
 	Sync(state *SyncState) error
 
+	// Reconcile converges the node's machine state to its (freshly synced)
+	// mirror: tear down apps deleted while it was disconnected, re-assert port
+	// rules. Run on every rejoin. Returns the orphan ids it removed.
+	Reconcile() []string
+
 	// Node-level: batch state for the control plane's cache, and the
 	// heartbeat placement/health feed on.
 	States(names []string) map[string]State

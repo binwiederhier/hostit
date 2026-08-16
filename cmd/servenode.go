@@ -122,10 +122,26 @@ func pollNodeStates(manager *app.Manager, nodeID string, remote app.NodeAgent, d
 			continue
 		}
 		if states := remote.States(names); states != nil {
-			manager.IngestStates(states)
+			// Scope to the apps we asked about: a node may only report state for
+			// the apps it hosts, so a lying node's extra keys never reach the
+			// cache (and thus other nodes' apps).
+			manager.IngestStates(scopeStates(states, names))
 			_ = manager.Store().SetNodeSeen(nodeID, time.Now())
 		}
 	}
+}
+
+// scopeStates keeps only the states for the apps in allowed: control asked a
+// node about the apps it hosts, so anything else it returns is dropped rather
+// than trusted into the cache.
+func scopeStates(states map[string]app.State, allowed []string) map[string]app.State {
+	keep := make(map[string]app.State, len(allowed))
+	for _, name := range allowed {
+		if s, ok := states[name]; ok {
+			keep[name] = s
+		}
+	}
+	return keep
 }
 
 // rejoin is the reconcile handshake, run on every node (re)connect: push the
@@ -135,6 +151,10 @@ func pollNodeStates(manager *app.Manager, nodeID string, remote app.NodeAgent, d
 // container died during the outage comes back without waiting for a user.
 func rejoin(manager *app.Manager, nodeID string, remote app.NodeAgent) {
 	manager.PushMirrorTo(nodeID, remote)
+	// Converge the node to the just-pushed mirror: tear down apps deleted while
+	// it was disconnected (the routed Deprovision was dropped) and re-assert its
+	// port rules. Must follow the mirror push.
+	remote.Reconcile()
 	ensured := 0
 	for _, a := range nodeApps(manager, nodeID) {
 		remote.SetMemoryLimit(a.Name, manager.MemoryLimit(a.Name))

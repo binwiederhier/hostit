@@ -271,6 +271,7 @@ func TestPortRulesReconciledOnCreateAndDelete(t *testing.T) {
 	assert.Equal(t, 10001, last[1].Port)
 	assert.NotZero(t, last[0].UID)
 	require.NoError(t, m.DeleteApp("wiki"))
+	m.WaitBackground() // the port rule is re-applied inside the async teardown now
 	last = ops.portRules[len(ops.portRules)-1]
 	require.Len(t, last, 1)
 	// The one remaining rule is blog's: its port and its uid, not wiki's

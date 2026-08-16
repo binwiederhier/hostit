@@ -125,7 +125,7 @@ func execServe(c *cli.Context) error {
 		case <-done:
 			return
 		}
-		if removed := manager.ReconcileOrphans(); len(removed) > 0 {
+		if removed := manager.Reconcile(); len(removed) > 0 {
 			slog.Info("Cleaned up leftovers of apps that no longer exist", "apps", removed)
 		}
 		restarted, err := manager.RestartStaleAgents(c.App.Version)

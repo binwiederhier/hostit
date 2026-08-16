@@ -4,6 +4,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"testing"
 	"time"
@@ -142,4 +143,31 @@ func TestMTLSRejectsUnknownClients(t *testing.T) {
 		}
 		assert.Error(t, err, "an unenrolled client must not get a usable connection")
 	}
+}
+
+func TestDuplexClientTimesOutOnAWedgedHandler(t *testing.T) {
+	t.Parallel()
+	// A hung node handler must not block its control-side caller forever: yamux
+	// keepalive keeps the session "healthy", so without a client deadline the
+	// request never returns.
+	old := rpcTimeout
+	rpcTimeout = 200 * time.Millisecond
+	defer func() { rpcTimeout = old }()
+
+	c1, c2 := net.Pipe()
+	defer c1.Close()
+	defer c2.Close()
+	block := make(chan struct{})
+	defer close(block)
+	serverMux := http.NewServeMux()
+	serverMux.HandleFunc("/wedge", func(w http.ResponseWriter, r *http.Request) { <-block })
+	_, _, err := Duplex(c1, false, serverMux)
+	require.NoError(t, err)
+	client, _, err := Duplex(c2, true, http.NewServeMux())
+	require.NoError(t, err)
+
+	start := time.Now()
+	_, err = client.Post("http://peer/wedge", "text/plain", nil)
+	require.Error(t, err, "the wedged handler must surface as a client error, not a hang")
+	assert.Less(t, time.Since(start), 3*time.Second, "the call must give up around the timeout")
 }

@@ -9,6 +9,7 @@ import (
 	"context"
 	"net"
 	"net/http"
+	"time"
 
 	"github.com/hashicorp/yamux"
 )
@@ -34,13 +35,30 @@ func Duplex(conn net.Conn, dialer bool, handler http.Handler) (*http.Client, *ya
 	go func() {
 		_ = http.Serve(sess, handler)
 	}()
-	return &http.Client{Transport: &http.Transport{
-		// Every request rides its own stream; the URL host is cosmetic.
-		DialContext: func(context.Context, string, string) (net.Conn, error) {
-			return sess.OpenStream()
+	return duplexClient(sess), sess, nil
+}
+
+// rpcTimeout bounds a single duplex request. yamux's transport keepalive keeps
+// the session healthy even when the far handler is wedged, so without a
+// per-request deadline a hung verb blocks its caller forever. Generous on
+// purpose: it must clear the slowest legitimate one-shot RPC (a large tar
+// upload or file read on a loaded box), so it is a hang backstop, not a SLA.
+// A var, not a const, so tests can shorten it.
+var rpcTimeout = 5 * time.Minute
+
+// duplexClient builds the http.Client that carries requests to the peer, each
+// on its own yamux stream, bounded by rpcTimeout.
+func duplexClient(sess *yamux.Session) *http.Client {
+	return &http.Client{
+		Timeout: rpcTimeout,
+		Transport: &http.Transport{
+			// Every request rides its own stream; the URL host is cosmetic.
+			DialContext: func(context.Context, string, string) (net.Conn, error) {
+				return sess.OpenStream()
+			},
+			// Streams are cheap and the session multiplexes; per-stream keep-alive
+			// would just pin stale streams.
+			DisableKeepAlives: true,
 		},
-		// Streams are cheap and the session multiplexes; per-stream keep-alive
-		// would just pin stale streams.
-		DisableKeepAlives: true,
-	}}, sess, nil
+	}
 }

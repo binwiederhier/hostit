@@ -258,6 +258,13 @@ func (a *remoteAgent) Sync(state *app.SyncState) error {
 	return a.postJSON("sync", state)
 }
 
+// Reconcile asks the node to converge to its mirror; the removed ids are not
+// needed by the caller (rejoin), so they are dropped.
+func (a *remoteAgent) Reconcile() []string {
+	_ = a.postJSON("reconcile", struct{}{})
+	return nil
+}
+
 func (a *remoteAgent) postJSON(verb string, payload any) error {
 	body, err := json.Marshal(payload)
 	if err != nil {

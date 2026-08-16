@@ -204,3 +204,38 @@ func TestReadmeAndDescriptionRouteThroughTheNodeAgent(t *testing.T) {
 	assert.NotEmpty(t, rec.writes, "readme/description writes go to the node")
 	assert.NotEmpty(t, rec.reads, "readme/description reads come from the node")
 }
+
+// statesRoutingAgent reports canned states, standing in for the fan-out to
+// remote nodes.
+type statesRoutingAgent struct {
+	NodeAgent
+	states map[string]State
+}
+
+func (s *statesRoutingAgent) States(names []string) map[string]State {
+	out := make(map[string]State, len(names))
+	for _, n := range names {
+		if st, ok := s.states[n]; ok {
+			out[n] = st
+		}
+	}
+	return out
+}
+
+func TestRefreshStatesReadsThroughTheNodeAgent(t *testing.T) {
+	t.Parallel()
+	// In split mode control has no local app containers: measuring locally and
+	// whole-swapping the cache would clobber the per-node poll data with empty
+	// "stopped" states. RefreshStates must read through the node agent (which
+	// fans out to the nodes), not control's own podman/systemd.
+	m, _, _ := newTestDeployManager(t)
+	createTestApp(t, m, "blog")
+	m.SetNodeAgent(&statesRoutingAgent{NodeAgent: m, states: map[string]State{
+		"blog": {Running: true, AppRunning: true, AppState: "running"},
+	}})
+
+	m.RefreshStates()
+	got := m.CachedStates([]string{"blog"})
+	assert.Equal(t, "running", got["blog"].AppState, "state comes from the node agent, not a local measure")
+	assert.True(t, got["blog"].Running)
+}

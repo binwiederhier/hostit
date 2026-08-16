@@ -11,6 +11,17 @@ import (
 	"heckel.io/hostit/workspace"
 )
 
+// Reconcile is the node's convergence pass, run on every rejoin: tear down the
+// machine state of apps no longer in the (freshly synced) mirror and re-assert
+// this node's port rules. It is what recovers an app deleted while the node was
+// disconnected -- the routed Deprovision was dropped, and ReconcileOrphans
+// otherwise runs only once per process. Returns the orphan ids it removed.
+func (m *Manager) Reconcile() []string {
+	removed := m.ReconcileOrphans()
+	m.ReconcilePortRules()
+	return removed
+}
+
 // ReconcileOrphans removes the host state of apps that no longer exist -- their
 // systemd units and their containers -- and returns the names it cleaned up.
 //

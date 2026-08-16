@@ -3,7 +3,6 @@ package node
 import (
 	"bufio"
 	"bytes"
-	"context"
 	"fmt"
 	"io"
 	"net"
@@ -117,14 +116,9 @@ func ServeAgent(conn net.Conn, nodeID string, agent app.NodeAgent, onLink func(c
 		_ = http.Serve(sess, RPCHandler(agent))
 	}()
 	// The reverse direction: the node's own requests to control (the control
-	// sink's callbacks) ride the same session.
+	// sink's callbacks) ride the same session, bounded by the same deadline.
 	if onLink != nil {
-		onLink(&http.Client{Transport: &http.Transport{
-			DialContext: func(context.Context, string, string) (net.Conn, error) {
-				return sess.OpenStream()
-			},
-			DisableKeepAlives: true,
-		}})
+		onLink(duplexClient(sess))
 	}
 	<-sess.CloseChan() // returns when the connection dies; the caller redials
 	return nil

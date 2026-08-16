@@ -91,6 +91,10 @@ func (m *Manager) Provision(spec *ProvisionSpec) error {
 			return fmt.Errorf("cannot write skeleton for %s: %w", spec.Name, err)
 		}
 	}
+	// Apply the node's port rules HERE, on the node: the app's unix user (whose
+	// uid the rule keys on) lives on this machine, and the firewall table is
+	// this node's -- neither is reachable from control in a split deployment.
+	m.ReconcilePortRules()
 	return nil
 }
 
@@ -180,6 +184,9 @@ func (m *Manager) Deprovision(spec *DeprovisionSpec) {
 	m.mu.Lock()
 	delete(m.tearingDown, spec.Name)
 	m.mu.Unlock()
+	// Re-assert this node's port rules now that the app's row is gone from the
+	// mirror: its loopback drop rule is dropped along with it.
+	m.ReconcilePortRules()
 	// Drop the (now empty) budget qgroup -- gently: the full ladder's
 	// filesystem sync stalls every concurrent btrfs operation on the pool
 	// (a create's snapshot waited ~12s behind it), so the teardown polls a

@@ -94,7 +94,10 @@ func (l *ControlLink) post(kind string, payload any) {
 const callbackPathPrefix = "/callback/"
 
 // CallbackStore is the slice of the registry the callback handlers write.
+// AppHost resolves an app's hosting node, the scoping check every write goes
+// through.
 type CallbackStore interface {
+	AppHost(name string) (string, error)
 	SetAppPoweredOff(name string, poweredOff bool) error
 	UpdateAppUsage(name string, usedMB int) error
 	ReplaceAppSnapshots(appName string, snaps []*store.Snapshot) error
@@ -102,14 +105,36 @@ type CallbackStore interface {
 
 // CallbackHandler is control's receiving side, served over the duplex session
 // of ONE node's connection: it applies the node-originated control-plane data
-// to the registry.
+// to the registry. Every write is scoped to the app's hosting node -- the
+// node id is the connection's authenticated identity, and a node may only
+// report data for apps it hosts. Without this, a compromised node could flip
+// another tenant's app powered_off, poison its usage, or wipe its snapshot
+// records by naming it in a callback.
 func CallbackHandler(nodeID string, st CallbackStore) http.Handler {
 	mux := http.NewServeMux()
+	// handle decodes the body, checks the named app belongs to this node, then
+	// applies the write. Every callback payload carries its target in "name".
 	handle := func(kind string, fn func(body []byte) error) {
 		mux.HandleFunc("POST "+callbackPathPrefix+kind, func(w http.ResponseWriter, r *http.Request) {
 			var buf bytes.Buffer
 			if _, err := buf.ReadFrom(r.Body); err != nil {
 				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			var target struct {
+				Name string `json:"name"`
+			}
+			if err := json.Unmarshal(buf.Bytes(), &target); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			host, err := st.AppHost(target.Name)
+			if host == "" {
+				host = store.HostLocal // a legacy unset host means the colocated node
+			}
+			if err != nil || host != nodeID {
+				slog.Warn("Rejecting node callback for an app it does not host", "node", nodeID, "app", target.Name, "kind", kind)
+				http.Error(w, "app not hosted by this node", http.StatusForbidden)
 				return
 			}
 			if err := fn(buf.Bytes()); err != nil {

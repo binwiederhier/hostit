@@ -392,7 +392,8 @@ func (m *Manager) create(name string, opts *CreateOptions, seed *seedRef) (*stor
 	// Provision created and capped the budget; SetDiskLimit re-asserts it
 	// ensure-style (idempotent) now that the registry row exists.
 	m.node.SetDiskLimit(name, m.DiskLimit(name))
-	m.ReconcilePortRules()
+	// Port rules are applied by the node inside Provision (that is where the
+	// app's unix user and the right firewall table live).
 
 	m.startInBackground(name, forking)
 	return app, nil
@@ -449,7 +450,8 @@ func (m *Manager) DeleteApp(name string) error {
 	m.reservedPorts[a.Port] = true
 	m.tearingDown[name] = true
 	m.mu.Unlock()
-	m.ReconcilePortRules()
+	// The port's drop rule is removed by the node inside Deprovision (its
+	// firewall table, its user lookups); the port stays reserved until then.
 	m.background.Add(1)
 	go func() {
 		defer m.background.Done()

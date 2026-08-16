@@ -424,6 +424,17 @@ func (ra *routingAgent) Sync(state *SyncState) error {
 	return nil
 }
 
+// Reconcile fans out to every connected node; rejoin calls a node's agent
+// directly, so this is only for interface completeness.
+func (ra *routingAgent) Reconcile() []string {
+	for _, id := range ra.reg.IDs() {
+		if agent := ra.reg.Agent(id); agent != nil {
+			agent.Reconcile()
+		}
+	}
+	return nil
+}
+
 // Heartbeat is per-node data; meaningless on the fan-out.
 func (ra *routingAgent) Heartbeat() *Heartbeat {
 	return nil

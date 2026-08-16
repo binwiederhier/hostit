@@ -21,6 +21,7 @@ const (
 		SELECT id, name, port, host, owner_id, disk_mb, created_at, image_tag, powered_off, uid
 		FROM app WHERE owner_id = ? ORDER BY name
 	`
+	selectAppHostQuery         = `SELECT host FROM app WHERE name = ?`
 	selectAppCountByOwnerQuery = `SELECT COUNT(*) FROM app WHERE owner_id = ?`
 	selectPortsQuery           = `SELECT port FROM app ORDER BY port`
 	updateAppUsageQuery        = `UPDATE app SET disk_mb = ? WHERE name = ?`
@@ -134,6 +135,17 @@ func (s *Store) App(name string) (*App, error) {
 	}
 	app.CreatedAt = time.Unix(createdAt, 0)
 	return &app, nil
+}
+
+// AppHost returns the id of the node an app is hosted on, or ErrAppNotFound.
+// Cheap single-column read, used to scope node callbacks to their own apps.
+func (s *Store) AppHost(name string) (string, error) {
+	var host string
+	err := s.db.QueryRow(selectAppHostQuery, name).Scan(&host)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", ErrAppNotFound
+	}
+	return host, err
 }
 
 // Apps returns all registered apps, sorted by name

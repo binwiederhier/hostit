@@ -134,7 +134,12 @@ func New(conf *config.Config, apps *app.Manager, users *user.Manager) *Server {
 
 // Run starts all listeners and blocks until the first one fails
 func (s *Server) Run() error {
-	s.apps.ReconcilePortRules() // Registry is the source of truth for port rules
+	// Port rules are node-local. Apply them here only when control also IS the
+	// node (no separate node listener); in a split deployment each hostit-node
+	// applies its own (Provision/Deprovision and the rejoin reconcile).
+	if s.config.ListenNode == "" {
+		s.apps.ReconcilePortRules()
+	}
 	g := &errgroup.Group{}
 
 	// Unix socket for the app-side CLI ("hostit up" etc.)
