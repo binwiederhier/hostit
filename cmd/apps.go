@@ -289,7 +289,7 @@ func execAppsList(c *cli.Context) error {
 		return nil
 	}
 	for _, app := range apps {
-		fmt.Printf("%-20s %-40s port %d, created %s\n", app.Name, app.URL, app.Port, app.CreatedAt.Format("2006-01-02"))
+		fmt.Printf("%-20s %-12s %-40s port %d, created %s\n", app.Name, app.ID, app.URL, app.Port, app.CreatedAt.Format("2006-01-02"))
 	}
 	return nil
 }

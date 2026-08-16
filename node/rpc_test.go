@@ -151,7 +151,7 @@ func TestDialInRegistersARemoteAgent(t *testing.T) {
 	agent := &fakeAgentFull{written: map[string][]byte{}}
 	registered := make(chan string, 1)
 	var got app.NodeAgent
-	srv := httptest.NewServer(ConnectHandler(func(nodeID string, remote app.NodeAgent) {
+	srv := httptest.NewServer(ConnectHandler(func(string) bool { return true }, func(nodeID string, remote app.NodeAgent) {
 		got = remote
 		registered <- nodeID
 	}))

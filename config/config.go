@@ -134,6 +134,11 @@ type Config struct {
 	// Never a public address -- the transport is the auth boundary.
 	ListenInternal string `yaml:"listen-internal"`
 
+	// NodeID is this hostit-node's identity: the CN of its mTLS certificate and
+	// its name in control's node registry. "local" is the colocated node whose
+	// credentials control mints itself; any other name needs `hostit-node join`.
+	NodeID string `yaml:"node-id"`
+
 	AppPreview           AppPreviewMode          `yaml:"app-preview"`             // "live" (iframe, default), "screenshot" (periodic headless-chromium shots) or "off"
 	AppPreviewIsolation  AppPreviewIsolationMode `yaml:"app-preview-isolation"`   // "strict" (default) or "off"; how the shot container's network is confined
 	AppPreviewAllowCIDRs []string                `yaml:"app-preview-allow-cidrs"` // Extra destination CIDRs the shot container may reach in strict mode
@@ -191,6 +196,7 @@ func NewConfig() *Config {
 		ListenHTTPS:         ":443",
 		SocketFile:          "/run/hostit/hostit.sock",
 		DataDir:             "/var/lib/hostit",
+		NodeID:              "local",
 		AppsDir:             "/var/lib/hostit/apps",
 		TLS:                 TLSLetsEncrypt,
 		AppPreview:          AppPreviewLive,

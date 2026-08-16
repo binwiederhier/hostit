@@ -4,10 +4,13 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/hex"
 	"encoding/pem"
+	"fmt"
 	"math/big"
 	"time"
 )
@@ -80,6 +83,89 @@ func (c *CA) Issue(id string) (tls.Certificate, error) {
 		return tls.Certificate{}, err
 	}
 	return tls.Certificate{Certificate: [][]byte{der}, PrivateKey: key, Leaf: tmpl}, nil
+}
+
+// IssueFromCSR signs a certificate for the CSR's public key. The CN is the
+// token-authenticated node name -- whatever subject the CSR asked for is
+// ignored, so a CSR can never claim another node's identity.
+func (c *CA) IssueFromCSR(id string, csrPEM []byte) (string, error) {
+	block, _ := pem.Decode(csrPEM)
+	if block == nil {
+		return "", fmt.Errorf("no CSR in request")
+	}
+	csr, err := x509.ParseCertificateRequest(block.Bytes)
+	if err != nil {
+		return "", err
+	}
+	if err := csr.CheckSignature(); err != nil {
+		return "", err
+	}
+	serial, err := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
+	if err != nil {
+		return "", err
+	}
+	tmpl := &x509.Certificate{
+		SerialNumber: serial,
+		Subject:      pkix.Name{CommonName: id},
+		DNSNames:     []string{id},
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     time.Now().Add(certValidity),
+		KeyUsage:     x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth},
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, c.cert, csr.PublicKey, c.key)
+	if err != nil {
+		return "", err
+	}
+	return string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})), nil
+}
+
+// Fingerprint identifies this CA (SHA256 of its certificate DER, hex); it is
+// embedded in join tokens as the joining node's only trust anchor.
+func (c *CA) Fingerprint() string {
+	sum := sha256.Sum256(c.cert.Raw)
+	return hex.EncodeToString(sum[:])
+}
+
+// ListenerTLS is control's node-listener config: present the chain INCLUDING
+// the CA (so a joining node can verify its pinned fingerprint), verify a
+// client cert when one is given. The join route is the only one that runs
+// without a client cert; everything else re-checks r.TLS.PeerCertificates.
+func (c *CA) ListenerTLS(cert tls.Certificate) *tls.Config {
+	chain := make([][]byte, 0, len(cert.Certificate)+1)
+	chain = append(chain, cert.Certificate...)
+	chain = append(chain, c.cert.Raw)
+	return &tls.Config{
+		Certificates: []tls.Certificate{{Certificate: chain, PrivateKey: cert.PrivateKey, Leaf: cert.Leaf}},
+		ClientCAs:    c.Pool(),
+		ClientAuth:   tls.VerifyClientCertIfGiven,
+		MinVersion:   tls.VersionTLS13,
+	}
+}
+
+// NewCAFromPEM reconstructs a CA from its persisted PEM pair.
+func NewCAFromPEM(certPEM, keyPEM []byte) (*CA, error) {
+	certBlock, _ := pem.Decode(certPEM)
+	if certBlock == nil {
+		return nil, fmt.Errorf("no CA certificate PEM")
+	}
+	cert, err := x509.ParseCertificate(certBlock.Bytes)
+	if err != nil {
+		return nil, err
+	}
+	keyBlock, _ := pem.Decode(keyPEM)
+	if keyBlock == nil {
+		return nil, fmt.Errorf("no CA key PEM")
+	}
+	keyAny, err := x509.ParsePKCS8PrivateKey(keyBlock.Bytes)
+	if err != nil {
+		return nil, err
+	}
+	key, ok := keyAny.(*ecdsa.PrivateKey)
+	if !ok {
+		return nil, fmt.Errorf("CA key is not ECDSA")
+	}
+	return &CA{cert: cert, key: key}, nil
 }
 
 // Pool returns the trust pool containing (only) this CA.

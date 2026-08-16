@@ -118,6 +118,19 @@ definitions and the conversation prefix are cache-marked, so repeat turns pay th
 
 ## Smaller things
 
+- **CHANGELOG.md per release.** Keep a CHANGELOG.md listing changes per
+  version, updated with every release. Retroactively create the history for
+  all existing tags from the commit messages and TODO.md's evolution through
+  git history (git log --first-parent per tag range is a good starting point).
+
+- **Can htop inside the container show only the container's resources?** Today
+  it reads the host's /proc: all cores, all memory, everyone's load. Options:
+  lxcfs-style /proc masking (fuse overlay for /proc/meminfo, /proc/cpuinfo,
+  /proc/stat scaled to the cgroup limits), or podman's --systemd/cgroup
+  namespace support; check what modern podman + crun offer out of the box
+  (cgroup v2 namespaces hide other containers' PIDs already; the meminfo/cpu
+  view is the missing piece).
+
 - **hostit-node hangs on stop.** During the 2026-08-16 stage deploy, stopping
   hostit-node timed out after systemd's 90s stop-sigterm window and the
   process was SIGKILLed. Something ignores the shutdown signal or blocks the

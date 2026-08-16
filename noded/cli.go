@@ -8,10 +8,13 @@ package noded
 
 import (
 	"crypto/tls"
+	"fmt"
 	"log/slog"
+	"net"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"sync"
 	"syscall"
 	"time"
 
@@ -28,24 +31,54 @@ import (
 const (
 	// redialDelay paces reconnects to control
 	redialDelay = 2 * time.Second
-	// nodeID is the colocated node's identity (its cert CN)
-	nodeID = "local"
 )
 
-// NewCLI is the hostit-node command line: one job, `serve`.
+// NewCLI is the hostit-node command line: `serve` and `join`.
 func NewCLI() *cli.App {
 	return &cli.App{
 		Name:  "hostit-node",
 		Usage: "hostit's machine half: runs apps on this host and serves control's node RPC",
-		Commands: []*cli.Command{{
-			Name:   "serve",
-			Usage:  "Run the node daemon (requires root)",
-			Action: execServe,
-			Flags: []cli.Flag{
-				&cli.StringFlag{Name: "config", Aliases: []string{"c"}, Value: config.DefaultServerConfigFile, Usage: "server config file (shared with hostit-control when colocated)"},
+		Commands: []*cli.Command{
+			{
+				Name:   "serve",
+				Usage:  "Run the node daemon (requires root)",
+				Action: execServe,
+				Flags: []cli.Flag{
+					&cli.StringFlag{Name: "config", Aliases: []string{"c"}, Value: config.DefaultServerConfigFile, Usage: "server config file (shared with hostit-control when colocated)"},
+				},
 			},
-		}},
+			{
+				Name:   "join",
+				Usage:  "Enroll this machine with control: exchange a one-time join token for this node's mTLS certificate",
+				Action: execJoin,
+				Flags: []cli.Flag{
+					&cli.StringFlag{Name: "config", Aliases: []string{"c"}, Value: config.DefaultServerConfigFile, Usage: "node config file"},
+					&cli.StringFlag{Name: "control", Required: true, Usage: "control's node listener, host:port"},
+					&cli.StringFlag{Name: "token", Required: true, Usage: "join token from `hostit-control node add`"},
+				},
+			},
+		},
 	}
+}
+
+// execJoin runs the enrollment exchange and tells the operator what the
+// config must say for serve to dial in as this node.
+func execJoin(c *cli.Context) error {
+	conf, err := config.LoadConfig(c.String("config"))
+	if err != nil {
+		return err
+	}
+	token, control := c.String("token"), c.String("control")
+	name, _, _, err := node.ParseJoinToken(token)
+	if err != nil {
+		return err
+	}
+	if err := node.Join(control, token, conf.DataDir); err != nil {
+		return err
+	}
+	fmt.Printf("Joined as node %q; credentials stored under %s.\n", name, conf.DataDir)
+	fmt.Printf("Make sure the config sets:\n\n  node-id: %s\n  listen-node: %s\n\nthen start hostit-node.\n", name, control)
+	return nil
 }
 
 func execServe(c *cli.Context) error {
@@ -103,39 +136,53 @@ func execServe(c *cli.Context) error {
 
 	// Dial control forever: serve the RPC over the mTLS connection; on death,
 	// redial with backoff. Control runs its rejoin handshake on every register.
-	tlsConf, err := node.LoadNodeCreds(conf.DataDir, nodeID)
+	tlsConf, err := node.LoadNodeCreds(conf.DataDir, conf.NodeID)
 	if err != nil {
 		return err
 	}
+	// A termination signal closes the live connection: ServeAgent blocks on the
+	// session and would otherwise ignore SIGTERM until systemd SIGKILLs us
+	// after its stop timeout.
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-	slog.Info("Node ready; dialing control", "addr", conf.ListenNode, "id", nodeID)
+	var connMu sync.Mutex
+	var current net.Conn
+	stopping := make(chan struct{})
+	go func() {
+		<-sigCh
+		close(stopping)
+		connMu.Lock()
+		if current != nil {
+			_ = current.Close()
+		}
+		connMu.Unlock()
+	}()
+	slog.Info("Node ready; dialing control", "addr", conf.ListenNode, "id", conf.NodeID)
 	for {
+		select {
+		case <-stopping:
+			return nil
+		default:
+		}
 		conn, err := tls.Dial("tcp", conf.ListenNode, tlsConf)
 		if err != nil {
 			time.Sleep(redialDelay)
 			continue
 		}
+		connMu.Lock()
+		current = conn
+		connMu.Unlock()
 		slog.Info("Connected to control", "addr", conf.ListenNode)
-		if err := node.ServeAgent(conn, nodeID, manager); err != nil {
+		if err := node.ServeAgent(conn, conf.NodeID, manager); err != nil {
 			slog.Warn("Control connection failed", "error", err)
 		}
-		slog.Warn("Control connection lost; redialing")
 		_ = conn.Close()
-		if interrupted() {
+		select {
+		case <-stopping:
 			return nil
+		default:
 		}
+		slog.Warn("Control connection lost; redialing")
 		time.Sleep(redialDelay)
-	}
-}
-
-// interrupted reports whether the process got a termination signal; the dial
-// loop otherwise spins through shutdown.
-func interrupted() bool {
-	select {
-	case <-sigCh:
-		return true
-	default:
-		return false
 	}
 }
 

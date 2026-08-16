@@ -5,10 +5,23 @@ import (
 )
 
 const (
-	// HostLocal is the runner host for apps on this machine; other values are
-	// reserved for the future multi-node setup (see TODO.md)
+	// HostLocal is the name of the colocated node (the one on control's own
+	// host); app.Host and the node table key on node names.
 	HostLocal = "local"
 )
+
+// Node is one app-running machine. A node is created pending (with a one-time
+// join token) by `node add`, becomes joined when the token is exchanged for
+// its mTLS certificate, and is authenticated from then on purely by that
+// certificate's CN matching this row's name.
+type Node struct {
+	Name    string `json:"name"`
+	Address string `json:"address"`
+	// JoinedAt is zero while the node is pending (token minted, not yet used).
+	JoinedAt time.Time `json:"joined_at"`
+	// LastSeen is the last connect/heartbeat, for liveness display and placement.
+	LastSeen time.Time `json:"last_seen"`
+}
 
 // Role is a user's permission level
 type Role string

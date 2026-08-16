@@ -17,44 +17,59 @@ import (
 const ipcDirName = "ipc"
 
 // EnsureIPCCreds creates (once) and loads the CA plus the "control" and
-// "local" identity certs; returns the server TLS config for control's node
-// listener.
-func EnsureIPCCreds(dataDir string) (*tls.Config, error) {
+// "local" identity certs; returns the TLS config for control's node listener
+// and the CA itself (the join handler signs with it).
+func EnsureIPCCreds(dataDir string) (*tls.Config, *CA, error) {
 	dir := filepath.Join(dataDir, ipcDirName)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if _, err := os.Stat(filepath.Join(dir, "ca.pem")); err != nil {
 		ca, err := NewCA()
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		if err := writePEMPair(dir, "ca", ca.CertPEM(), ca.KeyPEM()); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		for _, id := range []string{"control", "local"} {
 			cert, err := ca.Issue(id)
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 			certPEM, keyPEM, err := EncodeCert(cert)
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 			if err := writePEMPair(dir, id, certPEM, keyPEM); err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 		}
 	}
+	ca, err := LoadCA(dataDir)
+	if err != nil {
+		return nil, nil, err
+	}
 	controlCert, err := tls.LoadX509KeyPair(filepath.Join(dir, "control.pem"), filepath.Join(dir, "control.key"))
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	pool, err := loadPool(filepath.Join(dir, "ca.pem"))
+	return ca.ListenerTLS(controlCert), ca, nil
+}
+
+// LoadCA reads the persisted CA (cert + signing key) back for join-time
+// certificate issuance.
+func LoadCA(dataDir string) (*CA, error) {
+	dir := filepath.Join(dataDir, ipcDirName)
+	certPEM, err := os.ReadFile(filepath.Join(dir, "ca.pem"))
 	if err != nil {
 		return nil, err
 	}
-	return ServerTLS(controlCert, pool), nil
+	keyPEM, err := os.ReadFile(filepath.Join(dir, "ca.key"))
+	if err != nil {
+		return nil, err
+	}
+	return NewCAFromPEM(certPEM, keyPEM)
 }
 
 // LoadNodeCreds loads a node's identity ("local" on the colocated host) and

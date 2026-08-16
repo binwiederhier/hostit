@@ -238,6 +238,18 @@ var migrations = []string{
 	// from uidFor(port) once.
 	`
 		ALTER TABLE app ADD COLUMN uid INTEGER NOT NULL DEFAULT 0;
+	`, // 19: the node registry -- one row per app-running machine, created
+	// pending with a hashed one-time join token, joined once the token is
+	// exchanged for the node's mTLS certificate.
+	`
+		CREATE TABLE node (
+			name TEXT PRIMARY KEY,
+			address TEXT NOT NULL DEFAULT '',
+			token_hash TEXT NOT NULL DEFAULT '',
+			token_expires_at INTEGER NOT NULL DEFAULT 0,
+			joined_at INTEGER NOT NULL DEFAULT 0,
+			last_seen INTEGER NOT NULL DEFAULT 0
+		);
 	`,
 }
 

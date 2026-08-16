@@ -23,27 +23,40 @@ const (
 // the manager's and the server's NodeAgent, a poll loop feeds the state
 // cache, and the rejoin sweep re-asserts desired state.
 func listenForNode(conf *config.Config, manager *app.Manager, srv *server.Server, done <-chan struct{}) error {
-	tlsConf, err := node.EnsureIPCCreds(conf.DataDir)
+	tlsConf, ca, err := node.EnsureIPCCreds(conf.DataDir)
 	if err != nil {
+		return err
+	}
+	// The colocated node exists implicitly and is always authorized.
+	if err := manager.Store().EnsureNode(store.HostLocal, "127.0.0.1"); err != nil {
 		return err
 	}
 	// Each registration supersedes the previous connection's poll loop: without
 	// this, a stale loop against a dead session raced the live one for the cache.
 	var supersede chan struct{}
+	mux := http.NewServeMux()
+	// Enrollment: a new node exchanges its one-time join token for an mTLS
+	// certificate; the only route here that runs without a client cert.
+	mux.Handle(node.JoinPath, node.JoinHandler(ca, manager.Store()))
+	mux.Handle("/", node.ConnectHandler(func(nodeID string) bool {
+		n, err := manager.Store().Node(nodeID)
+		return err == nil && !n.JoinedAt.IsZero()
+	}, func(nodeID string, remote app.NodeAgent) {
+		slog.Info("Node connected", "node", nodeID)
+		_ = manager.Store().SetNodeSeen(nodeID, time.Now())
+		if supersede != nil {
+			close(supersede)
+		}
+		supersede = make(chan struct{})
+		manager.SetNodeAgent(remote)
+		srv.SetNode(remote)
+		go pollNodeStates(manager, remote, done, supersede)
+		go rejoin(manager, remote)
+	}))
 	httpSrv := &http.Server{
 		Addr:      conf.ListenNode,
 		TLSConfig: tlsConf,
-		Handler: node.ConnectHandler(func(nodeID string, remote app.NodeAgent) {
-			slog.Info("Node connected", "node", nodeID)
-			if supersede != nil {
-				close(supersede)
-			}
-			supersede = make(chan struct{})
-			manager.SetNodeAgent(remote)
-			srv.SetNode(remote)
-			go pollNodeStates(manager, remote, done, supersede)
-			go rejoin(manager, remote)
-		}),
+		Handler:   mux,
 	}
 	go func() {
 		slog.Info("Listening for node dial-ins", "addr", conf.ListenNode)
@@ -101,5 +114,3 @@ func rejoin(manager *app.Manager, remote app.NodeAgent) {
 	}
 	slog.Info("Rejoin sweep complete", "apps", ensured)
 }
-
-var _ = store.HostLocal // keep the import stable while the node table lands in 2b

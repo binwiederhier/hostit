@@ -13,6 +13,7 @@ type SSHInfo struct {
 
 // App mirrors the server's app response
 type App struct {
+	ID        string    `json:"id"`
 	Name      string    `json:"name"`
 	URL       string    `json:"url"`
 	Port      int       `json:"port"`

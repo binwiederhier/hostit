@@ -56,6 +56,6 @@ func NewControl() *cli.App {
 	return &cli.App{
 		Name:     "hostit-control",
 		Usage:    "hostit's control plane: web app, REST API, registry, placement, certificates",
-		Commands: []*cli.Command{cmdServe},
+		Commands: []*cli.Command{cmdServe, cmdNode},
 	}
 }

@@ -2,12 +2,13 @@ package node
 
 import (
 	"bufio"
-
+	"bytes"
 	"fmt"
-	"github.com/hashicorp/yamux"
+	"io"
 	"net"
 	"net/http"
 
+	"github.com/hashicorp/yamux"
 	"heckel.io/hostit/app"
 )
 
@@ -20,22 +21,28 @@ const connectPath = "/internal/node/connect"
 
 // ConnectHandler is control's side: it hijacks the upgrade request's
 // connection, becomes the duplex's accepting side, and hands the registered
-// remote agent (plus the node id) to register. The node id comes from the
-// mTLS client cert CN when the transport carries one, else from the node's
-// self-reported header (acceptable only on the root-only local socket).
-func ConnectHandler(register func(nodeID string, agent app.NodeAgent)) http.Handler {
+// remote agent (plus the node id) to register. Over TLS the node id is the
+// client cert CN, full stop -- the listener admits cert-less connections for
+// /join, so a header fallback there would let anyone claim any node. The
+// self-reported header is acceptable only without TLS (the root-only local
+// socket). authorize checks the id against the node registry: an unregistered
+// node's still-valid certificate is refused, which is what makes `node
+// remove` an effective revocation.
+func ConnectHandler(authorize func(nodeID string) bool, register func(nodeID string, agent app.NodeAgent)) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != connectPath && r.URL.Path != "/" { // mounted standalone in tests
 			http.NotFound(w, r)
 			return
 		}
 		nodeID := ""
-		if r.TLS != nil && len(r.TLS.PeerCertificates) > 0 {
-			nodeID = r.TLS.PeerCertificates[0].Subject.CommonName
+		if r.TLS != nil {
+			if len(r.TLS.PeerCertificates) > 0 {
+				nodeID = r.TLS.PeerCertificates[0].Subject.CommonName
+			}
 		} else {
 			nodeID = r.Header.Get("X-Hostit-Node")
 		}
-		if nodeID == "" {
+		if nodeID == "" || !authorize(nodeID) {
 			http.Error(w, "no node identity", http.StatusForbidden)
 			return
 		}
@@ -71,14 +78,26 @@ func ServeAgent(conn net.Conn, nodeID string, agent app.NodeAgent) error {
 	if err := req.Write(conn); err != nil {
 		return err
 	}
-	resp, err := http.ReadResponse(bufio.NewReader(conn), req)
+	br := bufio.NewReader(conn)
+	resp, err := http.ReadResponse(br, req)
 	if err != nil {
 		return err
 	}
 	if resp.StatusCode != http.StatusSwitchingProtocols {
 		return fmt.Errorf("connect refused: %s", resp.Status)
 	}
-	sess, err := yamux.Client(conn, nil)
+	// Control talks yamux immediately after the 101, so its first frames can
+	// already sit in the read buffer; hand them to the session or they are
+	// silently lost and control's first stream hangs forever.
+	var sessConn net.Conn = conn
+	if n := br.Buffered(); n > 0 {
+		peek, err := br.Peek(n)
+		if err != nil {
+			return err
+		}
+		sessConn = &bufferedConn{Conn: conn, reader: io.MultiReader(bytes.NewReader(append([]byte(nil), peek...)), conn)}
+	}
+	sess, err := yamux.Client(sessConn, nil)
 	if err != nil {
 		return err
 	}
@@ -88,3 +107,12 @@ func ServeAgent(conn net.Conn, nodeID string, agent app.NodeAgent) error {
 	<-sess.CloseChan() // returns when the connection dies; the caller redials
 	return nil
 }
+
+// bufferedConn replays bytes the response reader had already buffered before
+// handing the connection to yamux.
+type bufferedConn struct {
+	net.Conn
+	reader io.Reader
+}
+
+func (c *bufferedConn) Read(p []byte) (int, error) { return c.reader.Read(p) }
