@@ -435,17 +435,34 @@ func (ra *routingAgent) Sync(state *SyncState) error {
 
 // Reconcile fans out to every connected node; rejoin calls a node's agent
 // directly, so this is only for interface completeness.
-// Reconcile fans the desired document out: each node gets the apps it hosts,
-// so one call from a control loop converges the whole fleet.
+// Reconcile fans the desired document out, SLICED per node: a node must only
+// ever be handed the apps it hosts. Handing every node the whole fleet would
+// have each one try to build and configure apps that live elsewhere -- and on
+// a colocated pair, where /etc/passwd is shared, it would look like the app
+// already exists and quietly apply another node's limits to it.
 func (ra *routingAgent) Reconcile(desired *nodeapi.DesiredState) []string {
 	for _, id := range ra.reg.IDs() {
 		agent := ra.reg.Agent(id)
 		if agent == nil {
 			continue
 		}
-		agent.Reconcile(desired)
+		agent.Reconcile(sliceDesired(desired, id))
 	}
 	return nil
+}
+
+// sliceDesired narrows a fleet-wide document to one node's apps.
+func sliceDesired(desired *nodeapi.DesiredState, nodeID string) *nodeapi.DesiredState {
+	if desired == nil {
+		return nil
+	}
+	out := &nodeapi.DesiredState{Seq: desired.Seq, Apps: make([]*nodeapi.AppDesired, 0, len(desired.Apps))}
+	for _, app := range desired.Apps {
+		if hostOrLocal(app.Host) == nodeID {
+			out.Apps = append(out.Apps, app)
+		}
+	}
+	return out
 }
 
 // Heartbeat is per-node data; meaningless on the fan-out.

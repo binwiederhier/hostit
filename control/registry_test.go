@@ -5,6 +5,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"heckel.io/hostit/nodeapi"
 	"heckel.io/hostit/store"
 )
 
@@ -98,4 +99,44 @@ func TestMachineLifecycleInvalidatesTheControlCache(t *testing.T) {
 	assert.False(t, machineHas, "the machine's own cache entry is dropped")
 	cached := m.CachedStates([]string{"blog"})
 	assert.False(t, cached["blog"].Running, "the control cache must not keep serving the pre-Down state")
+}
+
+// A node must only ever be handed the apps it hosts. A fleet-wide document
+// fanned out unsliced would have every node try to build and configure apps
+// that live elsewhere -- and on a colocated pair, which shares /etc/passwd,
+// the app would look present and quietly take another node's limits.
+func TestReconcileSlicesTheDocumentPerNode(t *testing.T) {
+	t.Parallel()
+	m, _ := newTestManager(t)
+	reg := NewNodeRegistry()
+	local := &desiredRecorder{NodeAgent: m}
+	worker := &desiredRecorder{NodeAgent: m}
+	reg.Register(store.HostLocal, local)
+	reg.Register("worker-2", worker)
+
+	NewRoutingAgent(m.Store(), reg).Reconcile(&nodeapi.DesiredState{Apps: []*nodeapi.AppDesired{
+		{ProvisionSpec: nodeapi.ProvisionSpec{Name: "here", Host: store.HostLocal}},
+		{ProvisionSpec: nodeapi.ProvisionSpec{Name: "there", Host: "worker-2"}},
+	}})
+
+	assert.Equal(t, []string{"here"}, local.names())
+	assert.Equal(t, []string{"there"}, worker.names())
+}
+
+type desiredRecorder struct {
+	NodeAgent
+	got *nodeapi.DesiredState
+}
+
+func (r *desiredRecorder) Reconcile(desired *nodeapi.DesiredState) []string {
+	r.got = desired
+	return nil
+}
+
+func (r *desiredRecorder) names() []string {
+	var out []string
+	for _, a := range r.got.Apps {
+		out = append(out, a.Name)
+	}
+	return out
 }
