@@ -5,8 +5,6 @@ package main
 import (
 	"fmt"
 	"os"
-
-	"heckel.io/hostit/cmd"
 )
 
 // Set by goreleaser via ldflags (-X main.version=... etc.)
@@ -17,7 +15,7 @@ var (
 )
 
 func main() {
-	app := cmd.New()
+	app := New()
 	app.Version = version
 	if commit != "" {
 		app.Version = fmt.Sprintf("%s (%s, built %s)", version, commit, date)

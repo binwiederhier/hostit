@@ -12,7 +12,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/urfave/cli/v2"
 	"gopkg.in/yaml.v3"
 )
 
@@ -47,24 +46,9 @@ func LoadFileConfig(path string) (*FileConfig, error) {
 	return conf, nil
 }
 
-// NewCLI is the hostit-proxy command line: one job, `serve`.
-func NewCLI() *cli.App {
-	return &cli.App{
-		Name:  "hostit-proxy",
-		Usage: "hostit's data plane: terminates TLS and routes to apps from a cached table",
-		Commands: []*cli.Command{{
-			Name:   "serve",
-			Usage:  "Run the proxy",
-			Action: execServe,
-			Flags: []cli.Flag{
-				&cli.StringFlag{Name: "config", Aliases: []string{"c"}, Value: DefaultConfigFile, Usage: "proxy config file"},
-			},
-		}},
-	}
-}
-
-func execServe(c *cli.Context) error {
-	conf, err := LoadFileConfig(c.String("config"))
+// Serve runs the proxy from its config file until a termination signal.
+func Serve(configPath string) error {
+	conf, err := LoadFileConfig(configPath)
 	if err != nil {
 		return err
 	}

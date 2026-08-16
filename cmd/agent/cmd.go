@@ -1,6 +1,6 @@
 // Package cmd wires up the hostit CLI: the daemon ("serve"), the app-side deploy
 // commands ("deploy", "restart", ...) and the remote client ("apps ...").
-package cmd
+package main
 
 import (
 	"os"
@@ -46,16 +46,4 @@ func insideContainer() bool {
 		}
 	}
 	return os.Getenv("container") != ""
-}
-
-// NewControl creates the hostit-control CLI: the control plane as its own
-// binary and systemd service (the four-service split). The daemon that used
-// to be "hostit serve" lives here; the hostit binary keeps the CLI and the
-// in-container agent.
-func NewControl() *cli.App {
-	return &cli.App{
-		Name:     "hostit-control",
-		Usage:    "hostit's control plane: web app, REST API, registry, placement, certificates",
-		Commands: []*cli.Command{cmdServe, cmdNode},
-	}
 }

@@ -7,8 +7,6 @@ package main
 import (
 	"fmt"
 	"os"
-
-	"heckel.io/hostit/proxy"
 )
 
 // Set by goreleaser via ldflags (-X main.version=... etc.)
@@ -19,7 +17,7 @@ var (
 )
 
 func main() {
-	app := proxy.NewCLI()
+	app := newProxyApp()
 	app.Version = version
 	if commit != "" {
 		app.Version = fmt.Sprintf("%s (%s, built %s)", version, commit, date)

@@ -18,7 +18,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/urfave/cli/v2"
 	"heckel.io/hostit/app"
 	"heckel.io/hostit/config"
 	"heckel.io/hostit/node"
@@ -37,42 +36,15 @@ const (
 // systemd's stop timeout.
 var sigCh = make(chan os.Signal, 1)
 
-// NewCLI is the hostit-node command line: `serve` and `join`.
-func NewCLI() *cli.App {
-	return &cli.App{
-		Name:  "hostit-node",
-		Usage: "hostit's machine half: runs apps on this host and serves control's node RPC",
-		Commands: []*cli.Command{
-			{
-				Name:   "serve",
-				Usage:  "Run the node daemon (requires root)",
-				Action: execServe,
-				Flags: []cli.Flag{
-					&cli.StringFlag{Name: "config", Aliases: []string{"c"}, Value: config.DefaultServerConfigFile, Usage: "server config file (shared with hostit-control when colocated)"},
-				},
-			},
-			{
-				Name:   "join",
-				Usage:  "Enroll this machine with control: exchange a one-time join token for this node's mTLS certificate",
-				Action: execJoin,
-				Flags: []cli.Flag{
-					&cli.StringFlag{Name: "config", Aliases: []string{"c"}, Value: config.DefaultServerConfigFile, Usage: "node config file"},
-					&cli.StringFlag{Name: "control", Required: true, Usage: "control's node listener, host:port"},
-					&cli.StringFlag{Name: "token", Required: true, Usage: "join token from `hostit-control node add`"},
-				},
-			},
-		},
-	}
-}
-
 // execJoin runs the enrollment exchange and tells the operator what the
 // config must say for serve to dial in as this node.
-func execJoin(c *cli.Context) error {
-	conf, err := config.LoadConfig(c.String("config"))
+// Join runs the enrollment exchange and tells the operator what the config
+// must say for serve to dial in as this node.
+func Join(configPath, control, token string) error {
+	conf, err := config.LoadConfig(configPath)
 	if err != nil {
 		return err
 	}
-	token, control := c.String("token"), c.String("control")
 	name, _, _, err := node.ParseJoinToken(token)
 	if err != nil {
 		return err
@@ -85,8 +57,9 @@ func execJoin(c *cli.Context) error {
 	return nil
 }
 
-func execServe(c *cli.Context) error {
-	conf, err := config.LoadConfig(c.String("config"))
+// Serve runs the node daemon from its config file until a termination signal.
+func Serve(configPath, version string) error {
+	conf, err := config.LoadConfig(configPath)
 	if err != nil {
 		return err
 	}
@@ -103,7 +76,7 @@ func execServe(c *cli.Context) error {
 		return err
 	}
 	defer s.Close()
-	app.Version = c.App.Version
+	app.Version = version
 	manager := app.NewManager(conf, s, app.NewSystemServices(run.New(), conf.NodeID))
 
 	// The node-local startup, same order as the fused daemon's. Limits are
@@ -133,11 +106,11 @@ func execServe(c *cli.Context) error {
 		if removed := manager.Reconcile(); len(removed) > 0 {
 			slog.Info("Cleaned up leftovers of apps that no longer exist", "apps", removed)
 		}
-		restarted, err := manager.RestartStaleAgents(c.App.Version)
+		restarted, err := manager.RestartStaleAgents(version)
 		if err != nil {
 			slog.Warn("Cannot restart apps after upgrade", "error", err)
 		} else if len(restarted) > 0 {
-			slog.Info("Restarted apps to pick up the new version", "apps", restarted, "version", c.App.Version)
+			slog.Info("Restarted apps to pick up the new version", "apps", restarted, "version", version)
 		}
 	}()
 	go manager.DiskUsageLoop(done)

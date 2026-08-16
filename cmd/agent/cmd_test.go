@@ -1,4 +1,4 @@
-package cmd
+package main
 
 import (
 	"strings"
@@ -22,8 +22,6 @@ func TestNewCommands(t *testing.T) {
 		assert.Contains(t, names, expected)
 	}
 	assert.NotContains(t, names, "serve", "the daemon is hostit-control's job now")
-	control := NewControl()
-	require.NotNil(t, control.Command("serve"))
 	for _, hidden := range []string{"deploy", "start", "restart", "poweroff", "status", "logs", "guide"} {
 		assert.NotContains(t, names, hidden, "%q cannot work outside a container", hidden)
 	}

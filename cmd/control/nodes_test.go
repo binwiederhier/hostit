@@ -1,4 +1,4 @@
-package cmd
+package main
 
 import (
 	"os"
@@ -12,7 +12,7 @@ import (
 )
 
 func TestControlHasNodeCommands(t *testing.T) {
-	control := NewControl()
+	control := newControlApp()
 	nodes := control.Command("node")
 	require.NotNil(t, nodes, "hostit-control manages the node registry")
 	names := make([]string, 0)
