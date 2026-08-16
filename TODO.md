@@ -118,6 +118,14 @@ definitions and the conversation prefix are cache-marked, so repeat turns pay th
 
 ## Smaller things
 
+- **hostit-node hangs on stop.** During the 2026-08-16 stage deploy, stopping
+  hostit-node timed out after systemd's 90s stop-sigterm window and the
+  process was SIGKILLed. Something ignores the shutdown signal or blocks the
+  exit path -- suspects: the control dial loop's redial sleep, a loop stuck
+  in a long btrfs command, or the duplex session not unblocking Accept on
+  close. Reproduce with `systemctl stop hostit-node` + goroutine dump
+  (SIGQUIT), then fix the shutdown ordering.
+
 - **There are a lot of zombie processes.** Find who is not reaping: suspects
   are the in-container agent (PID 1 must reap everything -- check its SIGCHLD
   handling around run:/exec/terminal children), podman exec sessions from the
