@@ -131,26 +131,18 @@ type CreateOptions struct {
 	Host        string   // Target node; empty means placement picks one (a fork pins its source's)
 }
 
-// Manager creates and deletes apps and everything that belongs to them, and
-// runs their containers as root with per-app uid mappings
-type Manager struct {
-	// node is where this manager's ORCHESTRATION sends machine work (provision,
-	// deprovision): itself by default (single process), or a remote node agent
-	// when control and node run as separate services (SetNodeAgent).
-	node NodeAgent
-	// sink is the node's reverse channel to control for control-plane data the
-	// node originates (usage, poweroffs, snapshot records); nil in a single
-	// process (SetControlSink).
-	sink ControlSink
-	// synced closes when the first registry mirror arrives (Sync); gates the
-	// node's destructive startup work.
-	synced     chan struct{}
-	syncedOnce sync.Once
-	// registry is the connected-nodes registry in multi-node control mode
-	// (SetNodeRegistry); nil in a single process.
-	registry *NodeRegistry
-
-	config    *config.Config
+// machine is the node-local half of the Manager: the services and state that
+// act on THIS machine's apps (subvolumes, unix users, containers, port rules,
+// files, state measurement). It is the seam the app split grows along
+// (plans/260816-hostit-package-architecture.md, Phase 3): the NodeAgent verbs
+// operate on exactly these fields, and later phases lift this struct into the
+// node package. The Manager embeds it, so field promotion keeps every existing
+// method working unchanged while the seam becomes visible.
+type machine struct {
+	config *config.Config
+	// store is this half's view of the registry: the full registry in a single
+	// process (and on control), the pushed mirror on a split node. The control
+	// half reads it through promotion until the split gives it its own.
 	store     *store.Store
 	runner    run.Runner
 	btrfs     btrfs.Interface
@@ -170,6 +162,15 @@ type Manager struct {
 	// until serve establishes the bind (tests, dry runs): AppsDir is used as-is.
 	rawAppsDir string
 
+	// sink is the node's reverse channel to control for control-plane data the
+	// node originates (usage, poweroffs, snapshot records); nil in a single
+	// process (SetControlSink).
+	sink ControlSink
+	// synced closes when the first registry mirror arrives (Sync); gates the
+	// node's destructive startup work.
+	synced     chan struct{}
+	syncedOnce sync.Once
+
 	// memoryMB and diskMB cache per-app limits, so redeploys and quota checks
 	// keep them; the authoritative values come from the owner's limits
 	memoryMB map[string]int
@@ -181,11 +182,6 @@ type Manager struct {
 	// create can wait for the dying user instead of failing on the collision.
 	background  sync.WaitGroup
 	tearingDown map[string]bool
-	// nextPort rotates allocation through the range (see allocatePort)
-	nextPort int
-	// reservedPorts holds ports handed out by allocatePort but not yet registered
-	// in the store, so concurrent creates never share one (see allocatePort)
-	reservedPorts map[int]bool
 
 	// stateCache holds the last measured state of every app, so listing apps
 	// answers from memory instead of waiting on podman
@@ -198,33 +194,60 @@ type Manager struct {
 	// e.g. a rollback swapping the subvolume while a deploy writes into it.
 	appLocks map[string]*sync.Mutex
 
-	mu         sync.Mutex // Protects memoryMB, diskMB, reservedPorts
+	// mu also protects the Manager's reservedPorts for now: one lock spans the
+	// halves until the control split gives the control side its own.
+	mu         sync.Mutex // Protects memoryMB, diskMB, tearingDown, reservedPorts
 	stateMu    sync.Mutex // Protects stateCache, stateFresh, stateRefreshing
 	execMu     sync.Mutex // Serializes /run commands; they are builds, and the box has one core
 	appLocksMu sync.Mutex // Protects appLocks
+}
+
+// Manager creates and deletes apps and everything that belongs to them, and
+// runs their containers as root with per-app uid mappings. It is (still) both
+// halves of the platform in one type: the embedded machine is the node-local
+// half; the fields below are the control plane's (orchestration, placement,
+// port allocation from the registry).
+type Manager struct {
+	machine
+
+	// node is where this manager's ORCHESTRATION sends machine work (provision,
+	// deprovision): itself by default (single process), or a remote node agent
+	// when control and node run as separate services (SetNodeAgent).
+	node NodeAgent
+	// registry is the connected-nodes registry in multi-node control mode
+	// (SetNodeRegistry); nil in a single process.
+	registry *NodeRegistry
+
+	// nextPort rotates allocation through the range (see allocatePort)
+	nextPort int
+	// reservedPorts holds ports handed out by allocatePort but not yet registered
+	// in the store, so concurrent creates never share one (see allocatePort)
+	reservedPorts map[int]bool
 }
 
 // NewManager creates a Manager from its config, store and the node-local services
 // (real ones from NewSystemServices in production, fakes in tests).
 func NewManager(conf *config.Config, s *store.Store, svc *Services) *Manager {
 	m := &Manager{
-		config:        conf,
-		store:         s,
-		runner:        svc.Runner,
-		btrfs:         svc.Btrfs,
-		systemd:       svc.Systemd,
-		container:     svc.Container,
-		user:          svc.User,
-		ssh:           svc.SSH,
-		firewall:      svc.Firewall,
-		homefs:        homefs.New(ErrInvalid),
-		memoryMB:      make(map[string]int),
-		synced:        make(chan struct{}),
-		diskMB:        make(map[string]int),
+		machine: machine{
+			config:      conf,
+			store:       s,
+			runner:      svc.Runner,
+			btrfs:       svc.Btrfs,
+			systemd:     svc.Systemd,
+			container:   svc.Container,
+			user:        svc.User,
+			ssh:         svc.SSH,
+			firewall:    svc.Firewall,
+			homefs:      homefs.New(ErrInvalid),
+			memoryMB:    make(map[string]int),
+			synced:      make(chan struct{}),
+			diskMB:      make(map[string]int),
+			tearingDown: make(map[string]bool),
+			stateCache:  make(map[string]State),
+			appLocks:    make(map[string]*sync.Mutex),
+		},
 		reservedPorts: make(map[int]bool),
-		tearingDown:   make(map[string]bool),
-		stateCache:    make(map[string]State),
-		appLocks:      make(map[string]*sync.Mutex),
 	}
 	m.node = m // single process: orchestration and machine work are the same
 	// The snapshot Service reuses the Manager's node-local services and store, and
