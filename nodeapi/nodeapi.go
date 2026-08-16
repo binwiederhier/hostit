@@ -99,6 +99,10 @@ type NodeAgent interface {
 	// Keys and limits, applied where the app user lives.
 	SetKeys(name string, appKeys, profileKeys []string) error
 	SyncKeys(name string, profileKeys []string) error
+	// Rename renames the app's Unix login (stopping and restarting the app
+	// around the usermod) and carries the name-keyed caches over. The registry
+	// flip is control's; on a failed flip control compensates by renaming back.
+	Rename(oldName, newName, id string) error
 	SetMemoryLimit(name string, memoryMB int)
 	SetDiskLimit(name string, diskMB int)
 

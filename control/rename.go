@@ -2,6 +2,7 @@ package control
 
 import (
 	"errors"
+	"log/slog"
 
 	"heckel.io/hostit/store"
 )
@@ -12,10 +13,11 @@ import (
 // recreated: an app keeps whatever state it built up in its subvolume (its
 // files and everything it installed).
 //
-// The machine half of the rename (stopping the unit, the usermod, the cache
-// carry-over) runs through RenameLogin on this process's machine; the registry
-// flip is the callback in the middle. NOTE: like the whole rename flow, this
-// assumes the app's machine is THIS host -- the known colocated-only gap.
+// The machine half (stopping the unit, the usermod, the cache carry-over) runs
+// through the node agent on the app's OWN node -- locally when fused, over the
+// node RPC in split mode. The registry flip happens here afterwards; when it
+// loses the race to a same-name create, the machine rename is compensated by
+// renaming back, so login and registry stay consistent.
 func (m *Manager) RenameApp(oldName, newName string) (*store.App, error) {
 	defer m.LockApp(oldName)()
 	if newName == oldName {
@@ -30,9 +32,13 @@ func (m *Manager) RenameApp(oldName, newName string) (*store.App, error) {
 	if err := m.validateName(newName); err != nil {
 		return nil, err
 	}
-	if err := m.RenameLogin(oldName, newName, a.ID, func() error {
-		return m.store.RenameApp(oldName, newName)
-	}); err != nil {
+	if err := m.node.Rename(oldName, newName, a.ID); err != nil {
+		return nil, err
+	}
+	if err := m.store.RenameApp(oldName, newName); err != nil {
+		if renameErr := m.node.Rename(newName, oldName, a.ID); renameErr != nil {
+			slog.Error("Cannot rename app login back after a failed registry flip", "app", oldName, "error", renameErr)
+		}
 		if errors.Is(err, store.ErrAppNameTaken) {
 			return nil, ErrAppExists
 		}

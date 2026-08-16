@@ -32,6 +32,10 @@ func TestRPCRoundTrips(t *testing.T) {
 	assert.Equal(t, "up", out)
 	assert.Contains(t, agent.calls, "ensure:blog")
 
+	// Rename crosses the wire with both names and the stable id
+	require.NoError(t, remote.Rename("blog", "shop", "id123"))
+	assert.Contains(t, agent.calls, "rename:blog->shop:id123")
+
 	// Sentinel errors survive the wire as errors.Is-able values
 	err = remote.Down("blog")
 	assert.ErrorIs(t, err, appctl.ErrPoweredOff)
@@ -88,6 +92,11 @@ type fakeAgentFull struct {
 	calls   []string
 	written map[string][]byte
 	readErr error // when set, ReadFile fails with this
+}
+
+func (f *fakeAgentFull) Rename(oldName, newName, id string) error {
+	f.calls = append(f.calls, "rename:"+oldName+"->"+newName+":"+id)
+	return nil
 }
 
 func (f *fakeAgentFull) Ensure(name string) (string, error) {

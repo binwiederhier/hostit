@@ -192,6 +192,8 @@ func RPCHandler(agent nodeapi.NodeAgent) http.Handler {
 	verb("fileexists", func(q *rpcReq) *rpcResp { return &rpcResp{OK: agent.FileExists(q.Name, q.Path)} })
 	verb("setkeys", func(q *rpcReq) *rpcResp { return okErr(agent.SetKeys(q.Name, q.AppKeys, q.ProfileKeys)) })
 	verb("synckeys", func(q *rpcReq) *rpcResp { return okErr(agent.SyncKeys(q.Name, q.ProfileKeys)) })
+	// Rename rides Name (old), To (new) and ID; To is the same field movefile uses.
+	verb("rename", func(q *rpcReq) *rpcResp { return okErr(agent.Rename(q.Name, q.To, q.ID)) })
 	verb("setmemorylimit", func(q *rpcReq) *rpcResp { agent.SetMemoryLimit(q.Name, q.MemoryMB); return &rpcResp{OK: true} })
 	verb("setdisklimit", func(q *rpcReq) *rpcResp { agent.SetDiskLimit(q.Name, q.DiskMB); return &rpcResp{OK: true} })
 	verb("snapshot", func(q *rpcReq) *rpcResp {

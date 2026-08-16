@@ -8,10 +8,11 @@ import (
 	"heckel.io/hostit/workspace"
 )
 
-// RenameLogin is the Machine half of a rename: stop the app around the
-// usermod, rename the Unix login, run the registry flip in the middle, carry
-// the name-keyed caches over and bring the app back up. On a failed flip the
-// login is renamed back, so OS and registry stay consistent.
+// Rename is the Machine half of a rename: stop the app around the usermod,
+// rename the Unix login, carry the name-keyed caches over and bring the app
+// back up. The registry flip is control's, AFTER this returns; when that flip
+// fails, control compensates by calling Rename back the other way, so OS and
+// registry stay consistent.
 //
 // The one wrinkle is the Unix login: usermod --login refuses while the user has a
 // live process, and its container -- plus any open web-terminal or SSH session,
@@ -19,7 +20,7 @@ import (
 // rename and started again afterwards. Stop/start reuses the same container, so no
 // state is lost; it is a brief blip, not a rebuild. Old <name>.<base> links stop
 // resolving; the new one works on the next request.
-func (m *Machine) RenameLogin(oldName, newName, id string, flip func() error) error {
+func (m *Machine) Rename(oldName, newName, id string) error {
 	// The unit is keyed on the (unchanging) id, so the same name stops and starts it.
 	unit := workspace.UnitName(id)
 	wasRunning := m.isActive(oldName)
@@ -47,12 +48,6 @@ func (m *Machine) RenameLogin(oldName, newName, id string, flip func() error) er
 	if err := m.renameUser(oldName, newName); err != nil {
 		startApp() // bring the app back under its old name
 		return fmt.Errorf("cannot rename app user: %w", err)
-	}
-	// Flip the name in the registry; on failure, undo the user rename to stay consistent.
-	if err := flip(); err != nil {
-		_ = m.user.Rename(newName, oldName)
-		startApp()
-		return err
 	}
 	// Carry the name-keyed in-memory caches over so the next lookup is warm.
 	m.renameCaches(oldName, newName)

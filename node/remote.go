@@ -204,6 +204,10 @@ func (a *remoteAgent) SyncKeys(name string, profileKeys []string) error {
 	return a.do("synckeys", &rpcReq{Name: name, ProfileKeys: profileKeys})
 }
 
+func (a *remoteAgent) Rename(oldName, newName, id string) error {
+	return a.do("rename", &rpcReq{Name: oldName, To: newName, ID: id})
+}
+
 func (a *remoteAgent) SetMemoryLimit(name string, memoryMB int) {
 	_ = a.do("setmemorylimit", &rpcReq{Name: name, MemoryMB: memoryMB})
 }

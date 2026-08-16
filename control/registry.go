@@ -355,6 +355,15 @@ func (ra *routingAgent) SyncKeys(name string, profileKeys []string) error {
 	return agent.SyncKeys(name, profileKeys)
 }
 
+func (ra *routingAgent) Rename(oldName, newName, id string) error {
+	// Route by the OLD name: the registry still holds it while the machine half runs.
+	agent, err := ra.route(oldName)
+	if err != nil {
+		return err
+	}
+	return agent.Rename(oldName, newName, id)
+}
+
 func (ra *routingAgent) SetMemoryLimit(name string, memoryMB int) {
 	agent, err := ra.route(name)
 	if err != nil {
