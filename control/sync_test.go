@@ -239,3 +239,24 @@ func TestRefreshStatesReadsThroughTheNodeAgent(t *testing.T) {
 	assert.Equal(t, "running", got["blog"].AppState, "state comes from the node agent, not a local measure")
 	assert.True(t, got["blog"].Running)
 }
+
+// Each mirror push carries a higher sequence than the one before it, so a
+// node can tell a newer payload from an older one that raced it (the node's
+// half of this is TestSyncIgnoresAStaleMirror).
+func TestMirrorPushesCarryIncreasingSequences(t *testing.T) {
+	t.Parallel()
+	m, _ := newTestManager(t)
+	rec := &recordingAgent{NodeAgent: m}
+	m.SetNodeAgent(rec)
+
+	_, err := m.CreateApp("one", nil)
+	require.NoError(t, err)
+	_, err = m.CreateApp("two", nil)
+	require.NoError(t, err)
+	m.WaitBackground()
+
+	require.GreaterOrEqual(t, len(rec.syncs), 2)
+	for i := 1; i < len(rec.syncs); i++ {
+		assert.Greater(t, rec.syncs[i].Seq, rec.syncs[i-1].Seq, "sequences must increase with each push")
+	}
+}

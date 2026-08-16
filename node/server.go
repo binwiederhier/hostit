@@ -148,6 +148,7 @@ func Serve(configPath, version string) error {
 		current = conn
 		connMu.Unlock()
 		slog.Info("Connected to control", "addr", conf.ControlURL)
+		machine.ResetSyncSeq() // control's sequence restarts with its process
 		if err := ServeAgent(conn, conf.NodeID, machine, link.SetClient); err != nil {
 			slog.Warn("Control connection failed", "error", err)
 		}

@@ -185,6 +185,14 @@ type DeprovisionSpec struct {
 type SyncState struct {
 	Apps      []*store.App      `json:"apps"`
 	Snapshots []*store.Snapshot `json:"snapshots"`
+	// Seq orders the pushes on one control<->node connection. A payload is
+	// built by reading the registry and sent afterwards, so two concurrent
+	// mutations can reach the node in the opposite order to the one they were
+	// built in; the node applies only a payload newer than the last one it
+	// took, and ignores the rest. Without it, an older snapshot landing last
+	// drops a just-created app from the mirror and every verb for that app
+	// fails with "app not found" until the next mutation pushes again.
+	Seq int64 `json:"seq"`
 }
 
 // State is one app's measured runtime state, as a node reports it.

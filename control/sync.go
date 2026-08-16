@@ -62,7 +62,9 @@ func (m *Manager) syncState(host string) (*SyncState, error) {
 	if err != nil {
 		return nil, err
 	}
-	state := &SyncState{Apps: make([]*store.App, 0, len(apps)), Snapshots: make([]*store.Snapshot, 0)}
+	// Stamped AFTER the registry read, so a payload built from newer rows
+	// always carries the higher number (see SyncState.Seq).
+	state := &SyncState{Seq: m.mirrorSeq.Add(1), Apps: make([]*store.App, 0, len(apps)), Snapshots: make([]*store.Snapshot, 0)}
 	for _, a := range apps {
 		if host != "" && hostOrLocal(a.Host) != host {
 			continue

@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"heckel.io/hostit/config"
@@ -90,6 +91,10 @@ type Manager struct {
 	config *config.Config
 
 	pmu sync.Mutex // Protects nextPort, reservedPorts (the control side's own lock)
+	// mirrorSeq orders mirror pushes so a node can drop a stale one; see
+	// SyncState.Seq. Per control process, which is why a node resets its view
+	// of it on every new connection.
+	mirrorSeq atomic.Int64
 }
 
 // NewManager creates a Manager from its config, store and the node-local services

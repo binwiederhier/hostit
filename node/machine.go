@@ -108,6 +108,9 @@ type Machine struct {
 	// node's destructive startup work.
 	synced     chan struct{}
 	syncedOnce sync.Once
+	// syncSeq is the last mirror sequence applied (see nodeapi.SyncState.Seq);
+	// reset per control connection by ResetSyncSeq.
+	syncSeq int64
 	// onStateChanged, when set, tells the OTHER half that an app's state just
 	// moved (deploy, power, restart), so the control plane can invalidate its
 	// cached entry instead of serving the old state for a whole TTL. Wired by
@@ -143,6 +146,7 @@ type Machine struct {
 	stateMu    sync.Mutex // Protects stateCache, stateFresh, stateRefreshing
 	execMu     sync.Mutex // Serializes /run commands; they are builds, and the box has one core
 	appLocksMu sync.Mutex // Protects appLocks
+	syncMu     sync.Mutex // Protects syncSeq
 }
 
 // NewMachine creates the Machine half from its config, the store view (the
