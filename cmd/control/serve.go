@@ -11,13 +11,12 @@ import (
 	"time"
 
 	"github.com/urfave/cli/v2"
-	"heckel.io/hostit/app"
 	"heckel.io/hostit/config"
+	"heckel.io/hostit/control"
 	"heckel.io/hostit/node"
 	"heckel.io/hostit/preflight"
 	"heckel.io/hostit/preview"
 	"heckel.io/hostit/run"
-	"heckel.io/hostit/server"
 	"heckel.io/hostit/store"
 	"heckel.io/hostit/user"
 )
@@ -85,7 +84,7 @@ func execServe(c *cli.Context) error {
 	}
 	defer s.Close()
 	node.Version = c.App.Version // Part of each container's identity; see node.Version
-	manager := app.NewManager(conf, s, node.NewSystemServices(run.New(), conf.NodeID))
+	manager := control.NewManager(conf, s, node.NewSystemServices(run.New(), conf.NodeID))
 	users := user.NewManager(conf, s)
 	if err := ensureSessionKey(conf, s); err != nil {
 		return err
@@ -162,7 +161,7 @@ func execServe(c *cli.Context) error {
 		// app's resolved IP and the public internet, not the host/LAN/metadata.
 		previews.SetIsolation(conf.AppPreviewIsolation != config.AppPreviewIsolationOff, conf.AppPreviewAllowCIDRs)
 	}
-	srv := server.New(conf, manager, users)
+	srv := control.New(conf, manager, users)
 	if previews != nil {
 		srv.SetPreviews(previews)
 	}
@@ -241,7 +240,7 @@ func ensureSessionKey(conf *config.Config, s *store.Store) error {
 
 // applyStoredLimits primes the app manager with each app owner's memory and disk
 // limits, which live in the user records rather than in the app registry
-func applyStoredLimits(s *store.Store, apps *app.Manager, users *user.Manager, recordOnly bool) error {
+func applyStoredLimits(s *store.Store, apps *control.Manager, users *user.Manager, recordOnly bool) error {
 	registered, err := s.Apps()
 	if err != nil {
 		return err

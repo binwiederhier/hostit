@@ -7,10 +7,9 @@ import (
 	"sync"
 	"time"
 
-	"heckel.io/hostit/app"
 	"heckel.io/hostit/config"
+	"heckel.io/hostit/control"
 	"heckel.io/hostit/node"
-	"heckel.io/hostit/server"
 	"heckel.io/hostit/store"
 )
 
@@ -25,7 +24,7 @@ const (
 // the node registry (orchestration routes each app's verbs to its hosting
 // node), a per-node poll loop feeds the state cache, and the rejoin handshake
 // pushes the node's registry mirror and re-asserts desired state.
-func listenForNode(conf *config.Config, manager *app.Manager, srv *server.Server, done <-chan struct{}) error {
+func listenForNode(conf *config.Config, manager *control.Manager, srv *control.Server, done <-chan struct{}) error {
 	tlsConf, ca, err := node.EnsureIPCCreds(conf.DataDir)
 	if err != nil {
 		return err
@@ -34,9 +33,9 @@ func listenForNode(conf *config.Config, manager *app.Manager, srv *server.Server
 	if err := manager.Store().EnsureNode(store.HostLocal, "127.0.0.1"); err != nil {
 		return err
 	}
-	registry := app.NewNodeRegistry()
+	registry := control.NewNodeRegistry()
 	manager.SetNodeRegistry(registry)
-	srv.SetNode(app.NewRoutingAgent(manager.Store(), registry))
+	srv.SetNode(control.NewRoutingAgent(manager.Store(), registry))
 	// Each node's registration supersedes its previous connection's poll loop:
 	// without this, a stale loop against a dead session raced the live one.
 	var mu sync.Mutex
@@ -52,7 +51,7 @@ func listenForNode(conf *config.Config, manager *app.Manager, srv *server.Server
 		// The node's reverse channel: usage, poweroffs and snapshot records it
 		// originates land in the registry through these.
 		return node.CallbackHandler(nodeID, manager.Store())
-	}, func(nodeID string, remote app.NodeAgent) {
+	}, func(nodeID string, remote control.NodeAgent) {
 		slog.Info("Node connected", "node", nodeID)
 		_ = manager.Store().SetNodeSeen(nodeID, time.Now())
 		mu.Lock()
@@ -65,7 +64,7 @@ func listenForNode(conf *config.Config, manager *app.Manager, srv *server.Server
 		registry.Register(nodeID, remote)
 		go pollNodeStates(manager, registry, nodeID, remote, done, superseded)
 		go rejoin(manager, nodeID, remote)
-	}, func(nodeID string, remote app.NodeAgent) {
+	}, func(nodeID string, remote control.NodeAgent) {
 		slog.Info("Node disconnected", "node", nodeID)
 		registry.Unregister(nodeID, remote)
 	}))
@@ -84,7 +83,7 @@ func listenForNode(conf *config.Config, manager *app.Manager, srv *server.Server
 }
 
 // nodeApps lists the apps hosted by one node.
-func nodeApps(manager *app.Manager, nodeID string) []*store.App {
+func nodeApps(manager *control.Manager, nodeID string) []*store.App {
 	apps, err := manager.Store().Apps()
 	if err != nil {
 		return nil
@@ -106,7 +105,7 @@ func nodeApps(manager *app.Manager, nodeID string) []*store.App {
 // dashboards and placement read memory, never the wire, per request. Each
 // node is asked only about its own apps; the cache merges per name. The poll
 // also doubles as the liveness heartbeat.
-func pollNodeStates(manager *app.Manager, registry *app.NodeRegistry, nodeID string, remote app.NodeAgent, done, superseded <-chan struct{}) {
+func pollNodeStates(manager *control.Manager, registry *control.NodeRegistry, nodeID string, remote control.NodeAgent, done, superseded <-chan struct{}) {
 	for {
 		select {
 		case <-done:
@@ -145,8 +144,8 @@ func pollNodeStates(manager *app.Manager, registry *app.NodeRegistry, nodeID str
 // scopeStates keeps only the states for the apps in allowed: control asked a
 // node about the apps it hosts, so anything else it returns is dropped rather
 // than trusted into the cache.
-func scopeStates(states map[string]app.State, allowed []string) map[string]app.State {
-	keep := make(map[string]app.State, len(allowed))
+func scopeStates(states map[string]control.State, allowed []string) map[string]control.State {
+	keep := make(map[string]control.State, len(allowed))
 	for _, name := range allowed {
 		if s, ok := states[name]; ok {
 			keep[name] = s
@@ -160,7 +159,7 @@ func scopeStates(states map[string]app.State, allowed []string) map[string]app.S
 // on it, and every row-reading verb needs it), re-assert each of its apps'
 // limits, then Ensure every app that should be running, so an app whose
 // container died during the outage comes back without waiting for a user.
-func rejoin(manager *app.Manager, nodeID string, remote app.NodeAgent) {
+func rejoin(manager *control.Manager, nodeID string, remote control.NodeAgent) {
 	manager.PushMirrorTo(nodeID, remote)
 	// Converge the node to the just-pushed mirror: tear down apps deleted while
 	// it was disconnected (the routed Deprovision was dropped) and re-assert its

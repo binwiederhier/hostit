@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"heckel.io/hostit/app"
+	"heckel.io/hostit/control"
 )
 
 func TestScopeStatesDropsAppsNotAskedAbout(t *testing.T) {
@@ -13,7 +13,7 @@ func TestScopeStatesDropsAppsNotAskedAbout(t *testing.T) {
 	// apps it hosts). A compromised node returning an extra key for another
 	// node's app must not reach the state cache.
 	asked := []string{"mine1", "mine2"}
-	reported := map[string]app.State{
+	reported := map[string]control.State{
 		"mine1":  {AppState: "running"},
 		"mine2":  {AppState: "stopped"},
 		"victim": {AppState: "running"}, // an app on another node
