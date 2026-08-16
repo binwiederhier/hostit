@@ -108,6 +108,9 @@ func New(conf *config.Config, apps *Manager, users *user.Manager) *Server {
 		usernameForUID: usernameForUID,
 	}
 	s.exchangeGoogleCode = s.exchangeGoogleCodeLive
+	// The Manager builds the desired state control asserts on nodes; the
+	// per-app keys and limits in it need the user tables, which live here.
+	apps.SetPolicy(&serverPolicy{s})
 	// Continue the routing table's version where the last control process left
 	// off (see currentRoutes); a fresh counter would collide with what a
 	// running proxy already holds.

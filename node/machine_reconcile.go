@@ -7,19 +7,67 @@ import (
 	"path/filepath"
 	"strings"
 
+	"heckel.io/hostit/nodeapi"
 	"heckel.io/hostit/store"
 	"heckel.io/hostit/workspace"
 )
 
-// Reconcile is the node's convergence pass, run on every rejoin: tear down the
-// Machine state of apps no longer in the (freshly synced) mirror and re-assert
-// this node's port rules. It is what recovers an app deleted while the node was
-// disconnected -- the routed Deprovision was dropped, and ReconcileOrphans
-// otherwise runs only once per process. Returns the orphan ids it removed.
-func (m *Machine) Reconcile() []string {
-	removed := m.ReconcileOrphans()
+// Reconcile converges this node to the state control asserts. Control calls it
+// on every connect and on a timer, handing over the whole desired document, so
+// the node never reasons from a snapshot it has been sitting on: it builds what
+// is missing (an app whose account is gone -- a rebuilt node -- is provisioned
+// again from the same spec that created it), corrects what drifted (keys,
+// limits), re-asserts port rules, and tears down what the document does not
+// list. Applying it twice changes nothing.
+//
+// A nil document falls back to converging against the pushed mirror, which is
+// what an older control sends.
+func (m *Machine) Reconcile(desired *nodeapi.DesiredState) []string {
+	if desired != nil {
+		m.applyDesired(desired)
+	}
+	removed := m.reconcileOrphans(desiredIDs(desired))
 	m.ReconcilePortRules()
 	return removed
+}
+
+// applyDesired makes each app in the document true on this machine. Failures
+// are logged per app rather than aborting: one broken app must not stop the
+// rest of the node from converging.
+func (m *Machine) applyDesired(desired *nodeapi.DesiredState) {
+	for _, app := range desired.Apps {
+		if !m.UserExists(app.Name) {
+			// The app should be here and is not: a rebuilt node, a botched
+			// provision, an account swept by mistake. Build it from the same
+			// spec that created it originally.
+			spec := app.ProvisionSpec
+			if err := m.Provision(&spec); err != nil {
+				slog.Warn("Cannot provision a missing app during reconcile", "app", app.Name, "error", err)
+				continue
+			}
+			slog.Info("Provisioned an app that was missing on this node", "app", app.Name)
+		}
+		// Keys and limits are control's to assert; re-writing them every pass
+		// is how a change that happened while this node was away lands.
+		if err := m.SetKeys(app.Name, app.SSHKeys, nil); err != nil {
+			slog.Warn("Cannot apply app keys during reconcile", "app", app.Name, "error", err)
+		}
+		m.SetMemoryLimit(app.Name, app.MemoryMB)
+		m.SetDiskLimit(app.Name, app.DiskMB)
+	}
+}
+
+// desiredIDs is the id set the document lists, or nil when there is no
+// document (the caller then falls back to the mirror).
+func desiredIDs(desired *nodeapi.DesiredState) map[string]bool {
+	if desired == nil {
+		return nil
+	}
+	ids := make(map[string]bool, len(desired.Apps))
+	for _, app := range desired.Apps {
+		ids[app.ID] = true
+	}
+	return ids
 }
 
 // ReconcileOrphans removes the host state of apps that no longer exist -- their
@@ -62,6 +110,13 @@ func (m *Machine) endOrphanPass() {
 }
 
 func (m *Machine) ReconcileOrphans() []string {
+	return m.reconcileOrphans(nil)
+}
+
+// reconcileOrphans sweeps against the given id set, or against the mirror when
+// it is nil. The document is the fresher truth: it was built for this pass,
+// where the mirror is whatever last arrived.
+func (m *Machine) reconcileOrphans(known map[string]bool) []string {
 	m.startOrphanPass()
 	defer m.endOrphanPass()
 	out, err := m.systemd.ListUnits(workspace.UnitTemplate + "*")
@@ -76,9 +131,11 @@ func (m *Machine) ReconcileOrphans() []string {
 	}
 	// Containers, units and home directories are all keyed on the app's id, so the
 	// known-set holds ids and every reverse-parse below yields an id.
-	known := make(map[string]bool, len(apps))
-	for _, a := range apps {
-		known[a.ID] = true
+	if known == nil {
+		known = make(map[string]bool, len(apps))
+		for _, a := range apps {
+			known[a.ID] = true
+		}
 	}
 	removed := make([]string, 0)
 	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {

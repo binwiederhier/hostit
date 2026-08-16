@@ -3,6 +3,7 @@ package control
 import (
 	"log/slog"
 
+	"heckel.io/hostit/nodeapi"
 	"heckel.io/hostit/store"
 )
 
@@ -53,6 +54,78 @@ func (m *Manager) PushMirrorTo(nodeID string, agent NodeAgent) {
 	if err := agent.Sync(state); err != nil {
 		slog.Warn("Cannot push the registry mirror to the node", "node", nodeID, "error", err)
 	}
+}
+
+// AppPolicy resolves the per-app settings that do not live on the app row: the
+// complete SSH key set (the app's own keys plus every standing profile key)
+// and the owner's resource limits. It is an interface because those answers
+// need the user tables, which the server layer owns; without one the Manager
+// falls back to the app's own keys and its recorded limits.
+type AppPolicy interface {
+	Keys(a *store.App) []string
+	Limits(a *store.App) (memoryMB, diskMB int)
+}
+
+// SetPolicy wires the resolver used to build desired state (see AppPolicy).
+func (m *Manager) SetPolicy(p AppPolicy) {
+	m.policy = p
+}
+
+// DesiredState is the document control asserts for one node: every app that
+// belongs there, with everything needed to build it from nothing. This is the
+// registry projected outward -- the node holds no authority of its own, so a
+// node that crashed, was rebuilt or missed a mutation converges by replaying
+// this.
+func (m *Manager) DesiredState(nodeID string) (*nodeapi.DesiredState, error) {
+	apps, err := m.store.Apps()
+	if err != nil {
+		return nil, err
+	}
+	desired := &nodeapi.DesiredState{Apps: make([]*nodeapi.AppDesired, 0, len(apps))}
+	for _, a := range apps {
+		if nodeID != "" && hostOrLocal(a.Host) != nodeID {
+			continue
+		}
+		keys, memoryMB, diskMB := m.appPolicy(a)
+		desired.Apps = append(desired.Apps, &nodeapi.AppDesired{
+			ProvisionSpec: nodeapi.ProvisionSpec{
+				Host:    hostOrLocal(a.Host),
+				ID:      a.ID,
+				Name:    a.Name,
+				Port:    a.Port,
+				SSHKeys: keys,
+				URL:     m.URL(a),
+				DiskMB:  diskMB,
+			},
+			MemoryMB:   memoryMB,
+			PoweredOff: a.PoweredOff,
+		})
+	}
+	return desired, nil
+}
+
+// appPolicy resolves one app's keys and limits through the wired policy, or
+// falls back to what the registry and the recorded limits say.
+func (m *Manager) appPolicy(a *store.App) (keys []string, memoryMB, diskMB int) {
+	if m.policy != nil {
+		k := m.policy.Keys(a)
+		mem, disk := m.policy.Limits(a)
+		return k, mem, disk
+	}
+	k, err := m.store.AppKeys(a.Name)
+	if err != nil {
+		slog.Warn("Cannot read an app's keys for its desired state", "app", a.Name, "error", err)
+	}
+	return k, m.MemoryLimit(a.Name), m.DiskLimit(a.Name)
+}
+
+// ReconcileNodes hands every connected node the desired state and lets each
+// converge. A no-op in a single process, where control IS the machine.
+func (m *Manager) ReconcileNodes(desired *nodeapi.DesiredState) {
+	if m.node == NodeAgent(m) {
+		return
+	}
+	m.node.Reconcile(desired)
 }
 
 // syncState assembles the mirror payload: the given node's apps (all apps

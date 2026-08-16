@@ -93,7 +93,7 @@ func Serve(configPath, version string) error {
 		case <-done:
 			return
 		}
-		if removed := machine.Reconcile(); len(removed) > 0 {
+		if removed := machine.Reconcile(nil); len(removed) > 0 {
 			slog.Info("Cleaned up leftovers of apps that no longer exist", "apps", removed)
 		}
 		restarted, err := machine.RestartStaleAgents(version)

@@ -164,14 +164,18 @@ func rejoin(manager *control.Manager, nodeID string, remote control.NodeAgent) {
 	// BEFORE the mirror push overwrites its rows with control's older list.
 	manager.IngestNodeSnapshots(nodeID, remote)
 	manager.PushMirrorTo(nodeID, remote)
-	// Converge the node to the just-pushed mirror: tear down apps deleted while
-	// it was disconnected (the routed Deprovision was dropped) and re-assert its
-	// port rules. Must follow the mirror push.
-	remote.Reconcile()
+	// Hand the node its whole desired configuration and let it converge: build
+	// what is missing, correct keys and limits that drifted while it was away,
+	// drop what control no longer lists. The document is built here, from the
+	// registry, so the node needs no memory of its own.
+	desired, err := manager.DesiredState(nodeID)
+	if err != nil {
+		slog.Warn("Cannot build the desired state for a node", "node", nodeID, "error", err)
+	} else {
+		remote.Reconcile(desired)
+	}
 	ensured := 0
 	for _, a := range nodeApps(manager, nodeID) {
-		remote.SetMemoryLimit(a.Name, manager.MemoryLimit(a.Name))
-		remote.SetDiskLimit(a.Name, manager.DiskLimit(a.Name))
 		if a.PoweredOff {
 			continue
 		}

@@ -130,7 +130,18 @@ func RPCHandler(agent nodeapi.NodeAgent) http.Handler {
 		}
 		writeRPC(w, okErr(agent.Sync(&state)))
 	})
-	verb("reconcile", func(*rpcReq) *rpcResp { agent.Reconcile(); return &rpcResp{OK: true} })
+	mux.HandleFunc("POST /v1/reconcile", func(w http.ResponseWriter, r *http.Request) {
+		// The desired document rides the body; an empty body means "converge
+		// against your mirror" (an older control).
+		var desired nodeapi.DesiredState
+		if err := json.NewDecoder(r.Body).Decode(&desired); err != nil {
+			agent.Reconcile(nil)
+			writeRPC(w, &rpcResp{OK: true})
+			return
+		}
+		agent.Reconcile(&desired)
+		writeRPC(w, &rpcResp{OK: true})
+	})
 	mux.HandleFunc("POST /v1/provision", func(w http.ResponseWriter, r *http.Request) {
 		var spec nodeapi.ProvisionSpec
 		if err := json.NewDecoder(r.Body).Decode(&spec); err != nil {

@@ -160,3 +160,51 @@ func TestReconcileOrphanUsersRemovesAPersistentOrphan(t *testing.T) {
 	assert.Equal(t, []string{"ghost"}, ops.deletedUsers)
 	assert.Contains(t, ops.killedUsers, "ghost")
 }
+
+// Control asserts a whole desired document and the node converges to it: an
+// app whose account is missing (a rebuilt node, a botched provision, an
+// account swept by mistake) is built again from the same spec that created it
+// originally, and its keys and limits are re-applied. This is what makes the
+// registry the source of truth -- a node keeps no authority of its own, so
+// any component can crash and the next reconcile repairs it.
+func TestReconcileBuildsAnAppMissingFromTheNode(t *testing.T) {
+	t.Parallel()
+	m, ops, _ := newTestDeployManager(t)
+	app := createTestApp(t, m, "blog")
+	desired, err := m.DesiredState("")
+	require.NoError(t, err)
+	require.Len(t, desired.Apps, 1)
+
+	// The account is gone, as it would be on a rebuilt node.
+	ops.existingUsers, ops.createdUsers = nil, nil
+	require.NoError(t, m.store.SetAppKeys("blog", []string{testPublicKey}))
+	desired, err = m.DesiredState("")
+	require.NoError(t, err)
+
+	m.Reconcile(desired)
+
+	assert.Contains(t, ops.createdUsers, "blog", "an app the document lists but the node lacks is provisioned")
+	assert.Contains(t, ops.authorizedKeys["blog"], testPublicKey, "its keys are asserted from the registry")
+	_ = app
+}
+
+// The document is the truth for the sweep too: an app control no longer lists
+// is torn down (after the confirming second pass), while everything in the
+// document is left alone.
+func TestReconcileSweepsWhatTheDocumentOmits(t *testing.T) {
+	t.Parallel()
+	m, _, r := newTestDeployManager(t)
+	createTestApp(t, m, "blog")
+	require.NoError(t, m.WriteFile("blog", "x", []byte("y"), 0))
+	desired, err := m.DesiredState("")
+	require.NoError(t, err)
+
+	// A subvolume of an app the document does not list.
+	require.NoError(t, os.MkdirAll(filepath.Join(m.config.AppsDir, "ghostid"), 0o755))
+	r.reset()
+	m.Reconcile(desired)
+	m.Reconcile(desired)
+
+	assert.Contains(t, r.ran(), "btrfs subvolume delete "+filepath.Join(m.config.AppsDir, "ghostid"))
+	assert.DirExists(t, m.AppSubvolume("blog"), "an app the document lists is never touched")
+}

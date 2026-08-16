@@ -123,15 +123,38 @@ type NodeAgent interface {
 	// BEFORE any verb that reads rows on the node.
 	Sync(state *SyncState) error
 
-	// Reconcile converges the node's machine state to its (freshly synced)
-	// mirror: tear down apps deleted while it was disconnected, re-assert port
-	// rules. Run on every rejoin. Returns the orphan ids it removed.
-	Reconcile() []string
+	// Reconcile converges this node to the desired state control asserts:
+	// build what is missing, correct what has drifted (keys, limits, power),
+	// tear down what is not in the document. Control calls it on every connect
+	// and on a timer, so a node that crashed, was rebuilt, or missed a
+	// mutation heals from control's registry alone -- the registry is the
+	// source, the node is a projection of it. A nil desired state falls back
+	// to the node's mirror (an older control). Returns what it removed.
+	Reconcile(desired *DesiredState) []string
 
 	// Node-level: batch state for the control plane's cache, and the
 	// heartbeat placement/health feed on.
 	States(names []string) map[string]State
 	Heartbeat() *Heartbeat
+}
+
+// DesiredState is the complete configuration control asserts for one node:
+// every app that belongs there, with everything needed to build it from
+// nothing. It is a whole document rather than a diff, so applying it twice
+// changes nothing and applying it after any outage is enough to converge.
+type DesiredState struct {
+	Apps []*AppDesired `json:"apps"`
+	// Seq orders documents the same way SyncState.Seq orders mirrors.
+	Seq int64 `json:"seq"`
+}
+
+// AppDesired is one app's desired configuration. The embedded ProvisionSpec is
+// exactly what creating the app from nothing needs, which is what makes
+// re-provisioning a rebuilt node a matter of replaying this document.
+type AppDesired struct {
+	ProvisionSpec
+	MemoryMB   int  `json:"memory_mb"`
+	PoweredOff bool `json:"powered_off"`
 }
 
 // ControlSink is the node's reverse channel to control.

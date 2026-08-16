@@ -435,11 +435,15 @@ func (ra *routingAgent) Sync(state *SyncState) error {
 
 // Reconcile fans out to every connected node; rejoin calls a node's agent
 // directly, so this is only for interface completeness.
-func (ra *routingAgent) Reconcile() []string {
+// Reconcile fans the desired document out: each node gets the apps it hosts,
+// so one call from a control loop converges the whole fleet.
+func (ra *routingAgent) Reconcile(desired *nodeapi.DesiredState) []string {
 	for _, id := range ra.reg.IDs() {
-		if agent := ra.reg.Agent(id); agent != nil {
-			agent.Reconcile()
+		agent := ra.reg.Agent(id)
+		if agent == nil {
+			continue
 		}
+		agent.Reconcile(desired)
 	}
 	return nil
 }

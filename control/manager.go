@@ -96,7 +96,10 @@ type Manager struct {
 	// of it on every new connection. mirrorMu makes the registry read and the
 	// stamp atomic, so seq order IS read order.
 	mirrorSeq atomic.Int64
-	mirrorMu  sync.Mutex
+	// policy resolves per-app keys and limits when building desired state; the
+	// server sets it (those answers need the user tables). See AppPolicy.
+	policy   AppPolicy
+	mirrorMu sync.Mutex
 }
 
 // NewManager creates a Manager from its config, store and the node-local services

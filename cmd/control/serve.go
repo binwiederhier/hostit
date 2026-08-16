@@ -28,6 +28,8 @@ const (
 	// dataDirMode lets app users traverse /var/lib/hostit to their own home
 	// without reading it; the registry inside is 0600
 	dataDirMode = 0o711
+	// reconcileInterval paces the desired-state sweep across all nodes.
+	reconcileInterval = 5 * time.Minute
 	// appsDirMode is the directory holding the app subvolumes; app users traverse
 	// it to reach their own files dir (home/app) inside their subvolume
 	appsDirMode = 0o755
@@ -188,6 +190,13 @@ func execServe(c *cli.Context) error {
 	manager.SeedStates()
 	// One-time: record uid block bases for rows created before the uid column
 	manager.BackfillUIDs()
+	// Re-assert the desired state on every node on a timer: a push that failed
+	// mid-connection, a node that drifted, or anything that changed while a
+	// node was away converges here without waiting for a reconnect. Control is
+	// the source; this is how the registry keeps reaching the machines.
+	if splitNode {
+		go reconcileLoop(manager, done)
+	}
 	// Hourly automatic snapshots are CONTROL's decision in both modes: the
 	// sweep commands each app's node through the node agent (the local machine
 	// when fused, the routing agent when split; a no-op off btrfs).
@@ -242,6 +251,28 @@ func ensureSessionKey(conf *config.Config, s *store.Store) error {
 	}
 	conf.SessionKey = hex.EncodeToString(b)
 	return s.SetSetting(settingSessionKey, conf.SessionKey)
+}
+
+// reconcileLoop re-asserts every connected node's desired state periodically.
+// The interval is a compromise: often enough that a missed update heals on its
+// own, rare enough that the sweep is not itself load (each pass is a registry
+// read plus one RPC per node).
+func reconcileLoop(manager *control.Manager, done <-chan struct{}) {
+	slog.Info("Starting node reconcile loop", "interval", reconcileInterval)
+	defer slog.Info("Stopping node reconcile loop")
+	for {
+		select {
+		case <-time.After(reconcileInterval):
+		case <-done:
+			return
+		}
+		desired, err := manager.DesiredState("")
+		if err != nil {
+			slog.Warn("Cannot build the desired state for the reconcile sweep", "error", err)
+			continue
+		}
+		manager.ReconcileNodes(desired)
+	}
 }
 
 // applyStoredLimits primes the app manager with each app owner's memory and disk

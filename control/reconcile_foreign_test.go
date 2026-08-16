@@ -65,7 +65,7 @@ func TestReconcileAppliesPortRules(t *testing.T) {
 	m, ops, _ := newTestDeployManager(t)
 	createTestApp(t, m, "blog")
 	before := len(ops.portRules)
-	m.Reconcile() // first sighting: a removal always needs a second
-	m.Reconcile()
+	m.Reconcile(nil) // first sighting: a removal always needs a second
+	m.Reconcile(nil)
 	assert.Greater(t, len(ops.portRules), before, "reconcile re-applies the port rules")
 }
