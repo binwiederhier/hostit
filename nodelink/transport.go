@@ -3,7 +3,7 @@
 // transport that carries ordinary HTTP in both directions over one mTLS
 // connection the node dialed. Control never dials nodes; a node needs no
 // public listener. See plans/260807-hostit-multinode.md, section 4.
-package node
+package nodelink
 
 import (
 	"context"

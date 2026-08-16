@@ -8,8 +8,8 @@ import (
 
 	"github.com/urfave/cli/v2"
 	"heckel.io/hostit/config"
-	"heckel.io/hostit/node"
 	"heckel.io/hostit/nodeapi"
+	"heckel.io/hostit/nodelink"
 	"heckel.io/hostit/store"
 )
 
@@ -65,7 +65,7 @@ func execNodeAdd(c *cli.Context) error {
 	defer s.Close()
 	// Mint the node's identity from the cluster CA. Possession of this pair is
 	// membership (plus the registry row below); there is no join protocol.
-	ca, err := node.LoadCA(conf.DataDir)
+	ca, err := nodelink.LoadCA(conf.DataDir)
 	if err != nil {
 		return fmt.Errorf("cannot load the cluster CA (has hostit-control started once?): %w", err)
 	}
@@ -73,7 +73,7 @@ func execNodeAdd(c *cli.Context) error {
 	if err != nil {
 		return err
 	}
-	certPEM, keyPEM, err := node.EncodeCert(cert)
+	certPEM, keyPEM, err := nodelink.EncodeCert(cert)
 	if err != nil {
 		return err
 	}

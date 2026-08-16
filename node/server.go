@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"heckel.io/hostit/nodelink"
 	"heckel.io/hostit/preflight"
 	"heckel.io/hostit/run"
 	"heckel.io/hostit/store"
@@ -110,11 +111,11 @@ func Serve(configPath, version string) error {
 
 	// Dial control forever: serve the RPC over the mTLS connection; on death,
 	// redial with backoff. Control runs its rejoin handshake on every register.
-	tlsConf, err := DialCreds(conf)
+	tlsConf, err := nodelink.DialCreds(conf)
 	if err != nil {
 		return err
 	}
-	link := NewControlLink()
+	link := nodelink.NewControlLink()
 	machine.SetControlSink(link)
 	// A termination signal closes the live connection: ServeAgent blocks on the
 	// session and would otherwise ignore SIGTERM until systemd SIGKILLs us
@@ -149,7 +150,7 @@ func Serve(configPath, version string) error {
 		connMu.Unlock()
 		slog.Info("Connected to control", "addr", conf.ControlURL)
 		machine.ResetSyncSeq() // control's sequence restarts with its process
-		if err := ServeAgent(conn, conf.NodeID, machine, link.SetClient); err != nil {
+		if err := nodelink.ServeAgent(conn, conf.NodeID, machine, link.SetClient); err != nil {
 			slog.Warn("Control connection failed", "error", err)
 		}
 		_ = conn.Close()

@@ -9,7 +9,7 @@ import (
 
 	"heckel.io/hostit/config"
 	"heckel.io/hostit/control"
-	"heckel.io/hostit/node"
+	"heckel.io/hostit/nodelink"
 	"heckel.io/hostit/store"
 )
 
@@ -25,7 +25,7 @@ const (
 // node), a per-node poll loop feeds the state cache, and the rejoin handshake
 // pushes the node's registry mirror and re-asserts desired state.
 func listenForNode(conf *config.Config, manager *control.Manager, srv *control.Server, done <-chan struct{}) error {
-	tlsConf, err := node.ListenerCreds(conf.ClusterCertFile, conf.ClusterKeyFile, conf.ClusterCACertFile, conf.DataDir)
+	tlsConf, err := nodelink.ListenerCreds(conf.ClusterCertFile, conf.ClusterKeyFile, conf.ClusterCACertFile, conf.DataDir)
 	if err != nil {
 		return err
 	}
@@ -44,13 +44,13 @@ func listenForNode(conf *config.Config, manager *control.Manager, srv *control.S
 	// A node is authorized by its registry row plus its CA-signed certificate:
 	// the transport already proved the identity, the row is the membership
 	// switch `hostit-control node add` flips on and `node remove` off.
-	mux.Handle("/", node.ConnectHandler(func(nodeID string) bool {
+	mux.Handle("/", nodelink.ConnectHandler(func(nodeID string) bool {
 		_, err := manager.Store().Node(nodeID)
 		return err == nil
 	}, func(nodeID string) http.Handler {
 		// The node's reverse channel: usage, poweroffs and snapshot records it
 		// originates land in the registry through these.
-		return node.CallbackHandler(nodeID, manager.Store())
+		return nodelink.CallbackHandler(nodeID, manager.Store())
 	}, func(nodeID string, remote control.NodeAgent) {
 		slog.Info("Node connected", "node", nodeID)
 		_ = manager.Store().SetNodeSeen(nodeID, time.Now())

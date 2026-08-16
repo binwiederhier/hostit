@@ -13,13 +13,13 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"heckel.io/hostit/node"
+	"heckel.io/hostit/nodelink"
 )
 
 // fakeCertControl serves /internal/cert like control does, counting fetches.
 func fakeCertControl(t *testing.T, sni string) (*httptest.Server, *atomic.Int64) {
 	t.Helper()
-	ca, err := node.NewCA()
+	ca, err := nodelink.NewCA()
 	require.NoError(t, err)
 	cert, err := ca.Issue(sni)
 	require.NoError(t, err)
