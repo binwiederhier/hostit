@@ -6,54 +6,56 @@ before:
 builds:
   - id: hostit_linux_amd64
     binary: hostit
+    main: ./cmd/agent
     ldflags:
       - "-s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}}"
     goos: [ linux ]
     goarch: [ amd64 ]
   - id: hostit_linux_arm64
     binary: hostit
+    main: ./cmd/agent
     ldflags:
       - "-s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}}"
     goos: [ linux ]
     goarch: [ arm64 ]
   - id: hostit_proxy_linux_amd64
     binary: hostit-proxy
-    main: ./hostit-proxy-bin
+    main: ./cmd/proxy
     ldflags:
       - "-s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}}"
     goos: [ linux ]
     goarch: [ amd64 ]
   - id: hostit_control_linux_amd64
     binary: hostit-control
-    main: ./hostit-control-bin
+    main: ./cmd/control
     ldflags:
       - "-s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}}"
     goos: [ linux ]
     goarch: [ amd64 ]
   - id: hostit_control_linux_arm64
     binary: hostit-control
-    main: ./hostit-control-bin
+    main: ./cmd/control
     ldflags:
       - "-s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}}"
     goos: [ linux ]
     goarch: [ arm64 ]
   - id: hostit_node_linux_amd64
     binary: hostit-node
-    main: ./hostit-node-bin
+    main: ./cmd/node
     ldflags:
       - "-s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}}"
     goos: [ linux ]
     goarch: [ amd64 ]
   - id: hostit_node_linux_arm64
     binary: hostit-node
-    main: ./hostit-node-bin
+    main: ./cmd/node
     ldflags:
       - "-s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}}"
     goos: [ linux ]
     goarch: [ arm64 ]
   - id: hostit_proxy_linux_arm64
     binary: hostit-proxy
-    main: ./hostit-proxy-bin
+    main: ./cmd/proxy
     ldflags:
       - "-s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}}"
     goos: [ linux ]
