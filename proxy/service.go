@@ -4,7 +4,7 @@
 // control or a node daemon restarts. Anything it does not recognize falls
 // through to control, which owns the "nothing here" page and on-demand cert
 // issuance. See plans/260807-hostit-multinode.md.
-package proxyd
+package proxy
 
 import (
 	"crypto/tls"

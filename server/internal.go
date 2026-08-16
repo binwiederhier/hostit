@@ -32,7 +32,7 @@ var errTLSNotManaged = errors.New("tls is not managed here")
 
 const (
 	// internalRoutesPath/internalCertPath are the internal-surface endpoints the
-	// data plane (hostit-proxy) polls; the same strings live in the proxyd
+	// data plane (hostit-proxy) polls; the same strings live in the proxy
 	// package, which reaches this surface from the other side.
 	internalRoutesPath = "/internal/routes"
 	internalCertPath   = "/internal/cert"
@@ -47,7 +47,7 @@ const (
 	internalPollMax = 25 * time.Second
 )
 
-// routeTable mirrors proxyd.Table on the wire (seq/routes/host/target).
+// routeTable mirrors proxy.Table on the wire (seq/routes/host/target).
 type routeTable struct {
 	Seq    int64        `json:"seq"`
 	Routes []routeEntry `json:"routes"`

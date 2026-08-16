@@ -1,4 +1,4 @@
-package proxyd
+package proxy
 
 import (
 	"encoding/json"
