@@ -129,13 +129,18 @@ func UnitName(id string) string {
 // the app's unprivileged host uid: files in the app subvolume belong to the
 // app both inside and outside, and a workload escape lands on that uid rather
 // than on root. Each app gets its own network stack (slirp4netns), so containers
-// cannot reach each other, and ports are published on loopback only.
+// cannot reach each other. Ports are published on bindAddr: loopback on a
+// colocated node (where the proxy shares the host), the node's own private
+// address on a remote one, since the proxy dials the node over the network.
 //
 // The container runs the app's persistent subvolume (--rootfs), not an image:
 // the app's files live at home/app inside that same tree (no home bind mount),
 // so recreating the container (config change, daemon upgrade) keeps the files
 // and whatever the app installed, and one subvolume is the app's disk budget.
-func CreateArgs(conf *appconf.AppConfig, a *store.App, subvol, socketFile, hostitBin, version string, memoryMB int, ids IDs) []string {
+func CreateArgs(conf *appconf.AppConfig, a *store.App, subvol, socketFile, hostitBin, version string, memoryMB int, ids IDs, bindAddr string) []string {
+	if bindAddr == "" {
+		bindAddr = "127.0.0.1"
+	}
 	args := []string{"create", "--name", ContainerName(a.ID), "--hostname", a.Name}
 	// conmon signals readiness to systemd, so the app's Type=notify unit only reports
 	// active once the container is actually running. Without this a deploy can race a
@@ -172,7 +177,7 @@ func CreateArgs(conf *appconf.AppConfig, a *store.App, subvol, socketFile, hosti
 		"--env", fmt.Sprintf("PORT=%d", containerPort),
 		"--env", "HOME="+ContainerHome,
 		"--workdir", ContainerHome,
-		"--publish", fmt.Sprintf("127.0.0.1:%d:%d", a.Port, containerPort))
+		"--publish", fmt.Sprintf("%s:%d:%d", bindAddr, a.Port, containerPort))
 	// conf is nil for an app with no usable hostit.yml: the container still comes
 	// up, so its owner can SSH in and fix it
 	if conf != nil {

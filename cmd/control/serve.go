@@ -90,7 +90,7 @@ func execServe(c *cli.Context) error {
 	node.Version = c.App.Version
 	// The fused daemon IS the local node, so its machine services are the local
 	// node's (the firewall table is named after it).
-	manager := control.NewManager(conf, s, node.NewSystemServices(run.New(), store.HostLocal))
+	manager := control.NewManager(conf, s, node.NewSystemServices(run.New(), store.HostLocal, "", nil))
 	users := user.NewManager(conf, s)
 	if err := ensureSessionKey(conf, s); err != nil {
 		return err

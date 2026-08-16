@@ -46,6 +46,16 @@ type Config struct {
 	NodeKeyFile       string `yaml:"node-key-file"`
 	ClusterCACertFile string `yaml:"cluster-ca-cert-file"`
 
+	// AppsBindAddress is where this node publishes app ports. Empty means
+	// loopback, which is right when the proxy shares the host. A REMOTE node
+	// sets its own private address: the proxy dials apps over the network, and
+	// a loopback-published port is unreachable from another machine.
+	AppsBindAddress string `yaml:"apps-bind-address"`
+	// ControlAddresses are the control-plane addresses allowed to reach a
+	// published app port. Ignored on a loopback node; required on a remote one,
+	// or its apps would be reachable from anything that can route to it.
+	ControlAddresses []string `yaml:"control-addresses"`
+
 	// DataDir holds the registry mirror control pushes (and the colocated
 	// credentials); AppsDir is the btrfs pool the app subvolumes live in;
 	// SocketFile is where the in-container CLI reaches this node.
@@ -112,6 +122,11 @@ func (c *Config) Validate() error {
 	}
 	if set != 0 && set != 3 {
 		return errors.New("node-cert-file, node-key-file and cluster-ca-cert-file must be set together")
+	}
+	// Publishing off loopback without naming who may connect would put every
+	// app's port on whatever networks this node is attached to.
+	if c.AppsBindAddress != "" && len(c.ControlAddresses) == 0 {
+		return errors.New("apps-bind-address requires control-addresses: who may reach a published app port")
 	}
 	return nil
 }

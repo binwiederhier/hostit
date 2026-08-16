@@ -23,7 +23,7 @@ func TestContainerCreateArgsWorkspaceMode(t *testing.T) {
 	conf := &appconf.AppConfig{Mode: appconf.ModeApp, Run: "python3 -m http.server $PORT"}
 	require.NoError(t, conf.Validate())
 	a := &store.App{ID: "appid123", Name: "blog", Port: 10000}
-	args := CreateArgs(conf, a, "/srv/hostit/apps/appid123", "/run/hostit/hostit.sock", "/usr/bin/hostit", testVersion, 0, testIDs)
+	args := CreateArgs(conf, a, "/srv/hostit/apps/appid123", "/run/hostit/hostit.sock", "/usr/bin/hostit", testVersion, 0, testIDs, "")
 	cmd := strings.Join(args, " ")
 	// The container is named by the app's stable id, not its name, so a rename never
 	// has to recreate it. The in-container home is a fixed path for the same reason.
@@ -57,7 +57,7 @@ func TestCreateArgsOptionsAllPrecedeTheRootfs(t *testing.T) {
 	t.Parallel()
 	conf := &appconf.AppConfig{Mode: appconf.ModeApp, Run: "./server", Env: map[string]string{"K": "v"}}
 	a := &store.App{ID: "appid123", Name: "blog", Port: 10000}
-	args := CreateArgs(conf, a, "/apps/appid123", "/run/hostit/hostit.sock", "/usr/bin/hostit", testVersion, 512, testIDs)
+	args := CreateArgs(conf, a, "/apps/appid123", "/run/hostit/hostit.sock", "/usr/bin/hostit", testVersion, 512, testIDs, "")
 	// podman treats anything after --rootfs <path> as the container command, so a
 	// single misplaced option silently becomes argv[0] inside the container. The
 	// only things after --rootfs must be its path and the agent command.
@@ -78,7 +78,7 @@ func TestCreateArgsHashDiffersFromTheOldImageShape(t *testing.T) {
 	t.Parallel()
 	conf := &appconf.AppConfig{Mode: appconf.ModeApp, Run: "./server"}
 	a := &store.App{ID: "appid123", Name: "blog", Port: 10000}
-	args := CreateArgs(conf, a, "/apps/appid123", "/s", "/usr/bin/hostit", testVersion, 0, testIDs)
+	args := CreateArgs(conf, a, "/apps/appid123", "/s", "/usr/bin/hostit", testVersion, 0, testIDs, "")
 	// The pre-rootfs argv ended in [imageTag, hostitBin, agent]. The new shape must
 	// hash differently, because that hash change is exactly what triggers the
 	// one-time recreate of every existing container onto its rootfs.
@@ -93,10 +93,10 @@ func TestContainerConfigHashChanges(t *testing.T) {
 	conf2 := &appconf.AppConfig{Mode: appconf.ModeApp, Run: "./server"}
 	conf3 := &appconf.AppConfig{Mode: appconf.ModeApp, Run: "./other"}
 	conf4 := &appconf.AppConfig{Mode: appconf.ModeApp, Run: "./server", Env: map[string]string{"K": "v"}}
-	hash1 := ConfigHash(CreateArgs(conf1, a, "/apps/x", "/s", "/b", testVersion, 0, testIDs))
-	hash2 := ConfigHash(CreateArgs(conf2, a, "/apps/x", "/s", "/b", testVersion, 0, testIDs))
-	hash3 := ConfigHash(CreateArgs(conf3, a, "/apps/x", "/s", "/b", testVersion, 0, testIDs))
-	hash4 := ConfigHash(CreateArgs(conf4, a, "/apps/x", "/s", "/b", testVersion, 0, testIDs))
+	hash1 := ConfigHash(CreateArgs(conf1, a, "/apps/x", "/s", "/b", testVersion, 0, testIDs, ""))
+	hash2 := ConfigHash(CreateArgs(conf2, a, "/apps/x", "/s", "/b", testVersion, 0, testIDs, ""))
+	hash3 := ConfigHash(CreateArgs(conf3, a, "/apps/x", "/s", "/b", testVersion, 0, testIDs, ""))
+	hash4 := ConfigHash(CreateArgs(conf4, a, "/apps/x", "/s", "/b", testVersion, 0, testIDs, ""))
 	assert.Equal(t, hash1, hash2)
 	// run: changes are handled by the agent (SIGHUP), not by recreating the container,
 	// so the hash must NOT depend on the run command ...
@@ -113,8 +113,8 @@ func TestConfigHashIgnoresTheHostname(t *testing.T) {
 	// container, so the hash must not change.
 	before := &store.App{ID: "appid123", Name: "blog", Port: 10000}
 	after := &store.App{ID: "appid123", Name: "shop", Port: 10000}
-	hashBefore := ConfigHash(CreateArgs(conf, before, "/apps/x", "/s", "/b", testVersion, 0, testIDs))
-	hashAfter := ConfigHash(CreateArgs(conf, after, "/apps/x", "/s", "/b", testVersion, 0, testIDs))
+	hashBefore := ConfigHash(CreateArgs(conf, before, "/apps/x", "/s", "/b", testVersion, 0, testIDs, ""))
+	hashAfter := ConfigHash(CreateArgs(conf, after, "/apps/x", "/s", "/b", testVersion, 0, testIDs, ""))
 	assert.Equal(t, hashBefore, hashAfter)
 }
 
@@ -122,7 +122,7 @@ func TestContainerMountsTheSocketDirectory(t *testing.T) {
 	t.Parallel()
 	conf := &appconf.AppConfig{Mode: appconf.ModeStatic}
 	a := &store.App{Name: "blog", Port: 10000}
-	args := CreateArgs(conf, a, "/srv/hostit/apps/blog", "/run/hostit/hostit.sock", "/usr/bin/hostit", testVersion, 0, IDs{UID: 1001, GID: 1001})
+	args := CreateArgs(conf, a, "/srv/hostit/apps/blog", "/run/hostit/hostit.sock", "/usr/bin/hostit", testVersion, 0, IDs{UID: 1001, GID: 1001}, "")
 	joined := strings.Join(args, " ")
 
 	// The daemon deletes and recreates its socket on every restart, so a mount
@@ -138,7 +138,7 @@ func TestContainerUsesConmonSdnotify(t *testing.T) {
 	t.Parallel()
 	conf := &appconf.AppConfig{Mode: appconf.ModeStatic}
 	a := &store.App{Name: "blog", Port: 10000}
-	joined := strings.Join(CreateArgs(conf, a, "/srv/hostit/apps/blog", "/run/hostit/hostit.sock", "/usr/bin/hostit", testVersion, 0, testIDs), " ")
+	joined := strings.Join(CreateArgs(conf, a, "/srv/hostit/apps/blog", "/run/hostit/hostit.sock", "/usr/bin/hostit", testVersion, 0, testIDs, ""), " ")
 	// conmon (not the container) signals readiness, so the app's Type=notify systemd
 	// unit only reports active once the container is actually running -- a deploy that
 	// races a just-created app must not try to reload a container that is still
@@ -156,9 +156,9 @@ func TestEnvOrderDoesNotChangeTheConfigHash(t *testing.T) {
 	// Go randomizes map iteration per run, so without sortedKeys the env would land
 	// in a different order each time and every deploy would see a "changed" config
 	// and needlessly recreate the container. The hash must be stable.
-	first := ConfigHash(CreateArgs(conf, a, "/var/lib/hostit/apps/blog", "/run/hostit/hostit.sock", "/usr/bin/hostit", testVersion, 0, testIDs))
+	first := ConfigHash(CreateArgs(conf, a, "/var/lib/hostit/apps/blog", "/run/hostit/hostit.sock", "/usr/bin/hostit", testVersion, 0, testIDs, ""))
 	for i := 0; i < 50; i++ {
-		got := ConfigHash(CreateArgs(conf, a, "/var/lib/hostit/apps/blog", "/run/hostit/hostit.sock", "/usr/bin/hostit", testVersion, 0, testIDs))
+		got := ConfigHash(CreateArgs(conf, a, "/var/lib/hostit/apps/blog", "/run/hostit/hostit.sock", "/usr/bin/hostit", testVersion, 0, testIDs, ""))
 		require.Equal(t, first, got)
 	}
 }
@@ -167,7 +167,7 @@ func TestContainerRefusesPrivilegeEscalation(t *testing.T) {
 	t.Parallel()
 	conf := &appconf.AppConfig{Mode: appconf.ModeStatic}
 	a := &store.App{Name: "blog", Port: 10000}
-	args := CreateArgs(conf, a, "/var/lib/hostit/apps/blog", "/run/hostit/hostit.sock", "/usr/bin/hostit", testVersion, 0, testIDs)
+	args := CreateArgs(conf, a, "/var/lib/hostit/apps/blog", "/run/hostit/hostit.sock", "/usr/bin/hostit", testVersion, 0, testIDs, "")
 	// A setuid binary in the container (planted by the tenant, who is root there)
 	// must not let a process gain privileges beyond what it started with. Caps are
 	// deliberately NOT dropped: the app is container-root on purpose (apt-get,
@@ -179,7 +179,7 @@ func TestContainerRunsUnconfinedByAppArmor(t *testing.T) {
 	t.Parallel()
 	conf := &appconf.AppConfig{Mode: appconf.ModeStatic}
 	a := &store.App{Name: "blog", Port: 10000}
-	args := CreateArgs(conf, a, "/var/lib/hostit/apps/blog", "/run/hostit/hostit.sock", "/usr/bin/hostit", testVersion, 0, testIDs)
+	args := CreateArgs(conf, a, "/var/lib/hostit/apps/blog", "/run/hostit/hostit.sock", "/usr/bin/hostit", testVersion, 0, testIDs, "")
 	// podman's default AppArmor profile forbids signals across its per-container
 	// "//&crun" label, and the multithreaded Go agent ends up straddling that
 	// label -- so "stop app" (agent SIGKILLing its own child) is silently denied
@@ -192,14 +192,14 @@ func TestContainerArgsChangeWithTheVersion(t *testing.T) {
 	t.Parallel()
 	conf := &appconf.AppConfig{Mode: appconf.ModeStatic}
 	a := &store.App{Name: "blog", Port: 10000}
-	args := CreateArgs(conf, a, "/var/lib/hostit/apps/blog", "/run/hostit/hostit.sock", "/usr/bin/hostit", testVersion, 0, testIDs)
+	args := CreateArgs(conf, a, "/var/lib/hostit/apps/blog", "/run/hostit/hostit.sock", "/usr/bin/hostit", testVersion, 0, testIDs, "")
 
 	// The binary is bind-mounted as a file, so replacing it on the host leaves
 	// running containers on the old inode: the app's CLI and its agent stay on
 	// the previous version until the container is recreated. Making the version
 	// part of the container's identity is what triggers that recreate.
 	assert.Contains(t, strings.Join(args, " "), "hostit.version="+testVersion)
-	older := CreateArgs(conf, a, "/var/lib/hostit/apps/blog", "/run/hostit/hostit.sock", "/usr/bin/hostit", "v0.0.1-old", 0, testIDs)
+	older := CreateArgs(conf, a, "/var/lib/hostit/apps/blog", "/run/hostit/hostit.sock", "/usr/bin/hostit", "v0.0.1-old", 0, testIDs, "")
 	assert.NotEqual(t, ConfigHash(args), ConfigHash(older),
 		"an upgrade must make the container stale")
 }
@@ -208,7 +208,7 @@ func TestContainerHasProcessAndMemoryLimits(t *testing.T) {
 	t.Parallel()
 	conf := &appconf.AppConfig{Mode: appconf.ModeStatic}
 	a := &store.App{Name: "blog", Port: 10000}
-	joined := strings.Join(CreateArgs(conf, a, "/srv/hostit/apps/blog", "/run/hostit/hostit.sock", "/usr/bin/hostit", testVersion, 512, testIDs), " ")
+	joined := strings.Join(CreateArgs(conf, a, "/srv/hostit/apps/blog", "/run/hostit/hostit.sock", "/usr/bin/hostit", testVersion, 512, testIDs, ""), " ")
 
 	// A fork bomb in one app must not take the host down with it. podman has a
 	// default, but a default is the distribution's opinion, not hostit's.
@@ -221,7 +221,7 @@ func TestContainerOmitsTheMemoryFlagWhenUnlimited(t *testing.T) {
 	conf := &appconf.AppConfig{Mode: appconf.ModeStatic}
 	a := &store.App{Name: "blog", Port: 10000}
 	// A zero cap means unlimited: no --memory flag at all, rather than "0m".
-	joined := strings.Join(CreateArgs(conf, a, "/srv/hostit/apps/blog", "/run/hostit/hostit.sock", "/usr/bin/hostit", testVersion, 0, testIDs), " ")
+	joined := strings.Join(CreateArgs(conf, a, "/srv/hostit/apps/blog", "/run/hostit/hostit.sock", "/usr/bin/hostit", testVersion, 0, testIDs, ""), " ")
 	assert.NotContains(t, joined, "--memory")
 }
 
@@ -229,7 +229,7 @@ func TestAppsListenOnPortEightyInside(t *testing.T) {
 	t.Parallel()
 	conf := &appconf.AppConfig{Mode: appconf.ModeApp, Run: "./bin/server"}
 	a := &store.App{Name: "blog", Port: 10007}
-	joined := strings.Join(CreateArgs(conf, a, "/var/lib/hostit/apps/blog", "/run/hostit/hostit.sock", "/usr/bin/hostit", testVersion, 0, testIDs), " ")
+	joined := strings.Join(CreateArgs(conf, a, "/var/lib/hostit/apps/blog", "/run/hostit/hostit.sock", "/usr/bin/hostit", testVersion, 0, testIDs, ""), " ")
 
 	// The host port is hostit's bookkeeping. Inside its own network namespace an
 	// app has :80 to itself, so that is what it should listen on -- nobody should
@@ -243,7 +243,7 @@ func TestWithConfigLabelInsertsBeforeTheTrailer(t *testing.T) {
 	t.Parallel()
 	conf := &appconf.AppConfig{Mode: appconf.ModeApp, Run: "./server"}
 	a := &store.App{ID: "appid123", Name: "blog", Port: 10000}
-	args := CreateArgs(conf, a, "/apps/appid123", "/run/hostit/hostit.sock", "/usr/bin/hostit", testVersion, 0, testIDs)
+	args := CreateArgs(conf, a, "/apps/appid123", "/run/hostit/hostit.sock", "/usr/bin/hostit", testVersion, 0, testIDs, "")
 	labeled := WithConfigLabel(args, "abc123")
 	// The label is an option, so it must land before the trailing rootfs+command:
 	// after --rootfs it would be taken as the container command. Injecting it just
@@ -278,4 +278,17 @@ func TestPortRangeIsFixedAndDrivesTheUIDBlocks(t *testing.T) {
 	// The whole range fits below the next power-of-two boundary a 32-bit uid
 	// space allows, so no app's block can collide with another's.
 	assert.Less(t, UIDFor(PortMax)+UIDBlockSize, 1<<31)
+}
+
+// A remote node's apps must be reachable by the proxy on another host, so the
+// container publishes on the node's own address rather than its loopback. A
+// colocated node keeps 127.0.0.1, where loopback IS the proxy's path in.
+func TestCreateArgsPublishesOnTheNodesBindAddress(t *testing.T) {
+	a := &store.App{ID: "id1", Name: "blog", Port: 10000}
+	local := CreateArgs(nil, a, "/subvol", "/run/hostit/hostit.sock", "/usr/bin/hostit", "v1", 0, IDs{UID: 1000000, GID: 1000000}, "")
+	assert.Contains(t, local, "127.0.0.1:10000:80", "no bind address configured means loopback, as before")
+
+	remote := CreateArgs(nil, a, "/subvol", "/run/hostit/hostit.sock", "/usr/bin/hostit", "v1", 0, IDs{UID: 1000000, GID: 1000000}, "10.111.32.4")
+	assert.Contains(t, remote, "10.111.32.4:10000:80", "a remote node publishes where the proxy can reach it")
+	assert.NotContains(t, remote, "127.0.0.1:10000:80")
 }

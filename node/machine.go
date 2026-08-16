@@ -215,14 +215,14 @@ type Services struct {
 // NewSystemServices builds the real services the daemon runs with. btrfs, systemd
 // and container shell out through the shared runner; unixuser, ssh and firewall
 // touch the host directly (useradd, authorized_keys, nft) and must run as root.
-func NewSystemServices(runner run.Runner, nodeID string) *Services {
+func NewSystemServices(runner run.Runner, nodeID, bindAddr string, allowFrom []string) *Services {
 	return &Services{
 		Btrfs:     btrfs.New(runner),
 		Systemd:   systemd.New(runner),
 		Container: container.New(runner),
 		User:      unixuser.New(userShellFile, AppsGroup),
 		SSH:       ssh.New(),
-		Firewall:  firewall.New(FirewallTable(nodeID)),
+		Firewall:  firewall.New(FirewallTable(nodeID), bindAddr, allowFrom),
 		Runner:    runner,
 	}
 }
