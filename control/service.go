@@ -47,10 +47,13 @@ type Server struct {
 	apps      *Manager
 	users     *user.Manager
 	assistant *assistant.Manager // nil unless an Anthropic API key is configured
-	sessions  *sessionManager
-	api       http.Handler
-	socket    http.Handler
-	proxy     http.Handler
+	// assistantOps is the assistant's tool surface, kept so SetNode can repoint
+	// its node agent along with the handlers'; nil when no assistant is configured
+	assistantOps *appOps
+	sessions     *sessionManager
+	api          http.Handler
+	socket       http.Handler
+	proxy        http.Handler
 
 	// usernameForUID maps a peer-credential UID to a username; overridden in tests
 	usernameForUID func(uid int) (string, error)
@@ -110,7 +113,8 @@ func New(conf *config.Config, apps *Manager, users *user.Manager) *Server {
 	// subscription (a sandboxed claude -p). Its tools are the app's own operations,
 	// so it is confined to one app the way an agent token is.
 	if conf.AssistantAvailable() {
-		s.assistant = assistant.NewManager(assistant.NewClient(conf.AnthropicAPIKey), &appOps{apps: apps, node: apps, changed: s.assistantChanged}, &appTranscripts{store: apps.Store()}, conf.AssistantModel)
+		s.assistantOps = &appOps{apps: apps, node: apps, changed: s.assistantChanged}
+		s.assistant = assistant.NewManager(assistant.NewClient(conf.AnthropicAPIKey), s.assistantOps, &appTranscripts{store: apps.Store()}, conf.AssistantModel)
 		// Wire the Claude Max (subscription) backend whenever its token is configured,
 		// so selecting "Claude.ai" actually uses the subscription. Its presence is the
 		// whole switch; there is no separate backend setting. (Previously the option
@@ -449,6 +453,12 @@ func (s *Server) firstActiveDomain(name string) string {
 // what split mode calls when a hostit-node dials in.
 func (s *Server) SetNode(node NodeAgent) {
 	s.node = node
+	// The assistant's tools act through their own reference; repoint it too, or
+	// external-backend turns keep operating on control's LOCAL machine for apps
+	// hosted on other nodes (deploys build against the wrong paths).
+	if s.assistantOps != nil {
+		s.assistantOps.node = node
+	}
 }
 
 // SetPreviews wires the screenshot manager (app-preview: screenshot), so

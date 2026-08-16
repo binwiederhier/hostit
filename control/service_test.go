@@ -569,3 +569,31 @@ func TestUnknownAPIPathIsNotAWebPage(t *testing.T) {
 		assert.NotContains(t, rr.Body.String(), "<!doctype html>", "path %s must not answer with the web app", path)
 	}
 }
+
+// SetNode must repoint the ASSISTANT's tools too, not just the handlers: the
+// external-backend tool loop acts through appOps.node, and leaving it on the
+// local Manager makes assistant deploys build container args from control's
+// own paths for an app hosted on another node (turn "succeeds", app never
+// changes -- seen live on the two-node stage).
+func TestSetNodeRepointsTheAssistantOps(t *testing.T) {
+	t.Parallel()
+	conf := config.NewConfig()
+	conf.BaseDomain = "apps.example.com"
+	conf.AdminToken = testToken
+	conf.AppsDir = t.TempDir()
+	conf.DataDir = t.TempDir()
+	conf.AnthropicAPIKey = "sk-test" // makes New wire the assistant + its appOps
+	st, err := store.NewStore(filepath.Join(t.TempDir(), "hostit.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = st.Close() })
+	apps := NewManager(conf, st, testServices(newFakeSystem(), newFakeRunner()))
+	t.Cleanup(apps.WaitBackground)
+	s := New(conf, apps, user.NewManager(conf, st))
+	require.NotNil(t, s.assistantOps, "an assistant-configured server tracks its appOps")
+
+	routed := &snapAgent{NodeAgent: apps}
+	s.SetNode(routed)
+
+	assert.Same(t, any(routed), any(s.node), "the handlers' agent is swapped")
+	assert.Same(t, any(routed), any(s.assistantOps.node), "the assistant's tools must follow the same agent")
+}
