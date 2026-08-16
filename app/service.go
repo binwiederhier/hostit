@@ -344,9 +344,25 @@ func (m *Manager) create(name string, opts *CreateOptions, seedPath string) (*st
 	}
 	app := &store.App{ID: store.NewAppID(), Name: name, Port: port, Host: host, OwnerID: opts.OwnerID, ImageTag: workspace.ImageTag(), UID: m.uidFor(port)}
 
-	// Build the app on this machine (subvolume, user, keys, skeleton) -- the
-	// node-local half; everything after this is registry bookkeeping.
+	// Register the app FIRST and push the mirror before any machine state
+	// exists: the node's orphan reconcile treats unknown ids as leftovers, so
+	// a subvolume appearing before the mirror knows its id gets torn down by
+	// a concurrent reconcile (seen live on the stage two-node setup). The app
+	// is pinned to the workspace image it is built with, so a later
+	// Containerfile change (e.g. adding a runtime) only affects new apps.
 	m.recordDiskLimit(name, opts.DiskMB)
+	if err := m.store.AddApp(app); err != nil {
+		return nil, err
+	}
+	if err := m.store.SetAppKeys(name, appKeys); err != nil {
+		_ = m.store.RemoveApp(name)
+		return nil, err
+	}
+	m.PushMirror()
+
+	// Build the app on this machine (subvolume, user, keys, skeleton) -- the
+	// node-local half. On failure the row goes away again (and the mirror
+	// with it); the node's provision cleans up its own partial state.
 	spec := &ProvisionSpec{
 		Host:     host,
 		ID:       app.ID,
@@ -358,25 +374,10 @@ func (m *Manager) create(name string, opts *CreateOptions, seedPath string) (*st
 		DiskMB:   m.DiskLimit(name),
 	}
 	if err := m.node.Provision(spec); err != nil {
-		return nil, err
-	}
-
-	// Register the app; roll back the user if this fails. The app was built above
-	// (id minted so the subvolume could be created id-named); it is pinned to the
-	// workspace image it is built with, so a later Containerfile change (e.g. adding
-	// a runtime) only affects new apps, never this one.
-	if err := m.store.AddApp(app); err != nil {
-		m.provisionRollback(spec)
-		return nil, err
-	}
-	if err := m.store.SetAppKeys(name, appKeys); err != nil {
-		m.provisionRollback(spec)
 		_ = m.store.RemoveApp(name)
+		m.PushMirror()
 		return nil, err
 	}
-	// The node reads the row from HERE on (SetDiskLimit, Up): push the mirror
-	// before any of that.
-	m.PushMirror()
 	m.SetMemoryLimit(name, opts.MemoryMB)
 	// Apply the disk budget now (create and fork alike), so a new app is capped
 	// from the start rather than only after the next daemon restart: record the

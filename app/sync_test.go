@@ -123,3 +123,41 @@ func TestSnapshotMutationsNotifyTheSink(t *testing.T) {
 	require.NoError(t, m.DeleteSnapshot("blog", snap.ID))
 	assert.NotContains(t, ids(), snap.ID)
 }
+
+func TestCreatePushesMirrorBeforeProvision(t *testing.T) {
+	t.Parallel()
+	// The node's reconcile treats unknown ids as orphans: if machine state
+	// (subvolume, user) appears before the mirror knows the id, a concurrent
+	// reconcile on the node tears the half-built app down (seen live on the
+	// stage two-node setup). The row and the mirror push must come FIRST.
+	m, _, _ := newTestDeployManager(t)
+	rec := &orderRecordingAgent{recordingAgent: recordingAgent{NodeAgent: m}}
+	m.SetNodeAgent(rec)
+
+	_, err := m.CreateApp("blog", &CreateOptions{})
+	require.NoError(t, err)
+	m.WaitBackground()
+	require.True(t, rec.syncBeforeProvision, "the mirror must know the app id before any machine state exists")
+}
+
+// orderRecordingAgent flags whether a Sync carrying the app arrived before
+// Provision ran.
+type orderRecordingAgent struct {
+	recordingAgent
+	syncBeforeProvision bool
+}
+
+func (r *orderRecordingAgent) Provision(spec *ProvisionSpec) error {
+	for _, s := range r.syncs {
+		for _, a := range s.Apps {
+			if a.ID == spec.ID {
+				r.syncBeforeProvision = true
+			}
+		}
+	}
+	return r.recordingAgent.NodeAgent.Provision(spec)
+}
+
+func (r *orderRecordingAgent) Sync(state *SyncState) error {
+	return r.recordingAgent.Sync(state)
+}
