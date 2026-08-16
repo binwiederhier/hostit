@@ -23,13 +23,47 @@ func (m *Machine) Reconcile() []string {
 }
 
 // ReconcileOrphans removes the host state of apps that no longer exist -- their
-// systemd units and their containers -- and returns the names it cleaned up.
+// systemd units, containers, subvolumes, budget qgroups and unix accounts --
+// and returns the names it cleaned up. Every removal needs two sightings (see
+// confirmOrphan).
 //
 // The registry is the source of truth, as it is for port rules. A unit left
 // behind by a deleted app is not inert: hostit-app@.service is Restart=always,
 // so systemd retries it forever against a container that is gone, and its
 // enable symlink starts it again after a reboot.
+// confirmOrphan reports whether a resource has now been seen orphaned TWICE
+// running, recording the sighting either way. Nothing destructive happens on a
+// first sighting: a create provisions the account, subvolume, container and
+// unit BEFORE control's registry push necessarily reaches this node, so an app
+// mid-create is indistinguishable from a leftover in a single pass. Seen live
+// on stage twice -- a new app's account, then another's subvolume, deleted
+// seconds after creation, leaving apps that never served. A race resolves
+// itself because the next mirror carries the app; a genuine leftover is still
+// absent on the second pass and goes then.
+func (m *Machine) confirmOrphan(key string) bool {
+	m.orphanMu.Lock()
+	defer m.orphanMu.Unlock()
+	m.orphansThisPass[key] = true
+	return m.orphansLastPass[key]
+}
+
+// startOrphanPass begins a sweep's bookkeeping; endOrphanPass makes this
+// pass's sightings the ones the next pass compares against.
+func (m *Machine) startOrphanPass() {
+	m.orphanMu.Lock()
+	m.orphansThisPass = make(map[string]bool)
+	m.orphanMu.Unlock()
+}
+
+func (m *Machine) endOrphanPass() {
+	m.orphanMu.Lock()
+	m.orphansLastPass = m.orphansThisPass
+	m.orphanMu.Unlock()
+}
+
 func (m *Machine) ReconcileOrphans() []string {
+	m.startOrphanPass()
+	defer m.endOrphanPass()
 	out, err := m.systemd.ListUnits(workspace.UnitTemplate + "*")
 	if err != nil {
 		slog.Warn("Cannot list app units to reconcile", "error", err)
@@ -49,7 +83,7 @@ func (m *Machine) ReconcileOrphans() []string {
 	removed := make([]string, 0)
 	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
 		id, ok := idFromUnit(strings.Fields(strings.TrimSpace(line)))
-		if !ok || known[id] || m.containerForeign(id) {
+		if !ok || known[id] || m.containerForeign(id) || !m.confirmOrphan("unit:"+id) {
 			continue
 		}
 		unit := workspace.UnitName(id)
@@ -88,21 +122,10 @@ func (m *Machine) reconcileUsers(known map[string]bool) []string {
 		slog.Warn("Cannot list app accounts to reconcile", "error", err)
 		return nil
 	}
-	// Two sightings before a delete: an account whose app is not in the mirror
-	// YET (a create provisions the account, the registry push follows) would
-	// otherwise be swept mid-create -- seen on stage, where a new app's account
-	// was deleted two seconds after it was made and the app never served. A
-	// race resolves itself because the next mirror carries the app; a genuine
-	// leftover is still absent on the second pass and goes then.
-	suspects := make(map[string]bool)
 	removed := make([]string, 0)
 	for _, a := range accounts {
 		id, ok := m.idFromPoolHome(a.Home)
-		if !ok || known[id] {
-			continue
-		}
-		if !m.orphanUsers[a.Name] {
-			suspects[a.Name] = true // first sighting: watch it, do not touch it
+		if !ok || known[id] || !m.confirmOrphan("user:"+a.Name) {
 			continue
 		}
 		// Kill first: userdel refuses while anything runs as the account, and a
@@ -116,7 +139,6 @@ func (m *Machine) reconcileUsers(known map[string]bool) []string {
 		}
 		removed = append(removed, a.Name)
 	}
-	m.orphanUsers = suspects
 	return removed
 }
 
@@ -181,7 +203,7 @@ func (m *Machine) reconcileSubvolumes(known map[string]bool) []string {
 	removed := make([]string, 0)
 	for _, e := range entries {
 		id := e.Name() // app subvolumes are named by app id
-		if !e.IsDir() || strings.HasPrefix(id, ".") || known[id] {
+		if !e.IsDir() || strings.HasPrefix(id, ".") || known[id] || !m.confirmOrphan("subvol:"+id) {
 			continue
 		}
 		path := filepath.Join(m.config.AppsDir, id)
@@ -220,7 +242,7 @@ func (m *Machine) reconcileContainers(known map[string]bool) []string {
 	removed := make([]string, 0)
 	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
 		id, ok := strings.CutPrefix(strings.TrimSpace(line), workspace.ContainerPrefix)
-		if !ok || id == "" || known[id] || m.containerForeign(id) {
+		if !ok || id == "" || known[id] || m.containerForeign(id) || !m.confirmOrphan("container:"+id) {
 			continue
 		}
 		if err := m.container.RemoveForce(workspace.ContainerName(id)); err != nil {

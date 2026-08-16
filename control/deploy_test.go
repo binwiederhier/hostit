@@ -564,6 +564,7 @@ func TestReconcileUnitsRemovesUnitsOfDeletedApps(t *testing.T) {
 
 	// A unit whose app is gone is not harmless: Restart=always keeps systemd
 	// retrying it forever, and its enable symlink brings it back after a reboot
+	m.ReconcileOrphans() // first sighting: a removal always needs a second
 	removed := m.ReconcileOrphans()
 	assert.ElementsMatch(t, []string{"gone", "e2e-old", "ghost"}, removed)
 	ran := runner.ran()

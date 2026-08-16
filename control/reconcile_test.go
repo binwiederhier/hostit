@@ -26,6 +26,7 @@ func TestReconcileOrphansRemovesOrphanSubvolume(t *testing.T) {
 	require.NoError(t, os.MkdirAll(hidden, 0o755))
 	r.reset()
 
+	m.ReconcileOrphans() // first sighting: a removal always needs a second
 	removed := m.ReconcileOrphans()
 	assert.Contains(t, removed, "ghostid")
 	assert.Contains(t, r.ran(), "btrfs subvolume delete "+orphan)
@@ -52,6 +53,7 @@ func TestReconcileOrphansRemovesEmptyStubKeepsStubborn(t *testing.T) {
 	// tool refusing a plain directory; only the empty stub is then removable.
 	r.reset()
 
+	m.ReconcileOrphans() // first sighting: a removal always needs a second
 	removed := m.ReconcileOrphans()
 	assert.Contains(t, removed, "stubid")
 	assert.NoDirExists(t, stub)
@@ -74,6 +76,7 @@ func TestReconcileOrphansRemovesFileLessStubTree(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(withFile, "home", "app", "data"), []byte("x"), 0o644))
 	r.reset()
 
+	m.ReconcileOrphans() // first sighting: a removal always needs a second
 	removed := m.ReconcileOrphans()
 	assert.Contains(t, removed, "stubtree")
 	assert.NoDirExists(t, stub)
@@ -89,6 +92,7 @@ func TestReconcileOrphansSweepsStrayBudgetGroups(t *testing.T) {
 	// behind; the reconcile sweeps any 1/<uid> group whose uid maps to no app.
 	runner.returns("btrfs qgroup show", "0/5 16384 16384\n1/1000000 100 100\n1/1065536 100 100\n")
 	runner.reset()
+	m.ReconcileOrphans() // first sighting: nothing is removed yet
 	m.ReconcileOrphans()
 	ran := runner.ran()
 	assert.Contains(t, ran, "btrfs qgroup destroy 1/1065536", "the stray group (no app on that uid) is destroyed")
@@ -107,6 +111,7 @@ func TestReconcileOrphansLeavesOtherNodesAccountsAlone(t *testing.T) {
 		{Name: "stray", Home: "/home/somebody"},
 	}
 
+	m.ReconcileOrphans() // first sighting: nothing is removed yet
 	m.ReconcileOrphans()
 
 	assert.Empty(t, ops.deletedUsers, "accounts outside this node's pool are none of its business")

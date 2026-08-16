@@ -135,9 +135,11 @@ type Machine struct {
 	stateFresh      time.Time
 	stateRefreshing bool
 
-	// orphanUsers holds the app accounts seen orphaned by the LAST sweep;
-	// only an account orphaned twice running is removed (see reconcileUsers).
-	orphanUsers map[string]bool
+	// orphansLastPass/orphansThisPass hold the resources seen orphaned by the
+	// previous and current sweep; only something orphaned twice running is
+	// removed (see confirmOrphan).
+	orphansLastPass map[string]bool
+	orphansThisPass map[string]bool
 
 	// appLocks serializes mutating lifecycle work per app (deploy, snapshot,
 	// rollback, delete), so operations on one app's subvolume never interleave --
@@ -151,6 +153,7 @@ type Machine struct {
 	execMu     sync.Mutex // Serializes /run commands; they are builds, and the box has one core
 	appLocksMu sync.Mutex // Protects appLocks
 	syncMu     sync.Mutex // Protects syncSeq
+	orphanMu   sync.Mutex // Protects orphansLastPass, orphansThisPass
 }
 
 // NewMachine creates the Machine half from its config, the store view (the
@@ -159,23 +162,24 @@ type Machine struct {
 // fakes in tests).
 func NewMachine(conf *Config, s *store.Store, svc *Services) *Machine {
 	m := &Machine{
-		config:      conf,
-		store:       s,
-		runner:      svc.Runner,
-		btrfs:       svc.Btrfs,
-		systemd:     svc.Systemd,
-		container:   svc.Container,
-		user:        svc.User,
-		ssh:         svc.SSH,
-		firewall:    svc.Firewall,
-		homefs:      homefs.New(nodeapi.ErrInvalid),
-		memoryMB:    make(map[string]int),
-		synced:      make(chan struct{}),
-		diskMB:      make(map[string]int),
-		tearingDown: make(map[string]bool),
-		stateCache:  make(map[string]nodeapi.State),
-		appLocks:    make(map[string]*sync.Mutex),
-		orphanUsers: make(map[string]bool),
+		config:          conf,
+		store:           s,
+		runner:          svc.Runner,
+		btrfs:           svc.Btrfs,
+		systemd:         svc.Systemd,
+		container:       svc.Container,
+		user:            svc.User,
+		ssh:             svc.SSH,
+		firewall:        svc.Firewall,
+		homefs:          homefs.New(nodeapi.ErrInvalid),
+		memoryMB:        make(map[string]int),
+		synced:          make(chan struct{}),
+		diskMB:          make(map[string]int),
+		tearingDown:     make(map[string]bool),
+		stateCache:      make(map[string]nodeapi.State),
+		appLocks:        make(map[string]*sync.Mutex),
+		orphansLastPass: make(map[string]bool),
+		orphansThisPass: make(map[string]bool),
 	}
 	// The snapshot Service reuses the Machine's node-local services and store, and
 	// calls back into it through snapshotHost for the app-lifecycle operations and
