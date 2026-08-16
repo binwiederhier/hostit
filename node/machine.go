@@ -333,20 +333,7 @@ func (m *Machine) SetKeys(name string, appKeys, profileKeys []string) error {
 	if err := validateKeys(appKeys); err != nil {
 		return err
 	}
-	if err := m.store.SetAppKeys(app.Name, appKeys); err != nil {
-		return err
-	}
 	return m.writeKeys(app.Name, appKeys, profileKeys)
-}
-
-// SyncKeys rewrites an app's authorized_keys from its stored app keys plus the
-// given profile keys; used when a user adds or removes a profile key
-func (m *Machine) SyncKeys(name string, profileKeys []string) error {
-	appKeys, err := m.store.AppKeys(name)
-	if err != nil {
-		return err
-	}
-	return m.writeKeys(name, appKeys, profileKeys)
 }
 
 func (m *Machine) writeKeys(name string, appKeys, profileKeys []string) error {

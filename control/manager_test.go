@@ -30,15 +30,18 @@ const (
 	testProfileKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIi b@host"
 )
 
-func TestSyncKeysRewritesEveryAppOfTheOwner(t *testing.T) {
+// A profile key added later reaches every app the user owns, and each app
+// keeps its own keys: control resolves both halves and writes the full set
+// (there is no verb that asks a node for keys it does not have).
+func TestSetKeysRewritesEveryAppOfTheOwner(t *testing.T) {
 	t.Parallel()
 	m, ops, _ := newTestDeployManager(t)
 	createTestApp(t, m, "one")
 	createTestApp(t, m, "two")
-	// A profile key added later must reach every app the user owns
-	require.NoError(t, m.SyncKeys("one", []string{testProfileKey}))
-	require.NoError(t, m.SyncKeys("two", []string{testProfileKey}))
 	for _, name := range []string{"one", "two"} {
+		appKeys, err := m.store.AppKeys(name)
+		require.NoError(t, err)
+		require.NoError(t, m.SetKeys(name, appKeys, []string{testProfileKey}))
 		require.Contains(t, ops.authorizedKeys[name], testProfileKey, "app %s must get the profile key", name)
 		assert.Contains(t, ops.authorizedKeys[name], testPublicKey, "its own app key stays")
 	}

@@ -97,8 +97,10 @@ type NodeAgent interface {
 	ExtractTar(name string, r io.Reader) ([]string, error)
 
 	// Keys and limits, applied where the app user lives.
+	// SetKeys writes the app's complete authorized_keys set. Control resolves
+	// it (the app's own keys are registry state, absent from the node's
+	// mirror), so there is deliberately no "sync from what you have" verb.
 	SetKeys(name string, appKeys, profileKeys []string) error
-	SyncKeys(name string, profileKeys []string) error
 	// Rename renames the app's Unix login (stopping and restarting the app
 	// around the usermod) and carries the name-keyed caches over. The registry
 	// flip is control's; on a failed flip control compensates by renaming back.

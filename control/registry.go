@@ -348,14 +348,6 @@ func (ra *routingAgent) SetKeys(name string, appKeys, profileKeys []string) erro
 	return agent.SetKeys(name, appKeys, profileKeys)
 }
 
-func (ra *routingAgent) SyncKeys(name string, profileKeys []string) error {
-	agent, err := ra.route(name)
-	if err != nil {
-		return err
-	}
-	return agent.SyncKeys(name, profileKeys)
-}
-
 // Snapshots has no app to route by: it is a node-level read, and control asks
 // a SPECIFIC node's agent directly on rejoin (IngestNodeSnapshots), never
 // through the router. Routing it would have to pick a node arbitrarily.

@@ -115,12 +115,21 @@ func (s *Server) appProfileKeys(a *store.App) ([]string, error) {
 
 // resyncAppKeys rewrites the app's authorized_keys from its stored app keys
 // plus the full profile-key set (owner + collaborators).
+// resyncAppKeys rewrites an app's authorized_keys after an access change. The
+// app's OWN keys are registry state, so control resolves them here and hands
+// the node the complete set: a node cannot be asked for them (app_key is not
+// in the pushed mirror, so a split node would answer with an empty list and
+// drop the owner's keys).
 func (s *Server) resyncAppKeys(a *store.App) error {
 	profileKeys, err := s.appProfileKeys(a)
 	if err != nil {
 		return err
 	}
-	return s.node.SyncKeys(a.Name, profileKeys)
+	appKeys, err := s.apps.Store().AppKeys(a.Name)
+	if err != nil {
+		return err
+	}
+	return s.node.SetKeys(a.Name, appKeys, profileKeys)
 }
 
 // handleAppsTransfer moves the app to a new owner (an existing, approved

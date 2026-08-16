@@ -200,10 +200,6 @@ func (a *remoteAgent) SetKeys(name string, appKeys, profileKeys []string) error 
 	return a.do("setkeys", &rpcReq{Name: name, AppKeys: appKeys, ProfileKeys: profileKeys})
 }
 
-func (a *remoteAgent) SyncKeys(name string, profileKeys []string) error {
-	return a.do("synckeys", &rpcReq{Name: name, ProfileKeys: profileKeys})
-}
-
 func (a *remoteAgent) Rename(oldName, newName, id string) error {
 	return a.do("rename", &rpcReq{Name: oldName, To: newName, ID: id})
 }

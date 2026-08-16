@@ -244,6 +244,13 @@ func (s *Server) handleAppsSetKeys(w http.ResponseWriter, r *http.Request, c *ca
 		writeAppError(w, err)
 		return
 	}
+	// The registry owns an app's own keys (a node holds no copy: app_key is
+	// not in the pushed mirror), so persist them here before the node writes
+	// the file -- the next resync reads them back from here.
+	if err := s.apps.Store().SetAppKeys(a.Name, req.SSHKeys); err != nil {
+		writeAppError(w, err)
+		return
+	}
 	if err := s.node.SetKeys(a.Name, req.SSHKeys, profileKeys); err != nil {
 		writeAppError(w, err)
 		return

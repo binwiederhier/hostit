@@ -597,3 +597,57 @@ func TestSetNodeRepointsTheAssistantOps(t *testing.T) {
 	assert.Same(t, any(routed), any(s.node), "the handlers' agent is swapped")
 	assert.Same(t, any(routed), any(s.assistantOps.node), "the assistant's tools must follow the same agent")
 }
+
+// keyWriter records the key sets control asks a node to write, standing in for
+// the node's authorized_keys write.
+type keyWriter struct {
+	NodeAgent
+	appKeys     []string
+	profileKeys []string
+	calls       int
+}
+
+func (w *keyWriter) SetKeys(name string, appKeys, profileKeys []string) error {
+	w.appKeys, w.profileKeys, w.calls = appKeys, profileKeys, w.calls+1
+	return nil
+}
+
+// Re-syncing an app's keys (a collaborator added or removed, a profile key
+// changed) must keep the app's OWN keys. Control owns them -- they are
+// registry state -- so it resolves them and hands the node the full set. The
+// node used to be asked for a key set it did not have: app_key is not in the
+// pushed mirror, so on a split deployment it read an empty list and rewrote
+// authorized_keys with profile keys only, silently locking the owner out
+// (reproduced on stage: adding a collaborator emptied the managed block).
+func TestResyncAppKeysKeepsTheAppsOwnKeys(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	rr := request(t, s.API(), "POST", "/api/apps", fmt.Sprintf(`{"name":"blog","ssh_keys":["%s"]}`, testPublicKey), testToken)
+	require.Equal(t, http.StatusCreated, rr.Code)
+	writer := &keyWriter{NodeAgent: s.apps}
+	s.SetNode(writer)
+
+	app, err := s.apps.App("blog")
+	require.NoError(t, err)
+	require.NoError(t, s.resyncAppKeys(app))
+
+	require.Equal(t, 1, writer.calls, "the node is told the whole key set, not asked for it")
+	assert.Equal(t, []string{testPublicKey}, writer.appKeys, "the app's own keys must survive a resync")
+}
+
+// Setting an app's keys must persist them in the REGISTRY, not only on the
+// node's disk: control is where they live now, and the next resync (a
+// collaborator change) reads them back from there.
+func TestSetKeysPersistsThemInTheRegistry(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	rr := request(t, s.API(), "POST", "/api/apps", `{"name":"blog"}`, testToken)
+	require.Equal(t, http.StatusCreated, rr.Code)
+
+	rr = request(t, s.API(), "PUT", "/api/apps/blog/keys", fmt.Sprintf(`{"ssh_keys":["%s"]}`, testPublicKey2), testToken)
+	require.Equal(t, http.StatusOK, rr.Code)
+
+	stored, err := s.apps.Store().AppKeys("blog")
+	require.NoError(t, err)
+	assert.Equal(t, []string{testPublicKey2}, stored, "the registry owns the app's keys")
+}
