@@ -38,7 +38,7 @@ func (m *Manager) ReconcileOrphans() []string {
 	removed := make([]string, 0)
 	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
 		id, ok := idFromUnit(strings.Fields(strings.TrimSpace(line)))
-		if !ok || known[id] {
+		if !ok || known[id] || m.containerForeign(id) {
 			continue
 		}
 		unit := workspace.UnitName(id)
@@ -143,7 +143,7 @@ func (m *Manager) reconcileContainers(known map[string]bool) []string {
 	removed := make([]string, 0)
 	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
 		id, ok := strings.CutPrefix(strings.TrimSpace(line), workspace.ContainerPrefix)
-		if !ok || id == "" || known[id] {
+		if !ok || id == "" || known[id] || m.containerForeign(id) {
 			continue
 		}
 		if err := m.container.RemoveForce(workspace.ContainerName(id)); err != nil {
@@ -153,6 +153,29 @@ func (m *Manager) reconcileContainers(known map[string]bool) []string {
 		removed = append(removed, id)
 	}
 	return removed
+}
+
+// inspectMountsFormat lists a container's bind-mount sources, one per line.
+const inspectMountsFormat = `{{range .Mounts}}{{.Source}}
+{{end}}`
+
+// containerForeign reports whether the id's container exists and belongs to
+// ANOTHER node on this host: its apps-dir mount lies outside this node's
+// pool. Colocated nodes share systemd and podman, and each node's mirror
+// holds only its own rows -- without this check, each node's reconcile would
+// tear down the other's apps as "orphans". No container (or an unreadable
+// mount list) is not foreign, so genuinely dead leftovers still get cleaned.
+func (m *Manager) containerForeign(id string) bool {
+	out, err := m.container.Inspect(workspace.ContainerName(id), inspectMountsFormat)
+	if err != nil || strings.TrimSpace(out) == "" {
+		return false
+	}
+	for _, src := range strings.Fields(out) {
+		if strings.HasPrefix(src, m.config.AppsDir+string(os.PathSeparator)) {
+			return false
+		}
+	}
+	return true
 }
 
 // idFromUnit picks the app id out of a "systemctl list-units" line (units are

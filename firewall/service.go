@@ -23,20 +23,25 @@ type Interface interface {
 	Apply(rules []Rule) error
 }
 
-// Service applies port rules via the nft command.
-type Service struct{}
+// Service applies port rules via the nft command. Each node owns its own
+// nftables table (named for its node id): two colocated nodes replacing one
+// shared table would wipe each other's rules on every reconcile.
+type Service struct {
+	table string
+}
 
 var _ Interface = (*Service)(nil)
 
-// New builds a firewall Service.
-func New() *Service {
-	return &Service{}
+// New builds a firewall Service owning the named table ("hostit" for the
+// default local node).
+func New(table string) *Service {
+	return &Service{table: table}
 }
 
-// Apply atomically replaces the hostit nftables table: for each app port, loopback
-// connects are only allowed for root and the app's own uid.
+// Apply atomically replaces this node's nftables table: for each app port,
+// loopback connects are only allowed for root and the app's own uid.
 func (s *Service) Apply(rules []Rule) error {
-	ruleset := renderRuleset(rules)
+	ruleset := renderRuleset(s.table, rules)
 	f, err := os.CreateTemp("", "hostit-nft-*.conf")
 	if err != nil {
 		return err
@@ -55,16 +60,16 @@ func (s *Service) Apply(rules []Rule) error {
 	return nil
 }
 
-// renderRuleset builds the nft ruleset that replaces the hostit table, split out so
-// the generated rules can be tested without invoking nft.
-func renderRuleset(rules []Rule) string {
+// renderRuleset builds the nft ruleset that replaces the node's table, split
+// out so the generated rules can be tested without invoking nft.
+func renderRuleset(table string, rules []Rule) string {
 	var b strings.Builder
-	b.WriteString("add table inet hostit\n")
-	b.WriteString("flush table inet hostit\n")
-	b.WriteString("add chain inet hostit output { type filter hook output priority filter ; policy accept ; }\n")
+	fmt.Fprintf(&b, "add table inet %s\n", table)
+	fmt.Fprintf(&b, "flush table inet %s\n", table)
+	fmt.Fprintf(&b, "add chain inet %s output { type filter hook output priority filter ; policy accept ; }\n", table)
 	for _, rule := range rules {
-		fmt.Fprintf(&b, "add rule inet hostit output ip daddr 127.0.0.0/8 tcp dport %d meta skuid != { 0, %d } counter drop\n", rule.Port, rule.UID)
-		fmt.Fprintf(&b, "add rule inet hostit output ip6 daddr ::1 tcp dport %d meta skuid != { 0, %d } counter drop\n", rule.Port, rule.UID)
+		fmt.Fprintf(&b, "add rule inet %s output ip daddr 127.0.0.0/8 tcp dport %d meta skuid != { 0, %d } counter drop\n", table, rule.Port, rule.UID)
+		fmt.Fprintf(&b, "add rule inet %s output ip6 daddr ::1 tcp dport %d meta skuid != { 0, %d } counter drop\n", table, rule.Port, rule.UID)
 	}
 	return b.String()
 }

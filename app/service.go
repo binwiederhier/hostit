@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"regexp"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -100,16 +101,26 @@ type Services struct {
 // NewSystemServices builds the real services the daemon runs with. btrfs, systemd
 // and container shell out through the shared runner; unixuser, ssh and firewall
 // touch the host directly (useradd, authorized_keys, nft) and must run as root.
-func NewSystemServices(runner run.Runner) *Services {
+func NewSystemServices(runner run.Runner, nodeID string) *Services {
 	return &Services{
 		Btrfs:     btrfs.New(runner),
 		Systemd:   systemd.New(runner),
 		Container: container.New(runner),
 		User:      unixuser.New(userShellFile, AppsGroup),
 		SSH:       ssh.New(),
-		Firewall:  firewall.New(),
+		Firewall:  firewall.New(FirewallTable(nodeID)),
 		Runner:    runner,
 	}
+}
+
+// FirewallTable names the node's nftables table: the historical "hostit" for
+// the local node, "hostit_<id>" otherwise (two colocated nodes must not share
+// a table -- each reconcile replaces it wholesale).
+func FirewallTable(nodeID string) string {
+	if nodeID == "" || nodeID == store.HostLocal {
+		return "hostit"
+	}
+	return "hostit_" + strings.ReplaceAll(nodeID, "-", "_")
 }
 
 // CreateOptions carries everything CreateApp needs beyond the name: who owns the

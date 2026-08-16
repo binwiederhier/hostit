@@ -99,7 +99,7 @@ func execServe(c *cli.Context) error {
 	}
 	defer s.Close()
 	app.Version = c.App.Version
-	manager := app.NewManager(conf, s, app.NewSystemServices(run.New()))
+	manager := app.NewManager(conf, s, app.NewSystemServices(run.New(), conf.NodeID))
 
 	// The node-local startup, same order as the fused daemon's. Limits are
 	// not applied here: control re-asserts every app's memory and disk limit

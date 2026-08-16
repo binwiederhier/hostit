@@ -83,7 +83,7 @@ func execServe(c *cli.Context) error {
 	}
 	defer s.Close()
 	app.Version = c.App.Version // Part of each container's identity; see app.Version
-	manager := app.NewManager(conf, s, app.NewSystemServices(run.New()))
+	manager := app.NewManager(conf, s, app.NewSystemServices(run.New(), conf.NodeID))
 	users := user.NewManager(conf, s)
 	if err := ensureSessionKey(conf, s); err != nil {
 		return err
