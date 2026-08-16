@@ -15,8 +15,8 @@ import (
 	"strconv"
 	"strings"
 
-	"heckel.io/hostit/app"
 	"heckel.io/hostit/config"
+	"heckel.io/hostit/node"
 )
 
 const (
@@ -322,7 +322,7 @@ func appIdentity(appName string) (uid, gid int, appID string, err error) {
 	}
 	uid, _ = strconv.Atoi(u.Uid)
 	gid, _ = strconv.Atoi(u.Gid)
-	return uid, gid, app.IDFromHomeDir(u.HomeDir), nil
+	return uid, gid, node.IDFromHomeDir(u.HomeDir), nil
 }
 
 // containerName is the ephemeral sandbox container name for one turn, keyed on the

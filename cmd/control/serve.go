@@ -13,6 +13,7 @@ import (
 	"github.com/urfave/cli/v2"
 	"heckel.io/hostit/app"
 	"heckel.io/hostit/config"
+	"heckel.io/hostit/node"
 	"heckel.io/hostit/preflight"
 	"heckel.io/hostit/preview"
 	"heckel.io/hostit/run"
@@ -83,8 +84,8 @@ func execServe(c *cli.Context) error {
 		return err
 	}
 	defer s.Close()
-	app.Version = c.App.Version // Part of each container's identity; see app.Version
-	manager := app.NewManager(conf, s, app.NewSystemServices(run.New(), conf.NodeID))
+	node.Version = c.App.Version // Part of each container's identity; see node.Version
+	manager := app.NewManager(conf, s, node.NewSystemServices(run.New(), conf.NodeID))
 	users := user.NewManager(conf, s)
 	if err := ensureSessionKey(conf, s); err != nil {
 		return err

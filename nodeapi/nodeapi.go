@@ -11,6 +11,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"regexp"
 	"time"
 
 	"heckel.io/hostit/homefs"
@@ -23,6 +24,25 @@ type (
 	FileInfo = homefs.FileInfo
 	Listing  = homefs.Listing
 )
+
+const (
+	// AppNamePattern is what an app may be called: safe as a Unix username and as
+	// a DNS label. Part of the contract because both halves enforce it: control
+	// validates creates and renames, a node validates the login users it manages.
+	AppNamePattern = `^[a-z]([a-z0-9-]{0,30}[a-z0-9])?$`
+)
+
+var (
+	// appNameRegex is the compiled AppNamePattern behind ValidName
+	appNameRegex = regexp.MustCompile(AppNamePattern)
+)
+
+// ValidName reports whether s is a valid hostit app name (safe as a Unix username
+// and a DNS label). Format only -- create additionally rejects reserved names
+// and duplicates.
+func ValidName(s string) bool {
+	return appNameRegex.MatchString(s)
+}
 
 var (
 	// ErrAppExists is returned when an app (or its unix user) already exists.

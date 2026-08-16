@@ -1,4 +1,4 @@
-package app
+package node
 
 import (
 	"errors"
@@ -8,27 +8,28 @@ import (
 	"strings"
 	"time"
 
+	"heckel.io/hostit/nodeapi"
 	"heckel.io/hostit/workspace"
 )
 
 const (
-	// execDefaultTimeout bounds a command that did not ask for a limit
-	execDefaultTimeout = 60 * time.Second
-	// execMaxTimeout is the most any caller may ask for. This runs on the
+	// ExecDefaultTimeout bounds a command that did not ask for a limit
+	ExecDefaultTimeout = 60 * time.Second
+	// ExecMaxTimeout is the most any caller may ask for. This runs on the
 	// daemon's request path on a one-core box, so a long build belongs in the
 	// "prepare:" step, which the agent runs on its own time.
-	execMaxTimeout = 5 * time.Minute
-	// execGraceTimeout is how much longer the daemon waits than the command is
+	ExecMaxTimeout = 5 * time.Minute
+	// ExecGraceTimeout is how much longer the daemon waits than the command is
 	// allowed, so timeout(1) inside the container is what stops it
-	execGraceTimeout = 15 * time.Second
-	// execMaxOutput caps what comes back; a chatty build must not become
+	ExecGraceTimeout = 15 * time.Second
+	// ExecMaxOutput caps what comes back; a chatty build must not become
 	// megabytes of JSON, nor megabytes held in the daemon
-	execMaxOutput = 256 * 1024
-	// execTimeoutExitCode is what timeout(1) reports when it stopped the command
-	execTimeoutExitCode = 124
+	ExecMaxOutput = 256 * 1024
+	// ExecTimeoutExitCode is what timeout(1) reports when it stopped the command
+	ExecTimeoutExitCode = 124
 	// execTailKept is how much of an over-long output is worth keeping: the end,
 	// where the error that stopped the build is
-	execTailKept = execMaxOutput
+	execTailKept = ExecMaxOutput
 )
 
 // Exec runs a shell command inside the app's own container and returns what it
@@ -39,7 +40,7 @@ const (
 //
 // The command runs as the container's root, which is the app's own unprivileged
 // uid on the host, in the app's home directory.
-func (m *machine) Exec(name, command string, timeout time.Duration) (*ExecResult, error) {
+func (m *Machine) Exec(name, command string, timeout time.Duration) (*nodeapi.ExecResult, error) {
 	// Exec needs a running container, so it enters like a login does: a fresh
 	// fork or crashed app is brought up first (instead of racing the background
 	// start into a podman error), and a deliberately powered-off app is refused
@@ -49,7 +50,7 @@ func (m *machine) Exec(name, command string, timeout time.Duration) (*ExecResult
 	}
 	command = strings.TrimSpace(command)
 	if command == "" {
-		return nil, fmt.Errorf("%w: no command given", ErrInvalid)
+		return nil, fmt.Errorf("%w: no command given", nodeapi.ErrInvalid)
 	}
 	// One at a time per host: these are builds, and the box has one core
 	m.execMu.Lock()
@@ -61,14 +62,14 @@ func (m *machine) Exec(name, command string, timeout time.Duration) (*ExecResult
 	// exec" out here would leave the command running in there, burning the app's
 	// memory and CPU with nobody left to notice. The outer bound is a backstop
 	// for podman itself hanging, so it has to be the looser of the two.
-	out, err := m.container.Exec(limit+execGraceTimeout, m.containerName(name), workspace.ContainerHome,
+	out, err := m.container.Exec(limit+ExecGraceTimeout, m.ContainerName(name), workspace.ContainerHome,
 		"timeout", "--kill-after", "5s", strconv.Itoa(int(limit.Seconds())),
 		"/bin/sh", "-lc", command)
-	res := &ExecResult{ExitCode: exitCode(err)}
+	res := &nodeapi.ExecResult{ExitCode: exitCode(err)}
 	res.Output, res.Truncated = capOutput(out)
 	// timeout(1) exits 124 when it had to stop the command; a kill from the outer
 	// bound has no status at all, and only the clock tells us
-	if res.ExitCode == execTimeoutExitCode || (err != nil && time.Since(started) >= limit) {
+	if res.ExitCode == ExecTimeoutExitCode || (err != nil && time.Since(started) >= limit) {
 		res.TimedOut = true
 	}
 	return res, nil
@@ -80,7 +81,7 @@ func (m *machine) Exec(name, command string, timeout time.Duration) (*ExecResult
 // identical to an SSH session: the same banner, the same TERM and colours, the
 // same entry into the container. runuser drops from the root daemon to the app
 // user so the socket sees the right identity, just as sshd would.
-func (m *machine) TerminalCommand(name string) (string, []string, error) {
+func (m *Machine) TerminalCommand(name string) (string, []string, error) {
 	if _, err := m.store.App(name); err != nil {
 		return "", nil, err
 	}
@@ -90,14 +91,14 @@ func (m *machine) TerminalCommand(name string) (string, []string, error) {
 // execTimeout keeps a caller's request inside what the host can afford
 func execTimeout(requested time.Duration) time.Duration {
 	if requested <= 0 {
-		return execDefaultTimeout
+		return ExecDefaultTimeout
 	}
-	return min(requested, execMaxTimeout)
+	return min(requested, ExecMaxTimeout)
 }
 
 // capOutput trims an over-long output to its tail, saying that it did
 func capOutput(out string) (string, bool) {
-	if len(out) <= execMaxOutput {
+	if len(out) <= ExecMaxOutput {
 		return out, false
 	}
 	return "[...truncated, showing the last " + fmt.Sprint(execTailKept) + " bytes...]\n" + out[len(out)-execTailKept:], true

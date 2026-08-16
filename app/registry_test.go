@@ -94,9 +94,7 @@ func TestMachineLifecycleInvalidatesTheControlCache(t *testing.T) {
 
 	require.NoError(t, m.Down("blog"))
 
-	m.stateMu.Lock()
-	_, machineHas := m.stateCache["blog"]
-	m.stateMu.Unlock()
+	_, machineHas := m.MeasuredState("blog")
 	assert.False(t, machineHas, "the machine's own cache entry is dropped")
 	cached := m.CachedStates([]string{"blog"})
 	assert.False(t, cached["blog"].Running, "the control cache must not keep serving the pre-Down state")

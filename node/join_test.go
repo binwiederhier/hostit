@@ -115,7 +115,7 @@ func TestJoinVerifiesThePinnedCA(t *testing.T) {
 		_ = http.Serve(ln, JoinHandler(rogue, &fakeJoinStore{}))
 	}()
 
-	err = Join(ln.Addr().String(), token, t.TempDir())
+	err = enroll(ln.Addr().String(), token, t.TempDir())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "fingerprint")
 }
@@ -137,7 +137,7 @@ func TestJoinAgainstRealListener(t *testing.T) {
 	}()
 
 	dir := t.TempDir()
-	require.NoError(t, Join(ln.Addr().String(), token, dir))
+	require.NoError(t, enroll(ln.Addr().String(), token, dir))
 	_, err = LoadNodeCreds(dir, "worker-2")
 	require.NoError(t, err)
 	for _, f := range []string{"worker-2.pem", "worker-2.key", "ca.pem"} {

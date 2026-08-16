@@ -6,6 +6,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"heckel.io/hostit/node"
+	"heckel.io/hostit/workspace"
 )
 
 func TestCreateAppWiresSubvolumeAndBudget(t *testing.T) {
@@ -14,7 +16,7 @@ func TestCreateAppWiresSubvolumeAndBudget(t *testing.T) {
 	r.returns("inspect-internal rootid", "257\n")
 	a := createTestApp(t, m, "blog")
 	pool := m.config.AppsDir
-	group := fmt.Sprintf("1/%d", m.uidFor(a.Port))
+	group := fmt.Sprintf("1/%d", workspace.UIDFor(m.config.PortMin, a.Port))
 
 	// The budget group exists and is capped FIRST, and the app subvolume is
 	// snapshotted INTO it (-i): membership is atomic, so the cap enforces from
@@ -22,23 +24,23 @@ func TestCreateAppWiresSubvolumeAndBudget(t *testing.T) {
 	// quota rescan completes).
 	ran := r.ran()
 	assert.Contains(t, ran, "btrfs qgroup create "+group+" "+pool)
-	assert.Contains(t, ran, "btrfs subvolume snapshot -i "+group+" "+m.workspace.BasePath(a.ImageTag)+" "+m.appSubvolume("blog"))
+	assert.Contains(t, ran, "btrfs subvolume snapshot -i "+group+" "+m.Workspace().BasePath(a.ImageTag)+" "+m.AppSubvolume("blog"))
 	assert.NotContains(t, ran, "chown", "the subvolume stays root-owned for the idmap mount")
 
 	// DiskMB 0 no longer means unlimited: nothing is ever uncapped anymore (an
 	// uncapped app once filled the whole host), so 0 falls back to the default.
-	assert.Contains(t, ran, fmt.Sprintf("btrfs qgroup limit -e %dM %s %s", defaultDiskCapMB, group, pool))
+	assert.Contains(t, ran, fmt.Sprintf("btrfs qgroup limit -e %dM %s %s", node.DefaultDiskCapMB, group, pool))
 }
 
 func TestDeleteAppRemovesSubvolumeAndBudget(t *testing.T) {
 	t.Parallel()
 	m, _, r := newTestDeployManager(t)
 	a := createTestApp(t, m, "blog")
-	subvol := m.appSubvolume("blog")
-	group := fmt.Sprintf("1/%d", m.uidFor(a.Port))
+	subvol := m.AppSubvolume("blog")
+	group := fmt.Sprintf("1/%d", workspace.UIDFor(m.config.PortMin, a.Port))
 	r.reset()
 	require.NoError(t, m.DeleteApp("blog"))
-	m.background.Wait() // the subvolume/qgroup teardown runs in the background
+	m.WaitBackground() // the subvolume/qgroup teardown runs in the background
 	assert.Contains(t, r.ran(), "btrfs subvolume delete "+subvol)
 	assert.Contains(t, r.ran(), "btrfs qgroup destroy "+group+" "+m.config.AppsDir)
 }
@@ -58,7 +60,7 @@ func TestSweepStaleQgroups(t *testing.T) {
 	t.Parallel()
 	m, _, r := newTestDeployManager(t)
 	a := createTestApp(t, m, "keep")
-	liveBudget := fmt.Sprintf("1/%d", m.uidFor(a.Port))
+	liveBudget := fmt.Sprintf("1/%d", workspace.UIDFor(m.config.PortMin, a.Port))
 	// The pool has one live subvolume (rootid 256); 0/300 belonged to a deleted
 	// snapshot, 1/9999 to a deleted app. 0/5 is the filesystem root, never listed
 	// by "subvolume list" but never stale either.

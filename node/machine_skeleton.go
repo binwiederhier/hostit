@@ -1,4 +1,4 @@
-package app
+package node
 
 import (
 	_ "embed"
@@ -31,7 +31,7 @@ func skeletonFiles(name, url, runtimes string) map[string]string {
 	return map[string]string{
 		// Silences the host's login banner (Ubuntu's MOTD prints the host's IP,
 		// load and disk usage) and the "Last login" line, so an SSH session opens
-		// with hostit's own greeting and nothing about the machine underneath
+		// with hostit's own greeting and nothing about the Machine underneath
 		".hushlogin":        "",
 		"hostit.yml":        skeletonHostitYml,
 		"public/index.html": skeletonPublicIndex,

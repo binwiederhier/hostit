@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"heckel.io/hostit/store"
+	"heckel.io/hostit/workspace"
 )
 
 // The Manager delegates snapshots and rollback to the snapshot service; this
@@ -20,7 +21,7 @@ func TestManagerRollbackDelegatesAndBringsAppUp(t *testing.T) {
 	m, _, r := newTestDeployManager(t)
 	r.failOn("container inspect", assert.AnError) // no container yet -> Up creates one
 	require.NoError(t, m.store.AddApp(&store.App{Name: "blog", Port: 10000, Host: store.HostLocal}))
-	require.NoError(t, os.MkdirAll(m.appFiles("blog").Path(), 0o755))
+	require.NoError(t, os.MkdirAll(m.AppFiles("blog").Path(), 0o755))
 	writeAppFile(t, m, "blog", "hostit.yml", "mode: app\nrun: ./server")
 
 	target, err := m.TakeSnapshot("blog", "target", false)
@@ -41,7 +42,7 @@ func TestManagerRollbackDelegatesAndBringsAppUp(t *testing.T) {
 	assert.True(t, safety.Auto)
 
 	// The app was brought back up after the rollback (Host.Up -> m.up).
-	assert.Contains(t, r.ran(), "systemctl enable --now "+m.unitName("blog"), "the app is brought back up after rollback")
+	assert.Contains(t, r.ran(), "systemctl enable --now "+m.UnitName("blog"), "the app is brought back up after rollback")
 }
 
 // Snapshot subvolumes are created straight into the app's budget group (-i,
@@ -57,6 +58,6 @@ func TestTakeSnapshotCreatesTheSubvolumeInsideTheBudget(t *testing.T) {
 	require.NoError(t, err)
 	// Created INTO the budget group (-i): atomic membership, no post-hoc assign
 	// (which would leave the group unenforced until a rescan).
-	assert.Contains(t, r.ran(), fmt.Sprintf("btrfs subvolume snapshot -r -i 1/%d %s %s", m.uidFor(a.Port), m.appSubvolume("blog"), m.snapshotPath("blog", snap.ID)))
+	assert.Contains(t, r.ran(), fmt.Sprintf("btrfs subvolume snapshot -r -i 1/%d %s %s", workspace.UIDFor(m.config.PortMin, a.Port), m.AppSubvolume("blog"), m.SnapshotPath("blog", snap.ID)))
 	assert.NotContains(t, r.ran(), "qgroup assign")
 }

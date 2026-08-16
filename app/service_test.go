@@ -15,11 +15,13 @@ import (
 	"heckel.io/hostit/config"
 	"heckel.io/hostit/container"
 	"heckel.io/hostit/firewall"
+	"heckel.io/hostit/node"
 	"heckel.io/hostit/run"
 	"heckel.io/hostit/ssh"
 	"heckel.io/hostit/store"
 	"heckel.io/hostit/systemd"
 	"heckel.io/hostit/unixuser"
+	"heckel.io/hostit/workspace"
 )
 
 const (
@@ -51,8 +53,8 @@ func TestCreateApp(t *testing.T) {
 	assert.Equal(t, 10000, app.Port)
 	assert.Equal(t, []string{"blog"}, ops.createdUsers)
 	assert.Equal(t, []string{testPublicKey}, ops.authorizedKeys["blog"])
-	assert.Contains(t, ops.skeletons[m.appFiles("blog").Path()], "hostit.yml")
-	assert.Contains(t, ops.skeletons[m.appFiles("blog").Path()], "README.md")
+	assert.Contains(t, ops.skeletons[m.AppFiles("blog").Path()], "hostit.yml")
+	assert.Contains(t, ops.skeletons[m.AppFiles("blog").Path()], "README.md")
 	stored, err := m.App("blog")
 	require.NoError(t, err)
 	assert.Equal(t, 10000, stored.Port)
@@ -142,7 +144,7 @@ func TestDeleteApp(t *testing.T) {
 	_, err := m.CreateApp("blog", &CreateOptions{RequestKeys: []string{testPublicKey}})
 	require.NoError(t, err)
 	require.NoError(t, m.DeleteApp("blog"))
-	m.background.Wait() // the user teardown runs in the background
+	m.WaitBackground() // the user teardown runs in the background
 	assert.Equal(t, []string{"blog"}, ops.deletedUsers)
 	_, err = m.App("blog")
 	require.ErrorIs(t, err, store.ErrAppNotFound)
@@ -156,10 +158,10 @@ func TestDeleteAppRemovesAppDirectory(t *testing.T) {
 	m, _, _ := newTestDeployManager(t)
 	createTestApp(t, m, "blog")
 	require.NoError(t, m.WriteFile("blog", "index.html", []byte("hi"), 0))
-	require.DirExists(t, m.appSubvolume("blog"))
+	require.DirExists(t, m.AppSubvolume("blog"))
 
 	require.NoError(t, m.DeleteApp("blog"))
-	assert.NoDirExists(t, m.appSubvolume("blog"))
+	assert.NoDirExists(t, m.AppSubvolume("blog"))
 }
 
 func TestSetKeys(t *testing.T) {
@@ -212,15 +214,15 @@ func newTestManager(t *testing.T) (*Manager, *fakeSystem) {
 	// teardowns) BEFORE the db closes and the temp dirs vanish under them --
 	// the source of the "database is closed" noise and a flaky TempDir
 	// "directory not empty" failure in CI.
-	t.Cleanup(m.background.Wait)
+	t.Cleanup(m.WaitBackground)
 	return m, ops
 }
 
 // testServices bundles the fake privileged services (users, ssh keys, firewall)
-// with the runner-backed node-local services onto one Services, so a test Manager
+// with the runner-backed node-local services onto one node.Services, so a test
 // records system calls instead of executing them.
-func testServices(ops *fakeSystem, runner run.Runner) *Services {
-	return &Services{
+func testServices(ops *fakeSystem, runner run.Runner) *node.Services {
+	return &node.Services{
 		Btrfs:     btrfs.New(runner),
 		Systemd:   systemd.New(runner),
 		Container: container.New(runner),
@@ -398,9 +400,9 @@ func TestDeleteAppAnswersBeforeTeardownAndConverges(t *testing.T) {
 	t.Parallel()
 	m, ops, r := newTestDeployManager(t)
 	a := createTestApp(t, m, "blog")
-	subvol := m.appSubvolume("blog")
-	unit, container := m.unitName("blog"), m.containerName("blog")
-	group := fmt.Sprintf("1/%d", m.uidFor(a.Port))
+	subvol := m.AppSubvolume("blog")
+	unit, container := m.UnitName("blog"), m.ContainerName("blog")
+	group := fmt.Sprintf("1/%d", workspace.UIDFor(m.config.PortMin, a.Port))
 	r.reset()
 
 	// The API answer is immediate: the rows are gone before any host teardown
@@ -411,7 +413,7 @@ func TestDeleteAppAnswersBeforeTeardownAndConverges(t *testing.T) {
 	require.ErrorIs(t, err, store.ErrAppNotFound)
 
 	// The background teardown converges to exactly what the sync delete did.
-	m.background.Wait()
+	m.WaitBackground()
 	joined := r.ran()
 	assert.Contains(t, joined, "systemctl disable --now "+unit)
 	assert.Contains(t, joined, "podman rm --force "+container)
@@ -422,9 +424,9 @@ func TestDeleteAppAnswersBeforeTeardownAndConverges(t *testing.T) {
 
 	// The port (and with it the uid block) stays reserved until the teardown is
 	// done -- a new app grabbing it mid-userdel would collide -- and is free after.
-	m.mu.Lock()
+	m.pmu.Lock()
 	reserved := m.reservedPorts[a.Port]
-	m.mu.Unlock()
+	m.pmu.Unlock()
 	assert.False(t, reserved, "the port is released once the teardown finished")
 }
 

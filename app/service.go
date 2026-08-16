@@ -1,77 +1,40 @@
-// Package app orchestrates the lifecycle of hostit apps: the per-app Unix user, SSH
-// keys, port allocation, home skeleton and container. Node-local system interaction
-// is delegated to focused service packages (btrfs, systemd, container, unixuser, ssh,
-// firewall), each injected as an interface so it can be faked in tests. Keeping these
-// services separable is also the seam a future control/app-node split would use.
+// Package app is the control-plane orchestrator of hostit apps: creation and
+// deletion, placement, port allocation, ownership and the registry of record.
+// Machine work (subvolumes, unix users, containers, firewall, files, state)
+// lives in package node; the Manager embeds a node.Machine and drives it
+// through the nodeapi verbs -- locally in the fused daemon, over the node RPC
+// in a split deployment.
 package app
 
 import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"regexp"
 	"slices"
-	"strings"
 	"sync"
 	"time"
 
-	"heckel.io/hostit/btrfs"
 	"heckel.io/hostit/config"
-	"heckel.io/hostit/container"
-	"heckel.io/hostit/firewall"
-	"heckel.io/hostit/homefs"
-	"heckel.io/hostit/run"
-	"heckel.io/hostit/snapshot"
+	"heckel.io/hostit/node"
+	"heckel.io/hostit/nodeapi"
 	"heckel.io/hostit/ssh"
 	"heckel.io/hostit/store"
-	"heckel.io/hostit/systemd"
-	"heckel.io/hostit/unixuser"
 	"heckel.io/hostit/workspace"
 )
 
 const (
-	// userShellFile is the login shell for app users; it execs the SSH session
-	// into the app container (see cmd/shell.go). Also used by exec.go's terminal.
-	userShellFile = "/usr/bin/hostit-shell"
-	// AppsGroup owns the sudoers grant that lets app users enter their own
-	// container (and nothing else); see /etc/sudoers.d/hostit
-	AppsGroup = "hostit-apps"
-)
-
-const (
-	// settingAgentVersion records the hostit version the running agents were
-	// started from, so an upgrade knows whose behaviour is stale
-	settingAgentVersion = "agent_version"
-
-	// AppNamePattern is what an app may be called: safe as a Unix username and as
-	// a DNS label. Exported because the enter helper applies the same rule without
-	// importing this package's machinery.
-	AppNamePattern = `^[a-z]([a-z0-9-]{0,30}[a-z0-9])?$`
-
 	// teardownWait bounds how long a create waits for a same-name background
-	// teardown (delete-then-recreate); teardownPoll is its check interval, and
-	// budgetDestroyWait/Poll pace the teardown's gentle qgroup destroy.
-	teardownWait      = 30 * time.Second
-	teardownPoll      = 200 * time.Millisecond
-	budgetDestroyWait = 60 * time.Second
-	budgetDestroyPoll = 5 * time.Second
+	// teardown (delete-then-recreate); teardownPoll is its check interval.
+	teardownWait = 30 * time.Second
+	teardownPoll = 200 * time.Millisecond
 )
 
 var (
-	// Version is the hostit build this daemon is, set once at startup. It is part
-	// of each container's identity: the binary is bind-mounted into containers as
-	// a file, so replacing it on the host leaves running containers on the old
-	// inode until they are recreated.
-	Version = "dev"
-
-	// ErrAppExists is returned when the app name or a Unix user with that name already exists
-	// ErrNoPortsAvailable is returned when the configured port range is exhausted
+	// ErrNoPortsAvailable is returned when the configured port range is exhausted.
+	// ErrInvalid wraps all request validation errors (bad names, bad keys);
+	// ErrAppExists and ErrLimitReached live with the wire contract in nodeapi
+	// and are re-exported in nodeagent.go.
 	ErrNoPortsAvailable = errors.New("no free ports in configured range")
-	// ErrInvalid wraps all request validation errors (bad names, bad keys)
-	// ErrLimitReached is returned when a user hit one of their resource limits
-
-	// appNameRegex limits names to things that are safe as Unix usernames and DNS labels
-	appNameRegex = regexp.MustCompile(AppNamePattern)
 
 	// reservedNames are blocked in addition to existing Unix users; mostly hostnames
 	// with special meaning and common system accounts that may not exist yet
@@ -81,44 +44,6 @@ var (
 		"postgres", "mysql", "redis", "ubuntu", "debian",
 	}
 )
-
-// Services bundles the node-local system services the Manager depends on. Each is
-// an interface so a test can substitute a fake for any single one; production builds
-// the real, root-requiring implementations with NewSystemServices.
-type Services struct {
-	Btrfs     btrfs.Interface
-	Systemd   systemd.Interface
-	Container container.Interface
-	User      unixuser.Interface
-	SSH       ssh.Interface
-	Firewall  firewall.Interface
-	Runner    run.Runner
-}
-
-// NewSystemServices builds the real services the daemon runs with. btrfs, systemd
-// and container shell out through the shared runner; unixuser, ssh and firewall
-// touch the host directly (useradd, authorized_keys, nft) and must run as root.
-func NewSystemServices(runner run.Runner, nodeID string) *Services {
-	return &Services{
-		Btrfs:     btrfs.New(runner),
-		Systemd:   systemd.New(runner),
-		Container: container.New(runner),
-		User:      unixuser.New(userShellFile, AppsGroup),
-		SSH:       ssh.New(),
-		Firewall:  firewall.New(FirewallTable(nodeID)),
-		Runner:    runner,
-	}
-}
-
-// FirewallTable names the node's nftables table: the historical "hostit" for
-// the local node, "hostit_<id>" otherwise (two colocated nodes must not share
-// a table -- each reconcile replaces it wholesale).
-func FirewallTable(nodeID string) string {
-	if nodeID == "" || nodeID == store.HostLocal {
-		return "hostit"
-	}
-	return "hostit_" + strings.ReplaceAll(nodeID, "-", "_")
-}
 
 // CreateOptions carries everything CreateApp needs beyond the name: who owns the
 // app, which keys may log in, and the container's memory cap
@@ -131,89 +56,13 @@ type CreateOptions struct {
 	Host        string   // Target node; empty means placement picks one (a fork pins its source's)
 }
 
-// machine is the node-local half of the Manager: the services and state that
-// act on THIS machine's apps (subvolumes, unix users, containers, port rules,
-// files, state measurement). It is the seam the app split grows along
-// (plans/260816-hostit-package-architecture.md, Phase 3): the NodeAgent verbs
-// operate on exactly these fields, and later phases lift this struct into the
-// node package. The Manager embeds it, so field promotion keeps every existing
-// method working unchanged while the seam becomes visible.
-type machine struct {
-	config *config.Config
-	// store is this half's view of the registry: the full registry in a single
-	// process (and on control), the pushed mirror on a split node. The control
-	// half reads it through promotion until the split gives it its own.
-	store     *store.Store
-	runner    run.Runner
-	btrfs     btrfs.Interface
-	systemd   systemd.Interface
-	container container.Interface
-	user      unixuser.Interface
-	ssh       ssh.Interface
-	firewall  firewall.Interface
-	homefs    *homefs.Service
-	snapshots *snapshot.Service
-	workspace *workspace.Service
-	// rawAppsDir, when set, is a non-recursive bind of AppsDir the daemon's file
-	// I/O goes through. A running container's idmapped rootfs mount covers the
-	// subvolume path in the host namespace, and root writing through that mapped
-	// view fails (EOVERFLOW: root is not in the mapping); the raw bind excludes
-	// those child mounts, so the daemon always sees the disk as it is. Empty
-	// until serve establishes the bind (tests, dry runs): AppsDir is used as-is.
-	rawAppsDir string
-
-	// sink is the node's reverse channel to control for control-plane data the
-	// node originates (usage, poweroffs, snapshot records); nil in a single
-	// process (SetControlSink).
-	sink ControlSink
-	// synced closes when the first registry mirror arrives (Sync); gates the
-	// node's destructive startup work.
-	synced     chan struct{}
-	syncedOnce sync.Once
-	// onStateChanged, when set, tells the OTHER half that an app's state just
-	// moved (deploy, power, restart), so the control plane can invalidate its
-	// cached entry instead of serving the old state for a whole TTL. Wired by
-	// NewManager; a one-way, in-process hook.
-	onStateChanged func(name string)
-
-	// memoryMB and diskMB cache per-app limits, so redeploys and quota checks
-	// keep them; the authoritative values come from the owner's limits
-	memoryMB map[string]int
-	diskMB   map[string]int
-	// background tracks the manager's fire-and-forget goroutines -- delete
-	// teardowns and the post-create start -- so tests (and a graceful shutdown,
-	// if it ever wants to) can wait for them instead of racing their I/O.
-	// tearingDown holds the app names with a teardown in flight, so a same-name
-	// create can wait for the dying user instead of failing on the collision.
-	background  sync.WaitGroup
-	tearingDown map[string]bool
-
-	// stateCache holds the last measured state of every app, so listing apps
-	// answers from memory instead of waiting on podman
-	stateCache      map[string]State
-	stateFresh      time.Time
-	stateRefreshing bool
-
-	// appLocks serializes mutating lifecycle work per app (deploy, snapshot,
-	// rollback, delete), so operations on one app's subvolume never interleave --
-	// e.g. a rollback swapping the subvolume while a deploy writes into it.
-	appLocks map[string]*sync.Mutex
-
-	// mu also protects the Manager's reservedPorts for now: one lock spans the
-	// halves until the control split gives the control side its own.
-	mu         sync.Mutex // Protects memoryMB, diskMB, tearingDown, reservedPorts
-	stateMu    sync.Mutex // Protects stateCache, stateFresh, stateRefreshing
-	execMu     sync.Mutex // Serializes /run commands; they are builds, and the box has one core
-	appLocksMu sync.Mutex // Protects appLocks
-}
-
 // Manager creates and deletes apps and everything that belongs to them, and
 // runs their containers as root with per-app uid mappings. It is (still) both
-// halves of the platform in one type: the embedded machine is the node-local
-// half; the fields below are the control plane's (orchestration, placement,
-// port allocation from the registry).
+// halves of the platform in one type: the embedded node.Machine is the
+// node-local half; the fields below are the control plane's (orchestration,
+// placement, port allocation from the registry).
 type Manager struct {
-	machine
+	*node.Machine
 
 	// node is where this manager's ORCHESTRATION sends machine work (provision,
 	// deprovision): itself by default (single process), or a remote node agent
@@ -250,27 +99,10 @@ type Manager struct {
 }
 
 // NewManager creates a Manager from its config, store and the node-local services
-// (real ones from NewSystemServices in production, fakes in tests).
-func NewManager(conf *config.Config, s *store.Store, svc *Services) *Manager {
+// (real ones from node.NewSystemServices in production, fakes in tests).
+func NewManager(conf *config.Config, s *store.Store, svc *node.Services) *Manager {
 	m := &Manager{
-		machine: machine{
-			config:      conf,
-			store:       s,
-			runner:      svc.Runner,
-			btrfs:       svc.Btrfs,
-			systemd:     svc.Systemd,
-			container:   svc.Container,
-			user:        svc.User,
-			ssh:         svc.SSH,
-			firewall:    svc.Firewall,
-			homefs:      homefs.New(ErrInvalid),
-			memoryMB:    make(map[string]int),
-			synced:      make(chan struct{}),
-			diskMB:      make(map[string]int),
-			tearingDown: make(map[string]bool),
-			stateCache:  make(map[string]State),
-			appLocks:    make(map[string]*sync.Mutex),
-		},
+		Machine:       node.NewMachine(conf, s, svc),
 		reservedPorts: make(map[int]bool),
 		ctlStates:     make(map[string]State),
 		store:         s,
@@ -279,36 +111,12 @@ func NewManager(conf *config.Config, s *store.Store, svc *Services) *Manager {
 	m.node = m // single process: orchestration and machine work are the same
 	// A machine-side lifecycle change invalidates the control cache's entry,
 	// so the UI never confidently serves the pre-transition state for a TTL.
-	m.onStateChanged = func(name string) {
+	m.Machine.OnStateChanged(func(name string) {
 		m.ctlStatesMu.Lock()
 		delete(m.ctlStates, name)
 		m.ctlStatesMu.Unlock()
-	}
-	// The snapshot Service reuses the Manager's node-local services and store, and
-	// calls back into it through snapshotHost for the app-lifecycle operations and
-	// id-keyed lookups a snapshot or rollback needs.
-	m.snapshots = snapshot.New(m.btrfs, m.systemd, m.container, s, snapshotHost{&m.machine})
-	// The workspace Service owns the shared workspace image lifecycle (build,
-	// per-app pinned tags, prune) and the base and app subvolumes the containers
-	// run; it needs no callbacks into the Manager.
-	m.workspace = workspace.New(m.container, s, m.btrfs, m.runner, conf.DataDir, conf.AppsDir)
+	})
 	return m
-}
-
-// LockApp acquires the per-app lifecycle lock and returns its unlock func, so
-// deploy/snapshot/rollback/delete on one app run one at a time and never race on
-// its subvolume. It is NOT reentrant: a method already holding the lock must
-// call the unlocked helpers (up, takeSnapshot), not the public locking ones.
-func (m *machine) LockApp(name string) func() {
-	m.appLocksMu.Lock()
-	mu := m.appLocks[name]
-	if mu == nil {
-		mu = &sync.Mutex{}
-		m.appLocks[name] = mu
-	}
-	m.appLocksMu.Unlock()
-	mu.Lock()
-	return mu.Unlock
 }
 
 // CreateApp registers a new app: it allocates a port, creates the Unix user with
@@ -460,50 +268,6 @@ func (m *Manager) SetNodeAgent(node NodeAgent) {
 	m.node = node
 }
 
-// WaitBackground blocks until the manager's fire-and-forget goroutines (post-
-// create starts, delete teardowns) have finished: what a graceful shutdown or
-// a test harness waits on before pulling the store away from under them.
-func (m *machine) WaitBackground() {
-	m.background.Wait()
-}
-
-// TrackedGo runs fn in a goroutine tracked by the background group, so
-// WaitBackground covers it; how the control half's fire-and-forget work
-// (post-create starts, delete teardowns) stays waitable without reaching
-// into the machine's WaitGroup.
-func (m *machine) TrackedGo(fn func()) {
-	m.background.Add(1)
-	go func() {
-		defer m.background.Done()
-		fn()
-	}()
-}
-
-// SetTearingDown marks (or clears) an app name as having a teardown in
-// flight, under the machine's lock; IsTearingDown is the matching read. The
-// control half's delete/create paths coordinate through these.
-func (m *machine) SetTearingDown(name string, tearing bool) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if tearing {
-		m.tearingDown[name] = true
-	} else {
-		delete(m.tearingDown, name)
-	}
-}
-
-func (m *machine) IsTearingDown(name string) bool {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return m.tearingDown[name]
-}
-
-// UserExists reports whether the app's unix login exists on this machine;
-// name validation and the teardown wait consult it.
-func (m *machine) UserExists(name string) bool {
-	return m.user.Exists(name)
-}
-
 // DeleteApp removes the app from the registry and answers at once; the host
 // teardown -- container stop, subvolume and snapshot deletes (with the qgroup
 // sync ladder behind them), userdel -- takes seconds on a loaded box and
@@ -552,71 +316,6 @@ func (m *Manager) DeleteApp(name string) error {
 	return nil
 }
 
-// ReconcilePortRules rebuilds the per-app loopback firewall rules from the
-// registry; failures are logged, not fatal (nft may be absent in dev setups)
-func (m *machine) ReconcilePortRules() {
-	apps, err := m.store.Apps()
-	if err != nil {
-		slog.Warn("Cannot list apps for port rules", "error", err)
-		return
-	}
-	rules := make([]firewall.Rule, 0, len(apps))
-	for _, a := range apps {
-		uid, err := m.user.LookupUID(a.Name)
-		if err != nil {
-			slog.Warn("Cannot look up uid for port rule", "app", a.Name, "error", err)
-			continue
-		}
-		rules = append(rules, firewall.Rule{Port: a.Port, UID: uid})
-	}
-	if err := m.firewall.Apply(rules); err != nil {
-		slog.Warn("Cannot apply port rules", "error", err)
-	}
-}
-
-// SetKeys replaces the app-specific SSH keys; the app's authorized_keys become
-// those plus the owner's profile keys
-func (m *machine) SetKeys(name string, appKeys, profileKeys []string) error {
-	app, err := m.store.App(name)
-	if err != nil {
-		return err
-	}
-	if err := validateKeys(appKeys); err != nil {
-		return err
-	}
-	if err := m.store.SetAppKeys(app.Name, appKeys); err != nil {
-		return err
-	}
-	return m.writeKeys(app.Name, appKeys, profileKeys)
-}
-
-// SyncKeys rewrites an app's authorized_keys from its stored app keys plus the
-// given profile keys; used when a user adds or removes a profile key
-func (m *machine) SyncKeys(name string, profileKeys []string) error {
-	appKeys, err := m.store.AppKeys(name)
-	if err != nil {
-		return err
-	}
-	return m.writeKeys(name, appKeys, profileKeys)
-}
-
-func (m *machine) writeKeys(name string, appKeys, profileKeys []string) error {
-	keys := append(append([]string{}, appKeys...), profileKeys...)
-	return m.writeKeysIn(m.appFiles(name), name, keys)
-}
-
-// writeKeysIn writes an app's authorized_keys through its chained files root:
-// the files dir sits inside the tenant-owned subvolume, so a symlink planted at
-// home (or home/app) must not redirect root's key write out of it.
-func (m *machine) writeKeysIn(files homefs.Dir, name string, keys []string) error {
-	root, err := m.homefs.OpenRoot(files)
-	if err != nil {
-		return err
-	}
-	defer root.Close()
-	return m.ssh.WriteAuthorizedKeys(root, name, keys)
-}
-
 // App returns a registered app by name
 func (m *Manager) App(name string) (*store.App, error) {
 	return m.store.App(name)
@@ -641,9 +340,19 @@ func (m *Manager) Store() *store.Store {
 	return m.store
 }
 
+// validateKeys is the control side's early check of user-supplied SSH keys,
+// wrapping the ssh package's parse in ErrInvalid so the server reports a bad
+// request; the node re-validates whatever it is told to write.
+func validateKeys(keys []string) error {
+	if err := ssh.ValidateKeys(keys); err != nil {
+		return fmt.Errorf("%w: %s", ErrInvalid, err.Error())
+	}
+	return nil
+}
+
 func (m *Manager) validateName(name string) error {
-	if !appNameRegex.MatchString(name) {
-		return fmt.Errorf("%w: invalid app name %q, must match %s", ErrInvalid, name, appNameRegex.String())
+	if !nodeapi.ValidName(name) {
+		return fmt.Errorf("%w: invalid app name %q, must match %s", ErrInvalid, name, nodeapi.AppNamePattern)
 	}
 	if slices.Contains(reservedNames, name) {
 		return fmt.Errorf("%w: app name %q is reserved", ErrInvalid, name)
@@ -737,20 +446,4 @@ func (m *Manager) BackfillUIDs() {
 			slog.Warn("Cannot backfill app uid", "app", a.Name, "error", err)
 		}
 	}
-}
-
-// uidFor is an app's base uid: a contiguous workspace.UIDBlockSize-wide block, one per
-// app, spaced by port so blocks never overlap. Container uid 0 maps here.
-func (m *machine) uidFor(port int) int {
-	return workspace.UIDFor(m.config.PortMin, port)
-}
-
-// lookupIDs returns the app's contiguous id block: its uid/gid (which become
-// container root) and the block size that runs up from there.
-func (m *machine) lookupIDs(username string) (workspace.IDs, error) {
-	uid, gid, err := m.user.LookupIDs(username)
-	if err != nil {
-		return workspace.IDs{}, err
-	}
-	return workspace.IDs{UID: uid, GID: gid, Count: workspace.UIDBlockSize}, nil
 }

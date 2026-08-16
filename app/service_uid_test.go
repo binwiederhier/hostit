@@ -6,16 +6,17 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"heckel.io/hostit/store"
+	"heckel.io/hostit/workspace"
 )
 
 func TestCreateRecordsTheAppUID(t *testing.T) {
 	t.Parallel()
 	m, _, _ := newTestDeployManager(t)
 	a := createTestApp(t, m, "blog")
-	assert.Equal(t, m.uidFor(a.Port), a.UID, "the allocated uid block base is recorded on the row")
+	assert.Equal(t, workspace.UIDFor(m.config.PortMin, a.Port), a.UID, "the allocated uid block base is recorded on the row")
 	row, err := m.store.App("blog")
 	require.NoError(t, err)
-	assert.Equal(t, m.uidFor(a.Port), row.UID)
+	assert.Equal(t, workspace.UIDFor(m.config.PortMin, a.Port), row.UID)
 }
 
 func TestBackfillUIDsFillsOnlyZeroRows(t *testing.T) {
@@ -29,7 +30,7 @@ func TestBackfillUIDsFillsOnlyZeroRows(t *testing.T) {
 
 	old, err := m.store.App("old")
 	require.NoError(t, err)
-	assert.Equal(t, m.uidFor(10007), old.UID, "a zero uid is backfilled from the port")
+	assert.Equal(t, workspace.UIDFor(m.config.PortMin, 10007), old.UID, "a zero uid is backfilled from the port")
 	done, err := m.store.App("done")
 	require.NoError(t, err)
 	assert.Equal(t, 42, done.UID, "an already-recorded uid is left alone")
@@ -40,7 +41,7 @@ func TestAllocatePortRotatesInsteadOfReusingImmediately(t *testing.T) {
 	m, _, _ := newTestDeployManager(t)
 	a := createTestApp(t, m, "first")
 	require.NoError(t, m.DeleteApp("first"))
-	m.background.Wait()
+	m.WaitBackground()
 
 	// The freed port's uid still owns a budget qgroup whose phantom bytes may
 	// not have committed yet; immediate reuse started brand-new apps over their

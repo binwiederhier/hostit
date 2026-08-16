@@ -1,4 +1,4 @@
-package app
+package node
 
 import (
 	"fmt"
@@ -12,11 +12,11 @@ import (
 )
 
 const (
-	// defaultDiskCapMB is the disk budget for apps with no explicit limit
+	// DefaultDiskCapMB is the disk budget for apps with no explicit limit
 	// (disk_mb 0, which used to mean unlimited). Nothing is ever unlimited
 	// anymore: an uncapped app dd'ing into its rootfs once filled the whole host
 	// (stage, 2026-08-12), taking the daemon's own SQLite down with it.
-	defaultDiskCapMB = 2048
+	DefaultDiskCapMB = 2048
 )
 
 // EnableDiskBudgets puts the apps pool in simple-quota mode, the mechanism
@@ -24,7 +24,7 @@ const (
 // the limit sweep re-ensures each app's group (which rebuilds them after a
 // full-qgroups migration). Failure only warns: apps still run, just uncapped,
 // which the next start retries.
-func (m *machine) EnableDiskBudgets() {
+func (m *Machine) EnableDiskBudgets() {
 	if err := m.btrfs.EnsureSimpleQuota(m.config.AppsDir); err != nil {
 		slog.Warn("Cannot enable btrfs simple quotas; disk budgets will not be enforced", "error", err)
 	}
@@ -36,8 +36,8 @@ func (m *machine) EnableDiskBudgets() {
 // app itself pins, with extents shared with the base charged to nobody.
 // Ensure-style: every step is idempotent, so it is safe to re-run at startup or
 // after a partial failure.
-func (m *machine) ensureBudget(a *store.App) error {
-	ids, err := m.lookupIDs(a.Name)
+func (m *Machine) ensureBudget(a *store.App) error {
+	ids, err := m.LookupIDs(a.Name)
 	if err != nil {
 		return err
 	}
@@ -57,7 +57,7 @@ func (m *machine) ensureBudget(a *store.App) error {
 
 // assignToGroup resolves a subvolume's own qgroup (0/<rootid>) and makes it a
 // member of the app's budget group.
-func (m *machine) assignToGroup(subvolPath, group string) error {
+func (m *Machine) assignToGroup(subvolPath, group string) error {
 	rootID, err := m.btrfs.RootID(subvolPath)
 	if err != nil {
 		return err
@@ -67,7 +67,7 @@ func (m *machine) assignToGroup(subvolPath, group string) error {
 
 // destroyBudget removes an app's budget group on delete; best effort, since its
 // member subvolumes are already gone and a stale empty group is only clutter.
-func (m *machine) destroyBudget(uid int) {
+func (m *Machine) destroyBudget(uid int) {
 	if err := m.btrfs.QgroupDestroy(m.config.AppsDir, budgetGroup(uid)); err != nil {
 		slog.Warn("Cannot destroy disk budget qgroup", "uid", uid, "error", err)
 	}
@@ -78,7 +78,7 @@ func (m *machine) destroyBudget(uid int) {
 // concurrent btrfs operation on the pool, so this polls a plain destroy until
 // the deleted member subvolumes have committed on their own. A group that
 // outlasts the patience is left for the startup reconcile's sweep.
-func (m *machine) destroyBudgetGently(uid int) {
+func (m *Machine) destroyBudgetGently(uid int) {
 	deadline := time.Now().Add(budgetDestroyWait)
 	for {
 		err := m.btrfs.QgroupTryDestroy(m.config.AppsDir, budgetGroup(uid))
@@ -103,7 +103,7 @@ func budgetGroup(uid int) string {
 // falls back to the default cap instead of meaning unlimited.
 func effectiveDiskCapMB(diskMB int) int {
 	if diskMB <= 0 {
-		return defaultDiskCapMB
+		return DefaultDiskCapMB
 	}
 	return diskMB
 }
@@ -115,7 +115,7 @@ func effectiveDiskCapMB(diskMB int) int {
 // groups make every quota rescan slow -- and snapshot creation waits on
 // rescans, so app creates eventually blow their deadline. This sweep is the
 // backstop that keeps the pool lean.
-func (m *machine) SweepStaleQgroups() {
+func (m *Machine) SweepStaleQgroups() {
 	pool := m.config.AppsDir
 	groups, err := m.btrfs.ListQgroups(pool)
 	if err != nil {
@@ -141,7 +141,7 @@ func (m *machine) SweepStaleQgroups() {
 	budgets := make(map[string]bool, len(apps))
 	budgetsComplete := true
 	for _, a := range apps {
-		ids, err := m.lookupIDs(a.Name)
+		ids, err := m.LookupIDs(a.Name)
 		if err != nil {
 			budgetsComplete = false
 			continue
@@ -166,7 +166,7 @@ func (m *machine) SweepStaleQgroups() {
 }
 
 // QgroupSweepLoop sweeps at start and then every interval, until done closes.
-func (m *machine) QgroupSweepLoop(interval time.Duration, done <-chan struct{}) {
+func (m *Machine) QgroupSweepLoop(interval time.Duration, done <-chan struct{}) {
 	m.SweepStaleQgroups()
 	for {
 		select {

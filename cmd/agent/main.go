@@ -5,6 +5,8 @@ package main
 import (
 	"fmt"
 	"os"
+
+	"heckel.io/hostit/node"
 )
 
 // Set by goreleaser via ldflags (-X main.version=... etc.)
@@ -16,9 +18,9 @@ var (
 
 func main() {
 	app := New()
-	app.Version = version
+	node.Version = version
 	if commit != "" {
-		app.Version = fmt.Sprintf("%s (%s, built %s)", version, commit, date)
+		node.Version = fmt.Sprintf("%s (%s, built %s)", version, commit, date)
 	}
 	if err := app.Run(os.Args); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %s\n", err.Error())

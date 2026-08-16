@@ -107,7 +107,7 @@ func TestSymlinksCannotEscapeTheAppHome(t *testing.T) {
 	t.Parallel()
 	m, _, _ := newTestDeployManager(t)
 	createTestApp(t, m, "blog")
-	home := m.appFiles("blog").Path()
+	home := m.AppFiles("blog").Path()
 
 	outside := filepath.Join(t.TempDir(), "secret.txt")
 	require.NoError(t, os.WriteFile(outside, []byte("root-only secret"), 0o600))
@@ -172,7 +172,7 @@ func TestFilesRefuseAHomeSymlinkedOutOfTheSubvolume(t *testing.T) {
 			require.NoError(t, os.MkdirAll(filepath.Join(outside, "log"), 0o755))
 			require.NoError(t, os.WriteFile(filepath.Join(outside, "hostit.yml"), []byte("mode: static\n"), 0o644))
 			require.NoError(t, os.WriteFile(filepath.Join(outside, "log", "state"), []byte("running\n"), 0o644))
-			subvol := m.appSubvolume("blog")
+			subvol := m.AppSubvolume("blog")
 			require.NoError(t, os.RemoveAll(filepath.Join(subvol, plant)))
 			require.NoError(t, os.Symlink(outside, filepath.Join(subvol, plant)))
 
@@ -182,11 +182,11 @@ func TestFilesRefuseAHomeSymlinkedOutOfTheSubvolume(t *testing.T) {
 			require.Error(t, err, "reads through a planted %s link must be refused", plant)
 
 			// The config load refuses, so a deploy cannot be steered by a link.
-			_, err = m.loadConfig("blog")
+			_, err = m.LoadAppConfig("blog")
 			require.Error(t, err, "loadConfig must refuse a planted %s link", plant)
 
 			// The breadcrumb read refuses: the baited "running" never surfaces.
-			state, startedAt := m.appProcessState("blog")
+			state, startedAt := m.AppProcessState("blog")
 			assert.Empty(t, state, "the agent breadcrumb must not be read through a planted %s link", plant)
 			assert.Zero(t, startedAt)
 

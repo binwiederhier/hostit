@@ -10,8 +10,9 @@ import (
 	"syscall"
 
 	"github.com/urfave/cli/v2"
-	"heckel.io/hostit/app"
 	"heckel.io/hostit/container"
+	"heckel.io/hostit/node"
+	"heckel.io/hostit/nodeapi"
 )
 
 const (
@@ -23,8 +24,8 @@ const (
 
 var (
 	// termRegex keeps TERM to boring terminal names. The app-name and container-key
-	// formats are re-validated via app.ValidName / container.ValidName, which own
-	// those patterns.
+	// formats are re-validated via nodeapi.ValidName / container.ValidName, which
+	// own those patterns.
 	termRegex = regexp.MustCompile(`^[a-zA-Z0-9._-]{1,32}$`)
 
 	// cmdEnter is the privileged half of "hostit shell": it runs as root through
@@ -54,7 +55,7 @@ func execEnter(c *cli.Context) error {
 	if err != nil {
 		return cli.Exit("cannot resolve the calling user", 1)
 	}
-	if !app.ValidName(u.Username) {
+	if !nodeapi.ValidName(u.Username) {
 		return cli.Exit("not an app user", 1)
 	}
 	// Resolve the app's container from the caller's home directory, not its name.
@@ -92,13 +93,13 @@ func execEnter(c *cli.Context) error {
 }
 
 // containerKeyFromHome turns an app user's home directory into the name of its
-// container. The container is keyed on the app's id, which app.IDFromHomeDir
+// container. The container is keyed on the app's id, which node.IDFromHomeDir
 // digs out of the home path (apps/<id>/home/app, or the pre-unification
 // apps/<id>); the "hostit-app-" prefix is added. It returns false for a home
 // whose id is not a safe container key, so a surprising passwd entry cannot
 // inject podman arguments.
 func containerKeyFromHome(home string) (string, bool) {
-	base := app.IDFromHomeDir(home)
+	base := node.IDFromHomeDir(home)
 	if !container.ValidName(base) {
 		return "", false
 	}

@@ -28,8 +28,8 @@ func TestReconcileOrphansRemovesOrphanSubvolume(t *testing.T) {
 	assert.Contains(t, removed, "ghostid")
 	assert.Contains(t, r.ran(), "btrfs subvolume delete "+orphan)
 	assert.NoDirExists(t, orphan)
-	assert.NotContains(t, r.ran(), "btrfs subvolume delete "+m.appSubvolume("blog"), "a live app's subvolume must be left alone")
-	assert.DirExists(t, m.appSubvolume("blog"))
+	assert.NotContains(t, r.ran(), "btrfs subvolume delete "+m.AppSubvolume("blog"), "a live app's subvolume must be left alone")
+	assert.DirExists(t, m.AppSubvolume("blog"))
 	assert.DirExists(t, hidden, "hidden entries are never touched")
 }
 

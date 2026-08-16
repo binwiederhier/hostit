@@ -1,10 +1,4 @@
-// Package noded is the hostit-node engine: the machine half of the platform
-// as its own service. It runs the node-local startup and loops (budgets, raw
-// apps view, workspace image, state/disk/snapshot/qgroup loops, reconciles)
-// and dials control, serving the NodeAgent RPC over one mTLS connection.
-// Colocated interim: it shares the host, store and config file with control;
-// stateless remote nodes are Phase 2b.
-package noded
+package node
 
 import (
 	"crypto/tls"
@@ -18,9 +12,7 @@ import (
 	"syscall"
 	"time"
 
-	"heckel.io/hostit/app"
 	"heckel.io/hostit/config"
-	"heckel.io/hostit/node"
 	"heckel.io/hostit/preflight"
 	"heckel.io/hostit/run"
 	"heckel.io/hostit/store"
@@ -36,8 +28,6 @@ const (
 // systemd's stop timeout.
 var sigCh = make(chan os.Signal, 1)
 
-// execJoin runs the enrollment exchange and tells the operator what the
-// config must say for serve to dial in as this node.
 // Join runs the enrollment exchange and tells the operator what the config
 // must say for serve to dial in as this node.
 func Join(configPath, control, token string) error {
@@ -45,11 +35,11 @@ func Join(configPath, control, token string) error {
 	if err != nil {
 		return err
 	}
-	name, _, _, err := node.ParseJoinToken(token)
+	name, _, _, err := ParseJoinToken(token)
 	if err != nil {
 		return err
 	}
-	if err := node.Join(control, token, conf.DataDir); err != nil {
+	if err := enroll(control, token, conf.DataDir); err != nil {
 		return err
 	}
 	fmt.Printf("Joined as node %q; credentials stored under %s.\n", name, conf.DataDir)
@@ -58,6 +48,8 @@ func Join(configPath, control, token string) error {
 }
 
 // Serve runs the node daemon from its config file until a termination signal.
+// It is the machine half only: a Machine doing what control tells it to, with
+// no orchestration of its own.
 func Serve(configPath, version string) error {
 	conf, err := config.LoadConfig(configPath)
 	if err != nil {
@@ -76,57 +68,57 @@ func Serve(configPath, version string) error {
 		return err
 	}
 	defer s.Close()
-	app.Version = version
-	manager := app.NewManager(conf, s, app.NewSystemServices(run.New(), conf.NodeID))
+	Version = version
+	machine := NewMachine(conf, s, NewSystemServices(run.New(), conf.NodeID))
 
 	// The node-local startup, same order as the fused daemon's. Limits are
 	// not applied here: control re-asserts every app's memory and disk limit
 	// in its rejoin handshake right after the first dial-in.
-	manager.EnableDiskBudgets()
-	if err := manager.MountRawAppsView(filepath.Join(filepath.Dir(conf.SocketFile), "apps-raw")); err != nil {
+	machine.EnableDiskBudgets()
+	if err := machine.MountRawAppsView(filepath.Join(filepath.Dir(conf.SocketFile), "apps-raw")); err != nil {
 		return err
 	}
 	done := make(chan struct{})
 	defer close(done)
 	go func() {
-		if err := manager.EnsureWorkspaceBase(); err != nil {
+		if err := machine.EnsureWorkspaceBase(); err != nil {
 			slog.Warn("Cannot prepare workspace base rootfs; the first app deploy will retry", "error", err)
 		}
-		manager.PruneOldWorkspaceImages()
+		machine.PruneOldWorkspaceImages()
 	}()
 	// Anything that acts on "the set of apps this node hosts" waits for the
 	// first registry mirror: against an unsynced (possibly empty) mirror,
 	// ReconcileOrphans would tear down every app on the machine.
 	go func() {
 		select {
-		case <-manager.Synced():
+		case <-machine.Synced():
 		case <-done:
 			return
 		}
-		if removed := manager.Reconcile(); len(removed) > 0 {
+		if removed := machine.Reconcile(); len(removed) > 0 {
 			slog.Info("Cleaned up leftovers of apps that no longer exist", "apps", removed)
 		}
-		restarted, err := manager.RestartStaleAgents(version)
+		restarted, err := machine.RestartStaleAgents(version)
 		if err != nil {
 			slog.Warn("Cannot restart apps after upgrade", "error", err)
 		} else if len(restarted) > 0 {
 			slog.Info("Restarted apps to pick up the new version", "apps", restarted, "version", version)
 		}
 	}()
-	go manager.DiskUsageLoop(done)
-	manager.SeedStates()
-	go manager.StateLoop(done)
-	go manager.SnapshotLoop(time.Hour, done)
-	go manager.QgroupSweepLoop(6*time.Hour, done)
+	go machine.DiskUsageLoop(done)
+	machine.SeedStates()
+	go machine.StateLoop(done)
+	go machine.SnapshotLoop(time.Hour, done)
+	go machine.QgroupSweepLoop(6*time.Hour, done)
 
 	// Dial control forever: serve the RPC over the mTLS connection; on death,
 	// redial with backoff. Control runs its rejoin handshake on every register.
-	tlsConf, err := node.LoadNodeCreds(conf.DataDir, conf.NodeID)
+	tlsConf, err := LoadNodeCreds(conf.DataDir, conf.NodeID)
 	if err != nil {
 		return err
 	}
-	link := node.NewControlLink()
-	manager.SetControlSink(link)
+	link := NewControlLink()
+	machine.SetControlSink(link)
 	// A termination signal closes the live connection: ServeAgent blocks on the
 	// session and would otherwise ignore SIGTERM until systemd SIGKILLs us
 	// after its stop timeout.
@@ -159,7 +151,7 @@ func Serve(configPath, version string) error {
 		current = conn
 		connMu.Unlock()
 		slog.Info("Connected to control", "addr", conf.ListenNode)
-		if err := node.ServeAgent(conn, conf.NodeID, manager, link.SetClient); err != nil {
+		if err := ServeAgent(conn, conf.NodeID, machine, link.SetClient); err != nil {
 			slog.Warn("Control connection failed", "error", err)
 		}
 		_ = conn.Close()

@@ -123,11 +123,11 @@ func JoinHandler(ca *CA, store JoinStore) http.Handler {
 	})
 }
 
-// Join enrolls this machine: dial control's node listener with the token's CA
+// enroll enrolls this machine: dial control's node listener with the token's CA
 // fingerprint as the only trust anchor, exchange token + CSR for the node's
 // certificate, and persist the credentials under dataDir like the colocated
 // ones -- afterwards `hostit-node serve` dials with plain mTLS.
-func Join(addr, token, dataDir string) error {
+func enroll(addr, token, dataDir string) error {
 	_, _, caFP, err := ParseJoinToken(token)
 	if err != nil {
 		return err

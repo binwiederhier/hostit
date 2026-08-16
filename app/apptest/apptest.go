@@ -1,25 +1,25 @@
 // Package apptest provides no-op test doubles for the app package, kept out of
-// production code: NewNopServices builds an app.Services whose host-touching
+// production code: NewNopServices builds an node.Services whose host-touching
 // members (users, ssh keys, firewall) do nothing, so a test can build a Manager
 // without touching the host.
 package apptest
 
 import (
-	"heckel.io/hostit/app"
 	"heckel.io/hostit/btrfs"
 	"heckel.io/hostit/container"
 	"heckel.io/hostit/firewall"
+	"heckel.io/hostit/node"
 	"heckel.io/hostit/run"
 	"heckel.io/hostit/ssh"
 	"heckel.io/hostit/systemd"
 )
 
-// NewNopServices returns an app.Services that touches nothing: btrfs, systemd and
+// NewNopServices returns an node.Services that touches nothing: btrfs, systemd and
 // container run on a no-op runner, and the privileged services (users, ssh keys,
 // firewall) are no-op fakes.
-func NewNopServices() *app.Services {
+func NewNopServices() *node.Services {
 	runner := run.Nop{}
-	return &app.Services{
+	return &node.Services{
 		Btrfs:     btrfs.New(runner),
 		Systemd:   systemd.New(runner),
 		Container: container.New(runner),

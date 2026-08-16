@@ -53,7 +53,7 @@ func TestRawAppsViewRoutesFileIO(t *testing.T) {
 	// file I/O through a raw bind of the apps dir that excludes those child
 	// mounts; UseRawAppsView is what serve calls once the bind exists.
 	raw := t.TempDir()
-	id := m.appID("blog")
+	id := m.AppID("blog")
 	require.NoError(t, os.MkdirAll(filepath.Join(raw, id, "home", "app"), 0o755))
 	m.UseRawAppsView(raw)
 	require.NoError(t, m.WriteFile("blog", "after.txt", []byte("via raw view"), 0))
@@ -61,7 +61,7 @@ func TestRawAppsViewRoutesFileIO(t *testing.T) {
 
 	// The subvolume/btrfs side is untouched: podman and snapshots keep the real
 	// path (destructive ops stop the container first, clearing the overmount).
-	assert.Equal(t, filepath.Join(m.config.AppsDir, id), m.appSubvolume("blog"))
+	assert.Equal(t, filepath.Join(m.config.AppsDir, id), m.AppSubvolume("blog"))
 }
 
 func TestMountRawAppsViewBindsPrivate(t *testing.T) {

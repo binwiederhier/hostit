@@ -1,4 +1,4 @@
-package app
+package node
 
 import (
 	"log/slog"
@@ -14,7 +14,7 @@ import (
 // app once kept serving its old directory through an upgrade that way, with the
 // app's whole home on the internet. Restarting costs each app a moment of
 // downtime, so it only happens when the version actually changed.
-func (m *machine) RestartStaleAgents(version string) ([]string, error) {
+func (m *Machine) RestartStaleAgents(version string) ([]string, error) {
 	settings, err := m.store.Settings()
 	if err != nil {
 		return nil, err

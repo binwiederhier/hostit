@@ -14,7 +14,7 @@ func TestRenameAppIsCheapAndPreservesTheContainer(t *testing.T) {
 	m, ops, runner := newTestDeployManager(t)
 	a := createTestApp(t, m, "blog")
 	id := a.ID
-	oldSubvol := m.appSubvolume("blog")
+	oldSubvol := m.AppSubvolume("blog")
 	// Attach a token so we can prove per-app rows follow the rename.
 	require.NoError(t, m.store.AddToken(&store.Token{UserID: "u_1", Hash: "h1", AppName: "blog", Secret: "sek"}))
 	runner.reset()
@@ -33,9 +33,9 @@ func TestRenameAppIsCheapAndPreservesTheContainer(t *testing.T) {
 
 	// Durable resources are unchanged: the id-keyed subvolume, container and unit
 	// are the same as before, so nothing had to move.
-	assert.Equal(t, oldSubvol, m.appSubvolume("shop"))
-	assert.Equal(t, workspace.ContainerName(id), m.containerName("shop"))
-	assert.Equal(t, workspace.UnitName(id), m.unitName("shop"))
+	assert.Equal(t, oldSubvol, m.AppSubvolume("shop"))
+	assert.Equal(t, workspace.ContainerName(id), m.ContainerName("shop"))
+	assert.Equal(t, workspace.UnitName(id), m.UnitName("shop"))
 
 	// The critical property: the (stateful) container is NOT recreated.
 	ran := runner.ran()
