@@ -16,7 +16,7 @@ import (
 
 // SetControlSink wires the node's reverse channel; nil (the default) means
 // single-process, where the store writes land in the registry directly.
-func (m *Manager) SetControlSink(sink ControlSink) {
+func (m *machine) SetControlSink(sink ControlSink) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.sink = sink
@@ -26,7 +26,7 @@ func (m *Manager) SetControlSink(sink ControlSink) {
 // state. The first sync also opens the gate for destructive startup work
 // (ReconcileOrphans must never run against an unsynced, possibly empty
 // mirror -- it would tear down every app on the machine).
-func (m *Manager) Sync(state *SyncState) error {
+func (m *machine) Sync(state *SyncState) error {
 	if err := m.store.ReplaceNodeMirror(state.Apps, state.Snapshots); err != nil {
 		return err
 	}
@@ -36,7 +36,7 @@ func (m *Manager) Sync(state *SyncState) error {
 }
 
 // Synced closes once the first registry mirror arrived.
-func (m *Manager) Synced() <-chan struct{} {
+func (m *machine) Synced() <-chan struct{} {
 	return m.synced
 }
 
@@ -104,13 +104,13 @@ func (m *Manager) syncState(host string) (*SyncState, error) {
 }
 
 // The notify helpers guard the optional sink under the manager's lock.
-func (m *Manager) notifyPower(name string, off bool) {
+func (m *machine) notifyPower(name string, off bool) {
 	if sink := m.controlSink(); sink != nil {
 		sink.PowerChanged(name, off)
 	}
 }
 
-func (m *Manager) notifyUsage(name string, usedMB int) {
+func (m *machine) notifyUsage(name string, usedMB int) {
 	if sink := m.controlSink(); sink != nil {
 		sink.UsageChanged(name, usedMB)
 	}
@@ -118,7 +118,7 @@ func (m *Manager) notifyUsage(name string, usedMB int) {
 
 // SnapshotsChanged implements the snapshot service's host callback: after any
 // record mutation, ship the app's authoritative list to control.
-func (m *Manager) SnapshotsChanged(name string) {
+func (m *machine) SnapshotsChanged(name string) {
 	sink := m.controlSink()
 	if sink == nil {
 		return
@@ -131,7 +131,7 @@ func (m *Manager) SnapshotsChanged(name string) {
 	sink.SnapshotsChanged(name, snaps)
 }
 
-func (m *Manager) controlSink() ControlSink {
+func (m *machine) controlSink() ControlSink {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.sink

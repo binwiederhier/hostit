@@ -15,7 +15,7 @@ const diskUsageInterval = 5 * time.Minute
 // Going through ensureBudget also creates and assigns the qgroup when it is
 // missing, so a limit change never depends on startup having built the group
 // first. 0 falls back to the default cap; nothing is unlimited.
-func (m *Manager) SetDiskLimit(name string, diskMB int) {
+func (m *machine) SetDiskLimit(name string, diskMB int) {
 	m.recordDiskLimit(name, diskMB)
 	a, err := m.store.App(name)
 	if err != nil {
@@ -30,20 +30,20 @@ func (m *Manager) SetDiskLimit(name string, diskMB int) {
 // RecordDiskLimit caches the stored limit for display without touching the
 // qgroup: what control uses in split mode, where the machine half happens on
 // the node.
-func (m *Manager) RecordDiskLimit(name string, diskMB int) {
+func (m *machine) RecordDiskLimit(name string, diskMB int) {
 	m.recordDiskLimit(name, diskMB)
 }
 
 // recordDiskLimit caches the stored limit without touching the qgroup, for the
 // create path where the budget group does not exist yet (ensureBudget applies it).
-func (m *Manager) recordDiskLimit(name string, diskMB int) {
+func (m *machine) recordDiskLimit(name string, diskMB int) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.diskMB[name] = diskMB
 }
 
 // DiskLimit returns the recorded disk quota of an app.
-func (m *Manager) DiskLimit(name string) int {
+func (m *machine) DiskLimit(name string) int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.diskMB[name]
@@ -53,7 +53,7 @@ func (m *Manager) DiskLimit(name string) int {
 // dashboard. Enforcement is left to the filesystem: the qgroup hard-caps writes
 // (EDQUOT) at SetDiskLimit time, so there is nothing here to stop -- this is pure
 // accounting.
-func (m *Manager) RefreshDiskUsage() error {
+func (m *machine) RefreshDiskUsage() error {
 	apps, err := m.store.Apps()
 	if err != nil {
 		return err
@@ -73,7 +73,7 @@ func (m *Manager) RefreshDiskUsage() error {
 }
 
 // DiskUsageLoop periodically refreshes recorded disk usage until the stop channel closes
-func (m *Manager) DiskUsageLoop(done <-chan struct{}) {
+func (m *machine) DiskUsageLoop(done <-chan struct{}) {
 	slog.Info("Starting disk usage loop", "interval", diskUsageInterval)
 	defer slog.Info("Stopping disk usage loop")
 	for {
@@ -91,7 +91,7 @@ func (m *Manager) DiskUsageLoop(done <-chan struct{}) {
 // measureDiskMB returns the app's disk usage in MB: its budget group's exclusive
 // bytes, i.e. the bytes the app itself pins (what deleting it would free), with
 // the shared base rootfs charged to nobody. Cheap qgroup read, no directory walk.
-func (m *Manager) measureDiskMB(name string) (int, error) {
+func (m *machine) measureDiskMB(name string) (int, error) {
 	ids, err := m.lookupIDs(name)
 	if err != nil {
 		return 0, err

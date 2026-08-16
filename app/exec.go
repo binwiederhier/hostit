@@ -39,7 +39,7 @@ const (
 //
 // The command runs as the container's root, which is the app's own unprivileged
 // uid on the host, in the app's home directory.
-func (m *Manager) Exec(name, command string, timeout time.Duration) (*ExecResult, error) {
+func (m *machine) Exec(name, command string, timeout time.Duration) (*ExecResult, error) {
 	// Exec needs a running container, so it enters like a login does: a fresh
 	// fork or crashed app is brought up first (instead of racing the background
 	// start into a podman error), and a deliberately powered-off app is refused
@@ -80,7 +80,7 @@ func (m *Manager) Exec(name, command string, timeout time.Duration) (*ExecResult
 // identical to an SSH session: the same banner, the same TERM and colours, the
 // same entry into the container. runuser drops from the root daemon to the app
 // user so the socket sees the right identity, just as sshd would.
-func (m *Manager) TerminalCommand(name string) (string, []string, error) {
+func (m *machine) TerminalCommand(name string) (string, []string, error) {
 	if _, err := m.store.App(name); err != nil {
 		return "", nil, err
 	}

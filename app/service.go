@@ -253,7 +253,7 @@ func NewManager(conf *config.Config, s *store.Store, svc *Services) *Manager {
 	// The snapshot Service reuses the Manager's node-local services and store, and
 	// calls back into it through snapshotHost for the app-lifecycle operations and
 	// id-keyed lookups a snapshot or rollback needs.
-	m.snapshots = snapshot.New(m.btrfs, m.systemd, m.container, s, snapshotHost{m})
+	m.snapshots = snapshot.New(m.btrfs, m.systemd, m.container, s, snapshotHost{&m.machine})
 	// The workspace Service owns the shared workspace image lifecycle (build,
 	// per-app pinned tags, prune) and the base and app subvolumes the containers
 	// run; it needs no callbacks into the Manager.
@@ -265,7 +265,7 @@ func NewManager(conf *config.Config, s *store.Store, svc *Services) *Manager {
 // deploy/snapshot/rollback/delete on one app run one at a time and never race on
 // its subvolume. It is NOT reentrant: a method already holding the lock must
 // call the unlocked helpers (up, takeSnapshot), not the public locking ones.
-func (m *Manager) lockApp(name string) func() {
+func (m *machine) lockApp(name string) func() {
 	m.appLocksMu.Lock()
 	mu := m.appLocks[name]
 	if mu == nil {
@@ -489,7 +489,7 @@ func (m *Manager) DeleteApp(name string) error {
 
 // ReconcilePortRules rebuilds the per-app loopback firewall rules from the
 // registry; failures are logged, not fatal (nft may be absent in dev setups)
-func (m *Manager) ReconcilePortRules() {
+func (m *machine) ReconcilePortRules() {
 	apps, err := m.store.Apps()
 	if err != nil {
 		slog.Warn("Cannot list apps for port rules", "error", err)
@@ -511,7 +511,7 @@ func (m *Manager) ReconcilePortRules() {
 
 // SetKeys replaces the app-specific SSH keys; the app's authorized_keys become
 // those plus the owner's profile keys
-func (m *Manager) SetKeys(name string, appKeys, profileKeys []string) error {
+func (m *machine) SetKeys(name string, appKeys, profileKeys []string) error {
 	app, err := m.store.App(name)
 	if err != nil {
 		return err
@@ -527,7 +527,7 @@ func (m *Manager) SetKeys(name string, appKeys, profileKeys []string) error {
 
 // SyncKeys rewrites an app's authorized_keys from its stored app keys plus the
 // given profile keys; used when a user adds or removes a profile key
-func (m *Manager) SyncKeys(name string, profileKeys []string) error {
+func (m *machine) SyncKeys(name string, profileKeys []string) error {
 	appKeys, err := m.store.AppKeys(name)
 	if err != nil {
 		return err
@@ -535,7 +535,7 @@ func (m *Manager) SyncKeys(name string, profileKeys []string) error {
 	return m.writeKeys(name, appKeys, profileKeys)
 }
 
-func (m *Manager) writeKeys(name string, appKeys, profileKeys []string) error {
+func (m *machine) writeKeys(name string, appKeys, profileKeys []string) error {
 	keys := append(append([]string{}, appKeys...), profileKeys...)
 	return m.writeKeysIn(m.appFiles(name), name, keys)
 }
@@ -543,7 +543,7 @@ func (m *Manager) writeKeys(name string, appKeys, profileKeys []string) error {
 // writeKeysIn writes an app's authorized_keys through its chained files root:
 // the files dir sits inside the tenant-owned subvolume, so a symlink planted at
 // home (or home/app) must not redirect root's key write out of it.
-func (m *Manager) writeKeysIn(files homefs.Dir, name string, keys []string) error {
+func (m *machine) writeKeysIn(files homefs.Dir, name string, keys []string) error {
 	root, err := m.homefs.OpenRoot(files)
 	if err != nil {
 		return err
@@ -679,13 +679,13 @@ func (m *Manager) BackfillUIDs() {
 
 // uidFor is an app's base uid: a contiguous workspace.UIDBlockSize-wide block, one per
 // app, spaced by port so blocks never overlap. Container uid 0 maps here.
-func (m *Manager) uidFor(port int) int {
+func (m *machine) uidFor(port int) int {
 	return workspace.UIDBlockStart + (port-m.config.PortMin)*workspace.UIDBlockSize
 }
 
 // lookupIDs returns the app's contiguous id block: its uid/gid (which become
 // container root) and the block size that runs up from there.
-func (m *Manager) lookupIDs(username string) (workspace.IDs, error) {
+func (m *machine) lookupIDs(username string) (workspace.IDs, error) {
 	uid, gid, err := m.user.LookupIDs(username)
 	if err != nil {
 		return workspace.IDs{}, err

@@ -16,7 +16,7 @@ import (
 // this node's port rules. It is what recovers an app deleted while the node was
 // disconnected -- the routed Deprovision was dropped, and ReconcileOrphans
 // otherwise runs only once per process. Returns the orphan ids it removed.
-func (m *Manager) Reconcile() []string {
+func (m *machine) Reconcile() []string {
 	removed := m.ReconcileOrphans()
 	m.ReconcilePortRules()
 	return removed
@@ -29,7 +29,7 @@ func (m *Manager) Reconcile() []string {
 // behind by a deleted app is not inert: hostit-app@.service is Restart=always,
 // so systemd retries it forever against a container that is gone, and its
 // enable symlink starts it again after a reboot.
-func (m *Manager) ReconcileOrphans() []string {
+func (m *machine) ReconcileOrphans() []string {
 	out, err := m.systemd.ListUnits(workspace.UnitTemplate + "*")
 	if err != nil {
 		slog.Warn("Cannot list app units to reconcile", "error", err)
@@ -77,7 +77,7 @@ func (m *Manager) ReconcileOrphans() []string {
 // deletions had not committed yet) leaves the empty group behind. Budget groups
 // are keyed "1/<uid>" and uids derive from ports, so the live set is computable
 // from the registry alone.
-func (m *Manager) reconcileBudgets(apps []*store.App) {
+func (m *machine) reconcileBudgets(apps []*store.App) {
 	groups, err := m.btrfs.ListBudgetGroups(m.config.AppsDir)
 	if err != nil {
 		slog.Debug("Cannot list budget qgroups to reconcile", "error", err)
@@ -106,7 +106,7 @@ func (m *Manager) reconcileBudgets(apps []*store.App) {
 // never recreated, so deleting one by mistake would be data loss); the id-keyed
 // known-set is the sole gate. Hidden entries (.bases, .snapshots, dotfiles) are
 // never touched.
-func (m *Manager) reconcileSubvolumes(known map[string]bool) []string {
+func (m *machine) reconcileSubvolumes(known map[string]bool) []string {
 	entries, err := os.ReadDir(m.config.AppsDir)
 	if err != nil {
 		slog.Warn("Cannot list app subvolumes to reconcile", "error", err)
@@ -145,7 +145,7 @@ func (m *Manager) reconcileSubvolumes(known map[string]bool) []string {
 // reconcileContainers removes containers whose app is gone. Deleting an app
 // races the background start that follows creating one: if the start wins, it
 // leaves a container behind that nothing will ever run.
-func (m *Manager) reconcileContainers(known map[string]bool) []string {
+func (m *machine) reconcileContainers(known map[string]bool) []string {
 	out, err := m.container.Names(true)
 	if err != nil {
 		slog.Warn("Cannot list containers to reconcile", "error", err)
@@ -176,7 +176,7 @@ const inspectMountsFormat = `{{range .Mounts}}{{.Source}}
 // holds only its own rows -- without this check, each node's reconcile would
 // tear down the other's apps as "orphans". No container (or an unreadable
 // mount list) is not foreign, so genuinely dead leftovers still get cleaned.
-func (m *Manager) containerForeign(id string) bool {
+func (m *machine) containerForeign(id string) bool {
 	out, err := m.container.Inspect(workspace.ContainerName(id), inspectMountsFormat)
 	if err != nil || strings.TrimSpace(out) == "" {
 		return false

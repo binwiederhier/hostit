@@ -17,7 +17,7 @@ const (
 
 // TakeSnapshot snapshots an app's whole subvolume (files AND installed
 // software) into a read-only subvolume and records it.
-func (m *Manager) TakeSnapshot(name, label string, auto bool) (*store.Snapshot, error) {
+func (m *machine) TakeSnapshot(name, label string, auto bool) (*store.Snapshot, error) {
 	return m.snapshots.TakeSnapshot(name, label, auto)
 }
 
@@ -27,18 +27,18 @@ func (m *Manager) ListSnapshots(name string) ([]*store.Snapshot, error) {
 }
 
 // DeleteSnapshot removes a single snapshot (its subvolume and its record).
-func (m *Manager) DeleteSnapshot(name, id string) error {
+func (m *machine) DeleteSnapshot(name, id string) error {
 	return m.snapshots.DeleteSnapshot(name, id)
 }
 
 // Rollback restores an app from a snapshot: its files AND its installed
 // software come back together, since the snapshot is the whole app subvolume.
-func (m *Manager) Rollback(name, id string) error {
+func (m *machine) Rollback(name, id string) error {
 	return m.snapshots.Rollback(name, id)
 }
 
 // SnapshotLoop takes an automatic snapshot of every app on an interval (hourly).
-func (m *Manager) SnapshotLoop(interval time.Duration, done <-chan struct{}) {
+func (m *machine) SnapshotLoop(interval time.Duration, done <-chan struct{}) {
 	m.snapshots.SnapshotLoop(interval, done)
 }
 
@@ -47,7 +47,7 @@ func (m *Manager) SnapshotLoop(interval time.Duration, done <-chan struct{}) {
 // budget assignment the snapshot Service calls back for. It is a thin binding,
 // so the Manager's public API stays free of these callbacks (and of a second
 // method named Exec).
-type snapshotHost struct{ m *Manager }
+type snapshotHost struct{ m *machine }
 
 var _ snapshot.Host = snapshotHost{}
 
@@ -94,11 +94,11 @@ func (h snapshotHost) BudgetGroup(name string) string {
 
 // snapshotsRoot is where an app's snapshots live: <apps>/.snapshots/<id>/. Keyed
 // on the app's id (like the app subvolume) so a rename does not move them.
-func (m *Manager) snapshotsRoot(app string) string {
+func (m *machine) snapshotsRoot(app string) string {
 	return filepath.Join(m.config.AppsDir, snapshotsDirName, m.appID(app))
 }
 
 // snapshotPath is one snapshot's subvolume path.
-func (m *Manager) snapshotPath(app, id string) string {
+func (m *machine) snapshotPath(app, id string) string {
 	return filepath.Join(m.snapshotsRoot(app), id)
 }

@@ -24,7 +24,7 @@ const (
 
 // Up deploys the app from its hostit.yml: builds images as needed, recreates the
 // container if its configuration changed, and (re)starts or reloads the service
-func (m *Manager) Up(name string) (string, error) {
+func (m *machine) Up(name string) (string, error) {
 	defer m.lockApp(name)()
 	return m.up(name, true)
 }
@@ -32,7 +32,7 @@ func (m *Manager) Up(name string) (string, error) {
 // up is Up without the per-app lock, for callers that already hold it (rollback).
 // snapshot controls the pre-deploy safety snapshot: rollback passes false, having
 // already taken its own safety snapshot of the pre-rollback state.
-func (m *Manager) up(name string, snapshot bool) (string, error) {
+func (m *machine) up(name string, snapshot bool) (string, error) {
 	defer m.stateChanged(name)
 	a, err := m.store.App(name)
 	if err != nil {
@@ -57,7 +57,7 @@ func (m *Manager) up(name string, snapshot bool) (string, error) {
 // fight the operator. The intent is the store's recorded flag, NOT systemd's
 // is-enabled: a never-enabled fresh unit also reads "disabled", and inferring
 // from it made a brand-new app look powered off for its first seconds.
-func (m *Manager) Ensure(name string) (string, error) {
+func (m *machine) Ensure(name string) (string, error) {
 	a, err := m.store.App(name)
 	if err != nil {
 		return "", err
@@ -71,14 +71,14 @@ func (m *Manager) Ensure(name string) (string, error) {
 // PowerOn brings the app's container up, clearing a prior poweroff by re-enabling
 // its unit. Unlike Ensure it never refuses a powered-off app -- powering it on is
 // exactly the point.
-func (m *Manager) PowerOn(name string) (string, error) {
+func (m *machine) PowerOn(name string) (string, error) {
 	return m.powerOn(name)
 }
 
 // powerOn makes sure the app's container exists and its service is running; it
 // never recreates or reloads a live container. Without a (valid) hostit.yml it
 // provisions an idle workspace.
-func (m *Manager) powerOn(name string) (string, error) {
+func (m *machine) powerOn(name string) (string, error) {
 	defer m.stateChanged(name)
 	// Clear any recorded poweroff: reaching here means the app is meant to run
 	// (an explicit PowerOn, or a login on an app that was never powered off).
@@ -108,18 +108,18 @@ func (m *Manager) powerOn(name string) (string, error) {
 
 // RestartApp reloads the run: command inside the running container, without
 // recreating the container -- the fast path for iterating on the app itself.
-func (m *Manager) RestartApp(name string) error { return m.signalAgent(name, "HUP") }
+func (m *machine) RestartApp(name string) error { return m.signalAgent(name, "HUP") }
 
 // StopApp stops the run: command but leaves the container running, so a shell
 // (SSH or the web terminal) and the container's state are untouched.
-func (m *Manager) StopApp(name string) error { return m.signalAgent(name, "USR1") }
+func (m *machine) StopApp(name string) error { return m.signalAgent(name, "USR1") }
 
 // StartApp starts the run: command again after StopApp
-func (m *Manager) StartApp(name string) error { return m.signalAgent(name, "USR2") }
+func (m *machine) StartApp(name string) error { return m.signalAgent(name, "USR2") }
 
 // signalAgent delivers a control signal to the app's agent (PID 1 in the
 // container); it needs the container running, since it acts on the process.
-func (m *Manager) signalAgent(name, signal string) error {
+func (m *machine) signalAgent(name, signal string) error {
 	defer m.stateChanged(name) // The app process just moved; drop the cache and re-measure
 	a, err := m.store.App(name)
 	if err != nil {
@@ -139,7 +139,7 @@ func (m *Manager) signalAgent(name, signal string) error {
 
 // Down powers the app off: the intent is recorded first (the flag is what
 // Ensure and Exec refuse on), then the unit is stopped and disabled at boot.
-func (m *Manager) Down(name string) error {
+func (m *machine) Down(name string) error {
 	defer m.stateChanged(name)
 	if _, err := m.store.App(name); err != nil {
 		return err
@@ -152,7 +152,7 @@ func (m *Manager) Down(name string) error {
 }
 
 // Restart restarts the app's service (and thus its container)
-func (m *Manager) Restart(name string) error {
+func (m *machine) Restart(name string) error {
 	defer m.stateChanged(name)
 	if _, err := m.store.App(name); err != nil {
 		return err
@@ -161,7 +161,7 @@ func (m *Manager) Restart(name string) error {
 }
 
 // Status returns the systemd status output for the app's service
-func (m *Manager) Status(name string) (string, error) {
+func (m *machine) Status(name string) (string, error) {
 	if _, err := m.store.App(name); err != nil {
 		return "", err
 	}
@@ -173,7 +173,7 @@ func (m *Manager) Status(name string) (string, error) {
 }
 
 // Logs returns the last lines of the app's output, from the agent's log file.
-func (m *Manager) Logs(name string, lines int) (string, error) {
+func (m *machine) Logs(name string, lines int) (string, error) {
 	if _, err := m.store.App(name); err != nil {
 		return "", err
 	}
@@ -194,7 +194,7 @@ func (m *Manager) Logs(name string, lines int) (string, error) {
 // apply converges the app container to the desired config: recreate it when the
 // configuration changed, start it, or (allowReload) signal the agent to restart
 // just the run command
-func (m *Manager) apply(a *store.App, conf *appctl.AppConfig, allowReload bool) (string, error) {
+func (m *machine) apply(a *store.App, conf *appctl.AppConfig, allowReload bool) (string, error) {
 	name := a.Name
 	ids, err := m.lookupIDs(name)
 	if err != nil {
@@ -259,7 +259,7 @@ func (m *Manager) apply(a *store.App, conf *appctl.AppConfig, allowReload bool) 
 	return "up to date", nil
 }
 
-func (m *Manager) isActive(name string) bool {
+func (m *machine) isActive(name string) bool {
 	out, err := m.systemd.IsActive(0, m.unitName(name))
 	return err == nil && strings.TrimSpace(out) == "active"
 }
@@ -268,7 +268,7 @@ func (m *Manager) isActive(name string) bool {
 // its snapshots are keyed on the id so a rename never moves them; callers still
 // address apps by name and this is the single translation point. An unknown name
 // falls back to itself, so a stray lookup fails on a missing path rather than here.
-func (m *Manager) appID(name string) string {
+func (m *machine) appID(name string) string {
 	a, err := m.store.App(name)
 	if err != nil {
 		return name
@@ -278,27 +278,27 @@ func (m *Manager) appID(name string) string {
 
 // appSubvolume is the app's one subvolume (the container's whole OS tree, with
 // the app's files at home/app inside it), keyed on its id (see appID).
-func (m *Manager) appSubvolume(name string) string {
+func (m *machine) appSubvolume(name string) string {
 	return m.appSubvolumeByID(m.appID(name))
 }
 
 // appSubvolumeByID builds the subvolume path straight from an id, for the create
 // path where the app is not yet in the store to resolve a name through. The
 // workspace service owns the layout fact; this only saves callers the hop.
-func (m *Manager) appSubvolumeByID(id string) string {
+func (m *machine) appSubvolumeByID(id string) string {
 	return m.workspace.AppSubvolumePath(id)
 }
 
 // appFiles locates an app's files directory (home/app INSIDE the subvolume) for
 // the homefs service, which resolves the tenant-owned inner path within the
 // subvolume's os.Root rather than as one plain host path.
-func (m *Manager) appFiles(name string) homefs.Dir {
+func (m *machine) appFiles(name string) homefs.Dir {
 	return m.appFilesByID(m.appID(name))
 }
 
 // appFilesByID is appFiles for the create path, where the app is not yet in the
 // store to resolve a name through.
-func (m *Manager) appFilesByID(id string) homefs.Dir {
+func (m *machine) appFilesByID(id string) homefs.Dir {
 	// File I/O resolves through the raw apps view (see Manager.rawAppsDir);
 	// everything podman- and btrfs-facing keeps the real subvolume path.
 	base := m.config.AppsDir
@@ -310,7 +310,7 @@ func (m *Manager) appFilesByID(id string) homefs.Dir {
 
 // UseRawAppsView points the daemon's file I/O at a non-recursive bind of the
 // apps dir. serve calls this once the bind mount exists; see rawAppsDir for why.
-func (m *Manager) UseRawAppsView(dir string) {
+func (m *machine) UseRawAppsView(dir string) {
 	m.rawAppsDir = dir
 }
 
@@ -322,7 +322,7 @@ func (m *Manager) UseRawAppsView(dir string) {
 // plain bind would propagate into it anyway. A leftover bind from the previous
 // run is torn down first -- made rprivate before the unmount, so the unmounts
 // cannot propagate back onto the running containers' mounts.
-func (m *Manager) MountRawAppsView(dir string) error {
+func (m *machine) MountRawAppsView(dir string) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
@@ -342,7 +342,7 @@ func (m *Manager) MountRawAppsView(dir string) error {
 // loadConfig reads and validates an app's hostit.yml through its os.Root, so a
 // symlink the tenant planted there cannot walk the root daemon out of the home,
 // and the file is capped rather than read unbounded.
-func (m *Manager) loadConfig(name string) (*appctl.AppConfig, error) {
+func (m *machine) loadConfig(name string) (*appctl.AppConfig, error) {
 	root, err := m.homefs.OpenRoot(m.appFiles(name))
 	if err != nil {
 		return nil, err
@@ -357,14 +357,14 @@ func (m *Manager) loadConfig(name string) (*appctl.AppConfig, error) {
 
 // SetMemoryLimit records the container memory cap for an app; applied on the
 // next container (re)creation
-func (m *Manager) SetMemoryLimit(name string, memoryMB int) {
+func (m *machine) SetMemoryLimit(name string, memoryMB int) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.memoryMB[name] = memoryMB
 }
 
 // MemoryLimit returns the recorded memory cap of an app.
-func (m *Manager) MemoryLimit(name string) int {
+func (m *machine) MemoryLimit(name string) int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.memoryMB[name]

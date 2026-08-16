@@ -21,7 +21,7 @@ import (
 // Provision builds the app on this machine: subvolume (fresh or fork seed),
 // unix user, authorized keys, and -- for a fresh app -- the demo skeleton. On
 // failure it rolls back its own partial work and the machine is clean again.
-func (m *Manager) Provision(spec *ProvisionSpec) error {
+func (m *machine) Provision(spec *ProvisionSpec) error {
 	forking := spec.SeedAppID != ""
 	// The budget qgroup exists and is capped BEFORE the subvolume, which is then
 	// snapshotted INTO it (-i): membership is atomic at creation, so the cap
@@ -81,7 +81,7 @@ func (m *Manager) Provision(spec *ProvisionSpec) error {
 // the id-keyed subvolume go away. The app is not in the store on these early
 // failures, so this deletes the concrete path rather than resolving it by
 // name; a brand-new app has no snapshots to clean up.
-func (m *Manager) provisionRollback(spec *ProvisionSpec) {
+func (m *machine) provisionRollback(spec *ProvisionSpec) {
 	_ = m.user.Delete(spec.Name)
 	_ = m.btrfs.DeleteSubvolume(m.appSubvolumeByID(spec.ID))
 }
@@ -107,7 +107,7 @@ func (m *Manager) startInBackground(name string, forking bool) {
 
 // Deprovision tears the app down on this machine; it runs in the background
 // (the caller holds the app lock and the port/name reservations until done).
-func (m *Manager) Deprovision(spec *DeprovisionSpec) {
+func (m *machine) Deprovision(spec *DeprovisionSpec) {
 	// Stop the app first: a running container keeps processes alive, and
 	// userdel refuses to remove a user that still has any.
 	if err := m.systemd.DisableNow(spec.Unit); err != nil {

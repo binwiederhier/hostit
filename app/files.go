@@ -54,63 +54,63 @@ const (
 // WriteFile writes a file below the app's home directory, creating parent
 // directories, and gives it to the app user. A zero mode means the default;
 // anything else is used as-is, so a binary or script can arrive executable.
-func (m *Manager) WriteFile(name, relPath string, content []byte, mode os.FileMode) error {
+func (m *machine) WriteFile(name, relPath string, content []byte, mode os.FileMode) error {
 	return m.homefs.WriteFile(m.appFiles(name), relPath, content, mode)
 }
 
 // WriteFileFrom is WriteFile for a stream, so an upload never has to exist in
 // memory.
-func (m *Manager) WriteFileFrom(name, relPath string, r io.Reader, mode os.FileMode) error {
+func (m *machine) WriteFileFrom(name, relPath string, r io.Reader, mode os.FileMode) error {
 	return m.homefs.WriteFileFrom(m.appFiles(name), relPath, r, mode)
 }
 
 // ReadFile reads a file from the app's home directory
-func (m *Manager) ReadFile(name, relPath string) ([]byte, error) {
+func (m *machine) ReadFile(name, relPath string) ([]byte, error) {
 	return m.homefs.ReadFile(m.appFiles(name), relPath)
 }
 
 // ReadFileMax reads a file up to max bytes, refusing (not truncating) anything
 // larger, so a caller reading an app-controlled file cannot blow up memory.
-func (m *Manager) ReadFileMax(name, relPath string, max int64) ([]byte, error) {
+func (m *machine) ReadFileMax(name, relPath string, max int64) ([]byte, error) {
 	return m.homefs.ReadFileMax(m.appFiles(name), relPath, max)
 }
 
 // FileExists reports whether a file exists in the app's home directory.
-func (m *Manager) FileExists(name, relPath string) bool {
+func (m *machine) FileExists(name, relPath string) bool {
 	return m.homefs.FileExists(m.appFiles(name), relPath)
 }
 
 // DeleteFile removes a file (or a directory and its contents) from the app's
 // home directory.
-func (m *Manager) DeleteFile(name, relPath string) error {
+func (m *machine) DeleteFile(name, relPath string) error {
 	return m.homefs.DeleteFile(m.appFiles(name), relPath)
 }
 
 // MoveFile renames or moves a file within the app's home.
-func (m *Manager) MoveFile(name, fromRel, toRel string) error {
+func (m *machine) MoveFile(name, fromRel, toRel string) error {
 	return m.homefs.MoveFile(m.appFiles(name), fromRel, toRel)
 }
 
 // MakeDir creates a directory (and any missing parents) below the app's home and
 // gives it to the app user, so the file browser can add an empty folder.
-func (m *Manager) MakeDir(name, relPath string) error {
+func (m *machine) MakeDir(name, relPath string) error {
 	return m.homefs.MakeDir(m.appFiles(name), relPath)
 }
 
 // StatFile returns metadata for a single file (or directory) without reading its
 // whole contents: size, modtime, type, and a best-effort MIME type.
-func (m *Manager) StatFile(name, relPath string) (*FileInfo, error) {
+func (m *machine) StatFile(name, relPath string) (*FileInfo, error) {
 	return m.homefs.StatFile(m.appFiles(name), relPath)
 }
 
 // ListFiles returns one directory of the app, not the whole tree.
-func (m *Manager) ListFiles(name, dir string) (*Listing, error) {
+func (m *machine) ListFiles(name, dir string) (*Listing, error) {
 	return m.homefs.ListFiles(m.appFiles(name), dir)
 }
 
 // ExtractTar unpacks an uploaded tar archive into the app's home directory and
 // returns the paths it wrote. Entries that would escape the home are refused.
-func (m *Manager) ExtractTar(name string, r io.Reader) ([]string, error) {
+func (m *machine) ExtractTar(name string, r io.Reader) ([]string, error) {
 	return m.homefs.ExtractTar(m.appFiles(name), r)
 }
 

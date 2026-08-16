@@ -62,7 +62,7 @@ func (m *Manager) CachedStates(names []string) map[string]State {
 // empty cache would report every app as stopped for a moment after a daemon
 // restart (a red status dot on the first page load). Real numbers replace the
 // seed as soon as the first refresh lands; existing entries are never touched.
-func (m *Manager) SeedStates() {
+func (m *machine) SeedStates() {
 	apps, err := m.store.Apps()
 	if err != nil {
 		slog.Warn("Cannot list apps to seed states", "error", err)
@@ -90,7 +90,7 @@ func (m *Manager) SeedStates() {
 // then serves that confidently for a whole TTL. The owner is watching the status
 // dot while this happens, so the answer has to catch up in seconds, not tens of
 // seconds.
-func (m *Manager) stateChanged(name string) {
+func (m *machine) stateChanged(name string) {
 	m.stateMu.Lock()
 	delete(m.stateCache, name)
 	m.stateMu.Unlock()
@@ -100,7 +100,7 @@ func (m *Manager) stateChanged(name string) {
 	go func() {
 		for elapsed := time.Duration(0); elapsed < stateSettleWindow; elapsed += stateSettleInterval {
 			time.Sleep(stateSettleInterval)
-			m.refreshOnce()
+			m.refreshLocal()
 		}
 	}()
 }
@@ -108,7 +108,7 @@ func (m *Manager) stateChanged(name string) {
 // beginRefresh claims the right to refresh, so only one runs at a time. Two
 // concurrent refreshes would ask podman twice and, worse, the slower one would
 // write last -- stamping older numbers with a newer freshness time.
-func (m *Manager) beginRefresh() bool {
+func (m *machine) beginRefresh() bool {
 	m.stateMu.Lock()
 	defer m.stateMu.Unlock()
 	if m.stateRefreshing {
@@ -118,7 +118,7 @@ func (m *Manager) beginRefresh() bool {
 	return true
 }
 
-func (m *Manager) doneRefreshing() {
+func (m *machine) doneRefreshing() {
 	m.stateMu.Lock()
 	m.stateRefreshing = false
 	m.stateMu.Unlock()
@@ -131,6 +131,31 @@ func (m *Manager) refreshOnce() {
 	}
 	defer m.doneRefreshing()
 	m.RefreshStates()
+}
+
+// refreshLocal is the machine half's own refresh: measure every app in this
+// half's store with the LOCAL machinery and swap the cache. The control
+// plane's RefreshStates instead reads through the node agent; in a single
+// process the two are the same measurement.
+func (m *machine) refreshLocal() {
+	if !m.beginRefresh() {
+		return
+	}
+	defer m.doneRefreshing()
+	apps, err := m.store.Apps()
+	if err != nil {
+		slog.Warn("Cannot list apps for state refresh", "error", err)
+		return
+	}
+	names := make([]string, 0, len(apps))
+	for _, a := range apps {
+		names = append(names, a.Name)
+	}
+	states := m.States(names)
+	m.stateMu.Lock()
+	m.stateCache = states
+	m.stateFresh = time.Now()
+	m.stateMu.Unlock()
 }
 
 // RefreshStates measures every app and replaces the cache; it blocks on podman,
@@ -157,24 +182,24 @@ func (m *Manager) RefreshStates() {
 }
 
 // StateLoop keeps the cache warm until done closes
-func (m *Manager) StateLoop(done <-chan struct{}) {
+func (m *machine) StateLoop(done <-chan struct{}) {
 	slog.Info("Starting app state loop", "interval", stateRefreshInterval)
 	defer slog.Info("Stopping app state loop")
-	m.refreshOnce() // Prime it, so the first page load already has numbers
+	m.refreshLocal() // Prime it, so the first page load already has numbers
 	for {
 		select {
 		case <-time.After(stateRefreshInterval):
 		case <-done:
 			return
 		}
-		m.refreshOnce()
+		m.refreshLocal()
 	}
 }
 
 // States measures the given apps. Both podman and systemd are asked once for
 // all of them rather than once per app, so the cost does not grow with the
 // number of apps.
-func (m *Manager) States(names []string) map[string]State {
+func (m *machine) States(names []string) map[string]State {
 	states := make(map[string]State, len(names))
 	if len(names) == 0 {
 		return states
@@ -211,7 +236,7 @@ type usage struct {
 // (the file's mtime, bumped on every start/stop/crash). The time lets the UI see an
 // app restart, which otherwise looks identical to no change. Anything unreadable
 // means "" -- not serving, the safe default (the app is not up).
-func (m *Manager) appProcessState(name string) (state string, startedAt int64) {
+func (m *machine) appProcessState(name string) (state string, startedAt int64) {
 	root, err := m.homefs.OpenRoot(m.appFiles(name))
 	if err != nil {
 		return "", 0
@@ -243,7 +268,7 @@ func appStateFor(containerRunning bool, breadcrumb string) string {
 // seconds; a container that is not running is simply absent. podman prints one
 // line per running container, which recreate/restart makes newer -- the signal
 // the UI uses to know a reboot actually happened.
-func (m *Manager) containerStartTimes(names []string) map[string]int64 {
+func (m *machine) containerStartTimes(names []string) map[string]int64 {
 	starts := make(map[string]int64, len(names))
 	out, err := m.container.RunningStartTimes(stateTimeout)
 	if err != nil {
@@ -272,7 +297,7 @@ func (m *Manager) containerStartTimes(names []string) map[string]int64 {
 
 // runningStates asks systemd about every app's unit in one call; "systemctl
 // is-active" prints one line per unit, in order
-func (m *Manager) runningStates(names []string) map[string]bool {
+func (m *machine) runningStates(names []string) map[string]bool {
 	units := make([]string, len(names))
 	for i, name := range names {
 		units[i] = m.unitName(name)
@@ -287,7 +312,7 @@ func (m *Manager) runningStates(names []string) map[string]bool {
 }
 
 // resourceUsage reads current container memory and CPU from one podman stats call
-func (m *Manager) resourceUsage() map[string]usage {
+func (m *machine) resourceUsage() map[string]usage {
 	usages := make(map[string]usage)
 	out, err := m.container.Stats(stateTimeout)
 	if err != nil {
@@ -314,7 +339,7 @@ func (m *Manager) resourceUsage() map[string]usage {
 
 // nameByID maps every app's id to its current name, for turning id-keyed host
 // state (container names) back into the names callers use.
-func (m *Manager) nameByID() map[string]string {
+func (m *machine) nameByID() map[string]string {
 	apps, err := m.store.Apps()
 	if err != nil {
 		slog.Warn("Cannot list apps to map ids to names", "error", err)
@@ -330,7 +355,7 @@ func (m *Manager) nameByID() map[string]string {
 // Heartbeat reports this node's build and capabilities: the placement and
 // health inputs of the multi-node design. Grown in later phases (free
 // memory/disk, app count).
-func (m *Manager) Heartbeat() *Heartbeat {
+func (m *machine) Heartbeat() *Heartbeat {
 	return &Heartbeat{
 		Version:      Version,
 		BtrfsCapable: m.btrfs.IsBtrfs(m.config.AppsDir),
