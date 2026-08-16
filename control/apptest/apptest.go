@@ -12,6 +12,7 @@ import (
 	"heckel.io/hostit/run"
 	"heckel.io/hostit/ssh"
 	"heckel.io/hostit/systemd"
+	"heckel.io/hostit/unixuser"
 )
 
 // NewNopServices returns a node.Services that touches nothing: btrfs, systemd and
@@ -34,6 +35,8 @@ func NewNopServices() *node.Services {
 type nopUser struct{}
 
 func (nopUser) Exists(username string) bool { return false }
+
+func (nopUser) List() ([]unixuser.Account, error) { return nil, nil }
 
 func (nopUser) LookupUID(username string) (int, error) { return 1001, nil }
 

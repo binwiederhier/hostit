@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"heckel.io/hostit/unixuser"
 )
 
 // An app deleted while the daemon was down leaves its subvolume behind;
@@ -91,4 +92,45 @@ func TestReconcileOrphansSweepsStrayBudgetGroups(t *testing.T) {
 	ran := runner.ran()
 	assert.Contains(t, ran, "btrfs qgroup destroy 1/1065536", "the stray group (no app on that uid) is destroyed")
 	assert.NotContains(t, ran, "btrfs qgroup destroy 1/1000000", "the live app's group must survive")
+}
+
+// An app deleted while its node was disconnected (the routed Deprovision was
+// dropped) leaves its Unix account behind. That is not cosmetic: the account's
+// gid squats the uid block its port maps to, and the next app on that port
+// fails to create ("groupadd: GID already exists" -- seen on stage). The
+// rejoin reconcile therefore sweeps app accounts whose id matches no app.
+func TestReconcileOrphansRemovesOrphanUsers(t *testing.T) {
+	t.Parallel()
+	m, ops, _ := newTestDeployManager(t)
+	live := createTestApp(t, m, "blog")
+	// Two accounts on this node's pool: the live app's, and one whose app is
+	// long gone from the registry.
+	ops.accounts = []unixuser.Account{
+		{Name: "blog", Home: m.AppFiles("blog").Path()},
+		{Name: "ghost", Home: filepath.Join(m.config.AppsDir, "deadbeef1234", "home", "app")},
+	}
+
+	m.ReconcileOrphans()
+
+	assert.Equal(t, []string{"ghost"}, ops.deletedUsers, "the orphan account is removed")
+	assert.Contains(t, ops.killedUsers, "ghost", "its processes are killed first, so userdel can run")
+	assert.NotContains(t, ops.deletedUsers, "blog", "the live app's account survives")
+	_ = live
+}
+
+// Colocated nodes share one /etc/passwd, so the sweep must only ever touch
+// accounts whose home lies under THIS node's apps pool. Deleting another
+// node's app accounts would take its apps down.
+func TestReconcileOrphansLeavesOtherNodesAccountsAlone(t *testing.T) {
+	t.Parallel()
+	m, ops, _ := newTestDeployManager(t)
+	createTestApp(t, m, "blog")
+	ops.accounts = []unixuser.Account{
+		{Name: "neighbor", Home: "/var/lib/hostit-node2/apps/othernode99/home/app"},
+		{Name: "stray", Home: "/home/somebody"},
+	}
+
+	m.ReconcileOrphans()
+
+	assert.Empty(t, ops.deletedUsers, "accounts outside this node's pool are none of its business")
 }

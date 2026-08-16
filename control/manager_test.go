@@ -237,6 +237,7 @@ func testServices(ops *fakeSystem, runner run.Runner) *node.Services {
 // instead of executing them; it satisfies the unixuser, ssh and firewall interfaces.
 type fakeSystem struct {
 	existingUsers  []string
+	accounts       []unixuser.Account
 	createdUsers   []string
 	deletedUsers   []string
 	renamedUsers   []string
@@ -267,6 +268,15 @@ func newFakeSystem() *fakeSystem {
 func (f *fakeSystem) LookupIDs(username string) (uid, gid int, err error) {
 	u, _ := f.LookupUID(username)
 	return u, u, nil
+}
+
+// accounts is what the host would report for the app group; the reconcile
+// sweep filters it by home, so tests set homes to place them in (or outside)
+// this node's pool.
+func (f *fakeSystem) List() ([]unixuser.Account, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.accounts, nil
 }
 
 func (f *fakeSystem) Exists(username string) bool {

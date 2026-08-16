@@ -65,11 +65,65 @@ func (m *Machine) ReconcileOrphans() []string {
 	}
 	removed = append(removed, m.reconcileContainers(known)...)
 	removed = append(removed, m.reconcileSubvolumes(known)...)
+	removed = append(removed, m.reconcileUsers(known)...)
 	m.reconcileBudgets(apps)
 	if len(removed) > 0 {
 		slog.Info("Removed leftovers of deleted apps", "apps", removed)
 	}
 	return removed
+}
+
+// reconcileUsers removes the Unix accounts of apps that no longer exist. An app
+// deleted while this node was disconnected keeps its account (the routed
+// Deprovision was dropped), and that account is not inert: its gid squats the
+// uid block its old port maps to, so the next app allocated that port fails to
+// create ("groupadd: GID already exists").
+//
+// Only accounts whose home lies under THIS node's pool are touched. Colocated
+// nodes share one /etc/passwd, and another node's app accounts -- whose ids are
+// absent from this node's mirror by design -- must never be swept.
+func (m *Machine) reconcileUsers(known map[string]bool) []string {
+	accounts, err := m.user.List()
+	if err != nil {
+		slog.Warn("Cannot list app accounts to reconcile", "error", err)
+		return nil
+	}
+	removed := make([]string, 0)
+	for _, a := range accounts {
+		id, ok := m.idFromPoolHome(a.Home)
+		if !ok || known[id] {
+			continue
+		}
+		// Kill first: userdel refuses while anything runs as the account, and a
+		// leftover session or container process is exactly what may still be there.
+		if err := m.user.KillProcesses(a.Name); err != nil {
+			slog.Debug("Cannot kill processes of an orphaned account", "user", a.Name, "error", err)
+		}
+		if err := m.user.Delete(a.Name); err != nil {
+			slog.Warn("Cannot delete the account of a deleted app", "user", a.Name, "error", err)
+			continue
+		}
+		removed = append(removed, a.Name)
+	}
+	return removed
+}
+
+// idFromPoolHome extracts the app id from an account home, and reports whether
+// that home is in this node's apps pool at all (either the real AppsDir or the
+// raw bind the daemon's file I/O goes through, which is what useradd recorded).
+func (m *Machine) idFromPoolHome(home string) (string, bool) {
+	clean := filepath.Clean(home)
+	for _, base := range []string{m.config.AppsDir, m.rawAppsDir} {
+		if base == "" {
+			continue
+		}
+		rest, ok := strings.CutPrefix(clean, filepath.Clean(base)+string(filepath.Separator))
+		if !ok || rest == "" {
+			continue
+		}
+		return IDFromHomeDir(clean), true
+	}
+	return "", false
 }
 
 // reconcileBudgets destroys budget qgroups whose uid maps to no app: a destroy

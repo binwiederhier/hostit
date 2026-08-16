@@ -25,10 +25,22 @@ const (
 	userdelDelay     = time.Second
 )
 
+// Account is one app's Unix account as the host knows it: its login name and
+// its home directory, which is the only durable link back to the app id (the
+// home is the files path inside the id-keyed app subvolume).
+type Account struct {
+	Name string
+	Home string
+}
+
 // Interface is the subset of user-account operations the app package depends on;
 // the concrete *Service satisfies it, so a test can substitute a fake.
 type Interface interface {
 	Exists(username string) bool
+	// List returns the app accounts on this host (the members of the app
+	// group). Homes are what the caller filters on: colocated nodes share one
+	// /etc/passwd, so only the homes under a node's own pool are its business.
+	List() ([]Account, error)
 	LookupUID(username string) (int, error)
 	LookupIDs(username string) (uid, gid int, err error)
 	Create(username, home string, uid int) error
@@ -69,6 +81,45 @@ func (s *Service) LookupUID(username string) (int, error) {
 // LookupIDs returns a user's uid and gid.
 func (s *Service) LookupIDs(username string) (uid, gid int, err error) {
 	return lookupIDs(username)
+}
+
+// List returns the app accounts on this host: every member of the app group,
+// with its home. The group is how an app account is recognizable at all --
+// uids are a range, names are arbitrary -- and the home carries the app id.
+func (s *Service) List() ([]Account, error) {
+	g, err := user.LookupGroup(s.group)
+	if err != nil {
+		return nil, err
+	}
+	names, err := groupMembers(g)
+	if err != nil {
+		return nil, err
+	}
+	accounts := make([]Account, 0, len(names))
+	for _, name := range names {
+		u, err := user.Lookup(name)
+		if err != nil {
+			continue // a member that no longer resolves is nothing to clean up
+		}
+		accounts = append(accounts, Account{Name: u.Username, Home: u.HomeDir})
+	}
+	return accounts, nil
+}
+
+// groupMembers lists a group's members. os/user has no enumeration, so this
+// reads the group's member list with getent -- the same source useradd
+// --groups writes to, NSS included.
+func groupMembers(g *user.Group) ([]string, error) {
+	out, err := exec.Command("getent", "group", g.Name).Output()
+	if err != nil {
+		return nil, fmt.Errorf("getent group %s failed: %w", g.Name, err)
+	}
+	// name:x:gid:member,member,...
+	fields := strings.Split(strings.TrimSpace(string(out)), ":")
+	if len(fields) < 4 || strings.TrimSpace(fields[3]) == "" {
+		return nil, nil
+	}
+	return strings.Split(fields[3], ","), nil
 }
 
 // Create creates the app user. The home directory itself is NOT touched: it is

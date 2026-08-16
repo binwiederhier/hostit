@@ -151,13 +151,15 @@ definitions and the conversation prefix are cache-marked, so repeat turns pay th
   (cgroup v2 namespaces hide other containers' PIDs already; the meminfo/cpu
   view is the missing piece).
 
-- **Reconcile leaves orphaned unix users behind.** The rejoin Reconcile (and
-  startup ReconcileOrphans) cleans units, containers, subvolumes and budget
-  qgroups of apps deleted while a node was offline, but not the unix user
-  (verified live: user "outage" survived the outage-delete test). Self-healing
-  today (a later create at the reused uid replaces the squatter), but a clean
-  fix would sweep hostit-apps group members whose home lies under THIS node's
-  pool and whose name matches no mirror row. Needs a List on unixuser.
+- **DONE (2026-08-16): reconcile sweeps orphaned unix accounts.** The rejoin
+  Reconcile now removes app accounts whose home is in THIS node's pool and
+  whose id matches no mirror row (`Machine.reconcileUsers`, on the new
+  `unixuser.List`). The old note here called it self-healing -- it was not:
+  the orphan's gid squats the uid block its old port maps to, so the next app
+  allocated that port fails to create outright ("groupadd: GID already
+  exists", hit live on stage by a fork e2e). The pool-scoped filter is
+  load-bearing: colocated nodes share one /etc/passwd, so an unscoped sweep
+  would delete the other node's app accounts.
 
 - **Snapshot records: narrow reconnect race remains.** The main outage loss is
   fixed (2026-08-16, "Split 6"): the node no longer snapshots on its own timer,
