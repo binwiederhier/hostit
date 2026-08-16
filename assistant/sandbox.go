@@ -84,12 +84,14 @@ type Sandbox struct {
 
 // NewSandbox builds a sandbox launcher from the daemon config; it needs
 // the subscription token (config claude-code-oauth-token) to run.
+//
+// The MCP bridge mounted into the sandbox is the AGENT binary (the same one
+// bind-mounted into every app container), NOT this daemon's own executable:
+// since the cmd split the daemon is hostit-control, which has no "mcp"
+// command -- mounting os.Executable() worked only while one fused binary was
+// both the daemon and the CLI.
 func NewSandbox(conf *config.Config) (*Sandbox, error) {
-	bin, err := os.Executable()
-	if err != nil {
-		return nil, err
-	}
-	return &Sandbox{conf: conf, hostitBin: bin}, nil
+	return &Sandbox{conf: conf, hostitBin: node.HostitBinFile}, nil
 }
 
 // StreamUsage is one turn's token usage as claude reports it.
