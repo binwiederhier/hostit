@@ -97,10 +97,9 @@ Key management (the daemon side):
 - `ssh/service.go:ValidateKeys` (wrapped by `app/util.go:validateKeys`) rejects
   unparseable keys before anything is written.
 - The full key set for an app is app keys plus the owner's profile keys:
-  `control/manager.go:Manager.create` composes `sshKeys` and calls
-  `WriteAuthorizedKeys`; `control/manager.go:Manager.SyncKeys` /
-  `Manager.writeKeys` rewrite it when profile keys change; `systemOps`
-  delegates to the ssh service in `app/system.go:systemOps.WriteAuthorizedKeys`.
+  `control/manager.go:Manager.create` composes the key set and the node's
+  `Provision` writes it; `SetKeys` / `SyncKeys` (`node/machine.go`) rewrite it
+  when profile keys change, through `writeKeysIn` and the `ssh` service.
 - Profile keys live on the user: `store/userkey.go`, exposed through
   `user/service.go:Manager.AddKey` / `Manager.KeyStrings`, and pushed to every
   owned app by `control/server_handler_account.go:Server.syncUserAppKeys` when a

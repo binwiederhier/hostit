@@ -82,7 +82,7 @@ sequenceDiagram
 
 ## Technical details
 
-- **Package `app`** (`control/manager.go`) owns the lifecycle. `Manager` holds the
+- **Package `control`** (`control/manager.go`) owns the lifecycle. `Manager` holds the
   config, the store, and the `node.Services` bundle for root-privileged OS work (useradd, loginctl,
   nft), and injected `btrfs`/`systemd`/`container` services.
 - **Create** flows `CreateApp` -> `create` (`control/manager.go:create`, shared with

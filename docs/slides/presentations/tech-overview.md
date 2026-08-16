@@ -85,14 +85,15 @@ The request path and everything durable. Start here when reading top-down.
 
 | Package | Owns |
 |---|---|
-| `server` | HTTP: TLS-terminating proxy, REST API, app-scoped agent API, OAuth, sessions, the peercred unix socket, terminal WebSocket, assistant SSE |
-| `app` | an app's whole lifecycle; composes the service packages and holds naming, ports, identity |
+| `control` | the control plane: TLS-terminating proxy, REST API + web app, OAuth, sessions, the peercred unix socket, terminal WebSocket, assistant SSE, plus the `Manager` that owns an app's lifecycle (naming, ports, placement, identity) |
+| `node` | the machine half: the `Machine` that runs this host's containers, users, subvolumes and port rules, the node daemon, and the mTLS transport |
+| `nodeapi` | the control<->node wire contract (verbs, specs, sentinel errors) |
 | `store` | SQLite: schema, migrations, queries (one file per entity) |
 | `user` | people: accounts, roles, limits, tokens, SSH keys, allowed domains |
 | `config` | server config (`/etc/hostit/server.yml`) and its defaults |
-| `cmd` | the CLI: `serve`, the app commands, `admin`, the hidden `agent`/`enter`/`shell` group, the startup preflight |
+| `cmd/{control,node,proxy,agent}` | one thin `main` per binary; the app commands and the hidden `agent`/`enter`/`shell` group live under `cmd/agent` |
 | `client` | Go client for the REST API, used by `hostit apps` |
-| `web` | React 19 + Vite SPA; built into `server/site/` and embedded |
+| `web` | React 19 + Vite SPA; built into `control/site/` and embedded |
 
 ---
 zoom: 0.78

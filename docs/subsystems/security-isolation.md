@@ -195,7 +195,7 @@ tenant can still hand-edit them; public keys are not secrets.
 
 An SSH session must never reach a host shell. The app user's login shell is
 hostit's own (`userShellFile = /usr/bin/hostit-shell`, set at
-`app/system.go`), and the path from sshd to a shell is a chain that only ever
+`node/machine.go`), and the path from sshd to a shell is a chain that only ever
 lands the caller in **their own** container:
 
 ```mermaid

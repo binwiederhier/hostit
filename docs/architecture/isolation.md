@@ -106,7 +106,7 @@ out ownership, wherever the link pointed.
 ### The `hostit-shell` login shell
 
 App users' login shell is `/usr/bin/hostit-shell` (set at user creation,
-`app/system.go`), not a host shell. On login it identifies the app over the unix
+`node/machine.go:userShellFile`), not a host shell. On login it identifies the app over the unix
 socket, ensures the container is up, prints the banner, then hands off to a narrow
 sudoers grant, `sudo -n hostit-enter` (`cmd/agent/shell.go:execShell`). The privileged
 `hostit enter` half runs as root but derives the target container from `SUDO_UID`
