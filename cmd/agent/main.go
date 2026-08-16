@@ -5,8 +5,6 @@ package main
 import (
 	"fmt"
 	"os"
-
-	"heckel.io/hostit/node"
 )
 
 // Set by goreleaser via ldflags (-X main.version=... etc.)
@@ -17,11 +15,15 @@ var (
 )
 
 func main() {
-	app := New()
-	node.Version = version
+	ver := version
 	if commit != "" {
-		node.Version = fmt.Sprintf("%s (%s, built %s)", version, commit, date)
+		ver = fmt.Sprintf("%s (%s, built %s)", version, commit, date)
 	}
+	// No node.Version here: this binary is the CLI and the in-container agent;
+	// it creates no containers, and importing the machine stack to set a string
+	// it never reads put btrfs, podman, nftables and unixuser inside every app
+	// container's bind mount.
+	app := New(ver)
 	if err := app.Run(os.Args); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %s\n", err.Error())
 		os.Exit(1)

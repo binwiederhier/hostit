@@ -9,7 +9,6 @@ import (
 	"github.com/urfave/cli/v2"
 	"heckel.io/hostit/assistant"
 	"heckel.io/hostit/config"
-	"heckel.io/hostit/node"
 )
 
 // cmdInternal groups host-side debug/plumbing commands that app owners never run.
@@ -28,7 +27,10 @@ var cmdInternalAssistant = &cli.Command{
 	Usage:     "run one assistant turn via the sandboxed Claude Max backend (debug)",
 	ArgsUsage: "<app> [prompt]",
 	Flags: []cli.Flag{
-		&cli.StringFlag{Name: "config", Aliases: []string{"c"}, Value: node.DefaultConfigFile, Usage: "node config file"},
+		// The subscription token is a CONTROL setting, so this reads control's
+		// config -- pointing it at the node's would parse (yaml is lenient) and
+		// then report the token missing from a file it never belonged in.
+		&cli.StringFlag{Name: "config", Aliases: []string{"c"}, Value: config.DefaultControlConfigFile, Usage: "control config file"},
 		&cli.BoolFlag{Name: "shell", Usage: "drop into a shell in the sandbox instead of running claude (debugging)"},
 		&cli.BoolFlag{Name: "raw", Usage: "print raw event fields instead of a pretty summary"},
 	},

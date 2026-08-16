@@ -16,9 +16,6 @@ import (
 )
 
 const (
-	// HostitBinFile is where the hostit binary lives on the host AND inside every
-	// app container (bind-mounted), so the CLI works in both worlds
-	HostitBinFile = "/usr/bin/hostit"
 	// inspectHashFormat extracts the config-hash label from an existing container
 	inspectHashFormat = `{{index .Config.Labels "hostit.config"}}`
 )
@@ -212,7 +209,7 @@ func (m *Machine) apply(a *store.App, conf *appctl.AppConfig, allowReload bool) 
 
 	// Recreate the container if the desired config differs from the running one
 	started := time.Now()
-	desired := workspace.CreateArgs(conf, a, m.AppSubvolume(name), m.config.SocketFile, HostitBinFile, Version, m.MemoryLimit(name), ids)
+	desired := workspace.CreateArgs(conf, a, m.AppSubvolume(name), m.config.SocketFile, workspace.HostitBinFile, Version, m.MemoryLimit(name), ids)
 	hash := workspace.ConfigHash(desired)
 	current, err := m.container.Inspect(m.ContainerName(name), inspectHashFormat)
 	recreated := false

@@ -10,7 +10,7 @@ import (
 )
 
 func TestNewCommands(t *testing.T) {
-	app := New()
+	app := New("v0.0.0-test")
 	names := make([]string, 0)
 	for _, c := range app.Commands {
 		names = append(names, c.Name)
@@ -89,7 +89,7 @@ func TestCommandsInsideAContainerAreTheAppsOwn(t *testing.T) {
 	// container's environment, so this must not be the only signal
 	t.Setenv("container", "podman")
 	names := make([]string, 0)
-	for _, c := range New().Commands {
+	for _, c := range New("v0.0.0-test").Commands {
 		names = append(names, c.Name)
 	}
 	// An app's owner manages their app; they do not run the platform, and being

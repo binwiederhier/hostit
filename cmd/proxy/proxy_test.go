@@ -8,7 +8,7 @@ import (
 )
 
 func TestProxyCLIHasServe(t *testing.T) {
-	app := newProxyApp()
+	app := newProxyApp("v0.0.0-test")
 	serve := app.Command("serve")
 	require.NotNil(t, serve, "hostit-proxy's one job is serve")
 	// The config flag is how the unit points it at proxy.yml.

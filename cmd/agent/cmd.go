@@ -16,7 +16,7 @@ import (
 // surface they cannot use and should not have to think about -- they are refused
 // anyway, since the daemon is already running and admin needs a token they do
 // not have.
-func New() *cli.App {
+func New(version string) *cli.App {
 	// Two tools that happen to share a binary. Inside a container the commands act
 	// on this app through the daemon's socket, which identifies the caller by its
 	// uid; on the host there is no app to be, so those commands cannot work and
@@ -28,7 +28,10 @@ func New() *cli.App {
 		usage = "manage this app: deploy it, restart it, read its logs"
 	}
 	return &cli.App{
-		Name:     "hostit",
+		Name: "hostit",
+		// The MCP server reports this to its client (see mcp.go), so it is
+		// wired from the ldflags rather than left empty.
+		Version:  version,
 		Usage:    usage,
 		Commands: commands,
 	}

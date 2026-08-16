@@ -16,7 +16,7 @@ import (
 	"strings"
 
 	"heckel.io/hostit/config"
-	"heckel.io/hostit/node"
+	"heckel.io/hostit/workspace"
 )
 
 const (
@@ -91,7 +91,7 @@ type Sandbox struct {
 // command -- mounting os.Executable() worked only while one fused binary was
 // both the daemon and the CLI.
 func NewSandbox(conf *config.Config) (*Sandbox, error) {
-	return &Sandbox{conf: conf, hostitBin: node.HostitBinFile}, nil
+	return &Sandbox{conf: conf, hostitBin: workspace.HostitBinFile}, nil
 }
 
 // StreamUsage is one turn's token usage as claude reports it.
@@ -324,7 +324,7 @@ func appIdentity(appName string) (uid, gid int, appID string, err error) {
 	}
 	uid, _ = strconv.Atoi(u.Uid)
 	gid, _ = strconv.Atoi(u.Gid)
-	return uid, gid, node.IDFromHomeDir(u.HomeDir), nil
+	return uid, gid, workspace.IDFromHomeDir(u.HomeDir), nil
 }
 
 // containerName is the ephemeral sandbox container name for one turn, keyed on the

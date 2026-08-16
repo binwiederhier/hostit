@@ -11,8 +11,8 @@ import (
 
 	"github.com/urfave/cli/v2"
 	"heckel.io/hostit/container"
-	"heckel.io/hostit/node"
 	"heckel.io/hostit/nodeapi"
+	"heckel.io/hostit/workspace"
 )
 
 const (
@@ -93,13 +93,13 @@ func execEnter(c *cli.Context) error {
 }
 
 // containerKeyFromHome turns an app user's home directory into the name of its
-// container. The container is keyed on the app's id, which node.IDFromHomeDir
+// container. The container is keyed on the app's id, which workspace.IDFromHomeDir
 // digs out of the home path (apps/<id>/home/app, or the pre-unification
 // apps/<id>); the "hostit-app-" prefix is added. It returns false for a home
 // whose id is not a safe container key, so a surprising passwd entry cannot
 // inject podman arguments.
 func containerKeyFromHome(home string) (string, bool) {
-	base := node.IDFromHomeDir(home)
+	base := workspace.IDFromHomeDir(home)
 	if !container.ValidName(base) {
 		return "", false
 	}

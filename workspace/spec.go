@@ -52,6 +52,10 @@ const (
 	// are spaced UIDBlockSize apart (by port) so they never overlap.
 	UIDBlockStart = 1_000_000
 
+	// HostitBinFile is where the hostit binary lives on the host AND inside
+	// every app container (bind-mounted), so the CLI works in both worlds.
+	HostitBinFile = "/usr/bin/hostit"
+
 	// PortMin/PortMax bound the per-app loopback port range. Deliberately NOT
 	// configurable: an app's uid block is derived from its port (UIDFor), so
 	// moving the range on an existing install would re-map every app's uid
@@ -97,6 +101,19 @@ func ContainerName(id string) string {
 // UIDFor is an app's base uid: a contiguous UIDBlockSize-wide block, one per
 // app, spaced by port so blocks never overlap. Container uid 0 maps here.
 // Both halves of the platform derive it from the same formula.
+// IDFromHomeDir extracts the app id from an app account's home directory. The
+// account home is the files path inside the id-keyed app subvolume
+// (<apps>/<id>/home/app), so the id sits above the home/app tail; a
+// pre-unification account (e.g. a login racing the one-time migration) still
+// has <apps>/<id> itself, whose basename is already the id.
+func IDFromHomeDir(home string) string {
+	clean := filepath.Clean(home)
+	if rest, ok := strings.CutSuffix(clean, "/"+FilesDir); ok {
+		return filepath.Base(rest)
+	}
+	return filepath.Base(clean)
+}
+
 func UIDFor(port int) int {
 	return UIDBlockStart + (port-PortMin)*UIDBlockSize
 }

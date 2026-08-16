@@ -6,10 +6,11 @@ import (
 )
 
 // newProxyApp is the hostit-proxy command line: one job, serve.
-func newProxyApp() *cli.App {
+func newProxyApp(version string) *cli.App {
 	return &cli.App{
-		Name:  "hostit-proxy",
-		Usage: "hostit's data plane: terminates TLS and routes to apps from a cached table",
+		Name:    "hostit-proxy",
+		Version: version,
+		Usage:   "hostit's data plane: terminates TLS and routes to apps from a cached table",
 		Commands: []*cli.Command{{
 			Name:  "serve",
 			Usage: "Run the proxy",

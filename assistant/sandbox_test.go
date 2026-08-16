@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"heckel.io/hostit/config"
-	"heckel.io/hostit/node"
+	"heckel.io/hostit/workspace"
 )
 
 // The sandbox launch flags are the load-bearing security control (see
@@ -236,7 +236,7 @@ func TestSandboxSessionLogKeysOnAppID(t *testing.T) {
 	}
 }
 
-// The MCP bridge must be the AGENT binary (node.HostitBinFile, the one bind-
+// The MCP bridge must be the AGENT binary (workspace.HostitBinFile, the one bind-
 // mounted into every app container), never this daemon's own executable: since
 // the cmd split the daemon is hostit-control, which has no "mcp" command, and
 // mounting it silently broke the sandbox's only tool surface.
@@ -245,7 +245,7 @@ func TestNewSandboxMountsTheAgentBinary(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if s.hostitBin != node.HostitBinFile {
-		t.Fatalf("sandbox mounts %q as the MCP bridge, want the agent binary %q", s.hostitBin, node.HostitBinFile)
+	if s.hostitBin != workspace.HostitBinFile {
+		t.Fatalf("sandbox mounts %q as the MCP bridge, want the agent binary %q", s.hostitBin, workspace.HostitBinFile)
 	}
 }

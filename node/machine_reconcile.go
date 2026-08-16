@@ -121,7 +121,7 @@ func (m *Machine) idFromPoolHome(home string) (string, bool) {
 		if !ok || rest == "" {
 			continue
 		}
-		return IDFromHomeDir(clean), true
+		return workspace.IDFromHomeDir(clean), true
 	}
 	return "", false
 }

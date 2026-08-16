@@ -11,7 +11,7 @@ import (
 	"github.com/urfave/cli/v2"
 	"heckel.io/hostit/client"
 	"heckel.io/hostit/config"
-	"heckel.io/hostit/node"
+	"heckel.io/hostit/nodeconf"
 )
 
 var (
@@ -384,7 +384,7 @@ func resolveTransport(host, token, socketFile string, socketExists bool) (transp
 // unreadable or missing config falls back to the built-in default rather than
 // failing
 func localSocketFile() string {
-	if conf, err := node.LoadConfig(node.DefaultConfigFile); err == nil && conf.SocketFile != "" {
+	if conf, err := nodeconf.LoadConfig(nodeconf.DefaultConfigFile); err == nil && conf.SocketFile != "" {
 		return conf.SocketFile
 	}
 	return config.DefaultSocketFile
