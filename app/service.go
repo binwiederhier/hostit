@@ -120,6 +120,7 @@ type CreateOptions struct {
 	ProfileKeys []string // The owner's profile keys (apply to all their apps)
 	MemoryMB    int      // Container memory limit; 0 means unlimited
 	DiskMB      int      // Disk quota; 0 means unlimited. On btrfs a hard qgroup cap
+	Host        string   // Target node; empty means placement picks one (a fork pins its source's)
 }
 
 // Manager creates and deletes apps and everything that belongs to them, and
@@ -137,6 +138,9 @@ type Manager struct {
 	// node's destructive startup work.
 	synced     chan struct{}
 	syncedOnce sync.Once
+	// registry is the connected-nodes registry in multi-node control mode
+	// (SetNodeRegistry); nil in a single process.
+	registry *NodeRegistry
 
 	config    *config.Config
 	store     *store.Store
@@ -277,6 +281,14 @@ func (m *Manager) Fork(source, newName, snapshotID string, opts *CreateOptions) 
 	}
 	// Lock the source so its subvolume/snapshot is not rolled back or deleted
 	// mid-copy; the new app's own deploy runs under its own lock in the background.
+	// A fork always lands on the source's node: the seed subvolume is a
+	// node-local btrfs path.
+	if src, err := m.store.App(source); err == nil {
+		if opts == nil {
+			opts = &CreateOptions{}
+		}
+		opts.Host = hostOrLocal(src.Host)
+	}
 	defer m.lockApp(source)()
 	return m.create(newName, opts, seedPath)
 }
@@ -315,12 +327,17 @@ func (m *Manager) create(name string, opts *CreateOptions, seedPath string) (*st
 	// Mint the app's stable id up front: the app subvolume (and its snapshots) are
 	// keyed on the id, not the name, so a later rename never moves them. The id is
 	// on the App struct that gets inserted below.
-	app := &store.App{ID: store.NewAppID(), Name: name, Port: port, Host: store.HostLocal, OwnerID: opts.OwnerID, ImageTag: workspace.ImageTag(), UID: m.uidFor(port)}
+	host := opts.Host
+	if host == "" {
+		host = m.placeNode()
+	}
+	app := &store.App{ID: store.NewAppID(), Name: name, Port: port, Host: host, OwnerID: opts.OwnerID, ImageTag: workspace.ImageTag(), UID: m.uidFor(port)}
 
 	// Build the app on this machine (subvolume, user, keys, skeleton) -- the
 	// node-local half; everything after this is registry bookkeeping.
 	m.recordDiskLimit(name, opts.DiskMB)
 	spec := &ProvisionSpec{
+		Host:     host,
 		ID:       app.ID,
 		Name:     name,
 		Port:     port,
@@ -395,6 +412,7 @@ func (m *Manager) DeleteApp(name string) error {
 	// name-keyed lookups (paths, ids, snapshots) resolve nothing.
 	uid, uidErr := m.user.LookupUID(name)
 	spec := &DeprovisionSpec{
+		Host:      hostOrLocal(a.Host),
 		Name:      name,
 		Port:      a.Port,
 		UID:       uid,

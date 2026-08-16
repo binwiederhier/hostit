@@ -18,7 +18,7 @@ import (
 // requests TO the peer. Exactly one side passes dialer=true (the side that
 // dialed the underlying connection); yamux only uses it to assign stream-id
 // parity -- both sides can open and accept streams.
-func Duplex(conn net.Conn, dialer bool, handler http.Handler) (*http.Client, error) {
+func Duplex(conn net.Conn, dialer bool, handler http.Handler) (*http.Client, *yamux.Session, error) {
 	var sess *yamux.Session
 	var err error
 	if dialer {
@@ -27,7 +27,7 @@ func Duplex(conn net.Conn, dialer bool, handler http.Handler) (*http.Client, err
 		sess, err = yamux.Server(conn, nil)
 	}
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	// A yamux session is a net.Listener whose Accept returns peer-opened
 	// streams, so an ordinary http.Server serves the reverse direction.
@@ -42,5 +42,5 @@ func Duplex(conn net.Conn, dialer bool, handler http.Handler) (*http.Client, err
 		// Streams are cheap and the session multiplexes; per-stream keep-alive
 		// would just pin stale streams.
 		DisableKeepAlives: true,
-	}}, nil
+	}}, sess, nil
 }

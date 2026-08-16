@@ -52,7 +52,7 @@ func TestDuplexHTTPBothWays(t *testing.T) {
 		mux.HandleFunc("/heartbeat", func(w http.ResponseWriter, r *http.Request) {
 			fmt.Fprint(w, "noted")
 		})
-		client, err := Duplex(conn, false, mux)
+		client, _, err := Duplex(conn, false, mux)
 		if err != nil {
 			errCh <- err
 			return
@@ -69,7 +69,7 @@ func TestDuplexHTTPBothWays(t *testing.T) {
 		b, _ := io.ReadAll(r.Body)
 		fmt.Fprintf(w, "provisioned %s", string(b))
 	})
-	toControl, err := Duplex(conn, true, nodeMux)
+	toControl, _, err := Duplex(conn, true, nodeMux)
 	require.NoError(t, err)
 
 	var ctl accepted

@@ -10,6 +10,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"heckel.io/hostit/store"
 	"io"
 	"log/slog"
 	"net"
@@ -103,9 +104,7 @@ func (s *Server) currentRoutes() (*routeTable, error) {
 	routes := make([]routeEntry, 0, len(apps)+len(domains))
 	targets := make(map[string]string, len(apps))
 	for _, a := range apps {
-		// Today every app is local to control's host; the multi-node phase turns
-		// Host into the node address here.
-		target := fmt.Sprintf("127.0.0.1:%d", a.Port)
+		target := fmt.Sprintf("%s:%d", s.nodeAddress(a.Host), a.Port)
 		targets[a.Name] = target
 		routes = append(routes, routeEntry{Host: a.Name + "." + s.config.BaseDomain, Target: target})
 	}
@@ -132,6 +131,21 @@ func (s *Server) currentRoutes() (*routeTable, error) {
 		s.routesSeq++
 	}
 	return &routeTable{Seq: s.routesSeq, Routes: routes}, nil
+}
+
+// nodeAddress resolves an app's hosting node to the address its ports are
+// dialed at: control's own loopback for the local node (and for anything
+// unknown -- wrong-but-local beats black-holing a route), the registered
+// node address otherwise.
+func (s *Server) nodeAddress(host string) string {
+	if host == "" || host == store.HostLocal {
+		return "127.0.0.1"
+	}
+	if n, err := s.apps.Store().Node(host); err == nil && n.Address != "" {
+		return n.Address
+	}
+	slog.Warn("No address for node; falling back to loopback", "node", host)
+	return "127.0.0.1"
 }
 
 // certMaterial is what the proxy needs to terminate TLS for one SNI name.

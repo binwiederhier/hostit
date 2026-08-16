@@ -1,6 +1,7 @@
 package server
 
 import (
+	"heckel.io/hostit/store"
 	"log/slog"
 	"net"
 	"net/http"
@@ -37,7 +38,7 @@ func (s *Server) newProxyHandler() http.Handler {
 			s.writeNothingHerePage(w)
 			return
 		}
-		s.proxyTo(w, r, a.Port)
+		s.proxyTo(w, r, a)
 	})
 }
 
@@ -46,10 +47,12 @@ func (s *Server) newProxyHandler() http.Handler {
 // the proxy can tell a preview load from ordinary traffic.
 const previewParam = "hostit_preview"
 
-// proxyTo forwards the request to the app's loopback port, preserving the original
-// Host header and streaming immediately (SSE/websocket friendly)
-func (s *Server) proxyTo(w http.ResponseWriter, r *http.Request, port int) {
-	target := &url.URL{Scheme: "http", Host: net.JoinHostPort("127.0.0.1", strconv.Itoa(port))}
+// proxyTo forwards the request to the app's port on its hosting node (the
+// loopback for local apps), preserving the original Host header and streaming
+// immediately (SSE/websocket friendly)
+func (s *Server) proxyTo(w http.ResponseWriter, r *http.Request, a *store.App) {
+	port := a.Port
+	target := &url.URL{Scheme: "http", Host: net.JoinHostPort(s.nodeAddress(a.Host), strconv.Itoa(port))}
 	// The owner's live preview must always show the latest deploy, so on a preview
 	// load defeat all caching of the app's HTML and assets. Real visitors are
 	// unaffected -- this only touches requests tagged as a preview.

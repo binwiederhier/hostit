@@ -357,6 +357,13 @@ func (m *Manager) Heartbeat() *Heartbeat {
 func (m *Manager) IngestStates(states map[string]State) {
 	m.stateMu.Lock()
 	defer m.stateMu.Unlock()
-	m.stateCache = states
+	// Merge per name: in multi-node mode each node's poll loop feeds only its
+	// own apps, and a whole-map swap would clobber the other nodes' entries.
+	if m.stateCache == nil {
+		m.stateCache = make(map[string]State, len(states))
+	}
+	for name, state := range states {
+		m.stateCache[name] = state
+	}
 	m.stateFresh = time.Now()
 }

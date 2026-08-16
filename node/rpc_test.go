@@ -72,10 +72,10 @@ func startRPC(t *testing.T, agent app.NodeAgent) app.NodeAgent {
 	t.Helper()
 	nodeConn, controlConn := net.Pipe()
 	// Node side: serves the agent.
-	_, err := Duplex(nodeConn, true, RPCHandler(agent))
+	_, _, err := Duplex(nodeConn, true, RPCHandler(agent))
 	require.NoError(t, err)
 	// Control side: a client that implements app.NodeAgent.
-	client, err := Duplex(controlConn, false, nil)
+	client, _, err := Duplex(controlConn, false, nil)
 	require.NoError(t, err)
 	return NewRemoteAgent(client)
 }
@@ -154,7 +154,7 @@ func TestDialInRegistersARemoteAgent(t *testing.T) {
 	srv := httptest.NewServer(ConnectHandler(func(string) bool { return true }, nil, func(nodeID string, remote app.NodeAgent) {
 		got = remote
 		registered <- nodeID
-	}))
+	}, nil))
 	defer srv.Close()
 
 	// The node side: plain TCP here (the mTLS identity is the transport's

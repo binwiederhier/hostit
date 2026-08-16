@@ -47,6 +47,7 @@ func TestCallbacksFlowOverTheDuplex(t *testing.T) {
 		func(string) bool { return true },
 		func(nodeID string) http.Handler { return CallbackHandler(nodeID, st) },
 		func(string, app.NodeAgent) { registered <- struct{}{} },
+		nil,
 	))
 	defer srv.Close()
 

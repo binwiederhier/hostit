@@ -179,7 +179,7 @@ func TestConnectHandlerRejectsHeaderIdentityOverTLS(t *testing.T) {
 	// Over TLS the identity is the client cert CN, full stop: with the node
 	// listener accepting cert-less connections (for /join), a header fallback
 	// would let any joiner-to-be claim any node id.
-	h := ConnectHandler(func(string) bool { return true }, nil, func(string, app.NodeAgent) {})
+	h := ConnectHandler(func(string) bool { return true }, nil, func(string, app.NodeAgent) {}, nil)
 	req := httptest.NewRequest("POST", connectPath, nil)
 	req.TLS = &tls.ConnectionState{} // TLS, but no peer certificates
 	req.Header.Set("X-Hostit-Node", "victim")
@@ -193,7 +193,7 @@ func TestConnectHandlerAuthorizesTheNode(t *testing.T) {
 	// A valid certificate for an UNREGISTERED node (removed after joining) is
 	// refused: registration is checked at connect time, which is what makes
 	// `node remove` an effective revocation.
-	h := ConnectHandler(func(id string) bool { return id == "known" }, nil, func(string, app.NodeAgent) {})
+	h := ConnectHandler(func(id string) bool { return id == "known" }, nil, func(string, app.NodeAgent) {}, nil)
 	req := httptest.NewRequest("POST", connectPath, nil)
 	req.Header.Set("X-Hostit-Node", "unknown") // non-TLS local-socket path
 	rec := httptest.NewRecorder()

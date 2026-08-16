@@ -20,6 +20,9 @@ import (
 // ProvisionSpec is everything the node half needs to build an app on this
 // machine, resolved by the control side.
 type ProvisionSpec struct {
+	// Host is the target node id; the control plane's routing agent sends the
+	// spec there (the row does not exist yet when provisioning starts).
+	Host     string   `json:"host"`
 	ID       string   // Stable app id; subvolume and container are keyed on it
 	Name     string   // Unix account name (today: the app name)
 	Port     int      // Loopback port; the uid block derives from it
@@ -112,6 +115,8 @@ func (m *Manager) startInBackground(name string, forking bool) {
 // side BEFORE the registry rows are gone: once they are, name-keyed lookups
 // (paths, ids, snapshots) resolve nothing.
 type DeprovisionSpec struct {
+	// Host is the node the app lives on, captured before the row is removed.
+	Host      string `json:"host"`
 	Name      string
 	Port      int
 	UID       int // The budget qgroup key; UIDKnown guards a failed lookup

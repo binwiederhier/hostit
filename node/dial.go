@@ -29,7 +29,7 @@ const connectPath = "/internal/node/connect"
 // socket). authorize checks the id against the node registry: an unregistered
 // node's still-valid certificate is refused, which is what makes `node
 // remove` an effective revocation.
-func ConnectHandler(authorize func(nodeID string) bool, callbacks func(nodeID string) http.Handler, register func(nodeID string, agent app.NodeAgent)) http.Handler {
+func ConnectHandler(authorize func(nodeID string) bool, callbacks func(nodeID string) http.Handler, register func(nodeID string, agent app.NodeAgent), disconnect func(nodeID string, agent app.NodeAgent)) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != connectPath && r.URL.Path != "/" { // mounted standalone in tests
 			http.NotFound(w, r)
@@ -62,12 +62,19 @@ func ConnectHandler(authorize func(nodeID string) bool, callbacks func(nodeID st
 		if callbacks != nil {
 			cb = callbacks(nodeID)
 		}
-		client, err := Duplex(conn, false, cb)
+		client, sess, err := Duplex(conn, false, cb)
 		if err != nil {
 			_ = conn.Close()
 			return
 		}
-		register(nodeID, NewRemoteAgent(client))
+		agent := NewRemoteAgent(client)
+		register(nodeID, agent)
+		if disconnect != nil {
+			go func() {
+				<-sess.CloseChan()
+				disconnect(nodeID, agent)
+			}()
+		}
 	})
 }
 
