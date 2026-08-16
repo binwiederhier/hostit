@@ -680,21 +680,24 @@ than quietly ignored.
 
 ```sh
 make test vet fmt
-make web            # build the React app into server/site (embedded at compile time)
+make web            # build the React app into control/site (embedded at compile time)
 
 # End-to-end tests against a running server (creates and deletes e2e-* apps):
 HOSTIT_HOST=https://hostit.apps.example.com HOSTIT_TOKEN=... make e2e
 ```
 
-Layout follows the ntfy conventions: thin `main.go`, CLI wiring in `cmd/`, service
-packages at the root (`server/`, `app/`, `agent/`, `assistant/`, `store/`, `user/`,
-`appctl/`, `client/`, `config/`), and the web app in `web/` (Vite + React, no UI
-framework). The `assistant/` package is the in-browser AI agent: a loop over the
+Layout follows the ntfy conventions: one thin `main` per binary under `cmd/`
+(`control`, `node`, `proxy`, `agent`), component packages at the root
+(`control/` is the control plane incl. the REST API and web app, `node/` the
+machine half, `nodeapi/` the wire contract between them, `proxy/` the data
+plane) plus service packages (`agent/`, `assistant/`, `store/`, `user/`,
+`appctl/`, `client/`, `config/`, ...), and the web app in `web/` (Vite +
+React, no UI framework). The `assistant/` package is the in-browser AI agent: a loop over the
 Anthropic Messages API whose tools are scoped to one app.
 
 ### Releasing and environments
 
-The web assets are embedded at compile time (`go:embed server/site`), so a release
+The web assets are embedded at compile time (`go:embed control/site`), so a release
 is a single self-contained binary/`.deb`.
 
 ```sh
@@ -722,13 +725,13 @@ that app's prod -- are on the roadmap; see [TODO.md](TODO.md).)
 Contributions are welcome. To build and check locally:
 
 ```sh
-make web            # build the React app into server/site (embedded at compile time)
+make web            # build the React app into control/site (embedded at compile time)
 make test vet fmt   # Go tests, go vet, and gofmt
 cd web && npm test  # frontend unit tests (vitest)
 ```
 
 Please run `make web` before committing any change under `web/`, since the built
-assets in `server/site` are tracked and embedded at compile time. Keep to the
+assets in `control/site` are tracked and embedded at compile time. Keep to the
 existing style (see the Go conventions in the package layout above; ASCII only,
 comments explain *why*). Open an issue to discuss larger changes before a PR.
 

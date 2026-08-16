@@ -22,7 +22,7 @@ captured live from a real host
 </div>
 
 <div class="abs-br m-6 text-sm opacity-40">
-code path: <code>app/service.go: create()</code>
+code path: <code>control/manager.go: create()</code>
 </div>
 
 <style>
@@ -130,7 +130,7 @@ Three identities, all derived before anything touches the host:
 <v-click>
 
 ```
-code: app/service.go allocatePort() / uidFor(), store/app.go NewAppID()
+code: control/manager.go allocatePort(), workspace UIDFor(), store/app.go NewAppID()
 ```
 
 </v-click>
@@ -203,7 +203,7 @@ useradd[1240476]:  add 'blog' to group 'hostit-apps'
 <v-click>
 
 ```
-code: unixuser/service.go Create(), cmd/shell.go
+code: unixuser/service.go Create(), cmd/agent/shell.go
 ```
 
 </v-click>
@@ -343,7 +343,7 @@ are derived from the registry, never edited incrementally.
 </div>
 
 ```
-code: firewall/service.go, app/service.go ReconcilePortRules()
+code: firewall/service.go, control/manager.go ReconcilePortRules()
 ```
 
 ---
@@ -476,8 +476,8 @@ code: hostit-app@.service, agent/, app/deploy.go apply()
 | step | code |
 | --- | --- |
 | handler, limits, keys | `server/server_handler_apps.go` |
-| the create orchestration | `app/service.go create()` |
-| port/uid/id | `app/service.go`, `store/app.go` |
+| the create orchestration | `control/manager.go create()` |
+| port/uid/id | `control/manager.go`, `store/app.go` |
 | subvolume + base | `workspace/subvolume.go` |
 | unix user | `unixuser/service.go` |
 | keys + skeleton | `ssh/service.go`, `app/skeleton.go`, `homefs/service.go` |

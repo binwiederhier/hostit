@@ -174,7 +174,7 @@ flowchart TB
     proxy -->|"nodeA:10000"| a1
     proxy -->|"nodeB:10000"| a2
     control --> store
-    nodeDA -. "dials control<br/>join token" .-> control
+    nodeDA -. "dials control<br/>mTLS cert" .-> control
     nodeDB -. "dials control" .-> control
     proxy -. "dials control<br/>routes + certs" .-> control
     nodeDA --> a1
@@ -187,7 +187,7 @@ flowchart TB
     style nodeDB fill:#0369a1,color:#fff
 ```
 
-Dashed = dialed control connections (join token / subscription). App traffic
+Dashed = dialed control connections (per-node mTLS certs). App traffic
 never traverses control -- the proxy serves node targets from its **local
 cache**, so control and node daemons restart without dropping a request.
 
@@ -204,7 +204,6 @@ erDiagram
     node {
         text id PK "e.g. node-b"
         text address "internal RPC + proxy target"
-        text join_token "hashed; presented on every RPC"
         int  capacity_apps "soft cap for placement"
         int  free_mem_mb "from last heartbeat"
         int  free_disk_mb "from last heartbeat"
@@ -338,7 +337,7 @@ sequenceDiagram
   container-exec path: a key trusted by each node's sshd (or the same mTLS
   identity as the RPC channel). The user never sees it.
 - This credential is a **new trust edge**: scoped to container exec (never a node
-  root shell), rotatable, and guarded like the node join tokens. Compromising the front door
+  root shell), rotatable, and guarded like the node certificates. Compromising the front door
   was already game-over on one box; multi-node widens that blast radius to every
   node's containers.
 
@@ -464,8 +463,10 @@ on every call; the node keeps nothing between calls.
   a Unix user, `SetKeys` rewrites `authorized_keys`, `Deprovision` deletes a
   home. A separate channel means tenants *physically cannot address it*, instead
   of being policy-fenced on a shared one.
-- **Auth: per-node bearer token**, minted at join time, stored hashed in the
-  `node` table, presented on every RPC. **mTLS** as the stronger option.
+- **Auth: per-node mTLS certificate** (CN = node id), minted by
+  `hostit-control node add` and configured as plain files on the node
+  (`node-cert-file` / `node-key-file` / `cluster-ca-cert-file`). Shipped as
+  mTLS-only; there is no bearer-token fallback and no join protocol.
 - **Why not SO_PEERCRED?** On one box the kernel vouches for the calling uid over
   the unix socket. There is no kernel in the middle of a TCP connection --
   cross-node identity must be a cryptographic credential.
@@ -506,8 +507,8 @@ on every call; the node keeps nothing between calls.
   caller through a one-entry `{"local": ...}` map. Single box byte-identical.
 - **Phase 2 -- the binary split, one host**: `hostit-control`, `hostit-node`,
   `hostit-proxy` as separate systemd services over a localhost socket; the
-  proxy serves from its cached routes. Then **2b**: the `node` table, join
-  tokens, a second machine dials in; place by hand.
+  proxy serves from its cached routes. Then **2b**: the `node` table,
+  config-file mTLS certs, a second machine dials in; place by hand.
 - **Phase 3 -- invisible multi-node**: heartbeats, least-loaded placement,
   SSH ProxyJump.
 - **Phase 4 -- move & rebalance**: snapshot-ship-provision-flip; optional

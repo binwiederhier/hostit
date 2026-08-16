@@ -64,7 +64,7 @@ Everyday use:
 
 ## Technical details
 
-Frontend (`web/src/`, embedded and served by `server/web.go`):
+Frontend (`web/src/`, embedded and served by `control/web.go`):
 
 - `web/src/App.jsx`: top-level gate. `refreshAccount` calls `GET /api/account`;
   `account` is `undefined` (loading) / `null` (401 -> `Login`) / an object.
@@ -93,8 +93,8 @@ Frontend (`web/src/`, embedded and served by `server/web.go`):
 - `web/src/api.js` is the fetch wrapper (`ApiError`); the SPA never holds
   privileged logic, it just calls `/api`.
 
-Login backend (`server/server_handler_auth.go`, `server/auth.go`,
-`server/session.go`):
+Login backend (`control/server_handler_auth.go`, `control/auth.go`,
+`control/session.go`):
 
 - `handleGoogleLogin` sets a state cookie and redirects to Google's consent
   screen (`googleAuthURL`, scopes `openid email profile`).
@@ -112,9 +112,9 @@ Login backend (`server/server_handler_auth.go`, `server/auth.go`,
   `cookieName` add `HttpOnly`, `Secure` (when TLS is on), `SameSite=Lax`, and the
   `__Host-` prefix; `checkSameOrigin` blocks cross-site cookie writes.
 
-Routing to the SPA: `server/proxy.go:newProxyHandler` sends requests on the web
-hostname to `s.api`, whose fallthrough handler (`server/api.go`) serves the
-embedded SPA (`server/web.go:webHandler`) for any non-`/api` path.
+Routing to the SPA: `control/proxy.go:newProxyHandler` sends requests on the web
+hostname to `s.api`, whose fallthrough handler (`control/api.go`) serves the
+embedded SPA (`control/web.go:webHandler`) for any non-`/api` path.
 
 ## Other notes
 
@@ -122,7 +122,7 @@ embedded SPA (`server/web.go:webHandler`) for any non-`/api` path.
   (`config.WebEnabled`), so an API-only instance still runs.
 - The dashboard is a *personal* view: `listedApps` returns the caller's own apps
   unless `?all=true` and the caller is an admin
-  (`server/server_handler_apps.go`), so another user's app appearing on the
+  (`control/server_handler_apps.go`), so another user's app appearing on the
   dashboard would be a bug, not a privilege.
 - Pending/denied accounts can still call `GET /api/account` (it is
   authenticated-only, not active-only), which is how the SPA shows the "waiting

@@ -116,7 +116,7 @@ The model has four consequences, each carried end to end:
   (root is not in the mapping). At startup the daemon therefore binds the apps
   dir **non-recursively** (child overmounts excluded) at `<run-dir>/apps-raw`
   and resolves all file I/O through that raw view
-  (`app/deploy.go:MountRawAppsView`, called from `cmd/serve.go`;
+  (`app/deploy.go:MountRawAppsView`, called from `cmd/control/serve.go`;
   `appFilesByID`). The bind is made **private**: the apps mount is shared by
   default, so a container overmount created after a plain bind would propagate
   into it anyway; a leftover bind from the previous run is torn down (made
@@ -141,7 +141,7 @@ AND the installed software around them (`btrfs/service.go:Snapshot` with `-r`).
 hostit takes them:
 
 - **hourly**, for every app (`snapshot/service.go:SnapshotLoop`, started from
-  `cmd/serve.go`), labelled `"Automated snapshot"`,
+  `cmd/control/serve.go`), labelled `"Automated snapshot"`,
 - **before every deploy** (labelled `"Automated snapshot before deploy"`),
 - **on demand**, labelled, by the owner or the assistant's `snapshot` tool
   (`snapshot/service.go:TakeSnapshot`),
@@ -175,14 +175,14 @@ partway (`snapshot/service.go:Rollback`):
    no quota to restore either: the cap lives on the app's budget qgroup, and the
    staged copy joined it at stage time (qgroup membership survives the rename).
 
-The per-app lifecycle lock (`app/service.go:lockApp`, `appLocks`) serializes
+The per-app lifecycle lock (`control/manager.go:lockApp`, `appLocks`) serializes
 deploy/snapshot/rollback/delete, so these subvolume operations never interleave on
 one app.
 
 ## Fork: seed a new app from a snapshot
 
 Fork duplicates an app by seeding the new app's subvolume from a **writable CoW
-snapshot** of the source instead of the demo skeleton (`app/service.go:Fork` ->
+snapshot** of the source instead of the demo skeleton (`control/manager.go:Fork` ->
 `create` with a `seedPath`). The seed is the source's current subvolume, or a
 whole-app snapshot of it; either way the fork carries the source's files, config,
 data AND installed packages in one instant, space-shared copy
@@ -220,7 +220,7 @@ the base (the ~47 MB baseline the old create-time `chown -R` used to dirty per
 app is gone with the chown itself).
 `RefreshDiskUsage` runs on an interval purely for the dashboard -- there is
 nothing to enforce, because the qgroup already hard-caps writes (`app/quota.go`,
-`DiskUsageLoop` from `cmd/serve.go`).
+`DiskUsageLoop` from `cmd/control/serve.go`).
 
 Existing apps were moved onto this model by three one-time, settings-gated
 startup migrations (rootfs, unified, idmap) that shipped in v0.9.x-v0.10.x and
@@ -264,7 +264,7 @@ flowchart LR
 Earlier hostit degraded gracefully on a non-btrfs host (plain directories, soft
 quotas). That is gone: snapshots, rollback, fork and hard quotas are treated as
 core, not optional. The startup preflight refuses to run otherwise
-(`cmd/preflight.go:requireBtrfs`, called from `cmd/serve.go` after the apps
+(`cmd/preflight.go:requireBtrfs`, called from `cmd/control/serve.go` after the apps
 directory exists):
 
 > hostit requires the app homes (...) to be on a btrfs filesystem, for snapshots,

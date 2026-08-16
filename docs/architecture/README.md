@@ -14,7 +14,7 @@ it. Read these in order:
 - [`flows.md`](flows.md) -- sequence diagrams: the startup preflight, creating an app,
   serving a request, logging in over SSH, and an agent deploying.
 - [`code-map.md`](code-map.md) -- where the code lives: the package table, how
-  `app.Manager` composes the service packages, the `go:embed` blobs, and the
+  `control.Manager` composes the service packages, the `go:embed` blobs, and the
   within-package file conventions.
 
 For deeper dives into individual subsystems (the assistant, custom domains,

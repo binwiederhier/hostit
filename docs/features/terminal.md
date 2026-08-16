@@ -74,10 +74,10 @@ sequenceDiagram
 
 ## Technical details
 
-**Server.** `server/server_handler_terminal.go:handleTerminal` is the whole
+**Server.** `control/server_handler_terminal.go:handleTerminal` is the whole
 backend. It is registered under `requireActive` and resolves an owned app
 (`s.ownedApp`), so only the owner or an admin reaches it. It gets the shell
-command from `app/exec.go:TerminalCommand`, which returns
+command from `node/machine_exec.go:TerminalCommand`, which returns
 `runuser -u {app} -- {userShellFile}` -- the app's login shell through
 `hostit-shell`, identical to SSH (`runuser` drops from the root daemon to the app
 user so the daemon socket sees the right peercred identity, just as `sshd`

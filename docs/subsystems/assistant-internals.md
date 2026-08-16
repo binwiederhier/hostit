@@ -7,9 +7,9 @@ backends** behind the same UI and the same tools -- the metered Anthropic API, a
 the operator's Claude Max subscription running in a sandbox -- and the whole thing
 is confined to one app the same way an app-scoped token is.
 
-The package is `assistant/`; the server-side adapters are `server/assistantops.go`,
-`server/assistantclaude.go`, and `server/assistantmodes.go`; the sandbox's
-in-container bridge is `cmd/mcp.go`.
+The package is `assistant/`; the server-side adapters are `control/assistantops.go`,
+`control/assistantclaude.go`, and `control/assistantmodes.go`; the sandbox's
+in-container bridge is `cmd/agent/mcp.go`.
 
 ## Anatomy of a turn
 
@@ -89,9 +89,9 @@ deploy, refresh_preview, snapshot, list_snapshots, rollback
 ```
 
 `AppOps` is an interface (`assistant/tools.go`); the server implements it over
-`app.Manager`, scoped to one app name (`server/assistantops.go:appOps`). The
+`control.Manager`, scoped to one app name (`control/assistantops.go:appOps`). The
 model never gets a raw shell on the host -- `run_command` runs *inside the app's
-container* as the app user (`appOps.Exec` -> `app.Manager.Exec`).
+container* as the app user (`appOps.Exec` -> `control.Manager.Exec`).
 
 Tool calls are executed in one place, `assistant/tools.go:DispatchTool`, shared by
 **both** backends (the API loop calls it via `Manager.dispatch`; the sandbox
@@ -99,7 +99,7 @@ reaches it over MCP). A tool that errors is reported *to the model* with
 `isError` set, not returned up the stack: the model reads it and adapts, exactly
 as it would a failed shell command. `refresh_preview` is a UI-only signal handled
 by the caller that has a UI; a headless backend simply does not advertise it
-(`cmd/mcp.go:mcpTools` filters it out).
+(`cmd/agent/mcp.go:mcpTools` filters it out).
 
 ### Prompt caching
 
@@ -147,7 +147,7 @@ own account).
 
 Browsers do not watch the HTTP request that started the turn; they subscribe to a
 separate SSE endpoint (`GET /api/apps/{name}/assistant/stream`,
-`server/server_handler_assistant.go:handleAssistantStream`). Every subscriber gets
+`control/server_handler_assistant.go:handleAssistantStream`). Every subscriber gets
 the same stream, so a run started on one device shows up on all of them
 (`assistant/session.go`). The event types (`assistant/types.go:Event`,
 `Type` field):
@@ -168,7 +168,7 @@ The stream is defended: a per-app subscriber cap (`maxSubsPerApp = 64`), a slow
 subscriber is dropped rather than allowed to stall the run (it recovers on
 reload), a keepalive comment every 20s so proxies do not idle it out, and a
 **same-origin gate** on the connection (`Sec-Fetch-Site`) as defense in depth
-(`server/server_handler_assistant.go`). Per-user rate limits (`reserveRun`,
+(`control/server_handler_assistant.go`). Per-user rate limits (`reserveRun`,
 `assistant/service.go`) cap concurrent runs (`defaultMaxRunsPerUser = 3`) and runs
 per hour (`defaultMaxRunsPerHour = 60`) across all of a user's apps, because every
 turn spends the operator's budget; the admin token (empty user id) is exempt.
@@ -176,7 +176,7 @@ turn spends the operator's budget; the admin token (empty user id) is exempt.
 ## Resumable and pickup-able
 
 The transcript is one JSON blob per app in SQLite (`assistant_session`, adapted by
-`server/assistantops.go:appTranscripts`), saved after every step, so a reload
+`control/assistantops.go:appTranscripts`), saved after every step, so a reload
 mid-run recovers the progress. Two ways to resume:
 
 - **The web UI** loads the stored session as structured items
@@ -239,9 +239,9 @@ as text, because the sandbox container is ephemeral and stateless
 ### Tools mediated over MCP -- the load-bearing control
 
 Inside the sandbox, `claude` is configured so its **only** tools are the hostit
-app operations, advertised over MCP by `hostit mcp` (`cmd/mcp.go`), which bridges
+app operations, advertised over MCP by `hostit mcp` (`cmd/agent/mcp.go`), which bridges
 each tool call to the daemon over the peercred socket
-(`POST /v1/self/tool/{name}`, `server/socket.go`). The invocation
+(`POST /v1/self/tool/{name}`, `control/socket.go`). The invocation
 (`assistant/sandbox.go:claudeArgs`):
 
 ```
@@ -271,7 +271,7 @@ comments:
   the agent with no tools) and the prompt on **stdin** (not argv, because
   `--mcp-config` is variadic and would swallow a trailing positional).
 
-The MCP bridge itself (`cmd/mcp.go:mcpServer`) is a minimal stdio JSON-RPC 2.0
+The MCP bridge itself (`cmd/agent/mcp.go:mcpServer`) is a minimal stdio JSON-RPC 2.0
 server. It lists `assistant.ToolDefs()` (minus `refresh_preview`) so the sandbox
 model sees an identical tool surface to the API backend, forwards each
 `tools/call` to the daemon, and reports a daemon-unreachable error back to the
@@ -288,7 +288,7 @@ stream-json is teed to a root-owned per-app log
 inspect a complex turn; the web chat only shows distilled events. `claude`'s
 stream is normalized to the same `Event` types as the API loop
 (`sandbox.go:parseAssistantStreamLine`, adapted by
-`server/assistantclaude.go:claudeBackend`), so the UI renders a subscription turn
+`control/assistantclaude.go:claudeBackend`), so the UI renders a subscription turn
 exactly like an API turn. Usage comes back once, at the end, in the `result`
 event.
 
@@ -317,7 +317,7 @@ purely by which credentials are present in the config (`config/config.go`):
 - Either one present -> `AssistantAvailable()` -> the assistant runs at all.
 - Neither -> the assistant is inert; the routes return `enabled:false` cleanly.
 
-The server wires this directly from the config (`server/service.go`): it
+The server wires this directly from the config (`control/service.go`): it
 constructs the `assistant.Manager` when `AssistantAvailable()`, and calls
 `SetClaudeRunner(&claudeBackend{...})` only when `ClaudeBackendEnabled()`. The
 comment there records the bug this prevents: the option used to be offered while
@@ -325,7 +325,7 @@ the backend was unwired, silently running the API model and badging replies as
 Sonnet with no explanation. Now the token's presence is the whole switch -- if
 "Claude.ai" is offered, it actually runs the subscription.
 
-Per-user gating and defaults layer on top (`server/assistantmodes.go`): whether a
+Per-user gating and defaults layer on top (`control/assistantmodes.go`): whether a
 user may pick External Claude and which API models they may use come from a
 per-user override or the operator's global defaults, and the default when unset is
 "allowed whenever the subscription is configured" -- because the operator setting

@@ -65,18 +65,18 @@ the session cookie (as an admin) or the admin token against `/api/users`,
 
 Router and auth:
 
-- `server/api.go:newAPIHandler` registers every route via the `route` helper
+- `control/api.go:newAPIHandler` registers every route via the `route` helper
   under `apiPrefix = "/api"`. Anything unmatched under `/api/` returns a JSON 404
   pointing at `/api/info`; the SPA catches everything else.
-- `server/auth.go:Server.authenticate` resolves a `caller` from a `Bearer` token
+- `control/auth.go:Server.authenticate` resolves a `caller` from a `Bearer` token
   or the session cookie. The admin token (`config.AdminToken`) is compared in
   constant time and yields `caller{globalAdmin:true}`; otherwise
   `user/service.go:Manager.UserAndScopeByToken` resolves the token to its user
   and app scope.
 - Middleware: `authenticated` (auth only, plus `checkSameOrigin` and the
   app-scope check), `requireActive` (approved account), `requireAdmin`
-  (`server/auth.go`).
-- `caller` (`server/auth.go`): `user`, `globalAdmin`, `appScope` (non-empty for
+  (`control/auth.go`).
+- `caller` (`control/auth.go`): `user`, `globalAdmin`, `appScope` (non-empty for
   an app token), `viaCookie`. `isAdmin`, `isActive`, `userID` derive from it.
 - App-scope enforcement: `withinAppScope` allows only `/api/info` and
   `/api/apps/{scope}` (and its subpaths); reaching anything else with an app
@@ -105,22 +105,22 @@ Endpoint surface:
 
 - Account (self, readable while pending): `GET /api/account`, and
   `/api/account/keys` + `/api/account/tokens` (list/add/delete) in
-  `server/server_handler_account.go`. `handleTokensList` shows only account-wide
+  `control/server_handler_account.go`. `handleTokensList` shows only account-wide
   tokens; each app's token lives on its own page. `handleTokensAdd` mints an
   app-scoped token only for an app the caller owns.
 - Apps (owner-scoped; admins see all): create/list/get/delete, `keys`, `token`
   (rotate), `description`, `rename`, `fork`, `events`, `domains`, `terminal`,
-  `assistant*` in `server/server_handler_apps.go` and siblings, routed in
-  `server/api.go`.
+  `assistant*` in `control/server_handler_apps.go` and siblings, routed in
+  `control/api.go`.
 - The agent-facing per-app API is registered by
-  `server/server_handler_agent.go:newAgentRoutes` under `/api/apps/{app}/*`:
+  `control/server_handler_agent.go:newAgentRoutes` under `/api/apps/{app}/*`:
   `info`, `logs`, `files` (GET/PUT/GET-one/DELETE, plus tar upload, `move`,
   `mkdir`, `readme`), `run`, `deploy`, `poweron|poweroff|reboot`,
   `start|stop|restart`, and `snapshots*`. `requireApp` resolves and
   authorizes the `{app}` path value against the caller.
 - Admin (behind `requireAdmin`): `/api/users` (list/invite/update/delete),
   `/api/domains` (approval domains), `/api/settings` (global default limits),
-  `/api/assistant-defaults` in `server/server_handler_admin.go`.
+  `/api/assistant-defaults` in `control/server_handler_admin.go`.
 
 The self-describing endpoint:
 
@@ -134,20 +134,20 @@ The self-describing endpoint:
   app name (or `{app}`), and, when the app already has a description, tells the
   agent it is built and live -- do not rebuild it.
 
-Errors: `server/api.go:writeAppError` / `server/server_handler_account.go:
+Errors: `control/api.go:writeAppError` / `control/server_handler_account.go:
 writeUserError` map sentinel errors (`store.ErrAppNotFound`, `app.ErrAppExists`,
 `ErrInvalidDomain`, `user.ErrNotActive`, ...) to HTTP status codes; all responses
 are JSON via `writeJSON` / `writeError`.
 
-Note the on-box **unix-socket "self" API** (`server/socket.go`,
-`server/server_handler_self.go`) is a separate `/v1/self/*` surface used by the
+Note the on-box **unix-socket "self" API** (`control/socket.go`,
+`control/server_handler_self.go`) is a separate `/v1/self/*` surface used by the
 in-container `hostit` CLI, authenticated by SO_PEERCRED rather than a token. It is
 not part of the public `/api` and is documented with SSH/CLI, not here.
 
 ## Other notes
 
 - The `/v1/*` paths the API used to have now return a JSON 404 pointing at
-  `/api` (`server/api.go`).
+  `/api` (`control/api.go`).
 - The global admin token owns no user record, so "your apps" means all apps for
   it; `listedApps` / `ownedApp` implement the owner-or-admin visibility rule, and
   never widen an ordinary admin's *personal* app list unless `?all=true`.

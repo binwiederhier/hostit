@@ -114,16 +114,16 @@ right-aligned and only in the assistant view.
   `sandbox="allow-scripts allow-same-origin allow-forms"`, shown only when the
   app is running.
 
-**The file API** (`server/server_handler_files.go`, registered in
-`server/server_handler_agent.go:newAgentRoutes`, shared with the agent API):
+**The file API** (`control/server_handler_files.go`, registered in
+`control/server_handler_agent.go:newAgentRoutes`, shared with the agent API):
 `handleAgentFileList` (one directory), `handleAgentFileGet` (raw bytes, or
-`?stat=1` for size/modtime/MIME via `app.Manager.StatFile`; served as
+`?stat=1` for size/modtime/MIME via `control.Manager.StatFile`; served as
 `application/octet-stream` with `nosniff` so a tenant's HTML can never run on the
 web origin), `handleAgentFilePut` (raw body, `?mode=755` for executables),
 `handleAgentFileDelete`, `handleAgentMove`, `handleAgentMkdir`, and tar upload.
-All are thin handlers over `app.Manager`'s file methods.
+All are thin handlers over `control.Manager`'s file methods.
 
-**The live preview proxy.** The public proxy (`server/proxy.go`) serves the app
+**The live preview proxy.** The public proxy (`control/proxy.go`) serves the app
 at its subdomain and, on a preview-tagged request
 (`proxy.go:isPreviewRequest`, matching `proxy.go:previewParam` =
 `hostit_preview` in the query or the `Referer`), rewrites response headers via

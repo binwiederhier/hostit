@@ -29,7 +29,7 @@ rollback, take a *writable* snapshot and hang a whole new app off it. The copy i
 instant and shares storage with the source until the two diverge, so forking a large
 app costs almost nothing up front.
 
-The design reuses the create path exactly (`app/service.go:create`, shared by
+The design reuses the create path exactly (`control/manager.go:create`, shared by
 `CreateApp` and `Fork`): a fork is "create, but seed the app subvolume from a seed
 subvolume instead of the pinned tag's base plus the demo skeleton". This keeps the
 two operations honest with each other -- a fork gets the same validation, port
@@ -47,7 +47,7 @@ sequenceDiagram
     actor User
     participant UI as Dashboard / CLI
     participant API as hostit server
-    participant Mgr as app.Manager
+    participant Mgr as control.Manager
     participant Btrfs as btrfs.Service
     User->>UI: Fork "myapp" -> "myapp-copy" (optionally pick a snapshot)
     UI->>API: POST /api/apps/myapp/fork {new_name, snapshot_id?}
@@ -67,25 +67,25 @@ sequenceDiagram
 - **From a snapshot row** (`ForkDialog` with a `snapshotId`): seeds from that specific
   snapshot.
 - **CLI:** `hostit apps fork myapp myapp-copy` (current files) or
-  `hostit apps fork myapp myapp-copy <snapshot-id>` (`cmd/apps.go`, `execFork`).
+  `hostit apps fork myapp myapp-copy <snapshot-id>` (`cmd/agent/apps.go`, `execFork`).
 - **API:** `POST /api/apps/{app}/fork` with `{"new_name": "...", "snapshot_id": "..."}`
   (the snapshot id is optional).
 
 ## Technical details
 
 - **Route/handler:** `POST /api/apps/{name}/fork` ->
-  `server/server_handler_apps.go:handleAppsFork`. It resolves the owned source app,
+  `control/server_handler_apps.go:handleAppsFork`. It resolves the owned source app,
   enforces the caller's app-count limit (`checkAppLimit`), gathers the owner's
-  profile SSH keys and memory/disk limits, and calls `app.Manager.Fork`. Errors go
+  profile SSH keys and memory/disk limits, and calls `control.Manager.Fork`. Errors go
   through `writeSnapshotError`, which maps an unknown snapshot id to 404.
-- **`app.Manager.Fork`** (`app/service.go:Fork`): verifies the source exists,
+- **`control.Manager.Fork`** (`control/manager.go:Fork`): verifies the source exists,
   resolves the seed path -- the source's current subvolume
   (`appSubvolume(source)`) or, when `snapshotID != ""`, the snapshot's subvolume
   (`snapshotPath`, after checking the snapshot belongs to the source; snapshots
   are whole-app subvolumes, so either seed carries everything) -- takes the
   source's per-app lock (so its subvolume/snapshot is not rolled back or deleted
   mid-copy), and delegates to `create(newName, opts, seedPath)`.
-- **`create` with a seed** (`app/service.go:create`, `forking := seedPath != ""`):
+- **`create` with a seed** (`control/manager.go:create`, `forking := seedPath != ""`):
   - Instead of snapshotting the pinned tag's base and writing the skeleton, it
     makes a **writable** btrfs snapshot of the seed into the new app's id-keyed
     subvolume (`workspace/subvolume.go:ForkAppSubvolume` ->
@@ -104,7 +104,7 @@ sequenceDiagram
   without `-r` produces a writable CoW copy. This is the same call rollback uses to
   stage a restored subvolume (`readonly=false`), versus the read-only (`-r`)
   snapshots kept for rollback.
-- **CLI client:** `cmd/apps.go` registers the `fork` subcommand; `client.Client`
+- **CLI client:** `cmd/agent/apps.go` registers the `fork` subcommand; `client.Client`
   posts to the fork endpoint.
 
 ## Other notes

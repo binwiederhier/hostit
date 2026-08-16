@@ -40,9 +40,7 @@ Rollback is written to be crash-safe: it must never leave an app without a
 subvolume. The replacement is staged beside the live one first, a safety snapshot
 is taken, and only then is the swap done by moving subvolumes -- with the old one
 moved aside (not deleted) until the new one is confirmed in place, so any failure
-can put the original back. The staging happens *before* the safety snapshot's
-retention prune, because that prune could otherwise delete the very snapshot being
-restored.
+can put the original back.
 
 Retention exists so that constant automatic snapshotting does not fill the disk;
 it applies to manual snapshots too, so nothing lives forever (a documented
@@ -88,7 +86,7 @@ sequenceDiagram
 ## Technical details
 
 Core logic in the `snapshot/` service (`snapshot/service.go`), bound to the
-`app.Manager` through the small `snapshot.Host` interface (`app/snapshot.go`):
+`control.Manager` through the small `snapshot.Host` interface (`node/machine_snapshot.go`):
 
 - `Service.TakeSnapshot` / `takeSnapshot`: runs `snapshot.pre` (aborts on
   non-zero exit), makes the read-only subvolume via
@@ -108,16 +106,19 @@ Core logic in the `snapshot/` service (`snapshot/service.go`), bound to the
   way back up (it already took a safety snapshot).
 - `Service.DeleteSnapshot`: removes the subvolume then the record (never orphan
   a subvolume).
-- `Service.pruneSnapshots`: calls `retention.Apply` and deletes the pruned
-  subvolumes and records; keeps the record if the subvolume delete fails so it
-  retries rather than orphaning.
-- `Service.SnapshotLoop`: the hourly automatic snapshot loop;
-  started from `cmd/serve.go` with a 1h interval.
+- Control side (`control/snapshot.go`): `Manager.AutoSnapshotLoop` sweeps
+  every app hourly through the node agent (started from
+  `cmd/control/serve.go` in both fused and split mode);
+  `Manager.PruneSnapshots` applies `retention.Apply` to the registry rows and
+  commands `DeleteSnapshot` for what falls outside -- after the hourly sweep
+  and after every manual take and rollback.
 - Labels for unattended snapshots: "Automated snapshot" and
   "Automated snapshot before deploy".
 
-Pre-deploy trigger: `app/deploy.go:Up` calls the snapshot service's
-`PreDeploySnapshot` (best effort) before applying the new config.
+Pre-deploy trigger: the node's up path (`node/machine_deploy.go`) calls the
+snapshot service's `PreDeploySnapshot` (best effort) before applying the new
+config -- node-originated, but only ever while executing a deploy control
+commanded.
 
 Retention (`retention/retention.go`, pure logic, no I/O):
 
@@ -136,18 +137,18 @@ is the I/O-free mirror, bridged by `snapshot/service.go:toRetentionSnaps`.
 
 HTTP surface:
 
-- Agent/API (token): `server/server_handler_snapshots.go` -
+- Agent/API (token): `control/server_handler_snapshots.go` -
   `handleAgentSnapshotList`, `handleAgentSnapshotTake` (manual, `auto=false`),
   `handleAgentRestore` (rollback), `handleAgentSnapshotDelete`; routed in
-  `server/api.go` under `/api/apps/{app}/snapshots`. `writeSnapshotError` maps
+  `control/api.go` under `/api/apps/{app}/snapshots`. `writeSnapshotError` maps
   an unknown snapshot id to 404.
-- The `/info` guide (`server/server_handler_agent.go:agentGuide`) explicitly
+- The `/info` guide (`control/server_handler_agent.go:agentGuide`) explicitly
   tells agents to snapshot at intervals with a one-line reason, noting the
   automatic snapshots are coarse.
 - The built-in assistant takes a snapshot per turn via
-  `server/assistantops.go` (`o.apps.TakeSnapshot(..., false)`).
+  `control/assistantops.go` (`o.apps.TakeSnapshot(..., false)`).
 - Fork seeds a new app's subvolume from a snapshot subvolume
-  (`server/server_handler_apps.go:handleAppsFork` -> `app.Manager.Fork`).
+  (`control/server_handler_apps.go:handleAppsFork` -> `control.Manager.Fork`).
 
 ## Other notes
 

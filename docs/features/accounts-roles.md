@@ -96,9 +96,9 @@ and `Status` (`StatusPending`, `StatusActive`, `StatusDenied`), stored on
 override on `store.User.AppLimit`/`MemoryMB`/`DiskMB`, else the global setting,
 else the built-in defaults `defaultAppLimit`=3, `defaultMemoryMB`=512,
 `defaultDiskMB`=2048). `Defaults` / `SetDefaults` read and write the global
-settings. Enforcement: `server/server_handler_apps.go:checkAppLimit` rejects app
+settings. Enforcement: `control/server_handler_apps.go:checkAppLimit` rejects app
 creation past the app-count limit; memory and disk limits are applied to the
-container/qgroup at create time (`app/service.go` `SetMemoryLimit`,
+container/qgroup at create time (`node/machine_quota.go` `SetMemoryLimit`,
 `SetDiskLimit`). The global admin token (`c.user == nil`) is unlimited.
 
 **Tokens and keys.** Account-wide tokens (`user.Manager.CreateToken`) and
@@ -106,7 +106,7 @@ app-scoped tokens (`CreateAppToken` -- see `bring-your-own-agent.md`), and
 profile SSH keys (`AddKey`/`Keys`, granting access to all the user's apps), all
 hang off the same `Manager`. Only token hashes are stored (`user/service.go:hashToken`).
 
-**Authentication.** `server/auth.go:authenticate` resolves a caller from a
+**Authentication.** `control/auth.go:authenticate` resolves a caller from a
 session cookie or a `Bearer` token; `requireActive` gates on `StatusActive`,
 `requireAdmin` additionally on `RoleAdmin`. A pending user can still reach
 `/api/account` (authenticated-only) to see why they are waiting. The admin token
@@ -114,7 +114,7 @@ grants `globalAdmin`. When `config.Config.Breakglass` is set, an admin email can
 be signed in with the admin token without Google (`handleBreakglass`), for
 e2e/recovery.
 
-**Admin HTTP surface** (`server/server_handler_admin.go`, all behind
+**Admin HTTP surface** (`control/server_handler_admin.go`, all behind
 `requireAdmin`): `handleUsersList` (with each owner's assistant token total and
 cost, `assistant.CostUSD`), `handleUsersUpdate` (role/status/limits + assistant
 permissions), `handleUsersInvite`, `handleUsersDelete` (with the
@@ -126,7 +126,7 @@ separately. `store/assistantprefs.go`: a `user_assistant` row
 (`UserAssistant{ExternalAllowed, AllowedModels}`) is an explicit override; a
 missing row inherits the global defaults held in `setting`
 (`SettingAssistantDefaultExternal`, `SettingAssistantDefaultModels`,
-`SettingAssistantDefaultMode`). `server/assistantmodes.go` resolves it:
+`SettingAssistantDefaultMode`). `control/assistantmodes.go` resolves it:
 `effectiveUserAssistant` (override else defaults), `assistantOptions` (the modes
 a user may actually pick -- External Claude only if configured and allowed, plus
 the permitted API models), `fillUserAssistant` (populates the admin API

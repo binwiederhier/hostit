@@ -7,7 +7,7 @@ assistant turn are their own subsystems; see [`../subsystems/`](../subsystems/).
 
 Before the daemon touches anything it verifies the prerequisites it cannot run
 without, so a misconfigured host fails loudly at boot rather than lazily on the first
-app operation (`cmd/serve.go:execServe`, `cmd/preflight.go`).
+app operation (`cmd/control/serve.go:execServe`, `cmd/preflight.go`).
 
 ```mermaid
 flowchart TB
@@ -45,7 +45,7 @@ powered-off app stays off (`app/upgrade.go`).
 ## Creating an app
 
 The API answers as soon as the app exists; the container comes up behind it
-(`app/service.go:create`, `server/server_handler_apps.go`). The app's one subvolume
+(`control/manager.go:create`, `control/server_handler_apps.go`). The app's one subvolume
 is an instant snapshot of its image tag's base subvolume; the base itself is
 exported once per tag, in the background at startup, so create normally never
 waits on it.
@@ -78,7 +78,7 @@ An app that fails to start still exists: its URL shows hostit's "not running" pa
 rather than a dead hostname, and the owner can fix `hostit.yml` and deploy. Fork is
 the same flow, except the app subvolume is seeded from a writable btrfs snapshot of
 the source's whole subvolume rather than the base -- one CoW copy carrying the
-source's files AND installed packages (`app/service.go:Fork`,
+source's files AND installed packages (`control/manager.go:Fork`,
 `workspace/subvolume.go:ForkAppSubvolume`).
 
 ## Serving a request
@@ -104,7 +104,7 @@ sequenceDiagram
 
 By design there is no 502 path: no-such-host, lookup errors, and a proxy failure
 because the app is down all return the **same** 404 "nothing here" page
-(`server/proxy.go:newProxyHandler`, `proxyTo`), so a stopped app is indistinguishable
+(`control/proxy.go:newProxyHandler`, `proxyTo`), so a stopped app is indistinguishable
 from a free name. A request whose host matches the web hostname is handed to the
 REST/web handler instead of being proxied.
 
@@ -112,7 +112,7 @@ REST/web handler instead of being proxied.
 
 The session never touches a host shell. sshd runs the app user's login shell, which is
 hostit's own, and that execs into the container through a root helper
-(`cmd/shell.go`, `cmd/enter.go`).
+(`cmd/agent/shell.go`, `cmd/agent/enter.go`).
 
 ```mermaid
 sequenceDiagram
@@ -139,14 +139,14 @@ sequenceDiagram
 
 `hostit-enter` ignores its arguments when choosing a container, so an app user who
 calls it directly with someone else's name still lands in their own
-(`cmd/enter.go:execEnter`). scp, rsync and `ssh host <command>` get no banner; only an
-interactive human session does (`cmd/shell.go:execShell`).
+(`cmd/agent/enter.go:execEnter`). scp, rsync and `ssh host <command>` get no banner; only an
+interactive human session does (`cmd/agent/shell.go:execShell`).
 
 ## An agent deploying
 
 An app-scoped token reaches exactly one app's endpoints; the daemon refuses anything
-outside `/api/apps/<that-app>/` (`server/server_handler_agent.go`,
-`server/auth.go`).
+outside `/api/apps/<that-app>/` (`control/server_handler_agent.go`,
+`control/auth.go`).
 
 ```mermaid
 sequenceDiagram

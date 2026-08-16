@@ -1,11 +1,17 @@
-# Overview: one binary, running as root
+# Overview: four small binaries, running as root
 
-One binary (`heckel.io/hostit`) running as root is the entire control plane. It
-terminates TLS, proxies to apps, serves the web app and REST API, creates Unix users
-and containers, and answers a unix socket for the CLI inside each app. There is no
-separate scheduler, no message bus, no sidecar; the same binary is also the app-side
-CLI (`hostit deploy`) and PID 1 inside every container, so which commands it offers
-depends only on where it runs (`cmd/serve.go`, `cmd/shell.go`, `cmd/app.go`).
+The platform is four binaries from one module (`heckel.io/hostit`), each a thin
+main over its component package: `hostit-control` (TLS termination, web app,
+REST API, the registry, placement, snapshot/retention decisions),
+`hostit-node` (the machine half: Unix users, containers, subvolumes, port
+rules -- doing only what control commands over the `nodeapi` verbs),
+`hostit-proxy` (a dumb data plane serving a cached routing table), and
+`hostit` (the app-side CLI and PID 1 inside every container; which commands it
+offers depends on where it runs, `cmd/agent/`). There is no separate
+scheduler, no message bus, no sidecar. All four colocate on one host -- the
+diagram below shows that single-droplet shape; a remote node is the same node
+binary dialing control over mTLS (per-node certificates as plain config
+files, minted by `hostit-control node add`).
 
 ```mermaid
 flowchart TB
@@ -45,17 +51,17 @@ flowchart TB
 ```
 
 The dotted line is the only way in from an app: a unix socket where the kernel, not
-the caller, says which uid is calling (`server/socket.go:socketConnContext`). An app
+the caller, says which uid is calling (`control/socket.go:socketConnContext`). An app
 can therefore ask about itself and act on itself, and cannot name another app.
 
 Containers and app subvolumes are keyed on each app's stable id (`hostit-app-<id>`,
 `apps/<id>` -- the app's files live at `home/app` inside its subvolume), not its
 name, so a rename never moves anything on disk
-(`app/service.go:create`, `cmd/enter.go:containerKeyFromHome`).
+(`control/manager.go:create`, `cmd/agent/enter.go`).
 
 ## What each listener serves
 
-The daemon opens a handful of listeners in `server/service.go:Run`; a separate system
+The daemon opens a handful of listeners in `control/service.go:Run`; a separate system
 `sshd` handles SSH. All the HTTP surfaces below are same-origin, served by the one
 root daemon.
 
@@ -64,27 +70,27 @@ root daemon.
 | HTTPS proxy | `ListenHTTPS` (`:443`) | Terminates TLS (certmagic: a wildcard cert, or issued on demand). On the web hostname it hands off to the REST/web handler; on `<app>.<base>` or a custom domain it reverse-proxies to the app's loopback port. |
 | HTTP | `ListenHTTP` (`:80`) | ACME HTTP-01 challenges, and a redirect of everything else to HTTPS. When TLS is off, this becomes the plain-HTTP proxy instead. |
 | Admin API | `ListenAPI` (optional, e.g. `127.0.0.1:2900`) | The same REST/web handler over plain HTTP, for local admin use behind the firewall. |
-| Unix socket | `SocketFile` (`/run/hostit/hostit.sock`) | The app-side CLI (`hostit deploy/status/logs`, the login shell's `Self`/`Ensure`, and the sandboxed Claude Max tool calls), authorized by `SO_PEERCRED` (`server/socket.go`). World-connectable on purpose; the uid, not the caller, names the app. |
+| Unix socket | `SocketFile` (`/run/hostit/hostit.sock`) | The app-side CLI (`hostit deploy/status/logs`, the login shell's `Self`/`Ensure`, and the sandboxed Claude Max tool calls), authorized by `SO_PEERCRED` (`control/socket.go`). World-connectable on purpose; the uid, not the caller, names the app. |
 | sshd | `:22` (system service) | App logins. sshd runs the app user's login shell, `/usr/bin/hostit-shell`, which execs into the container; see [`isolation.md`](isolation.md) and [`flows.md`](flows.md). |
 
-The single web/REST handler (`server/service.go:New`, built by `newAPIHandler`) is
+The single web/REST handler (`control/service.go:New`, built by `newAPIHandler`) is
 one origin for all of these:
 
-- the React SPA (`web/`, embedded via `server/web.go`),
-- the REST API and the app-scoped agent API (`server/server_handler_*.go`),
-- Google OAuth and cookie sessions (`server/auth.go`, `server/session.go`),
-- the browser terminal WebSocket (`server/server_handler_terminal.go`),
-- the assistant's SSE stream (`server/server_handler_assistant.go`).
+- the React SPA (`web/`, embedded via `control/web.go`),
+- the REST API and the app-scoped agent API (`control/server_handler_*.go`),
+- Google OAuth and cookie sessions (`control/auth.go`, `control/session.go`),
+- the browser terminal WebSocket (`control/server_handler_terminal.go`),
+- the assistant's SSE stream (`control/server_handler_assistant.go`).
 
 The public proxy gets only the base security headers, so proxied tenant apps are not
 constrained by the platform's own CSP; the web/REST handler additionally gets the
-full CSP and framing denial (`server/service.go:New`, `server/headers.go`).
+full CSP and framing denial (`control/service.go:New`, `control/headers.go`).
 
 ## The built-in assistant, by credential presence
 
 The in-browser coding assistant has two possible backends, and each is switched on
 purely by the presence of its credential in the config (`config/config.go`,
-`server/service.go:New`):
+`control/service.go:New`):
 
 - an `anthropic-api-key` enables the metered Anthropic Messages backend
   (`Config.AssistantEnabled`);
@@ -98,7 +104,7 @@ assistant is nil and its routes report `enabled:false` cleanly. See
 
 ## Startup, briefly
 
-`cmd/serve.go:execServe` loads and validates the config, then refuses to run unless
+`cmd/control/serve.go:execServe` loads and validates the config, then refuses to run unless
 three non-negotiable prerequisites hold: it is root, every external binary it drives
 is installed, and the app-homes directory is on btrfs
 (`cmd/preflight.go:checkHostRequirements`, `requireBtrfs`). btrfs is mandatory:

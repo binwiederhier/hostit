@@ -28,11 +28,11 @@ on the name.** The app subvolume, its btrfs snapshots, the container, the system
 unit, tokens and all per-app database rows are id-keyed. The name is just a mutable
 label plus the Unix login. This is what makes rename cheap (nothing moves) and what
 lets the daemon translate a caller's name into node-local state at exactly one
-point (`app/deploy.go:appID`).
+point (`node/machine_deploy.go:appID`).
 
-Names are constrained (`app/service.go:AppNamePattern`, `^[a-z]([a-z0-9-]{0,30}[a-z0-9])?$`)
+Names are constrained (`control/manager.go:AppNamePattern`, `^[a-z]([a-z0-9-]{0,30}[a-z0-9])?$`)
 because a name has to be safe both as a Unix username and as a DNS label. A
-reserved-name list (`app/service.go:reservedNames`) blocks hostnames with special
+reserved-name list (`control/manager.go:reservedNames`) blocks hostnames with special
 meaning (`api`, `www`, `mail`, ...) and common system accounts.
 
 ## User flows
@@ -44,7 +44,7 @@ sequenceDiagram
     actor User
     participant Dashboard as Web dashboard
     participant Server as hostit server
-    participant Manager as app.Manager
+    participant Manager as control.Manager
     participant OS as SystemOps (useradd, nft)
     User->>Dashboard: "+ New app", type name
     Dashboard->>Server: POST /api/apps {name}
@@ -62,13 +62,13 @@ sequenceDiagram
 - **Create.** Dashboard `/api/apps` (`Dashboard.jsx` posts `{name}` then navigates
   to `/app/<name>`), or `hostit apps add <name> [-k key]`, or
   `POST /api/apps`. The server enforces the caller's app-count limit
-  (`server/server_handler_apps.go:checkAppLimit`), gathers the owner's profile SSH
-  keys and memory/disk limits, and calls `app.Manager.CreateApp`. The app is
+  (`control/server_handler_apps.go:checkAppLimit`), gathers the owner's profile SSH
+  keys and memory/disk limits, and calls `control.Manager.CreateApp`. The app is
   registered and then started in the background, so the API returns at once and the
   URL comes up shortly after.
 - **List.** Dashboard home, `hostit apps list`, or `GET /api/apps`. By default a
   caller sees only their own apps; an admin can pass `?all=true`
-  (`server/server_handler_apps.go:listedApps`). Each row carries live state (running
+  (`control/server_handler_apps.go:listedApps`). Each row carries live state (running
   dot, CPU/RAM/disk) merged in via `withState`.
 - **Open.** Two senses: "Open app" opens the app's public URL
   (`<name>.<base-domain>`) in a new tab; clicking the card opens the workspace page
@@ -82,10 +82,10 @@ sequenceDiagram
 
 ## Technical details
 
-- **Package `app`** (`app/service.go`) owns the lifecycle. `Manager` holds the
+- **Package `app`** (`control/manager.go`) owns the lifecycle. `Manager` holds the
   config, the store, a `SystemOps` for root-privileged OS work (useradd, loginctl,
   nft), and injected `btrfs`/`systemd`/`container` services.
-- **Create** flows `CreateApp` -> `create` (`app/service.go:create`, shared with
+- **Create** flows `CreateApp` -> `create` (`control/manager.go:create`, shared with
   fork). It validates the name (`validateName`), allocates the lowest free port in
   the configured range (`allocatePort`), mints `store.NewAppID`, creates the app's
   one id-keyed subvolume (an instant, metadata-only snapshot of its pinned image
@@ -98,7 +98,7 @@ sequenceDiagram
   daemon and sshd see past a running container's idmapped overmount), writes
   `authorized_keys` (the
   union of request keys and the owner's profile keys) and the skeleton
-  (`app/skeleton.go`, see [deploy.md](deploy.md)/[placeholder.md](placeholder.md)),
+  (`node/machine_skeleton.go`, see [deploy.md](deploy.md)/[placeholder.md](placeholder.md)),
   inserts the row (`store.AddApp`), records memory/disk limits and sets up the disk
   budget qgroup (the subvolume, capped on exclusive bytes), reconciles the
   per-app loopback firewall rules, and starts the app in a goroutine (`Up`).
@@ -107,8 +107,8 @@ sequenceDiagram
   `store.App` is the struct. Lookups are by name (`Store.App`), and `RemoveApp`
   looks the app up first so it can cascade-delete every per-app table by id.
 - **List**: `handleAppsList` -> `listedApps` -> `Store.Apps` / `AppsByOwner`, then
-  `appResponse` + `withState` (live state from `app/state.go:CachedStates`).
-- **Rename** (`app/rename.go:RenameApp`): validates the new name, stops the unit if
+  `appResponse` + `withState` (live state from `node/machine_state.go:CachedStates`).
+- **Rename** (`control/rename.go:RenameApp`): validates the new name, stops the unit if
   running (it is `Restart=always`, so it must be stopped, not just killed), force-kills
   leftover user processes so `usermod --login` is not blocked
   (`SystemOps.KillUserProcesses`, with a retry loop in `renameUser` for the
@@ -118,14 +118,14 @@ sequenceDiagram
   app. Nothing durable moves; the container keeps its `--hostname` until the next
   deploy recreates it. The server then calls `reloadDomains` so a custom domain
   follows the app to its new name.
-- **Delete** (`app/service.go:DeleteApp`): serialized by the per-app lock, it
+- **Delete** (`control/manager.go:DeleteApp`): serialized by the per-app lock, it
   disables the unit, resets its failed state, force-removes the container, deletes
   the app's btrfs subvolumes (the app subvolume + its snapshots), destroys its
   budget qgroup, deletes the Unix
   user, removes any leftover home dir, and finally `store.RemoveApp` (which cascades
   keys, snapshots, domains, events, usage, tokens, assistant session). The server
   also drops the app's assistant session (`handleAppsDelete`).
-- **Per-app lock** (`app/service.go:lockApp`): a per-app mutex serializes deploy,
+- **Per-app lock** (`control/manager.go:lockApp`): a per-app mutex serializes deploy,
   snapshot, rollback and delete so operations on one app's home never interleave.
 
 ## Other notes

@@ -44,7 +44,7 @@ sequenceDiagram
     participant Tab as Logs tab (AppLogs.jsx)
     participant API as hostit server
     participant Store as store (app_event)
-    participant Mgr as app.Manager
+    participant Mgr as control.Manager
     participant Log as log/app.log (in app home)
     User->>Tab: open Logs tab
     Tab->>API: GET /api/apps/{app}/events
@@ -68,7 +68,7 @@ sequenceDiagram
   token rotation, power on/off, reboot, start/stop/restart, snapshot, rollback,
   domain changes.
 - **App output over SSH/CLI:** `hostit logs` reads through the daemon; `hostit logs -f`
-  tails the agent's log file directly (`cmd/app.go:execLogs`), so follow works from
+  tails the agent's log file directly (`cmd/agent/app.go:execLogs`), so follow works from
   inside the container without a round trip.
 
 ## Technical details
@@ -81,12 +81,12 @@ sequenceDiagram
   name via a `COALESCE` subquery so the feed follows a rename. `AddEvent` inserts and
   then trims the app's log to the newest `maxAppEvents` (500). `AppEvents(app, limit)`
   returns newest-first.
-- **Writing events** (`server/events.go`): `recordEvent(appName, actor, level, action,
+- **Writing events** (`control/events.go`): `recordEvent(appName, actor, level, action,
   detail)` appends one row; a failure is logged, never returned ("auditing can never
   break the action it records"). `logAction(caller, app, action, detail)` is the
   common wrapper that attributes the event to the caller's email.
-- **Reading events** (`server/events.go:handleAppEvents`): `GET /api/apps/{name}/events`
-  (registered in `server/api.go`), owner/admin-gated via `ownedApp`, returns up to 100
+- **Reading events** (`control/events.go:handleAppEvents`): `GET /api/apps/{name}/events`
+  (registered in `control/api.go`), owner/admin-gated via `ownedApp`, returns up to 100
   `apiEventResponse` entries (`time`, `actor`, `level`, `action`, `detail`).
 
 ### App output
@@ -100,23 +100,23 @@ sequenceDiagram
 - **The log file** (`appctl/types.go:AppLogFile` = `log/app.log`, under the app home):
   `appLog` rotates to `app.log.old` once it passes `logMaxSize` (10 MiB), both on open
   and mid-write, so a long-running app's log cannot grow without bound.
-- **Reading the tail** (`app/deploy.go:Logs`): opens the app's `os.Root`, reads the log
+- **Reading the tail** (`node/machine_deploy.go:Logs`): opens the app's `os.Root`, reads the log
   file capped at `maxLogRead` (16 MiB, `app/files.go`), and returns the last `lines`
   via `tailLines`. Reading through the `os.Root` means a symlink the tenant planted
   cannot walk the daemon out of the home.
-- **The endpoint** (`server/server_handler_agent.go:handleAgentLogs`):
+- **The endpoint** (`control/server_handler_agent.go:handleAgentLogs`):
   `GET /api/apps/{app}/logs`, with `?lines=` bounded by `logLines` (default 100, max
   10000). An app with no output yet answers `"(no logs yet: ...)"` rather than an
   error.
-- **CLI:** `cmd/app.go:execLogs` (`hostit logs`, with `-f` tailing the file directly);
-  `cmd/apps.go:execRemoteLogs` (`hostit apps logs`) and `appctl.Controller.Logs` go
+- **CLI:** `cmd/agent/app.go:execLogs` (`hostit logs`, with `-f` tailing the file directly);
+  `cmd/agent/apps.go:execRemoteLogs` (`hostit apps logs`) and `appctl.Controller.Logs` go
   through the daemon.
 
 ## Other notes
 
 - **The app-process state** the status dot reflects is separate from the log: the
   agent writes `log/state` (running/stopped/crashed/idle), which the daemon reads in
-  `app/state.go:appProcessState`. The Logs tab shows output; the top bar shows the
+  `node/machine_state.go:appProcessState`. The Logs tab shows output; the top bar shows the
   live state. See [deploy.md](deploy.md).
 - **Two different "logs".** The activity feed is server-side audit data in SQLite; the
   app output is the container process's own stdout/stderr in a file in the app home.

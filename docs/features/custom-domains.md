@@ -84,10 +84,10 @@ sequenceDiagram
 
 ## Technical details
 
-Handlers and issuance (all in `server/server_handler_domains.go`):
+Handlers and issuance (all in `control/server_handler_domains.go`):
 
 - HTTP surface: `handleAppDomainsList`, `handleAppDomainAdd`,
-  `handleAppDomainVerify`, `handleAppDomainDelete` (routed in `server/api.go`
+  `handleAppDomainVerify`, `handleAppDomainDelete` (routed in `control/api.go`
   under `/api/apps/{name}/domains`). Admin-wide list of *approval* domains is a
   different feature; these are per-app custom domains.
 - `Server.addAppDomain` normalizes and validates the hostname
@@ -116,7 +116,7 @@ Handlers and issuance (all in `server/server_handler_domains.go`):
 - `dnsSolver` builds the `certmagic.DNS01Solver` for Route53
   (`config.DNSProviderRoute53`), with propagation delay/timeout.
 
-certmagic wiring (`server/service.go:runTLSServers`):
+certmagic wiring (`control/service.go:runTLSServers`):
 
 - In wildcard mode a *separate* `certmagic.Config` (`s.domainMagic`) is built on
   its own cache, whose DNS-01 solver sets `OverrideDomain =
@@ -131,7 +131,7 @@ certmagic wiring (`server/service.go:runTLSServers`):
 - Without a DNS provider (no wildcard), custom domains reuse the on-demand
   HTTP-01 config (`s.domainMagic = magic`) and only the traffic record is needed.
 
-Routing (`server/proxy.go:newProxyHandler`): an incoming request host is matched
+Routing (`control/proxy.go:newProxyHandler`): an incoming request host is matched
 first as `<app>.<base>` (`appNameFromHost`), then as a custom domain
 (`appNameFromCustomDomain`, which consults/loads the cache), then proxied to the
 app's loopback port.
@@ -148,7 +148,7 @@ first active domain in one query for the app list.
   certificate in certmagic storage to expire on its own; there is no revoke.
 - A rename does not move a domain: routing keys on the app id, and the rename
   handler calls `s.reloadDomains()` so the cache follows
-  (`server/server_handler_apps.go:handleAppsRename`).
+  (`control/server_handler_apps.go:handleAppsRename`).
 - Validation forbids wildcards, trailing dots, bare TLDs, and any hostname hostit
   already owns; a domain already attached to some app returns
   `store.ErrAppDomainExists` (409).

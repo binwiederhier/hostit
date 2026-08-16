@@ -139,7 +139,7 @@ zoom: 0.9
 # How `app.Manager` composes the services
 
 `app.Manager` decides *what* an app needs and delegates the *how* to the service that
-owns each host tool (`app/service.go:NewManager`).
+owns each host tool (`control/manager.go:NewManager`).
 
 ```mermaid {scale: 0.72}
 flowchart TB
@@ -282,7 +282,7 @@ sequenceDiagram
 ```
 
 <div class="mt-2 text-sm opacity-60">
-Entry: <code>app/service.go:create</code>. A fresh app is reachable before you build
+Entry: <code>control/manager.go:create</code>. A fresh app is reachable before you build
 anything -- the skeleton ships a static placeholder page.
 </div>
 

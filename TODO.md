@@ -8,30 +8,31 @@ everything imaginable -- if it is not written down here it is not planned.
 - is "hostit apps" api really necessary?
 - what is v1/self and why is it not just the same api as the main api?
 
-## Multi-node: the four-service split (IN PROGRESS on the multinode branch)
+## Multi-node: the four-service split (BUILT on the multinode branch)
 
-Decided design (2026-08-16): FOUR binaries, each its own systemd service,
+Shipped design (2026-08-16): FOUR binaries, each its own systemd service,
 colocatable on one host -- `hostit-control` (web app + API, owns the SQLite
-registry, placement, certs, assistant), `hostit-node` (dials control; all
-machine-local ops: users, containers, btrfs, ports, os.OpenRoot files),
-`hostit-proxy` (dials control; dumb data plane serving <app>.<base> ->
-<node-ip>:port from a locally cached routing table, so apps keep serving while
-control/node restart), and `hostit-agent` (unchanged: PID 1 in the app
-container). mTLS REQUIRED for cross-host IPC (per-node CN certs from a
-control-owned CA; one-time join token; no steady-state bearer token); unix
-sockets for colocated services; transport is raw TLS + yamux carrying HTTP
-both ways over the node-dialed connection. Full design incl. rejoin handshake
-and route propagation: `plans/260807-hostit-multinode.md`; execution plan:
-`plans/260815-hostit-nodeagent.md`; slides:
-`docs/slides/presentations/multinode.md`.
+registry, placement, certs, assistant, snapshot/retention decisions),
+`hostit-node` (dials control; all machine-local ops as `node.Machine`, doing
+only what control commands over the `nodeapi` verbs), `hostit-proxy` (dials
+control; dumb data plane from a cached routing table) and `hostit` (CLI +
+in-container agent). Identity is per-node mTLS certificates as plain config
+files (`node-cert-file`/`node-key-file`/`cluster-ca-cert-file`), minted by
+`hostit-control node add`; colocated nodes use the auto-minted set under
+data-dir/ipc. There is no join protocol. Packages: `control`, `node`,
+`nodeapi` (contract), `proxy`; the old `app`/`server`/`noded` are gone.
+Design history: `plans/260807-hostit-multinode.md`,
+`plans/260815-hostit-nodeagent.md`, `plans/260816-hostit-package-architecture.md`.
 
-Done so far (multinode branch): Phase 1 complete -- app.uid column, the
-provision/deprovision seam, the NodeAgent interface with the Manager as the
-in-process implementation, all callers routed through it, e2e-gated on stage.
-Phase 2 in progress: node package (CA + duplex transport + NodeAgent RPC with
-sentinel-preserving errors) done; next are the three binaries + serve
-subcommands, enrollment, the proxy route cache, the rejoin handshake, ansible
-units, and the stage cutover over localhost mTLS.
+Running on the two-node stage (colocated split), full e2e green. Remaining
+before calling multi-node DONE:
+
+- **A genuinely remote node** (second droplet) has never been exercised; the
+  one-host stage masks cross-host assumptions (two bugs of exactly that shape
+  were found and fixed on 2026-08-16: assistant tools and rename both ran on
+  control's local machine). Bring up a real second node, run the full e2e.
+- **Prod cutover** from the fused v0.12.0 daemon to the split services:
+  ansible units, migration order, and an explicitly approved release.
 
 ## Resource allocation
 

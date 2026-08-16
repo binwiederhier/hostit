@@ -34,7 +34,7 @@ pages zoom in on one mechanism each.
   shipped and started: goreleaser and the `.deb`, the example Ansible role, the
   startup preflight, and why agents only pick up an upgrade on a restart.
 - [seams-and-testing.md](seams-and-testing.md) -- the injection seams
-  (`SystemOps`, `run.Runner`, the service packages) that let `app.Manager` be
+  (`SystemOps`, `run.Runner`, the service packages) that let `control.Manager` be
   built and tested without root, and how that same node-local seam is what a
   future control/app-node split would remote.
 

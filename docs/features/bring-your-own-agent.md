@@ -89,19 +89,19 @@ moment it is created; `RotateAppToken` replaces it. Unlike account-wide tokens
 (`store/token.go`, `store/types.go:Token`) so the app page can render the prompt
 again. Tokens are keyed on app id so they survive a rename, and move with the app
 on owner transfer (`store/user.go:TransferApps`). The app API exposes the token
-to the owner as `agent_token` (`server/server_handler_apps.go:agentToken`, rotated
+to the owner as `agent_token` (`control/server_handler_apps.go:agentToken`, rotated
 via `POST /api/apps/{name}/token`).
 
-**Authentication and scope enforcement.** `server/auth.go:authenticate`
+**Authentication and scope enforcement.** `control/auth.go:authenticate`
 resolves a `Bearer` token to a `caller` with an `appScope`
-(`user/service.go:UserAndScopeByToken`). `server/auth.go:authenticated` rejects
+(`user/service.go:UserAndScopeByToken`). `control/auth.go:authenticated` rejects
 any request whose path is outside that scope
-(`server/auth.go:withinAppScope`), and `server/server_handler_agent.go:requireApp`
+(`control/auth.go:withinAppScope`), and `control/server_handler_agent.go:requireApp`
 additionally refuses if `{app}` in the path is not the token's app. An app
 created with the global admin token has no owner, but its app token still works
 (scoped to that app only).
 
-**The self-describing endpoint.** `server/server_handler_agent.go` registers the
+**The self-describing endpoint.** `control/server_handler_agent.go` registers the
 per-app API under `/api/apps/{app}/` in `newAgentRoutes` -- the prefix is exactly
 what an app token may reach. `handleAgentInfo` (`GET /api/info`) and
 `handleAgentAppInfo` (`GET /api/apps/{app}/info`) both return
@@ -113,13 +113,13 @@ README, file list, current `hostit.yml`, and SSH command. When the app has a
 `description`, the guide switches to its "already built, do not rebuild" shape.
 
 **Continuity with the built-in assistant.**
-`server/server_handler_agent.go:handleAgentAssistant`
+`control/server_handler_agent.go:handleAgentAssistant`
 (`GET /api/apps/{app}/assistant/transcript`) renders the built-in assistant's
 session as markdown via `assistant/transcript.go:RenderTranscript`, or
 `{"enabled":false}` when no assistant is configured. The guide tells the agent
 to read this first.
 
-**The always-fresh live preview.** `server/proxy.go` reverse-proxies
+**The always-fresh live preview.** `control/proxy.go` reverse-proxies
 `<app>.<base-domain>` to the app's loopback port. `proxy.go:isPreviewRequest`
 recognizes a preview load two ways: the top-level document by its
 `hostit_preview` query param (`proxy.go:previewParam`), and its same-origin

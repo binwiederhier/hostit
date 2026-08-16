@@ -38,7 +38,7 @@ app is a stub.
 sequenceDiagram
     actor User
     participant API as hostit server
-    participant Mgr as app.Manager
+    participant Mgr as control.Manager
     participant Static as static file server
     User->>API: create app
     API->>Mgr: CreateApp
@@ -59,16 +59,16 @@ sequenceDiagram
 
 - **The page:** `app/skeleton/public/index.html`, embedded via
   `//go:embed skeleton/public/index.html` into `skeletonPublicIndex`
-  (`app/skeleton.go`). It is a self-contained HTML document with inline CSS
+  (`node/machine_skeleton.go`). It is a self-contained HTML document with inline CSS
   (light/dark aware), a "Ready" badge, the "Nothing here yet" heading, and the hostit
   wordmark. Embedding (not inlining a string literal) keeps the markup in its own file.
 - **The config:** `app/skeleton/hostit.yml` is `mode: static`, with the description
   field and the `mode: app` alternative documented inline as comments.
-- **Wired via the skeleton:** `app/skeleton.go:skeletonFiles` returns the initial home
+- **Wired via the skeleton:** `node/machine_skeleton.go:skeletonFiles` returns the initial home
   files: `hostit.yml`, `public/index.html` (the placeholder), a templated `README.md`
   (`app/skeleton/readme.md`) that tells the reader the app is a stub, and `.hushlogin`.
-- **Applied on create:** `app/service.go:create` calls
-  `SystemOps.WriteSkeleton(name, home, skeletonFiles(...))` for a fresh (non-fork) app.
+- **Applied on create:** `control/manager.go:create` calls
+  the node's Provision, which writes `skeletonFiles(...)` (`node/machine_skeleton.go`) for a fresh (non-fork) app.
   `WriteSkeleton` never overwrites existing files.
 - **Served like any static app:** a `mode: static` app is served straight from
   `public/`; there is no per-app process for the placeholder (see [deploy.md](deploy.md)
@@ -78,12 +78,12 @@ sequenceDiagram
 ## Other notes
 
 - **A fork does not get the placeholder.** Forking seeds the home from the source and
-  skips the skeleton (`app/service.go:create`, the `forking` branch), so a fork serves
+  skips the skeleton (`control/manager.go:create`, the `forking` branch), so a fork serves
   whatever the source served. See [fork.md](fork.md).
 - **The placeholder is only the default, not a lock-in.** Editing `public/index.html`
   (or switching to `mode: app`) and deploying replaces it. The skeleton `README.md` and
   the agent guide steer whoever comes next to do exactly that, and to keep a one-line
   `description:` so the next session starts from what the app already is
-  (`server/server_handler_agent.go:agentGuide`).
+  (`control/server_handler_agent.go:agentGuide`).
 - **Related:** [deploy.md](deploy.md) (the modes and the deploy path) and
   [apps-lifecycle.md](apps-lifecycle.md) (create, which installs the skeleton).

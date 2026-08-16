@@ -72,7 +72,7 @@ variable, including the assistant credentials whose *presence* is the whole swit
 ## Start: the preflight
 
 `hostit serve` refuses to run on a host it cannot support, up front, rather than
-failing lazily on the first app operation (`cmd/serve.go:execServe` calls
+failing lazily on the first app operation (`cmd/control/serve.go:execServe` calls
 `cmd/preflight.go`). Two gates:
 
 **`checkHostRequirements`** (`cmd/preflight.go`):
@@ -121,7 +121,7 @@ migrations that moved pre-v0.11 hosts onto this layout have been removed;
 upgrading from an older release goes through v0.11.x first. It then kicks off
 background work:
 build the shared workspace image and export its base rootfs subvolume, restart
-stale agents, prune superseded images and unpinned bases (`cmd/serve.go`, the
+stale agents, prune superseded images and unpinned bases (`cmd/control/serve.go`, the
 `go func`), reconcile orphaned units/containers/app-subvolumes/budget-qgroups
 against the registry (`app/reconcile.go`), and start the periodic loops (disk
 usage, state, hourly snapshots, custom-domain retry).
@@ -140,7 +140,7 @@ bug it prevents -- a static app once kept serving its old directory through an
 upgrade this way, with the app's whole home on the internet.
 
 So an upgrade must actively reach the agents. On startup, once the new `Version` is
-set (`cmd/serve.go`, `app.Version = c.App.Version`), `RestartStaleAgents` compares
+set (`cmd/control/serve.go`, `app.Version = c.App.Version`), `RestartStaleAgents` compares
 the stored `agent_version` setting to the running build and, if it changed, brings
 every **enabled** app **Up** (`Up`, not a bare restart -- a new binary may want the
 container built differently, and only `apply` notices that), then records the new

@@ -2,7 +2,7 @@
 
 Each app is created as four things at once: a Unix user, a btrfs subvolume (the
 container's whole filesystem, with the app's files inside it), a podman
-container, and a loopback port with a firewall rule (`app/service.go:create`). Each
+container, and a loopback port with a firewall rule (`control/manager.go:create`). Each
 of those carries one boundary, and the daemon holds all the privilege; nothing an app
 does escalates, because it starts as an unprivileged uid and every path back into
 hostit identifies it by that uid.
@@ -46,7 +46,7 @@ flowchart TB
 ### Per-app Unix user and uid-block idmap
 
 Each app owns a **65536-wide contiguous uid/gid block**: `uidFor(port) = 1000000 +
-(port - PortMin) * 65536` (`app/service.go:uidFor`, `workspace/spec.go` block
+(port - PortMin) * 65536` (`control/manager.go:uidFor`, `workspace/spec.go` block
 constants). The container is created by the root daemon but mapped
 `--uidmap 0:<base>:65536` (and the matching `--gidmap`), so container root *is* the
 app's unprivileged host uid and the whole block maps one-to-one
@@ -86,7 +86,7 @@ firewall package installs an nftables `output`-hook rule per app port: a connect
 `127.0.0.0/8` (and `::1`) on that port is dropped unless the calling socket's uid is
 `0` (the proxy) or the app's own base uid (`firewall/service.go:renderRuleset`). The
 ruleset is rebuilt from the registry (the source of truth) whenever apps change
-(`app/service.go:ReconcilePortRules`), applied atomically by replacing the whole
+(`control/manager.go:ReconcilePortRules`), applied atomically by replacing the whole
 `inet hostit` table.
 
 ### `os.OpenRoot` file containment
@@ -108,12 +108,12 @@ out ownership, wherever the link pointed.
 App users' login shell is `/usr/bin/hostit-shell` (set at user creation,
 `app/system.go`), not a host shell. On login it identifies the app over the unix
 socket, ensures the container is up, prints the banner, then hands off to a narrow
-sudoers grant, `sudo -n hostit-enter` (`cmd/shell.go:execShell`). The privileged
+sudoers grant, `sudo -n hostit-enter` (`cmd/agent/shell.go:execShell`). The privileged
 `hostit enter` half runs as root but derives the target container from `SUDO_UID`
 (the app's id, dug out of the caller's home directory path,
 its `<id>/home/app` tail), **never** from its
 arguments, so an app user who invokes it directly with someone else's name still lands
-in their own container (`cmd/enter.go:execEnter`). The caller's arguments only ever
+in their own container (`cmd/agent/enter.go:execEnter`). The caller's arguments only ever
 become the command run *inside* their own container, and the privileged exec runs with
 a minimal, non-inherited environment.
 

@@ -48,7 +48,7 @@ Either credential on its own turns the assistant on
 (`config.Config.AssistantAvailable`); both being present offers both in the
 dropdown. This replaced an earlier design where the option could be shown while
 the backend was unwired, silently running the API model and mislabelling the
-reply (see `server/service.go:New`).
+reply (see `control/service.go:New`).
 
 Design tradeoffs worth recording:
 
@@ -111,7 +111,7 @@ sequenceDiagram
 
 **Packages.** The loop and its backends live in `assistant/`; the HTTP surface,
 the adapters to the rest of hostit, and the mode/permission logic live in
-`server/`.
+`control/`.
 
 **The API loop.** `assistant/service.go:Manager` owns everything. `Manager.Send`
 reserves a run slot (`reserveRun`), claims the app's session (`session.begin`),
@@ -137,7 +137,7 @@ with `ephemeralCache`), and only the last `maxContextTurns` (12) human turns
 `refresh_preview`, `snapshot`, `list_snapshots`, `rollback`).
 `assistant/tools.go:DispatchTool` is the single place they execute, shared by
 both backends, against `assistant/tools.go:AppOps`. The server implements
-`AppOps` over `app.Manager` in `server/assistantops.go:appOps` (with an
+`AppOps` over `control.Manager` in `control/assistantops.go:appOps` (with an
 `assistantReadCap` of 128 KB on reads). `refresh_preview` is a UI-only signal:
 the tool call on the event stream tells the browser to reload the preview.
 
@@ -150,7 +150,7 @@ the tool call on the event stream tells the browser to reload the preview.
 (`"external-claude"`, labelled `config.ExternalClaudeLabel` = `"Claude.ai"`)
 routes a turn to `assistant/claude.go:Manager.runClaudeTurn`, which calls
 `assistant/claude.go:ClaudeRunner` -- implemented by
-`server/assistantclaude.go:claudeBackend` over `assistant/sandbox.go:Sandbox`.
+`control/assistantclaude.go:claudeBackend` over `assistant/sandbox.go:Sandbox`.
 The sandbox runs a pinned `claude -p` inside a locked-down podman container
 (uid-mapped to the app, MCP-only tools via `mcpToolGlob`, every built-in tool
 denied via `disallowedBuiltins`), advertising the same tool surface over an MCP
@@ -162,21 +162,21 @@ falls back to the API model; `dedupeToolIDs` repairs tool-call ids so the
 fallback turn is not rejected by the Messages API. (The step-limit "paused"
 notice applies to the API loop only; the sandbox runs claude's own agent loop.)
 
-**HTTP surface** (`server/server_handler_assistant.go`):
+**HTTP surface** (`control/server_handler_assistant.go`):
 `handleAssistant` (POST a message, `202`), `handleAssistantStream` (SSE, with a
 same-origin gate and a keepalive), `handleAssistantStop`,
 `handleAssistantTranscript` (GET history + running state + mode options),
 `handleAssistantUpload` / `handleAssistantUploadDelete` (chat attachments into
 `uploads/`, images read back with a 6 MB cap so the model can see them).
 
-**Modes and permissions** (`server/assistantmodes.go`): `assistantOptions`
+**Modes and permissions** (`control/assistantmodes.go`): `assistantOptions`
 computes the modes a user may pick (External Claude + allowed API models),
 `resolveMode` picks the mode a turn actually runs (request -> app's remembered
 mode -> global default -> first allowed), and the choice is persisted per app
 via `store.Store.SetAppAssistantMode`. `config.Config.ModeOptions` /
 `IsValidMode` / `DefaultAPIModel` back this.
 
-**Persistence and accounting.** `server/assistantops.go:appTranscripts` stores
+**Persistence and accounting.** `control/assistantops.go:appTranscripts` stores
 the conversation as one JSON blob (`store/assistant.go`, keyed on app id so it
 survives a rename) and accumulates per-turn token usage
 (`store.Store.AddAssistantUsage`). `assistant/pricing.go:CostUSD` prices that
@@ -187,7 +187,7 @@ usage for the admin UI.
 `maxSubsPerApp` = 64, buffered at `subChanBuffer` = 256; a slow subscriber is
 dropped and recovers by reloading). `runTimeout` bounds a turn at 15 minutes.
 
-**Wiring.** `server/service.go:New` constructs the `Manager` when
+**Wiring.** `control/service.go:New` constructs the `Manager` when
 `conf.AssistantAvailable()`, and calls `SetClaudeRunner` when
 `conf.ClaudeBackendEnabled()`.
 

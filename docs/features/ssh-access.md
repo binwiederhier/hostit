@@ -83,7 +83,7 @@ Key management (the daemon side):
 
 - `ssh/service.go:Service.WriteAuthorizedKeys` writes through the chained files
   root the caller hands it
-  (`app/service.go:writeKeysIn` opens it via `homefs.Service.OpenRoot`); it
+  (`control/manager.go:writeKeysIn` opens it via `homefs.Service.OpenRoot`); it
   refuses if `.ssh` is not a real directory (`ssh/service.go:ErrNotDirectory`).
   The results stay root-owned and world-readable (0755 `.ssh`, 0644
   `authorized_keys`): the host's `sshd` reads them as the app user (StrictModes
@@ -97,18 +97,18 @@ Key management (the daemon side):
 - `ssh/service.go:ValidateKeys` (wrapped by `app/util.go:validateKeys`) rejects
   unparseable keys before anything is written.
 - The full key set for an app is app keys plus the owner's profile keys:
-  `app/service.go:Manager.create` composes `sshKeys` and calls
-  `WriteAuthorizedKeys`; `app/service.go:Manager.SyncKeys` /
+  `control/manager.go:Manager.create` composes `sshKeys` and calls
+  `WriteAuthorizedKeys`; `control/manager.go:Manager.SyncKeys` /
   `Manager.writeKeys` rewrite it when profile keys change; `systemOps`
   delegates to the ssh service in `app/system.go:systemOps.WriteAuthorizedKeys`.
 - Profile keys live on the user: `store/userkey.go`, exposed through
   `user/service.go:Manager.AddKey` / `Manager.KeyStrings`, and pushed to every
-  owned app by `server/server_handler_account.go:Server.syncUserAppKeys` when a
+  owned app by `control/server_handler_account.go:Server.syncUserAppKeys` when a
   key is added or deleted.
 - The create/set-keys HTTP surface is
-  `server/server_handler_apps.go:handleAppsCreate` (profile keys via
+  `control/server_handler_apps.go:handleAppsCreate` (profile keys via
   `s.users.KeyStrings`, request keys from `apiCreateAppRequest.SSHKeys`) and
-  `handleAppsSetKeys`; the request shapes are in `server/types.go`
+  `handleAppsSetKeys`; the request shapes are in `control/types.go`
   (`SSHKeys []string`).
 
 The login path (what happens on connect):
@@ -117,12 +117,12 @@ The login path (what happens on connect):
   in the `hostit-apps` group: `unixuser/service.go:Service.Create` /
   `createUserArgs`.
 - `hostit-shell` is a one-line wrapper that `exec`s `hostit shell`
-  (`cmd/shell.go:cmdShell` / `execShell`). It skips flag parsing so `sshd`'s
+  (`cmd/agent/shell.go:cmdShell` / `execShell`). It skips flag parsing so `sshd`'s
   `-c <command>` is passed through untouched, ensures the container is up via
   `appctl` (`ctl.Self()` / `ctl.Ensure()`), prints `loginBanner` only when
   `isTerminal(os.Stdin)` and there is no forced command, then `exec`s
   `sudo -n /usr/bin/hostit-enter <TERM> [args...]`.
-- `hostit-enter` (`cmd/enter.go:cmdEnter` / `execEnter`) is the privileged half.
+- `hostit-enter` (`cmd/agent/enter.go:cmdEnter` / `execEnter`) is the privileged half.
   It must run as root, derives the caller from `SUDO_UID` (never from
   arguments), and resolves the target container from the caller's *home
   directory path* via `containerKeyFromHome` (`app.IDFromHomeDir` digs the id
@@ -150,7 +150,7 @@ sshd forwarding hardening:
 - The SSH host reported to clients is `config/config.go:Config.SSHHostname`
   (`ssh-host`, defaulting to the base domain); it is what the app page and the
   agent `/info` response print as the ready-made `ssh <app>@<host>` command
-  (`server/server_handler_agent.go:handleAgentAppInfo`, `apiSSHInfo`).
+  (`control/server_handler_agent.go:handleAgentAppInfo`, `apiSSHInfo`).
 - hostit never generates a key pair; an app with no keys is API-only until a key
   is added. This is intentional (no private key to hand out or store).
 - Whether SSH is usable at all is a property of the owner's profile, not the app,

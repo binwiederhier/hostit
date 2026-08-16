@@ -8,8 +8,10 @@ all of these; which commands it offers depends on where it runs (see
 
 | Package | Owns |
 |---|---|
-| `server` | HTTP: the TLS-terminating proxy, REST API, app-scoped agent API, OAuth, sessions, the peercred unix socket, terminal WebSocket, assistant SSE |
-| `app` | an app's whole lifecycle; composes the service packages below and holds naming, ports and identity |
+| `control` | the control plane: TLS-terminating proxy, REST API + web app, OAuth, sessions, the peercred unix socket, terminal WebSocket, assistant SSE -- plus the `Manager` that orchestrates app lifecycles (creation/deletion, placement, ports, ownership, retention) |
+| `node` | the machine half: the `Machine` that owns this host's containers, unix users, subvolumes, port rules, files and state (implementing `nodeapi.NodeAgent`), the node daemon's serve loop, and the mTLS/yamux transport |
+| `nodeapi` | the control<->node wire contract: the `NodeAgent` verbs, `ControlSink` callbacks, specs, sentinel errors, and the app-name rule |
+| `proxy` | the standalone data plane (`hostit-proxy`): serves `<app>.<base>` from a locally cached routing table |
 | `btrfs` | subvolumes, read-only snapshots, reflink copies, qgroup disk budgets |
 | `container` | podman: create, exec, remove, image build/list, rootfs export |
 | `workspace` | the app-container spec (`CreateArgs`, `--rootfs` + uid map, config hash) and its storage: the workspace image (build input), per-tag base subvolumes, and the per-app subvolumes (one writable subvolume per app: the container's whole OS tree, files at `home/app` inside) |
@@ -26,20 +28,21 @@ all of these; which commands it offers depends on where it runs (see
 | `appctl` | the `hostit.yml` contract and the client for the app-side CLI over the unix socket |
 | `agent` | PID 1 inside a container: supervises the app's run command, rotates its log |
 | `assistant` | the in-browser AI agent (an Anthropic Messages loop whose tools are one app's REST surface) plus the Claude Max subscription sandbox |
-| `cmd` | the CLI: `serve`, the app commands, `admin`, the hidden `internal`/`enter`/`shell`/`agent` group, and the startup preflight |
+| `cmd/{control,node,proxy,agent}` | one thin `main` per binary: `hostit-control`, `hostit-node`, `hostit-proxy`, and `hostit` (the host CLI + in-container agent commands) |
+| `preflight` | the startup host checks (btrfs, tooling) shared by control and node |
 | `config` | server config (`/etc/hostit/server.yml`) and its defaults |
 | `client` | Go client for the REST API, used by `hostit apps` |
-| `web` | React 19 + Vite SPA (dashboard, app workspace, admin); built into `server/site/` |
+| `web` | React 19 + Vite SPA (dashboard, app workspace, admin); built into `control/site/` |
 
-## How `app.Manager` composes the services
+## How `control.Manager` composes the services
 
-`app.Manager` decides *what* an app needs and delegates the *how* to the service that
-owns each host tool (`app/service.go:NewManager`). It holds three service structs
+`control.Manager` decides *what* an app needs and delegates the *how* to the service that
+owns each host tool (`control/manager.go:NewManager`). It holds three service structs
 directly plus a `SystemOps` interface and the shared runner:
 
 ```mermaid
 flowchart TB
-    mgr["app.Manager"]
+    mgr["control.Manager"]
     mgr --> btrfs["btrfs.Service<br/>subvolumes, snapshots, qgroups"]
     mgr --> systemd["systemd.Service<br/>per-app units"]
     mgr --> container["container.Service<br/>podman"]
@@ -78,14 +81,14 @@ literals:
 
 | Blob | Source | Embedded in |
 |---|---|---|
-| Built web SPA | `server/site/` | `server/web.go` (a placeholder is checked in so the package always compiles) |
-| 404 "nothing here" page | `server/errorpage.html` | `server/errorpage.go` |
+| Built web SPA | `control/site/` | `control/web.go` (a placeholder is checked in so the package always compiles) |
+| 404 "nothing here" page | `control/errorpage.html` | `control/errorpage.go` |
 | Workspace image recipe | `workspace/workspace.Containerfile` | `workspace/service.go` |
 | App skeleton (`hostit.yml`, README) | `app/skeleton/` | `app/skeleton.go` |
 | New-app placeholder page | `app/skeleton/public/index.html` | `app/skeleton.go` (served as a `mode: static` app) |
 
 The SPA is a separate app under `web/`; `make web` builds it and copies the output
-into `server/site/`, which `server/web.go` bakes into the binary. The SPA, REST API,
+into `control/site/`, which `control/web.go` bakes into the binary. The SPA, REST API,
 agent API, OAuth, terminal WebSocket and assistant SSE are all same-origin, served by
 the one root daemon.
 
@@ -98,7 +101,7 @@ Code is split per concern into small files rather than a few grab-bags:
 - `store` has one file per entity: `app.go`, `snapshot.go`, `domain.go`, `event.go`,
   `token.go`, `setting.go`, `user.go`, ... plus `migrate.go` for the ordered,
   version-recording migrations.
-- `server` keeps its HTTP handlers in `server_handler_<topic>.go` files (thin
+- `control` keeps its HTTP handlers in `server_handler_<topic>.go` files (thin
   orchestration over the service packages: `_apps`, `_agent`, `_files`, `_domains`,
   `_snapshots`, `_assistant`, `_terminal`, `_auth`, `_account`, `_admin`, `_self`),
   with the router, middleware and response helpers in `api.go`, `auth.go`,

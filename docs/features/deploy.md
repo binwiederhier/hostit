@@ -31,7 +31,7 @@ should be a single verb. `hostit.yml` is that contract (`appctl/config.go`).
 The two modes cover the two things people actually deploy: a bag of static files,
 and a process that listens on a port. Static mode needs zero configuration because
 there is exactly one place static files go (`public/`), so there is nothing to point
-at and nothing to get wrong (`appctl/config.go:Command`, `cmd/app.go:execStatic`).
+at and nothing to get wrong (`appctl/config.go:Command`, `cmd/agent/app.go:execStatic`).
 App mode is the general escape hatch: any language, any framework, as long as it
 binds `$PORT`.
 
@@ -56,7 +56,7 @@ anything else written anywhere in it survive it.
 sequenceDiagram
     actor Dev as Owner / agent
     participant API as hostit server (REST)
-    participant Mgr as app.Manager
+    participant Mgr as control.Manager
     participant Podman as container/systemd
     participant Agent as in-container agent (PID 1)
     Dev->>API: POST /api/apps/{app}/deploy
@@ -75,12 +75,12 @@ sequenceDiagram
     Agent->>Agent: prepare step, then run: command, output -> log/app.log
 ```
 
-- **From inside the container / over SSH:** `hostit deploy` (`cmd/app.go:execDeploy`)
+- **From inside the container / over SSH:** `hostit deploy` (`cmd/agent/app.go:execDeploy`)
   posts to the daemon's unix socket (`appctl.Controller.Deploy` ->
   `POST /v1/self/deploy`), which the socket authenticates by peer uid. This is the
   same code path the SSH login banner and `hostit guide` point people at.
 - **Remotely:** `hostit apps deploy <app>` or `POST /api/apps/{app}/deploy` with a
-  Bearer token (`server/server_handler_agent.go:handleAgentDeploy`).
+  Bearer token (`control/server_handler_agent.go:handleAgentDeploy`).
 - **Editing the config:** the owner edits `hostit.yml` (Files tab, SSH, or an agent's
   file PUT), then deploys. Static apps just upload files under `public/`.
 
@@ -94,16 +94,16 @@ sequenceDiagram
   `Command(hostitBin)` returns `hostit static` for static mode, else the `run:`
   string. The agent parses leniently (`ParseAppConfig`) and simply idles on a
   half-written config.
-- **Reading the config safely** (`app/deploy.go:loadConfig`): the daemon reads
+- **Reading the config safely** (`node/machine_deploy.go:loadConfig`): the daemon reads
   `hostit.yml` through the app's chained `os.Root` (`homefs.Service.OpenRoot`: the
   subvolume root first, then `home/app` resolved inside it), so a symlink the
   tenant planted cannot walk the root daemon out of the subvolume, and the read is
   capped (`maxConfigSize`).
-- **Deploy entry points** (`app/deploy.go`): `Up` (locks the app, takes a pre-deploy
+- **Deploy entry points** (`node/machine_deploy.go`): `Up` (locks the app, takes a pre-deploy
   snapshot, then `apply`), `up` (unlocked variant for rollback), `Ensure` (used on
   SSH login: makes sure the container exists and runs, never recreates a live
   container, falls back to an idle workspace without a valid config).
-- **`apply`** (`app/deploy.go:apply`) is the convergence step. It ensures the app's
+- **`apply`** (`node/machine_deploy.go:apply`) is the convergence step. It ensures the app's
   subvolume exists (`workspace/subvolume.go:EnsureAppSubvolume` -- a snapshot of
   its pinned tag's base subvolume, a no-op for an existing subvolume, which is
   **never** recreated), computes the desired container create args
@@ -150,7 +150,7 @@ sequenceDiagram
   (`workspace/subvolume.go:EnsureBase`), and every app's subvolume is an instant
   snapshot of its pinned tag's base -- so a Containerfile change only affects new
   apps, and an existing app's subvolume is never touched.
-- **CLI static server:** `cmd/app.go:execStatic` (`hostit static`) serves `~/public`
+- **CLI static server:** `cmd/agent/app.go:execStatic` (`hostit static`) serves `~/public`
   with `appctl.StaticHandler`; this is what a `mode: static` app runs, including a
   brand-new app (whose skeleton ships `public/index.html`, the placeholder).
 - **Serialization:** image builds / base exports and `/run` execs are each
@@ -164,7 +164,7 @@ sequenceDiagram
   inline as comments. So a brand-new app already serves the placeholder page; see
   [placeholder.md](placeholder.md).
 - **`prepare:` is bounded only by the agent, not the request.** A one-off build over
-  `/run` is capped (a minute by default, five max, `app/exec.go`); anything longer
+  `/run` is capped (a minute by default, five max, `node/machine_exec.go`); anything longer
   belongs in `prepare:`, which the agent runs on its own time on every deploy.
 - **A crash loop is visible in the logs**, not the deploy response: `apply` returns as
   soon as the unit is started; whether the `run:` command then binds `$PORT` is seen

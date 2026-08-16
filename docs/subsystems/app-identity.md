@@ -29,7 +29,7 @@ flowchart LR
 ## What keys on the id
 
 The id is minted at create time and put on the `App` struct before anything is
-built (`app/service.go:create`, `ID: store.NewAppID()`), specifically so the app
+built (`control/manager.go:create`, `ID: store.NewAppID()`), specifically so the app
 subvolume can be created id-named. From then on:
 
 - **App subvolume:** `apps/<id>` (`workspace/subvolume.go:AppSubvolumePath`,
@@ -80,7 +80,7 @@ about avoiding the restart, not about data.)
 ```mermaid
 sequenceDiagram
     participant O as Owner
-    participant M as app.Manager
+    participant M as control.Manager
     participant SD as systemd
     participant OS as usermod
     participant S as SQLite

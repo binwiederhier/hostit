@@ -50,7 +50,7 @@ sequenceDiagram
     actor User
     participant API as hostit server
     participant UM as user.Manager (Limits)
-    participant AM as app.Manager
+    participant AM as control.Manager
     participant Btrfs as btrfs qgroup
     User->>API: POST /api/apps {name}
     API->>AM: checkAppLimit(caller)
@@ -85,7 +85,7 @@ sequenceDiagram
   `default_memory_mb`, `default_disk_mb`) with built-in fallbacks
   (`defaultAppLimit = 3`, `defaultMemoryMB = 512`, `defaultDiskMB = 2048`).
   `SetDefaults` persists them.
-- **Server plumbing** (`server/server_handler_apps.go`): `callerMemoryLimit` and
+- **Server plumbing** (`control/server_handler_apps.go`): `callerMemoryLimit` and
   `callerDiskLimit` resolve the caller's caps (the global admin token uses instance
   defaults); `checkAppLimit` counts the owner's apps (`Store.AppCountByOwner`) against
   `AppLimit` and returns `app.ErrLimitReached` when at or over it.
@@ -99,34 +99,34 @@ sequenceDiagram
 
 ### Memory limit
 
-- Recorded per app in `Manager.memoryMB` (`app/deploy.go:SetMemoryLimit` /
+- Recorded per app in `Manager.memoryMB` (`node/machine_deploy.go:SetMemoryLimit` /
   `memoryLimit`), cached in memory rather than only in the DB so redeploys keep it.
 - Applied when the container is (re)created: `workspace/spec.go:CreateArgs`
   adds `--memory <MB>m` when the limit is > 0 (0 means unlimited). The kernel enforces
   it via cgroups.
-- Live usage is read from `podman stats` (`app/state.go:resourceUsage`, parsed by
+- Live usage is read from `podman stats` (`node/machine_state.go:resourceUsage`, parsed by
   `parseMemMB`) and surfaced in `State.MemoryMB`.
 
 ### Disk budget
 
-- Each app has one hierarchical qgroup, `1/<uid>` (`app/budget.go:budgetGroup`,
+- Each app has one hierarchical qgroup, `1/<uid>` (`node/machine_budget.go:budgetGroup`,
   keyed on the app's unix uid: stable across renames, unique per app). Its members
   are the app's one subvolume and every snapshot subvolume
-  (`app/budget.go:ensureBudget`; the snapshot service joins each subvolume it
+  (`node/machine_budget.go:ensureBudget`; the snapshot service joins each subvolume it
   creates via `snapshot.Host.AssignBudget`).
 - The group is capped on **exclusive bytes** (`btrfs/service.go:QgroupLimitExclusive`
   -> `btrfs qgroup limit -e <MB>M`): the app pays for what it alone pins, while data
   still shared with the read-only base is charged to nobody. This is a
   **hard** limit: a write past it fails with `EDQUOT` -- in `/home/app` or anywhere
   else inside the container. Quota accounting is enabled at every start
-  (`app/budget.go:EnableDiskBudgets`).
+  (`node/machine_budget.go:EnableDiskBudgets`).
 - A stored `disk_mb` of 0 (or less) is enforced as the 2048 MB default
-  (`app/budget.go:effectiveDiskCapMB`); nothing is unlimited.
-- Recorded per app in `Manager.diskMB` (`app/quota.go:SetDiskLimit` / `diskLimit`);
+  (`node/machine_budget.go:effectiveDiskCapMB`); nothing is unlimited.
+- Recorded per app in `Manager.diskMB` (`node/machine_quota.go:SetDiskLimit` / `diskLimit`);
   `SetDiskLimit` re-caps the budget group. The budget is set up at create/fork and
   re-ensured at startup; a rollback needs no re-application, because the staged
   copy joins the group before the swap and qgroup membership survives the rename.
-- **Usage accounting** (`app/quota.go:RefreshDiskUsage` / `DiskUsageLoop`,
+- **Usage accounting** (`node/machine_quota.go:RefreshDiskUsage` / `DiskUsageLoop`,
   `measureDiskMB`): reads the budget group's exclusive bytes
   (`btrfs.ExclusiveUsageMB`, cheap and accurate, no directory walk) -- the true
   bytes the app pins, i.e. what deleting it would free. A fresh app shows next
@@ -152,8 +152,8 @@ sequenceDiagram
 
 - **The budget spans the whole app.** The one subvolume and its snapshots are one
   number: an `apt-get install` competes with uploaded files and retained snapshot
-  divergence for the same `disk_mb`. Treat the code (`app/budget.go`,
-  `app/quota.go`) as authoritative.
+  divergence for the same `disk_mb`. Treat the code (`node/machine_budget.go`,
+  `node/machine_quota.go`) as authoritative.
 - **The disk budget is shared** by everything in the app (the app process, builds,
   logs, uploaded files, dependencies, installed packages). A build that fans out
   past the budget fails rather than taking the host with it -- as does one past the
@@ -163,7 +163,7 @@ sequenceDiagram
   takes to exhaust the host.
 - **Changing a user's limits does not retroactively resize existing apps' caps** in
   the running daemon beyond what a redeploy re-applies; disk is re-applied on
-  create/fork and at every daemon start (`applyStoredLimits` in `cmd/serve.go`),
+  create/fork and at every daemon start (`applyStoredLimits` in `cmd/control/serve.go`),
   memory on the next container (re)create.
 - **Related:** [apps-lifecycle.md](apps-lifecycle.md) (create enforces the app-count
   limit and applies the caps), [fork.md](fork.md) (also counts against the app limit

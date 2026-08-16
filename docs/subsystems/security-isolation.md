@@ -14,7 +14,7 @@ them together.
 
 Each app is created as four things together: a Unix user, a btrfs subvolume (the
 container's whole filesystem, with the app's files at `home/app` inside it), a
-podman container, and a loopback port with an nftables rule (`app/service.go:create`).
+podman container, and a loopback port with an nftables rule (`control/manager.go:create`).
 Each boundary does one job.
 
 | Boundary | Mechanism | What it stops |
@@ -47,7 +47,7 @@ flowchart TB
 ## App vs app: the contiguous uid block
 
 Every app owns a **65536-wide contiguous uid/gid block**, one per app, spaced so
-blocks never overlap (`app/service.go:uidFor`):
+blocks never overlap (`control/manager.go:uidFor`):
 
 ```
 uidFor(port) = uidBlockStart + (port - PortMin) * uidBlockSize
@@ -131,7 +131,7 @@ published ports) or the **app's own base uid**. Both IPv4 (`127.0.0.0/8`) and
 IPv6 (`::1`) loopback are covered.
 
 The ruleset is rebuilt from the registry, not patched incrementally
-(`app/service.go:ReconcilePortRules`): it lists every app, looks up each uid, and
+(`control/manager.go:ReconcilePortRules`): it lists every app, looks up each uid, and
 applies the full set. This runs on create, delete, and startup reconcile, so the
 rules always match the registry, and a failure (nft absent in a dev setup) is
 logged, not fatal. The rule is keyed to the uid, which is why the uid block and
@@ -219,23 +219,23 @@ sequenceDiagram
 ```
 
 - `hostit-shell` is a one-line wrapper that execs `hostit shell`
-  (`cmd/shell.go:execShell`). It identifies the app via the peercred socket,
+  (`cmd/agent/shell.go:execShell`). It identifies the app via the peercred socket,
   ensures the container is up, greets only an interactive human (scp/rsync see
   nothing but their protocol), then execs `sudo -n /usr/bin/hostit-enter`. It
   **never falls back to a host shell** -- the container is the user's environment.
-- `hostit-enter` is the privileged half (`cmd/enter.go:execEnter`), reachable
+- `hostit-enter` is the privileged half (`cmd/agent/enter.go:execEnter`), reachable
   only through a narrow sudoers grant (`hostit.sudoers`:
   `%hostit-apps ALL=(root) NOPASSWD: /usr/bin/hostit-enter`). It **ignores its
   arguments when choosing a target**: it derives the caller from `SUDO_UID`,
   resolves that user's home, and digs the app id out of the home path
-  (its `<id>/home/app` tail, `cmd/enter.go:containerKeyFromHome` ->
+  (its `<id>/home/app` tail, `cmd/agent/enter.go:containerKeyFromHome` ->
   `app.IDFromHomeDir`). So an app user who calls `hostit-enter`
   directly with someone else's name still lands in their own container. The
   caller contributes only `$TERM` (regex-validated) and a single command string,
   passed as individual argv, never through a shell on the root side; podman runs
   with a `minimalEnv`, not the caller's environment.
 
-This is why `cmd/enter.go` imports as little as possible: it is the only code that
+This is why `cmd/agent/enter.go` imports as little as possible: it is the only code that
 runs as root on behalf of an app user, so its blast radius is kept small.
 
 ## sshd forwarding hardening
@@ -273,8 +273,8 @@ on itself is a channel where identity is a fact the app cannot forge.**
 
 - **From inside a container:** the unix socket at `/run/hostit/hostit.sock`. The
   daemon reads the connection's peer credentials with `SO_PEERCRED`
-  (`server/socket.go:socketConnContext`), so the **kernel**, not the caller, says
-  which uid is connecting. `selfApp` (`server/socket.go:selfApp`) maps that uid to
+  (`control/socket.go:socketConnContext`), so the **kernel**, not the caller, says
+  which uid is connecting. `selfApp` (`control/socket.go:selfApp`) maps that uid to
   the app and scopes the handler to it. A process in a container carries the app's
   host uid through the mounted socket, so this works identically inside and
   outside a container. An app can therefore ask about *itself* and act on
