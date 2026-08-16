@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"time"
 
 	"heckel.io/hostit/store"
@@ -22,21 +23,27 @@ import (
 type ProvisionSpec struct {
 	// Host is the target node id; the control plane's routing agent sends the
 	// spec there (the row does not exist yet when provisioning starts).
-	Host     string   `json:"host"`
-	ID       string   // Stable app id; subvolume and container are keyed on it
-	Name     string   // Unix account name (today: the app name)
-	Port     int      // Loopback port; the uid block derives from it
-	SSHKeys  []string // Full authorized_keys set (request + profile keys)
-	SeedPath string   // Fork seed subvolume; "" builds a fresh app with the skeleton
-	URL      string   // The app's public URL, for the skeleton's welcome page
-	DiskMB   int      // Resolved disk cap; the budget qgroup is created and capped BEFORE the subvolume
+	Host    string   `json:"host"`
+	ID      string   // Stable app id; subvolume and container are keyed on it
+	Name    string   // Unix account name (today: the app name)
+	Port    int      // Loopback port; the uid block derives from it
+	SSHKeys []string // Full authorized_keys set (request + profile keys)
+	// SeedAppID/SeedSnapshotID name the fork seed (the source app's subvolume,
+	// or one of its snapshots); empty SeedAppID builds a fresh app with the
+	// skeleton. IDs, not paths: the NODE resolves them against its own pool --
+	// a control-computed absolute path is wrong on any node whose apps-dir is
+	// not control's.
+	SeedAppID      string `json:"seed_app_id"`
+	SeedSnapshotID string `json:"seed_snapshot_id"`
+	URL            string // The app's public URL, for the skeleton's welcome page
+	DiskMB         int    // Resolved disk cap; the budget qgroup is created and capped BEFORE the subvolume
 }
 
 // Provision builds the app on this machine: subvolume (fresh or fork seed),
 // unix user, authorized keys, and -- for a fresh app -- the demo skeleton. On
 // failure it rolls back its own partial work and the machine is clean again.
 func (m *Manager) Provision(spec *ProvisionSpec) error {
-	forking := spec.SeedPath != ""
+	forking := spec.SeedAppID != ""
 	// The budget qgroup exists and is capped BEFORE the subvolume, which is then
 	// snapshotted INTO it (-i): membership is atomic at creation, so the cap
 	// enforces from the app's first byte. A later "qgroup assign" would leave
@@ -53,7 +60,11 @@ func (m *Manager) Provision(spec *ProvisionSpec) error {
 	// idmap-mounts it, so creation is a metadata snapshot and nothing more.
 	subvol := m.appSubvolumeByID(spec.ID)
 	if forking {
-		if err := m.workspace.ForkAppSubvolume(spec.SeedPath, spec.ID, group); err != nil {
+		seedPath := m.appSubvolumeByID(spec.SeedAppID)
+		if spec.SeedSnapshotID != "" {
+			seedPath = filepath.Join(m.config.AppsDir, snapshotsDirName, spec.SeedAppID, spec.SeedSnapshotID)
+		}
+		if err := m.workspace.ForkAppSubvolume(seedPath, spec.ID, group); err != nil {
 			return fmt.Errorf("cannot seed %s: %w", spec.Name, err)
 		}
 	} else {
@@ -116,16 +127,16 @@ func (m *Manager) startInBackground(name string, forking bool) {
 // (paths, ids, snapshots) resolve nothing.
 type DeprovisionSpec struct {
 	// Host is the node the app lives on, captured before the row is removed.
-	Host      string `json:"host"`
+	Host string `json:"host"`
+	// ID keys everything on-disk (subvolume, snapshots dir); the node resolves
+	// the paths against its own pool.
+	ID        string
 	Name      string
 	Port      int
 	UID       int // The budget qgroup key; UIDKnown guards a failed lookup
 	UIDKnown  bool
 	Unit      string
 	Container string
-	Subvol    string
-	SnapsRoot string
-	SnapPaths []string
 }
 
 // Deprovision tears the app down on this machine; it runs in the background
@@ -141,12 +152,18 @@ func (m *Manager) Deprovision(spec *DeprovisionSpec) {
 	_ = m.systemd.ResetFailed(spec.Unit)
 	_ = m.container.RemoveForce(spec.Container)
 	// The app subvolume and its snapshots are subvolumes that userdel's
-	// rm -rf cannot remove, so delete them first.
-	for _, path := range spec.SnapPaths {
-		_ = m.btrfs.DeleteSubvolume(path)
+	// rm -rf cannot remove, so delete them first. Snapshot ids come from THIS
+	// pool's directory, not the spec: the mirror rows are already gone when
+	// the teardown runs, and paths must be node-local anyway.
+	subvol := m.appSubvolumeByID(spec.ID)
+	snapsRoot := filepath.Join(m.config.AppsDir, snapshotsDirName, spec.ID)
+	if entries, err := os.ReadDir(snapsRoot); err == nil {
+		for _, e := range entries {
+			_ = m.btrfs.DeleteSubvolume(filepath.Join(snapsRoot, e.Name()))
+		}
 	}
-	_ = os.RemoveAll(spec.SnapsRoot)
-	_ = m.btrfs.DeleteSubvolume(spec.Subvol)
+	_ = os.RemoveAll(snapsRoot)
+	_ = m.btrfs.DeleteSubvolume(subvol)
 	if err := m.user.Delete(spec.Name); err != nil {
 		slog.Warn("Cannot delete the app's unix user; a later create at this uid cleans up", "app", spec.Name, "error", err)
 	}
@@ -154,8 +171,8 @@ func (m *Manager) Deprovision(spec *DeprovisionSpec) {
 	// subvolume holding it was removed above, and any recreated stub is
 	// root-owned -- so remove whatever is left, or an empty stub is orphaned
 	// under AppsDir.
-	if err := os.RemoveAll(spec.Subvol); err != nil {
-		slog.Warn("Could not remove leftover app directory after deleting app", "app", spec.Name, "path", spec.Subvol, "error", err)
+	if err := os.RemoveAll(subvol); err != nil {
+		slog.Warn("Could not remove leftover app directory after deleting app", "app", spec.Name, "path", subvol, "error", err)
 	}
 	// The name is reusable the moment the unix user is gone: release it
 	// BEFORE the qgroup polling below, which can wait a while for the

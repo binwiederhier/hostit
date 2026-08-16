@@ -262,7 +262,7 @@ func (m *Manager) lockApp(name string) func() {
 // of the request keys and the owner's profile keys; an app with neither is fine,
 // since apps are driven through the API and SSH is opt-in.
 func (m *Manager) CreateApp(name string, opts *CreateOptions) (*store.App, error) {
-	return m.create(name, opts, "")
+	return m.create(name, opts, nil)
 }
 
 // Fork duplicates an existing app into a new one: the new app's subvolume is
@@ -274,12 +274,13 @@ func (m *Manager) CreateApp(name string, opts *CreateOptions) (*store.App, error
 // fork gets its own port, Unix user, subdomain and container. Requires btrfs
 // (the snapshot primitive it relies on).
 func (m *Manager) Fork(source, newName, snapshotID string, opts *CreateOptions) (*store.App, error) {
-	if _, err := m.store.App(source); err != nil {
+	src, err := m.store.App(source)
+	if err != nil {
 		return nil, err
 	}
 	// Seed from a specific snapshot if asked, else from the source's current
-	// subvolume.
-	seedPath := m.appSubvolume(source)
+	// subvolume. The seed travels as IDs -- the node resolves them against its
+	// own pool.
 	if snapshotID != "" {
 		snap, err := m.store.Snapshot(snapshotID)
 		if err != nil {
@@ -288,20 +289,23 @@ func (m *Manager) Fork(source, newName, snapshotID string, opts *CreateOptions) 
 		if snap.AppName != source {
 			return nil, store.ErrSnapshotNotFound
 		}
-		seedPath = m.snapshotPath(source, snapshotID)
 	}
+	// A fork always lands on the source's node: the seed subvolume is a
+	// node-local btrfs path there.
+	if opts == nil {
+		opts = &CreateOptions{}
+	}
+	opts.Host = hostOrLocal(src.Host)
 	// Lock the source so its subvolume/snapshot is not rolled back or deleted
 	// mid-copy; the new app's own deploy runs under its own lock in the background.
-	// A fork always lands on the source's node: the seed subvolume is a
-	// node-local btrfs path.
-	if src, err := m.store.App(source); err == nil {
-		if opts == nil {
-			opts = &CreateOptions{}
-		}
-		opts.Host = hostOrLocal(src.Host)
-	}
 	defer m.lockApp(source)()
-	return m.create(newName, opts, seedPath)
+	return m.create(newName, opts, &seedRef{AppID: src.ID, SnapshotID: snapshotID})
+}
+
+// seedRef names a fork's seed for the provision spec: ids, never paths.
+type seedRef struct {
+	AppID      string
+	SnapshotID string
 }
 
 // create registers a new app. With seedPath == "" it writes the demo app's
@@ -313,7 +317,7 @@ func (m *Manager) Fork(source, newName, snapshotID string, opts *CreateOptions) 
 // authorized_keys are the union of the request keys and the owner's profile
 // keys; an app with neither is fine, since apps are driven through the API and
 // SSH is opt-in.
-func (m *Manager) create(name string, opts *CreateOptions, seedPath string) (*store.App, error) {
+func (m *Manager) create(name string, opts *CreateOptions, seed *seedRef) (*store.App, error) {
 	if opts == nil {
 		opts = &CreateOptions{}
 	}
@@ -333,7 +337,7 @@ func (m *Manager) create(name string, opts *CreateOptions, seedPath string) (*st
 	defer m.releasePort(port)
 
 	appKeys := opts.RequestKeys
-	forking := seedPath != ""
+	forking := seed != nil
 
 	// Mint the app's stable id up front: the app subvolume (and its snapshots) are
 	// keyed on the id, not the name, so a later rename never moves them. The id is
@@ -364,14 +368,16 @@ func (m *Manager) create(name string, opts *CreateOptions, seedPath string) (*st
 	// node-local half. On failure the row goes away again (and the mirror
 	// with it); the node's provision cleans up its own partial state.
 	spec := &ProvisionSpec{
-		Host:     host,
-		ID:       app.ID,
-		Name:     name,
-		Port:     port,
-		SSHKeys:  append(append([]string{}, appKeys...), opts.ProfileKeys...),
-		SeedPath: seedPath,
-		URL:      m.URL(&store.App{Name: name, Port: port}),
-		DiskMB:   m.DiskLimit(name),
+		Host:    host,
+		ID:      app.ID,
+		Name:    name,
+		Port:    port,
+		SSHKeys: append(append([]string{}, appKeys...), opts.ProfileKeys...),
+		URL:     m.URL(&store.App{Name: name, Port: port}),
+		DiskMB:  m.DiskLimit(name),
+	}
+	if seed != nil {
+		spec.SeedAppID, spec.SeedSnapshotID = seed.AppID, seed.SnapshotID
 	}
 	if err := m.node.Provision(spec); err != nil {
 		_ = m.store.RemoveApp(name)
@@ -421,23 +427,18 @@ func (m *Manager) DeleteApp(name string) error {
 		return err
 	}
 	// Everything the teardown needs is captured NOW: once the rows are gone,
-	// name-keyed lookups (paths, ids, snapshots) resolve nothing.
-	uid, uidErr := m.user.LookupUID(name)
+	// name-keyed lookups (paths, ids, snapshots) resolve nothing. The uid
+	// comes from the row (recorded at create, backfilled for older apps), not
+	// a machine lookup -- the unix user lives on the app's node, not here.
 	spec := &DeprovisionSpec{
 		Host:      hostOrLocal(a.Host),
+		ID:        a.ID,
 		Name:      name,
 		Port:      a.Port,
-		UID:       uid,
-		UIDKnown:  uidErr == nil,
+		UID:       a.UID,
+		UIDKnown:  a.UID != 0,
 		Unit:      m.unitName(name),
 		Container: m.containerName(name),
-		Subvol:    m.appSubvolumeByID(a.ID),
-		SnapsRoot: m.snapshotsRoot(name),
-	}
-	if snaps, err := m.store.Snapshots(name); err == nil {
-		for _, snap := range snaps {
-			spec.SnapPaths = append(spec.SnapPaths, m.snapshotPath(name, snap.ID))
-		}
 	}
 	if err := m.store.RemoveApp(name); err != nil {
 		unlock()

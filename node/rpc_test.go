@@ -130,7 +130,7 @@ func TestRPCProvisionRoundTrips(t *testing.T) {
 	remote := startRPC(t, agent)
 	require.NoError(t, remote.Provision(&app.ProvisionSpec{ID: "aaa", Name: "blog", Port: 10000}))
 	assert.Contains(t, agent.calls, "provision:blog:10000")
-	remote.Deprovision(&app.DeprovisionSpec{Name: "blog", Subvol: "/x"})
+	remote.Deprovision(&app.DeprovisionSpec{Name: "blog", ID: "aaa"})
 	assert.Contains(t, agent.calls, "deprovision:blog")
 }
 
