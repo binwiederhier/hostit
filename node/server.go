@@ -108,7 +108,6 @@ func Serve(configPath, version string) error {
 	go machine.DiskUsageLoop(done)
 	machine.SeedStates()
 	go machine.StateLoop(done)
-	go machine.SnapshotLoop(time.Hour, done)
 	go machine.QgroupSweepLoop(6*time.Hour, done)
 
 	// Dial control forever: serve the RPC over the mTLS connection; on death,

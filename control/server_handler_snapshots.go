@@ -52,6 +52,8 @@ func (s *Server) handleAgentSnapshotTake(w http.ResponseWriter, r *http.Request,
 		writeSnapshotError(w, err)
 		return
 	}
+	// Retention is control's call now: prune after every successful take.
+	s.apps.PruneSnapshots(a.Name)
 	detail := "Took a snapshot"
 	if req.Label != "" {
 		detail = "Took a snapshot: " + req.Label
@@ -68,6 +70,8 @@ func (s *Server) handleAgentRestore(w http.ResponseWriter, r *http.Request, c *c
 		writeSnapshotError(w, err)
 		return
 	}
+	// The rollback took a safety snapshot on the node; prune under the policy.
+	s.apps.PruneSnapshots(a.Name)
 	s.logAction(c, a.Name, "rollback", "Rolled back to an earlier snapshot")
 	writeJSON(w, http.StatusOK, &apiMessageResponse{Message: "rolled back to " + id})
 }

@@ -32,11 +32,6 @@ func (m *Machine) Rollback(name, id string) error {
 	return m.snapshots.Rollback(name, id)
 }
 
-// SnapshotLoop takes an automatic snapshot of every app on an interval (hourly).
-func (m *Machine) SnapshotLoop(interval time.Duration, done <-chan struct{}) {
-	m.snapshots.SnapshotLoop(interval, done)
-}
-
 // snapshotHost adapts the Manager to snapshot.Host: it exposes the per-app lock,
 // the unlocked deploy path, the id-keyed path/name/uid lookups and the disk
 // budget assignment the snapshot Service calls back for. It is a thin binding,

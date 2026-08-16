@@ -260,3 +260,32 @@ func (f *fakeRunner) reset() {
 	defer f.mu.Unlock()
 	f.commands = nil
 }
+
+// Retention is control's decision now: a take must record its snapshot and
+// NOTHING else -- no matter how many records already exist, the node never
+// prunes on its own (control applies the policy and commands deletions).
+func TestTakeSnapshotDoesNotPrune(t *testing.T) {
+	t.Parallel()
+	svc, _, r, st := newTestService(t)
+	require.NoError(t, st.AddApp(&store.App{Name: "blog", Port: 10000, Host: store.HostLocal}))
+	// Far more automatic records than the retention policy keeps.
+	now := time.Now()
+	for i := 0; i < 80; i++ {
+		require.NoError(t, st.AddSnapshot(&store.Snapshot{
+			ID:        snapshotID(now.Add(-time.Duration(i)*time.Hour), "seed"),
+			AppName:   "blog",
+			Label:     AutoSnapshotLabel,
+			CreatedAt: now.Add(-time.Duration(i) * time.Hour),
+			Auto:      true,
+		}))
+	}
+	r.reset()
+
+	_, err := svc.TakeSnapshot("blog", AutoSnapshotLabel, true)
+	require.NoError(t, err)
+
+	snaps, err := svc.ListSnapshots("blog")
+	require.NoError(t, err)
+	assert.Len(t, snaps, 81, "all 80 seeds and the new snapshot survive the take")
+	assert.NotContains(t, r.ran(), "subvolume delete", "no prune deletions on take")
+}

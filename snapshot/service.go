@@ -19,7 +19,6 @@ import (
 
 	"heckel.io/hostit/btrfs"
 	"heckel.io/hostit/container"
-	"heckel.io/hostit/retention"
 	"heckel.io/hostit/store"
 	"heckel.io/hostit/systemd"
 )
@@ -35,10 +34,10 @@ const (
 	// rollback proceeds.
 	rollbackStagedSuffix = ".rollback-staged"
 	rollbackOldSuffix    = ".rollback-old"
-	// autoSnapshotLabel labels the hourly automatic snapshots, and
+	// AutoSnapshotLabel labels the hourly automatic snapshots, and
 	// preDeploySnapshotLabel the one taken just before a deploy, so the owner sees
 	// why each unattended snapshot exists instead of a blank row.
-	autoSnapshotLabel      = "Automated snapshot"
+	AutoSnapshotLabel      = "Automated snapshot"
 	preDeploySnapshotLabel = "Automated snapshot before deploy"
 )
 
@@ -149,7 +148,6 @@ func (s *Service) takeSnapshot(name, label string, auto bool) (*store.Snapshot, 
 			slog.Warn("Snapshot post hook failed", "app", name, "error", err)
 		}
 	}
-	s.pruneSnapshots(name)
 	s.host.SnapshotsChanged(name)
 	return snap, nil
 }
@@ -197,8 +195,7 @@ func (s *Service) DeleteSnapshot(name, id string) error {
 // the app without a subvolume:
 //
 //  1. stage a writable copy of the target snapshot (before touching the live
-//     subvolume, and before the safety snapshot -- whose retention prune could
-//     otherwise delete the very target being restored);
+//     subvolume, so the content is captured before anything else happens);
 //  2. take a safety snapshot of the current state (so the rollback is itself undoable);
 //  3. power the container down (disable the unit and remove the container -- the
 //     subvolume being swapped IS the container's rootfs, so nothing may run it
@@ -230,8 +227,7 @@ func (s *Service) Rollback(name, id string) error {
 	oldSubvol := subvol + rollbackOldSuffix
 
 	// Stage the restored subvolume from the target first, so the live one stays
-	// intact until the replacement is ready, and the content is safely captured
-	// before the safety snapshot's retention prune (which could remove the target).
+	// intact until the replacement is ready.
 	_ = s.btrfs.DeleteSubvolume(staged) // clear any leftover from an aborted rollback
 	if err := s.btrfs.Snapshot(s.host.SnapshotPath(name, id), staged, false, s.host.BudgetGroup(name)); err != nil {
 		return fmt.Errorf("cannot stage the snapshot for rollback: %w", err)
@@ -239,8 +235,8 @@ func (s *Service) Rollback(name, id string) error {
 	// The staged copy was created inside the disk budget (-i above) and becomes
 	// the app's subvolume after the swap; qgroup membership survives the rename.
 
-	// The safety snapshot is itself automatic (retention prunes it in time) and
-	// labelled so the owner can see what it captured.
+	// The safety snapshot is itself automatic (control's retention prunes it in
+	// time) and labelled so the owner can see what it captured.
 	if _, err := s.takeSnapshot(name, "Before rolling back to snapshot "+id, true); err != nil {
 		_ = s.btrfs.DeleteSubvolume(staged)
 		return fmt.Errorf("cannot take a safety snapshot before rolling back: %w", err)
@@ -275,23 +271,6 @@ func (s *Service) Rollback(name, id string) error {
 	return s.host.Up(name)
 }
 
-// pruneSnapshots deletes the snapshots that fall outside the retention policy,
-// removing both the subvolume and the record.
-func (s *Service) pruneSnapshots(name string) {
-	snaps, err := s.store.Snapshots(name)
-	if err != nil {
-		return
-	}
-	_, prune := retention.Apply(toRetentionSnaps(snaps), retention.Default)
-	for _, p := range prune {
-		if err := s.btrfs.DeleteSubvolume(s.host.SnapshotPath(name, p.ID)); err != nil {
-			slog.Warn("Cannot delete pruned snapshot subvolume", "app", name, "id", p.ID, "error", err)
-			continue // keep the record so we retry, rather than orphan the subvolume
-		}
-		_ = s.store.DeleteSnapshot(p.ID)
-	}
-}
-
 // DeleteAppSubvolumes removes an app's subvolume and all its snapshot
 // subvolumes, used when an app is deleted. On a btrfs host `btrfs subvolume
 // delete` cleans the whole subvolume; the caller then removes whatever stub
@@ -303,37 +282,6 @@ func (s *Service) DeleteAppSubvolumes(name string) {
 	}
 	_ = os.RemoveAll(s.host.SnapshotsRoot(name))
 	_ = s.btrfs.DeleteSubvolume(s.host.AppSubvolume(name))
-}
-
-// SnapshotLoop takes an automatic snapshot of every app on an interval (hourly),
-// so an owner always has a recent point to roll back to.
-func (s *Service) SnapshotLoop(interval time.Duration, done <-chan struct{}) {
-	slog.Info("Starting snapshot loop", "interval", interval)
-	defer slog.Info("Stopping snapshot loop")
-	for {
-		select {
-		case <-time.After(interval):
-		case <-done:
-			return
-		}
-		apps, err := s.store.Apps()
-		if err != nil {
-			continue
-		}
-		for _, a := range apps {
-			if _, err := s.TakeSnapshot(a.Name, autoSnapshotLabel, true); err != nil {
-				slog.Warn("Hourly snapshot failed", "app", a.Name, "error", err)
-			}
-		}
-	}
-}
-
-func toRetentionSnaps(ss []*store.Snapshot) []retention.Snapshot {
-	out := make([]retention.Snapshot, len(ss))
-	for i, s := range ss {
-		out[i] = retention.Snapshot{ID: s.ID, App: s.AppName, Label: s.Label, CreatedAt: s.CreatedAt, Auto: s.Auto}
-	}
-	return out
 }
 
 // snapshotID builds a sortable, unique id from a timestamp: seconds precision plus

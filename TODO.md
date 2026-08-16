@@ -158,14 +158,15 @@ definitions and the conversation prefix are cache-marked, so repeat turns pay th
   fix would sweep hostit-apps group members whose home lies under THIS node's
   pool and whose name matches no mirror row. Needs a List on unixuser.
 
-- **Snapshots taken while control is unreachable are lost on reconnect.** The
-  rejoin mirror push (control->node) overwrites the node's snapshot rows with
-  control's stale list; records created/pruned during the outage vanish from
-  both stores and the subvolumes leak (invisible to retention, still counted
-  against the budget). Fix: a node->control snapshot re-report on connect
-  (before the mirror push replaces the node's rows), or exclude snapshots from
-  ReplaceNodeMirror and make the node's callback the single source. Found by
-  the branch review (app/sync.go); the ControlLink doc comment marks the gap.
+- **Snapshot records: narrow reconnect race remains.** The main outage loss is
+  fixed (2026-08-16, "Split 6"): the node no longer snapshots on its own timer,
+  so snapshots only happen while control is connected and their records reach
+  the registry through the sink. What remains is a narrow race: a snapshot
+  that completes just as the connection drops (a commanded take, a rollback's
+  safety snapshot, or a deploy's pre-deploy snapshot) can miss its
+  SnapshotsChanged callback, and the next mirror push then drops the record
+  while the subvolume stays. Clean fix if it ever matters: a node->control
+  snapshot re-report on connect, before the rejoin mirror push.
 
 - **hostit-node hangs on stop.** During the 2026-08-16 stage deploy, stopping
   hostit-node timed out after systemd's 90s stop-sigterm window and the

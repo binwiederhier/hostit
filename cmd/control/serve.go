@@ -184,11 +184,13 @@ func execServe(c *cli.Context) error {
 	manager.SeedStates()
 	// One-time: record uid block bases for rows created before the uid column
 	manager.BackfillUIDs()
+	// Hourly automatic snapshots are CONTROL's decision in both modes: the
+	// sweep commands each app's node through the node agent (the local machine
+	// when fused, the routing agent when split; a no-op off btrfs).
+	go manager.AutoSnapshotLoop(time.Hour, done)
 	if !splitNode {
 		go manager.DiskUsageLoop(done)
 		go manager.StateLoop(done)
-		// Hourly automatic snapshots (a no-op unless the apps filesystem is btrfs)
-		go manager.SnapshotLoop(time.Hour, done)
 		// Sweep stale qgroups (deleted subvolumes/apps whose gentle destroy lost
 		// its race); enough of them slow quota rescans until app creates time out
 		go manager.QgroupSweepLoop(6*time.Hour, done)
