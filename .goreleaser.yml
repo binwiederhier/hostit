@@ -80,8 +80,12 @@ nfpms:
     recommends:
       - passt
     contents:
-      - src: server.yml.example
-        dst: /etc/hostit/server.yml.example
+      # Each component owns a directory under /etc/hostit and reads its own
+      # file there; the examples ship beside where they belong.
+      - src: control.yml.example
+        dst: /etc/hostit/control/control.yml.example
+      - src: node.yml.example
+        dst: /etc/hostit/node/node.yml.example
       - src: hostit-control.service
         dst: /lib/systemd/system/hostit-control.service
       - src: hostit-proxy.service
@@ -89,7 +93,7 @@ nfpms:
       - src: hostit-node.service
         dst: /lib/systemd/system/hostit-node.service
       - src: proxy.yml.example
-        dst: /etc/hostit/proxy.yml.example
+        dst: /etc/hostit/proxy/proxy.yml.example
       - src: hostit-shell
         dst: /usr/bin/hostit-shell
         file_info:
@@ -122,7 +126,9 @@ archives:
     wrap_in_directory: true
     files:
       - README.md
-      - server.yml.example
+      - control.yml.example
+      - node.yml.example
+      - proxy.yml.example
 checksum:
   name_template: 'checksums.txt'
 snapshot:

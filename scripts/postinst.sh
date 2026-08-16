@@ -4,7 +4,7 @@ set -e
 # postinst - runs after files are extracted on .deb/.rpm install or upgrade.
 # We only reload systemd and restart a running daemon; enabling the service
 # is left to the operator (or Ansible), since hostit refuses to start without
-# a configured /etc/hostit/server.yml anyway.
+# a configured /etc/hostit/control/control.yml anyway.
 
 if [ "$1" = "configure" ] || [ "$1" -ge 1 ] 2>/dev/null; then
   # Register the app-user login shell so chsh/sshd accept it
@@ -32,8 +32,8 @@ if [ "$1" = "configure" ] || [ "$1" -ge 1 ] 2>/dev/null; then
       systemctl restart hostit-control || true
     fi
   fi
-  if [ ! -f /etc/hostit/server.yml ]; then
-    echo "hostit: create /etc/hostit/server.yml (see /etc/hostit/server.yml.example)," >&2
+  if [ ! -f /etc/hostit/control/control.yml ]; then
+    echo "hostit: create /etc/hostit/control/control.yml (see /etc/hostit/control/control.yml.example)," >&2
     echo "hostit: then run: systemctl enable --now hostit" >&2
   fi
 fi

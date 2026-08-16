@@ -1,4 +1,4 @@
-# hostit server config -- copy to /etc/hostit/server.yml and edit.
+# hostit control-plane config -- copy to /etc/hostit/control/control.yml and edit.
 # Only base-domain and admin-token are required; everything else has sane defaults.
 
 # Apps are served at <app>.<base-domain>. Requires a wildcard DNS record:

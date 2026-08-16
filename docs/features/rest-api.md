@@ -12,7 +12,7 @@ agent talk to. There are three ways to authenticate:
   `/api/apps/{app}/`, meant to be pasted into an agent so it cannot touch the
   owner's other apps or reveal who the owner is;
 - the **session cookie** the web app gets from Google login (plus a same-origin
-  guard), and the operator's unlimited **admin token** from `server.yml`.
+  guard), and the operator's unlimited **admin token** from `control.yml`.
 
 The API is self-describing: `GET /api/info` (and `GET /api/apps/{app}/info`)
 return a machine-readable guide -- the base URL, the auth header, the endpoint

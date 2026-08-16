@@ -39,13 +39,13 @@ var (
 		Usage:  "Run the hostit daemon (requires root)",
 		Action: execServe,
 		Flags: []cli.Flag{
-			&cli.StringFlag{Name: "config", Aliases: []string{"c"}, Value: config.DefaultServerConfigFile, Usage: "server config file"},
+			&cli.StringFlag{Name: "config", Aliases: []string{"c"}, Value: config.DefaultControlConfigFile, Usage: "control config file"},
 		},
 	}
 )
 
 func execServe(c *cli.Context) error {
-	conf, err := config.LoadConfig(c.String("config"))
+	conf, err := config.LoadConfig(config.ResolveConfigFile(c.String("config"), config.LegacyServerConfigFile))
 	if err != nil {
 		return err
 	}

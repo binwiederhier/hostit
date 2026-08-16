@@ -27,7 +27,7 @@ var cmdInternalAssistant = &cli.Command{
 	Usage:     "run one assistant turn via the sandboxed Claude Max backend (debug)",
 	ArgsUsage: "<app> [prompt]",
 	Flags: []cli.Flag{
-		&cli.StringFlag{Name: "config", Aliases: []string{"c"}, Value: config.DefaultServerConfigFile, Usage: "server config file"},
+		&cli.StringFlag{Name: "config", Aliases: []string{"c"}, Value: config.ResolveConfigFile(config.DefaultNodeConfigFile, config.LegacyServerConfigFile), Usage: "node config file"},
 		&cli.BoolFlag{Name: "shell", Usage: "drop into a shell in the sandbox instead of running claude (debugging)"},
 		&cli.BoolFlag{Name: "raw", Usage: "print raw event fields instead of a pretty summary"},
 	},

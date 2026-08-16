@@ -187,3 +187,43 @@ func TestValidateNodeAcceptsAColocatedServerConfig(t *testing.T) {
 	c.AdminToken = "secr3t"
 	require.NoError(t, c.ValidateNode())
 }
+
+// Each component owns a directory under /etc/hostit, so a node's config is not
+// entangled with control's (a remote node has no business holding control's
+// file at all). Installs predating the split keep working: when the
+// component's own file is absent and the old shared one is there, that is used
+// instead, so a package upgrade does not strand a running daemon.
+func TestResolveConfigFilePrefersTheComponentFile(t *testing.T) {
+	dir := t.TempDir()
+	own := filepath.Join(dir, "control.yml")
+	legacy := filepath.Join(dir, "server.yml")
+	require.NoError(t, os.WriteFile(own, []byte("base-domain: a.example.com\n"), 0o600))
+	require.NoError(t, os.WriteFile(legacy, []byte("base-domain: legacy.example.com\n"), 0o600))
+
+	assert.Equal(t, own, ResolveConfigFile(own, legacy), "the component's own file wins")
+}
+
+func TestResolveConfigFileFallsBackToTheLegacySharedFile(t *testing.T) {
+	dir := t.TempDir()
+	own := filepath.Join(dir, "node.yml") // never created
+	legacy := filepath.Join(dir, "server.yml")
+	require.NoError(t, os.WriteFile(legacy, []byte("node-id: local\n"), 0o600))
+
+	assert.Equal(t, legacy, ResolveConfigFile(own, legacy), "a pre-split install keeps running")
+}
+
+func TestResolveConfigFileKeepsTheIntendedPathWhenNeitherExists(t *testing.T) {
+	dir := t.TempDir()
+	own := filepath.Join(dir, "control.yml")
+	// Neither file exists: report the path the operator is meant to create, so
+	// the error names the new location rather than the retired one.
+	assert.Equal(t, own, ResolveConfigFile(own, filepath.Join(dir, "server.yml")))
+}
+
+// The per-component defaults are part of the packaging contract (the .deb ships
+// examples there, the units read them, ansible writes them).
+func TestPerComponentConfigDefaults(t *testing.T) {
+	assert.Equal(t, "/etc/hostit/control/control.yml", DefaultControlConfigFile)
+	assert.Equal(t, "/etc/hostit/node/node.yml", DefaultNodeConfigFile)
+	assert.Equal(t, "/etc/hostit/server.yml", LegacyServerConfigFile)
+}

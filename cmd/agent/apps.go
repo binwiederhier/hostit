@@ -378,11 +378,13 @@ func resolveTransport(host, token, socketFile string, socketExists bool) (transp
 	return transportSocket, nil
 }
 
-// localSocketFile is the daemon's socket path from the server config; a plain
-// operator may not be able to read /etc/hostit/server.yml, so an unreadable or
-// missing config falls back to the built-in default rather than failing
+// localSocketFile is the daemon's socket path from the node config (the socket
+// is the node's); a plain operator may not be able to read it, so an
+// unreadable or missing config falls back to the built-in default rather than
+// failing
 func localSocketFile() string {
-	if conf, err := config.LoadConfig(config.DefaultServerConfigFile); err == nil && conf.SocketFile != "" {
+	path := config.ResolveConfigFile(config.DefaultNodeConfigFile, config.LegacyServerConfigFile)
+	if conf, err := config.LoadConfig(path); err == nil && conf.SocketFile != "" {
 		return conf.SocketFile
 	}
 	return config.NewConfig().SocketFile

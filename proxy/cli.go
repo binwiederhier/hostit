@@ -16,8 +16,11 @@ import (
 )
 
 const (
-	// DefaultConfigFile is where the proxy's config lives on a package install
-	DefaultConfigFile = "/etc/hostit/proxy.yml"
+	// DefaultConfigFile is where the proxy's config lives on a package install;
+	// like every component, it owns a directory under /etc/hostit.
+	// legacyConfigFile is the pre-split path, still honored (see Serve).
+	DefaultConfigFile = "/etc/hostit/proxy/proxy.yml"
+	legacyConfigFile  = "/etc/hostit/proxy.yml"
 	readHeaderTimeout = 10 * time.Second
 )
 
@@ -48,6 +51,13 @@ func LoadFileConfig(path string) (*FileConfig, error) {
 
 // Serve runs the proxy from its config file until a termination signal.
 func Serve(configPath string) error {
+	// Pre-split installs keep their /etc/hostit/proxy.yml until it is moved.
+	if _, err := os.Stat(configPath); err != nil {
+		if _, legacyErr := os.Stat(legacyConfigFile); legacyErr == nil {
+			slog.Warn("Reading the pre-split proxy config; move it to the component's own file", "file", legacyConfigFile, "expected", configPath)
+			configPath = legacyConfigFile
+		}
+	}
 	conf, err := LoadFileConfig(configPath)
 	if err != nil {
 		return err

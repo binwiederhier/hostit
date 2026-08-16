@@ -22,7 +22,7 @@ GOOS=linux GOARCH="$ARCH" CGO_ENABLED=0 go build -C "$ROOT" -trimpath \
   -ldflags "-s -w -X main.version=$VERSION" -o "$STAGE/usr/bin/hostit" .
 
 # Package contents, mirroring the nfpm section of .goreleaser.yml
-install -m 644 "$ROOT/server.yml.example" "$STAGE/etc/hostit/server.yml.example"
+install -m 644 "$ROOT/control.yml.example" "$STAGE/etc/hostit/control/control.yml.example"
 install -m 644 "$ROOT/hostit-control.service" "$STAGE/lib/systemd/system/hostit-control.service"
 install -m 755 "$ROOT/hostit-shell" "$STAGE/usr/bin/hostit-shell"
 install -m 755 "$ROOT/hostit-enter" "$STAGE/usr/bin/hostit-enter"

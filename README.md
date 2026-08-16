@@ -105,8 +105,8 @@ config):
 ```sh
 make release-snapshot                         # goreleaser; or: make deb (plain dpkg-deb)
 sudo apt install ./dist/hostit_*linux_amd64.deb podman
-sudo cp /etc/hostit/server.yml.example /etc/hostit/server.yml
-sudo $EDITOR /etc/hostit/server.yml           # set base-domain + admin-token
+sudo cp /etc/hostit/control/control.yml.example /etc/hostit/control/control.yml
+sudo $EDITOR /etc/hostit/control/control.yml           # set base-domain + admin-token
 sudo systemctl enable --now hostit
 ```
 
@@ -115,8 +115,8 @@ Or manually:
 ```sh
 make web && make build && sudo make install
 sudo mkdir -p /etc/hostit
-sudo cp server.yml.example /etc/hostit/server.yml
-sudo $EDITOR /etc/hostit/server.yml
+sudo cp control.yml.example /etc/hostit/control/control.yml
+sudo $EDITOR /etc/hostit/control/control.yml
 sudo cp hostit-control.service /etc/systemd/system/ && sudo cp hostit-shell /usr/bin/
 sudo systemctl daemon-reload && sudo systemctl enable --now hostit
 ```
@@ -134,7 +134,7 @@ git-free fallback.
 ### Deploying and updating
 
 Everything the daemon needs is one config file plus the package, so a deploy is
-"install the `.deb`, drop `/etc/hostit/server.yml`, harden sshd, enable the
+"install the `.deb`, drop `/etc/hostit/control/control.yml`, harden sshd, enable the
 service", and an update is just installing the newer package:
 
 ```sh
@@ -199,7 +199,7 @@ What each boundary is, so it is clear what hostit does and does not promise:
   read back through the API are always downloads, never rendered.
 
 An **app-scoped token** can only reach `/api/<its app>/`. An **account token**
-can do anything its owner can. The **admin token** in `server.yml` is unlimited
+can do anything its owner can. The **admin token** in `control.yml` is unlimited
 and belongs to the operator -- treat it like a root password.
 
 > **Self-hosting disclaimer.** hostit runs as root, terminates TLS, and hands
@@ -257,7 +257,7 @@ plus CLI keep working with the admin token.
 3. **Create credentials -> OAuth client ID -> Web application**:
    - Authorized JavaScript origin: `https://hostit.<base-domain>`
    - Authorized redirect URI: `https://hostit.<base-domain>/auth/callback`
-4. Put the client ID and secret in `/etc/hostit/server.yml`, together with the
+4. Put the client ID and secret in `/etc/hostit/control/control.yml`, together with the
    emails that should be admins, and restart hostit:
 
    ```yaml
@@ -330,7 +330,7 @@ already in `<data-dir>/certs` keep working either way.
 ### Built-in assistant (optional)
 
 The in-browser chat that builds and changes an app is off until the server has an
-AI key. Two ways to power it, both configured in `server.yml`:
+AI key. Two ways to power it, both configured in `control.yml`:
 
 ```yaml
 # Metered Anthropic API (pay per token):

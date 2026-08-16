@@ -13,7 +13,7 @@ if [ "$1" = "purge" ] || [ "$1" = "0" ] 2>/dev/null; then
   # apps/ -- purging the package must not destroy the tenants' data.
   find /var/lib/hostit -mindepth 1 -maxdepth 1 ! -name apps -exec rm -rf {} + 2>/dev/null || true
   rmdir /var/lib/hostit 2>/dev/null || true
-  rm -f /etc/hostit/server.yml.example
+  rm -f /etc/hostit/control/control.yml.example
   rm -f /etc/sudoers.d/hostit
   rmdir /etc/hostit 2>/dev/null || true
   if [ -f /etc/shells ]; then

@@ -1,0 +1,34 @@
+# hostit-node configuration -- copy to /etc/hostit/node/node.yml and edit.
+#
+# The node is the machine half: it runs this host's app containers, their unix
+# users, btrfs subvolumes and port rules, and it does ONLY what control tells
+# it to over the node RPC. It therefore holds none of control's settings: no
+# admin token, no base domain, no OAuth, no TLS.
+#
+# On a host that also runs hostit-control, the two share nothing but the data
+# directory (the node reads its mTLS credentials from data-dir/ipc, which
+# control mints on first start) -- so a colocated node needs only node-id,
+# listen-node and the paths below.
+
+# This node's identity: the CN of its certificate and its name in control's
+# node registry. "local" is the colocated node; a remote node uses the name it
+# was registered under (hostit-control node add <name>).
+node-id: local
+
+# Control's node listener, which this node dials. Localhost when colocated.
+listen-node: "127.0.0.1:2930"
+
+# Cluster credentials for a REMOTE node, minted by `hostit-control node add`:
+# possession of a CA-signed certificate plus its registry row IS membership,
+# there is no enrollment protocol. Leave unset when colocated: the node then
+# reads the credentials control minted under data-dir/ipc.
+#node-cert-file: /etc/hostit/node/node.pem
+#node-key-file: /etc/hostit/node/node.key
+#cluster-ca-cert-file: /etc/hostit/node/cluster-ca.pem
+
+# Node-local storage: data-dir holds the registry mirror control pushes (and,
+# when colocated, the credentials above); apps-dir is the btrfs pool the app
+# subvolumes live in; socket-file is where the in-container CLI reaches it.
+data-dir: /var/lib/hostit
+apps-dir: /var/lib/hostit/apps
+socket-file: /run/hostit/hostit.sock

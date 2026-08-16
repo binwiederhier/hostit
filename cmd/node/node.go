@@ -19,7 +19,7 @@ func newNodeApp(version string) *cli.App {
 					return node.Serve(c.String("config"), version)
 				},
 				Flags: []cli.Flag{
-					&cli.StringFlag{Name: "config", Aliases: []string{"c"}, Value: config.DefaultServerConfigFile, Usage: "server config file (shared with hostit-control when colocated)"},
+					&cli.StringFlag{Name: "config", Aliases: []string{"c"}, Value: config.DefaultNodeConfigFile, Usage: "node config file"},
 				},
 			},
 		},

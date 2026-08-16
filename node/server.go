@@ -35,7 +35,7 @@ var sigCh = make(chan os.Signal, 1)
 // It is the machine half only: a Machine doing what control tells it to, with
 // no orchestration of its own.
 func Serve(configPath, version string) error {
-	conf, err := config.LoadConfig(configPath)
+	conf, err := config.LoadConfig(config.ResolveConfigFile(configPath, config.LegacyServerConfigFile))
 	if err != nil {
 		return err
 	}

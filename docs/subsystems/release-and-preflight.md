@@ -25,7 +25,7 @@ whole host contract:
 | `hostit-shell` | `/usr/bin/` (0755) | app users' login shell |
 | `hostit-enter` | `/usr/bin/` (0755) | the privileged container-entry helper |
 | `hostit.sudoers` | `/etc/sudoers.d/hostit` (0440, noreplace) | the narrow sudo grant |
-| `server.yml.example` | `/etc/hostit/server.yml.example` | config template |
+| `control.yml.example` | `/etc/hostit/control/control.yml.example` | config template |
 
 Package **dependencies** are the host tools the daemon shells out to: `podman`,
 `uidmap` (per-app user-namespace uid mappings), `slirp4netns` (per-app netns),
@@ -38,7 +38,7 @@ grant is scoped to it), validates the sudoers file with `visudo -cf` and removes
 it if broken (never leave a broken sudoers behind), reloads systemd, and restarts
 the daemon **only if it is already running**. It deliberately does **not** enable
 the service -- hostit refuses to start without a configured
-`/etc/hostit/server.yml`, so enabling is left to the operator or Ansible.
+`/etc/hostit/control/control.yml`, so enabling is left to the operator or Ansible.
 
 ## Deploy: the example Ansible role
 
@@ -56,8 +56,8 @@ the shape the production deploy follows, not a vendored copy of it). The role
    development), and install it with `dpkg -i --force-confold` -- `dpkg`, not the
    apt module, because same-version rebuilds are common while iterating and apt
    would treat them as already installed; `--force-confold` keeps the managed
-   `/etc/hostit/server.yml` instead of prompting on upgrade.
-5. Template `/etc/hostit/server.yml` (0600).
+   `/etc/hostit/control/control.yml` instead of prompting on upgrade.
+5. Template `/etc/hostit/control/control.yml` (0600).
 6. **Set up the btrfs loopback** for app homes (`btrfs.yml`, gated on
    `hostit_btrfs`, on by default) -- see [storage-btrfs.md](storage-btrfs.md).
 7. **Harden sshd** for app users (drop the forwarding-stripping config) -- see
@@ -96,7 +96,7 @@ created. btrfs is core (snapshots, rollback, fork, hard quotas), not optional.
 
 ```mermaid
 flowchart TB
-    start["hostit serve"] --> cfg["load + validate server.yml"]
+    start["hostit serve"] --> cfg["load + validate control.yml"]
     cfg --> root{"running as root?<br/>all binaries present?"}
     root -->|no| die1["refuse to start"]
     root -->|yes| dirs["mkdir data-dir (0711) + apps-dir"]
