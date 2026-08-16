@@ -16,8 +16,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"heckel.io/hostit/app"
 	"heckel.io/hostit/appctl"
+	"heckel.io/hostit/nodeapi"
 	"heckel.io/hostit/store"
 )
 
@@ -69,13 +69,13 @@ func TestRPCRoundTrips(t *testing.T) {
 
 // startRPC wires fake agent -> RPC server -> duplex over an in-memory pipe ->
 // remote client, the exact shape hostit-node and hostit-control use.
-func startRPC(t *testing.T, agent app.NodeAgent) app.NodeAgent {
+func startRPC(t *testing.T, agent nodeapi.NodeAgent) nodeapi.NodeAgent {
 	t.Helper()
 	nodeConn, controlConn := net.Pipe()
 	// Node side: serves the agent.
 	_, _, err := Duplex(nodeConn, true, RPCHandler(agent))
 	require.NoError(t, err)
-	// Control side: a client that implements app.NodeAgent.
+	// Control side: a client that implements nodeapi.NodeAgent.
 	client, _, err := Duplex(controlConn, false, nil)
 	require.NoError(t, err)
 	return NewRemoteAgent(client)
@@ -84,7 +84,7 @@ func startRPC(t *testing.T, agent app.NodeAgent) app.NodeAgent {
 // fakeAgentFull adds the file verbs with real signatures (the embedded
 // interface trick above cannot express io.Reader cleanly).
 type fakeAgentFull struct {
-	app.NodeAgent
+	nodeapi.NodeAgent
 	calls   []string
 	written map[string][]byte
 	readErr error // when set, ReadFile fails with this
@@ -98,17 +98,17 @@ func (f *fakeAgentFull) Down(name string) error { return appctl.ErrPoweredOff }
 func (f *fakeAgentFull) Logs(name string, lines int) (string, error) {
 	return "line1\nline2", nil
 }
-func (f *fakeAgentFull) Exec(name, command string, timeout time.Duration) (*app.ExecResult, error) {
-	return &app.ExecResult{Output: "ran " + command, ExitCode: 3, TimedOut: true}, nil
+func (f *fakeAgentFull) Exec(name, command string, timeout time.Duration) (*nodeapi.ExecResult, error) {
+	return &nodeapi.ExecResult{Output: "ran " + command, ExitCode: 3, TimedOut: true}, nil
 }
 func (f *fakeAgentFull) TakeSnapshot(name, label string, auto bool) (*store.Snapshot, error) {
 	return &store.Snapshot{ID: "snap-1", AppName: name, Label: label, Auto: auto}, nil
 }
-func (f *fakeAgentFull) States(names []string) map[string]app.State {
-	return map[string]app.State{names[0]: {Running: true, AppState: "running"}}
+func (f *fakeAgentFull) States(names []string) map[string]nodeapi.State {
+	return map[string]nodeapi.State{names[0]: {Running: true, AppState: "running"}}
 }
-func (f *fakeAgentFull) Heartbeat() *app.Heartbeat {
-	return &app.Heartbeat{Version: "test", BtrfsCapable: true}
+func (f *fakeAgentFull) Heartbeat() *nodeapi.Heartbeat {
+	return &nodeapi.Heartbeat{Version: "test", BtrfsCapable: true}
 }
 func (f *fakeAgentFull) WriteFileFrom(name, relPath string, r io.Reader, mode os.FileMode) error {
 	var buf bytes.Buffer
@@ -133,18 +133,18 @@ func TestRPCProvisionRoundTrips(t *testing.T) {
 	t.Parallel()
 	agent := &fakeAgentFull{written: map[string][]byte{}}
 	remote := startRPC(t, agent)
-	require.NoError(t, remote.Provision(&app.ProvisionSpec{ID: "aaa", Name: "blog", Port: 10000}))
+	require.NoError(t, remote.Provision(&nodeapi.ProvisionSpec{ID: "aaa", Name: "blog", Port: 10000}))
 	assert.Contains(t, agent.calls, "provision:blog:10000")
-	remote.Deprovision(&app.DeprovisionSpec{Name: "blog", ID: "aaa"})
+	remote.Deprovision(&nodeapi.DeprovisionSpec{Name: "blog", ID: "aaa"})
 	assert.Contains(t, agent.calls, "deprovision:blog")
 }
 
-func (f *fakeAgentFull) Provision(spec *app.ProvisionSpec) error {
+func (f *fakeAgentFull) Provision(spec *nodeapi.ProvisionSpec) error {
 	f.calls = append(f.calls, fmt.Sprintf("provision:%s:%d", spec.Name, spec.Port))
 	return nil
 }
 
-func (f *fakeAgentFull) Deprovision(spec *app.DeprovisionSpec) {
+func (f *fakeAgentFull) Deprovision(spec *nodeapi.DeprovisionSpec) {
 	f.calls = append(f.calls, "deprovision:"+spec.Name)
 }
 
@@ -155,8 +155,8 @@ func TestDialInRegistersARemoteAgent(t *testing.T) {
 	t.Parallel()
 	agent := &fakeAgentFull{written: map[string][]byte{}}
 	registered := make(chan string, 1)
-	var got app.NodeAgent
-	srv := httptest.NewServer(ConnectHandler(func(string) bool { return true }, nil, func(nodeID string, remote app.NodeAgent) {
+	var got nodeapi.NodeAgent
+	srv := httptest.NewServer(ConnectHandler(func(string) bool { return true }, nil, func(nodeID string, remote nodeapi.NodeAgent) {
 		got = remote
 		registered <- nodeID
 	}, nil))

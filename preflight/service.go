@@ -1,4 +1,4 @@
-package cmd
+package preflight
 
 import (
 	"errors"
@@ -30,11 +30,11 @@ var requiredBinaries = []string{
 	"useradd", "usermod", "userdel", "groupadd", "groupmod", "groupdel", "pkill",
 }
 
-// checkHostRequirements verifies the two non-negotiable prerequisites the daemon
+// CheckHost verifies the two non-negotiable prerequisites the daemon
 // has before it touches anything: it runs as root, and every command it drives is
 // installed. It reports all missing commands at once so an operator fixes them in
 // one pass rather than one lazy failure at a time.
-func checkHostRequirements() error {
+func CheckHost() error {
 	if os.Geteuid() != 0 {
 		return errors.New("hostit must run as root: it creates Unix users and drives podman, systemd, nftables and btrfs")
 	}
@@ -122,10 +122,10 @@ func missingBinaries(lookPath func(string) (string, error)) []string {
 	return missing
 }
 
-// requireBtrfs fails unless the app subvolumes live on a btrfs filesystem. btrfs is
+// RequireBtrfs fails unless the app subvolumes live on a btrfs filesystem. btrfs is
 // mandatory: snapshots, rollback, fork and hard disk quotas are core, not
 // optional, and hostit refuses to run without them rather than silently degrading.
-func requireBtrfs(appsDir string) error {
+func RequireBtrfs(appsDir string) error {
 	if !btrfs.New(run.New()).IsBtrfs(appsDir) {
 		return fmt.Errorf("hostit requires the apps directory (%s) to be on a btrfs filesystem, for snapshots, rollback and hard disk quotas; see the install docs", appsDir)
 	}
@@ -134,9 +134,9 @@ func requireBtrfs(appsDir string) error {
 
 // Preflight is the host check for any machine-half daemon (the fused daemon
 // and hostit-node): root, required commands, runtime versions, btrfs.
-func Preflight(appsDir string) error {
-	if err := checkHostRequirements(); err != nil {
+func Check(appsDir string) error {
+	if err := CheckHost(); err != nil {
 		return err
 	}
-	return requireBtrfs(appsDir)
+	return RequireBtrfs(appsDir)
 }

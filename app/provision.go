@@ -18,27 +18,6 @@ import (
 // plans/260815-hostit-nodeagent.md: specs carry everything the node half
 // needs, so it never reads the registry.
 
-// ProvisionSpec is everything the node half needs to build an app on this
-// machine, resolved by the control side.
-type ProvisionSpec struct {
-	// Host is the target node id; the control plane's routing agent sends the
-	// spec there (the row does not exist yet when provisioning starts).
-	Host    string   `json:"host"`
-	ID      string   `json:"id"`       // Stable app id; subvolume and container are keyed on it
-	Name    string   `json:"name"`     // Unix account name (today: the app name)
-	Port    int      `json:"port"`     // Loopback port; the uid block derives from it
-	SSHKeys []string `json:"ssh_keys"` // Full authorized_keys set (request + profile keys)
-	// SeedAppID/SeedSnapshotID name the fork seed (the source app's subvolume,
-	// or one of its snapshots); empty SeedAppID builds a fresh app with the
-	// skeleton. IDs, not paths: the NODE resolves them against its own pool --
-	// a control-computed absolute path is wrong on any node whose apps-dir is
-	// not control's.
-	SeedAppID      string `json:"seed_app_id"`
-	SeedSnapshotID string `json:"seed_snapshot_id"`
-	URL            string `json:"url"`     // The app's public URL, for the skeleton's welcome page
-	DiskMB         int    `json:"disk_mb"` // Resolved disk cap; the budget qgroup is created and capped BEFORE the subvolume
-}
-
 // Provision builds the app on this machine: subvolume (fresh or fork seed),
 // unix user, authorized keys, and -- for a fresh app -- the demo skeleton. On
 // failure it rolls back its own partial work and the machine is clean again.
@@ -124,23 +103,6 @@ func (m *Manager) startInBackground(name string, forking bool) {
 		}
 		slog.Info("App started", "app", name, "forked", forking, "took", time.Since(started).Round(time.Second))
 	}()
-}
-
-// DeprovisionSpec is everything the teardown needs, captured by the control
-// side BEFORE the registry rows are gone: once they are, name-keyed lookups
-// (paths, ids, snapshots) resolve nothing.
-type DeprovisionSpec struct {
-	// Host is the node the app lives on, captured before the row is removed.
-	Host string `json:"host"`
-	// ID keys everything on-disk (subvolume, snapshots dir); the node resolves
-	// the paths against its own pool.
-	ID        string `json:"id"`
-	Name      string `json:"name"`
-	Port      int    `json:"port"`
-	UID       int    `json:"uid"` // The budget qgroup key; UIDKnown guards a failed lookup
-	UIDKnown  bool   `json:"uid_known"`
-	Unit      string `json:"unit"`
-	Container string `json:"container"`
 }
 
 // Deprovision tears the app down on this machine; it runs in the background

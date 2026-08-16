@@ -7,6 +7,7 @@ import (
 
 	"github.com/urfave/cli/v2"
 	"heckel.io/hostit/appctl"
+	"heckel.io/hostit/config"
 	"heckel.io/hostit/workspace"
 )
 
@@ -23,7 +24,7 @@ var (
 )
 
 func execGuide(_ *cli.Context) error {
-	self, err := appctl.NewController(appctl.DefaultSocketFile()).Self()
+	self, err := appctl.NewController(config.DefaultSocketFile).Self()
 	if err != nil {
 		return fmt.Errorf("cannot identify this app: %w", err)
 	}

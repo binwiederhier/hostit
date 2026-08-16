@@ -9,7 +9,7 @@ import (
 	"net/http"
 
 	"github.com/hashicorp/yamux"
-	"heckel.io/hostit/app"
+	"heckel.io/hostit/nodeapi"
 )
 
 // The dial-in path: hostit-node dials control's internal listener, sends one
@@ -40,7 +40,7 @@ const (
 // socket). authorize checks the id against the node registry: an unregistered
 // node's still-valid certificate is refused, which is what makes `node
 // remove` an effective revocation.
-func ConnectHandler(authorize func(nodeID string) bool, callbacks func(nodeID string) http.Handler, register func(nodeID string, agent app.NodeAgent), disconnect func(nodeID string, agent app.NodeAgent)) http.Handler {
+func ConnectHandler(authorize func(nodeID string) bool, callbacks func(nodeID string) http.Handler, register func(nodeID string, agent nodeapi.NodeAgent), disconnect func(nodeID string, agent nodeapi.NodeAgent)) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != connectPath && r.URL.Path != "/" { // mounted standalone in tests
 			http.NotFound(w, r)
@@ -92,7 +92,7 @@ func ConnectHandler(authorize func(nodeID string) bool, callbacks func(nodeID st
 // ServeAgent is the node's side after dialing: it sends the upgrade request
 // on the raw connection, then serves its NodeAgent over the duplex. Blocks
 // until the connection dies (the caller redials with backoff).
-func ServeAgent(conn net.Conn, nodeID string, agent app.NodeAgent, onLink func(client *http.Client)) error {
+func ServeAgent(conn net.Conn, nodeID string, agent nodeapi.NodeAgent, onLink func(client *http.Client)) error {
 	req, err := http.NewRequest("POST", "http://"+controlID+connectPath, nil)
 	if err != nil {
 		return err

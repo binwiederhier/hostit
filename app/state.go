@@ -31,25 +31,6 @@ const (
 	stateSettleWindow   = 40 * time.Second
 )
 
-// State is what an app is doing right now: whether its container is up, whether
-// the run: process inside it is up, and how much memory its container is using.
-//
-// StartedAt and AppStartedAt are the only way the UI can tell a reboot or an app
-// restart apart from "nothing happened yet": both leave the app in the same
-// running state it was in before, so the UI waits for a start time newer than the
-// one it saw when the action was issued.
-type State struct {
-	Running    bool `json:"running"`     // The container's systemd unit is active
-	AppRunning bool `json:"app_running"` // The run: command inside it is up
-	// AppState is the agent's breadcrumb verbatim ("running"/"crashed"/"failed"/... or
-	// "" when the container is down), so the UI can tell a crashed give-up from a stop.
-	AppState     string `json:"app_state"`
-	MemoryMB     int    `json:"memory_mb"`      // Current container memory use in MB
-	CPUPercent   int    `json:"cpu_percent"`    // Current container CPU use in whole percent (may exceed 100 on multiple cores)
-	StartedAt    int64  `json:"started_at"`     // Unix seconds the container last started (0 if down)
-	AppStartedAt int64  `json:"app_started_at"` // Unix millis the run: process last changed state (0 if never)
-}
-
 // CachedStates returns the last known state of the given apps immediately and,
 // when the cache has aged out, kicks off a refresh in the background. Listing
 // apps therefore never waits on podman or systemd: the page renders at once and

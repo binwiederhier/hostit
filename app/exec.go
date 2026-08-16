@@ -31,14 +31,6 @@ const (
 	execTailKept = execMaxOutput
 )
 
-// ExecResult is what a command left behind
-type ExecResult struct {
-	Output    string `json:"output"`
-	ExitCode  int    `json:"exit_code"`
-	Truncated bool   `json:"truncated"`
-	TimedOut  bool   `json:"timed_out"`
-}
-
 // Exec runs a shell command inside the app's own container and returns what it
 // printed. It grants nothing the caller did not already have: an app token can
 // upload a file and name it in "run:", so the container already executes

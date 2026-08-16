@@ -20,9 +20,9 @@ import (
 
 	"github.com/urfave/cli/v2"
 	"heckel.io/hostit/app"
-	"heckel.io/hostit/cmd"
 	"heckel.io/hostit/config"
 	"heckel.io/hostit/node"
+	"heckel.io/hostit/preflight"
 	"heckel.io/hostit/run"
 	"heckel.io/hostit/store"
 )
@@ -93,7 +93,7 @@ func execServe(c *cli.Context) error {
 	if err := conf.Validate(); err != nil {
 		return err
 	}
-	if err := cmd.Preflight(conf.AppsDir); err != nil {
+	if err := preflight.Check(conf.AppsDir); err != nil {
 		return err
 	}
 	// The node's own SQLite: a MIRROR of the app/snapshot rows this node

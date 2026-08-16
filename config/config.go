@@ -55,6 +55,9 @@ const (
 const (
 	// DefaultServerConfigFile is where "hostit serve" looks for its config by default
 	DefaultServerConfigFile = "/etc/hostit/server.yml"
+	// DefaultSocketFile is the daemon's app-side unix socket; the in-container
+	// CLI dials it to reach the daemon.
+	DefaultSocketFile = "/run/hostit/hostit.sock"
 	// DNSProviderRoute53 enables DNS-01 challenges via AWS Route 53, which is
 	// what a wildcard certificate requires (Let's Encrypt does not issue
 	// wildcards over HTTP-01)
@@ -194,7 +197,7 @@ func NewConfig() *Config {
 	return &Config{
 		ListenHTTP:          ":80",
 		ListenHTTPS:         ":443",
-		SocketFile:          "/run/hostit/hostit.sock",
+		SocketFile:          DefaultSocketFile,
 		DataDir:             "/var/lib/hostit",
 		NodeID:              "local",
 		AppsDir:             "/var/lib/hostit/apps",

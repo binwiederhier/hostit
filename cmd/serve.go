@@ -13,6 +13,7 @@ import (
 	"github.com/urfave/cli/v2"
 	"heckel.io/hostit/app"
 	"heckel.io/hostit/config"
+	"heckel.io/hostit/preflight"
 	"heckel.io/hostit/preview"
 	"heckel.io/hostit/run"
 	"heckel.io/hostit/server"
@@ -53,7 +54,7 @@ func execServe(c *cli.Context) error {
 	}
 	// Refuse to start on a host that cannot support the daemon (not root, a missing
 	// command), rather than failing lazily on the first app operation.
-	if err := checkHostRequirements(); err != nil {
+	if err := preflight.CheckHost(); err != nil {
 		return err
 	}
 	// 0711: app users must traverse this to reach their own home below it, but
@@ -74,7 +75,7 @@ func execServe(c *cli.Context) error {
 	// btrfs is mandatory: snapshots, rollback, fork and hard disk quotas are core.
 	// Check it here, once the apps directory exists, and refuse to start
 	// otherwise rather than silently running without those features.
-	if err := requireBtrfs(conf.AppsDir); err != nil {
+	if err := preflight.RequireBtrfs(conf.AppsDir); err != nil {
 		return err
 	}
 	s, err := store.NewStore(filepath.Join(conf.DataDir, "hostit.db"))

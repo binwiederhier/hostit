@@ -65,13 +65,10 @@ var (
 	Version = "dev"
 
 	// ErrAppExists is returned when the app name or a Unix user with that name already exists
-	ErrAppExists = errors.New("app or user already exists")
 	// ErrNoPortsAvailable is returned when the configured port range is exhausted
 	ErrNoPortsAvailable = errors.New("no free ports in configured range")
 	// ErrInvalid wraps all request validation errors (bad names, bad keys)
-	ErrInvalid = errors.New("invalid request")
 	// ErrLimitReached is returned when a user hit one of their resource limits
-	ErrLimitReached = errors.New("limit reached")
 
 	// appNameRegex limits names to things that are safe as Unix usernames and DNS labels
 	appNameRegex = regexp.MustCompile(AppNamePattern)

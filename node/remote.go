@@ -11,21 +11,21 @@ import (
 	"os"
 	"time"
 
-	"heckel.io/hostit/app"
+	"heckel.io/hostit/nodeapi"
 	"heckel.io/hostit/store"
 )
 
-// remoteAgent implements app.NodeAgent over the duplex client: what
+// remoteAgent implements nodeapi.NodeAgent over the duplex client: what
 // hostit-control holds for every remote node. The URL host is cosmetic --
 // routing is the underlying session.
 type remoteAgent struct {
 	c *http.Client
 }
 
-var _ app.NodeAgent = (*remoteAgent)(nil)
+var _ nodeapi.NodeAgent = (*remoteAgent)(nil)
 
 // NewRemoteAgent wraps a duplex client into a NodeAgent.
-func NewRemoteAgent(c *http.Client) app.NodeAgent {
+func NewRemoteAgent(c *http.Client) nodeapi.NodeAgent {
 	return &remoteAgent{c: c}
 }
 
@@ -81,7 +81,7 @@ func (a *remoteAgent) Logs(name string, lines int) (string, error) {
 	return resp.Output, nil
 }
 
-func (a *remoteAgent) Exec(name, command string, timeout time.Duration) (*app.ExecResult, error) {
+func (a *remoteAgent) Exec(name, command string, timeout time.Duration) (*nodeapi.ExecResult, error) {
 	resp, err := a.call("exec", &rpcReq{Name: name, Command: command, TimeoutSec: int(timeout / time.Second)})
 	if err != nil {
 		return nil, err
@@ -97,7 +97,7 @@ func (a *remoteAgent) TerminalCommand(name string) (string, []string, error) {
 	return resp.Cmd, resp.Args, nil
 }
 
-func (a *remoteAgent) ListFiles(name, dir string) (*app.Listing, error) {
+func (a *remoteAgent) ListFiles(name, dir string) (*nodeapi.Listing, error) {
 	resp, err := a.call("listfiles", &rpcReq{Name: name, Path: dir})
 	if err != nil {
 		return nil, err
@@ -117,7 +117,7 @@ func (a *remoteAgent) MakeDir(name, relPath string) error {
 	return a.do("makedir", &rpcReq{Name: name, Path: relPath})
 }
 
-func (a *remoteAgent) StatFile(name, relPath string) (*app.FileInfo, error) {
+func (a *remoteAgent) StatFile(name, relPath string) (*nodeapi.FileInfo, error) {
 	resp, err := a.call("statfile", &rpcReq{Name: name, Path: relPath})
 	if err != nil {
 		return nil, err
@@ -228,7 +228,7 @@ func (a *remoteAgent) Rollback(name, id string) error {
 	return a.do("rollback", &rpcReq{Name: name, ID: id})
 }
 
-func (a *remoteAgent) States(names []string) map[string]app.State {
+func (a *remoteAgent) States(names []string) map[string]nodeapi.State {
 	resp, err := a.call("states", &rpcReq{Names: names})
 	if err != nil {
 		return nil // nil = "could not measure"; callers must not ingest it
@@ -236,7 +236,7 @@ func (a *remoteAgent) States(names []string) map[string]app.State {
 	return resp.States
 }
 
-func (a *remoteAgent) Heartbeat() *app.Heartbeat {
+func (a *remoteAgent) Heartbeat() *nodeapi.Heartbeat {
 	resp, err := a.call("heartbeat", &rpcReq{})
 	if err != nil {
 		return nil
@@ -245,16 +245,16 @@ func (a *remoteAgent) Heartbeat() *app.Heartbeat {
 }
 
 // Provision/Deprovision cross the wire as their full spec envelopes.
-func (a *remoteAgent) Provision(spec *app.ProvisionSpec) error {
+func (a *remoteAgent) Provision(spec *nodeapi.ProvisionSpec) error {
 	return a.postJSON("provision", spec)
 }
 
-func (a *remoteAgent) Deprovision(spec *app.DeprovisionSpec) {
+func (a *remoteAgent) Deprovision(spec *nodeapi.DeprovisionSpec) {
 	_ = a.postJSON("deprovision", spec)
 }
 
 // Sync pushes the registry mirror; a plain JSON verb.
-func (a *remoteAgent) Sync(state *app.SyncState) error {
+func (a *remoteAgent) Sync(state *nodeapi.SyncState) error {
 	return a.postJSON("sync", state)
 }
 

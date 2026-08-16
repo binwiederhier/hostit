@@ -15,8 +15,6 @@ import (
 	"net/http"
 	"strconv"
 	"time"
-
-	"heckel.io/hostit/config"
 )
 
 const (
@@ -134,11 +132,6 @@ func (c *Controller) Tool(name string, args []byte) (string, bool, error) {
 		return "", false, err
 	}
 	return resp.Output, resp.IsError, nil
-}
-
-// DefaultSocketFile returns the daemon socket path from the default config
-func DefaultSocketFile() string {
-	return config.NewConfig().SocketFile
 }
 
 func (c *Controller) message(method, path string) (string, error) {

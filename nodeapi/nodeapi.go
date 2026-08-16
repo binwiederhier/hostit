@@ -1,0 +1,187 @@
+// Package nodeapi is the contract between the control plane and a node: the
+// NodeAgent verbs control calls, the ControlSink callbacks a node reports back
+// through, the spec/state types that cross the wire, and the sentinel errors
+// that must survive it. It is deliberately a low package -- it imports only the
+// registry types (store) and the file-layer types (homefs), never the app
+// orchestrator -- so the transport (package node) can speak the contract
+// without depending on the implementation, and app implements it.
+package nodeapi
+
+import (
+	"errors"
+	"io"
+	"os"
+	"time"
+
+	"heckel.io/hostit/homefs"
+	"heckel.io/hostit/store"
+)
+
+// FileInfo and Listing are the file-layer shapes the file verbs return; they
+// live in homefs and are re-exported here so the contract is self-describing.
+type (
+	FileInfo = homefs.FileInfo
+	Listing  = homefs.Listing
+)
+
+var (
+	// ErrAppExists is returned when an app (or its unix user) already exists.
+	ErrAppExists = errors.New("app or user already exists")
+	// ErrInvalid is returned for a malformed request.
+	ErrInvalid = errors.New("invalid request")
+	// ErrLimitReached is returned when a quota (app count, disk) is hit.
+	ErrLimitReached = errors.New("limit reached")
+)
+
+// NodeAgent is the node-local half of the platform: every verb that must run
+// on the machine an app physically lives on (its subvolume, unix user,
+// container, ports, files). The control plane resolves an app to its node and
+// calls these; on a single-box install the implementation is the app.Manager
+// itself, in-process. Nothing here may depend on reading the registry --
+// inputs arrive as arguments or specs.
+//
+// Deliberately NOT here: registry bookkeeping (rows, tokens, limits records,
+// snapshot metadata, retention policy), URL building, name validation, and
+// compositions like Readme/Description/ListSnapshots -- those assemble on the
+// control plane from these primitives.
+type NodeAgent interface {
+	// Provisioning: build/tear down the app on this machine. Fork is not a
+	// separate verb: a fork is a provision whose spec carries the seed
+	// subvolume (the reflink is node-local either way).
+	Provision(spec *ProvisionSpec) error
+	Deprovision(spec *DeprovisionSpec)
+	Ensure(name string) (string, error)
+	Up(name string) (string, error)
+	Down(name string) error
+	PowerOn(name string) (string, error)
+	Restart(name string) error
+	StartApp(name string) error
+	StopApp(name string) error
+	RestartApp(name string) error
+	Status(name string) (string, error)
+	Logs(name string, lines int) (string, error)
+	Exec(name, command string, timeout time.Duration) (*ExecResult, error)
+	TerminalCommand(name string) (string, []string, error)
+
+	// Files: each resolves through os.OpenRoot on this machine's real path.
+	ListFiles(name, dir string) (*Listing, error)
+	ReadFile(name, relPath string) ([]byte, error)
+	ReadFileMax(name, relPath string, max int64) ([]byte, error)
+	WriteFile(name, relPath string, content []byte, mode os.FileMode) error
+	WriteFileFrom(name, relPath string, r io.Reader, mode os.FileMode) error
+	DeleteFile(name, relPath string) error
+	MoveFile(name, fromRel, toRel string) error
+	MakeDir(name, relPath string) error
+	StatFile(name, relPath string) (*FileInfo, error)
+	FileExists(name, relPath string) bool
+	ExtractTar(name string, r io.Reader) ([]string, error)
+
+	// Keys and limits, applied where the app user lives.
+	SetKeys(name string, appKeys, profileKeys []string) error
+	SyncKeys(name string, profileKeys []string) error
+	SetMemoryLimit(name string, memoryMB int)
+	SetDiskLimit(name string, diskMB int)
+
+	// Snapshots: the subvolume work; metadata stays on the control plane.
+	TakeSnapshot(name, label string, auto bool) (*store.Snapshot, error)
+	DeleteSnapshot(name, id string) error
+	Rollback(name, id string) error
+
+	// Sync replaces the node's registry mirror (the app and snapshot rows it
+	// hosts); control pushes it on connect and after every registry mutation,
+	// BEFORE any verb that reads rows on the node.
+	Sync(state *SyncState) error
+
+	// Reconcile converges the node's machine state to its (freshly synced)
+	// mirror: tear down apps deleted while it was disconnected, re-assert port
+	// rules. Run on every rejoin. Returns the orphan ids it removed.
+	Reconcile() []string
+
+	// Node-level: batch state for the control plane's cache, and the
+	// heartbeat placement/health feed on.
+	States(names []string) map[string]State
+	Heartbeat() *Heartbeat
+}
+
+// ControlSink is the node's reverse channel to control.
+type ControlSink interface {
+	// PowerChanged reports a poweroff/poweron the node's own verb performed.
+	PowerChanged(name string, poweredOff bool)
+	// UsageChanged reports a fresh disk usage measurement.
+	UsageChanged(name string, usedMB int)
+	// SnapshotsChanged carries the app's authoritative snapshot records after
+	// any mutation; control replaces its rows with them.
+	SnapshotsChanged(name string, snaps []*store.Snapshot)
+}
+
+// ProvisionSpec is everything the node half needs to build an app on this
+// machine, resolved by the control side.
+type ProvisionSpec struct {
+	// Host is the target node id; the control plane's routing agent sends the
+	// spec there (the row does not exist yet when provisioning starts).
+	Host    string   `json:"host"`
+	ID      string   `json:"id"`       // Stable app id; subvolume and container are keyed on it
+	Name    string   `json:"name"`     // Unix account name (today: the app name)
+	Port    int      `json:"port"`     // Loopback port; the uid block derives from it
+	SSHKeys []string `json:"ssh_keys"` // Full authorized_keys set (request + profile keys)
+	// SeedAppID/SeedSnapshotID name the fork seed (the source app's subvolume,
+	// or one of its snapshots); empty SeedAppID builds a fresh app with the
+	// skeleton. IDs, not paths: the NODE resolves them against its own pool --
+	// a control-computed absolute path is wrong on any node whose apps-dir is
+	// not control's.
+	SeedAppID      string `json:"seed_app_id"`
+	SeedSnapshotID string `json:"seed_snapshot_id"`
+	URL            string `json:"url"`     // The app's public URL, for the skeleton's welcome page
+	DiskMB         int    `json:"disk_mb"` // Resolved disk cap; the budget qgroup is created and capped BEFORE the subvolume
+}
+
+// DeprovisionSpec is everything the teardown needs, captured by the control
+// side BEFORE the registry rows are gone: once they are, name-keyed lookups
+// (paths, ids, snapshots) resolve nothing.
+type DeprovisionSpec struct {
+	// Host is the node the app lives on, captured before the row is removed.
+	Host string `json:"host"`
+	// ID keys everything on-disk (subvolume, snapshots dir); the node resolves
+	// the paths against its own pool.
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Port      int    `json:"port"`
+	UID       int    `json:"uid"` // The budget qgroup key; UIDKnown guards a failed lookup
+	UIDKnown  bool   `json:"uid_known"`
+	Unit      string `json:"unit"`
+	Container string `json:"container"`
+}
+
+// SyncState is the registry slice a node mirrors.
+type SyncState struct {
+	Apps      []*store.App      `json:"apps"`
+	Snapshots []*store.Snapshot `json:"snapshots"`
+}
+
+// State is one app's measured runtime state, as a node reports it.
+type State struct {
+	Running    bool `json:"running"`     // The container's systemd unit is active
+	AppRunning bool `json:"app_running"` // The run: command inside it is up
+	// AppState is the agent's breadcrumb verbatim ("running"/"crashed"/"failed"/... or
+	// "" when the container is down), so the UI can tell a crashed give-up from a stop.
+	AppState     string `json:"app_state"`
+	MemoryMB     int    `json:"memory_mb"`      // Current container memory use in MB
+	CPUPercent   int    `json:"cpu_percent"`    // Current container CPU use in whole percent (may exceed 100 on multiple cores)
+	StartedAt    int64  `json:"started_at"`     // Unix seconds the container last started (0 if down)
+	AppStartedAt int64  `json:"app_started_at"` // Unix millis the run: process last changed state (0 if never)
+}
+
+// ExecResult is the output of one in-container command.
+type ExecResult struct {
+	Output    string `json:"output"`
+	ExitCode  int    `json:"exit_code"`
+	Truncated bool   `json:"truncated"`
+	TimedOut  bool   `json:"timed_out"`
+}
+
+// Heartbeat is what a node reports about itself: the inputs for placement and
+// health. Grown in later phases (free memory/disk, app count).
+type Heartbeat struct {
+	Version      string `json:"version"`
+	BtrfsCapable bool   `json:"btrfs_capable"`
+}

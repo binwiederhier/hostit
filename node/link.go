@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"sync"
 
-	"heckel.io/hostit/app"
+	"heckel.io/hostit/nodeapi"
 	"heckel.io/hostit/store"
 )
 
@@ -16,7 +16,7 @@ import (
 const callbackPathPrefix = "/callback/"
 
 // ControlLink is the node's reverse channel to control: it implements
-// app.ControlSink by POSTing callbacks over the same duplex connection the
+// nodeapi.ControlSink by POSTing callbacks over the same duplex connection the
 // RPC rides on. The client is swapped on every (re)dial; between connections
 // callbacks are dropped with a warning. Usage recovers on its own (re-measured
 // on a cadence) and a power transition on the next lifecycle change. Snapshot
@@ -28,7 +28,7 @@ type ControlLink struct {
 	mu     sync.Mutex // Protects client
 }
 
-var _ app.ControlSink = (*ControlLink)(nil)
+var _ nodeapi.ControlSink = (*ControlLink)(nil)
 
 // NewControlLink creates the (initially disconnected) link.
 func NewControlLink() *ControlLink {

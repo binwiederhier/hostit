@@ -14,23 +14,6 @@ import (
 // snapshot record changes from the auto-snapshot loop and retention) back
 // through a ControlSink over the same duplex connection.
 
-// SyncState is the registry slice a node mirrors.
-type SyncState struct {
-	Apps      []*store.App      `json:"apps"`
-	Snapshots []*store.Snapshot `json:"snapshots"`
-}
-
-// ControlSink is the node's reverse channel to control.
-type ControlSink interface {
-	// PowerChanged reports a poweroff/poweron the node's own verb performed.
-	PowerChanged(name string, poweredOff bool)
-	// UsageChanged reports a fresh disk usage measurement.
-	UsageChanged(name string, usedMB int)
-	// SnapshotsChanged carries the app's authoritative snapshot records after
-	// any mutation; control replaces its rows with them.
-	SnapshotsChanged(name string, snaps []*store.Snapshot)
-}
-
 // SetControlSink wires the node's reverse channel; nil (the default) means
 // single-process, where the store writes land in the registry directly.
 func (m *Manager) SetControlSink(sink ControlSink) {

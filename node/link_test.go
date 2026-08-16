@@ -11,7 +11,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"heckel.io/hostit/app"
+	"heckel.io/hostit/nodeapi"
 	"heckel.io/hostit/store"
 )
 
@@ -56,7 +56,7 @@ func TestCallbacksFlowOverTheDuplex(t *testing.T) {
 	srv := httptest.NewServer(ConnectHandler(
 		func(string) bool { return true },
 		func(nodeID string) http.Handler { return CallbackHandler(nodeID, st) },
-		func(string, app.NodeAgent) { registered <- struct{}{} },
+		func(string, nodeapi.NodeAgent) { registered <- struct{}{} },
 		nil,
 	))
 	defer srv.Close()
