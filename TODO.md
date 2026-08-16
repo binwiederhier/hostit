@@ -96,15 +96,18 @@ definitions and the conversation prefix are cache-marked, so repeat turns pay th
 
 ## Snapshots and quotas
 
-- **Evaluate btrfs simple quotas (squotas).** Snapshots take forever under
-  classic qgroups (see the >2min prod snapshot item below): every snapshot
-  create/delete drags quota accounting through the transaction. Simple quotas
-  (kernel 6.7+) charge extents to their ORIGINAL owner only -- much cheaper
-  accounting, no rescans -- at the cost of shared-extent precision (a
-  snapshot's unshared growth bills the original subvolume). Evaluate: kernel
-  availability on stage/prod, whether exclusive-bytes budgets still make
-  sense under squota semantics, migration (quotas must be re-enabled in
-  squota mode on an empty accounting state).
+- **DONE: btrfs simple quotas (squotas).** Shipped on the multinode branch,
+  live on stage 2026-08-16. It turned out to be a correctness fix, not just a
+  performance one: classic qgroups NEVER enforced the budgets, because seeding
+  an app from the shared base marks the fs quota state inconsistent and the
+  kernel stops enforcing until a rescan completes (which churn keeps
+  re-triggering -- so effectively never; verified 300MB written past a 200MB
+  cap). EnableDiskBudgets now ensures squota mode at startup, migrating a
+  classic-qgroups pool automatically (disable + enable-simple via ioctl, no
+  btrfs-progs 6.7 needed; kernel 6.7+ required -- stage and prod run 6.8).
+  Migration resets usage accounting: pre-existing extents are never counted.
+  Rescans are gone wholesale, which should also fix the >2min prod snapshot
+  item below (re-measure after the prod release).
 - **Default snapshot cadence: every 3 hours, spread across apps.** Hourly
   auto-snapshots of every app at once spike the pool (and the cleaner);
   default to 3h per app instead and STAGGER apps across the interval so
