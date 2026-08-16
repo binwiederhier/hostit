@@ -1,6 +1,7 @@
 package app
 
 import (
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -160,4 +161,46 @@ func (r *orderRecordingAgent) Provision(spec *ProvisionSpec) error {
 
 func (r *orderRecordingAgent) Sync(state *SyncState) error {
 	return r.recordingAgent.Sync(state)
+}
+
+// fileRoutingAgent records file verbs, standing in for a remote node.
+type fileRoutingAgent struct {
+	NodeAgent
+	reads, writes []string
+}
+
+func (f *fileRoutingAgent) ReadFile(name, rel string) ([]byte, error) {
+	f.reads = append(f.reads, name+":"+rel)
+	return f.NodeAgent.ReadFile(name, rel)
+}
+
+func (f *fileRoutingAgent) ReadFileMax(name, rel string, max int64) ([]byte, error) {
+	f.reads = append(f.reads, name+":"+rel)
+	return f.NodeAgent.ReadFileMax(name, rel, max)
+}
+
+func (f *fileRoutingAgent) WriteFile(name, rel string, b []byte, mode os.FileMode) error {
+	f.writes = append(f.writes, name+":"+rel)
+	return f.NodeAgent.WriteFile(name, rel, b, mode)
+}
+
+func TestReadmeAndDescriptionRouteThroughTheNodeAgent(t *testing.T) {
+	t.Parallel()
+	// Readme/Description are control-plane COMPOSITIONS, but their file reads
+	// and writes must go through the node agent: the file lives on the app's
+	// hosting node, not on control's machine (a node2 app's readme PUT hit
+	// control's local raw view and 500ed, live on stage).
+	m, _, _ := newTestDeployManager(t)
+	createTestApp(t, m, "blog")
+	rec := &fileRoutingAgent{NodeAgent: m}
+	m.SetNodeAgent(rec)
+
+	require.NoError(t, m.WriteReadme("blog", "hello"))
+	_, err := m.Readme("blog")
+	require.NoError(t, err)
+	m.Description("blog")
+	require.NoError(t, m.SetDescription("blog", "an app"))
+
+	assert.NotEmpty(t, rec.writes, "readme/description writes go to the node")
+	assert.NotEmpty(t, rec.reads, "readme/description reads come from the node")
 }

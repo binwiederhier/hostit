@@ -117,7 +117,7 @@ func (m *Manager) ExtractTar(name string, r io.Reader) ([]string, error) {
 // Readme returns the app's README, which doubles as the notes an agent keeps
 // about what the app is and what it changed
 func (m *Manager) Readme(name string) (string, error) {
-	b, err := m.ReadFile(name, readmeFile)
+	b, err := m.node.ReadFile(name, readmeFile)
 	if errors.Is(err, fs.ErrNotExist) {
 		return "", nil
 	} else if err != nil {
@@ -126,9 +126,11 @@ func (m *Manager) Readme(name string) (string, error) {
 	return string(b), nil
 }
 
-// WriteReadme replaces the app's README
+// WriteReadme replaces the app's README. Like every composition here, the
+// file work routes through the node agent: the file lives on the app's
+// hosting node, not necessarily on control's machine.
 func (m *Manager) WriteReadme(name, content string) error {
-	return m.WriteFile(name, readmeFile, []byte(content), 0)
+	return m.node.WriteFile(name, readmeFile, []byte(content), 0)
 }
 
 // Description returns the app's own one-liner from hostit.yml, which whoever
@@ -136,7 +138,7 @@ func (m *Manager) WriteReadme(name, content string) error {
 // config that names no runnable mode yet still describes the app, and the
 // owner's prompt depends on this being right while they are mid-edit.
 func (m *Manager) Description(name string) string {
-	b, err := m.ReadFileMax(name, configFile, maxConfigSize)
+	b, err := m.node.ReadFileMax(name, configFile, maxConfigSize)
 	if err != nil {
 		return ""
 	}
@@ -154,8 +156,8 @@ func (m *Manager) Description(name string) string {
 func (m *Manager) SetDescription(name, desc string) error {
 	desc = strings.ReplaceAll(strings.TrimSpace(desc), "\n", " ")
 	var content string
-	if b, err := m.ReadFile(name, configFile); err == nil {
+	if b, err := m.node.ReadFile(name, configFile); err == nil {
 		content = string(b)
 	}
-	return m.WriteFile(name, configFile, []byte(appctl.SetDescription(content, desc)), 0)
+	return m.node.WriteFile(name, configFile, []byte(appctl.SetDescription(content, desc)), 0)
 }

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net"
 	"net/http/httptest"
 	"net/url"
@@ -86,6 +87,7 @@ type fakeAgentFull struct {
 	app.NodeAgent
 	calls   []string
 	written map[string][]byte
+	readErr error // when set, ReadFile fails with this
 }
 
 func (f *fakeAgentFull) Ensure(name string) (string, error) {
@@ -117,6 +119,9 @@ func (f *fakeAgentFull) WriteFileFrom(name, relPath string, r io.Reader, mode os
 	return nil
 }
 func (f *fakeAgentFull) ReadFile(name, relPath string) ([]byte, error) {
+	if f.readErr != nil {
+		return nil, f.readErr
+	}
 	b, ok := f.written[name+"/"+relPath]
 	if !ok {
 		return nil, errors.New("no such file")
@@ -175,4 +180,14 @@ func TestDialInRegistersARemoteAgent(t *testing.T) {
 	out, err := got.Ensure("blog")
 	require.NoError(t, err)
 	assert.Equal(t, "up", out)
+}
+
+// TestReadFileNotExistSurvivesTheWire: Readme() treats a missing README as
+// empty via errors.Is(err, fs.ErrNotExist); the sentinel must survive RPC.
+func TestReadFileNotExistSurvivesTheWire(t *testing.T) {
+	t.Parallel()
+	agent := &fakeAgentFull{written: map[string][]byte{}, readErr: fs.ErrNotExist}
+	remote := startRPC(t, agent)
+	_, err := remote.ReadFile("blog", "README.md")
+	require.ErrorIs(t, err, fs.ErrNotExist)
 }

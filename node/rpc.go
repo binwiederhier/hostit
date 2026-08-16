@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"net/http"
 	"os"
 	"strconv"
@@ -64,6 +65,7 @@ var wireErrs = map[string]error{
 	"app_notfound":  store.ErrAppNotFound,
 	"snap_notfound": store.ErrSnapshotNotFound,
 	"app_exists":    app.ErrAppExists,
+	"file_notfound": fs.ErrNotExist,
 	"invalid":       app.ErrInvalid,
 	"limit":         app.ErrLimitReached,
 }
