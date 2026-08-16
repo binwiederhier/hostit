@@ -139,8 +139,20 @@ type Config struct {
 
 	// NodeID is this hostit-node's identity: the CN of its mTLS certificate and
 	// its name in control's node registry. "local" is the colocated node whose
-	// credentials control mints itself; any other name needs `hostit-node join`.
+	// credentials control mints itself under data-dir/ipc; any other name gets
+	// its certificate from `hostit-control node add` via the files below.
 	NodeID string `yaml:"node-id"`
+
+	// NodeCertFile/NodeKeyFile are this process's cluster identity (the mTLS
+	// certificate control and nodes present to each other; CN = node-id, or
+	// "control" for control's listener), and ClusterCACertFile is the cluster
+	// CA every certificate must chain to. Unset, all three fall back to the
+	// auto-minted colocated files under data-dir/ipc, so a single-host split
+	// needs no configuration. That is the whole trust setup: possession of a
+	// CA-signed certificate is membership; there is no enrollment protocol.
+	NodeCertFile      string `yaml:"node-cert-file"`
+	NodeKeyFile       string `yaml:"node-key-file"`
+	ClusterCACertFile string `yaml:"cluster-ca-cert-file"`
 
 	AppPreview           AppPreviewMode          `yaml:"app-preview"`             // "live" (iframe, default), "screenshot" (periodic headless-chromium shots) or "off"
 	AppPreviewIsolation  AppPreviewIsolationMode `yaml:"app-preview-isolation"`   // "strict" (default) or "off"; how the shot container's network is confined

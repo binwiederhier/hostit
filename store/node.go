@@ -1,9 +1,7 @@
 package store
 
 import (
-	"database/sql"
 	"errors"
-	"strings"
 	"time"
 )
 
@@ -24,45 +22,13 @@ var (
 	ErrNodeNotFound = errors.New("node not found")
 	// ErrNodeExists is returned when adding a node name that already joined
 	ErrNodeExists = errors.New("node already joined")
-	// ErrNodeJoinTokenInvalid is returned for an unknown, used or expired join token
-	ErrNodeJoinTokenInvalid = errors.New("join token invalid or expired")
 )
-
-// CreateNode registers a pending node with its (hashed) one-time join token.
-// Re-creating a node that never joined replaces its token (lost-token UX);
-// a node that already joined must be removed first.
-func (s *Store) CreateNode(name, address, tokenHash string, tokenExpiresAt time.Time) error {
-	res, err := s.db.Exec(remintNodeQuery, address, tokenHash, tokenExpiresAt.Unix(), name)
-	if err != nil {
-		return err
-	}
-	if n, err := res.RowsAffected(); err == nil && n > 0 {
-		return nil
-	}
-	_, err = s.db.Exec(insertNodeQuery, name, address, tokenHash, tokenExpiresAt.Unix())
-	if err != nil && strings.Contains(err.Error(), "UNIQUE") {
-		return ErrNodeExists
-	}
-	return err
-}
 
 // EnsureNode upserts a node that needs no enrollment -- the colocated "local"
 // node, joined from the start; safe to call at every control start.
 func (s *Store) EnsureNode(name, address string) error {
 	_, err := s.db.Exec(ensureNodeQuery, name, address, time.Now().Unix())
 	return err
-}
-
-// ConsumeNodeJoinToken burns an unexpired token and marks its node joined,
-// returning the node name; single-use by construction (the hash is cleared in
-// the same statement that matches it).
-func (s *Store) ConsumeNodeJoinToken(tokenHash string, now time.Time) (string, error) {
-	var name string
-	err := s.db.QueryRow(consumeTokenQuery, now.Unix(), tokenHash, now.Unix()).Scan(&name)
-	if errors.Is(err, sql.ErrNoRows) {
-		return "", ErrNodeJoinTokenInvalid
-	}
-	return name, err
 }
 
 // Node returns one node by name, or ErrNodeNotFound.

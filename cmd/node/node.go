@@ -22,18 +22,6 @@ func newNodeApp(version string) *cli.App {
 					&cli.StringFlag{Name: "config", Aliases: []string{"c"}, Value: config.DefaultServerConfigFile, Usage: "server config file (shared with hostit-control when colocated)"},
 				},
 			},
-			{
-				Name:  "join",
-				Usage: "Enroll this machine with control: exchange a one-time join token for this node's mTLS certificate",
-				Action: func(c *cli.Context) error {
-					return node.Join(c.String("config"), c.String("control"), c.String("token"))
-				},
-				Flags: []cli.Flag{
-					&cli.StringFlag{Name: "config", Aliases: []string{"c"}, Value: config.DefaultServerConfigFile, Usage: "node config file"},
-					&cli.StringFlag{Name: "control", Required: true, Usage: "control's node listener, host:port"},
-					&cli.StringFlag{Name: "token", Required: true, Usage: "join token from `hostit-control node add`"},
-				},
-			},
 		},
 	}
 }

@@ -9,18 +9,14 @@ import (
 	"github.com/urfave/cli/v2"
 	"heckel.io/hostit/config"
 	"heckel.io/hostit/node"
+	"heckel.io/hostit/nodeapi"
 	"heckel.io/hostit/store"
 )
 
-const (
-	// joinTokenTTL is how long a minted join token stays redeemable; enrollment
-	// is an operator copy-pasting between two shells, not an automation window.
-	joinTokenTTL = time.Hour
-)
-
-// cmdNode is the hostit-control node registry: add (mint a join token), list,
-// remove (revoke). These act on the registry SQLite directly -- same host,
-// root-only file, WAL keeps the daemon's writes safe alongside.
+// cmdNode is the hostit-control node registry: add (mint the node's mTLS
+// certificate), list, remove (revoke). These act on the registry SQLite
+// directly -- same host, root-only file, WAL keeps the daemon's writes safe
+// alongside.
 var cmdNode = &cli.Command{
 	Name:  "node",
 	Usage: "Manage app-running nodes (enrollment, listing, removal)",
@@ -30,7 +26,7 @@ var cmdNode = &cli.Command{
 	Subcommands: []*cli.Command{
 		{
 			Name:      "add",
-			Usage:     "Register a new node and mint its one-time join token",
+			Usage:     "Register a new node and mint its mTLS certificate",
 			ArgsUsage: "<name>",
 			Flags: []cli.Flag{
 				&cli.StringFlag{Name: "address", Usage: "the node's IP or hostname, as the proxy will reach its apps"},
@@ -57,20 +53,38 @@ func execNodeAdd(c *cli.Context) error {
 	}
 	name := c.Args().First()
 	if name == store.HostLocal {
-		return fmt.Errorf("%q is the colocated node; it needs no enrollment", name)
+		return fmt.Errorf("%q is the colocated node; its certificate is minted automatically", name)
+	}
+	if !nodeapi.ValidName(name) {
+		return fmt.Errorf("invalid node name %q", name)
 	}
 	conf, s, err := nodeStore(c)
 	if err != nil {
 		return err
 	}
 	defer s.Close()
-	token, err := mintNodeJoinToken(s, conf.DataDir, name, c.String("address"))
+	// Mint the node's identity from the cluster CA. Possession of this pair is
+	// membership (plus the registry row below); there is no join protocol.
+	ca, err := node.LoadCA(conf.DataDir)
+	if err != nil {
+		return fmt.Errorf("cannot load the cluster CA (has hostit-control started once?): %w", err)
+	}
+	cert, err := ca.Issue(name)
 	if err != nil {
 		return err
 	}
-	fmt.Printf("Node %q registered. On the new machine, run:\n\n", name)
-	fmt.Printf("  hostit-node join --control <this-host>:%s --token %s\n\n", portOf(conf.ListenNode), token)
-	fmt.Printf("The token is single-use and expires in %s.\n", joinTokenTTL)
+	certPEM, keyPEM, err := node.EncodeCert(cert)
+	if err != nil {
+		return err
+	}
+	if err := s.EnsureNode(name, c.String("address")); err != nil {
+		return err
+	}
+	fmt.Printf("Node %q registered. On the new machine, save the three PEM blocks below\n", name)
+	fmt.Printf("(e.g. under /etc/hostit/) and point the node config at them:\n\n")
+	fmt.Printf("  node-id: %s\n  listen-node: <this-host>:%s\n", name, portOf(conf.ListenNode))
+	fmt.Printf("  node-cert-file: /etc/hostit/node.pem\n  node-key-file: /etc/hostit/node.key\n  cluster-ca-cert-file: /etc/hostit/cluster-ca.pem\n\n")
+	fmt.Printf("# node.pem\n%s\n# node.key\n%s\n# cluster-ca.pem\n%s\n", certPEM, keyPEM, ca.CertPEM())
 	return nil
 }
 
@@ -89,15 +103,11 @@ func execNodeList(c *cli.Context) error {
 		return nil
 	}
 	for _, n := range nodes {
-		status := "pending"
-		if !n.JoinedAt.IsZero() {
-			status = "joined " + n.JoinedAt.Format("2006-01-02")
-		}
 		seen := "never"
 		if !n.LastSeen.IsZero() {
 			seen = n.LastSeen.Format(time.RFC3339)
 		}
-		fmt.Printf("%-20s %-20s %-18s last seen %s\n", n.Name, n.Address, status, seen)
+		fmt.Printf("%-20s %-20s last seen %s\n", n.Name, n.Address, seen)
 	}
 	return nil
 }
@@ -112,23 +122,6 @@ func execNodeRemove(c *cli.Context) error {
 	}
 	defer s.Close()
 	return s.RemoveNode(c.Args().First())
-}
-
-// mintNodeJoinToken registers the pending node and returns the one-time token
-// (the registry keeps only the hash).
-func mintNodeJoinToken(s *store.Store, dataDir, name, address string) (string, error) {
-	ca, err := node.LoadCA(dataDir)
-	if err != nil {
-		return "", fmt.Errorf("cannot load the node CA (has hostit-control started once?): %w", err)
-	}
-	token, hash, err := node.MintJoinToken(name, ca)
-	if err != nil {
-		return "", err
-	}
-	if err := s.CreateNode(name, address, hash, time.Now().Add(joinTokenTTL)); err != nil {
-		return "", err
-	}
-	return token, nil
 }
 
 // nodeStore opens the config and registry the node commands act on.

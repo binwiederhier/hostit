@@ -8,19 +8,69 @@ import (
 	"os"
 	"path/filepath"
 
+	"heckel.io/hostit/config"
 	"heckel.io/hostit/store"
 )
 
-// Colocated-interim credential files: control mints the CA and both identity
-// certs under <dataDir>/ipc (root-only), and the colocated hostit-node reads
-// its own pair from there. Real remote nodes get certs via join tokens
-// (Phase 2b); the wire and verification are identical either way.
+// Cluster credentials are plain files: each process presents a CA-signed
+// certificate (CN = its node id, "control" for control) and trusts the
+// cluster CA. Configured explicitly via node-cert-file / node-key-file /
+// cluster-ca-cert-file, or -- unset -- the auto-minted colocated set under
+// <dataDir>/ipc (root-only), which control creates on first listen and the
+// colocated hostit-node reads back. Remote nodes get their pair from
+// `hostit-control node add`; there is no enrollment protocol.
 
 const ipcDirName = "ipc"
 
+// ListenerCreds resolves control's node-listener TLS config: the configured
+// cluster files when set, else the auto-minted colocated set (created on
+// first use).
+func ListenerCreds(conf *config.Config) (*tls.Config, error) {
+	if conf.NodeCertFile != "" {
+		cert, pool, err := loadClusterFiles(conf)
+		if err != nil {
+			return nil, err
+		}
+		return ServerTLS(cert, pool), nil
+	}
+	tlsConf, _, err := EnsureIPCCreds(conf.DataDir)
+	return tlsConf, err
+}
+
+// DialCreds resolves a node's client TLS config for dialing control: the
+// configured cluster files when set, else the colocated pair under
+// <dataDir>/ipc that control minted for this node id.
+func DialCreds(conf *config.Config) (*tls.Config, error) {
+	if conf.NodeCertFile != "" {
+		cert, pool, err := loadClusterFiles(conf)
+		if err != nil {
+			return nil, err
+		}
+		return ClientTLS(cert, pool), nil
+	}
+	return LoadNodeCreds(conf.DataDir, conf.NodeID)
+}
+
+// loadClusterFiles loads the configured identity pair and CA pool; all three
+// files must be set together.
+func loadClusterFiles(conf *config.Config) (tls.Certificate, *x509.CertPool, error) {
+	if conf.NodeKeyFile == "" || conf.ClusterCACertFile == "" {
+		return tls.Certificate{}, nil, fmt.Errorf("node-cert-file requires node-key-file and cluster-ca-cert-file")
+	}
+	cert, err := tls.LoadX509KeyPair(conf.NodeCertFile, conf.NodeKeyFile)
+	if err != nil {
+		return tls.Certificate{}, nil, err
+	}
+	pool, err := loadPool(conf.ClusterCACertFile)
+	if err != nil {
+		return tls.Certificate{}, nil, err
+	}
+	return cert, pool, nil
+}
+
 // EnsureIPCCreds creates (once) and loads the CA plus the "control" and
 // "local" identity certs; returns the TLS config for control's node listener
-// and the CA itself (the join handler signs with it).
+// and the CA itself (`node add` mints remote-node certs with it).
 func EnsureIPCCreds(dataDir string) (*tls.Config, *CA, error) {
 	dir := filepath.Join(dataDir, ipcDirName)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -59,8 +109,8 @@ func EnsureIPCCreds(dataDir string) (*tls.Config, *CA, error) {
 	return ca.ListenerTLS(controlCert), ca, nil
 }
 
-// LoadCA reads the persisted CA (cert + signing key) back for join-time
-// certificate issuance.
+// LoadCA reads the persisted CA (cert + signing key) back so `node add` can
+// mint a remote node's certificate.
 func LoadCA(dataDir string) (*CA, error) {
 	dir := filepath.Join(dataDir, ipcDirName)
 	certPEM, err := os.ReadFile(filepath.Join(dir, "ca.pem"))

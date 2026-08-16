@@ -8,8 +8,13 @@ web/build/
 control/site/*
 !control/site/index.html
 
-# component build artifacts
+# component build artifacts (the stray binaries `go build` drops in the repo
+# root); the !/  lines keep the package DIRECTORIES of the same names tracked
 /control
+!/control/
 /node
+!/node/
 /proxy
+!/proxy/
 /hostit
+!/hostit/

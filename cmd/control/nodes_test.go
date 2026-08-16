@@ -1,7 +1,6 @@
 package main
 
 import (
-	"os"
 	"path/filepath"
 	"testing"
 
@@ -24,7 +23,7 @@ func TestControlHasNodeCommands(t *testing.T) {
 	}
 }
 
-func TestNodeAddMintsAJoinToken(t *testing.T) {
+func TestNodeAddRegistersTheNode(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	// Control has started once: CA and registry exist.
@@ -34,21 +33,19 @@ func TestNodeAddMintsAJoinToken(t *testing.T) {
 	require.NoError(t, err)
 	defer s.Close()
 
-	token, err := mintNodeJoinToken(s, dir, "worker-2", "10.0.0.2")
-	require.NoError(t, err)
-
-	// The token parses, pins the CA, and its hash is redeemable in the registry.
-	name, secret, caFP, err := node.ParseJoinToken(token)
-	require.NoError(t, err)
-	assert.Equal(t, "worker-2", name)
+	// The CLI's mint path: issue the node's certificate from the cluster CA
+	// and register the row; the pair plus the row IS the membership.
 	ca, err := node.LoadCA(dir)
 	require.NoError(t, err)
-	assert.Equal(t, ca.Fingerprint(), caFP)
-	_ = secret
+	cert, err := ca.Issue("worker-2")
+	require.NoError(t, err)
+	certPEM, keyPEM, err := node.EncodeCert(cert)
+	require.NoError(t, err)
+	assert.Contains(t, certPEM, "BEGIN CERTIFICATE")
+	assert.Contains(t, keyPEM, "BEGIN PRIVATE KEY")
+	require.NoError(t, s.EnsureNode("worker-2", "10.0.0.2"))
 
 	n, err := s.Node("worker-2")
 	require.NoError(t, err)
 	assert.Equal(t, "10.0.0.2", n.Address)
-	assert.True(t, n.JoinedAt.IsZero(), "pending until the token is used")
-	_ = os.Remove(filepath.Join(dir, "hostit.db"))
 }

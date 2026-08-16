@@ -10,14 +10,15 @@ const (
 	HostLocal = "local"
 )
 
-// Node is one app-running machine. A node is created pending (with a one-time
-// join token) by `node add`, becomes joined when the token is exchanged for
-// its mTLS certificate, and is authenticated from then on purely by that
-// certificate's CN matching this row's name.
+// Node is one app-running machine, registered by `node add` (which also mints
+// its mTLS certificate). A node authenticates purely by that certificate's CN
+// matching this row's name; the row is the membership switch `node remove`
+// flips off.
 type Node struct {
 	Name    string `json:"name"`
 	Address string `json:"address"`
-	// JoinedAt is zero while the node is pending (token minted, not yet used).
+	// JoinedAt is a leftover of the retired join-token flow (kept for schema
+	// compatibility); liveness is LastSeen.
 	JoinedAt time.Time `json:"joined_at"`
 	// LastSeen is the last connect/heartbeat, for liveness display and placement.
 	LastSeen time.Time `json:"last_seen"`

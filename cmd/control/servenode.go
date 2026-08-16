@@ -25,7 +25,7 @@ const (
 // node), a per-node poll loop feeds the state cache, and the rejoin handshake
 // pushes the node's registry mirror and re-asserts desired state.
 func listenForNode(conf *config.Config, manager *control.Manager, srv *control.Server, done <-chan struct{}) error {
-	tlsConf, ca, err := node.EnsureIPCCreds(conf.DataDir)
+	tlsConf, err := node.ListenerCreds(conf)
 	if err != nil {
 		return err
 	}
@@ -41,12 +41,12 @@ func listenForNode(conf *config.Config, manager *control.Manager, srv *control.S
 	var mu sync.Mutex
 	supersede := make(map[string]chan struct{})
 	mux := http.NewServeMux()
-	// Enrollment: a new node exchanges its one-time join token for an mTLS
-	// certificate; the only route here that runs without a client cert.
-	mux.Handle(node.JoinPath, node.JoinHandler(ca, manager.Store()))
+	// A node is authorized by its registry row plus its CA-signed certificate:
+	// the transport already proved the identity, the row is the membership
+	// switch `hostit-control node add` flips on and `node remove` off.
 	mux.Handle("/", node.ConnectHandler(func(nodeID string) bool {
-		n, err := manager.Store().Node(nodeID)
-		return err == nil && !n.JoinedAt.IsZero()
+		_, err := manager.Store().Node(nodeID)
+		return err == nil
 	}, func(nodeID string) http.Handler {
 		// The node's reverse channel: usage, poweroffs and snapshot records it
 		// originates land in the registry through these.

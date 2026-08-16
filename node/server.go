@@ -2,7 +2,6 @@ package node
 
 import (
 	"crypto/tls"
-	"fmt"
 	"log/slog"
 	"net"
 	"os"
@@ -21,31 +20,16 @@ import (
 const (
 	// redialDelay paces reconnects to control
 	redialDelay = 2 * time.Second
+	// dialTimeout bounds one connection attempt to control. Without it a stop
+	// during an unreachable-control window sits in the OS connect timeout
+	// (minutes), longer than systemd's stop window -- the daemon gets SIGKILLed.
+	dialTimeout = 10 * time.Second
 )
 
 // sigCh receives the termination signal; the dial loop closes the live control
 // connection on it so ServeAgent unblocks instead of ignoring SIGTERM until
 // systemd's stop timeout.
 var sigCh = make(chan os.Signal, 1)
-
-// Join runs the enrollment exchange and tells the operator what the config
-// must say for serve to dial in as this node.
-func Join(configPath, control, token string) error {
-	conf, err := config.LoadConfig(configPath)
-	if err != nil {
-		return err
-	}
-	name, _, _, err := ParseJoinToken(token)
-	if err != nil {
-		return err
-	}
-	if err := enroll(control, token, conf.DataDir); err != nil {
-		return err
-	}
-	fmt.Printf("Joined as node %q; credentials stored under %s.\n", name, conf.DataDir)
-	fmt.Printf("Make sure the config sets:\n\n  node-id: %s\n  listen-node: %s\n\nthen start hostit-node.\n", name, control)
-	return nil
-}
 
 // Serve runs the node daemon from its config file until a termination signal.
 // It is the machine half only: a Machine doing what control tells it to, with
@@ -112,7 +96,7 @@ func Serve(configPath, version string) error {
 
 	// Dial control forever: serve the RPC over the mTLS connection; on death,
 	// redial with backoff. Control runs its rejoin handshake on every register.
-	tlsConf, err := LoadNodeCreds(conf.DataDir, conf.NodeID)
+	tlsConf, err := DialCreds(conf)
 	if err != nil {
 		return err
 	}
@@ -141,7 +125,7 @@ func Serve(configPath, version string) error {
 			return nil
 		default:
 		}
-		conn, err := tls.Dial("tcp", conf.ListenNode, tlsConf)
+		conn, err := tls.DialWithDialer(&net.Dialer{Timeout: dialTimeout}, "tcp", conf.ListenNode, tlsConf)
 		if err != nil {
 			time.Sleep(redialDelay)
 			continue
