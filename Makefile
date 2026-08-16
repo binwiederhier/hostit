@@ -67,9 +67,16 @@ test:
 #   HOSTIT_HOST=https://hostit.apps.example.com HOSTIT_TOKEN=... make e2e
 #   HOSTIT_HOST=... HOSTIT_TOKEN=... make e2e RUN='TestFork|TestChurn'
 RUN ?= .
+# E2E_PARALLEL caps how many e2e tests run concurrently: most tests are
+# self-contained (own app, unique name) and marked t.Parallel(), but each app
+# create is heavy on the server (btrfs, podman), so this is a server-load
+# knob, not a client one. Global-state tests (disk default, assistant
+# settings) stay serial and complete before the parallel batch starts.
+E2E_PARALLEL ?= 4
+
 e2e:
 	@test -n "$(HOSTIT_HOST)" || { echo "set HOSTIT_HOST and HOSTIT_TOKEN"; exit 1; }
-	$(GO) test -tags e2e -count 1 -timeout 30m -run '$(RUN)' -v ./e2e/
+	$(GO) test -tags e2e -count 1 -timeout 30m -parallel $(E2E_PARALLEL) -run '$(RUN)' -v ./e2e/
 
 # A fast smoke subset (~4 min): one full create-deploy-serve journey, the token
 # scoping boundary, and the preview contract. For quick confidence between full runs.

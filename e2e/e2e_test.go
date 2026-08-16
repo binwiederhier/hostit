@@ -31,6 +31,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -63,6 +64,7 @@ func newEnv(t *testing.T) *env {
 }
 
 func TestAgentCanBuildAnAppFromNothing(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	name := uniqueName("e2e-agent")
 	app := e.createApp(name)
@@ -102,6 +104,7 @@ func TestAgentCanBuildAnAppFromNothing(t *testing.T) {
 }
 
 func TestRunModeWithARealRuntime(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	name := uniqueName("e2e-run")
 	app := e.createApp(name)
@@ -128,6 +131,7 @@ func TestRunModeWithARealRuntime(t *testing.T) {
 }
 
 func TestTarUploadOfAWholeTree(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	name := uniqueName("e2e-tar")
 	app := e.createApp(name)
@@ -155,6 +159,7 @@ func TestTarUploadOfAWholeTree(t *testing.T) {
 }
 
 func TestExecutableUploadAndDescription(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	name := uniqueName("e2e-exec")
 	app := e.createApp(name)
@@ -182,6 +187,7 @@ func TestExecutableUploadAndDescription(t *testing.T) {
 }
 
 func TestAppTokenCannotLeaveItsApp(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	mine, theirs := uniqueName("e2e-mine"), uniqueName("e2e-theirs")
 	app := e.createApp(mine)
@@ -202,6 +208,7 @@ func TestAppTokenCannotLeaveItsApp(t *testing.T) {
 }
 
 func TestUnknownAppAndStoppedApp(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	name := uniqueName("e2e-stop")
 	app := e.createApp(name)
@@ -232,6 +239,7 @@ func TestUnknownAppAndStoppedApp(t *testing.T) {
 // the container. This is the apt-persistence promise -- installed packages no
 // longer vanish on deploys and upgrades.
 func TestRootfsPersistsAcrossDeploy(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	name := uniqueName("e2e-rootfs")
 	app := e.createApp(name)
@@ -265,6 +273,7 @@ func TestRootfsPersistsAcrossDeploy(t *testing.T) {
 // is the unified-layout promise -- rollback restores data AND installed
 // software together.
 func TestRollbackRestoresInstalledSoftware(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	name := uniqueName("e2e-rollb")
 	app := e.createApp(name)
@@ -334,6 +343,7 @@ func TestDiskHardCap(t *testing.T) {
 // python itself), restore the snapshot, and verify that everything -- marker,
 // data, interpreter, and the served page -- is back.
 func TestFullLifecycleJourney(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	name := uniqueName("e2e-journey")
 	app := e.createApp(name)
@@ -384,6 +394,7 @@ func TestFullLifecycleJourney(t *testing.T) {
 // the WHOLE app subvolume, not just the home: a marker in /usr/local and a file
 // in the home both show up in the fork, and the fork serves on its own URL.
 func TestForkCarriesEverything(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	source := uniqueName("e2e-fkr-src")
 	app := e.createApp(source)
@@ -420,6 +431,7 @@ func TestForkCarriesEverything(t *testing.T) {
 // container-needing calls with a 409 that says why (powered off). Power on
 // brings the skeleton back.
 func TestPowerCycleJourney(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	name := uniqueName("e2e-power")
 	app := e.createApp(name)
@@ -453,6 +465,7 @@ func TestPowerCycleJourney(t *testing.T) {
 // removes exactly that one. Automatic snapshots may interleave, so the test
 // keys on its own ids rather than on absolute positions.
 func TestSnapshotListAndDelete(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	name := uniqueName("e2e-snaps")
 	app := e.createApp(name)
@@ -494,6 +507,7 @@ func TestSnapshotListAndDelete(t *testing.T) {
 // nothing durable), and the old name is freed -- its API path 404s and its
 // subdomain shows the anonymous "nothing deployed" page.
 func TestRenameKeepsAppAlive(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	oldName, newName := uniqueName("e2e-ren-old"), uniqueName("e2e-ren-new")
 	app := e.createApp(oldName)
@@ -533,8 +547,12 @@ func TestRenameKeepsAppAlive(t *testing.T) {
 
 // --- helpers ---
 
+// nameCounter de-duplicates names minted in the same instant: the timestamp
+// component cycles every 100us, and parallel tests mint names simultaneously.
+var nameCounter atomic.Int64
+
 func uniqueName(prefix string) string {
-	return fmt.Sprintf("%s-%d", prefix, time.Now().UnixNano()%100000)
+	return fmt.Sprintf("%s-%d%02d", prefix, time.Now().UnixNano()%100000, nameCounter.Add(1)%100)
 }
 
 func (e *env) createApp(name string) map[string]any {
@@ -1001,6 +1019,7 @@ func contains(ss []string, s string) bool {
 // return of the old behavior (multi-second deletes, 409s, or creates stalled
 // ~12s behind a teardown's filesystem sync).
 func TestChurnDeleteRecreate(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	name := uniqueName("e2e-churn")
 	app := e.createApp(name)
@@ -1037,6 +1056,7 @@ func TestChurnDeleteRecreate(t *testing.T) {
 // "live"/"off" server the endpoints do not exist for callers. So it passes
 // against both stage (screenshot) and a default (live) install.
 func TestAppPreviewModeContract(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	name := uniqueName("e2e-preview")
 	app := e.createApp(name)
