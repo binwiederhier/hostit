@@ -39,7 +39,7 @@ type Interface interface {
 	MoveSubvolume(src, dst string) error
 	Snapshot(src, dst string, readonly bool, qgroup string) error
 	SetReadOnly(path string, readonly bool) error
-	QuotaEnable(pool string) error
+	EnsureSimpleQuota(pool string) error
 	RootID(path string) (string, error)
 	QgroupCreate(pool, groupID string) error
 	QgroupAssign(pool, subvolQgroup, groupID string) error
@@ -56,13 +56,16 @@ type Interface interface {
 // Service performs btrfs subvolume and qgroup operations over a run.Runner.
 type Service struct {
 	runner run.Runner
+	// enableSimpleQuota issues the quota-enable ioctl (no btrfs-progs version
+	// dependency); a hook so tests can observe it without a real btrfs mount.
+	enableSimpleQuota func(pool string) error
 }
 
 var _ Interface = (*Service)(nil)
 
 // New builds a btrfs Service from a command runner.
 func New(runner run.Runner) *Service {
-	return &Service{runner: runner}
+	return &Service{runner: runner, enableSimpleQuota: enableSimpleQuotaIoctl}
 }
 
 // filesystem returns the filesystem type of dir (e.g. "btrfs", "ext2/ext3"), as
@@ -123,13 +126,6 @@ func (s *Service) Snapshot(src, dst string, readonly bool, qgroup string) error 
 // base rootfs so nothing (and nobody) can dirty what every app snapshot shares.
 func (s *Service) SetReadOnly(path string, readonly bool) error {
 	_, err := s.runner.RunTimeout(timeout, "btrfs", "property", "set", path, "ro", strconv.FormatBool(readonly))
-	return err
-}
-
-// QuotaEnable turns on quota accounting for the pool; idempotent, so it is safe
-// to run at every daemon start.
-func (s *Service) QuotaEnable(pool string) error {
-	_, err := s.runner.RunTimeout(timeout, "btrfs", "quota", "enable", pool)
 	return err
 }
 

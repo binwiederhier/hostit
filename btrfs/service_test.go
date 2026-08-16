@@ -1,6 +1,7 @@
 package btrfs
 
 import (
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -103,13 +104,6 @@ func TestSetReadOnly(t *testing.T) {
 	r.ran = nil
 	assert.NoError(t, s.SetReadOnly("/apps/.bases/abc", false))
 	assert.Contains(t, r.ran, "btrfs property set /apps/.bases/abc ro false")
-}
-
-func TestQuotaEnable(t *testing.T) {
-	t.Parallel()
-	r := newFakeRunner()
-	assert.NoError(t, New(r).QuotaEnable("/apps"))
-	assert.Contains(t, r.ran, "btrfs quota enable /apps")
 }
 
 func TestRootID(t *testing.T) {
@@ -273,4 +267,58 @@ func TestQgroupTryDestroyNeverSyncs(t *testing.T) {
 	assert.NotContains(t, joined, "filesystem sync", "the gentle path must never force a commit")
 	assert.NotContains(t, joined, "qgroup remove")
 	assert.Equal(t, 1, strings.Count(joined, "btrfs qgroup destroy"), "one attempt, no ladder")
+}
+
+func TestEnsureSimpleQuotaEnablesWhenQuotaIsOff(t *testing.T) {
+	t.Parallel()
+	r := newFakeRunner()
+	r.returns("findmnt", "abcd-1234\n")
+	r.fails("cat /sys/fs/btrfs/abcd-1234/qgroups/mode", errors.New("cat: /sys/fs/btrfs/abcd-1234/qgroups/mode: No such file or directory"))
+	s := New(r)
+	var enabled []string
+	s.enableSimpleQuota = func(pool string) error { enabled = append(enabled, pool); return nil }
+
+	require.NoError(t, s.EnsureSimpleQuota("/apps"))
+	assert.Equal(t, []string{"/apps"}, enabled)
+	assert.NotContains(t, strings.Join(s.runner.(*fakeRunner).ran, "\n"), "btrfs quota disable")
+}
+
+func TestEnsureSimpleQuotaMigratesFromNormalQuotas(t *testing.T) {
+	t.Parallel()
+	r := newFakeRunner()
+	r.returns("findmnt", "abcd-1234\n")
+	r.returns("cat /sys/fs/btrfs/abcd-1234/qgroups/mode", "qgroup\n")
+	s := New(r)
+	var enabled []string
+	s.enableSimpleQuota = func(pool string) error { enabled = append(enabled, pool); return nil }
+
+	// Normal (full) qgroups cannot enforce budgets on CoW-seeded subvolumes:
+	// snapshot -i from a base outside the group marks the whole fs inconsistent
+	// and the kernel stops enforcing until a rescan completes. Migrate: disable,
+	// then enable simple quotas (the caller re-ensures every app's budget after).
+	require.NoError(t, s.EnsureSimpleQuota("/apps"))
+	assert.Contains(t, r.ran, "btrfs quota disable /apps")
+	assert.Equal(t, []string{"/apps"}, enabled)
+}
+
+func TestEnsureSimpleQuotaNoopWhenAlreadySimple(t *testing.T) {
+	t.Parallel()
+	r := newFakeRunner()
+	r.returns("findmnt", "abcd-1234\n")
+	r.returns("cat /sys/fs/btrfs/abcd-1234/qgroups/mode", "squota\n")
+	s := New(r)
+	s.enableSimpleQuota = func(pool string) error { t.Fatal("must not re-enable"); return nil }
+
+	require.NoError(t, s.EnsureSimpleQuota("/apps"))
+	assert.NotContains(t, strings.Join(r.ran, "\n"), "btrfs quota disable")
+}
+
+func TestEnsureSimpleQuotaSurfacesUnknownModeReadErrors(t *testing.T) {
+	t.Parallel()
+	r := newFakeRunner()
+	r.fails("findmnt", errors.New("findmnt: /apps: not found"))
+	s := New(r)
+	s.enableSimpleQuota = func(pool string) error { t.Fatal("must not enable blind"); return nil }
+
+	require.Error(t, s.EnsureSimpleQuota("/apps"))
 }

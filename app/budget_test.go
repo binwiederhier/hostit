@@ -43,11 +43,15 @@ func TestDeleteAppRemovesSubvolumeAndBudget(t *testing.T) {
 	assert.Contains(t, r.ran(), "btrfs qgroup destroy "+group+" "+m.config.AppsDir)
 }
 
-func TestEnableDiskBudgetsEnablesQuotaOnThePool(t *testing.T) {
+func TestEnableDiskBudgetsMigratesThePoolToSimpleQuotas(t *testing.T) {
 	t.Parallel()
 	m, _, r := newTestDeployManager(t)
+	// The pool still runs full qgroups (an install predating squota): startup
+	// migrates it -- disable, then enable simple -- so budgets actually enforce.
+	r.returns("findmnt", "abcd-1234\n")
+	r.returns("cat /sys/fs/btrfs/abcd-1234/qgroups/mode", "qgroup\n")
 	m.EnableDiskBudgets()
-	assert.Contains(t, r.ran(), "btrfs quota enable "+m.config.AppsDir)
+	assert.Contains(t, r.ran(), "btrfs quota disable "+m.config.AppsDir)
 }
 
 func TestSweepStaleQgroups(t *testing.T) {

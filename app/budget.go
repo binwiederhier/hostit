@@ -19,13 +19,14 @@ const (
 	defaultDiskCapMB = 2048
 )
 
-// EnableDiskBudgets turns on btrfs quota accounting for the apps pool, the
-// mechanism behind every per-app disk budget; idempotent, called once at
-// startup. Failure only warns: apps still run, just uncapped, which the next
-// start retries.
+// EnableDiskBudgets puts the apps pool in simple-quota mode, the mechanism
+// behind every per-app disk budget; idempotent, called once at startup before
+// the limit sweep re-ensures each app's group (which rebuilds them after a
+// full-qgroups migration). Failure only warns: apps still run, just uncapped,
+// which the next start retries.
 func (m *Manager) EnableDiskBudgets() {
-	if err := m.btrfs.QuotaEnable(m.config.AppsDir); err != nil {
-		slog.Warn("Cannot enable btrfs quota accounting; disk budgets will not be enforced", "error", err)
+	if err := m.btrfs.EnsureSimpleQuota(m.config.AppsDir); err != nil {
+		slog.Warn("Cannot enable btrfs simple quotas; disk budgets will not be enforced", "error", err)
 	}
 }
 
