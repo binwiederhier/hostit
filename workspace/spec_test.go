@@ -265,3 +265,17 @@ func TestContainerAndUnitNamesKeyOnTheID(t *testing.T) {
 	assert.Equal(t, ContainerPrefix+"appid123", ContainerName("appid123"))
 	assert.Equal(t, UnitTemplate+"appid123", UnitName("appid123"))
 }
+
+// The per-app loopback port range is fixed, not configurable: an app's uid
+// block is derived from its port, so moving the range on an existing install
+// would silently re-map every app's uid. Pinning it here means the range and
+// the uid formula can only ever change together, deliberately.
+func TestPortRangeIsFixedAndDrivesTheUIDBlocks(t *testing.T) {
+	assert.Equal(t, 10000, PortMin)
+	assert.Equal(t, 19999, PortMax)
+	assert.Equal(t, UIDBlockStart, UIDFor(PortMin), "the first port owns the first uid block")
+	assert.Equal(t, UIDBlockStart+UIDBlockSize, UIDFor(PortMin+1), "blocks are spaced by port")
+	// The whole range fits below the next power-of-two boundary a 32-bit uid
+	// space allows, so no app's block can collide with another's.
+	assert.Less(t, UIDFor(PortMax)+UIDBlockSize, 1<<31)
+}

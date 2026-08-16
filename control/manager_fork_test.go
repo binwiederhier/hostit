@@ -33,7 +33,7 @@ func TestForkSeedsSubvolumeFromSourceAndDeploys(t *testing.T) {
 	// ONE snapshot seeds the fork: the source's whole subvolume (files, config,
 	// data AND installed packages), writable, not read-only, created straight
 	// into the fork's budget group (-i).
-	group := fmt.Sprintf("1/%d", workspace.UIDFor(m.config.PortMin, fork.Port))
+	group := fmt.Sprintf("1/%d", workspace.UIDFor(fork.Port))
 	assert.Contains(t, r.ran(), "btrfs subvolume snapshot -i "+group+" "+m.AppSubvolume("blog")+" "+m.AppSubvolume("blog2"))
 	assert.NotContains(t, r.ran(), "btrfs subvolume snapshot -r ", "the fork seed is writable")
 
@@ -69,7 +69,7 @@ func TestForkFromSnapshotSeedsFromThatSnapshot(t *testing.T) {
 
 	// Seeded from the snapshot's subvolume (a whole-app snapshot), not the live
 	// subvolume, and joined to the NEW app's budget group at birth (-i).
-	assert.Contains(t, r.ran(), "btrfs subvolume snapshot -i "+fmt.Sprintf("1/%d", workspace.UIDFor(m.config.PortMin, fork.Port))+" "+m.SnapshotPath("blog", snap.ID)+" "+m.AppSubvolume("blog2"))
+	assert.Contains(t, r.ran(), "btrfs subvolume snapshot -i "+fmt.Sprintf("1/%d", workspace.UIDFor(fork.Port))+" "+m.SnapshotPath("blog", snap.ID)+" "+m.AppSubvolume("blog2"))
 	assert.NotContains(t, r.ran(), "btrfs subvolume snapshot "+m.AppSubvolume("blog")+" "+m.AppSubvolume("blog2"))
 }
 
@@ -92,7 +92,7 @@ func TestForkSetsDiskQuota(t *testing.T) {
 	fork, err := m.Fork("blog", "blog2", "", &CreateOptions{DiskMB: 256})
 	require.NoError(t, err)
 	// The fork gets its own hard budget cap, not the source's and not none.
-	group := fmt.Sprintf("1/%d", workspace.UIDFor(m.config.PortMin, fork.Port))
+	group := fmt.Sprintf("1/%d", workspace.UIDFor(fork.Port))
 	assert.Contains(t, r.ran(), "btrfs qgroup limit -e 256M "+group+" "+m.config.AppsDir)
 }
 

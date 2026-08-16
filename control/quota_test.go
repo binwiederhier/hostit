@@ -14,7 +14,7 @@ func TestMeasureDiskUsage(t *testing.T) {
 	t.Parallel()
 	m, _, r := newTestDeployManager(t)
 	a := createTestApp(t, m, "blog")
-	group := fmt.Sprintf("1/%d", workspace.UIDFor(m.config.PortMin, a.Port))
+	group := fmt.Sprintf("1/%d", workspace.UIDFor(a.Port))
 	// Usage is the budget group's EXCLUSIVE bytes (the app's true pinned bytes:
 	// what deleting it would free), not the referenced count, which would include
 	// the ~860 MB base every rootfs shares. 3145728 exclusive bytes is 3 MB.
@@ -29,7 +29,7 @@ func TestSetDiskLimitCapsTheBudgetGroupNotTheHome(t *testing.T) {
 	t.Parallel()
 	m, _, r := newTestDeployManager(t)
 	a := createTestApp(t, m, "blog")
-	group := fmt.Sprintf("1/%d", workspace.UIDFor(m.config.PortMin, a.Port))
+	group := fmt.Sprintf("1/%d", workspace.UIDFor(a.Port))
 	r.reset()
 	m.SetDiskLimit("blog", 512)
 	// The limit is the app's COMBINED budget (home + rootfs + snapshots), enforced
@@ -42,7 +42,7 @@ func TestSetDiskLimitZeroFallsBackToTheDefaultCap(t *testing.T) {
 	t.Parallel()
 	m, _, r := newTestDeployManager(t)
 	a := createTestApp(t, m, "blog")
-	group := fmt.Sprintf("1/%d", workspace.UIDFor(m.config.PortMin, a.Port))
+	group := fmt.Sprintf("1/%d", workspace.UIDFor(a.Port))
 	r.reset()
 	m.SetDiskLimit("blog", 0)
 	// 0 used to mean unlimited; an uncapped app once dd'd the host full, so now
@@ -56,7 +56,7 @@ func TestRefreshDiskUsageRecordsUsageWithoutStopping(t *testing.T) {
 	t.Parallel()
 	m, _, runner := newTestDeployManager(t)
 	app := createTestApp(t, m, "blog")
-	group := fmt.Sprintf("1/%d", workspace.UIDFor(m.config.PortMin, app.Port))
+	group := fmt.Sprintf("1/%d", workspace.UIDFor(app.Port))
 	// The app's budget group reports ~3 MB exclusive (3145728 bytes).
 	runner.returns("qgroup show", group+" 904921088 3145728 <2 member qgroups>\n")
 	m.SetDiskLimit("blog", 1) // 1 MB limit, app uses ~3 MB

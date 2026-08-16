@@ -13,10 +13,10 @@ func TestCreateRecordsTheAppUID(t *testing.T) {
 	t.Parallel()
 	m, _, _ := newTestDeployManager(t)
 	a := createTestApp(t, m, "blog")
-	assert.Equal(t, workspace.UIDFor(m.config.PortMin, a.Port), a.UID, "the allocated uid block base is recorded on the row")
+	assert.Equal(t, workspace.UIDFor(a.Port), a.UID, "the allocated uid block base is recorded on the row")
 	row, err := m.store.App("blog")
 	require.NoError(t, err)
-	assert.Equal(t, workspace.UIDFor(m.config.PortMin, a.Port), row.UID)
+	assert.Equal(t, workspace.UIDFor(a.Port), row.UID)
 }
 
 func TestBackfillUIDsFillsOnlyZeroRows(t *testing.T) {
@@ -30,7 +30,7 @@ func TestBackfillUIDsFillsOnlyZeroRows(t *testing.T) {
 
 	old, err := m.store.App("old")
 	require.NoError(t, err)
-	assert.Equal(t, workspace.UIDFor(m.config.PortMin, 10007), old.UID, "a zero uid is backfilled from the port")
+	assert.Equal(t, workspace.UIDFor(10007), old.UID, "a zero uid is backfilled from the port")
 	done, err := m.store.App("done")
 	require.NoError(t, err)
 	assert.Equal(t, 42, done.UID, "an already-recorded uid is left alone")

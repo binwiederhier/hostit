@@ -118,13 +118,21 @@ func TestCreateAppPortAllocation(t *testing.T) {
 	assert.Equal(t, 10001, app2.Port)
 }
 
-func TestCreateAppPortRangeExhausted(t *testing.T) {
+// The port range is fixed (workspace.PortMin/PortMax), so exhaustion is
+// reached by reserving the whole span rather than by shrinking the range:
+// allocatePort must report it instead of handing out a port twice.
+func TestAllocatePortReportsAnExhaustedRange(t *testing.T) {
 	t.Parallel()
 	m, _ := newTestManager(t)
-	m.config.PortMax = 10000 // Only one port available
-	_, err := m.CreateApp("one", &CreateOptions{RequestKeys: []string{testPublicKey}})
-	require.NoError(t, err)
-	_, err = m.CreateApp("two", &CreateOptions{RequestKeys: []string{testPublicKey}})
+	m.pmu.Lock()
+	for port := workspace.PortMin; port <= workspace.PortMax; port++ {
+		m.reservedPorts[port] = true
+	}
+	m.pmu.Unlock()
+
+	_, err := m.allocatePort()
+	require.ErrorIs(t, err, ErrNoPortsAvailable)
+	_, err = m.CreateApp("one", &CreateOptions{RequestKeys: []string{testPublicKey}})
 	require.ErrorIs(t, err, ErrNoPortsAvailable)
 }
 
@@ -412,7 +420,7 @@ func TestDeleteAppAnswersBeforeTeardownAndConverges(t *testing.T) {
 	a := createTestApp(t, m, "blog")
 	subvol := m.AppSubvolume("blog")
 	unit, container := m.UnitName("blog"), m.ContainerName("blog")
-	group := fmt.Sprintf("1/%d", workspace.UIDFor(m.config.PortMin, a.Port))
+	group := fmt.Sprintf("1/%d", workspace.UIDFor(a.Port))
 	r.reset()
 
 	// The API answer is immediate: the rows are gone before any host teardown

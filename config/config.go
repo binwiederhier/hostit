@@ -109,8 +109,6 @@ type Config struct {
 	AWSAccessKeyID  string `yaml:"aws-access-key-id"` // Optional; falls back to the usual AWS env/instance credentials
 	AWSSecretKey    string `yaml:"aws-secret-key"`    // Optional; see above
 	AWSHostedZoneID string `yaml:"aws-hosted-zone-id"`
-	PortMin         int    `yaml:"port-min"` // Lower bound of the per-app loopback port range
-	PortMax         int    `yaml:"port-max"` // Upper bound of the per-app loopback port range
 
 	// Web app and user accounts
 	GoogleClientID     string   `yaml:"google-client-id"`     // Google OAuth client ID; empty disables the web login
@@ -216,8 +214,6 @@ func NewConfig() *Config {
 		TLS:                 TLSLetsEncrypt,
 		AppPreview:          AppPreviewLive,
 		AppPreviewIsolation: AppPreviewIsolationStrict,
-		PortMin:             10000,
-		PortMax:             19999,
 		AssistantModel:      DefaultAssistantModel,
 		AssistantModels: []ModelOption{
 			{ID: "claude-sonnet-5", Label: "Sonnet 5"},
@@ -301,9 +297,6 @@ func (c *Config) Validate() error {
 	}
 	if c.AdminToken == "" {
 		return errAdminTokenRequired
-	}
-	if c.PortMin <= 0 || c.PortMax < c.PortMin {
-		return fmt.Errorf("invalid port range %d-%d", c.PortMin, c.PortMax)
 	}
 	if c.TLS != TLSLetsEncrypt && c.TLS != TLSOff {
 		return fmt.Errorf("invalid tls mode %q, must be %q or %q", c.TLS, TLSLetsEncrypt, TLSOff)

@@ -61,7 +61,7 @@ func TestTakeSnapshotCreatesTheSubvolumeInsideTheBudget(t *testing.T) {
 	require.NoError(t, err)
 	// Created INTO the budget group (-i): atomic membership, no post-hoc assign
 	// (which would leave the group unenforced until a rescan).
-	assert.Contains(t, r.ran(), fmt.Sprintf("btrfs subvolume snapshot -r -i 1/%d %s %s", workspace.UIDFor(m.config.PortMin, a.Port), m.AppSubvolume("blog"), m.SnapshotPath("blog", snap.ID)))
+	assert.Contains(t, r.ran(), fmt.Sprintf("btrfs subvolume snapshot -r -i 1/%d %s %s", workspace.UIDFor(a.Port), m.AppSubvolume("blog"), m.SnapshotPath("blog", snap.ID)))
 	assert.NotContains(t, r.ran(), "qgroup assign")
 }
 

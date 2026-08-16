@@ -16,7 +16,7 @@ func TestCreateAppWiresSubvolumeAndBudget(t *testing.T) {
 	r.returns("inspect-internal rootid", "257\n")
 	a := createTestApp(t, m, "blog")
 	pool := m.config.AppsDir
-	group := fmt.Sprintf("1/%d", workspace.UIDFor(m.config.PortMin, a.Port))
+	group := fmt.Sprintf("1/%d", workspace.UIDFor(a.Port))
 
 	// The budget group exists and is capped FIRST, and the app subvolume is
 	// snapshotted INTO it (-i): membership is atomic, so the cap enforces from
@@ -37,7 +37,7 @@ func TestDeleteAppRemovesSubvolumeAndBudget(t *testing.T) {
 	m, _, r := newTestDeployManager(t)
 	a := createTestApp(t, m, "blog")
 	subvol := m.AppSubvolume("blog")
-	group := fmt.Sprintf("1/%d", workspace.UIDFor(m.config.PortMin, a.Port))
+	group := fmt.Sprintf("1/%d", workspace.UIDFor(a.Port))
 	r.reset()
 	require.NoError(t, m.DeleteApp("blog"))
 	m.WaitBackground() // the subvolume/qgroup teardown runs in the background
@@ -60,7 +60,7 @@ func TestSweepStaleQgroups(t *testing.T) {
 	t.Parallel()
 	m, _, r := newTestDeployManager(t)
 	a := createTestApp(t, m, "keep")
-	liveBudget := fmt.Sprintf("1/%d", workspace.UIDFor(m.config.PortMin, a.Port))
+	liveBudget := fmt.Sprintf("1/%d", workspace.UIDFor(a.Port))
 	// The pool has one live subvolume (rootid 256); 0/300 belonged to a deleted
 	// snapshot, 1/9999 to a deleted app. 0/5 is the filesystem root, never listed
 	// by "subvolume list" but never stale either.

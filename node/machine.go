@@ -366,7 +366,7 @@ func (m *Machine) writeKeysIn(files homefs.Dir, name string, keys []string) erro
 // uidFor is an app's base uid: a contiguous workspace.UIDBlockSize-wide block, one per
 // app, spaced by port so blocks never overlap. Container uid 0 maps here.
 func (m *Machine) uidFor(port int) int {
-	return workspace.UIDFor(m.config.PortMin, port)
+	return workspace.UIDFor(port)
 }
 
 // lookupIDs returns the app's contiguous id block: its uid/gid (which become

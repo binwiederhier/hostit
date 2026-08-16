@@ -147,7 +147,7 @@ func TestContainerRunsUnderTheAppsOwnIdentity(t *testing.T) {
 	// Container root maps to the app's unprivileged uid, so an escape lands
 	// there rather than on real root, and its own network stack keeps it from
 	// reaching other apps. One contiguous block, so podman idmap-mounts the image.
-	uid := workspace.UIDFor(m.config.PortMin, 10000)
+	uid := workspace.UIDFor(10000)
 	assert.Contains(t, joined, fmt.Sprintf("--uidmap 0:%d:65536", uid))
 	assert.Contains(t, joined, fmt.Sprintf("--gidmap 0:%d:65536", uid))
 	assert.Contains(t, joined, "--network slirp4netns")

@@ -52,6 +52,13 @@ const (
 	// are spaced UIDBlockSize apart (by port) so they never overlap.
 	UIDBlockStart = 1_000_000
 
+	// PortMin/PortMax bound the per-app loopback port range. Deliberately NOT
+	// configurable: an app's uid block is derived from its port (UIDFor), so
+	// moving the range on an existing install would re-map every app's uid
+	// while their homes and containers keep the old one.
+	PortMin = 10000
+	PortMax = 19999
+
 	// Runtimes is what the workspace image ships, quoted verbatim to
 	// users and agents so nobody has to guess what is available. It is kept lean
 	// on purpose (a big image makes every per-app container slower to create and
@@ -90,8 +97,8 @@ func ContainerName(id string) string {
 // UIDFor is an app's base uid: a contiguous UIDBlockSize-wide block, one per
 // app, spaced by port so blocks never overlap. Container uid 0 maps here.
 // Both halves of the platform derive it from the same formula.
-func UIDFor(portMin, port int) int {
-	return UIDBlockStart + (port-portMin)*UIDBlockSize
+func UIDFor(port int) int {
+	return UIDBlockStart + (port-PortMin)*UIDBlockSize
 }
 
 func UnitName(id string) string {

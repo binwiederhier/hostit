@@ -18,8 +18,6 @@ func TestNewConfigDefaults(t *testing.T) {
 	assert.Equal(t, "/var/lib/hostit", c.DataDir)
 	// Under the data directory, not /srv: one place holds hostit's state
 	assert.Equal(t, "/var/lib/hostit/apps", c.AppsDir)
-	assert.Equal(t, 10000, c.PortMin)
-	assert.Equal(t, 19999, c.PortMax)
 	assert.Equal(t, TLSLetsEncrypt, c.TLS)
 }
 
@@ -31,8 +29,6 @@ base-domain: apps.example.com
 admin-token: secr3t
 listen-http: ":8080"
 tls: "off"
-port-min: 20000
-port-max: 20010
 `), 0600))
 	c, err := LoadConfig(filename)
 	require.NoError(t, err)
@@ -40,8 +36,6 @@ port-max: 20010
 	assert.Equal(t, "secr3t", c.AdminToken)
 	assert.Equal(t, ":8080", c.ListenHTTP)
 	assert.Equal(t, TLSOff, c.TLS)
-	assert.Equal(t, 20000, c.PortMin)
-	assert.Equal(t, 20010, c.PortMax)
 	assert.Equal(t, ":443", c.ListenHTTPS) // Default retained
 }
 
@@ -63,7 +57,6 @@ func TestValidate(t *testing.T) {
 		{"valid", func(c *Config) {}, ""},
 		{"missing base domain", func(c *Config) { c.BaseDomain = "" }, "base-domain"},
 		{"missing admin token", func(c *Config) { c.AdminToken = "" }, "admin-token"},
-		{"bad port range", func(c *Config) { c.PortMin = 5000; c.PortMax = 4000 }, "port"},
 		{"bad tls mode", func(c *Config) { c.TLS = "wat" }, "tls"},
 		{"bad app preview mode", func(c *Config) { c.AppPreview = "movie" }, "app-preview"},
 		{"screenshot previews", func(c *Config) { c.AppPreview = AppPreviewScreenshot }, ""},

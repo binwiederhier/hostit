@@ -202,7 +202,7 @@ func (m *Manager) create(name string, opts *CreateOptions, seed *seedRef) (*stor
 	if host == "" {
 		host = m.placeNode()
 	}
-	app := &store.App{ID: store.NewAppID(), Name: name, Port: port, Host: host, OwnerID: opts.OwnerID, ImageTag: workspace.ImageTag(), UID: workspace.UIDFor(m.config.PortMin, port)}
+	app := &store.App{ID: store.NewAppID(), Name: name, Port: port, Host: host, OwnerID: opts.OwnerID, ImageTag: workspace.ImageTag(), UID: workspace.UIDFor(port)}
 
 	// Register the app FIRST and push the mirror before any machine state
 	// exists: the node's orphan reconcile treats unknown ids as leftovers, so
@@ -400,12 +400,12 @@ func (m *Manager) allocatePort() (int, error) {
 	// over their disk cap -- EDQUOT on the container's first mkdir. Scanning
 	// upward from the last grant leaves freed uids fallow until the wrap-around;
 	// the qgroup sweep collects their leftovers long before that.
-	span := m.config.PortMax - m.config.PortMin + 1
-	if m.nextPort < m.config.PortMin || m.nextPort > m.config.PortMax {
-		m.nextPort = m.config.PortMin
+	span := workspace.PortMax - workspace.PortMin + 1
+	if m.nextPort < workspace.PortMin || m.nextPort > workspace.PortMax {
+		m.nextPort = workspace.PortMin
 	}
 	for i := 0; i < span; i++ {
-		port := m.config.PortMin + (m.nextPort-m.config.PortMin+i)%span
+		port := workspace.PortMin + (m.nextPort-workspace.PortMin+i)%span
 		if !slices.Contains(used, port) && !m.reservedPorts[port] {
 			m.reservedPorts[port] = true
 			m.nextPort = port + 1
@@ -436,7 +436,7 @@ func (m *Manager) BackfillUIDs() {
 		if a.UID != 0 {
 			continue
 		}
-		if err := m.store.SetAppUID(a.Name, workspace.UIDFor(m.config.PortMin, a.Port)); err != nil {
+		if err := m.store.SetAppUID(a.Name, workspace.UIDFor(a.Port)); err != nil {
 			slog.Warn("Cannot backfill app uid", "app", a.Name, "error", err)
 		}
 	}

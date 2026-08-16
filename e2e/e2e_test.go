@@ -31,6 +31,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -778,9 +779,33 @@ func skipAssistantIfOptedOut(t *testing.T) {
 	}
 }
 
+// assistantSettingsReset clears the server's assistant restrictions once per
+// suite run. The mode-filtering test restricts them globally, and a run killed
+// by -timeout (or a hand-run curl) skips its cleanup, so the NEXT run would
+// otherwise start against a restricted catalog and fail tests that have
+// nothing to do with restrictions. Resetting up front makes every run start
+// from the same server state instead of inheriting the last one's.
+var assistantSettingsReset sync.Once
+
+// resetAssistantSettings returns the server to unrestricted assistant defaults:
+// external allowed, no model allow-list. This IS the shipped default, so it is
+// safe to assert as a baseline rather than echoing whatever was found.
+func (e *env) resetAssistantSettings() {
+	e.t.Helper()
+	assistantSettingsReset.Do(func() {
+		e.doJSON("PATCH", "/api/settings", e.token, map[string]any{
+			"assistant": map[string]any{
+				"external_allowed": true,
+				"allowed_models":   []string{},
+			},
+		}, nil, http.StatusOK)
+	})
+}
+
 func TestAssistantCatalogAndPerAppModes(t *testing.T) {
 	skipAssistantIfOptedOut(t)
 	e := newEnv(t)
+	e.resetAssistantSettings()
 	d := e.assistantDefaults()
 	require.NotEmpty(t, asSlice(d["models"]), "the API model catalog is offered")
 
@@ -801,12 +826,15 @@ func TestAssistantCatalogAndPerAppModes(t *testing.T) {
 func TestAssistantGlobalDefaultsFilterModes(t *testing.T) {
 	skipAssistantIfOptedOut(t)
 	e := newEnv(t)
+	e.resetAssistantSettings()
 	orig := e.assistantDefaults()
+	// Restore the unrestricted baseline rather than what was found: echoing the
+	// observed state would perpetuate residue from an earlier killed run.
 	t.Cleanup(func() {
 		e.doJSON("PATCH", "/api/settings", e.token, map[string]any{
 			"assistant": map[string]any{
-				"external_allowed": orig["external_allowed"],
-				"allowed_models":   orig["allowed_models"],
+				"external_allowed": true,
+				"allowed_models":   []string{},
 				"default_mode":     orig["default_mode"],
 			},
 		}, nil, http.StatusOK)
@@ -861,6 +889,7 @@ func TestAssistantPerUserOverride(t *testing.T) {
 func TestAssistantEveryModelRunsATurn(t *testing.T) {
 	skipAssistantIfOptedOut(t)
 	e := newEnv(t)
+	e.resetAssistantSettings()
 	d := e.assistantDefaults()
 
 	name := uniqueName("e2e-turn")
@@ -892,6 +921,7 @@ func TestAssistantEveryModelRunsATurn(t *testing.T) {
 func TestAssistantBuildsSomething(t *testing.T) {
 	skipAssistantIfOptedOut(t)
 	e := newEnv(t)
+	e.resetAssistantSettings()
 	d := e.assistantDefaults()
 	mode := cheapestMode(d)
 	if mode == "" {
