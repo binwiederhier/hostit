@@ -135,6 +135,10 @@ type Machine struct {
 	stateFresh      time.Time
 	stateRefreshing bool
 
+	// orphanUsers holds the app accounts seen orphaned by the LAST sweep;
+	// only an account orphaned twice running is removed (see reconcileUsers).
+	orphanUsers map[string]bool
+
 	// appLocks serializes mutating lifecycle work per app (deploy, snapshot,
 	// rollback, delete), so operations on one app's subvolume never interleave --
 	// e.g. a rollback swapping the subvolume while a deploy writes into it.
@@ -171,6 +175,7 @@ func NewMachine(conf *Config, s *store.Store, svc *Services) *Machine {
 		tearingDown: make(map[string]bool),
 		stateCache:  make(map[string]nodeapi.State),
 		appLocks:    make(map[string]*sync.Mutex),
+		orphanUsers: make(map[string]bool),
 	}
 	// The snapshot Service reuses the Machine's node-local services and store, and
 	// calls back into it through snapshotHost for the app-lifecycle operations and

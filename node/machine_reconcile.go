@@ -88,10 +88,21 @@ func (m *Machine) reconcileUsers(known map[string]bool) []string {
 		slog.Warn("Cannot list app accounts to reconcile", "error", err)
 		return nil
 	}
+	// Two sightings before a delete: an account whose app is not in the mirror
+	// YET (a create provisions the account, the registry push follows) would
+	// otherwise be swept mid-create -- seen on stage, where a new app's account
+	// was deleted two seconds after it was made and the app never served. A
+	// race resolves itself because the next mirror carries the app; a genuine
+	// leftover is still absent on the second pass and goes then.
+	suspects := make(map[string]bool)
 	removed := make([]string, 0)
 	for _, a := range accounts {
 		id, ok := m.idFromPoolHome(a.Home)
 		if !ok || known[id] {
+			continue
+		}
+		if !m.orphanUsers[a.Name] {
+			suspects[a.Name] = true // first sighting: watch it, do not touch it
 			continue
 		}
 		// Kill first: userdel refuses while anything runs as the account, and a
@@ -105,6 +116,7 @@ func (m *Machine) reconcileUsers(known map[string]bool) []string {
 		}
 		removed = append(removed, a.Name)
 	}
+	m.orphanUsers = suspects
 	return removed
 }
 

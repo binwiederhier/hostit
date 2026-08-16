@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"heckel.io/hostit/store"
 	"heckel.io/hostit/unixuser"
 )
 
@@ -94,30 +95,6 @@ func TestReconcileOrphansSweepsStrayBudgetGroups(t *testing.T) {
 	assert.NotContains(t, ran, "btrfs qgroup destroy 1/1000000", "the live app's group must survive")
 }
 
-// An app deleted while its node was disconnected (the routed Deprovision was
-// dropped) leaves its Unix account behind. That is not cosmetic: the account's
-// gid squats the uid block its port maps to, and the next app on that port
-// fails to create ("groupadd: GID already exists" -- seen on stage). The
-// rejoin reconcile therefore sweeps app accounts whose id matches no app.
-func TestReconcileOrphansRemovesOrphanUsers(t *testing.T) {
-	t.Parallel()
-	m, ops, _ := newTestDeployManager(t)
-	live := createTestApp(t, m, "blog")
-	// Two accounts on this node's pool: the live app's, and one whose app is
-	// long gone from the registry.
-	ops.accounts = []unixuser.Account{
-		{Name: "blog", Home: m.AppFiles("blog").Path()},
-		{Name: "ghost", Home: filepath.Join(m.config.AppsDir, "deadbeef1234", "home", "app")},
-	}
-
-	m.ReconcileOrphans()
-
-	assert.Equal(t, []string{"ghost"}, ops.deletedUsers, "the orphan account is removed")
-	assert.Contains(t, ops.killedUsers, "ghost", "its processes are killed first, so userdel can run")
-	assert.NotContains(t, ops.deletedUsers, "blog", "the live app's account survives")
-	_ = live
-}
-
 // Colocated nodes share one /etc/passwd, so the sweep must only ever touch
 // accounts whose home lies under THIS node's apps pool. Deleting another
 // node's app accounts would take its apps down.
@@ -133,4 +110,48 @@ func TestReconcileOrphansLeavesOtherNodesAccountsAlone(t *testing.T) {
 	m.ReconcileOrphans()
 
 	assert.Empty(t, ops.deletedUsers, "accounts outside this node's pool are none of its business")
+}
+
+// The orphan-account sweep must never delete an app that simply is not in
+// this mirror YET. A create provisions the account and the registry push
+// follows, so a reconcile landing in that window would see a live app as an
+// orphan -- which is exactly what happened on stage: an app was created and
+// its unix account was deleted two seconds later, so it never served.
+//
+// An account is therefore only removed if it was already orphaned in the
+// PREVIOUS sweep: a race resolves itself because the next mirror carries the
+// app, while a genuine leftover is still absent and goes.
+func TestReconcileOrphanUsersNeedsTwoSightings(t *testing.T) {
+	t.Parallel()
+	m, ops, _ := newTestDeployManager(t)
+	createTestApp(t, m, "blog")
+	ops.accounts = []unixuser.Account{
+		{Name: "blog", Home: m.AppFiles("blog").Path()},
+		{Name: "newcomer", Home: filepath.Join(m.config.AppsDir, "id-not-yet-mirrored", "home", "app")},
+	}
+
+	m.ReconcileOrphans()
+	assert.Empty(t, ops.deletedUsers, "a first sighting is never enough: the app may just be mid-create")
+
+	// The app arrived in the mirror before the next sweep: never touched.
+	require.NoError(t, m.store.AddApp(&store.App{ID: "id-not-yet-mirrored", Name: "newcomer", Port: 10777, Host: store.HostLocal}))
+	m.ReconcileOrphans()
+	assert.Empty(t, ops.deletedUsers, "an account that showed up in the mirror is not an orphan")
+}
+
+// A genuine leftover -- absent from the mirror across two sweeps -- is removed.
+func TestReconcileOrphanUsersRemovesAPersistentOrphan(t *testing.T) {
+	t.Parallel()
+	m, ops, _ := newTestDeployManager(t)
+	createTestApp(t, m, "blog")
+	ops.accounts = []unixuser.Account{
+		{Name: "blog", Home: m.AppFiles("blog").Path()},
+		{Name: "ghost", Home: filepath.Join(m.config.AppsDir, "deadbeef1234", "home", "app")},
+	}
+
+	m.ReconcileOrphans()
+	m.ReconcileOrphans()
+
+	assert.Equal(t, []string{"ghost"}, ops.deletedUsers)
+	assert.Contains(t, ops.killedUsers, "ghost")
 }

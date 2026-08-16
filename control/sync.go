@@ -58,13 +58,20 @@ func (m *Manager) PushMirrorTo(nodeID string, agent NodeAgent) {
 // syncState assembles the mirror payload: the given node's apps (all apps
 // when host is empty) and their snapshots.
 func (m *Manager) syncState(host string) (*SyncState, error) {
+	// The read and the stamp are ONE step: stamping afterwards let two
+	// builders interleave so that a payload read earlier got the higher
+	// number, and the node -- which keeps only the highest -- then held the
+	// older content for good. The lock spans the registry read only, never the
+	// send, so a wedged node cannot block anyone else's push.
+	m.mirrorMu.Lock()
 	apps, err := m.store.Apps()
 	if err != nil {
+		m.mirrorMu.Unlock()
 		return nil, err
 	}
-	// Stamped AFTER the registry read, so a payload built from newer rows
-	// always carries the higher number (see SyncState.Seq).
-	state := &SyncState{Seq: m.mirrorSeq.Add(1), Apps: make([]*store.App, 0, len(apps)), Snapshots: make([]*store.Snapshot, 0)}
+	seq := m.mirrorSeq.Add(1)
+	m.mirrorMu.Unlock()
+	state := &SyncState{Seq: seq, Apps: make([]*store.App, 0, len(apps)), Snapshots: make([]*store.Snapshot, 0)}
 	for _, a := range apps {
 		if host != "" && hostOrLocal(a.Host) != host {
 			continue

@@ -93,8 +93,10 @@ type Manager struct {
 	pmu sync.Mutex // Protects nextPort, reservedPorts (the control side's own lock)
 	// mirrorSeq orders mirror pushes so a node can drop a stale one; see
 	// SyncState.Seq. Per control process, which is why a node resets its view
-	// of it on every new connection.
+	// of it on every new connection. mirrorMu makes the registry read and the
+	// stamp atomic, so seq order IS read order.
 	mirrorSeq atomic.Int64
+	mirrorMu  sync.Mutex
 }
 
 // NewManager creates a Manager from its config, store and the node-local services

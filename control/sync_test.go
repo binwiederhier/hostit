@@ -1,7 +1,10 @@
 package control
 
 import (
+	"fmt"
 	"os"
+	"sort"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -258,5 +261,43 @@ func TestMirrorPushesCarryIncreasingSequences(t *testing.T) {
 	require.GreaterOrEqual(t, len(rec.syncs), 2)
 	for i := 1; i < len(rec.syncs); i++ {
 		assert.Greater(t, rec.syncs[i].Seq, rec.syncs[i-1].Seq, "sequences must increase with each push")
+	}
+}
+
+// Seq order must be READ order: a payload built from a later registry state
+// must carry the higher number. Stamping after the read let two builders
+// interleave the other way round, and the node -- which keeps only the
+// highest -- then held the older app set permanently (an app created in that
+// window never started, seen twice on stage).
+func TestMirrorSequenceFollowsRegistryOrder(t *testing.T) {
+	t.Parallel()
+	m, _ := newTestManager(t)
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	seen := map[int64]int{} // seq -> app count
+
+	for i := 0; i < 40; i++ {
+		require.NoError(t, m.store.AddApp(&store.App{ID: fmt.Sprintf("id%02d", i), Name: fmt.Sprintf("app%02d", i), Port: 11000 + i, Host: store.HostLocal}))
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			state, err := m.syncState("")
+			if err == nil {
+				mu.Lock()
+				seen[state.Seq] = len(state.Apps)
+				mu.Unlock()
+			}
+		}()
+	}
+	wg.Wait()
+
+	seqs := make([]int64, 0, len(seen))
+	for s := range seen {
+		seqs = append(seqs, s)
+	}
+	sort.Slice(seqs, func(i, j int) bool { return seqs[i] < seqs[j] })
+	for i := 1; i < len(seqs); i++ {
+		assert.GreaterOrEqual(t, seen[seqs[i]], seen[seqs[i-1]],
+			"a higher sequence must never carry fewer apps than a lower one")
 	}
 }
