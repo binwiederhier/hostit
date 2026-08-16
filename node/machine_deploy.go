@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"heckel.io/hostit/appconf"
 	"heckel.io/hostit/appctl"
 	"heckel.io/hostit/homefs"
 	"heckel.io/hostit/nodeapi"
@@ -192,7 +193,7 @@ func (m *Machine) Logs(name string, lines int) (string, error) {
 // apply converges the app container to the desired config: recreate it when the
 // configuration changed, start it, or (allowReload) signal the agent to restart
 // just the run command
-func (m *Machine) apply(a *store.App, conf *appctl.AppConfig, allowReload bool) (string, error) {
+func (m *Machine) apply(a *store.App, conf *appconf.AppConfig, allowReload bool) (string, error) {
 	name := a.Name
 	ids, err := m.LookupIDs(name)
 	if err != nil {
@@ -340,7 +341,7 @@ func (m *Machine) MountRawAppsView(dir string) error {
 // loadConfig reads and validates an app's hostit.yml through its os.Root, so a
 // symlink the tenant planted there cannot walk the root daemon out of the home,
 // and the file is capped rather than read unbounded.
-func (m *Machine) LoadAppConfig(name string) (*appctl.AppConfig, error) {
+func (m *Machine) LoadAppConfig(name string) (*appconf.AppConfig, error) {
 	root, err := m.homefs.OpenRoot(m.AppFiles(name))
 	if err != nil {
 		return nil, err
@@ -350,7 +351,7 @@ func (m *Machine) LoadAppConfig(name string) (*appctl.AppConfig, error) {
 	if err != nil {
 		return nil, err
 	}
-	return appctl.LoadAppConfig(b)
+	return appconf.LoadAppConfig(b)
 }
 
 // SetMemoryLimit records the container memory cap for an app; applied on the

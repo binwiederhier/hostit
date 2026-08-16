@@ -4,7 +4,7 @@ import (
 	"log/slog"
 	"time"
 
-	"heckel.io/hostit/appctl"
+	"heckel.io/hostit/appconf"
 )
 
 const (
@@ -56,7 +56,7 @@ func (m *Manager) SeedStates() {
 		}
 		state := State{}
 		if !a.PoweredOff {
-			state = State{Running: true, AppRunning: true, AppState: appctl.AppStateRunning}
+			state = State{Running: true, AppRunning: true, AppState: appconf.AppStateRunning}
 		}
 		m.ctlStates[a.Name] = state
 	}

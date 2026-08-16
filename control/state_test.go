@@ -8,7 +8,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"heckel.io/hostit/appctl"
+	"heckel.io/hostit/appconf"
 )
 
 func TestStatesReadsRunningAndMemory(t *testing.T) {
@@ -147,7 +147,7 @@ func TestSeedStatesFromRecordedIntent(t *testing.T) {
 	states := m.CachedStates([]string{"up", "off"})
 	assert.True(t, states["up"].Running)
 	assert.True(t, states["up"].AppRunning)
-	assert.Equal(t, appctl.AppStateRunning, states["up"].AppState)
+	assert.Equal(t, appconf.AppStateRunning, states["up"].AppState)
 	assert.False(t, states["off"].Running, "a recorded poweroff seeds as down")
 }
 

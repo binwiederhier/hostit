@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"heckel.io/hostit/appctl"
+	"heckel.io/hostit/appconf"
 	"heckel.io/hostit/btrfs"
 	"heckel.io/hostit/container"
 	"heckel.io/hostit/firewall"
@@ -56,12 +56,12 @@ const (
 
 const (
 	// configFile is the app's own configuration, written by whoever builds it
-	configFile = appctl.ConfigFile
+	configFile = appconf.ConfigFile
 	// appLogFile is where the agent records an app's output, below the app's home
-	appLogFile = appctl.AppLogFile
+	appLogFile = appconf.AppLogFile
 	// appStateFile is where the agent records the run: process state; maxStateRead
 	// caps that tiny file when the daemon reads it
-	appStateFile = appctl.AppStateFile
+	appStateFile = appconf.AppStateFile
 	maxStateRead = 64
 	// maxLogRead caps how much of that log a request reads; the agent rotates it
 	// at 10 MB, and a reader only ever wants the tail

@@ -9,6 +9,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"heckel.io/hostit/appconf"
 )
 
 func TestLoadAppConfigAppMode(t *testing.T) {
@@ -19,7 +20,7 @@ run: ./server --debug
 env:
   FOO: bar
 `)
-	assert.Equal(t, ModeApp, c.Mode)
+	assert.Equal(t, appconf.ModeApp, c.Mode)
 	assert.Equal(t, "./server --debug", c.Run)
 	assert.Equal(t, "bar", c.Env["FOO"])
 }
@@ -29,14 +30,14 @@ func TestConfigRefusesTheRemovedContainerMode(t *testing.T) {
 	// "image:" let an app bring its own runtime, which meant a second execution
 	// model with none of the agent's guarantees. Old configs must fail loudly
 	// rather than quietly serving nothing.
-	_, err := ParseAppConfigStrict([]byte("image: docker.io/library/nginx:alpine\ncontainer-port: 80\n"))
+	_, err := appconf.ParseAppConfigStrict([]byte("image: docker.io/library/nginx:alpine\ncontainer-port: 80\n"))
 	require.Error(t, err)
 }
 
 func TestLoadAppConfigStaticMode(t *testing.T) {
 	t.Parallel()
 	c := writeAndLoadConfig(t, "mode: static\n")
-	assert.Equal(t, ModeStatic, c.Mode)
+	assert.Equal(t, appconf.ModeStatic, c.Mode)
 	// There is nothing else to say: a static app serves public/
 	assert.Equal(t, "/usr/bin/hostit static", c.Command("/usr/bin/hostit"))
 }
@@ -63,7 +64,7 @@ func TestAppConfigValidate(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			_, err := LoadAppConfig([]byte(tt.yaml))
+			_, err := appconf.LoadAppConfig([]byte(tt.yaml))
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), tt.wantErr)
 		})
@@ -72,7 +73,7 @@ func TestAppConfigValidate(t *testing.T) {
 
 func TestParseAppConfigLenient(t *testing.T) {
 	t.Parallel()
-	c, err := ParseAppConfig([]byte("# nothing"))
+	c, err := appconf.ParseAppConfig([]byte("# nothing"))
 	require.NoError(t, err)
 	assert.Empty(t, c.Run)
 }
@@ -137,9 +138,9 @@ func TestControllerDaemonUnreachable(t *testing.T) {
 	assert.Contains(t, err.Error(), "daemon")
 }
 
-func writeAndLoadConfig(t *testing.T, content string) *AppConfig {
+func writeAndLoadConfig(t *testing.T, content string) *appconf.AppConfig {
 	t.Helper()
-	c, err := LoadAppConfig([]byte(content))
+	c, err := appconf.LoadAppConfig([]byte(content))
 	require.NoError(t, err)
 	return c
 }
@@ -173,7 +174,7 @@ func newTestController(t *testing.T, routes map[string]any) *Controller {
 func TestStaticModeAlwaysServesPublic(t *testing.T) {
 	t.Parallel()
 	// A static app serves exactly public/, so there is no directory to configure
-	c := &AppConfig{Mode: ModeStatic}
+	c := &appconf.AppConfig{Mode: appconf.ModeStatic}
 	require.NoError(t, c.Validate())
 	assert.Equal(t, "/usr/bin/hostit static", c.Command("/usr/bin/hostit"))
 
@@ -181,7 +182,7 @@ func TestStaticModeAlwaysServesPublic(t *testing.T) {
 	// unknown key whatever it points at, so a stale config is reported rather
 	// than quietly served from the wrong place.
 	for _, value := range []string{"public", ".", "site", "true"} {
-		_, err := ParseAppConfigStrict([]byte("static: " + value + "\n"))
+		_, err := appconf.ParseAppConfigStrict([]byte("static: " + value + "\n"))
 		assert.Error(t, err, "static: %q must be rejected", value)
 	}
 }
@@ -191,32 +192,32 @@ func TestPrepareRunsBeforeTheApp(t *testing.T) {
 	// Without a build step, an agent driving the API can only compile by baking
 	// the build into "run:", which then rebuilds on every restart and turns a
 	// broken compile into a crash loop
-	c := &AppConfig{Mode: ModeApp, Prepare: "go build -o bin/app ./src", Run: "./bin/app"}
+	c := &appconf.AppConfig{Mode: appconf.ModeApp, Prepare: "go build -o bin/app ./src", Run: "./bin/app"}
 	require.NoError(t, c.Validate())
-	assert.Equal(t, ModeApp, c.Mode)
+	assert.Equal(t, appconf.ModeApp, c.Mode)
 	assert.Equal(t, "go build -o bin/app ./src", c.Prepare)
 	assert.Equal(t, "./bin/app", c.Command("/usr/bin/hostit"))
 
 	// It is a step, not a mode: on its own it says nothing about how to serve
-	assert.Error(t, (&AppConfig{Prepare: "make"}).Validate())
+	assert.Error(t, (&appconf.AppConfig{Prepare: "make"}).Validate())
 	// And it works for static apps too (build a frontend into public/)
-	assert.NoError(t, (&AppConfig{Mode: ModeStatic, Prepare: "npm run build"}).Validate())
+	assert.NoError(t, (&appconf.AppConfig{Mode: appconf.ModeStatic, Prepare: "npm run build"}).Validate())
 }
 
 func TestModeIsExplicit(t *testing.T) {
 	t.Parallel()
 	// "mode: static" read as though the value mattered, when the directory is
 	// always public/. The mode is a choice between two things, so it says so.
-	c, err := ParseAppConfigStrict([]byte("mode: static\n"))
+	c, err := appconf.ParseAppConfigStrict([]byte("mode: static\n"))
 	require.NoError(t, err)
 	require.NoError(t, c.Validate())
-	assert.Equal(t, ModeStatic, c.Mode)
+	assert.Equal(t, appconf.ModeStatic, c.Mode)
 	assert.Equal(t, "/usr/bin/hostit static", c.Command("/usr/bin/hostit"))
 
-	c, err = ParseAppConfigStrict([]byte("mode: app\nrun: ./bin/server\n"))
+	c, err = appconf.ParseAppConfigStrict([]byte("mode: app\nrun: ./bin/server\n"))
 	require.NoError(t, err)
 	require.NoError(t, c.Validate())
-	assert.Equal(t, ModeApp, c.Mode)
+	assert.Equal(t, appconf.ModeApp, c.Mode)
 	assert.Equal(t, "./bin/server", c.Command("/usr/bin/hostit"))
 
 	for _, yaml := range []string{
@@ -226,7 +227,7 @@ func TestModeIsExplicit(t *testing.T) {
 		"mode: nonsense\n",
 		"static: public\n", // the old spelling
 	} {
-		c, err := ParseAppConfigStrict([]byte(yaml))
+		c, err := appconf.ParseAppConfigStrict([]byte(yaml))
 		if err != nil {
 			continue // strict parsing already rejected it
 		}

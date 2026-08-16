@@ -17,7 +17,7 @@ import (
 	"strconv"
 	"strings"
 
-	"heckel.io/hostit/appctl"
+	"heckel.io/hostit/appconf"
 	"heckel.io/hostit/store"
 )
 
@@ -135,7 +135,7 @@ func UnitName(id string) string {
 // the app's files live at home/app inside that same tree (no home bind mount),
 // so recreating the container (config change, daemon upgrade) keeps the files
 // and whatever the app installed, and one subvolume is the app's disk budget.
-func CreateArgs(conf *appctl.AppConfig, a *store.App, subvol, socketFile, hostitBin, version string, memoryMB int, ids IDs) []string {
+func CreateArgs(conf *appconf.AppConfig, a *store.App, subvol, socketFile, hostitBin, version string, memoryMB int, ids IDs) []string {
 	args := []string{"create", "--name", ContainerName(a.ID), "--hostname", a.Name}
 	// conmon signals readiness to systemd, so the app's Type=notify unit only reports
 	// active once the container is actually running. Without this a deploy can race a

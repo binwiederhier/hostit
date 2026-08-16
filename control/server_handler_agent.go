@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"heckel.io/hostit/appctl"
+	"heckel.io/hostit/appconf"
 	"heckel.io/hostit/assistant"
 	"heckel.io/hostit/config"
 	"heckel.io/hostit/store"
@@ -307,26 +307,26 @@ func (s *Server) agentGuide(appName, description string) *apiAgentInfoResponse {
 			"POST " + appsPath(name) + "/deploy to apply hostit.yml and (re)start the app.",
 			"GET " + appsPath(name) + "/logs if it does not come up; the app must listen on 0.0.0.0:$PORT.",
 			"PUT " + appsPath(name) + "/readme to record what this app is and what you changed, for whoever comes next.",
-			"Keep the app's own documentation in " + appctl.DocsDir + "/ -- how it works, why it is built the way it is, anything the next session would otherwise have to re-derive. Read it before you change anything, and update it after every change that matters. README.md is the summary and worklog; " + appctl.DocsDir + "/ is the detail.",
+			"Keep the app's own documentation in " + appconf.DocsDir + "/ -- how it works, why it is built the way it is, anything the next session would otherwise have to re-derive. Read it before you change anything, and update it after every change that matters. README.md is the summary and worklog; " + appconf.DocsDir + "/ is the detail.",
 			"Compiling or installing dependencies: POST " + appsPath(name) + "/run with a shell command. It runs in the app's container, where the toolchains are, and returns the output and exit code -- so you can iterate on a build error without SSH. It is bounded (a minute by default, five at most): make the build a \"prepare:\" step in hostit.yml once it works, so it also runs on every deploy.",
 			"Keep a one-line \"description:\" in hostit.yml saying what this app is. The owner's web page shows it, and the next session (or a different agent) starts from it instead of from a blank page.",
 			"Snapshot as you go: POST " + appsPath(name) + "/snapshots at regular intervals -- before any risky change and after each chunk of working progress -- so there is always a recent point to roll back to. A snapshot captures the container's whole filesystem, your files AND anything you installed, so a broken apt-get or system change rolls back too. Always include a short one-line description of why, e.g. {\"label\": \"before rewriting the router\"}. (hostit also snapshots automatically before every deploy and hourly, but those are coarse; your own labelled snapshots are what make a mistake easy to undo.)",
 		},
 		Layout: "The app's home directory has a place for each kind of thing:\n\n" +
-			"  " + appctl.PublicDir + "/   files served on the web -- static mode serves exactly this directory\n" +
-			"  " + appctl.BinDir + "/      binaries and scripts the app runs (run: ./" + appctl.BinDir + "/myapp)\n" +
-			"  " + appctl.LogDir + "/      the app's output, written by hostit; read it with GET /logs\n" +
-			"  " + appctl.SrcDir + "/      source, if you keep the app's source here\n" +
-			"  " + appctl.DocsDir + "/     the app's own documentation -- how it works, why it is built that way\n\n" +
+			"  " + appconf.PublicDir + "/   files served on the web -- static mode serves exactly this directory\n" +
+			"  " + appconf.BinDir + "/      binaries and scripts the app runs (run: ./" + appconf.BinDir + "/myapp)\n" +
+			"  " + appconf.LogDir + "/      the app's output, written by hostit; read it with GET /logs\n" +
+			"  " + appconf.SrcDir + "/      source, if you keep the app's source here\n" +
+			"  " + appconf.DocsDir + "/     the app's own documentation -- how it works, why it is built that way\n\n" +
 			"hostit.yml and README.md live at the top. Directories are created as you write into them.\n\n" +
-			"If your app serves files itself, point it at " + appctl.PublicDir + "/ and never at the home directory: " +
+			"If your app serves files itself, point it at " + appconf.PublicDir + "/ and never at the home directory: " +
 			"the home also holds hostit.yml (which may carry env values) and .ssh/, and serving it puts them on the " +
-			"open internet. For example: python3 -m http.server $PORT --bind 0.0.0.0 --directory " + appctl.PublicDir + "",
+			"open internet. For example: python3 -m http.server $PORT --bind 0.0.0.0 --directory " + appconf.PublicDir + "",
 		HostitYml: "\"mode:\" says what this app is. Two answers.\n\n" +
-			"  mode: static     hostit serves " + appctl.PublicDir + "/ -- nothing to run, nothing else to set\n\n" +
+			"  mode: static     hostit serves " + appconf.PublicDir + "/ -- nothing to run, nothing else to set\n\n" +
 			"  mode: app        your command serves it:\n" +
-			"    prepare: cd " + appctl.SrcDir + " && go build -o ../" + appctl.BinDir + "/myapp .   # optional build step\n" +
-			"    run: ./" + appctl.BinDir + "/myapp   # MUST listen on 0.0.0.0:$PORT; $PORT is provided\n" +
+			"    prepare: cd " + appconf.SrcDir + " && go build -o ../" + appconf.BinDir + "/myapp .   # optional build step\n" +
+			"    run: ./" + appconf.BinDir + "/myapp   # MUST listen on 0.0.0.0:$PORT; $PORT is provided\n" +
 			"    (upload binaries with ?mode=755 so they are executable)\n\n" +
 			"Optional in both: env: {KEY: value}, and description: a one-liner about the app. " +
 			"Unknown keys are an error, so a typo is reported rather than ignored.",
@@ -334,13 +334,13 @@ func (s *Server) agentGuide(appName, description string) *apiAgentInfoResponse {
 			"installed packages persist across restarts and redeploys (the container's filesystem is the app's " +
 			"own durable disk) and count against the app's disk budget. A new app starts as a stub serving a placeholder page.",
 		SuggestedStack: "A single Go binary that embeds its frontend (go:embed) is the easiest thing to run here: " +
-			"one file, no runtime to install, instant start. Use run: ./" + appctl.BinDir + "/myapp listening on 0.0.0.0:$PORT. " +
+			"one file, no runtime to install, instant start. Use run: ./" + appconf.BinDir + "/myapp listening on 0.0.0.0:$PORT. " +
 			"Python, Node.js (with npm) and PHP work out of the box, a plain HTML site needs only mode: static, and anything else installs with apt-get.\n\n" +
-			"Prefer keeping the source here: upload it to " + appctl.SrcDir + "/ and build it in the container with a " +
-			"\"prepare:\" step in hostit.yml, e.g. prepare: cd " + appctl.SrcDir + " && go build -o ../" + appctl.BinDir + "/myapp . " +
+			"Prefer keeping the source here: upload it to " + appconf.SrcDir + "/ and build it in the container with a " +
+			"\"prepare:\" step in hostit.yml, e.g. prepare: cd " + appconf.SrcDir + " && go build -o ../" + appconf.BinDir + "/myapp . " +
 			"Prepare runs before the app starts, on every deploy; if it fails the app is not started and the error is in the logs. " +
 			"That way the build happens on the machine that runs it (no cross-compiling, no toolchain needed on your side), " +
-			"and the next session can still change the app. Uploading a prebuilt binary to " + appctl.BinDir + "/ also works and is " +
+			"and the next session can still change the app. Uploading a prebuilt binary to " + appconf.BinDir + "/ also works and is " +
 			"faster -- build it with CGO_ENABLED=0 GOOS=linux GOARCH=amd64 -- but then only the binary is here, and whoever " +
 			"comes next has nothing to edit.",
 		Auth: "Send the token as: Authorization: Bearer <token>",

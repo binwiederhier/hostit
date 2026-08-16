@@ -1,4 +1,4 @@
-package appctl
+package appconf
 
 import (
 	"testing"

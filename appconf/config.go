@@ -1,8 +1,9 @@
-// The hostit.yml contract: what an app may say about how it runs, and the
-// parsing and validation that keep those strings safe to act on. Everything
-// here is written by the app's own owner (or their agent), so nothing in it may
-// be trusted with a path outside the app.
-package appctl
+// Package appconf is the app's own contract: the hostit.yml schema (what an
+// app may say about how it runs, parsed and validated -- it is written by the
+// app's owner or their agent, so nothing in it may be trusted with a path
+// outside the app) and the layout of an app's home. It pairs with nodeconf,
+// which is the node daemon's config; this one is the tenant's.
+package appconf
 
 import (
 	"bytes"

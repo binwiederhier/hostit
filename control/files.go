@@ -5,7 +5,7 @@ import (
 	"io/fs"
 	"strings"
 
-	"heckel.io/hostit/appctl"
+	"heckel.io/hostit/appconf"
 	"heckel.io/hostit/homefs"
 )
 
@@ -15,15 +15,15 @@ const (
 	// app; hostit's own instructions are not a file here (see "hostit guide").
 	readmeFile = "README.md"
 	// configFile is the app's own configuration, written by whoever builds it
-	configFile = appctl.ConfigFile
+	configFile = appconf.ConfigFile
 	// homeMode is the files dir's permissions: root-owned (idmap-mounted) but
 	// world-traversable, so sshd can reach .ssh/authorized_keys as the app user
 	homeMode = 0o755
 	// appLogFile is where the agent records an app's output, below the app's home
-	appLogFile = appctl.AppLogFile
+	appLogFile = appconf.AppLogFile
 	// appStateFile is where the agent records the run: process state; maxStateRead
 	// caps that tiny file when the daemon reads it
-	appStateFile = appctl.AppStateFile
+	appStateFile = appconf.AppStateFile
 	maxStateRead = 64
 	// maxLogRead caps how much of that log a request reads; the agent rotates it
 	// at 10 MB, and a reader only ever wants the tail
@@ -77,7 +77,7 @@ func (m *Manager) Description(name string) string {
 	if err != nil {
 		return ""
 	}
-	conf, err := appctl.ParseAppConfig(b)
+	conf, err := appconf.ParseAppConfig(b)
 	if err != nil {
 		return ""
 	}
@@ -87,12 +87,12 @@ func (m *Manager) Description(name string) string {
 // SetDescription writes the app's one-line description into its hostit.yml,
 // replacing an existing description: line or inserting one at the top, so it lives
 // with the app's config where the assistant also keeps it current. The line
-// surgery itself is appctl.SetDescription, next to the hostit.yml parsing.
+// surgery itself is appconf.SetDescription, next to the hostit.yml parsing.
 func (m *Manager) SetDescription(name, desc string) error {
 	desc = strings.ReplaceAll(strings.TrimSpace(desc), "\n", " ")
 	var content string
 	if b, err := m.node.ReadFile(name, configFile); err == nil {
 		content = string(b)
 	}
-	return m.node.WriteFile(name, configFile, []byte(appctl.SetDescription(content, desc)), 0)
+	return m.node.WriteFile(name, configFile, []byte(appconf.SetDescription(content, desc)), 0)
 }
