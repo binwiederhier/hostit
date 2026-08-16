@@ -16,14 +16,12 @@ import (
 // recreated: an app keeps whatever state it built up in its subvolume (its
 // files and everything it installed).
 //
-// The one wrinkle is the Unix login: usermod --login refuses while the user has a
-// live process, and its container -- plus any open web-terminal or SSH session,
-// which run as that user -- is exactly that. So a running app is stopped around the
-// rename and started again afterwards. Stop/start reuses the same container, so no
-// state is lost; it is a brief blip, not a rebuild. Old <name>.<base> links stop
-// resolving; the new one works on the next request.
+// The machine half of the rename (stopping the unit, the usermod, the cache
+// carry-over) runs through RenameLogin on this process's machine; the registry
+// flip is the callback in the middle. NOTE: like the whole rename flow, this
+// assumes the app's machine is THIS host -- the known colocated-only gap.
 func (m *Manager) RenameApp(oldName, newName string) (*store.App, error) {
-	defer m.lockApp(oldName)()
+	defer m.LockApp(oldName)()
 	if newName == oldName {
 		return m.store.App(oldName)
 	}
@@ -36,8 +34,32 @@ func (m *Manager) RenameApp(oldName, newName string) (*store.App, error) {
 	if err := m.validateName(newName); err != nil {
 		return nil, err
 	}
+	if err := m.RenameLogin(oldName, newName, a.ID, func() error {
+		return m.store.RenameApp(oldName, newName)
+	}); err != nil {
+		if errors.Is(err, store.ErrAppNameTaken) {
+			return nil, ErrAppExists
+		}
+		return nil, err
+	}
+	m.PushMirror()
+	return m.store.App(newName)
+}
+
+// RenameLogin is the machine half of a rename: stop the app around the
+// usermod, rename the Unix login, run the registry flip in the middle, carry
+// the name-keyed caches over and bring the app back up. On a failed flip the
+// login is renamed back, so OS and registry stay consistent.
+//
+// The one wrinkle is the Unix login: usermod --login refuses while the user has a
+// live process, and its container -- plus any open web-terminal or SSH session,
+// which run as that user -- is exactly that. So a running app is stopped around the
+// rename and started again afterwards. Stop/start reuses the same container, so no
+// state is lost; it is a brief blip, not a rebuild. Old <name>.<base> links stop
+// resolving; the new one works on the next request.
+func (m *machine) RenameLogin(oldName, newName, id string, flip func() error) error {
 	// The unit is keyed on the (unchanging) id, so the same name stops and starts it.
-	unit := workspace.UnitName(a.ID)
+	unit := workspace.UnitName(id)
 	wasRunning := m.isActive(oldName)
 	if wasRunning {
 		// Stop the unit first: it is Restart=always, so it must be stopped (not just
@@ -62,18 +84,14 @@ func (m *Manager) RenameApp(oldName, newName string) (*store.App, error) {
 	// Rename the Unix login (uid and home unchanged). This is the only OS mutation.
 	if err := m.renameUser(oldName, newName); err != nil {
 		startApp() // bring the app back under its old name
-		return nil, fmt.Errorf("cannot rename app user: %w", err)
+		return fmt.Errorf("cannot rename app user: %w", err)
 	}
-	// Flip the name in the store; on failure, undo the user rename to stay consistent.
-	if err := m.store.RenameApp(oldName, newName); err != nil {
+	// Flip the name in the registry; on failure, undo the user rename to stay consistent.
+	if err := flip(); err != nil {
 		_ = m.user.Rename(newName, oldName)
 		startApp()
-		if errors.Is(err, store.ErrAppNameTaken) {
-			return nil, ErrAppExists
-		}
-		return nil, err
+		return err
 	}
-	m.PushMirror()
 	// Carry the name-keyed in-memory caches over so the next lookup is warm.
 	m.renameCaches(oldName, newName)
 	startApp()
@@ -84,13 +102,13 @@ func (m *Manager) RenameApp(oldName, newName string) (*store.App, error) {
 	// The SSH login banner shows the app's current name regardless (it comes from
 	// the daemon); only the bare `hostname` command and the shell's \h prompt keep
 	// the old name until then.
-	return m.store.App(newName)
+	return nil
 }
 
 // renameUser renames the app's Unix login, retrying briefly: stopping the app's
 // container tears down its sessions asynchronously, so usermod can still see a
 // dying process for a moment ("currently used by process ...").
-func (m *Manager) renameUser(oldName, newName string) error {
+func (m *machine) renameUser(oldName, newName string) error {
 	var err error
 	for i := 0; i < 15; i++ {
 		if err = m.user.Rename(oldName, newName); err == nil {
@@ -106,7 +124,7 @@ func (m *Manager) renameUser(oldName, newName string) error {
 
 // renameCaches moves an app's name-keyed in-memory state from the old name to the
 // new one. Everything durable keys on the id and needs no move.
-func (m *Manager) renameCaches(oldName, newName string) {
+func (m *machine) renameCaches(oldName, newName string) {
 	m.mu.Lock()
 	if v, ok := m.memoryMB[oldName]; ok {
 		m.memoryMB[newName] = v

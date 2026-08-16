@@ -238,6 +238,15 @@ type Manager struct {
 	ctlStatesFresh time.Time
 	ctlRefreshing  bool
 	ctlStatesMu    sync.Mutex // Protects ctlStates, ctlStatesFresh, ctlRefreshing
+
+	// store and config are the control plane's OWN references (the same
+	// objects as the machine's in any real process). Declared here so the
+	// control methods stop reaching into the machine's internals: the outer
+	// fields shadow the embedded ones for every *Manager method.
+	store  *store.Store
+	config *config.Config
+
+	pmu sync.Mutex // Protects nextPort, reservedPorts (the control side's own lock)
 }
 
 // NewManager creates a Manager from its config, store and the node-local services
@@ -264,6 +273,8 @@ func NewManager(conf *config.Config, s *store.Store, svc *Services) *Manager {
 		},
 		reservedPorts: make(map[int]bool),
 		ctlStates:     make(map[string]State),
+		store:         s,
+		config:        conf,
 	}
 	m.node = m // single process: orchestration and machine work are the same
 	// A machine-side lifecycle change invalidates the control cache's entry,
@@ -284,11 +295,11 @@ func NewManager(conf *config.Config, s *store.Store, svc *Services) *Manager {
 	return m
 }
 
-// lockApp acquires the per-app lifecycle lock and returns its unlock func, so
+// LockApp acquires the per-app lifecycle lock and returns its unlock func, so
 // deploy/snapshot/rollback/delete on one app run one at a time and never race on
 // its subvolume. It is NOT reentrant: a method already holding the lock must
 // call the unlocked helpers (up, takeSnapshot), not the public locking ones.
-func (m *machine) lockApp(name string) func() {
+func (m *machine) LockApp(name string) func() {
 	m.appLocksMu.Lock()
 	mu := m.appLocks[name]
 	if mu == nil {
@@ -341,7 +352,7 @@ func (m *Manager) Fork(source, newName, snapshotID string, opts *CreateOptions) 
 	opts.Host = hostOrLocal(src.Host)
 	// Lock the source so its subvolume/snapshot is not rolled back or deleted
 	// mid-copy; the new app's own deploy runs under its own lock in the background.
-	defer m.lockApp(source)()
+	defer m.LockApp(source)()
 	return m.create(newName, opts, &seedRef{AppID: src.ID, SnapshotID: snapshotID})
 }
 
@@ -389,7 +400,7 @@ func (m *Manager) create(name string, opts *CreateOptions, seed *seedRef) (*stor
 	if host == "" {
 		host = m.placeNode()
 	}
-	app := &store.App{ID: store.NewAppID(), Name: name, Port: port, Host: host, OwnerID: opts.OwnerID, ImageTag: workspace.ImageTag(), UID: m.uidFor(port)}
+	app := &store.App{ID: store.NewAppID(), Name: name, Port: port, Host: host, OwnerID: opts.OwnerID, ImageTag: workspace.ImageTag(), UID: workspace.UIDFor(m.config.PortMin, port)}
 
 	// Register the app FIRST and push the mirror before any machine state
 	// exists: the node's orphan reconcile treats unknown ids as leftovers, so
@@ -397,7 +408,7 @@ func (m *Manager) create(name string, opts *CreateOptions, seed *seedRef) (*stor
 	// a concurrent reconcile (seen live on the stage two-node setup). The app
 	// is pinned to the workspace image it is built with, so a later
 	// Containerfile change (e.g. adding a runtime) only affects new apps.
-	m.recordDiskLimit(name, opts.DiskMB)
+	m.RecordDiskLimit(name, opts.DiskMB)
 	if err := m.store.AddApp(app); err != nil {
 		return nil, err
 	}
@@ -452,8 +463,45 @@ func (m *Manager) SetNodeAgent(node NodeAgent) {
 // WaitBackground blocks until the manager's fire-and-forget goroutines (post-
 // create starts, delete teardowns) have finished: what a graceful shutdown or
 // a test harness waits on before pulling the store away from under them.
-func (m *Manager) WaitBackground() {
+func (m *machine) WaitBackground() {
 	m.background.Wait()
+}
+
+// TrackedGo runs fn in a goroutine tracked by the background group, so
+// WaitBackground covers it; how the control half's fire-and-forget work
+// (post-create starts, delete teardowns) stays waitable without reaching
+// into the machine's WaitGroup.
+func (m *machine) TrackedGo(fn func()) {
+	m.background.Add(1)
+	go func() {
+		defer m.background.Done()
+		fn()
+	}()
+}
+
+// SetTearingDown marks (or clears) an app name as having a teardown in
+// flight, under the machine's lock; IsTearingDown is the matching read. The
+// control half's delete/create paths coordinate through these.
+func (m *machine) SetTearingDown(name string, tearing bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if tearing {
+		m.tearingDown[name] = true
+	} else {
+		delete(m.tearingDown, name)
+	}
+}
+
+func (m *machine) IsTearingDown(name string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.tearingDown[name]
+}
+
+// UserExists reports whether the app's unix login exists on this machine;
+// name validation and the teardown wait consult it.
+func (m *machine) UserExists(name string) bool {
+	return m.user.Exists(name)
 }
 
 // DeleteApp removes the app from the registry and answers at once; the host
@@ -464,7 +512,7 @@ func (m *Manager) WaitBackground() {
 // net; the app's port (and with it its uid block) stays reserved until the
 // teardown finishes, so a new app cannot collide with the dying user.
 func (m *Manager) DeleteApp(name string) error {
-	unlock := m.lockApp(name) // serialize against a concurrent deploy/snapshot/rollback
+	unlock := m.LockApp(name) // serialize against a concurrent deploy/snapshot/rollback
 	a, err := m.store.App(name)
 	if err != nil {
 		unlock()
@@ -481,32 +529,26 @@ func (m *Manager) DeleteApp(name string) error {
 		Port:      a.Port,
 		UID:       a.UID,
 		UIDKnown:  a.UID != 0,
-		Unit:      m.unitName(name),
-		Container: m.containerName(name),
+		Unit:      workspace.UnitName(a.ID),
+		Container: workspace.ContainerName(a.ID),
 	}
 	if err := m.store.RemoveApp(name); err != nil {
 		unlock()
 		return err
 	}
 	m.PushMirror()
-	m.mu.Lock()
+	m.pmu.Lock()
 	m.reservedPorts[a.Port] = true
-	m.tearingDown[name] = true
-	m.mu.Unlock()
+	m.pmu.Unlock()
+	m.SetTearingDown(name, true)
 	// The port's drop rule is removed by the node inside Deprovision (its
 	// firewall table, its user lookups); the port stays reserved until then.
-	m.background.Add(1)
-	go func() {
-		defer m.background.Done()
+	m.TrackedGo(func() {
 		defer unlock()
 		defer m.releasePort(a.Port)
-		defer func() {
-			m.mu.Lock()
-			delete(m.tearingDown, name)
-			m.mu.Unlock()
-		}()
+		defer m.SetTearingDown(name, false)
 		m.node.Deprovision(spec)
-	}()
+	})
 	return nil
 }
 
@@ -611,7 +653,7 @@ func (m *Manager) validateName(name string) error {
 	} else if !errors.Is(err, store.ErrAppNotFound) {
 		return err
 	}
-	if m.user.Exists(name) {
+	if m.UserExists(name) {
 		// The unix user of a just-deleted same-name app dies in the background;
 		// waiting the teardown out turns an instant delete-then-recreate from a
 		// spurious "already exists" into a create that simply takes a moment.
@@ -628,11 +670,8 @@ func (m *Manager) validateName(name string) error {
 func (m *Manager) waitForTeardown(name string) bool {
 	deadline := time.Now().Add(teardownWait)
 	for time.Now().Before(deadline) {
-		m.mu.Lock()
-		inFlight := m.tearingDown[name]
-		m.mu.Unlock()
-		if !inFlight {
-			return !m.user.Exists(name)
+		if !m.IsTearingDown(name) {
+			return !m.UserExists(name)
 		}
 		time.Sleep(teardownPoll)
 	}
@@ -649,8 +688,8 @@ func (m *Manager) allocatePort() (int, error) {
 	// port only shows up in UsedPorts at AddApp time, seconds after allocation,
 	// and two concurrent creates reading the store in that window were both handed
 	// the same port -- the second useradd then failed on the taken uid.
-	m.mu.Lock()
-	defer m.mu.Unlock()
+	m.pmu.Lock()
+	defer m.pmu.Unlock()
 	// Rotate through the range instead of always taking the lowest free port: a
 	// just-deleted app's port maps to a uid whose budget qgroup may still hold
 	// the dying subvolume's uncommitted bytes (the teardown destroys it gently,
@@ -677,8 +716,8 @@ func (m *Manager) allocatePort() (int, error) {
 // (UsedPorts covers it from then on), or when the create failed. Leaving it
 // reserved would leak the port until the next daemon restart.
 func (m *Manager) releasePort(port int) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+	m.pmu.Lock()
+	defer m.pmu.Unlock()
 	delete(m.reservedPorts, port)
 }
 
@@ -694,7 +733,7 @@ func (m *Manager) BackfillUIDs() {
 		if a.UID != 0 {
 			continue
 		}
-		if err := m.store.SetAppUID(a.Name, m.uidFor(a.Port)); err != nil {
+		if err := m.store.SetAppUID(a.Name, workspace.UIDFor(m.config.PortMin, a.Port)); err != nil {
 			slog.Warn("Cannot backfill app uid", "app", a.Name, "error", err)
 		}
 	}
@@ -703,7 +742,7 @@ func (m *Manager) BackfillUIDs() {
 // uidFor is an app's base uid: a contiguous workspace.UIDBlockSize-wide block, one per
 // app, spaced by port so blocks never overlap. Container uid 0 maps here.
 func (m *machine) uidFor(port int) int {
-	return workspace.UIDBlockStart + (port-m.config.PortMin)*workspace.UIDBlockSize
+	return workspace.UIDFor(m.config.PortMin, port)
 }
 
 // lookupIDs returns the app's contiguous id block: its uid/gid (which become

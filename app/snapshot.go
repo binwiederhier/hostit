@@ -23,7 +23,7 @@ func (m *machine) TakeSnapshot(name, label string, auto bool) (*store.Snapshot, 
 
 // ListSnapshots returns an app's snapshots, newest first.
 func (m *Manager) ListSnapshots(name string) ([]*store.Snapshot, error) {
-	return m.snapshots.ListSnapshots(name)
+	return m.store.Snapshots(name)
 }
 
 // DeleteSnapshot removes a single snapshot (its subvolume and its record).
@@ -51,7 +51,7 @@ type snapshotHost struct{ m *machine }
 
 var _ snapshot.Host = snapshotHost{}
 
-func (h snapshotHost) LockApp(name string) func() { return h.m.lockApp(name) }
+func (h snapshotHost) LockApp(name string) func() { return h.m.LockApp(name) }
 
 func (h snapshotHost) Up(name string) error {
 	_, err := h.m.up(name, false)

@@ -87,6 +87,13 @@ func ContainerName(id string) string {
 	return ContainerPrefix + id
 }
 
+// UIDFor is an app's base uid: a contiguous UIDBlockSize-wide block, one per
+// app, spaced by port so blocks never overlap. Container uid 0 maps here.
+// Both halves of the platform derive it from the same formula.
+func UIDFor(portMin, port int) int {
+	return UIDBlockStart + (port-portMin)*UIDBlockSize
+}
+
 func UnitName(id string) string {
 	return UnitTemplate + id
 }

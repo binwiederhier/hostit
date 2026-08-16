@@ -62,15 +62,23 @@ func (m *Manager) CachedStates(names []string) map[string]State {
 // callers in serve/noded correct for whichever half matters in that process.
 func (m *Manager) SeedStates() {
 	m.machine.SeedStates()
+	apps, err := m.store.Apps()
+	if err != nil {
+		slog.Warn("Cannot list apps to seed states", "error", err)
+		return
+	}
 	m.ctlStatesMu.Lock()
 	defer m.ctlStatesMu.Unlock()
-	m.stateMu.Lock()
-	for name, state := range m.stateCache {
-		if _, ok := m.ctlStates[name]; !ok {
-			m.ctlStates[name] = state
+	for _, a := range apps {
+		if _, ok := m.ctlStates[a.Name]; ok {
+			continue
 		}
+		state := State{}
+		if !a.PoweredOff {
+			state = State{Running: true, AppRunning: true, AppState: appctl.AppStateRunning}
+		}
+		m.ctlStates[a.Name] = state
 	}
-	m.stateMu.Unlock()
 }
 
 // SeedStates pre-fills the cache from recorded intent, before the first real

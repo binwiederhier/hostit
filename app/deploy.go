@@ -25,7 +25,7 @@ const (
 // Up deploys the app from its hostit.yml: builds images as needed, recreates the
 // container if its configuration changed, and (re)starts or reloads the service
 func (m *machine) Up(name string) (string, error) {
-	defer m.lockApp(name)()
+	defer m.LockApp(name)()
 	return m.up(name, true)
 }
 

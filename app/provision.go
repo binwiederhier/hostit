@@ -89,9 +89,7 @@ func (m *machine) provisionRollback(spec *ProvisionSpec) {
 // startInBackground brings the app up without the API call waiting for a
 // container (and, on the app user's first app, an image build) to come up.
 func (m *Manager) startInBackground(name string, forking bool) {
-	m.background.Add(1)
-	go func() {
-		defer m.background.Done()
+	m.TrackedGo(func() {
 		// How long this took is the question asked whenever an app "would not
 		// start": the API returns at once, and the wait is podman's queue behind
 		// whatever else the host is doing
@@ -102,7 +100,7 @@ func (m *Manager) startInBackground(name string, forking bool) {
 			return
 		}
 		slog.Info("App started", "app", name, "forked", forking, "took", time.Since(started).Round(time.Second))
-	}()
+	})
 }
 
 // Deprovision tears the app down on this machine; it runs in the background
