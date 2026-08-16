@@ -15,6 +15,12 @@ import (
 // unix user, authorized keys, and -- for a fresh app -- the demo skeleton. On
 // failure it rolls back its own partial work and the Machine is clean again.
 func (m *Machine) Provision(spec *nodeapi.ProvisionSpec) error {
+	// Serialize with anything else acting on this app: a reconcile that finds
+	// the account missing would otherwise provision the app a SECOND time
+	// while the original create is still running, and the two builds corrupt
+	// each other's subvolume (seen on stage: an app whose subvolume vanished
+	// mid-create and never served).
+	defer m.LockApp(spec.Name)()
 	forking := spec.SeedAppID != ""
 	// The budget qgroup exists and is capped BEFORE the subvolume, which is then
 	// snapshotted INTO it (-i): membership is atomic at creation, so the cap

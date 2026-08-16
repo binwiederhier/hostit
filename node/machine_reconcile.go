@@ -36,16 +36,21 @@ func (m *Machine) Reconcile(desired *nodeapi.DesiredState) []string {
 // rest of the node from converging.
 func (m *Machine) applyDesired(desired *nodeapi.DesiredState) {
 	for _, app := range desired.Apps {
+		// Under the app's lock, so an in-flight create finishes first and this
+		// pass then sees the account it made rather than racing it.
+		unlock := m.LockApp(app.Name)
 		if !m.UserExists(app.Name) {
 			// The app should be here and is not: a rebuilt node, a botched
 			// provision, an account swept by mistake. Build it from the same
 			// spec that created it originally.
 			spec := app.ProvisionSpec
+			unlock() // Provision takes the lock itself
 			if err := m.Provision(&spec); err != nil {
 				slog.Warn("Cannot provision a missing app during reconcile", "app", app.Name, "error", err)
 				continue
 			}
 			slog.Info("Provisioned an app that was missing on this node", "app", app.Name)
+			unlock = func() {}
 		}
 		// Keys and limits are control's to assert; re-writing them every pass
 		// is how a change that happened while this node was away lands.
@@ -54,6 +59,7 @@ func (m *Machine) applyDesired(desired *nodeapi.DesiredState) {
 		}
 		m.SetMemoryLimit(app.Name, app.MemoryMB)
 		m.SetDiskLimit(app.Name, app.DiskMB)
+		unlock()
 	}
 }
 
