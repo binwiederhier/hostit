@@ -5,14 +5,17 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strconv"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"heckel.io/hostit/config"
 	"heckel.io/hostit/node"
 	"heckel.io/hostit/store"
+	"heckel.io/hostit/user"
 )
 
 // The internal surface is what hostit-proxy (and later hostit-node) consume:
@@ -95,4 +98,44 @@ func TestInternalCertServesPEMThroughTheCombinedLookup(t *testing.T) {
 	pair, err := tls.X509KeyPair([]byte(mat.CertPEM), []byte(mat.KeyPEM))
 	require.NoError(t, err, "the PEM material must load as a working key pair")
 	require.NotEmpty(t, pair.Certificate)
+}
+
+// The routing table's version must keep increasing across a control restart.
+// The proxy persists the last version it stored and long-polls with it, so a
+// version that restarts at 1 makes a proxy holding 1 from the previous
+// lifetime block forever against an equal number -- serving a stale table with
+// no way to notice. The counter therefore lives in the registry, like every
+// other thing control is authoritative for.
+func TestRouteTableVersionSurvivesAControlRestart(t *testing.T) {
+	t.Parallel()
+	conf, st := newInternalTestDeps(t)
+	first := New(conf, NewManager(conf, st, testServices(newFakeSystem(), newFakeRunner())), user.NewManager(conf, st))
+	t.Cleanup(first.apps.WaitBackground)
+	_, err := first.apps.CreateApp("one", nil)
+	require.NoError(t, err)
+	before, err := first.currentRoutes()
+	require.NoError(t, err)
+	require.NotZero(t, before.Seq)
+
+	// A new control process over the same registry, with different routes.
+	second := New(conf, NewManager(conf, st, testServices(newFakeSystem(), newFakeRunner())), user.NewManager(conf, st))
+	t.Cleanup(second.apps.WaitBackground)
+	_, err = second.apps.CreateApp("two", nil)
+	require.NoError(t, err)
+	after, err := second.currentRoutes()
+	require.NoError(t, err)
+
+	assert.Greater(t, after.Seq, before.Seq, "a restarted control must not reuse a version the proxy already has")
+}
+
+func newInternalTestDeps(t *testing.T) (*config.Config, *store.Store) {
+	t.Helper()
+	conf := config.NewConfig()
+	conf.BaseDomain = "apps.example.com"
+	conf.AdminToken = testToken
+	conf.AppsDir, conf.DataDir = t.TempDir(), t.TempDir()
+	st, err := store.NewStore(filepath.Join(t.TempDir(), "hostit.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = st.Close() })
+	return conf, st
 }

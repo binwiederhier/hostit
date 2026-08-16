@@ -122,8 +122,8 @@ func (s *Server) currentRoutes() (*routeTable, error) {
 	sort.Slice(routes, func(i, j int) bool { return routes[i].Host < routes[j].Host })
 
 	// Hash the content; a changed hash bumps the persistent-ish seq (in memory:
-	// proxies compare seqs within one control lifetime, and a restart's seq
-	// reset just causes one redundant snapshot).
+	// proxies compare versions across control lifetimes, which is why the
+	// counter is persisted below).
 	b, err := json.Marshal(routes)
 	if err != nil {
 		return nil, err
@@ -135,6 +135,14 @@ func (s *Server) currentRoutes() (*routeTable, error) {
 	if sum != s.routesHash {
 		s.routesHash = sum
 		s.routesSeq++
+		// Persisted, not just in memory: the proxy keeps the last version it
+		// stored across ITS restarts and long-polls with it, so a control that
+		// restarted its counter would hand out a number the proxy already
+		// holds -- and the proxy would block on an equal version forever while
+		// serving a stale table.
+		if err := s.apps.Store().SetSetting(store.SettingRoutesSeq, strconv.FormatInt(s.routesSeq, 10)); err != nil {
+			slog.Warn("Cannot persist the routing table version", "error", err)
+		}
 	}
 	return &routeTable{Seq: s.routesSeq, Routes: routes}, nil
 }

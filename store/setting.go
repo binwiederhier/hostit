@@ -1,6 +1,10 @@
 package store
 
 const (
+	// SettingRoutesSeq is the routing table's version, persisted because the
+	// proxy compares it across control restarts (see control/internal.go).
+	SettingRoutesSeq = "routes_seq"
+
 	upsertSettingQuery  = `INSERT INTO setting (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value`
 	selectSettingsQuery = `SELECT key, value FROM setting`
 )

@@ -108,6 +108,14 @@ func New(conf *config.Config, apps *Manager, users *user.Manager) *Server {
 		usernameForUID: usernameForUID,
 	}
 	s.exchangeGoogleCode = s.exchangeGoogleCodeLive
+	// Continue the routing table's version where the last control process left
+	// off (see currentRoutes); a fresh counter would collide with what a
+	// running proxy already holds.
+	if settings, err := apps.Store().Settings(); err == nil {
+		if seq, err := strconv.ParseInt(settings[store.SettingRoutesSeq], 10, 64); err == nil {
+			s.routesSeq = seq
+		}
+	}
 	// The built-in coding assistant, available when either backend is configured:
 	// the metered Anthropic API (an API key) or the operator's Claude Max
 	// subscription (a sandboxed claude -p). Its tools are the app's own operations,
