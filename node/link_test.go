@@ -63,6 +63,13 @@ func TestCallbacksFlowOverTheDuplex(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("node never registered")
 	}
+	// Control registered first; wait for the node side to finish wiring its
+	// reverse client (a callback posted before that is dropped by design).
+	require.Eventually(t, func() bool {
+		link.mu.Lock()
+		defer link.mu.Unlock()
+		return link.client != nil
+	}, 3*time.Second, 5*time.Millisecond)
 
 	link.PowerChanged("blog", true)
 	link.UsageChanged("blog", 42)
