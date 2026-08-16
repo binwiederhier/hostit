@@ -253,6 +253,11 @@ func (a *remoteAgent) Deprovision(spec *app.DeprovisionSpec) {
 	_ = a.postJSON("deprovision", spec)
 }
 
+// Sync pushes the registry mirror; a plain JSON verb.
+func (a *remoteAgent) Sync(state *app.SyncState) error {
+	return a.postJSON("sync", state)
+}
+
 func (a *remoteAgent) postJSON(verb string, payload any) error {
 	body, err := json.Marshal(payload)
 	if err != nil {

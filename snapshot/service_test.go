@@ -191,6 +191,7 @@ func (h *fakeHost) LockApp(string) func()     { return func() {} }
 func (h *fakeHost) BudgetGroup(string) string { return "1/1000" }
 func (h *fakeHost) Up(name string) error      { h.upCalled = append(h.upCalled, name); return nil }
 func (h *fakeHost) StateChanged(string)       {}
+func (h *fakeHost) SnapshotsChanged(string)   {}
 func (h *fakeHost) SnapshotHooks(string) (string, string) {
 	return h.pre, h.post
 }

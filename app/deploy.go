@@ -85,6 +85,7 @@ func (m *Manager) powerOn(name string) (string, error) {
 	if err := m.store.SetAppPoweredOff(name, false); err != nil {
 		return "", err
 	}
+	m.notifyPower(name, false)
 	a, err := m.store.App(name)
 	if err != nil {
 		return "", err
@@ -146,6 +147,7 @@ func (m *Manager) Down(name string) error {
 	if err := m.store.SetAppPoweredOff(name, true); err != nil {
 		return err
 	}
+	m.notifyPower(name, true)
 	return m.systemd.DisableNow(m.unitName(name))
 }
 

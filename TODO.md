@@ -118,6 +118,25 @@ definitions and the conversation prefix are cache-marked, so repeat turns pay th
 
 ## Smaller things
 
+- **Remove port-min/port-max from the config, hardcode the range.** The
+  per-app loopback port range is an implementation detail nobody should tune;
+  a config knob just invites broken installs (uids derive from ports, so
+  changing the range on an existing install corrupts the uid mapping).
+
+- **Remove assistant-models / assistant-model from the config?** Probably
+  subsumed by the model-picker rework below: the available models should be
+  derived from which credentials are configured, not hand-listed in YAML.
+
+- **Assistant model picker: show models, not backends.** Instead of just
+  "claude.ai" in the UI, list the actual models, driven by which credentials
+  are configured. Anthropic API key configured -> "Haiku 4.5", "Sonnet 5",
+  "Opus 5" (anthropic logo icon). claude.ai token (claude-code-oauth-token)
+  configured -> "Sonnet 5", "Opus 5", "Fable 5" (claude icon). Both -> both
+  sets, separated by a divider, distinguished by icon; only one -> only that
+  set. Example (only the claude.ai token):
+  `<claude icon> Fable 5 / Opus 5 / Sonnet 5`; with both, the same list
+  followed by a divider and `<anthropic logo> Opus 5 / Sonnet 5 / Haiku 4.5`.
+
 - **CHANGELOG.md per release.** Keep a CHANGELOG.md listing changes per
   version, updated with every release. Retroactively create the history for
   all existing tags from the commit messages and TODO.md's evolution through

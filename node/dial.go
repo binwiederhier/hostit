@@ -3,6 +3,7 @@ package node
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"net"
@@ -28,7 +29,7 @@ const connectPath = "/internal/node/connect"
 // socket). authorize checks the id against the node registry: an unregistered
 // node's still-valid certificate is refused, which is what makes `node
 // remove` an effective revocation.
-func ConnectHandler(authorize func(nodeID string) bool, register func(nodeID string, agent app.NodeAgent)) http.Handler {
+func ConnectHandler(authorize func(nodeID string) bool, callbacks func(nodeID string) http.Handler, register func(nodeID string, agent app.NodeAgent)) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != connectPath && r.URL.Path != "/" { // mounted standalone in tests
 			http.NotFound(w, r)
@@ -57,7 +58,11 @@ func ConnectHandler(authorize func(nodeID string) bool, register func(nodeID str
 		}
 		_ = buf.Flush()
 		_, _ = conn.Write([]byte("HTTP/1.1 101 Switching Protocols\r\n\r\n"))
-		client, err := Duplex(conn, false, nil)
+		var cb http.Handler
+		if callbacks != nil {
+			cb = callbacks(nodeID)
+		}
+		client, err := Duplex(conn, false, cb)
 		if err != nil {
 			_ = conn.Close()
 			return
@@ -69,7 +74,7 @@ func ConnectHandler(authorize func(nodeID string) bool, register func(nodeID str
 // ServeAgent is the node's side after dialing: it sends the upgrade request
 // on the raw connection, then serves its NodeAgent over the duplex. Blocks
 // until the connection dies (the caller redials with backoff).
-func ServeAgent(conn net.Conn, nodeID string, agent app.NodeAgent) error {
+func ServeAgent(conn net.Conn, nodeID string, agent app.NodeAgent, onLink func(client *http.Client)) error {
 	req, err := http.NewRequest("POST", "http://control"+connectPath, nil)
 	if err != nil {
 		return err
@@ -104,6 +109,16 @@ func ServeAgent(conn net.Conn, nodeID string, agent app.NodeAgent) error {
 	go func() {
 		_ = http.Serve(sess, RPCHandler(agent))
 	}()
+	// The reverse direction: the node's own requests to control (the control
+	// sink's callbacks) ride the same session.
+	if onLink != nil {
+		onLink(&http.Client{Transport: &http.Transport{
+			DialContext: func(context.Context, string, string) (net.Conn, error) {
+				return sess.OpenStream()
+			},
+			DisableKeepAlives: true,
+		}})
+	}
 	<-sess.CloseChan() // returns when the connection dies; the caller redials
 	return nil
 }

@@ -41,6 +41,10 @@ func listenForNode(conf *config.Config, manager *app.Manager, srv *server.Server
 	mux.Handle("/", node.ConnectHandler(func(nodeID string) bool {
 		n, err := manager.Store().Node(nodeID)
 		return err == nil && !n.JoinedAt.IsZero()
+	}, func(nodeID string) http.Handler {
+		// The node's reverse channel: usage, poweroffs and snapshot records it
+		// originates land in the registry through these.
+		return node.CallbackHandler(nodeID, manager.Store())
 	}, func(nodeID string, remote app.NodeAgent) {
 		slog.Info("Node connected", "node", nodeID)
 		_ = manager.Store().SetNodeSeen(nodeID, time.Now())
@@ -92,10 +96,13 @@ func pollNodeStates(manager *app.Manager, remote app.NodeAgent, done, superseded
 	}
 }
 
-// rejoin is the reconcile handshake, run on every node (re)connect: every app
-// that should be running gets an Ensure, so an app whose container died
+// rejoin is the reconcile handshake, run on every node (re)connect: push the
+// registry mirror FIRST (the node gates its destructive startup work on it,
+// and every row-reading verb needs it), re-assert each app's limits, then
+// Ensure every app that should be running, so an app whose container died
 // during the outage comes back without waiting for a user action.
 func rejoin(manager *app.Manager, remote app.NodeAgent) {
+	manager.PushMirror()
 	apps, err := manager.Store().Apps()
 	if err != nil {
 		slog.Warn("Rejoin: cannot list apps", "error", err)
@@ -103,6 +110,8 @@ func rejoin(manager *app.Manager, remote app.NodeAgent) {
 	}
 	ensured := 0
 	for _, a := range apps {
+		remote.SetMemoryLimit(a.Name, manager.MemoryLimit(a.Name))
+		remote.SetDiskLimit(a.Name, manager.DiskLimit(a.Name))
 		if a.PoweredOff {
 			continue
 		}

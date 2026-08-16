@@ -60,6 +60,8 @@ func (h snapshotHost) Up(name string) error {
 
 func (h snapshotHost) StateChanged(name string) { h.m.stateChanged(name) }
 
+func (h snapshotHost) SnapshotsChanged(name string) { h.m.SnapshotsChanged(name) }
+
 func (h snapshotHost) SnapshotHooks(name string) (pre, post string) {
 	conf, _ := h.m.loadConfig(name) // hooks are optional; a missing/invalid config just means none
 	if conf == nil {

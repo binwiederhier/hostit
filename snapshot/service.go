@@ -57,6 +57,10 @@ type Host interface {
 	Up(name string) error
 	// StateChanged drops the app's cached state after its home or process moved.
 	StateChanged(name string)
+	// SnapshotsChanged reports that the app's snapshot RECORDS changed
+	// (created, deleted, pruned); the split-mode host ships the authoritative
+	// list to control, which owns the metadata the UI and retention read.
+	SnapshotsChanged(name string)
 	// SnapshotHooks returns the app's snapshot.pre/post commands from its
 	// hostit.yml; empty strings when there is no (valid) config or no such hook.
 	SnapshotHooks(name string) (pre, post string)
@@ -146,6 +150,7 @@ func (s *Service) takeSnapshot(name, label string, auto bool) (*store.Snapshot, 
 		}
 	}
 	s.pruneSnapshots(name)
+	s.host.SnapshotsChanged(name)
 	return snap, nil
 }
 
@@ -179,7 +184,11 @@ func (s *Service) DeleteSnapshot(name, id string) error {
 	if err := s.btrfs.DeleteSubvolume(s.host.SnapshotPath(name, id)); err != nil {
 		return fmt.Errorf("cannot delete the snapshot subvolume: %w", err)
 	}
-	return s.store.DeleteSnapshot(id)
+	if err := s.store.DeleteSnapshot(id); err != nil {
+		return err
+	}
+	s.host.SnapshotsChanged(name)
+	return nil
 }
 
 // Rollback restores an app from a snapshot: the snapshot is the whole app

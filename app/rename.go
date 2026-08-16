@@ -73,6 +73,7 @@ func (m *Manager) RenameApp(oldName, newName string) (*store.App, error) {
 		}
 		return nil, err
 	}
+	m.PushMirror()
 	// Carry the name-keyed in-memory caches over so the next lookup is warm.
 	m.renameCaches(oldName, newName)
 	startApp()

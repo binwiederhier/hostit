@@ -129,6 +129,14 @@ type Manager struct {
 	// deprovision): itself by default (single process), or a remote node agent
 	// when control and node run as separate services (SetNodeAgent).
 	node NodeAgent
+	// sink is the node's reverse channel to control for control-plane data the
+	// node originates (usage, poweroffs, snapshot records); nil in a single
+	// process (SetControlSink).
+	sink ControlSink
+	// synced closes when the first registry mirror arrives (Sync); gates the
+	// node's destructive startup work.
+	synced     chan struct{}
+	syncedOnce sync.Once
 
 	config    *config.Config
 	store     *store.Store
@@ -199,6 +207,7 @@ func NewManager(conf *config.Config, s *store.Store, svc *Services) *Manager {
 		firewall:      svc.Firewall,
 		homefs:        homefs.New(ErrInvalid),
 		memoryMB:      make(map[string]int),
+		synced:        make(chan struct{}),
 		diskMB:        make(map[string]int),
 		reservedPorts: make(map[int]bool),
 		tearingDown:   make(map[string]bool),
@@ -337,6 +346,9 @@ func (m *Manager) create(name string, opts *CreateOptions, seedPath string) (*st
 		_ = m.store.RemoveApp(name)
 		return nil, err
 	}
+	// The node reads the row from HERE on (SetDiskLimit, Up): push the mirror
+	// before any of that.
+	m.PushMirror()
 	m.SetMemoryLimit(name, opts.MemoryMB)
 	// Apply the disk budget now (create and fork alike), so a new app is capped
 	// from the start rather than only after the next daemon restart: record the
@@ -401,6 +413,7 @@ func (m *Manager) DeleteApp(name string) error {
 		unlock()
 		return err
 	}
+	m.PushMirror()
 	m.mu.Lock()
 	m.reservedPorts[a.Port] = true
 	m.tearingDown[name] = true

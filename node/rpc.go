@@ -119,6 +119,14 @@ func RPCHandler(agent app.NodeAgent) http.Handler {
 		return &rpcResp{OK: true}
 	}
 
+	mux.HandleFunc("POST /v1/sync", func(w http.ResponseWriter, r *http.Request) {
+		var state app.SyncState
+		if err := json.NewDecoder(r.Body).Decode(&state); err != nil {
+			writeRPC(w, &rpcResp{Err: "bad request: " + err.Error()})
+			return
+		}
+		writeRPC(w, okErr(agent.Sync(&state)))
+	})
 	mux.HandleFunc("POST /v1/provision", func(w http.ResponseWriter, r *http.Request) {
 		var spec app.ProvisionSpec
 		if err := json.NewDecoder(r.Body).Decode(&spec); err != nil {

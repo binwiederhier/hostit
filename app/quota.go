@@ -67,6 +67,7 @@ func (m *Manager) RefreshDiskUsage() error {
 		if err := m.store.UpdateAppUsage(a.Name, usage); err != nil {
 			slog.Warn("Cannot record disk usage", "app", a.Name, "error", err)
 		}
+		m.notifyUsage(a.Name, usage)
 	}
 	return nil
 }

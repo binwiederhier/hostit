@@ -25,7 +25,6 @@ import (
 	"heckel.io/hostit/node"
 	"heckel.io/hostit/run"
 	"heckel.io/hostit/store"
-	"heckel.io/hostit/user"
 )
 
 const (
@@ -92,7 +91,9 @@ func execServe(c *cli.Context) error {
 	if err := cmd.Preflight(conf.AppsDir); err != nil {
 		return err
 	}
-	s, err := store.NewStore(filepath.Join(conf.DataDir, "hostit.db"))
+	// The node's own SQLite: a MIRROR of the app/snapshot rows this node
+	// hosts, pushed by control (never control's registry, even colocated).
+	s, err := store.NewStore(filepath.Join(conf.DataDir, "node.db"))
 	if err != nil {
 		return err
 	}
@@ -100,19 +101,32 @@ func execServe(c *cli.Context) error {
 	app.Version = c.App.Version
 	manager := app.NewManager(conf, s, app.NewSystemServices(run.New()))
 
-	// The node-local startup, same order as the fused daemon's.
+	// The node-local startup, same order as the fused daemon's. Limits are
+	// not applied here: control re-asserts every app's memory and disk limit
+	// in its rejoin handshake right after the first dial-in.
 	manager.EnableDiskBudgets()
-	// The machine half of every stored limit (control only records them in
-	// split mode): re-cap each app's budget qgroup to its owner's limit.
-	if err := applyLimits(s, manager, conf); err != nil {
-		return err
-	}
 	if err := manager.MountRawAppsView(filepath.Join(filepath.Dir(conf.SocketFile), "apps-raw")); err != nil {
 		return err
 	}
+	done := make(chan struct{})
+	defer close(done)
 	go func() {
 		if err := manager.EnsureWorkspaceBase(); err != nil {
 			slog.Warn("Cannot prepare workspace base rootfs; the first app deploy will retry", "error", err)
+		}
+		manager.PruneOldWorkspaceImages()
+	}()
+	// Anything that acts on "the set of apps this node hosts" waits for the
+	// first registry mirror: against an unsynced (possibly empty) mirror,
+	// ReconcileOrphans would tear down every app on the machine.
+	go func() {
+		select {
+		case <-manager.Synced():
+		case <-done:
+			return
+		}
+		if removed := manager.ReconcileOrphans(); len(removed) > 0 {
+			slog.Info("Cleaned up leftovers of apps that no longer exist", "apps", removed)
 		}
 		restarted, err := manager.RestartStaleAgents(c.App.Version)
 		if err != nil {
@@ -120,16 +134,9 @@ func execServe(c *cli.Context) error {
 		} else if len(restarted) > 0 {
 			slog.Info("Restarted apps to pick up the new version", "apps", restarted, "version", c.App.Version)
 		}
-		manager.PruneOldWorkspaceImages()
 	}()
-	if removed := manager.ReconcileOrphans(); len(removed) > 0 {
-		slog.Info("Cleaned up leftovers of apps that no longer exist", "apps", removed)
-	}
-	done := make(chan struct{})
-	defer close(done)
 	go manager.DiskUsageLoop(done)
 	manager.SeedStates()
-	manager.BackfillUIDs()
 	go manager.StateLoop(done)
 	go manager.SnapshotLoop(time.Hour, done)
 	go manager.QgroupSweepLoop(6*time.Hour, done)
@@ -140,6 +147,8 @@ func execServe(c *cli.Context) error {
 	if err != nil {
 		return err
 	}
+	link := node.NewControlLink()
+	manager.SetControlSink(link)
 	// A termination signal closes the live connection: ServeAgent blocks on the
 	// session and would otherwise ignore SIGTERM until systemd SIGKILLs us
 	// after its stop timeout.
@@ -172,7 +181,7 @@ func execServe(c *cli.Context) error {
 		current = conn
 		connMu.Unlock()
 		slog.Info("Connected to control", "addr", conf.ListenNode)
-		if err := node.ServeAgent(conn, conf.NodeID, manager); err != nil {
+		if err := node.ServeAgent(conn, conf.NodeID, manager, link.SetClient); err != nil {
 			slog.Warn("Control connection failed", "error", err)
 		}
 		_ = conn.Close()
@@ -187,30 +196,3 @@ func execServe(c *cli.Context) error {
 }
 
 var sigCh = make(chan os.Signal, 1)
-
-// applyLimits applies each app owner's stored memory/disk limits on this
-// machine -- the split-mode counterpart of the fused daemon's startup step.
-func applyLimits(s *store.Store, manager *app.Manager, conf *config.Config) error {
-	users := user.NewManager(conf, s)
-	apps, err := s.Apps()
-	if err != nil {
-		return err
-	}
-	defaults, err := users.Defaults()
-	if err != nil {
-		return err
-	}
-	for _, a := range apps {
-		limits := defaults
-		if a.OwnerID != "" {
-			if owner, err := users.User(a.OwnerID); err == nil {
-				if limits, err = users.Limits(owner); err != nil {
-					return err
-				}
-			}
-		}
-		manager.SetMemoryLimit(a.Name, limits.MemoryMB)
-		manager.SetDiskLimit(a.Name, limits.DiskMB)
-	}
-	return nil
-}

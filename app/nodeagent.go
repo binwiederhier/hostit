@@ -64,6 +64,11 @@ type NodeAgent interface {
 	DeleteSnapshot(name, id string) error
 	Rollback(name, id string) error
 
+	// Sync replaces the node's registry mirror (the app and snapshot rows it
+	// hosts); control pushes it on connect and after every registry mutation,
+	// BEFORE any verb that reads rows on the node.
+	Sync(state *SyncState) error
+
 	// Node-level: batch state for the control plane's cache, and the
 	// heartbeat placement/health feed on.
 	States(names []string) map[string]State
