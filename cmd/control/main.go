@@ -19,11 +19,12 @@ var (
 )
 
 func main() {
-	app := newControlApp()
-	node.Version = version
+	ver := version
 	if commit != "" {
-		node.Version = fmt.Sprintf("%s (%s, built %s)", version, commit, date)
+		ver = fmt.Sprintf("%s (%s, built %s)", version, commit, date)
 	}
+	app := newControlApp(ver)
+	node.Version = ver
 	if err := app.Run(os.Args); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %s\n", err.Error())
 		os.Exit(1)

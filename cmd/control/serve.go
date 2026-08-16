@@ -83,7 +83,9 @@ func execServe(c *cli.Context) error {
 		return err
 	}
 	defer s.Close()
-	node.Version = c.App.Version // Part of each container's identity; see node.Version
+	// c.App.Version is what main stamped from the ldflags; keep the machine
+	// half on the same string (it is part of each container's identity).
+	node.Version = c.App.Version
 	// The fused daemon IS the local node, so its machine services are the local
 	// node's (the firewall table is named after it).
 	manager := control.NewManager(conf, s, node.NewSystemServices(run.New(), store.HostLocal))

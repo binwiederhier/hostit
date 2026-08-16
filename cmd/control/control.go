@@ -5,10 +5,15 @@ import "github.com/urfave/cli/v2"
 // newControlApp is the hostit-control CLI: the control plane as its own binary
 // and systemd service. The daemon that used to be "hostit serve" lives here;
 // the hostit binary keeps the CLI and the in-container agent.
-func newControlApp() *cli.App {
+func newControlApp(version string) *cli.App {
 	return &cli.App{
-		Name:     "hostit-control",
-		Usage:    "hostit's control plane: web app, REST API, registry, placement, certificates",
+		Name:  "hostit-control",
+		Usage: "hostit's control plane: web app, REST API, registry, placement, certificates",
+		// The version is load-bearing, not decoration: serve stamps it into
+		// every container this daemon creates and records it as the agents'
+		// version, so an empty one would make the stale-agent check match
+		// forever and agents would stop being restarted on upgrades.
+		Version:  version,
 		Commands: []*cli.Command{cmdServe, cmdNode},
 	}
 }
