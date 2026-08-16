@@ -22,6 +22,10 @@ import (
 )
 
 const (
+	// internalRoutesPath/internalCertPath are control's internal-surface
+	// endpoints this proxy polls (the server package registers the same paths).
+	internalRoutesPath = "/internal/routes"
+	internalCertPath   = "/internal/cert"
 	// pollTimeout is the long-poll window: control answers immediately when the
 	// table changed since the caller's seq, else when this elapses.
 	pollTimeout = 25 * time.Second
@@ -151,7 +155,7 @@ func (p *Proxy) WatchRoutes(done <-chan struct{}) {
 }
 
 func (p *Proxy) fetch(since int64) (*Table, error) {
-	resp, err := p.client.Get(fmt.Sprintf("%s/internal/routes?since=%d", p.conf.InternalURL, since))
+	resp, err := p.client.Get(fmt.Sprintf("%s%s?since=%d", p.conf.InternalURL, internalRoutesPath, since))
 	if err != nil {
 		return nil, err
 	}

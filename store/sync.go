@@ -11,7 +11,10 @@ import (
 // node-originated snapshot callback (auto-snapshots, retention pruning).
 
 const (
-	replaceMirrorAppQuery = `
+	deleteAllSnapshotsQuery = `DELETE FROM snapshot`
+	deleteAllAppsQuery      = `DELETE FROM app`
+	selectAppIDByNameQuery  = `SELECT id FROM app WHERE name = ?`
+	replaceMirrorAppQuery   = `
 		INSERT INTO app (id, name, port, host, owner_id, disk_mb, created_at, image_tag, uid, powered_off)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	replaceMirrorSnapshotQuery = `
@@ -23,10 +26,10 @@ const (
 // state, atomically; full-row fidelity, since the node's loops read all of it.
 func (s *Store) ReplaceNodeMirror(apps []*App, snaps []*Snapshot) error {
 	return s.inTx(func(tx *sql.Tx) error {
-		if _, err := tx.Exec(`DELETE FROM snapshot`); err != nil {
+		if _, err := tx.Exec(deleteAllSnapshotsQuery); err != nil {
 			return err
 		}
-		if _, err := tx.Exec(`DELETE FROM app`); err != nil {
+		if _, err := tx.Exec(deleteAllAppsQuery); err != nil {
 			return err
 		}
 		for _, a := range apps {
@@ -48,7 +51,7 @@ func (s *Store) ReplaceNodeMirror(apps []*App, snaps []*Snapshot) error {
 func (s *Store) ReplaceAppSnapshots(appName string, snaps []*Snapshot) error {
 	return s.inTx(func(tx *sql.Tx) error {
 		var appID string
-		if err := tx.QueryRow(`SELECT id FROM app WHERE name = ?`, appName).Scan(&appID); err != nil {
+		if err := tx.QueryRow(selectAppIDByNameQuery, appName).Scan(&appID); err != nil {
 			return err
 		}
 		if _, err := tx.Exec(deleteAppSnapshotsQuery, appID, appName); err != nil {

@@ -222,8 +222,8 @@ func RPCHandler(agent app.NodeAgent) http.Handler {
 			b, err = agent.ReadFile(q.Get("name"), q.Get("path"))
 		}
 		if err != nil {
-			w.Header().Set("X-Hostit-Err", errString(err))
-			w.Header().Set("X-Hostit-Err-Code", errCode(err))
+			w.Header().Set(errHeader, errString(err))
+			w.Header().Set(errCodeHeader, errCode(err))
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}

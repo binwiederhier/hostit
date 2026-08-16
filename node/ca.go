@@ -196,7 +196,7 @@ func ClientTLS(cert tls.Certificate, rootCAs *x509.CertPool) *tls.Config {
 			return &cert, nil
 		},
 		RootCAs:    rootCAs,
-		ServerName: "control",
+		ServerName: controlID,
 		MinVersion: tls.VersionTLS13,
 	}
 }

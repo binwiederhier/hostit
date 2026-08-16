@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"log/slog"
 	"net/http"
 	"sync"
@@ -62,7 +63,7 @@ func listenForNode(conf *config.Config, manager *app.Manager, srv *server.Server
 		supersede[nodeID] = superseded
 		mu.Unlock()
 		registry.Register(nodeID, remote)
-		go pollNodeStates(manager, nodeID, remote, done, superseded)
+		go pollNodeStates(manager, registry, nodeID, remote, done, superseded)
 		go rejoin(manager, nodeID, remote)
 	}, func(nodeID string, remote app.NodeAgent) {
 		slog.Info("Node disconnected", "node", nodeID)
@@ -75,7 +76,7 @@ func listenForNode(conf *config.Config, manager *app.Manager, srv *server.Server
 	}
 	go func() {
 		slog.Info("Listening for node dial-ins", "addr", conf.ListenNode)
-		if err := httpSrv.ListenAndServeTLS("", ""); err != nil && err != http.ErrServerClosed {
+		if err := httpSrv.ListenAndServeTLS("", ""); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			slog.Error("Node listener failed", "error", err)
 		}
 	}()
@@ -105,7 +106,7 @@ func nodeApps(manager *app.Manager, nodeID string) []*store.App {
 // dashboards and placement read memory, never the wire, per request. Each
 // node is asked only about its own apps; the cache merges per name. The poll
 // also doubles as the liveness heartbeat.
-func pollNodeStates(manager *app.Manager, nodeID string, remote app.NodeAgent, done, superseded <-chan struct{}) {
+func pollNodeStates(manager *app.Manager, registry *app.NodeRegistry, nodeID string, remote app.NodeAgent, done, superseded <-chan struct{}) {
 	for {
 		select {
 		case <-done:
@@ -113,6 +114,16 @@ func pollNodeStates(manager *app.Manager, nodeID string, remote app.NodeAgent, d
 		case <-superseded:
 			return
 		case <-time.After(nodeStatePoll):
+		}
+		// `hostit-control node remove` runs in a separate process and only
+		// deletes the registry row; the running daemon checks it here so a
+		// removed node stops being routed verbs within a poll interval, rather
+		// than only when its TCP session happens to drop (connect-time authz
+		// alone would keep a live session going).
+		if _, err := manager.Store().Node(nodeID); errors.Is(err, store.ErrNodeNotFound) {
+			slog.Info("Node was removed; dropping its session", "node", nodeID)
+			registry.Unregister(nodeID, remote)
+			return
 		}
 		names := make([]string, 0)
 		for _, a := range nodeApps(manager, nodeID) {

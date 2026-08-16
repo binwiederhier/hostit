@@ -12,15 +12,20 @@ import (
 	"heckel.io/hostit/store"
 )
 
+// callbackPathPrefix roots the callback routes on control's duplex side.
+const callbackPathPrefix = "/callback/"
+
 // ControlLink is the node's reverse channel to control: it implements
 // app.ControlSink by POSTing callbacks over the same duplex connection the
 // RPC rides on. The client is swapped on every (re)dial; between connections
-// callbacks are dropped with a warning -- every payload is either re-measured
-// on a cadence (usage) or re-derived from authoritative node state on the
-// next connect (snapshots via the rejoin's re-sync, power via the mirror).
+// callbacks are dropped with a warning. Usage recovers on its own (re-measured
+// on a cadence) and a power transition on the next lifecycle change. Snapshot
+// records taken during an outage do NOT yet recover -- the rejoin sync flows
+// control->node and overwrites them; a node->control snapshot re-report on
+// connect is still owed (see plans/260815-hostit-nodeagent.md).
 type ControlLink struct {
-	mu     sync.Mutex // Protects client
 	client *http.Client
+	mu     sync.Mutex // Protects client
 }
 
 var _ app.ControlSink = (*ControlLink)(nil)
@@ -79,7 +84,7 @@ func (l *ControlLink) post(kind string, payload any) {
 	if err != nil {
 		return
 	}
-	resp, err := client.Post("http://control"+callbackPathPrefix+kind, "application/json", bytes.NewReader(body))
+	resp, err := client.Post("http://"+controlID+callbackPathPrefix+kind, "application/json", bytes.NewReader(body))
 	if err != nil {
 		slog.Warn("Control callback failed", "kind", kind, "error", err)
 		return
@@ -89,9 +94,6 @@ func (l *ControlLink) post(kind string, payload any) {
 		slog.Warn("Control callback refused", "kind", kind, "status", resp.Status)
 	}
 }
-
-// callbackPathPrefix roots the callback routes on control's duplex side.
-const callbackPathPrefix = "/callback/"
 
 // CallbackStore is the slice of the registry the callback handlers write.
 // AppHost resolves an app's hosting node, the scoping check every write goes

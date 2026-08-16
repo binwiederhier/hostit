@@ -16,8 +16,20 @@ import (
 // upgrade request, and the raw connection becomes the duplex -- control ends
 // up holding a NodeAgent for the node, the node serves its RPC over it.
 
-// connectPath is the internal upgrade endpoint.
-const connectPath = "/internal/node/connect"
+const (
+	// connectPath is the internal upgrade endpoint.
+	connectPath = "/internal/node/connect"
+	// controlID is control's identity: the CN of its cert, the ServerName the
+	// node pins, and the cosmetic host in the reverse-HTTP URLs.
+	controlID = "control"
+	// nodeHeader carries the node's self-reported id on the cert-less local
+	// socket (over TLS the id is the client cert CN instead).
+	nodeHeader = "X-Hostit-Node"
+	// errHeader/errCodeHeader carry a verb's failure across the raw file-stream
+	// responses (the JSON verbs use the rpcResp envelope instead).
+	errHeader     = "X-Hostit-Err"
+	errCodeHeader = "X-Hostit-Err-Code"
+)
 
 // ConnectHandler is control's side: it hijacks the upgrade request's
 // connection, becomes the duplex's accepting side, and hands the registered
@@ -40,7 +52,7 @@ func ConnectHandler(authorize func(nodeID string) bool, callbacks func(nodeID st
 				nodeID = r.TLS.PeerCertificates[0].Subject.CommonName
 			}
 		} else {
-			nodeID = r.Header.Get("X-Hostit-Node")
+			nodeID = r.Header.Get(nodeHeader)
 		}
 		if nodeID == "" || !authorize(nodeID) {
 			http.Error(w, "no node identity", http.StatusForbidden)
@@ -81,11 +93,11 @@ func ConnectHandler(authorize func(nodeID string) bool, callbacks func(nodeID st
 // on the raw connection, then serves its NodeAgent over the duplex. Blocks
 // until the connection dies (the caller redials with backoff).
 func ServeAgent(conn net.Conn, nodeID string, agent app.NodeAgent, onLink func(client *http.Client)) error {
-	req, err := http.NewRequest("POST", "http://control"+connectPath, nil)
+	req, err := http.NewRequest("POST", "http://"+controlID+connectPath, nil)
 	if err != nil {
 		return err
 	}
-	req.Header.Set("X-Hostit-Node", nodeID)
+	req.Header.Set(nodeHeader, nodeID)
 	if err := req.Write(conn); err != nil {
 		return err
 	}

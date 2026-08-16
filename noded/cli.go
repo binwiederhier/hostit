@@ -32,6 +32,11 @@ const (
 	redialDelay = 2 * time.Second
 )
 
+// sigCh receives the termination signal; the dial loop closes the live control
+// connection on it so ServeAgent unblocks instead of ignoring SIGTERM until
+// systemd's stop timeout.
+var sigCh = make(chan os.Signal, 1)
+
 // NewCLI is the hostit-node command line: `serve` and `join`.
 func NewCLI() *cli.App {
 	return &cli.App{
@@ -194,5 +199,3 @@ func execServe(c *cli.Context) error {
 		time.Sleep(redialDelay)
 	}
 }
-
-var sigCh = make(chan os.Signal, 1)

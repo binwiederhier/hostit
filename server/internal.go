@@ -10,7 +10,6 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
-	"heckel.io/hostit/store"
 	"io"
 	"log/slog"
 	"net"
@@ -20,6 +19,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"heckel.io/hostit/store"
 )
 
 // The internal surface: what hostit-proxy (and later hostit-node enrollment)
@@ -30,6 +31,11 @@ import (
 var errTLSNotManaged = errors.New("tls is not managed here")
 
 const (
+	// internalRoutesPath/internalCertPath are the internal-surface endpoints the
+	// data plane (hostit-proxy) polls; the same strings live in the proxyd
+	// package, which reaches this surface from the other side.
+	internalRoutesPath = "/internal/routes"
+	internalCertPath   = "/internal/cert"
 	// internalCertTimeout bounds one cert lookup, including a possible on-demand
 	// issuance for a not-yet-seen custom domain
 	internalCertTimeout = 90 * time.Second
@@ -55,8 +61,8 @@ type routeEntry struct {
 // Internal returns the internal API handler.
 func (s *Server) Internal() http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /internal/routes", s.handleInternalRoutes)
-	mux.HandleFunc("GET /internal/cert", s.handleInternalCert)
+	mux.HandleFunc("GET "+internalRoutesPath, s.handleInternalRoutes)
+	mux.HandleFunc("GET "+internalCertPath, s.handleInternalCert)
 	return mux
 }
 

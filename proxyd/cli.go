@@ -2,6 +2,7 @@ package proxyd
 
 import (
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -85,7 +86,7 @@ func execServe(c *cli.Context) error {
 		})}
 	go func() {
 		slog.Info("Listening for HTTP (ACME pass-through + redirect)", "addr", conf.ListenHTTP)
-		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			slog.Error("HTTP listener failed", "error", err)
 		}
 	}()
@@ -110,7 +111,7 @@ func execServe(c *cli.Context) error {
 	}()
 	slog.Info("Listening for HTTPS", "addr", conf.ListenHTTPS, "control", conf.ControlURL)
 	err = httpsServer.ListenAndServeTLS("", "")
-	if err == http.ErrServerClosed {
+	if errors.Is(err, http.ErrServerClosed) {
 		return nil
 	}
 	return err

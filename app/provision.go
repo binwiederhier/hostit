@@ -24,10 +24,10 @@ type ProvisionSpec struct {
 	// Host is the target node id; the control plane's routing agent sends the
 	// spec there (the row does not exist yet when provisioning starts).
 	Host    string   `json:"host"`
-	ID      string   // Stable app id; subvolume and container are keyed on it
-	Name    string   // Unix account name (today: the app name)
-	Port    int      // Loopback port; the uid block derives from it
-	SSHKeys []string // Full authorized_keys set (request + profile keys)
+	ID      string   `json:"id"`       // Stable app id; subvolume and container are keyed on it
+	Name    string   `json:"name"`     // Unix account name (today: the app name)
+	Port    int      `json:"port"`     // Loopback port; the uid block derives from it
+	SSHKeys []string `json:"ssh_keys"` // Full authorized_keys set (request + profile keys)
 	// SeedAppID/SeedSnapshotID name the fork seed (the source app's subvolume,
 	// or one of its snapshots); empty SeedAppID builds a fresh app with the
 	// skeleton. IDs, not paths: the NODE resolves them against its own pool --
@@ -35,8 +35,8 @@ type ProvisionSpec struct {
 	// not control's.
 	SeedAppID      string `json:"seed_app_id"`
 	SeedSnapshotID string `json:"seed_snapshot_id"`
-	URL            string // The app's public URL, for the skeleton's welcome page
-	DiskMB         int    // Resolved disk cap; the budget qgroup is created and capped BEFORE the subvolume
+	URL            string `json:"url"`     // The app's public URL, for the skeleton's welcome page
+	DiskMB         int    `json:"disk_mb"` // Resolved disk cap; the budget qgroup is created and capped BEFORE the subvolume
 }
 
 // Provision builds the app on this machine: subvolume (fresh or fork seed),
@@ -134,13 +134,13 @@ type DeprovisionSpec struct {
 	Host string `json:"host"`
 	// ID keys everything on-disk (subvolume, snapshots dir); the node resolves
 	// the paths against its own pool.
-	ID        string
-	Name      string
-	Port      int
-	UID       int // The budget qgroup key; UIDKnown guards a failed lookup
-	UIDKnown  bool
-	Unit      string
-	Container string
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Port      int    `json:"port"`
+	UID       int    `json:"uid"` // The budget qgroup key; UIDKnown guards a failed lookup
+	UIDKnown  bool   `json:"uid_known"`
+	Unit      string `json:"unit"`
+	Container string `json:"container"`
 }
 
 // Deprovision tears the app down on this machine; it runs in the background

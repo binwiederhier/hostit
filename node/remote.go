@@ -164,10 +164,10 @@ func (a *remoteAgent) readFile(name, relPath string, max int64) ([]byte, error) 
 	}
 	defer httpResp.Body.Close()
 	if httpResp.StatusCode != http.StatusOK {
-		if sentinel, ok := wireErrs[httpResp.Header.Get("X-Hostit-Err-Code")]; ok {
+		if sentinel, ok := wireErrs[httpResp.Header.Get(errCodeHeader)]; ok {
 			return nil, sentinel
 		}
-		return nil, errors.New(httpResp.Header.Get("X-Hostit-Err"))
+		return nil, errors.New(httpResp.Header.Get(errHeader))
 	}
 	return io.ReadAll(httpResp.Body)
 }

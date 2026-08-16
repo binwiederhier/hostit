@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"heckel.io/hostit/store"
 )
 
 // Colocated-interim credential files: control mints the CA and both identity
@@ -32,7 +34,7 @@ func EnsureIPCCreds(dataDir string) (*tls.Config, *CA, error) {
 		if err := writePEMPair(dir, "ca", ca.CertPEM(), ca.KeyPEM()); err != nil {
 			return nil, nil, err
 		}
-		for _, id := range []string{"control", "local"} {
+		for _, id := range []string{controlID, store.HostLocal} {
 			cert, err := ca.Issue(id)
 			if err != nil {
 				return nil, nil, err

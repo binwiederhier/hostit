@@ -28,7 +28,7 @@ import (
 // all further authentication is the certificate's CN.
 
 const (
-	// joinPath is the enrollment endpoint on control's node listener; unlike
+	// JoinPath is the enrollment endpoint on control's node listener; unlike
 	// everything else there, it requires no client certificate (the token is
 	// the credential).
 	JoinPath = "/internal/node/join"
