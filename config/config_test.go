@@ -151,3 +151,39 @@ func TestSSHHostname(t *testing.T) {
 	c.SSHHost = "box1.example.com"
 	assert.Equal(t, "box1.example.com", c.SSHHostname())
 }
+
+// A node's config is not control's: it holds no admin token, no base domain,
+// no OAuth, no TLS settings -- it dials control and does what it is told. The
+// node therefore validates its OWN fields; requiring control's would make a
+// legitimate remote-node config refuse to start.
+func TestValidateNodeIgnoresControlOnlyFields(t *testing.T) {
+	c := NewConfig()
+	c.BaseDomain = ""
+	c.AdminToken = ""
+	c.NodeID = "worker-2"
+	c.ListenNode = "10.0.0.1:2930"
+	c.NodeCertFile = "/etc/hostit/node.pem"
+	c.NodeKeyFile = "/etc/hostit/node.key"
+	c.ClusterCACertFile = "/etc/hostit/cluster-ca.pem"
+
+	require.NoError(t, c.ValidateNode())
+	require.Error(t, c.Validate(), "control still requires its own fields")
+}
+
+// The cluster credential files are all-or-none: a half-configured triple would
+// otherwise fail later, at dial time, with a confusing TLS error.
+func TestValidateNodeRequiresTheWholeCertTriple(t *testing.T) {
+	c := NewConfig()
+	c.NodeID = "worker-2"
+	c.NodeCertFile = "/etc/hostit/node.pem" // key and CA missing
+	require.ErrorContains(t, c.ValidateNode(), "node-key-file")
+}
+
+// A colocated node reads the shared server.yml, which has everything; node
+// validation must accept that too.
+func TestValidateNodeAcceptsAColocatedServerConfig(t *testing.T) {
+	c := NewConfig()
+	c.BaseDomain = "apps.example.com"
+	c.AdminToken = "secr3t"
+	require.NoError(t, c.ValidateNode())
+}

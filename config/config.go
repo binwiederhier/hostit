@@ -291,6 +291,34 @@ func LoadConfig(filename string) (*Config, error) {
 }
 
 // Validate checks that the config is complete enough to run the server
+// ValidateNode checks what a NODE needs, which is a strict subset: a node
+// holds no admin token, base domain, TLS mode or OAuth settings -- those are
+// control's, and requiring them would make a legitimate remote-node config
+// refuse to start. A colocated node reads the shared server.yml, which has
+// everything, so this accepts that too.
+func (c *Config) ValidateNode() error {
+	if c.NodeID == "" {
+		return errors.New("node-id is required")
+	}
+	if c.AppsDir == "" || c.DataDir == "" || c.SocketFile == "" {
+		return errors.New("apps-dir, data-dir and socket-file are required")
+	}
+	// The cluster credentials are all-or-none: a half-configured triple would
+	// otherwise surface later as an opaque TLS failure at dial time.
+	set := 0
+	for _, f := range []string{c.NodeCertFile, c.NodeKeyFile, c.ClusterCACertFile} {
+		if f != "" {
+			set++
+		}
+	}
+	if set != 0 && set != 3 {
+		return errors.New("node-cert-file, node-key-file and cluster-ca-cert-file must be set together")
+	}
+	return nil
+}
+
+// Validate checks a CONTROL config: the web app, certificates and registry
+// settings the control plane cannot run without.
 func (c *Config) Validate() error {
 	if c.BaseDomain == "" {
 		return errBaseDomainRequired

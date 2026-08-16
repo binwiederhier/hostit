@@ -39,7 +39,7 @@ func Serve(configPath, version string) error {
 	if err != nil {
 		return err
 	}
-	if err := conf.Validate(); err != nil {
+	if err := conf.ValidateNode(); err != nil {
 		return err
 	}
 	if err := preflight.Check(conf.AppsDir); err != nil {
