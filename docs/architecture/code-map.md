@@ -34,46 +34,37 @@ all of these; which commands it offers depends on where it runs (see
 | `client` | Go client for the REST API, used by `hostit apps` |
 | `web` | React 19 + Vite SPA (dashboard, app workspace, admin); built into `control/site/` |
 
-## How `control.Manager` composes the services
+## How the Manager and the Machine compose the services
 
-`control.Manager` decides *what* an app needs and delegates the *how* to the service that
-owns each host tool (`control/manager.go:NewManager`). It holds three service structs
-directly plus a `SystemOps` interface and the shared runner:
+`control.Manager` decides *what* an app needs and drives the machine half
+through the `nodeapi` verbs; `node.Machine` does the *how* on its host through
+the injected `node.Services` bundle -- one interface per host tool:
 
 ```mermaid
 flowchart TB
     mgr["control.Manager"]
-    mgr --> btrfs["btrfs.Service<br/>subvolumes, snapshots, qgroups"]
-    mgr --> systemd["systemd.Service<br/>per-app units"]
-    mgr --> container["container.Service<br/>podman"]
-    mgr --> runner["run.Runner<br/>shells out on the host"]
-    mgr --> ops["SystemOps (interface)<br/><i>injected; faked in tests</i>"]
-
-    ops -.->|"real impl:<br/>app/system.go NewSystemOps"| sysops["systemOps facade"]
-    sysops --> unixuser["unixuser.Service<br/>accounts, homes, skeleton"]
-    sysops --> ssh["ssh.Service<br/>authorized_keys"]
-    sysops --> firewall["firewall.Service<br/>nftables"]
-
-    retention["retention (pure policy)"] -.->|"used by"| btrfs
-
+    machine["node.Machine"]
+    subgraph svc["node.Services (interfaces, faked in tests)"]
+        btrfs
+        systemd
+        container
+        unixuser
+        sshp["ssh"]
+        firewall
+    end
+    runner["run.Runner<br/><i>raw exec; run.Nop in tests</i>"]
+    mgr -->|"nodeapi verbs<br/>(direct call when fused,<br/>node RPC when split)"| machine
+    machine --> svc
+    btrfs --> runner
+    systemd --> runner
+    container --> runner
     style mgr fill:#047857,color:#fff
-    style ops fill:#1f252d,color:#fff
+    style machine fill:#0369a1,color:#fff
 ```
 
-The `btrfs`, `systemd` and `container` services are wired in directly because the
-Manager calls them all over the lifecycle. The account, SSH-key and firewall
-operations are reached through the `SystemOps` interface, whose real implementation
-(`app/system.go:systemOps`, built by `NewSystemOps`) is a thin facade composing
-`unixuser`, `ssh` and `firewall` and converting app-level types at the boundary. The
-interface is the Manager's injection seam, so tests fake those root-requiring
-operations wholesale (`app/apptest/`). `retention` is a pure, I/O-free policy the
-btrfs snapshot code applies. Keeping the services separable is also the seam a future
-control/app-node split would use to run them on a remote host agent.
-
-Each service package is scoped to one host tool or API and exposes a small `Service`
-built on the shared `run.Runner`, so nothing shells out except through one injected
-runner.
-
+`NewSystemServices` (`node/machine.go`) builds the real, root-requiring set;
+`testServices` (control tests) and `apptest.NewNopServices` substitute fakes.
+See [seams-and-testing.md](../subsystems/seams-and-testing.md).
 ## `go:embed` blobs
 
 Large text blobs are pulled in with `//go:embed`, never inlined as Go string

@@ -45,7 +45,7 @@ sequenceDiagram
     participant Dashboard as Web dashboard
     participant Server as hostit server
     participant Manager as control.Manager
-    participant OS as SystemOps (useradd, nft)
+    participant OS as node.Services (useradd, nft)
     User->>Dashboard: "+ New app", type name
     Dashboard->>Server: POST /api/apps {name}
     Server->>Server: checkAppLimit(caller)
@@ -83,7 +83,7 @@ sequenceDiagram
 ## Technical details
 
 - **Package `app`** (`control/manager.go`) owns the lifecycle. `Manager` holds the
-  config, the store, a `SystemOps` for root-privileged OS work (useradd, loginctl,
+  config, the store, and the `node.Services` bundle for root-privileged OS work (useradd, loginctl,
   nft), and injected `btrfs`/`systemd`/`container` services.
 - **Create** flows `CreateApp` -> `create` (`control/manager.go:create`, shared with
   fork). It validates the name (`validateName`), allocates the lowest free port in
@@ -111,7 +111,7 @@ sequenceDiagram
 - **Rename** (`control/rename.go:RenameApp`): validates the new name, stops the unit if
   running (it is `Restart=always`, so it must be stopped, not just killed), force-kills
   leftover user processes so `usermod --login` is not blocked
-  (`SystemOps.KillUserProcesses`, with a retry loop in `renameUser` for the
+  (`unixuser.KillProcesses`, with a retry loop in `renameUser` for the
   process-death race), renames the Unix login and the store row
   (`store.RenameApp`, one transaction that also fixes the `assistant_session` name
   mirror), moves the name-keyed in-memory caches (`renameCaches`), and restarts the
