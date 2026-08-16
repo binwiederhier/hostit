@@ -361,3 +361,13 @@ Kept briefly for context; prune when stale.
   certificates that work even for an internally-deployed server.
 - Chat file uploads: drag-and-drop or "+" to save files into the app's uploads/, with
   images shown to the model as vision.
+
+- **e2e: parallel tests share mutable global server state.** The assistant
+  tests mutate global settings (allowed_models, external_allowed) while other
+  tests read them concurrently (t.Parallel + E2E_PARALLEL=4), so suite runs
+  intermittently fail tests that pass in isolation
+  (TestAssistantGlobalDefaultsFilterModes, and cheapestMode can pick a
+  different backend mid-suite). Also: a run killed by -timeout skips
+  t.Cleanup, leaving settings residue on stage for LATER runs. Fix ideas:
+  serialize the settings-mutating tests (no t.Parallel on them), or make
+  cheapestMode pin a mode once per suite.
