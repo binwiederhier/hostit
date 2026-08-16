@@ -125,7 +125,7 @@ type NodeAgent interface {
 
 	// Reconcile converges this node to the desired state control asserts:
 	// build what is missing, correct what has drifted (keys, limits, power),
-	// tear down what is not in the document. Control calls it on every connect
+	// tear down what is not in it. Control calls it on every connect
 	// and on a timer, so a node that crashed, was rebuilt, or missed a
 	// mutation heals from control's registry alone -- the registry is the
 	// source, the node is a projection of it. A nil desired state falls back
@@ -140,17 +140,17 @@ type NodeAgent interface {
 
 // DesiredState is the complete configuration control asserts for one node:
 // every app that belongs there, with everything needed to build it from
-// nothing. It is a whole document rather than a diff, so applying it twice
-// changes nothing and applying it after any outage is enough to converge.
+// nothing. It is the complete set, never a delta: applying it twice changes
+// nothing, and applying it once after any outage is enough to converge.
 type DesiredState struct {
 	Apps []*AppDesired `json:"apps"`
-	// Seq orders documents the same way SyncState.Seq orders mirrors.
+	// Seq orders these the same way SyncState.Seq orders mirrors.
 	Seq int64 `json:"seq"`
 }
 
 // AppDesired is one app's desired configuration. The embedded ProvisionSpec is
 // exactly what creating the app from nothing needs, which is what makes
-// re-provisioning a rebuilt node a matter of replaying this document.
+// re-provisioning a rebuilt node a matter of replaying this state.
 type AppDesired struct {
 	ProvisionSpec
 	MemoryMB   int  `json:"memory_mb"`

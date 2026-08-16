@@ -435,7 +435,7 @@ func (ra *routingAgent) Sync(state *SyncState) error {
 
 // Reconcile fans out to every connected node; rejoin calls a node's agent
 // directly, so this is only for interface completeness.
-// Reconcile fans the desired document out, SLICED per node: a node must only
+// Reconcile fans the desired state out, SLICED per node: a node must only
 // ever be handed the apps it hosts. Handing every node the whole fleet would
 // have each one try to build and configure apps that live elsewhere -- and on
 // a colocated pair, where /etc/passwd is shared, it would look like the app
@@ -451,7 +451,7 @@ func (ra *routingAgent) Reconcile(desired *nodeapi.DesiredState) []string {
 	return nil
 }
 
-// sliceDesired narrows a fleet-wide document to one node's apps.
+// sliceDesired narrows a fleet-wide desired state to one node's apps.
 func sliceDesired(desired *nodeapi.DesiredState, nodeID string) *nodeapi.DesiredState {
 	if desired == nil {
 		return nil

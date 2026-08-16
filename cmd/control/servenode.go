@@ -166,8 +166,8 @@ func rejoin(manager *control.Manager, nodeID string, remote control.NodeAgent) {
 	manager.PushMirrorTo(nodeID, remote)
 	// Hand the node its whole desired configuration and let it converge: build
 	// what is missing, correct keys and limits that drifted while it was away,
-	// drop what control no longer lists. The document is built here, from the
-	// registry, so the node needs no memory of its own.
+	// drop what control no longer lists. It is built here, from the registry,
+	// so the node needs no memory of its own.
 	desired, err := manager.DesiredState(nodeID)
 	if err != nil {
 		slog.Warn("Cannot build the desired state for a node", "node", nodeID, "error", err)

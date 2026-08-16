@@ -266,7 +266,7 @@ func (a *remoteAgent) Sync(state *nodeapi.SyncState) error {
 	return a.postJSON("sync", state)
 }
 
-// Reconcile hands the node its desired document; the removed ids are not
+// Reconcile hands the node its desired state; the removed ids are not
 // needed by the caller (rejoin and the sweep loop), so they are dropped.
 func (a *remoteAgent) Reconcile(desired *nodeapi.DesiredState) []string {
 	if desired == nil {

@@ -13,14 +13,14 @@ import (
 )
 
 // Reconcile converges this node to the state control asserts. Control calls it
-// on every connect and on a timer, handing over the whole desired document, so
+// on every connect and on a timer, handing over the whole desired state, so
 // the node never reasons from a snapshot it has been sitting on: it builds what
 // is missing (an app whose account is gone -- a rebuilt node -- is provisioned
 // again from the same spec that created it), corrects what drifted (keys,
-// limits), re-asserts port rules, and tears down what the document does not
+// limits), re-asserts port rules, and tears down what the desired state does not
 // list. Applying it twice changes nothing.
 //
-// A nil document falls back to converging against the pushed mirror, which is
+// A nil desired state falls back to converging against the pushed mirror, which is
 // what an older control sends.
 func (m *Machine) Reconcile(desired *nodeapi.DesiredState) []string {
 	if desired != nil {
@@ -31,7 +31,7 @@ func (m *Machine) Reconcile(desired *nodeapi.DesiredState) []string {
 	return removed
 }
 
-// applyDesired makes each app in the document true on this machine. Failures
+// applyDesired makes each app in the desired state true on this machine. Failures
 // are logged per app rather than aborting: one broken app must not stop the
 // rest of the node from converging.
 func (m *Machine) applyDesired(desired *nodeapi.DesiredState) {
@@ -63,8 +63,8 @@ func (m *Machine) applyDesired(desired *nodeapi.DesiredState) {
 	}
 }
 
-// desiredIDs is the id set the document lists, or nil when there is no
-// document (the caller then falls back to the mirror).
+// desiredIDs is the id set the desired state lists, or nil when there is
+// none (the caller then falls back to the mirror).
 func desiredIDs(desired *nodeapi.DesiredState) map[string]bool {
 	if desired == nil {
 		return nil
@@ -120,8 +120,8 @@ func (m *Machine) ReconcileOrphans() []string {
 }
 
 // reconcileOrphans sweeps against the given id set, or against the mirror when
-// it is nil. The document is the fresher truth: it was built for this pass,
-// where the mirror is whatever last arrived.
+// it is nil. The desired state is the fresher truth: it was built for this
+// pass, where the mirror is whatever last arrived.
 func (m *Machine) reconcileOrphans(known map[string]bool) []string {
 	m.startOrphanPass()
 	defer m.endOrphanPass()

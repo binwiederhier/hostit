@@ -71,7 +71,7 @@ func (m *Manager) SetPolicy(p AppPolicy) {
 	m.policy = p
 }
 
-// DesiredState is the document control asserts for one node: every app that
+// DesiredState is what control asserts for one node: every app that
 // belongs there, with everything needed to build it from nothing. This is the
 // registry projected outward -- the node holds no authority of its own, so a
 // node that crashed, was rebuilt or missed a mutation converges by replaying
