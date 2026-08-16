@@ -46,7 +46,7 @@ flowchart TB
 ### Per-app Unix user and uid-block idmap
 
 Each app owns a **65536-wide contiguous uid/gid block**: `uidFor(port) = 1000000 +
-(port - PortMin) * 65536` (`control/manager.go:uidFor`, `workspace/spec.go` block
+(port - PortMin) * 65536` (`workspace.UIDFor`, `workspace/spec.go` block
 constants). The container is created by the root daemon but mapped
 `--uidmap 0:<base>:65536` (and the matching `--gidmap`), so container root *is* the
 app's unprivileged host uid and the whole block maps one-to-one

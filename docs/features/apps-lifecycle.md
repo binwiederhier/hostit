@@ -137,7 +137,7 @@ sequenceDiagram
 - **The global admin token owns nothing** (`c.user == nil`): its "own apps" means
   all apps, and it is exempt from the app-count limit.
 - **Ports are the scarce resource.** Creation fails with `ErrNoPortsAvailable` when
-  the configured `PortMin..PortMax` range is exhausted; the uid block is also derived
+  the fixed `workspace.PortMin..PortMax` range is exhausted; the uid block is also derived
   from the port, so ports bound how many apps a node can hold.
 - **App-count limit** is enforced on create/fork only (`checkAppLimit`); see
   [quotas-limits.md](quotas-limits.md).
