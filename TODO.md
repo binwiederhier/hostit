@@ -161,15 +161,12 @@ definitions and the conversation prefix are cache-marked, so repeat turns pay th
   load-bearing: colocated nodes share one /etc/passwd, so an unscoped sweep
   would delete the other node's app accounts.
 
-- **Snapshot records: narrow reconnect race remains.** The main outage loss is
-  fixed (2026-08-16, "Split 6"): the node no longer snapshots on its own timer,
-  so snapshots only happen while control is connected and their records reach
-  the registry through the sink. What remains is a narrow race: a snapshot
-  that completes just as the connection drops (a commanded take, a rollback's
-  safety snapshot, or a deploy's pre-deploy snapshot) can miss its
-  SnapshotsChanged callback, and the next mirror push then drops the record
-  while the subvolume stays. Clean fix if it ever matters: a node->control
-  snapshot re-report on connect, before the rejoin mirror push.
+- **DONE (2026-08-16): snapshot records survive a reconnect.** On rejoin
+  control reads the node's own records (`Manager.IngestNodeSnapshots`, the
+  `nodeapi` Snapshots verb) BEFORE pushing the mirror back, so a snapshot that
+  completed as the connection dropped is recovered instead of being overwritten
+  by control's older list. Records are accepted only for apps that node hosts,
+  the same scoping the reverse-channel callbacks enforce.
 
 - **hostit-node hangs on stop.** During the 2026-08-16 stage deploy, stopping
   hostit-node timed out after systemd's 90s stop-sigterm window and the

@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"heckel.io/hostit/nodeapi"
 	"heckel.io/hostit/store"
 )
 
@@ -353,6 +354,13 @@ func (ra *routingAgent) SyncKeys(name string, profileKeys []string) error {
 		return err
 	}
 	return agent.SyncKeys(name, profileKeys)
+}
+
+// Snapshots has no app to route by: it is a node-level read, and control asks
+// a SPECIFIC node's agent directly on rejoin (IngestNodeSnapshots), never
+// through the router. Routing it would have to pick a node arbitrarily.
+func (ra *routingAgent) Snapshots() ([]*store.Snapshot, error) {
+	return nil, fmt.Errorf("%w: snapshots must be read from a specific node's agent", nodeapi.ErrInvalid)
 }
 
 func (ra *routingAgent) Rename(oldName, newName, id string) error {

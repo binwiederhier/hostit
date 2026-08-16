@@ -13,6 +13,7 @@ const (
 	insertSnapshotQuery     = `INSERT INTO snapshot (id, app_name, app_id, label, created_at, auto) VALUES (?, ?, COALESCE((SELECT id FROM app WHERE name = ?), ''), ?, ?, ?)`
 	selectSnapshotsQuery    = `SELECT id, ` + snapshotName + `, label, created_at, auto FROM snapshot WHERE app_id = (SELECT id FROM app WHERE name = ?) ORDER BY created_at DESC`
 	selectSnapshotQuery     = `SELECT id, ` + snapshotName + `, label, created_at, auto FROM snapshot WHERE id = ?`
+	selectAllSnapshotsQuery = `SELECT id, ` + snapshotName + `, label, created_at, auto FROM snapshot ORDER BY created_at DESC`
 	deleteSnapshotQuery     = `DELETE FROM snapshot WHERE id = ?`
 	deleteAppSnapshotsQuery = `DELETE FROM snapshot WHERE app_id = ? OR (app_id = '' AND app_name = ?)`
 )
@@ -26,6 +27,26 @@ var (
 func (s *Store) AddSnapshot(snap *Snapshot) error {
 	_, err := s.db.Exec(insertSnapshotQuery, snap.ID, snap.AppName, snap.AppName, snap.Label, snap.CreatedAt.Unix(), boolToInt(snap.Auto))
 	return err
+}
+
+// AllSnapshots lists every snapshot row, newest first. On a node this is its
+// mirror -- the records for the apps it hosts -- which control reads back on
+// rejoin.
+func (s *Store) AllSnapshots() ([]*Snapshot, error) {
+	rows, err := s.db.Query(selectAllSnapshotsQuery)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var snaps []*Snapshot
+	for rows.Next() {
+		snap, err := scanSnapshot(rows)
+		if err != nil {
+			return nil, err
+		}
+		snaps = append(snaps, snap)
+	}
+	return snaps, rows.Err()
 }
 
 // Snapshots lists an app's snapshots, newest first

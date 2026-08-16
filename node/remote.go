@@ -216,6 +216,14 @@ func (a *remoteAgent) SetDiskLimit(name string, diskMB int) {
 	_ = a.do("setdisklimit", &rpcReq{Name: name, DiskMB: diskMB})
 }
 
+func (a *remoteAgent) Snapshots() ([]*store.Snapshot, error) {
+	resp, err := a.call("snapshots", &rpcReq{})
+	if err != nil {
+		return nil, err
+	}
+	return resp.Snapshots, nil
+}
+
 func (a *remoteAgent) TakeSnapshot(name, label string, auto bool) (*store.Snapshot, error) {
 	resp, err := a.call("snapshot", &rpcReq{Name: name, Label: label, Auto: auto})
 	if err != nil {

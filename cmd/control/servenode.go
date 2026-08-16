@@ -160,6 +160,9 @@ func scopeStates(states map[string]control.State, allowed []string) map[string]c
 // limits, then Ensure every app that should be running, so an app whose
 // container died during the outage comes back without waiting for a user.
 func rejoin(manager *control.Manager, nodeID string, remote control.NodeAgent) {
+	// Recover snapshot records the node wrote while the connection was down,
+	// BEFORE the mirror push overwrites its rows with control's older list.
+	manager.IngestNodeSnapshots(nodeID, remote)
 	manager.PushMirrorTo(nodeID, remote)
 	// Converge the node to the just-pushed mirror: tear down apps deleted while
 	// it was disconnected (the routed Deprovision was dropped) and re-assert its

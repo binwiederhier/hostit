@@ -14,6 +14,40 @@ func (m *Manager) ListSnapshots(name string) ([]*store.Snapshot, error) {
 	return m.store.Snapshots(name)
 }
 
+// IngestNodeSnapshots recovers the snapshot records a node holds for the apps
+// it hosts. Control calls this on rejoin BEFORE pushing the mirror back: a
+// snapshot that completed as the connection dropped never delivered its
+// SnapshotsChanged callback, and the push would otherwise overwrite the node's
+// rows with control's older list -- losing the record while its subvolume
+// stays (invisible to retention, still charged to the app's budget).
+//
+// Records for apps this node does not host are ignored, the same scoping the
+// reverse-channel callbacks enforce.
+func (m *Manager) IngestNodeSnapshots(nodeID string, agent NodeAgent) {
+	reported, err := agent.Snapshots()
+	if err != nil {
+		slog.Warn("Cannot read a node's snapshot records on rejoin", "node", nodeID, "error", err)
+		return
+	}
+	byApp := make(map[string][]*store.Snapshot)
+	for _, snap := range reported {
+		host, err := m.store.AppHost(snap.AppName)
+		if err != nil {
+			continue // the app is gone from the registry; the node's reconcile drops it
+		}
+		if hostOrLocal(host) != nodeID {
+			slog.Warn("Ignoring snapshot records for an app the node does not host", "node", nodeID, "app", snap.AppName)
+			continue
+		}
+		byApp[snap.AppName] = append(byApp[snap.AppName], snap)
+	}
+	for name, snaps := range byApp {
+		if err := m.store.ReplaceAppSnapshots(name, snaps); err != nil {
+			slog.Warn("Cannot ingest a node's snapshot records", "node", nodeID, "app", name, "error", err)
+		}
+	}
+}
+
 // AutoSnapshotLoop drives the hourly automatic snapshots from the control
 // plane: every tick it sweeps the registry and commands each app's node
 // through the node agent. The node no longer snapshots on its own timer, so

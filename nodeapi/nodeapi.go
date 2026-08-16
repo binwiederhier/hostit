@@ -107,6 +107,11 @@ type NodeAgent interface {
 	SetDiskLimit(name string, diskMB int)
 
 	// Snapshots: the subvolume work; metadata stays on the control plane.
+	// Snapshots reports the records this node holds for the apps it hosts.
+	// Control reads them on rejoin, BEFORE pushing the mirror back, so a
+	// record written while the connection was down is not overwritten by
+	// control's older list (the subvolume would stay, unreferenced).
+	Snapshots() ([]*store.Snapshot, error)
 	TakeSnapshot(name, label string, auto bool) (*store.Snapshot, error)
 	DeleteSnapshot(name, id string) error
 	Rollback(name, id string) error

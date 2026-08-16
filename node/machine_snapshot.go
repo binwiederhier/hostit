@@ -21,6 +21,13 @@ func (m *Machine) TakeSnapshot(name, label string, auto bool) (*store.Snapshot, 
 	return m.snapshots.TakeSnapshot(name, label, auto)
 }
 
+// Snapshots reports every snapshot record this node holds, so control can
+// recover records it missed while the connection was down (see the verb's
+// contract in nodeapi).
+func (m *Machine) Snapshots() ([]*store.Snapshot, error) {
+	return m.store.AllSnapshots()
+}
+
 // DeleteSnapshot removes a single snapshot (its subvolume and its record).
 func (m *Machine) DeleteSnapshot(name, id string) error {
 	return m.snapshots.DeleteSnapshot(name, id)

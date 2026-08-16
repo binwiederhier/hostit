@@ -178,3 +178,59 @@ func TestPruneSnapshotsDeletesBeyondRetentionThroughTheAgent(t *testing.T) {
 	}
 	assert.ElementsMatch(t, pruned, agent.deletes["blog"])
 }
+
+// snapshotReporter is a node agent that reports its own snapshot records, the
+// way a reconnecting node does.
+type snapshotReporter struct {
+	NodeAgent
+	report []*store.Snapshot
+}
+
+func (a *snapshotReporter) Snapshots() ([]*store.Snapshot, error) { return a.report, nil }
+
+// A snapshot that completed just as the connection dropped never delivered its
+// SnapshotsChanged callback, and the rejoin mirror push would then overwrite
+// the node's rows -- losing the record while the subvolume stays (invisible to
+// retention, still charged to the app's budget). On rejoin control therefore
+// ingests the node's own records BEFORE pushing the mirror back.
+func TestIngestNodeSnapshotsRecoversRecordsMissedWhileDisconnected(t *testing.T) {
+	t.Parallel()
+	m, _ := newTestManager(t)
+	// An app hosted on the remote node (create places locally in tests, so the
+	// row is written directly with that node as its host).
+	require.NoError(t, m.store.AddApp(&store.App{ID: store.NewAppID(), Name: "blog", Port: 10500, Host: "worker-2"}))
+	agent := &snapshotReporter{NodeAgent: m, report: []*store.Snapshot{
+		{ID: "20260816-120000-lost", AppName: "blog", Label: "taken during the outage", CreatedAt: time.Now().UTC().Truncate(time.Second), Auto: true},
+	}}
+
+	m.IngestNodeSnapshots("worker-2", agent)
+
+	snaps, err := m.ListSnapshots("blog")
+	require.NoError(t, err)
+	var ids []string
+	for _, s := range snaps {
+		ids = append(ids, s.ID)
+	}
+	assert.Contains(t, ids, "20260816-120000-lost", "the record the node kept is recovered")
+}
+
+// A node may only report snapshots for the apps it actually hosts: the same
+// scoping the reverse-channel callbacks enforce, so a compromised node cannot
+// rewrite another node's app records.
+func TestIngestNodeSnapshotsRejectsForeignApps(t *testing.T) {
+	t.Parallel()
+	m, _ := newTestManager(t)
+	_, err := m.CreateApp("mine", nil) // stays on the local node
+	require.NoError(t, err)
+	before, err := m.ListSnapshots("mine")
+	require.NoError(t, err)
+	agent := &snapshotReporter{NodeAgent: m, report: []*store.Snapshot{
+		{ID: "20260816-120000-evil", AppName: "mine", Label: "not yours", CreatedAt: time.Now().UTC()},
+	}}
+
+	m.IngestNodeSnapshots("worker-2", agent)
+
+	after, err := m.ListSnapshots("mine")
+	require.NoError(t, err)
+	assert.Equal(t, len(before), len(after), "a node cannot rewrite another node's app snapshots")
+}

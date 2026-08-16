@@ -50,6 +50,7 @@ type rpcResp struct {
 	Paths     []string                 `json:"paths,omitempty"`
 	Exec      *nodeapi.ExecResult      `json:"exec,omitempty"`
 	Snapshot  *store.Snapshot          `json:"snapshot,omitempty"`
+	Snapshots []*store.Snapshot        `json:"snapshots,omitempty"`
 	States    map[string]nodeapi.State `json:"states,omitempty"`
 	Heartbeat *nodeapi.Heartbeat       `json:"heartbeat,omitempty"`
 	Listing   *nodeapi.Listing         `json:"listing,omitempty"`
@@ -202,6 +203,13 @@ func RPCHandler(agent nodeapi.NodeAgent) http.Handler {
 			return fail(err)
 		}
 		return &rpcResp{Snapshot: snap}
+	})
+	verb("snapshots", func(*rpcReq) *rpcResp {
+		snaps, err := agent.Snapshots()
+		if err != nil {
+			return fail(err)
+		}
+		return &rpcResp{Snapshots: snaps}
 	})
 	verb("deletesnapshot", func(q *rpcReq) *rpcResp { return okErr(agent.DeleteSnapshot(q.Name, q.ID)) })
 	verb("rollback", func(q *rpcReq) *rpcResp { return okErr(agent.Rollback(q.Name, q.ID)) })
