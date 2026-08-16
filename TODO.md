@@ -150,6 +150,23 @@ definitions and the conversation prefix are cache-marked, so repeat turns pay th
   (cgroup v2 namespaces hide other containers' PIDs already; the meminfo/cpu
   view is the missing piece).
 
+- **Reconcile leaves orphaned unix users behind.** The rejoin Reconcile (and
+  startup ReconcileOrphans) cleans units, containers, subvolumes and budget
+  qgroups of apps deleted while a node was offline, but not the unix user
+  (verified live: user "outage" survived the outage-delete test). Self-healing
+  today (a later create at the reused uid replaces the squatter), but a clean
+  fix would sweep hostit-apps group members whose home lies under THIS node's
+  pool and whose name matches no mirror row. Needs a List on unixuser.
+
+- **Snapshots taken while control is unreachable are lost on reconnect.** The
+  rejoin mirror push (control->node) overwrites the node's snapshot rows with
+  control's stale list; records created/pruned during the outage vanish from
+  both stores and the subvolumes leak (invisible to retention, still counted
+  against the budget). Fix: a node->control snapshot re-report on connect
+  (before the mirror push replaces the node's rows), or exclude snapshots from
+  ReplaceNodeMirror and make the node's callback the single source. Found by
+  the branch review (app/sync.go); the ControlLink doc comment marks the gap.
+
 - **hostit-node hangs on stop.** During the 2026-08-16 stage deploy, stopping
   hostit-node timed out after systemd's 90s stop-sigterm window and the
   process was SIGKILLed. Something ignores the shutdown signal or blocks the
