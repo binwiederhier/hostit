@@ -134,6 +134,23 @@ func machineConfig(conf *config.Config) *node.Config {
 	return c
 }
 
+// startInBackground brings the app up without the API call waiting for a
+// container (and, on the app user's first app, an image build) to come up.
+func (m *Manager) startInBackground(name string, forking bool) {
+	m.TrackedGo(func() {
+		// How long this took is the question asked whenever an app "would not
+		// start": the API returns at once, and the wait is podman's queue behind
+		// whatever else the host is doing
+		started := time.Now()
+		if _, err := m.node.Up(name); err != nil {
+			slog.Warn("Cannot start app; it exists but serves nothing yet",
+				"app", name, "took", time.Since(started).Round(time.Second), "error", err)
+			return
+		}
+		slog.Info("App started", "app", name, "forked", forking, "took", time.Since(started).Round(time.Second))
+	})
+}
+
 // CreateApp registers a new app: it allocates a port, creates the Unix user with
 // SSH access and writes the home skeleton. Its authorized_keys are the union
 // of the request keys and the owner's profile keys; an app with neither is fine,

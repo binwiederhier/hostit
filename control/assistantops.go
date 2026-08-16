@@ -60,7 +60,7 @@ func (t *appTranscripts) RecordUsage(app string, u assistant.Usage) error {
 
 // appOps adapts Manager to assistant.AppOps: it turns the assistant's generic
 // tool calls into the app manager's operations, scoped to one app. This is the
-// only place the assistant package meets the app package.
+// only place the assistant package meets the app lifecycle.
 type appOps struct {
 	apps *Manager  // Control-plane compositions (snapshot listing)
 	node NodeAgent // The machine half: files, exec, deploy, snapshots

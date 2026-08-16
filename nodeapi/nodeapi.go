@@ -56,7 +56,7 @@ var (
 // NodeAgent is the node-local half of the platform: every verb that must run
 // on the machine an app physically lives on (its subvolume, unix user,
 // container, ports, files). The control plane resolves an app to its node and
-// calls these; on a single-box install the implementation is the app.Manager
+// calls these; on a single-box install the implementation is control.Manager
 // itself, in-process. Nothing here may depend on reading the registry --
 // inputs arrive as arguments or specs.
 //

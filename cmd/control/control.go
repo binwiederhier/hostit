@@ -3,7 +3,7 @@ package main
 import "github.com/urfave/cli/v2"
 
 // newControlApp is the hostit-control CLI: the control plane as its own binary
-// and systemd service. The daemon that used to be "hostit serve" lives here;
+// and systemd service. The daemon that used to be one fused "hostit serve" lives here;
 // the hostit binary keeps the CLI and the in-container agent.
 func newControlApp(version string) *cli.App {
 	return &cli.App{

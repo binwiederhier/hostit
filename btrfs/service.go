@@ -15,7 +15,7 @@ import (
 
 const (
 	// BudgetGroupPrefix is the level-1 qgroup namespace app disk budgets live in
-	// ("1/<uid>"). Exported so the app package builds group ids against the same
+	// ("1/<uid>"). Exported so the node package builds group ids against the same
 	// prefix this package's ListBudgetGroups filters on -- the reconcile sweep's
 	// correctness depends on the two never drifting apart.
 	BudgetGroupPrefix = "1/"

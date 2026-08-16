@@ -163,7 +163,7 @@ func TestDeleteSnapshotWrongAppIsNotFound(t *testing.T) {
 
 // newTestService builds a snapshot Service over a fake runner-backed btrfs/systemd/
 // container stack, a real store and a fake Host, so the service's orchestration can
-// be exercised without an actual btrfs filesystem or app.Manager.
+// be exercised without an actual btrfs filesystem or control.Manager.
 func newTestService(t *testing.T) (*Service, *fakeHost, *fakeRunner, *store.Store) {
 	t.Helper()
 	r := newFakeRunner()
@@ -175,7 +175,7 @@ func newTestService(t *testing.T) (*Service, *fakeHost, *fakeRunner, *store.Stor
 	return svc, h, r, st
 }
 
-// fakeHost stands in for app.Manager: it hands out tmpdir-based paths, records the
+// fakeHost stands in for control.Manager: it hands out tmpdir-based paths, records the
 // Up and BudgetGroup callbacks and returns canned snapshot-hook results.
 type fakeHost struct {
 	base      string

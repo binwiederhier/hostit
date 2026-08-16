@@ -17,7 +17,7 @@ type Rule struct {
 	UID  int
 }
 
-// Interface is the subset of firewall operations the app package depends on; the
+// Interface is the subset of firewall operations the machine half depends on; the
 // concrete *Service satisfies it, so a test can substitute a fake.
 type Interface interface {
 	Apply(rules []Rule) error

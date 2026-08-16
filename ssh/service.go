@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
-	"os/user"
-	"strconv"
 
 	cryptossh "golang.org/x/crypto/ssh"
 )
@@ -22,7 +20,7 @@ var (
 	ErrNotDirectory = errors.New(".ssh must be a directory")
 )
 
-// Interface is the subset of ssh-key operations the app package depends on; the
+// Interface is the subset of ssh-key operations the machine half depends on; the
 // concrete *Service satisfies it, so a test can substitute a fake.
 type Interface interface {
 	WriteAuthorizedKeys(root *os.Root, username string, keys []string) error
@@ -84,21 +82,4 @@ func writeAuthorizedKeysIn(root *os.Root, keys []string) error {
 		return err
 	}
 	return root.Chmod(sshDir, 0o755)
-}
-
-// lookupIDs resolves an app user's uid/gid.
-func lookupIDs(username string) (uid int, gid int, err error) {
-	u, err := user.Lookup(username)
-	if err != nil {
-		return 0, 0, err
-	}
-	uid, err = strconv.Atoi(u.Uid)
-	if err != nil {
-		return 0, 0, err
-	}
-	gid, err = strconv.Atoi(u.Gid)
-	if err != nil {
-		return 0, 0, err
-	}
-	return uid, gid, nil
 }

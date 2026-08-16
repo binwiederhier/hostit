@@ -7,6 +7,7 @@
 package node
 
 import (
+	"fmt"
 	"log/slog"
 	"strings"
 	"sync"
@@ -74,7 +75,7 @@ const (
 // on THIS host's apps (subvolumes, unix users, containers, port rules, files,
 // state measurement). It implements the nodeapi.NodeAgent verbs and does only
 // what control tells it to. In a split deployment Serve runs a bare Machine;
-// in the fused daemon the app.Manager embeds one, so the control half's
+// in the fused daemon the control.Manager embeds one, so the control half's
 // orchestration calls the same code through promotion.
 type Machine struct {
 	config *Config
@@ -348,6 +349,15 @@ func (m *Machine) SetKeys(name string, appKeys, profileKeys []string) error {
 func (m *Machine) writeKeys(name string, appKeys, profileKeys []string) error {
 	keys := append(append([]string{}, appKeys...), profileKeys...)
 	return m.writeKeysIn(m.AppFiles(name), name, keys)
+}
+
+// validateKeys ensures every entry is a parseable authorized_keys line, wrapping
+// the ssh package's check in nodeapi.ErrInvalid so the server reports it as a bad request.
+func validateKeys(keys []string) error {
+	if err := ssh.ValidateKeys(keys); err != nil {
+		return fmt.Errorf("%w: %s", nodeapi.ErrInvalid, err.Error())
+	}
+	return nil
 }
 
 // writeKeysIn writes an app's authorized_keys through its chained files root:

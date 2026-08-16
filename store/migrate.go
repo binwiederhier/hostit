@@ -232,15 +232,16 @@ var migrations = []string{
 			PRIMARY KEY (app_id, user_id)
 		);
 		CREATE INDEX idx_app_collaborator_user ON app_collaborator (user_id);
-	`, // 18: the base uid of the app's block on its hosting node, allocated by the
-	// node and recorded centrally (multi-node prep: the control plane must reason
-	// about an app without asking the node). The daemon backfills existing rows
-	// from uidFor(port) once.
+	`, // 18: the base uid of the app's block on its hosting node. Control
+	// allocates it (workspace.UIDFor of the app's port) and records it here, so
+	// it can reason about an app without asking the node. The daemon backfills
+	// existing rows once.
 	`
 		ALTER TABLE app ADD COLUMN uid INTEGER NOT NULL DEFAULT 0;
-	`, // 19: the node registry -- one row per app-running machine, created
-	// pending with a hashed one-time join token, joined once the token is
-	// exchanged for the node's mTLS certificate.
+	`, // 19: the node registry -- one row per app-running machine. The
+	// token_hash/token_expires_at/joined_at columns are from the retired
+	// enrollment flow (a node's identity is now a CA-signed certificate named
+	// in its config); they stay because migrations are append-only.
 	`
 		CREATE TABLE node (
 			name TEXT PRIMARY KEY,

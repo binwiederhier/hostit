@@ -33,7 +33,7 @@ type Account struct {
 	Home string
 }
 
-// Interface is the subset of user-account operations the app package depends on;
+// Interface is the subset of user-account operations the machine half depends on;
 // the concrete *Service satisfies it, so a test can substitute a fake.
 type Interface interface {
 	Exists(username string) bool

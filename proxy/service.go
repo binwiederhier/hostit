@@ -23,7 +23,7 @@ import (
 
 const (
 	// internalRoutesPath/internalCertPath are control's internal-surface
-	// endpoints this proxy polls (the server package registers the same paths).
+	// endpoints this proxy polls (package control registers the same paths).
 	internalRoutesPath = "/internal/routes"
 	internalCertPath   = "/internal/cert"
 	// pollTimeout is the long-poll window: control answers immediately when the

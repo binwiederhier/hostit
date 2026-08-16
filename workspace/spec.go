@@ -92,7 +92,7 @@ type IDs struct {
 
 // ContainerName and UnitName are keyed on the app's stable id, not its name, so a
 // rename never recreates the (stateful) container or its unit. Callers holding
-// only a name resolve the id first (the app.Manager's name-to-id lookup); callers
+// only a name resolve the id first (the control.Manager's name-to-id lookup); callers
 // holding the app use these directly.
 func ContainerName(id string) string {
 	return ContainerPrefix + id

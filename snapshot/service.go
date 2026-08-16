@@ -2,7 +2,7 @@
 // btrfs. A snapshot captures the app's one subvolume -- its files at home/app
 // AND the installed software around them -- so a rollback restores both
 // together. It composes the node-local services (btrfs, systemd, container) and
-// the store directly, and calls back into its Host (the app.Manager) for the
+// the store directly, and calls back into its Host (the control.Manager) for the
 // app-lifecycle operations a snapshot or rollback needs: taking the per-app lock,
 // bringing the app up after a rollback, running snapshot hooks, resolving the
 // id-keyed paths, names and uid of an app, and joining new subvolumes to the
@@ -42,9 +42,9 @@ const (
 )
 
 // Host is the set of app-orchestration callbacks the Service needs from its owner
-// (app.Manager). Everything node-local (btrfs, systemd, container, the store) the
+// (control.Manager). Everything node-local (btrfs, systemd, container, the store) the
 // Service holds directly; these are the app-lifecycle operations and the id-keyed
-// path/name/uid lookups that stay in the app package, so the path layout and
+// path/name/uid lookups that stay in the node package, so the path layout and
 // the deploy machinery have a single home.
 type Host interface {
 	// LockApp acquires the per-app lifecycle lock and returns its unlock func, so a
@@ -52,7 +52,7 @@ type Host interface {
 	LockApp(name string) func()
 	// Up brings the app up after a rollback. It must NOT take the per-app lock (the
 	// caller holds it) nor a pre-deploy snapshot (the rollback already took a safety
-	// one) -- the app.Manager's unlocked up path.
+	// one) -- the control.Manager's unlocked up path.
 	Up(name string) error
 	// StateChanged drops the app's cached state after its home or process moved.
 	StateChanged(name string)

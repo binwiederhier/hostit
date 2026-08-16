@@ -65,14 +65,6 @@ func (m *Machine) assignToGroup(subvolPath, group string) error {
 	return m.btrfs.QgroupAssign(m.config.AppsDir, "0/"+rootID, group)
 }
 
-// destroyBudget removes an app's budget group on delete; best effort, since its
-// member subvolumes are already gone and a stale empty group is only clutter.
-func (m *Machine) destroyBudget(uid int) {
-	if err := m.btrfs.QgroupDestroy(m.config.AppsDir, budgetGroup(uid)); err != nil {
-		slog.Warn("Cannot destroy disk budget qgroup", "uid", uid, "error", err)
-	}
-}
-
 // destroyBudgetGently is destroyBudget for the background teardown: the full
 // ladder's filesystem sync forces a transaction commit that stalls every
 // concurrent btrfs operation on the pool, so this polls a plain destroy until

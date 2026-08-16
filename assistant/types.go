@@ -210,7 +210,7 @@ type Event struct {
 
 // ExecResult is what running a command in the app's container produced. It
 // mirrors app.ExecResult but lives here so this package does not depend on the
-// app package: the server adapts one to the other.
+// control plane: the server adapts one to the other.
 type ExecResult struct {
 	Output    string
 	ExitCode  int

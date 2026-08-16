@@ -40,7 +40,7 @@ func (m *Manager) CachedStates(names []string) map[string]State {
 // SeedStates seeds BOTH halves' caches from recorded intent: the control
 // plane's (what the UI reads on the first page load) and the machine's (the
 // promoted seed below). Shadowing the machine method keeps the one-liner
-// callers in serve/noded correct for whichever half matters in that process.
+// callers in control and node correct for whichever half matters in that process.
 func (m *Manager) SeedStates() {
 	m.Machine.SeedStates()
 	apps, err := m.store.Apps()

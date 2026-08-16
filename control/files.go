@@ -16,18 +16,6 @@ const (
 	readmeFile = "README.md"
 	// configFile is the app's own configuration, written by whoever builds it
 	configFile = appconf.ConfigFile
-	// homeMode is the files dir's permissions: root-owned (idmap-mounted) but
-	// world-traversable, so sshd can reach .ssh/authorized_keys as the app user
-	homeMode = 0o755
-	// appLogFile is where the agent records an app's output, below the app's home
-	appLogFile = appconf.AppLogFile
-	// appStateFile is where the agent records the run: process state; maxStateRead
-	// caps that tiny file when the daemon reads it
-	appStateFile = appconf.AppStateFile
-	maxStateRead = 64
-	// maxLogRead caps how much of that log a request reads; the agent rotates it
-	// at 10 MB, and a reader only ever wants the tail
-	maxLogRead = 16 * 1024 * 1024
 	// maxConfigSize caps hostit.yml when it is read on a request path. Apps write
 	// their own, and the app list reads one per app on every poll, so a caller
 	// must not be able to turn that into megabytes of YAML parsing.

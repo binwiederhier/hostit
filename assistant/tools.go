@@ -25,7 +25,7 @@ const (
 // AppOps is what the assistant can do to an app. It is exactly the app's own REST
 // surface -- read and write files, run a command in the container, read logs --
 // so the model is confined to the one app the same way a pasted agent token is.
-// The server implements this over app.Manager; tests use a fake.
+// The control plane implements this over its Manager; tests use a fake.
 type AppOps interface {
 	ListFiles(app, path string) (string, error)
 	ReadFile(app, path string) (string, error)

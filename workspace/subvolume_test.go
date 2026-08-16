@@ -208,12 +208,6 @@ func (f *fakeRunner) RunTimeout(_ time.Duration, args ...string) (string, error)
 	return f.Run(args...)
 }
 
-func (f *fakeRunner) reset() {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.commands = nil
-}
-
 func (f *fakeRunner) ran() string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
