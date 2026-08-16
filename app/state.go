@@ -36,16 +36,16 @@ const (
 // apps therefore never waits on podman or systemd: the page renders at once and
 // picks up exact numbers on the next poll.
 func (m *Manager) CachedStates(names []string) map[string]State {
-	m.stateMu.Lock()
+	m.ctlStatesMu.Lock()
 	cached := make(map[string]State, len(names))
 	unknown := false
 	for _, name := range names {
-		state, ok := m.stateCache[name]
+		state, ok := m.ctlStates[name]
 		cached[name] = state
 		unknown = unknown || !ok
 	}
-	stale := time.Since(m.stateFresh) > stateTTL
-	m.stateMu.Unlock()
+	stale := time.Since(m.ctlStatesFresh) > stateTTL
+	m.ctlStatesMu.Unlock()
 
 	// An app the cache has never seen was just created, and its owner is looking
 	// at its page right now: waiting out the TTL would show them "stopped" for
@@ -54,6 +54,23 @@ func (m *Manager) CachedStates(names []string) map[string]State {
 		go m.refreshOnce()
 	}
 	return cached
+}
+
+// SeedStates seeds BOTH halves' caches from recorded intent: the control
+// plane's (what the UI reads on the first page load) and the machine's (the
+// promoted seed below). Shadowing the machine method keeps the one-liner
+// callers in serve/noded correct for whichever half matters in that process.
+func (m *Manager) SeedStates() {
+	m.machine.SeedStates()
+	m.ctlStatesMu.Lock()
+	defer m.ctlStatesMu.Unlock()
+	m.stateMu.Lock()
+	for name, state := range m.stateCache {
+		if _, ok := m.ctlStates[name]; !ok {
+			m.ctlStates[name] = state
+		}
+	}
+	m.stateMu.Unlock()
 }
 
 // SeedStates pre-fills the cache from recorded intent, before the first real
@@ -94,6 +111,11 @@ func (m *machine) stateChanged(name string) {
 	m.stateMu.Lock()
 	delete(m.stateCache, name)
 	m.stateMu.Unlock()
+	// The other half's cache would otherwise serve the pre-transition state
+	// for a whole TTL; the hook invalidates its entry (see NewManager).
+	if m.onStateChanged != nil {
+		m.onStateChanged(name)
+	}
 	// Re-measure repeatedly for the length of a transition, not just once: the UI
 	// watches the app's start time to know a reboot/restart finished, and it can
 	// only see that if the cache is refreshed the whole time the action is settling.
@@ -124,12 +146,22 @@ func (m *machine) doneRefreshing() {
 	m.stateMu.Unlock()
 }
 
-// refreshOnce refreshes unless a refresh is already in flight
+// refreshOnce refreshes the control cache unless one is already in flight;
+// its single-flight guard is the control side's own, distinct from the
+// machine's measurement guard.
 func (m *Manager) refreshOnce() {
-	if !m.beginRefresh() {
+	m.ctlStatesMu.Lock()
+	if m.ctlRefreshing {
+		m.ctlStatesMu.Unlock()
 		return
 	}
-	defer m.doneRefreshing()
+	m.ctlRefreshing = true
+	m.ctlStatesMu.Unlock()
+	defer func() {
+		m.ctlStatesMu.Lock()
+		m.ctlRefreshing = false
+		m.ctlStatesMu.Unlock()
+	}()
 	m.RefreshStates()
 }
 
@@ -175,10 +207,10 @@ func (m *Manager) RefreshStates() {
 	// which fans out to the nodes -- control has no app containers of its own to
 	// measure, and doing so would clobber the per-node poll data with empties.
 	states := m.node.States(names)
-	m.stateMu.Lock()
-	m.stateCache = states
-	m.stateFresh = time.Now()
-	m.stateMu.Unlock()
+	m.ctlStatesMu.Lock()
+	m.ctlStates = states
+	m.ctlStatesFresh = time.Now()
+	m.ctlStatesMu.Unlock()
 }
 
 // StateLoop keeps the cache warm until done closes
@@ -365,15 +397,15 @@ func (m *machine) Heartbeat() *Heartbeat {
 // IngestStates replaces the state cache with externally measured states: what
 // control does in split mode, where the node measures and reports.
 func (m *Manager) IngestStates(states map[string]State) {
-	m.stateMu.Lock()
-	defer m.stateMu.Unlock()
+	m.ctlStatesMu.Lock()
+	defer m.ctlStatesMu.Unlock()
 	// Merge per name: in multi-node mode each node's poll loop feeds only its
 	// own apps, and a whole-map swap would clobber the other nodes' entries.
-	if m.stateCache == nil {
-		m.stateCache = make(map[string]State, len(states))
+	if m.ctlStates == nil {
+		m.ctlStates = make(map[string]State, len(states))
 	}
 	for name, state := range states {
-		m.stateCache[name] = state
+		m.ctlStates[name] = state
 	}
-	m.stateFresh = time.Now()
+	m.ctlStatesFresh = time.Now()
 }

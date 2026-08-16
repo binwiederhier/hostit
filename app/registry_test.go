@@ -80,3 +80,24 @@ func TestIngestStatesMergesPerName(t *testing.T) {
 	assert.Equal(t, "running", states["one"].AppState)
 	assert.Equal(t, "stopped", states["two"].AppState)
 }
+
+func TestMachineLifecycleInvalidatesTheControlCache(t *testing.T) {
+	t.Parallel()
+	// The control plane serves states from its own cache; a lifecycle change
+	// the machine half performs (Down here) must invalidate that entry so the
+	// UI does not confidently serve the old state for a whole TTL. Guarded
+	// across the cache split: with one shared map this held trivially, with
+	// two it needs the machine's invalidation hook.
+	m, _, _ := newTestDeployManager(t)
+	createTestApp(t, m, "blog")
+	m.IngestStates(map[string]State{"blog": {Running: true, AppRunning: true, AppState: "running"}})
+
+	require.NoError(t, m.Down("blog"))
+
+	m.stateMu.Lock()
+	_, machineHas := m.stateCache["blog"]
+	m.stateMu.Unlock()
+	assert.False(t, machineHas, "the machine's own cache entry is dropped")
+	cached := m.CachedStates([]string{"blog"})
+	assert.False(t, cached["blog"].Running, "the control cache must not keep serving the pre-Down state")
+}

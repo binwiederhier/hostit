@@ -170,6 +170,11 @@ type machine struct {
 	// node's destructive startup work.
 	synced     chan struct{}
 	syncedOnce sync.Once
+	// onStateChanged, when set, tells the OTHER half that an app's state just
+	// moved (deploy, power, restart), so the control plane can invalidate its
+	// cached entry instead of serving the old state for a whole TTL. Wired by
+	// NewManager; a one-way, in-process hook.
+	onStateChanged func(name string)
 
 	// memoryMB and diskMB cache per-app limits, so redeploys and quota checks
 	// keep them; the authoritative values come from the owner's limits
@@ -223,6 +228,16 @@ type Manager struct {
 	// reservedPorts holds ports handed out by allocatePort but not yet registered
 	// in the store, so concurrent creates never share one (see allocatePort)
 	reservedPorts map[int]bool
+
+	// ctlStates is the control plane's OWN view of app states -- what
+	// CachedStates serves. Fed by the per-node poll loops (IngestStates) in
+	// split mode and by RefreshStates through the node agent otherwise. The
+	// machine half keeps its own measurement cache; the two are different
+	// things that happened to share a map before the split.
+	ctlStates      map[string]State
+	ctlStatesFresh time.Time
+	ctlRefreshing  bool
+	ctlStatesMu    sync.Mutex // Protects ctlStates, ctlStatesFresh, ctlRefreshing
 }
 
 // NewManager creates a Manager from its config, store and the node-local services
@@ -248,8 +263,16 @@ func NewManager(conf *config.Config, s *store.Store, svc *Services) *Manager {
 			appLocks:    make(map[string]*sync.Mutex),
 		},
 		reservedPorts: make(map[int]bool),
+		ctlStates:     make(map[string]State),
 	}
 	m.node = m // single process: orchestration and machine work are the same
+	// A machine-side lifecycle change invalidates the control cache's entry,
+	// so the UI never confidently serves the pre-transition state for a TTL.
+	m.onStateChanged = func(name string) {
+		m.ctlStatesMu.Lock()
+		delete(m.ctlStates, name)
+		m.ctlStatesMu.Unlock()
+	}
 	// The snapshot Service reuses the Manager's node-local services and store, and
 	// calls back into it through snapshotHost for the app-lifecycle operations and
 	// id-keyed lookups a snapshot or rollback needs.
