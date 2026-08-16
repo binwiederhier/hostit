@@ -96,7 +96,7 @@ type Manager struct {
 // (real ones from node.NewSystemServices in production, fakes in tests).
 func NewManager(conf *config.Config, s *store.Store, svc *node.Services) *Manager {
 	m := &Manager{
-		Machine:       node.NewMachine(conf, s, svc),
+		Machine:       node.NewMachine(machineConfig(conf), s, svc),
 		reservedPorts: make(map[int]bool),
 		ctlStates:     make(map[string]State),
 		store:         s,
@@ -111,6 +111,17 @@ func NewManager(conf *config.Config, s *store.Store, svc *node.Services) *Manage
 		m.ctlStatesMu.Unlock()
 	})
 	return m
+}
+
+// machineConfig is the node config the FUSED daemon's machine half runs on:
+// control does the machine work itself, so the node is always the local one
+// and the paths are control's. A split deployment's node reads its own file
+// instead -- the two configs are separate types precisely so control's
+// settings cannot leak into a node.
+func machineConfig(conf *config.Config) *node.Config {
+	c := node.NewConfig()
+	c.DataDir, c.AppsDir, c.SocketFile = conf.DataDir, conf.AppsDir, conf.SocketFile
+	return c
 }
 
 // CreateApp registers a new app: it allocates a port, creates the Unix user with

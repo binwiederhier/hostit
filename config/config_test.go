@@ -156,43 +156,6 @@ func TestSSHHostname(t *testing.T) {
 // no OAuth, no TLS settings -- it dials control and does what it is told. The
 // node therefore validates its OWN fields; requiring control's would make a
 // legitimate remote-node config refuse to start.
-func TestValidateNodeIgnoresControlOnlyFields(t *testing.T) {
-	c := NewConfig()
-	c.BaseDomain = ""
-	c.AdminToken = ""
-	c.NodeID = "worker-2"
-	c.ListenNode = "10.0.0.1:2930"
-	c.NodeCertFile = "/etc/hostit/node.pem"
-	c.NodeKeyFile = "/etc/hostit/node.key"
-	c.ClusterCACertFile = "/etc/hostit/cluster-ca.pem"
-
-	require.NoError(t, c.ValidateNode())
-	require.Error(t, c.Validate(), "control still requires its own fields")
-}
-
-// The cluster credential files are all-or-none: a half-configured triple would
-// otherwise fail later, at dial time, with a confusing TLS error.
-func TestValidateNodeRequiresTheWholeCertTriple(t *testing.T) {
-	c := NewConfig()
-	c.NodeID = "worker-2"
-	c.NodeCertFile = "/etc/hostit/node.pem" // key and CA missing
-	require.ErrorContains(t, c.ValidateNode(), "node-key-file")
-}
-
-// A colocated node reads the shared server.yml, which has everything; node
-// validation must accept that too.
-func TestValidateNodeAcceptsAColocatedServerConfig(t *testing.T) {
-	c := NewConfig()
-	c.BaseDomain = "apps.example.com"
-	c.AdminToken = "secr3t"
-	require.NoError(t, c.ValidateNode())
-}
-
-// Each component owns a directory under /etc/hostit, so a node's config is not
-// entangled with control's (a remote node has no business holding control's
-// file at all). Installs predating the split keep working: when the
-// component's own file is absent and the old shared one is there, that is used
-// instead, so a package upgrade does not strand a running daemon.
 func TestResolveConfigFilePrefersTheComponentFile(t *testing.T) {
 	dir := t.TempDir()
 	own := filepath.Join(dir, "control.yml")
@@ -222,8 +185,3 @@ func TestResolveConfigFileKeepsTheIntendedPathWhenNeitherExists(t *testing.T) {
 
 // The per-component defaults are part of the packaging contract (the .deb ships
 // examples there, the units read them, ansible writes them).
-func TestPerComponentConfigDefaults(t *testing.T) {
-	assert.Equal(t, "/etc/hostit/control/control.yml", DefaultControlConfigFile)
-	assert.Equal(t, "/etc/hostit/node/node.yml", DefaultNodeConfigFile)
-	assert.Equal(t, "/etc/hostit/server.yml", LegacyServerConfigFile)
-}

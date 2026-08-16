@@ -2,7 +2,6 @@ package main
 
 import (
 	"github.com/urfave/cli/v2"
-	"heckel.io/hostit/config"
 	"heckel.io/hostit/node"
 )
 
@@ -19,7 +18,7 @@ func newNodeApp(version string) *cli.App {
 					return node.Serve(c.String("config"), version)
 				},
 				Flags: []cli.Flag{
-					&cli.StringFlag{Name: "config", Aliases: []string{"c"}, Value: config.DefaultNodeConfigFile, Usage: "node config file"},
+					&cli.StringFlag{Name: "config", Aliases: []string{"c"}, Value: node.DefaultConfigFile, Usage: "node config file"},
 				},
 			},
 		},

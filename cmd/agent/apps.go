@@ -11,6 +11,7 @@ import (
 	"github.com/urfave/cli/v2"
 	"heckel.io/hostit/client"
 	"heckel.io/hostit/config"
+	"heckel.io/hostit/node"
 )
 
 var (
@@ -383,11 +384,10 @@ func resolveTransport(host, token, socketFile string, socketExists bool) (transp
 // unreadable or missing config falls back to the built-in default rather than
 // failing
 func localSocketFile() string {
-	path := config.ResolveConfigFile(config.DefaultNodeConfigFile, config.LegacyServerConfigFile)
-	if conf, err := config.LoadConfig(path); err == nil && conf.SocketFile != "" {
+	if conf, err := node.LoadConfig(node.DefaultConfigFile); err == nil && conf.SocketFile != "" {
 		return conf.SocketFile
 	}
-	return config.NewConfig().SocketFile
+	return config.DefaultSocketFile
 }
 
 // readKeyFlags resolves --ssh-key values: file paths are read, literals passed through

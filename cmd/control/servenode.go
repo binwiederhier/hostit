@@ -25,7 +25,7 @@ const (
 // node), a per-node poll loop feeds the state cache, and the rejoin handshake
 // pushes the node's registry mirror and re-asserts desired state.
 func listenForNode(conf *config.Config, manager *control.Manager, srv *control.Server, done <-chan struct{}) error {
-	tlsConf, err := node.ListenerCreds(conf)
+	tlsConf, err := node.ListenerCreds(conf.ClusterCertFile, conf.ClusterKeyFile, conf.ClusterCACertFile, conf.DataDir)
 	if err != nil {
 		return err
 	}

@@ -11,7 +11,6 @@ import (
 	"syscall"
 	"time"
 
-	"heckel.io/hostit/config"
 	"heckel.io/hostit/preflight"
 	"heckel.io/hostit/run"
 	"heckel.io/hostit/store"
@@ -26,6 +25,21 @@ const (
 	dialTimeout = 10 * time.Second
 )
 
+// resolveConfigFile picks the node's own file when it exists, else the
+// pre-split shared one when THAT exists, else the intended path -- so an
+// upgrade never strands a running node and a missing-file error names the
+// location the operator is meant to create.
+func resolveConfigFile(path string) string {
+	if _, err := os.Stat(path); err == nil {
+		return path
+	}
+	if _, err := os.Stat(legacyConfigFile); err == nil {
+		slog.Warn("Reading the pre-split shared config; move it to the node's own file", "file", legacyConfigFile, "expected", path)
+		return legacyConfigFile
+	}
+	return path
+}
+
 // sigCh receives the termination signal; the dial loop closes the live control
 // connection on it so ServeAgent unblocks instead of ignoring SIGTERM until
 // systemd's stop timeout.
@@ -35,11 +49,11 @@ var sigCh = make(chan os.Signal, 1)
 // It is the machine half only: a Machine doing what control tells it to, with
 // no orchestration of its own.
 func Serve(configPath, version string) error {
-	conf, err := config.LoadConfig(config.ResolveConfigFile(configPath, config.LegacyServerConfigFile))
+	conf, err := LoadConfig(resolveConfigFile(configPath))
 	if err != nil {
 		return err
 	}
-	if err := conf.ValidateNode(); err != nil {
+	if err := conf.Validate(); err != nil {
 		return err
 	}
 	if err := preflight.Check(conf.AppsDir); err != nil {
@@ -118,14 +132,14 @@ func Serve(configPath, version string) error {
 		}
 		connMu.Unlock()
 	}()
-	slog.Info("Node ready; dialing control", "addr", conf.ListenNode, "id", conf.NodeID)
+	slog.Info("Node ready; dialing control", "addr", conf.ControlURL, "id", conf.NodeID)
 	for {
 		select {
 		case <-stopping:
 			return nil
 		default:
 		}
-		conn, err := tls.DialWithDialer(&net.Dialer{Timeout: dialTimeout}, "tcp", conf.ListenNode, tlsConf)
+		conn, err := tls.DialWithDialer(&net.Dialer{Timeout: dialTimeout}, "tcp", conf.ControlURL, tlsConf)
 		if err != nil {
 			time.Sleep(redialDelay)
 			continue
@@ -133,7 +147,7 @@ func Serve(configPath, version string) error {
 		connMu.Lock()
 		current = conn
 		connMu.Unlock()
-		slog.Info("Connected to control", "addr", conf.ListenNode)
+		slog.Info("Connected to control", "addr", conf.ControlURL)
 		if err := ServeAgent(conn, conf.NodeID, machine, link.SetClient); err != nil {
 			slog.Warn("Control connection failed", "error", err)
 		}

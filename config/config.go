@@ -59,7 +59,6 @@ const (
 	// nothing in common, and a remote node must not carry control's config at
 	// all. hostit-proxy's default lives in the proxy package, in the same shape.
 	DefaultControlConfigFile = "/etc/hostit/control/control.yml"
-	DefaultNodeConfigFile    = "/etc/hostit/node/node.yml"
 	// LegacyServerConfigFile is the pre-split shared file. Installs that still
 	// have it keep working (see ResolveConfigFile), so upgrading the package
 	// does not strand a running daemon.
@@ -144,21 +143,14 @@ type Config struct {
 	// Never a public address -- the transport is the auth boundary.
 	ListenInternal string `yaml:"listen-internal"`
 
-	// NodeID is this hostit-node's identity: the CN of its mTLS certificate and
-	// its name in control's node registry. "local" is the colocated node whose
-	// credentials control mints itself under data-dir/ipc; any other name gets
-	// its certificate from `hostit-control node add` via the files below.
-	NodeID string `yaml:"node-id"`
-
-	// NodeCertFile/NodeKeyFile are this process's cluster identity (the mTLS
-	// certificate control and nodes present to each other; CN = node-id, or
-	// "control" for control's listener), and ClusterCACertFile is the cluster
-	// CA every certificate must chain to. Unset, all three fall back to the
-	// auto-minted colocated files under data-dir/ipc, so a single-host split
-	// needs no configuration. That is the whole trust setup: possession of a
-	// CA-signed certificate is membership; there is no enrollment protocol.
-	NodeCertFile      string `yaml:"node-cert-file"`
-	NodeKeyFile       string `yaml:"node-key-file"`
+	// ClusterCertFile/ClusterKeyFile are CONTROL's cluster identity: the mTLS
+	// certificate its node listener presents (CN "control"), and
+	// ClusterCACertFile is the CA every node certificate must chain to. Unset,
+	// all three fall back to the set control mints itself under data-dir/ipc,
+	// so a single-host deployment needs no configuration. A node's own
+	// credentials are in ITS config (node.Config), not here.
+	ClusterCertFile   string `yaml:"cluster-cert-file"`
+	ClusterKeyFile    string `yaml:"cluster-key-file"`
 	ClusterCACertFile string `yaml:"cluster-ca-cert-file"`
 
 	AppPreview           AppPreviewMode          `yaml:"app-preview"`             // "live" (iframe, default), "screenshot" (periodic headless-chromium shots) or "off"
@@ -218,7 +210,6 @@ func NewConfig() *Config {
 		ListenHTTPS:         ":443",
 		SocketFile:          DefaultSocketFile,
 		DataDir:             "/var/lib/hostit",
-		NodeID:              "local",
 		AppsDir:             "/var/lib/hostit/apps",
 		TLS:                 TLSLetsEncrypt,
 		AppPreview:          AppPreviewLive,
@@ -313,32 +304,6 @@ func ResolveConfigFile(own, legacy string) string {
 		return legacy
 	}
 	return own
-}
-
-// ValidateNode checks what a NODE needs, which is a strict subset: a node
-// holds no admin token, base domain, TLS mode or OAuth settings -- those are
-// control's, and requiring them would make a legitimate remote-node config
-// refuse to start. A colocated node reads the shared server.yml, which has
-// everything, so this accepts that too.
-func (c *Config) ValidateNode() error {
-	if c.NodeID == "" {
-		return errors.New("node-id is required")
-	}
-	if c.AppsDir == "" || c.DataDir == "" || c.SocketFile == "" {
-		return errors.New("apps-dir, data-dir and socket-file are required")
-	}
-	// The cluster credentials are all-or-none: a half-configured triple would
-	// otherwise surface later as an opaque TLS failure at dial time.
-	set := 0
-	for _, f := range []string{c.NodeCertFile, c.NodeKeyFile, c.ClusterCACertFile} {
-		if f != "" {
-			set++
-		}
-	}
-	if set != 0 && set != 3 {
-		return errors.New("node-cert-file, node-key-file and cluster-ca-cert-file must be set together")
-	}
-	return nil
 }
 
 // Validate checks a CONTROL config: the web app, certificates and registry

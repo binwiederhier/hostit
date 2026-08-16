@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"heckel.io/hostit/config"
 	"heckel.io/hostit/store"
 )
 
@@ -23,26 +22,27 @@ import (
 const ipcDirName = "ipc"
 
 // ListenerCreds resolves control's node-listener TLS config: the configured
-// cluster files when set, else the auto-minted colocated set (created on
-// first use).
-func ListenerCreds(conf *config.Config) (*tls.Config, error) {
-	if conf.NodeCertFile != "" {
-		cert, pool, err := loadClusterFiles(conf)
+// cluster files when set, else the auto-minted colocated set under dataDir
+// (created on first use). Control's own identity, hence the explicit paths --
+// a node's are in its Config.
+func ListenerCreds(certFile, keyFile, caFile, dataDir string) (*tls.Config, error) {
+	if certFile != "" {
+		cert, pool, err := loadClusterFiles(certFile, keyFile, caFile)
 		if err != nil {
 			return nil, err
 		}
 		return ServerTLS(cert, pool), nil
 	}
-	tlsConf, _, err := EnsureIPCCreds(conf.DataDir)
+	tlsConf, _, err := EnsureIPCCreds(dataDir)
 	return tlsConf, err
 }
 
-// DialCreds resolves a node's client TLS config for dialing control: the
+// DialCreds resolves a node's client TLS config for dialing control: its
 // configured cluster files when set, else the colocated pair under
-// <dataDir>/ipc that control minted for this node id.
-func DialCreds(conf *config.Config) (*tls.Config, error) {
+// <DataDir>/ipc that control minted for this node id.
+func DialCreds(conf *Config) (*tls.Config, error) {
 	if conf.NodeCertFile != "" {
-		cert, pool, err := loadClusterFiles(conf)
+		cert, pool, err := loadClusterFiles(conf.NodeCertFile, conf.NodeKeyFile, conf.ClusterCACertFile)
 		if err != nil {
 			return nil, err
 		}
@@ -51,17 +51,17 @@ func DialCreds(conf *config.Config) (*tls.Config, error) {
 	return LoadNodeCreds(conf.DataDir, conf.NodeID)
 }
 
-// loadClusterFiles loads the configured identity pair and CA pool; all three
-// files must be set together.
-func loadClusterFiles(conf *config.Config) (tls.Certificate, *x509.CertPool, error) {
-	if conf.NodeKeyFile == "" || conf.ClusterCACertFile == "" {
-		return tls.Certificate{}, nil, fmt.Errorf("node-cert-file requires node-key-file and cluster-ca-cert-file")
+// loadClusterFiles loads an identity pair and the CA pool; all three files
+// must be set together.
+func loadClusterFiles(certFile, keyFile, caFile string) (tls.Certificate, *x509.CertPool, error) {
+	if keyFile == "" || caFile == "" {
+		return tls.Certificate{}, nil, fmt.Errorf("a cluster certificate needs its key file and the cluster CA file")
 	}
-	cert, err := tls.LoadX509KeyPair(conf.NodeCertFile, conf.NodeKeyFile)
+	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
 	if err != nil {
 		return tls.Certificate{}, nil, err
 	}
-	pool, err := loadPool(conf.ClusterCACertFile)
+	pool, err := loadPool(caFile)
 	if err != nil {
 		return tls.Certificate{}, nil, err
 	}

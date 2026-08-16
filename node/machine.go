@@ -14,7 +14,6 @@ import (
 
 	"heckel.io/hostit/appctl"
 	"heckel.io/hostit/btrfs"
-	"heckel.io/hostit/config"
 	"heckel.io/hostit/container"
 	"heckel.io/hostit/firewall"
 	"heckel.io/hostit/homefs"
@@ -78,7 +77,7 @@ const (
 // in the fused daemon the app.Manager embeds one, so the control half's
 // orchestration calls the same code through promotion.
 type Machine struct {
-	config *config.Config
+	config *Config
 	// store is this half's view of the registry: the full registry in a single
 	// process (and on control), the pushed mirror on a split node. The control
 	// half reads it through promotion until the split gives it its own.
@@ -150,7 +149,7 @@ type Machine struct {
 // full registry in a single process, the pushed mirror on a split node) and
 // the node-local services (real ones from NewSystemServices in production,
 // fakes in tests).
-func NewMachine(conf *config.Config, s *store.Store, svc *Services) *Machine {
+func NewMachine(conf *Config, s *store.Store, svc *Services) *Machine {
 	m := &Machine{
 		config:      conf,
 		store:       s,

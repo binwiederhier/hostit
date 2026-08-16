@@ -7,7 +7,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"heckel.io/hostit/config"
 )
 
 // Cluster identity comes from configuration: a node (or control) points at its
@@ -30,7 +29,8 @@ func TestCredsFromConfiguredFiles(t *testing.T) {
 	require.NoError(t, os.WriteFile(certFile, []byte(certPEM), 0o600))
 	require.NoError(t, os.WriteFile(keyFile, []byte(keyPEM), 0o600))
 
-	conf := config.NewConfig()
+	conf := NewConfig()
+	conf.NodeID = "worker-9"
 	conf.NodeCertFile = certFile
 	conf.NodeKeyFile = keyFile
 	conf.ClusterCACertFile = caFile
@@ -42,7 +42,7 @@ func TestCredsFromConfiguredFiles(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotEmpty(t, clientCert.Certificate)
 	assert.NotNil(t, dial.RootCAs)
-	listen, err := ListenerCreds(conf)
+	listen, err := ListenerCreds(certFile, keyFile, caFile, dir)
 	require.NoError(t, err)
 	assert.NotEmpty(t, listen.Certificates)
 	assert.NotNil(t, listen.ClientCAs)
@@ -52,10 +52,10 @@ func TestCredsFromConfiguredFiles(t *testing.T) {
 // <data-dir>/ipc on first use and the local node reads its pair from there.
 func TestCredsFallBackToColocatedIPCFiles(t *testing.T) {
 	t.Parallel()
-	conf := config.NewConfig()
+	conf := NewConfig()
 	conf.DataDir = t.TempDir()
 
-	listen, err := ListenerCreds(conf) // control side: auto-mints
+	listen, err := ListenerCreds("", "", "", conf.DataDir) // control side: auto-mints
 	require.NoError(t, err)
 	assert.NotEmpty(t, listen.Certificates)
 	dial, err := DialCreds(conf) // node side: reads the minted "local" pair
