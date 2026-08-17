@@ -15,7 +15,7 @@ import (
 	"strconv"
 	"strings"
 
-	"heckel.io/hostit/config"
+	"heckel.io/hostit/controlconf"
 	"heckel.io/hostit/workspace"
 )
 
@@ -78,7 +78,7 @@ CMD ["/bin/bash"]
 // daemon's peercred socket scopes every tool call to it. Both the CLI PoC and the
 // server's claude-cli backend drive it.
 type Sandbox struct {
-	conf      *config.Config
+	conf      *controlconf.Config
 	hostitBin string
 	// identity resolves an app to the uid the sandbox maps to and the app id
 	// its container is named for. The server wires the REGISTRY, which knows
@@ -109,7 +109,7 @@ func (s *Sandbox) SetIdentity(fn Identity) {
 // since the cmd split the daemon is hostit-control, which has no "mcp"
 // command -- mounting os.Executable() worked only while one fused binary was
 // both the daemon and the CLI.
-func NewSandbox(conf *config.Config) (*Sandbox, error) {
+func NewSandbox(conf *controlconf.Config) (*Sandbox, error) {
 	return &Sandbox{conf: conf, hostitBin: workspace.HostitBinFile, identity: appIdentity}, nil
 }
 

@@ -11,7 +11,7 @@ import (
 	"golang.org/x/term"
 	"heckel.io/hostit/agent"
 	"heckel.io/hostit/appctl"
-	"heckel.io/hostit/config"
+	"heckel.io/hostit/controlconf"
 	"heckel.io/hostit/workspace"
 )
 
@@ -46,7 +46,7 @@ var (
 )
 
 func execShell(c *cli.Context) error {
-	ctl := appctl.NewController(config.DefaultSocketFile)
+	ctl := appctl.NewController(controlconf.DefaultSocketFile)
 
 	// Identify the app and make sure its container is up
 	self, err := ctl.Self()

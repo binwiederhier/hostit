@@ -14,7 +14,7 @@ import (
 
 	"github.com/caddyserver/certmagic"
 	"github.com/libdns/route53"
-	"heckel.io/hostit/config"
+	"heckel.io/hostit/controlconf"
 	"heckel.io/hostit/store"
 )
 
@@ -428,8 +428,8 @@ const (
 // dnsSolver builds the DNS-01 challenge solver for the configured provider.
 // Credentials may come from the config or, when left empty, from the usual AWS
 // environment variables and instance roles.
-func dnsSolver(conf *config.Config) (*certmagic.DNS01Solver, error) {
-	if conf.DNSProvider != config.DNSProviderRoute53 {
+func dnsSolver(conf *controlconf.Config) (*certmagic.DNS01Solver, error) {
+	if conf.DNSProvider != controlconf.DNSProviderRoute53 {
 		return nil, fmt.Errorf("unsupported dns-provider %q", conf.DNSProvider)
 	}
 	provider := &route53.Provider{

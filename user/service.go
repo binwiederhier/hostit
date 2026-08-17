@@ -15,7 +15,7 @@ import (
 	"strings"
 
 	"golang.org/x/crypto/ssh"
-	"heckel.io/hostit/config"
+	"heckel.io/hostit/controlconf"
 	"heckel.io/hostit/store"
 )
 
@@ -57,12 +57,12 @@ type Limits struct {
 
 // Manager owns users, tokens, profile keys and limit settings
 type Manager struct {
-	config *config.Config
+	config *controlconf.Config
 	store  *store.Store
 }
 
 // NewManager creates a Manager
-func NewManager(conf *config.Config, s *store.Store) *Manager {
+func NewManager(conf *controlconf.Config, s *store.Store) *Manager {
 	return &Manager{
 		config: conf,
 		store:  s,

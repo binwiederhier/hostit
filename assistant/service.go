@@ -14,7 +14,7 @@ import (
 	"sync"
 	"time"
 
-	"heckel.io/hostit/config"
+	"heckel.io/hostit/controlconf"
 )
 
 const (
@@ -239,7 +239,7 @@ func (m *Manager) runLoop(s *session, app, userID, userText, mode string, attach
 	// else the API model. The server usually resolves a concrete mode first.
 	if mode == "" {
 		if m.claude != nil {
-			mode = config.ExternalClaudeMode
+			mode = controlconf.ExternalClaudeMode
 		} else {
 			mode = m.model
 		}
@@ -255,7 +255,7 @@ func (m *Manager) runLoop(s *session, app, userID, userText, mode string, attach
 	// External Claude mode: run the subscription-backed agent in its sandbox. If the
 	// subscription is unavailable, tell the user and fall back to the API backend so
 	// a lapsed/expired subscription never leaves the assistant dead.
-	if mode == config.ExternalClaudeMode && m.claude != nil {
+	if mode == controlconf.ExternalClaudeMode && m.claude != nil {
 		if err := m.runClaudeTurn(ctx, s, app, history, userText); err == nil {
 			return // handled the turn (published done) or was cancelled
 		} else {
@@ -289,7 +289,7 @@ func outputConfigFor(model string) *outputConfig {
 // apiModel resolves the API model id for a turn: the selected mode when it names a
 // model, or the fallback (External Claude and empty resolve to the fallback).
 func apiModel(mode, fallback string) string {
-	if mode == "" || mode == config.ExternalClaudeMode {
+	if mode == "" || mode == controlconf.ExternalClaudeMode {
 		return fallback
 	}
 	return mode

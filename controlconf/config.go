@@ -1,5 +1,8 @@
-// Package config defines the hostit server configuration and its YAML loading logic.
-package config
+// Package controlconf is hostit-control's configuration and its YAML loading.
+// It is the control plane's own file, the way nodeconf is a node's and app is
+// the tenant's -- three configs, each named for whose it is, so no call site
+// has to work out which one a bare "config" meant.
+package controlconf
 
 import (
 	"errors"

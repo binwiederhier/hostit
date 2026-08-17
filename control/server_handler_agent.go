@@ -10,7 +10,7 @@ import (
 
 	"heckel.io/hostit/app"
 	"heckel.io/hostit/assistant"
-	"heckel.io/hostit/config"
+	"heckel.io/hostit/controlconf"
 	"heckel.io/hostit/store"
 	"heckel.io/hostit/workspace"
 )
@@ -268,7 +268,7 @@ func logLines(raw string) int {
 // that single URL.
 func (s *Server) agentGuide(appName, description string) *apiAgentInfoResponse {
 	base := "https://" + s.config.APIHostname()
-	if s.config.TLS == config.TLSOff {
+	if s.config.TLS == controlconf.TLSOff {
 		base = "http://" + s.config.APIHostname()
 	}
 	name := appName

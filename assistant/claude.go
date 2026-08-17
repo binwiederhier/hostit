@@ -8,7 +8,7 @@ import (
 	"log/slog"
 	"time"
 
-	"heckel.io/hostit/config"
+	"heckel.io/hostit/controlconf"
 )
 
 // ClaudeRunner runs one assistant turn on the Claude Max backend: it launches the
@@ -39,7 +39,7 @@ func (m *Manager) SetClaudeRunner(r ClaudeRunner) {
 // deliberately saves nothing, so the fallback turn starts from a clean transcript.
 func (m *Manager) runClaudeTurn(ctx context.Context, s *session, app string, history []Message, userText string) error {
 	prior := history[:len(history)-1] // everything before the user message just added
-	s.publish(Event{Type: evtModel, Text: config.ExternalClaudeMode})
+	s.publish(Event{Type: evtModel, Text: controlconf.ExternalClaudeMode})
 	acc := &claudeAccumulator{}
 	usage, err := m.claude.RunTurn(ctx, app, buildClaudePrompt(prior, userText), systemPrompt(app), func(ev Event) {
 		s.publish(ev)
@@ -56,7 +56,7 @@ func (m *Manager) runClaudeTurn(ctx context.Context, s *session, app string, his
 	if err != nil {
 		if ctx.Err() != nil {
 			acc.flush() // cancelled (Stop / timeout): keep what was done, end cleanly
-			tagModel(acc.messages, config.ExternalClaudeMode)
+			tagModel(acc.messages, controlconf.ExternalClaudeMode)
 			m.save(app, append(history, acc.messages...))
 			s.publish(Event{Type: evtDone})
 			return nil
@@ -66,7 +66,7 @@ func (m *Manager) runClaudeTurn(ctx context.Context, s *session, app string, his
 	// Persist what the agent did, reconstructed from the same ordered stream the
 	// subscribers saw, so a reload shows this turn (badged as External Claude).
 	acc.flush()
-	tagModel(acc.messages, config.ExternalClaudeMode)
+	tagModel(acc.messages, controlconf.ExternalClaudeMode)
 	m.save(app, append(history, acc.messages...))
 	s.publish(Event{Type: evtDone})
 	return nil

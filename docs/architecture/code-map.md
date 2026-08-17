@@ -35,7 +35,7 @@ all of these; which commands it offers depends on where it runs (see
 | `assistant` | the in-browser AI agent (an Anthropic Messages loop whose tools are one app's REST surface) plus the Claude Max subscription sandbox |
 | `cmd/{control,node,proxy,agent}` | one thin `main` per binary: `hostit-control`, `hostit-node`, `hostit-proxy`, and `hostit` (the host CLI + in-container agent commands) |
 | `preflight` | the startup host checks (btrfs, tooling) shared by control and node |
-| `config` | per-component config files (`/etc/hostit/<component>/<component>.yml`) and their defaults |
+| `controlconf` | hostit-control's config file and defaults; `nodeconf` is a node's, `app` is the tenant's -- one per component, each named for whose it is |
 | `client` | Go client for the REST API, used by `hostit apps` |
 | `web` | React 19 + Vite SPA (dashboard, app workspace, admin); built into `control/site/` |
 

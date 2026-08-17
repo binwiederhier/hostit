@@ -3,7 +3,7 @@ package control
 import (
 	"net/http"
 
-	"heckel.io/hostit/config"
+	"heckel.io/hostit/controlconf"
 )
 
 const (
@@ -32,7 +32,7 @@ func (s *Server) withBaseSecurityHeaders(next http.Handler) http.Handler {
 		h := w.Header()
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("Referrer-Policy", "strict-origin-when-cross-origin")
-		if s.config.TLS != config.TLSOff {
+		if s.config.TLS != controlconf.TLSOff {
 			h.Set("Strict-Transport-Security", hstsValue)
 		}
 		next.ServeHTTP(w, r)

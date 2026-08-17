@@ -13,7 +13,7 @@ import (
 	"github.com/urfave/cli/v2"
 	"heckel.io/hostit/app"
 	"heckel.io/hostit/appctl"
-	"heckel.io/hostit/config"
+	"heckel.io/hostit/controlconf"
 )
 
 const (
@@ -188,5 +188,5 @@ func execStatic(c *cli.Context) error {
 }
 
 func newController() *appctl.Controller {
-	return appctl.NewController(config.DefaultSocketFile)
+	return appctl.NewController(controlconf.DefaultSocketFile)
 }

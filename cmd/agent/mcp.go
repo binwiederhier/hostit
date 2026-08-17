@@ -10,7 +10,7 @@ import (
 	"github.com/urfave/cli/v2"
 	"heckel.io/hostit/appctl"
 	"heckel.io/hostit/assistant"
-	"heckel.io/hostit/config"
+	"heckel.io/hostit/controlconf"
 )
 
 const (
@@ -44,7 +44,7 @@ var cmdMCP = &cli.Command{
 func execMCP(c *cli.Context) error {
 	socket := c.String("socket")
 	if socket == "" {
-		socket = config.DefaultSocketFile
+		socket = controlconf.DefaultSocketFile
 	}
 	srv := &mcpServer{
 		ctl:     appctl.NewController(socket),

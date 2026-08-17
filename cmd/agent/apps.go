@@ -10,7 +10,7 @@ import (
 
 	"github.com/urfave/cli/v2"
 	"heckel.io/hostit/client"
-	"heckel.io/hostit/config"
+	"heckel.io/hostit/controlconf"
 	"heckel.io/hostit/nodeconf"
 )
 
@@ -387,7 +387,7 @@ func localSocketFile() string {
 	if conf, err := nodeconf.LoadConfig(nodeconf.DefaultConfigFile); err == nil && conf.SocketFile != "" {
 		return conf.SocketFile
 	}
-	return config.DefaultSocketFile
+	return controlconf.DefaultSocketFile
 }
 
 // readKeyFlags resolves --ssh-key values: file paths are read, literals passed through

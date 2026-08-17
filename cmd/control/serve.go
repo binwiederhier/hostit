@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"github.com/urfave/cli/v2"
-	"heckel.io/hostit/config"
 	"heckel.io/hostit/control"
+	"heckel.io/hostit/controlconf"
 	"heckel.io/hostit/node"
 	"heckel.io/hostit/preflight"
 	"heckel.io/hostit/preview"
@@ -41,13 +41,13 @@ var (
 		Usage:  "Run the hostit daemon (requires root)",
 		Action: execServe,
 		Flags: []cli.Flag{
-			&cli.StringFlag{Name: "config", Aliases: []string{"c"}, Value: config.DefaultControlConfigFile, Usage: "control config file"},
+			&cli.StringFlag{Name: "config", Aliases: []string{"c"}, Value: controlconf.DefaultControlConfigFile, Usage: "control config file"},
 		},
 	}
 )
 
 func execServe(c *cli.Context) error {
-	conf, err := config.LoadConfig(config.ResolveConfigFile(c.String("config"), config.LegacyServerConfigFile))
+	conf, err := controlconf.LoadConfig(controlconf.ResolveConfigFile(c.String("config"), controlconf.LegacyServerConfigFile))
 	if err != nil {
 		return err
 	}
@@ -146,7 +146,7 @@ func execServe(c *cli.Context) error {
 	// plus debounced shots after assistant changes, one at a time, each in a
 	// locked-down podman container (the page content is untrusted).
 	var previews *preview.Manager
-	if conf.AppPreview == config.AppPreviewScreenshot {
+	if conf.AppPreview == controlconf.AppPreviewScreenshot {
 		previews = preview.New(run.New(), preview.Dir(conf.DataDir), func() ([]preview.App, error) {
 			apps, err := s.Apps()
 			if err != nil {
@@ -165,7 +165,7 @@ func execServe(c *cli.Context) error {
 		})
 		// Strict egress isolation by default: the shot container reaches only the
 		// app's resolved IP and the public internet, not the host/LAN/metadata.
-		previews.SetIsolation(conf.AppPreviewIsolation != config.AppPreviewIsolationOff, conf.AppPreviewAllowCIDRs)
+		previews.SetIsolation(conf.AppPreviewIsolation != controlconf.AppPreviewIsolationOff, conf.AppPreviewAllowCIDRs)
 	}
 	srv := control.New(conf, manager, users)
 	if previews != nil {
@@ -236,7 +236,7 @@ func execServe(c *cli.Context) error {
 
 // ensureSessionKey persists a generated session key, so web logins survive
 // restarts even when the operator did not configure one
-func ensureSessionKey(conf *config.Config, s *store.Store) error {
+func ensureSessionKey(conf *controlconf.Config, s *store.Store) error {
 	if conf.SessionKey != "" {
 		return nil
 	}

@@ -7,7 +7,7 @@ import (
 
 	"github.com/urfave/cli/v2"
 	"heckel.io/hostit/cluster"
-	"heckel.io/hostit/config"
+	"heckel.io/hostit/controlconf"
 	"heckel.io/hostit/nodeapi"
 	"heckel.io/hostit/nodelink"
 	"heckel.io/hostit/store"
@@ -20,7 +20,7 @@ var cmdProxy = &cli.Command{
 	Name:  "proxy",
 	Usage: "Manage data-plane proxies (enrollment, listing, removal)",
 	Flags: []cli.Flag{
-		&cli.StringFlag{Name: "config", Aliases: []string{"c"}, Value: config.DefaultControlConfigFile, Usage: "control config file"},
+		&cli.StringFlag{Name: "config", Aliases: []string{"c"}, Value: controlconf.DefaultControlConfigFile, Usage: "control config file"},
 	},
 	Subcommands: []*cli.Command{
 		{

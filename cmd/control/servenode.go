@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"heckel.io/hostit/cluster"
-	"heckel.io/hostit/config"
 	"heckel.io/hostit/control"
+	"heckel.io/hostit/controlconf"
 	"heckel.io/hostit/nodelink"
 	"heckel.io/hostit/proxyapi"
 	"heckel.io/hostit/proxylink"
@@ -70,7 +70,7 @@ func nodeRole(manager *control.Manager, registry *control.NodeRegistry, srv *con
 // in the node registry (orchestration routes each app's verbs to its hosting
 // node), a per-node poll loop feeds the state cache, and the rejoin handshake
 // pushes the node's registry mirror and re-asserts desired state.
-func listenForMembers(conf *config.Config, manager *control.Manager, srv *control.Server, done <-chan struct{}, withNodes bool) error {
+func listenForMembers(conf *controlconf.Config, manager *control.Manager, srv *control.Server, done <-chan struct{}, withNodes bool) error {
 	tlsConf, err := nodelink.ListenerCreds(conf.ClusterCertFile, conf.ClusterKeyFile, conf.ClusterCACertFile, conf.DataDir)
 	if err != nil {
 		return err

@@ -27,7 +27,7 @@ import (
 	"github.com/caddyserver/certmagic"
 	"golang.org/x/sync/errgroup"
 	"heckel.io/hostit/assistant"
-	"heckel.io/hostit/config"
+	"heckel.io/hostit/controlconf"
 	"heckel.io/hostit/preview"
 	"heckel.io/hostit/store"
 	"heckel.io/hostit/user"
@@ -43,7 +43,7 @@ const (
 
 // Server is the hostit daemon; create with New, run with Run
 type Server struct {
-	config    *config.Config
+	config    *controlconf.Config
 	apps      *Manager
 	users     *user.Manager
 	assistant *assistant.Manager // nil unless an Anthropic API key is configured
@@ -104,7 +104,7 @@ type Server struct {
 }
 
 // New creates a Server; it does not start any listeners
-func New(conf *config.Config, apps *Manager, users *user.Manager) *Server {
+func New(conf *controlconf.Config, apps *Manager, users *user.Manager) *Server {
 	s := &Server{
 		config:         conf,
 		apps:           apps,
@@ -223,7 +223,7 @@ func (s *Server) Run() error {
 		})
 		return g.Wait()
 	}
-	if s.config.TLS == config.TLSOff {
+	if s.config.TLS == controlconf.TLSOff {
 		httpServer := &http.Server{Addr: s.config.ListenHTTP, Handler: s.proxy, ReadHeaderTimeout: readHeaderTimeout}
 		s.servers = append(s.servers, httpServer)
 		g.Go(func() error {

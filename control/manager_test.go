@@ -12,8 +12,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"heckel.io/hostit/btrfs"
-	"heckel.io/hostit/config"
 	"heckel.io/hostit/container"
+	"heckel.io/hostit/controlconf"
 	"heckel.io/hostit/firewall"
 	"heckel.io/hostit/node"
 	"heckel.io/hostit/run"
@@ -201,9 +201,9 @@ func TestApps(t *testing.T) {
 // newTestManagerDeps builds the config, store and fake system services a test
 // Manager needs, so callers can construct the Manager via NewManager with their own
 // runner (keeping every runner-backed service -- btrfs, etc. -- on that one runner).
-func newTestManagerDeps(t *testing.T) (*config.Config, *store.Store, *fakeSystem) {
+func newTestManagerDeps(t *testing.T) (*controlconf.Config, *store.Store, *fakeSystem) {
 	t.Helper()
-	conf := config.NewConfig()
+	conf := controlconf.NewConfig()
 	conf.BaseDomain = "apps.example.com"
 	conf.AdminToken = "secr3t"
 	conf.AppsDir = t.TempDir()

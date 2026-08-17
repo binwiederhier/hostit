@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"heckel.io/hostit/config"
+	"heckel.io/hostit/controlconf"
 	"heckel.io/hostit/store"
 )
 
@@ -51,7 +51,7 @@ func (s *Server) assistantDefaults(settings map[string]string) *apiAssistantDefa
 }
 
 // modelCatalog is the configured API models as dropdown options (no External Claude).
-func modelCatalog(conf *config.Config) []apiAssistantMode {
+func modelCatalog(conf *controlconf.Config) []apiAssistantMode {
 	out := make([]apiAssistantMode, 0, len(conf.AssistantModels))
 	for _, m := range conf.AssistantModels {
 		out = append(out, apiAssistantMode{ID: m.ID, Label: m.Label})
@@ -70,7 +70,7 @@ func (s *Server) assistantOptions(userID string) []apiAssistantMode {
 	}
 	opts := make([]apiAssistantMode, 0)
 	for _, o := range s.config.ModeOptions() {
-		if o.ID == config.ExternalClaudeMode {
+		if o.ID == controlconf.ExternalClaudeMode {
 			if externalAllowed {
 				opts = append(opts, apiAssistantMode{ID: o.ID, Label: o.Label})
 			}
@@ -140,7 +140,7 @@ func (s *Server) defaultMode() string {
 		return s.config.DefaultAPIModel()
 	}
 	if s.config.ClaudeBackendEnabled() {
-		return config.ExternalClaudeMode
+		return controlconf.ExternalClaudeMode
 	}
 	return s.config.DefaultAPIModel()
 }

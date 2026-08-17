@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"heckel.io/hostit/cluster"
-	"heckel.io/hostit/config"
+	"heckel.io/hostit/controlconf"
 	"heckel.io/hostit/proxyapi"
 	"heckel.io/hostit/store"
 	"heckel.io/hostit/user"
@@ -171,9 +171,9 @@ func TestRouteTableVersionSurvivesAControlRestart(t *testing.T) {
 	assert.Greater(t, after.Seq, before.Seq, "a restarted control must not reuse a version the proxy already has")
 }
 
-func newProxyTestDeps(t *testing.T) (*config.Config, *store.Store) {
+func newProxyTestDeps(t *testing.T) (*controlconf.Config, *store.Store) {
 	t.Helper()
-	conf := config.NewConfig()
+	conf := controlconf.NewConfig()
 	conf.BaseDomain = "apps.example.com"
 	conf.AdminToken = testToken
 	conf.AppsDir, conf.DataDir = t.TempDir(), t.TempDir()

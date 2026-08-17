@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"heckel.io/hostit/config"
+	"heckel.io/hostit/controlconf"
 )
 
 // errorPageHTML is the "nothing here" page's markup (a self-contained HTML
@@ -48,7 +48,7 @@ func (s *Server) writeNothingHerePage(w http.ResponseWriter) {
 func (s *Server) writeErrorPage(w http.ResponseWriter, status int, data *errorPageData) {
 	data.Code = strconv.Itoa(status)
 	scheme := "https"
-	if s.config.TLS == config.TLSOff {
+	if s.config.TLS == controlconf.TLSOff {
 		scheme = "http"
 	}
 	data.Home = scheme + "://" + s.config.APIHostname()
