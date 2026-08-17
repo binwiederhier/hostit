@@ -43,3 +43,34 @@ func TestProvisionDoesNotWaitWhenNothingIsTearingDown(t *testing.T) {
 	assert.Less(t, time.Since(start), 50*time.Millisecond)
 	_ = nodeapi.ProvisionSpec{}
 }
+
+// Deprovision marks the name for the whole teardown: that flag is what a
+// same-name provision waits on. Control marks its own machine, which is a
+// different object entirely when the node is remote -- so the node must mark
+// its own, or the wait waits on nothing (the churn e2e failed twice on this).
+func TestDeprovisionMarksTheNameWhileItTearsDown(t *testing.T) {
+	t.Parallel()
+	m := newSyncTestMachine(t)
+	// Observe the flag from inside the teardown, where the collision would
+	// happen, rather than racing it from outside.
+	spy := &tearingSpy{m: m}
+	m.user = spy
+
+	m.Deprovision(&nodeapi.DeprovisionSpec{Name: "blog", ID: "id1", Unit: "u", Container: "c"})
+
+	assert.True(t, spy.markedDuringDelete, "the name is marked while the account is being removed")
+	assert.False(t, m.IsTearingDown("blog"), "and released when the teardown finishes")
+}
+
+// tearingSpy records whether the machine considered the app "tearing down" at
+// the moment its account was deleted.
+type tearingSpy struct {
+	nopUser
+	m                  *Machine
+	markedDuringDelete bool
+}
+
+func (s *tearingSpy) Delete(username string) error {
+	s.markedDuringDelete = s.m.IsTearingDown(username)
+	return nil
+}

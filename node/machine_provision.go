@@ -93,6 +93,13 @@ func (m *Machine) provisionRollback(spec *nodeapi.ProvisionSpec) {
 // Deprovision tears the app down on this Machine; it runs in the background
 // (the caller holds the app lock and the port/name reservations until done).
 func (m *Machine) Deprovision(spec *nodeapi.DeprovisionSpec) {
+	// Mark the name for the whole teardown, so a same-name provision arriving
+	// meanwhile waits for it (awaitTeardown) instead of colliding with the
+	// dying account. Control marks its OWN machine as well, which covers the
+	// fused daemon; this is what covers a remote node, where control's flag
+	// says nothing about this host.
+	m.SetTearingDown(spec.Name, true)
+	defer m.SetTearingDown(spec.Name, false)
 	// Stop the app first: a running container keeps processes alive, and
 	// userdel refuses to remove a user that still has any.
 	if err := m.systemd.DisableNow(spec.Unit); err != nil {

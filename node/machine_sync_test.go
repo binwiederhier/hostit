@@ -8,10 +8,13 @@ import (
 	"github.com/stretchr/testify/require"
 	"heckel.io/hostit/btrfs"
 	"heckel.io/hostit/container"
+	"heckel.io/hostit/firewall"
 	"heckel.io/hostit/nodeapi"
 	"heckel.io/hostit/run"
+	"heckel.io/hostit/ssh"
 	"heckel.io/hostit/store"
 	"heckel.io/hostit/systemd"
+	"heckel.io/hostit/unixuser"
 )
 
 // Control builds a mirror by reading its registry and sends it afterwards, so
@@ -65,5 +68,26 @@ func newSyncTestMachine(t *testing.T) *Machine {
 	s, err := store.NewStore(filepath.Join(t.TempDir(), "node.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = s.Close() })
-	return NewMachine(conf, s, &Services{Runner: run.Nop{}, Btrfs: btrfs.New(run.Nop{}), Systemd: systemd.New(run.Nop{}), Container: container.New(run.Nop{})})
+	return NewMachine(conf, s, &Services{
+		Runner: run.Nop{}, Btrfs: btrfs.New(run.Nop{}), Systemd: systemd.New(run.Nop{}),
+		Container: container.New(run.Nop{}), User: nopUser{}, SSH: ssh.New(), Firewall: nopFirewall{},
+	})
 }
+
+// The privileged services do nothing here: these tests are about the machine's
+// own bookkeeping, not about touching the host.
+type nopUser struct{}
+
+func (nopUser) Exists(string) bool                            { return false }
+func (nopUser) List() ([]unixuser.Account, error)             { return nil, nil }
+func (nopUser) LookupUID(string) (int, error)                 { return 1001, nil }
+func (nopUser) LookupIDs(string) (int, int, error)            { return 1001, 1001, nil }
+func (nopUser) Create(string, string, int) error              { return nil }
+func (nopUser) Rename(string, string) error                   { return nil }
+func (nopUser) KillProcesses(string) error                    { return nil }
+func (nopUser) Delete(string) error                           { return nil }
+func (nopUser) WriteSkeleton(string, map[string]string) error { return nil }
+
+type nopFirewall struct{}
+
+func (nopFirewall) Apply([]firewall.Rule) error { return nil }
