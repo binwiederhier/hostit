@@ -46,6 +46,11 @@ const (
 )
 
 const (
+	// teardownWait bounds how long a provision waits for a same-name teardown
+	// still running here (delete-then-recreate); teardownPoll is its interval.
+	teardownWait = 30 * time.Second
+	teardownPoll = 200 * time.Millisecond
+
 	// settingAgentVersion records the hostit version the running agents were
 	// started from, so an upgrade knows whose behaviour is stale
 	settingAgentVersion = "agent_version"

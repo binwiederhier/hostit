@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"time"
 
 	"heckel.io/hostit/nodeapi"
 	"heckel.io/hostit/store"
@@ -21,6 +22,10 @@ func (m *Machine) Provision(spec *nodeapi.ProvisionSpec) error {
 	// each other's subvolume (seen on stage: an app whose subvolume vanished
 	// mid-create and never served).
 	defer m.LockApp(spec.Name)()
+	// A same-name app deleted a moment ago is still being torn down here, in
+	// the background; its unix account outlives the API call. Wait it out, or
+	// the useradd collides with the dying one ("group already exists").
+	m.awaitTeardown(spec.Name)
 	forking := spec.SeedAppID != ""
 	// The budget qgroup exists and is capped BEFORE the subvolume, which is then
 	// snapshotted INTO it (-i): membership is atomic at creation, so the cap
@@ -143,4 +148,19 @@ func (m *Machine) Deprovision(spec *nodeapi.DeprovisionSpec) {
 		}()
 	}
 	slog.Info("App teardown complete", "app", spec.Name)
+}
+
+// awaitTeardown waits, bounded, for an in-flight teardown of this name to
+// release its unix account. The teardown runs on THIS machine, so the wait
+// belongs here: control asking its own copy of this state only ever worked
+// while the node shared its process.
+func (m *Machine) awaitTeardown(name string) {
+	deadline := time.Now().Add(teardownWait)
+	for time.Now().Before(deadline) {
+		if !m.IsTearingDown(name) {
+			return
+		}
+		time.Sleep(teardownPoll)
+	}
+	slog.Warn("Timed out waiting for a same-name teardown; provisioning anyway", "app", name)
 }
