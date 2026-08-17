@@ -103,10 +103,9 @@ func execProxyList(c *cli.Context) error {
 		if !p.LastSeen.IsZero() {
 			seen = p.LastSeen.Format(time.RFC3339)
 		}
-		version := p.Version
-		if version == "" {
-			version = "-"
-		}
+		// The version, not the whole build string: the commit and timestamp make
+		// the row wrap (see `status` for the same trim).
+		version := dashIfEmpty(shortVersion(p.Version))
 		fmt.Printf("%-20s %-28s %5d routes  last seen %s\n", p.Name, version, p.Routes, seen)
 	}
 	return nil
