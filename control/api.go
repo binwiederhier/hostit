@@ -92,6 +92,7 @@ func (s *Server) newAPIHandler() http.Handler {
 	route(mux, "GET", "/domains", s.requireAdmin(s.handleDomainsList))
 	route(mux, "POST", "/domains", s.requireAdmin(s.handleDomainsAdd))
 	route(mux, "DELETE", "/domains/{domain}", s.requireAdmin(s.handleDomainsDelete))
+	route(mux, "GET", "/cluster", s.requireAdmin(s.handleClusterStatus))
 	route(mux, "GET", "/settings", s.requireAdmin(s.handleSettingsGet))
 	route(mux, "PATCH", "/settings", s.requireAdmin(s.handleSettingsUpdate))
 

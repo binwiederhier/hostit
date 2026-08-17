@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -157,4 +158,33 @@ func TestUpdateUserAppliesLimitsToTheirAppsLive(t *testing.T) {
 	assert.Equal(t, 4096, s.apps.DiskLimit("blog"))
 	assert.Equal(t, 1024, s.apps.MemoryLimit("wiki"))
 	assert.Equal(t, 0, s.apps.MemoryLimit("docs"), "another owner's apps are untouched")
+}
+
+// The dashboard reads the cluster over the API, and only an admin may: the
+// nodes, their addresses and the shape of the fleet are operator information,
+// not something an app owner needs.
+func TestClusterStatusEndpointIsAdminOnly(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	require.NoError(t, s.apps.Store().EnsureNode("worker-1", "10.0.0.2"))
+	require.NoError(t, s.apps.Store().EnsureProxy("edge-1"))
+	require.NoError(t, s.apps.Store().SetProxyStatus("edge-1", time.Now(), "v0.13.0", 4))
+
+	rr := request(t, s.API(), "GET", "/api/cluster", "", testToken)
+	require.Equal(t, http.StatusOK, rr.Code)
+	var status Status
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &status))
+	require.Len(t, status.Nodes, 1)
+	assert.Equal(t, "worker-1", status.Nodes[0].Name)
+	require.Len(t, status.Proxies, 1)
+	assert.Equal(t, "v0.13.0", status.Proxies[0].Version)
+	assert.Equal(t, 4, status.Proxies[0].Routes)
+	require.NotNil(t, status.Apps)
+
+	// An app owner's token gets nothing.
+	u := newActiveTestUser(t, s, "owner@example.com")
+	userToken, _, err := s.users.CreateToken(u.ID, "laptop")
+	require.NoError(t, err)
+	rr = request(t, s.API(), "GET", "/api/cluster", "", userToken)
+	assert.Equal(t, http.StatusForbidden, rr.Code)
 }

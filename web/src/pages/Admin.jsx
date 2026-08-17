@@ -1,15 +1,27 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
-import { ErrorBanner, formatDate, formatUsage, Loading, StatusDot } from "../components";
+import {
+  ErrorBanner,
+  formatDate,
+  formatUsage,
+  Loading,
+  StatusDot,
+} from "../components";
 
 // Empty input means "use the global default"; the API expects null for that.
 const numOrNull = (v) => (v === "" ? null : Number(v));
 const numOrEmpty = (v) => (v === null || v === undefined ? "" : String(v));
 
 // Built-in assistant spend, formatted compactly for the user table.
-const formatUSD = (n) => (!n ? "$0.00" : n < 0.01 ? "<$0.01" : "$" + n.toFixed(2));
-const formatTokens = (n) => (n >= 1e6 ? (n / 1e6).toFixed(1) + "M" : n >= 1e3 ? Math.round(n / 1e3) + "k" : String(n || 0));
+const formatUSD = (n) =>
+  !n ? "$0.00" : n < 0.01 ? "<$0.01" : "$" + n.toFixed(2);
+const formatTokens = (n) =>
+  n >= 1e6
+    ? (n / 1e6).toFixed(1) + "M"
+    : n >= 1e3
+      ? Math.round(n / 1e3) + "k"
+      : String(n || 0);
 
 // One user row with locally edited limit fields; Save appears once dirty.
 // AssistantAccess sets, per user, whether External Claude is available and which
@@ -33,13 +45,16 @@ const AssistantAccess = ({ user, catalog, externalConfigured, onPatch }) => {
     const all = catalog.length > 0 && catalog.every((m) => set.includes(m.id));
     patch({ assistant_allowed_models: all ? [] : set });
   };
-  const enabled = allModels ? catalog.length : models.filter((m) => catalog.some((c) => c.id === m)).length;
+  const enabled = allModels
+    ? catalog.length
+    : models.filter((m) => catalog.some((c) => c.id === m)).length;
   const external = user.assistant_external_allowed && externalConfigured;
   return (
     <details className="asst-access">
       <summary title="Assistant access">
         {external ? "External + " : ""}
-        {enabled}/{catalog.length} models{user.assistant_has_override ? " *" : ""}
+        {enabled}/{catalog.length} models
+        {user.assistant_has_override ? " *" : ""}
       </summary>
       <div className="asst-access-body">
         <label className={externalConfigured ? "" : "cell-muted"}>
@@ -47,18 +62,30 @@ const AssistantAccess = ({ user, catalog, externalConfigured, onPatch }) => {
             type="checkbox"
             checked={user.assistant_external_allowed}
             disabled={busy || !externalConfigured}
-            onChange={(e) => patch({ assistant_external_allowed: e.target.checked })}
+            onChange={(e) =>
+              patch({ assistant_external_allowed: e.target.checked })
+            }
           />
           External Claude{externalConfigured ? "" : " (not configured)"}
         </label>
         {catalog.map((m) => (
           <label key={m.id}>
-            <input type="checkbox" checked={allModels || models.includes(m.id)} disabled={busy} onChange={() => toggleModel(m.id)} />
+            <input
+              type="checkbox"
+              checked={allModels || models.includes(m.id)}
+              disabled={busy}
+              onChange={() => toggleModel(m.id)}
+            />
             {m.label}
           </label>
         ))}
         {user.assistant_has_override && (
-          <button type="button" className="btn btn-small" disabled={busy} onClick={() => patch({ assistant_clear_override: true })}>
+          <button
+            type="button"
+            className="btn btn-small"
+            disabled={busy}
+            onClick={() => patch({ assistant_clear_override: true })}
+          >
             Reset to default
           </button>
         )}
@@ -67,7 +94,14 @@ const AssistantAccess = ({ user, catalog, externalConfigured, onPatch }) => {
   );
 };
 
-const UserRow = ({ user, defaults, catalog, externalConfigured, onPatch, onDelete }) => {
+const UserRow = ({
+  user,
+  defaults,
+  catalog,
+  externalConfigured,
+  onPatch,
+  onDelete,
+}) => {
   const [appLimit, setAppLimit] = useState(numOrEmpty(user.app_limit));
   const [memoryMb, setMemoryMb] = useState(numOrEmpty(user.memory_mb));
   const [diskMb, setDiskMb] = useState(numOrEmpty(user.disk_mb));
@@ -80,7 +114,9 @@ const UserRow = ({ user, defaults, catalog, externalConfigured, onPatch, onDelet
   }, [user]);
 
   const dirty =
-    appLimit !== numOrEmpty(user.app_limit) || memoryMb !== numOrEmpty(user.memory_mb) || diskMb !== numOrEmpty(user.disk_mb);
+    appLimit !== numOrEmpty(user.app_limit) ||
+    memoryMb !== numOrEmpty(user.memory_mb) ||
+    diskMb !== numOrEmpty(user.disk_mb);
 
   const run = async (body) => {
     setBusy(true);
@@ -105,10 +141,16 @@ const UserRow = ({ user, defaults, catalog, externalConfigured, onPatch, onDelet
         <div className="cell-muted">{user.name}</div>
       </td>
       <td>
-        <span className={`badge${user.role === "admin" ? " badge-accent" : ""}`}>{user.role}</span>
+        <span
+          className={`badge${user.role === "admin" ? " badge-accent" : ""}`}
+        >
+          {user.role}
+        </span>
       </td>
       <td>
-        <span className={`badge${user.status === "pending" ? " badge-warn" : user.status === "denied" ? " badge-danger" : ""}`}>
+        <span
+          className={`badge${user.status === "pending" ? " badge-warn" : user.status === "denied" ? " badge-danger" : ""}`}
+        >
           {user.status}
         </span>
       </td>
@@ -116,8 +158,12 @@ const UserRow = ({ user, defaults, catalog, externalConfigured, onPatch, onDelet
       <td title="Built-in assistant usage across this user's apps (does not include their own agent)">
         {user.assistant_tokens ? (
           <>
-            <div className="item-label">{formatUSD(user.assistant_cost_usd)}</div>
-            <div className="cell-muted">{formatTokens(user.assistant_tokens)} tokens</div>
+            <div className="item-label">
+              {formatUSD(user.assistant_cost_usd)}
+            </div>
+            <div className="cell-muted">
+              {formatTokens(user.assistant_tokens)} tokens
+            </div>
           </>
         ) : (
           <span className="cell-muted">--</span>
@@ -153,36 +199,63 @@ const UserRow = ({ user, defaults, catalog, externalConfigured, onPatch, onDelet
             title="Disk in MB (empty = global default)"
           />
           {dirty && (
-            <button type="button" className="btn btn-small btn-primary" onClick={saveLimits} disabled={busy}>
+            <button
+              type="button"
+              className="btn btn-small btn-primary"
+              onClick={saveLimits}
+              disabled={busy}
+            >
               Save
             </button>
           )}
         </div>
       </td>
       <td>
-        <AssistantAccess user={user} catalog={catalog || []} externalConfigured={externalConfigured} onPatch={onPatch} />
+        <AssistantAccess
+          user={user}
+          catalog={catalog || []}
+          externalConfigured={externalConfigured}
+          onPatch={onPatch}
+        />
       </td>
       <td className="cell-actions">
         <div className="btn-row">
           {user.status !== "active" && (
-            <button type="button" className="btn btn-small" onClick={() => run({ status: "active" })} disabled={busy}>
+            <button
+              type="button"
+              className="btn btn-small"
+              onClick={() => run({ status: "active" })}
+              disabled={busy}
+            >
               Approve
             </button>
           )}
           {user.status === "pending" && (
-            <button type="button" className="btn btn-small btn-danger" onClick={() => run({ status: "denied" })} disabled={busy}>
+            <button
+              type="button"
+              className="btn btn-small btn-danger"
+              onClick={() => run({ status: "denied" })}
+              disabled={busy}
+            >
               Deny
             </button>
           )}
           <button
             type="button"
             className="btn btn-small"
-            onClick={() => run({ role: user.role === "admin" ? "user" : "admin" })}
+            onClick={() =>
+              run({ role: user.role === "admin" ? "user" : "admin" })
+            }
             disabled={busy}
           >
             {user.role === "admin" ? "Make user" : "Make admin"}
           </button>
-          <button type="button" className="btn btn-small btn-danger" onClick={() => onDelete(user)} disabled={busy}>
+          <button
+            type="button"
+            className="btn btn-small btn-danger"
+            onClick={() => onDelete(user)}
+            disabled={busy}
+          >
             Delete
           </button>
         </div>
@@ -196,7 +269,11 @@ const UserRow = ({ user, defaults, catalog, externalConfigured, onPatch, onDelet
 const AppRow = ({ app }) => (
   <tr>
     <td>
-      <StatusDot running={app.running} appRunning={app.app_running} appState={app.app_state} />
+      <StatusDot
+        running={app.running}
+        appRunning={app.app_running}
+        appState={app.app_state}
+      />
       <Link className="mono app-link" to={`/app/${app.name}`}>
         {app.name}
       </Link>
@@ -210,7 +287,12 @@ const AppRow = ({ app }) => (
         <Link className="btn btn-small" to={`/app/${app.name}`}>
           Manage
         </Link>
-        <a className="btn btn-small btn-primary" href={app.url} target="_blank" rel="noreferrer">
+        <a
+          className="btn btn-small btn-primary"
+          href={app.url}
+          target="_blank"
+          rel="noreferrer"
+        >
           Open app
         </a>
       </div>
@@ -222,10 +304,16 @@ const AllApps = ({ apps, error }) => (
   <div className="card">
     <div className="card-header">
       <h2>All apps</h2>
-      {apps !== null && <span className="usage">{apps.length === 1 ? "1 app" : `${apps.length} apps`}</span>}
+      {apps !== null && (
+        <span className="usage">
+          {apps.length === 1 ? "1 app" : `${apps.length} apps`}
+        </span>
+      )}
     </div>
     {apps === null && !error && <Loading label="Loading apps..." />}
-    {apps !== null && apps.length === 0 && <p className="empty">No apps yet.</p>}
+    {apps !== null && apps.length === 0 && (
+      <p className="empty">No apps yet.</p>
+    )}
     {apps !== null && apps.length > 0 && (
       <div className="table-wrap">
         <table>
@@ -255,7 +343,9 @@ const AllApps = ({ apps, error }) => (
 // serving with nobody able to manage it, which is why that is not an option.
 const DeleteUserDialog = ({ user, users, onCancel, onDone, setError }) => {
   const others = users.filter((u) => u.id !== user.id && u.status === "active");
-  const [choice, setChoice] = useState(user.app_count > 0 ? "transfer" : "delete");
+  const [choice, setChoice] = useState(
+    user.app_count > 0 ? "transfer" : "delete",
+  );
   const [target, setTarget] = useState(others.length > 0 ? others[0].id : "");
   const [busy, setBusy] = useState(false);
   const canTransfer = others.length > 0;
@@ -265,7 +355,10 @@ const DeleteUserDialog = ({ user, users, onCancel, onDone, setError }) => {
     setBusy(true);
     setError("");
     try {
-      const query = choice === "transfer" ? `?apps=transfer&transfer_to=${target}` : "?apps=delete";
+      const query =
+        choice === "transfer"
+          ? `?apps=transfer&transfer_to=${target}`
+          : "?apps=delete";
       await api.del(`/api/users/${user.id}${query}`);
       onDone();
     } catch (err) {
@@ -278,11 +371,18 @@ const DeleteUserDialog = ({ user, users, onCancel, onDone, setError }) => {
     <div className="modal-backdrop" role="dialog" aria-modal="true">
       <form className="card modal" onSubmit={submit}>
         <h2>Delete {user.email}</h2>
-        {user.app_count === 0 && <p>This account has no apps. Deleting it removes the account, its keys and its tokens.</p>}
+        {user.app_count === 0 && (
+          <p>
+            This account has no apps. Deleting it removes the account, its keys
+            and its tokens.
+          </p>
+        )}
         {user.app_count > 0 && (
           <>
             <p>
-              This account owns {user.app_count} {user.app_count === 1 ? "app" : "apps"}. What should happen to them?
+              This account owns {user.app_count}{" "}
+              {user.app_count === 1 ? "app" : "apps"}. What should happen to
+              them?
             </p>
             <label className="choice">
               <input
@@ -296,7 +396,11 @@ const DeleteUserDialog = ({ user, users, onCancel, onDone, setError }) => {
               <span>
                 Give them to another user
                 {canTransfer ? (
-                  <select value={target} onChange={(e) => setTarget(e.target.value)} disabled={choice !== "transfer"}>
+                  <select
+                    value={target}
+                    onChange={(e) => setTarget(e.target.value)}
+                    disabled={choice !== "transfer"}
+                  >
                     {others.map((u) => (
                       <option key={u.id} value={u.id}>
                         {u.email}
@@ -304,23 +408,42 @@ const DeleteUserDialog = ({ user, users, onCancel, onDone, setError }) => {
                     ))}
                   </select>
                 ) : (
-                  <span className="cell-muted"> -- no other active account to give them to</span>
+                  <span className="cell-muted">
+                    {" "}
+                    -- no other active account to give them to
+                  </span>
                 )}
               </span>
             </label>
             <label className="choice">
-              <input type="radio" name="apps" value="delete" checked={choice === "delete"} onChange={() => setChoice("delete")} />
+              <input
+                type="radio"
+                name="apps"
+                value="delete"
+                checked={choice === "delete"}
+                onChange={() => setChoice("delete")}
+              />
               <span>
-                Delete the apps too -- their containers, files and URLs go with them. <strong>This cannot be undone.</strong>
+                Delete the apps too -- their containers, files and URLs go with
+                them. <strong>This cannot be undone.</strong>
               </span>
             </label>
           </>
         )}
         <div className="btn-row">
-          <button type="button" className="btn" onClick={onCancel} disabled={busy}>
+          <button
+            type="button"
+            className="btn"
+            onClick={onCancel}
+            disabled={busy}
+          >
             Cancel
           </button>
-          <button type="submit" className="btn btn-danger" disabled={busy || (choice === "transfer" && !target)}>
+          <button
+            type="submit"
+            className="btn btn-danger"
+            disabled={busy || (choice === "transfer" && !target)}
+          >
             {busy ? "Deleting..." : "Delete user"}
           </button>
         </div>
@@ -364,11 +487,19 @@ const InviteUser = ({ onAdded, setError }) => {
         placeholder="person@company.com"
         aria-label="Email address to add"
       />
-      <select value={role} onChange={(e) => setRole(e.target.value)} aria-label="Role">
+      <select
+        value={role}
+        onChange={(e) => setRole(e.target.value)}
+        aria-label="Role"
+      >
         <option value="user">User</option>
         <option value="admin">Admin</option>
       </select>
-      <button type="submit" className="btn btn-primary" disabled={busy || email.trim() === ""}>
+      <button
+        type="submit"
+        className="btn btn-primary"
+        disabled={busy || email.trim() === ""}
+      >
         {busy ? "Adding..." : "Add user"}
       </button>
     </form>
@@ -413,7 +544,11 @@ const AllowedDomains = ({ setError }) => {
   };
 
   const remove = async (d) => {
-    if (!window.confirm(`Stop auto-approving @${d.domain}? Users already approved keep their accounts.`)) {
+    if (
+      !window.confirm(
+        `Stop auto-approving @${d.domain}? Users already approved keep their accounts.`,
+      )
+    ) {
       return;
     }
     setError("");
@@ -429,21 +564,32 @@ const AllowedDomains = ({ setError }) => {
     <div className="card">
       <h2>Sign-up without approval</h2>
       <p className="hint">
-        Anyone signing in with a Google address in one of these domains is approved automatically. Everyone else waits in the
-        list above. Write it as <span className="mono">company.com</span> or <span className="mono">*@company.com</span>.
-        Public providers (gmail.com, outlook.com, ...) are refused: allowing one would let anyone in.
+        Anyone signing in with a Google address in one of these domains is
+        approved automatically. Everyone else waits in the list above. Write it
+        as <span className="mono">company.com</span> or{" "}
+        <span className="mono">*@company.com</span>. Public providers
+        (gmail.com, outlook.com, ...) are refused: allowing one would let anyone
+        in.
       </p>
       {domains === null && <Loading label="Loading domains..." />}
-      {domains !== null && domains.length === 0 && <p className="empty">No domains yet: every sign-up needs approval.</p>}
+      {domains !== null && domains.length === 0 && (
+        <p className="empty">No domains yet: every sign-up needs approval.</p>
+      )}
       {domains !== null && domains.length > 0 && (
         <ul className="item-list">
           {domains.map((d) => (
             <li key={d.domain}>
               <div>
                 <div className="item-label mono">*@{d.domain}</div>
-                <div className="cell-muted">added {formatDate(d.created_at)}</div>
+                <div className="cell-muted">
+                  added {formatDate(d.created_at)}
+                </div>
               </div>
-              <button type="button" className="btn btn-small btn-danger" onClick={() => remove(d)}>
+              <button
+                type="button"
+                className="btn btn-small btn-danger"
+                onClick={() => remove(d)}
+              >
                 Remove
               </button>
             </li>
@@ -458,7 +604,11 @@ const AllowedDomains = ({ setError }) => {
           placeholder="company.com"
           aria-label="Email domain to allow"
         />
-        <button type="submit" className="btn btn-primary" disabled={busy || domain.trim() === ""}>
+        <button
+          type="submit"
+          className="btn btn-primary"
+          disabled={busy || domain.trim() === ""}
+        >
           {busy ? "Adding..." : "Allow domain"}
         </button>
       </form>
@@ -467,8 +617,12 @@ const AllowedDomains = ({ setError }) => {
 };
 
 const Defaults = ({ settings, asstDefaults, onSaved, setError }) => {
-  const [appLimit, setAppLimit] = useState(numOrEmpty(settings.default_app_limit));
-  const [memoryMb, setMemoryMb] = useState(numOrEmpty(settings.default_memory_mb));
+  const [appLimit, setAppLimit] = useState(
+    numOrEmpty(settings.default_app_limit),
+  );
+  const [memoryMb, setMemoryMb] = useState(
+    numOrEmpty(settings.default_memory_mb),
+  );
   const [diskMb, setDiskMb] = useState(numOrEmpty(settings.default_disk_mb));
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -500,21 +654,195 @@ const Defaults = ({ settings, asstDefaults, onSaved, setError }) => {
       <form className="defaults-form" onSubmit={save}>
         <label>
           App limit
-          <input type="number" min="0" required value={appLimit} onChange={(e) => setAppLimit(e.target.value)} />
+          <input
+            type="number"
+            min="0"
+            required
+            value={appLimit}
+            onChange={(e) => setAppLimit(e.target.value)}
+          />
         </label>
         <label>
           Memory (MB)
-          <input type="number" min="0" required value={memoryMb} onChange={(e) => setMemoryMb(e.target.value)} />
+          <input
+            type="number"
+            min="0"
+            required
+            value={memoryMb}
+            onChange={(e) => setMemoryMb(e.target.value)}
+          />
         </label>
         <label>
           Disk (MB)
-          <input type="number" min="0" required value={diskMb} onChange={(e) => setDiskMb(e.target.value)} />
+          <input
+            type="number"
+            min="0"
+            required
+            value={diskMb}
+            onChange={(e) => setDiskMb(e.target.value)}
+          />
         </label>
         <button type="submit" className="btn btn-primary" disabled={busy}>
           {busy ? "Saving..." : saved ? "Saved!" : "Save"}
         </button>
       </form>
-      {asstDefaults && <AssistantDefaults defaults={asstDefaults} onSaved={onSaved} setError={setError} />}
+      {asstDefaults && (
+        <AssistantDefaults
+          defaults={asstDefaults}
+          onSaved={onSaved}
+          setError={setError}
+        />
+      )}
+    </div>
+  );
+};
+
+// The cluster: which machines are in it, whether they are reporting, and what
+// they are carrying. Everything here is what the daemon last recorded, which is
+// why a member's row leads with how long ago it reported rather than a green
+// light that would imply a live check.
+const relativeAge = (iso) => {
+  if (!iso) return null;
+  const seconds = Math.max(
+    0,
+    Math.round((Date.now() - new Date(iso).getTime()) / 1000),
+  );
+  if (seconds < 60) return `${seconds}s ago`;
+  if (seconds < 3600) return `${Math.round(seconds / 60)}m ago`;
+  if (seconds < 86400) return `${Math.round(seconds / 3600)}h ago`;
+  return `${Math.round(seconds / 86400)}d ago`;
+};
+
+const formatMB = (mb) =>
+  mb >= 1024 ? `${(mb / 1024).toFixed(1)} GB` : `${mb || 0} MB`;
+
+// The build string carries commit and timestamp; the row wants the version.
+const shortVersion = (v) => (v ? v.split(" ")[0] : null);
+
+const MemberRow = ({ member, kind }) => (
+  <tr>
+    <td>
+      <span
+        className={`status-dot ${member.stale ? "status-down" : "status-up"}`}
+        title={member.stale ? "Has not reported recently" : "Reporting"}
+      />
+      <span className="mono">{member.name}</span>
+    </td>
+    <td className="cell-muted mono">
+      {kind === "node"
+        ? member.address || "--"
+        : shortVersion(member.version) || "--"}
+    </td>
+    <td>
+      {kind === "node"
+        ? `${member.apps} ${member.apps === 1 ? "app" : "apps"}`
+        : `${member.routes || 0} routes`}
+    </td>
+    <td className={member.stale ? "cell-warn" : "cell-muted"}>
+      {member.last_seen ? relativeAge(member.last_seen) : "never reported"}
+    </td>
+  </tr>
+);
+
+const MemberTable = ({ title, members, kind, emptyLabel }) => (
+  <div className="cluster-half">
+    <div className="card-header">
+      <h3>{title}</h3>
+      <span className="usage">{members.length}</span>
+    </div>
+    {members.length === 0 && <p className="empty">{emptyLabel}</p>}
+    {members.length > 0 && (
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>{kind === "node" ? "Address" : "Build"}</th>
+              <th>{kind === "node" ? "Hosting" : "Serving"}</th>
+              <th>Reported</th>
+            </tr>
+          </thead>
+          <tbody>
+            {members.map((m) => (
+              <MemberRow key={m.name} member={m} kind={kind} />
+            ))}
+          </tbody>
+        </table>
+      </div>
+    )}
+  </div>
+);
+
+const Cluster = ({ status, error }) => {
+  if (status === null)
+    return (
+      <div className="card">
+        {!error && <Loading label="Loading cluster..." />}
+      </div>
+    );
+  const quiet = [...(status.nodes || []), ...(status.proxies || [])].filter(
+    (m) => m.stale,
+  ).length;
+  return (
+    <div className="card">
+      <div className="card-header">
+        <h2>Cluster</h2>
+        {quiet > 0 && (
+          <span className="usage usage-warn">
+            {quiet} {quiet === 1 ? "member has" : "members have"} not reported
+            recently
+          </span>
+        )}
+      </div>
+      <div className="cluster-grid">
+        <MemberTable
+          title="Nodes"
+          members={status.nodes || []}
+          kind="node"
+          emptyLabel="No nodes registered."
+        />
+        <MemberTable
+          title="Proxies"
+          members={status.proxies || []}
+          kind="proxy"
+          emptyLabel="No proxies registered."
+        />
+      </div>
+      <div className="cluster-stats">
+        <div className="cluster-stat">
+          <span className="k">Apps</span>
+          <span className="v">{status.apps.total}</span>
+        </div>
+        <div className="cluster-stat">
+          <span className="k">Powered off</span>
+          <span className="v">{status.apps.powered_off}</span>
+        </div>
+        <div className="cluster-stat">
+          <span className="k">Snapshots</span>
+          <span className="v">{status.apps.snapshots}</span>
+        </div>
+        <div className="cluster-stat">
+          <span className="k">Disk used</span>
+          <span className="v">{formatMB(status.apps.disk_used_mb)}</span>
+        </div>
+        <div className="cluster-stat">
+          <span className="k">People</span>
+          <span className="v">
+            {status.people.total}
+            {status.people.pending > 0
+              ? ` (${status.people.pending} pending)`
+              : ""}
+          </span>
+        </div>
+      </div>
+      {status.apps.unplaced > 0 && (
+        <p className="hint hint-warn">
+          {status.apps.unplaced}{" "}
+          {status.apps.unplaced === 1 ? "app is" : "apps are"} on a node that is
+          not registered, so they are not routable. Re-register the node, or
+          move the apps.
+        </p>
+      )}
     </div>
   );
 };
@@ -523,19 +851,22 @@ const AdminInner = () => {
   const [users, setUsers] = useState(null);
   const [apps, setApps] = useState(null);
   const [settings, setSettings] = useState(null);
+  const [cluster, setCluster] = useState(null);
   const [asstDefaults, setAsstDefaults] = useState(null);
   const [error, setError] = useState("");
 
   const load = useCallback(async () => {
     try {
-      const [u, a, s] = await Promise.all([
+      const [u, a, s, c] = await Promise.all([
         api.get("/api/users"),
         api.get("/api/apps?all=true"),
         api.get("/api/settings"),
+        api.get("/api/cluster"),
       ]);
       setUsers(u);
       setApps(a);
       setSettings(s);
+      setCluster(c);
       // The assistant defaults are part of the settings response now.
       setAsstDefaults(s.assistant);
     } catch (err) {
@@ -577,9 +908,12 @@ const AdminInner = () => {
           }}
         />
       )}
+      <Cluster status={cluster} error={error} />
       <div className="card">
         <h2>Users</h2>
-        {(users === null || settings === null) && !error && <Loading label="Loading users..." />}
+        {(users === null || settings === null) && !error && (
+          <Loading label="Loading users..." />
+        )}
         {users !== null && settings !== null && (
           <div className="table-wrap">
             <table>
@@ -612,11 +946,21 @@ const AdminInner = () => {
           </div>
         )}
         <InviteUser onAdded={load} setError={setError} />
-        <p className="hint">Adding someone here approves them up front; they still sign in with Google.</p>
+        <p className="hint">
+          Adding someone here approves them up front; they still sign in with
+          Google.
+        </p>
       </div>
       <AllowedDomains setError={setError} />
       <AllApps apps={apps} error={error} />
-      {settings !== null && <Defaults settings={settings} asstDefaults={asstDefaults} onSaved={load} setError={setError} />}
+      {settings !== null && (
+        <Defaults
+          settings={settings}
+          asstDefaults={asstDefaults}
+          onSaved={load}
+          setError={setError}
+        />
+      )}
     </>
   );
 };
@@ -649,13 +993,18 @@ const AssistantDefaults = ({ defaults, onSaved, setError }) => {
     save({ allowed_models: all ? [] : set });
   };
   const modeOptions = [
-    ...(defaults.external_configured ? [{ id: "external-claude", label: "Claude.ai" }] : []),
+    ...(defaults.external_configured
+      ? [{ id: "external-claude", label: "Claude.ai" }]
+      : []),
     ...catalog,
   ];
   return (
     <div className="defaults-assistant">
       <h3>Assistant</h3>
-      <p className="hint">Which agent new conversations use, and what each user may pick (unless overridden per user).</p>
+      <p className="hint">
+        Which agent new conversations use, and what each user may pick (unless
+        overridden per user).
+      </p>
       <div className="asst-defaults">
         <label>
           <input
@@ -664,11 +1013,16 @@ const AssistantDefaults = ({ defaults, onSaved, setError }) => {
             disabled={busy || !defaults.external_configured}
             onChange={(e) => save({ external_allowed: e.target.checked })}
           />
-          Allow External Claude{defaults.external_configured ? "" : " (subscription not configured)"}
+          Allow External Claude
+          {defaults.external_configured ? "" : " (subscription not configured)"}
         </label>
         <label className="asst-defaults-mode">
           Default agent
-          <select value={defaults.default_mode} disabled={busy} onChange={(e) => save({ default_mode: e.target.value })}>
+          <select
+            value={defaults.default_mode}
+            disabled={busy}
+            onChange={(e) => save({ default_mode: e.target.value })}
+          >
             {modeOptions.map((m) => (
               <option key={m.id} value={m.id}>
                 {m.label}
@@ -680,7 +1034,12 @@ const AssistantDefaults = ({ defaults, onSaved, setError }) => {
           <span className="hint">Models available by default</span>
           {catalog.map((m) => (
             <label key={m.id}>
-              <input type="checkbox" checked={allModels || models.includes(m.id)} disabled={busy} onChange={() => toggleModel(m.id)} />
+              <input
+                type="checkbox"
+                checked={allModels || models.includes(m.id)}
+                disabled={busy}
+                onChange={() => toggleModel(m.id)}
+              />
               {m.label}
             </label>
           ))}

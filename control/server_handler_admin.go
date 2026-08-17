@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	"heckel.io/hostit/assistant"
 	"heckel.io/hostit/store"
@@ -351,4 +352,17 @@ func newUserResponse(u *store.User, appCount int) *apiUserResponse {
 		AppCount:  appCount,
 		CreatedAt: u.CreatedAt,
 	}
+}
+
+// handleClusterStatus reports the cluster: its nodes and proxies with liveness,
+// and what it is carrying. Admin-only, and the same shape `hostit-control
+// status` prints -- one assembly (ClusterStatus), so the terminal and the
+// dashboard can never disagree about the state of the cluster.
+func (s *Server) handleClusterStatus(w http.ResponseWriter, _ *http.Request, _ *caller) {
+	status, err := ClusterStatus(s.apps.Store(), time.Now())
+	if err != nil {
+		writeAppError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, status)
 }
