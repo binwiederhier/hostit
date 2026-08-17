@@ -239,12 +239,41 @@ A node that reconnects gets the same treatment as one that boots for the first t
 control never asks what the node currently has, it states what the node should have.
 That is why a wiped node rebuilds itself with no operator action.
 
-### Not used for the proxy
+### A proxy joins the same way
 
-`nodelink` is node/control only. A proxy holds no cluster certificate and opens no
-yamux session -- it long-polls control's `/internal/routes` and `/internal/cert`
-over ordinary HTTPS and caches the answers to disk (`proxy/service.go`). The two
-links are shaped differently on purpose: a node is told what to DO (imperative verbs,
-in both directions, needing a live connection), while a proxy only needs to KNOW the
-routing table (one direction, pollable, and serviceable from cache while control is
-down).
+A proxy is a cluster member too, and everything above applies to it: same CA, same
+port, same upgrade, same direction of authority. Its certificate carries `OU=proxy`,
+so control's connect handler routes it to the proxy role rather than the node one --
+and a proxy credential can never register as a node.
+
+What differs is only the contract carried over the connection, because a proxy is a
+much smaller thing than a node. It holds no registry, provisions nothing, and owns
+no state beyond a cache of control's last word.
+
+```mermaid
+sequenceDiagram
+    participant X as hostit-proxy
+    participant C as hostit-control (:2930)
+
+    X->>C: TCP + mTLS (proxy cert, OU=proxy), upgrade, yamux
+    C->>X: ApplyRoutes(table) -- immediately on connect
+    Note over C,X: control pushes again on every change,<br/>and on the reconcile timer
+
+    Note over X,C: a TLS handshake for a name the proxy has never seen
+    X->>C: CertFor(sni)
+    C-->>X: chain + key (issuing on demand for a new custom domain)
+    X->>X: cache in memory and on disk
+```
+
+Certificates are the one thing a proxy asks for rather than being handed, because the
+trigger is a handshake for a name nobody has seen yet, and answering it may mean
+issuing a certificate right then. Everything else is stated by control.
+
+The disk cache is what makes a proxy survive control being down: it keeps serving the
+last table it was given, and answers handshakes from cached material (falling back to
+a self-signed stand-in rather than failing, so `:443` never goes silent).
+
+This was not always the shape. Until 2026-08, a proxy long-polled `/internal/routes`
+and `/internal/cert` over a plain-HTTP `listen-internal` with no authentication at
+all -- fine while every proxy shared control's host and dialed loopback, and a way to
+serve the routing table and TLS private keys to the network the moment one did not.
