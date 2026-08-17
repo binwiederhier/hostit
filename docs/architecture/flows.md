@@ -184,3 +184,67 @@ container recreate by diffing the create arguments (`app/deploy.go`), so a
 run-command-only change costs no container restart. A recreate keeps the app's
 filesystem either way: the container runs the app's one persistent subvolume
 (`--rootfs`), so installed packages survive it.
+
+## A node joining the cluster
+
+Every node/control conversation rides ONE TCP connection, dialed by the node. The
+node never listens: it has no inbound port, needs no route from control, and works
+from behind NAT. `listen-node` (default 2930) is the single port control listens on
+for that dial-in; `nodelink` is the package that owns the whole exchange.
+
+The connection starts life as ordinary HTTP so it can be authorized and upgraded,
+then stops being HTTP-shaped: after the 101 both sides hand the raw socket to
+[yamux](https://github.com/hashicorp/yamux) and speak in multiplexed streams. Each
+stream still carries an HTTP request/response, because a yamux session satisfies
+`net.Listener` -- so each side runs a plain `http.Serve` for the streams its PEER
+opens, and holds an `http.Client` for the streams it opens itself
+(`nodelink/transport.go:Duplex`). That symmetry is the point: control can call the
+node, and the node can call control, over one connection the node dialed.
+
+```mermaid
+sequenceDiagram
+    participant N as hostit-node
+    participant C as hostit-control (listen-node :2930)
+
+    Note over N,C: 1. Establish -- once per connection
+    N->>C: TCP + mTLS (node cert, cluster CA)
+    N->>C: POST /internal/node/connect (X-Hostit-Node: <id>)
+    C->>C: authorize the cert CN against the registry
+    C-->>N: 101 Switching Protocols
+    Note over N,C: socket is hijacked; both sides start yamux<br/>(control = server, node = client)
+
+    Note over N,C: 2. Rejoin handshake -- control asserts the world
+    C->>N: Heartbeat()
+    N-->>C: version, btrfs-capable, apps-bind-address
+    C->>N: Snapshots()
+    N-->>C: records written while the link was down
+    C->>N: SyncState(mirror, seq)
+    C->>N: Reconcile(desired state)
+    N->>N: provision what is missing, fix keys/limits,<br/>re-assert port rules, sweep what control no longer lists
+    C->>N: Ensure(app) for each app that should run
+
+    Note over N,C: 3. Steady state -- streams both ways, same connection
+    C->>N: Provision / States / Rollback / Deprovision ...
+    N->>C: sync + heartbeat callbacks
+    C->>N: Reconcile(desired state) every 5 minutes
+```
+
+The rejoin order is load-bearing (`cmd/control/servenode.go:rejoin`). Snapshot
+records are ingested BEFORE the mirror push, or control's older list would overwrite
+what the node recorded during the outage. The mirror lands before anything reads
+rows, and before the node's destructive startup sweeps are unblocked -- a node that
+swept on an empty mirror would delete every app it hosts.
+
+A node that reconnects gets the same treatment as one that boots for the first time:
+control never asks what the node currently has, it states what the node should have.
+That is why a wiped node rebuilds itself with no operator action.
+
+### Not used for the proxy
+
+`nodelink` is node/control only. A proxy holds no cluster certificate and opens no
+yamux session -- it long-polls control's `/internal/routes` and `/internal/cert`
+over ordinary HTTPS and caches the answers to disk (`proxy/service.go`). The two
+links are shaped differently on purpose: a node is told what to DO (imperative verbs,
+in both directions, needing a live connection), while a proxy only needs to KNOW the
+routing table (one direction, pollable, and serviceable from cache while control is
+down).
