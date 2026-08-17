@@ -1,8 +1,14 @@
 ---
 
-- name: restart hostit
+- name: restart hostit-control
   ansible.builtin.systemd:
-    name: hostit
+    name: hostit-control
+    state: restarted
+    daemon_reload: true
+
+- name: restart hostit-proxy
+  ansible.builtin.systemd:
+    name: hostit-proxy
     state: restarted
     daemon_reload: true
 

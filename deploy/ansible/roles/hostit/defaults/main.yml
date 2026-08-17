@@ -2,12 +2,23 @@
 
 # Which hostit release to install, from the public GitHub releases:
 #   https://github.com/binwiederhier/hostit/releases
-hostit_version: "0.10.1"
+hostit_version: "0.12.0"
 
-# Development override: install a locally built .deb instead of downloading.
-#   (cd hostit && make release-snapshot -> dist/hostit_*_linux_amd64.deb)
+# hostit ships one package per component. All three go on a single-box install:
+# the node package is what carries the `hostit` CLI, the per-app systemd unit,
+# the app login shell and the sudoers grant, even where its daemon stays off.
+hostit_packages: [hostit-control, hostit-node, hostit-proxy]
+hostit_arch: amd64
+
+# Development override: install locally built .debs instead of downloading.
+#   (cd hostit && make release-snapshot)
 # Empty means download hostit_version from GitHub.
-hostit_deb_local: ""
+hostit_deb_dir: ""
+hostit_deb_version: "v0.12.0-next"
+
+# Where hostit-control listens for the proxy in front of it. Loopback: the
+# proxy shares this host, and nothing else should reach the plain-HTTP port.
+hostit_control_http: "127.0.0.1:2910"
 
 # REQUIRED. Apps are served at <app>.<hostit_domain>. Needs wildcard DNS: both
 # *.apps.example.com AND apps.example.com must point at this host.

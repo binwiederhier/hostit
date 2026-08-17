@@ -1,7 +1,7 @@
 ---
 
-# hostit -- self-hosted mini-app platform. Installs the daemon from a public
-# GitHub release (or a local .deb), writes /etc/hostit/server.yml, optionally puts
+# hostit -- self-hosted mini-app platform. Installs the component packages from
+# a public GitHub release (or locally built .debs), writes their configs, optionally puts
 # app homes on btrfs, hardens sshd for app logins, and starts the service.
 #
 # hostit runs as a root daemon and drives podman as root, giving each app its own
@@ -57,6 +57,11 @@
       [engine.runtimes]
       crun = ["{{ hostit_crun_path }}", "/usr/bin/crun"]
 
+# The pre-split package check below reads the package list.
+- name: Gather installed packages
+  ansible.builtin.package_facts:
+    manager: auto
+
 - name: Fail early if required variables are unset
   ansible.builtin.assert:
     that:
@@ -64,38 +69,90 @@
       - hostit_admin_token | length > 0
     fail_msg: "Set hostit_domain and hostit_admin_token (see group_vars/hostit.example.yml)."
 
-- name: Download the hostit {{ hostit_version }} release .deb
-  ansible.builtin.get_url:
-    url: "https://github.com/binwiederhier/hostit/releases/download/v{{ hostit_version }}/hostit_{{ hostit_version }}_linux_amd64.deb"
-    dest: "/tmp/hostit_{{ hostit_version }}_linux_amd64.deb"
-    mode: "0644"
-  register: hostit_deb_remote
-  when: hostit_deb_local | length == 0
+# hostit ships as three packages, one per component. This role installs all
+# three on one machine: hostit-control (the brain, which also does the machine
+# work here), hostit-proxy (the data plane on :443), and hostit-node -- whose
+# daemon stays disabled in this shape, but whose package carries the `hostit`
+# CLI that is bind-mounted into every app container, the per-app systemd unit,
+# the app login shell and the sudoers grant.
+# One name for each package's file, used by the download, the copy and the
+# install below, so the three can never disagree about what they are handling.
+- name: Name the package files
+  ansible.builtin.set_fact:
+    hostit_deb_release: "{{ hostit_deb_dir | length > 0 and hostit_deb_version or 'v' + hostit_version }}"
 
-- name: Copy a local hostit .deb (development override)
-  ansible.builtin.copy:
-    src: "{{ hostit_deb_local }}"
-    dest: "/tmp/{{ hostit_deb_local | basename }}"
+- name: Stage the package paths
+  ansible.builtin.set_fact:
+    hostit_deb_files: >-
+      {{ hostit_packages | map('regex_replace', '$', '_' + hostit_deb_release + '_linux_' + hostit_arch + '.deb') | list }}
+
+- name: Download the hostit {{ hostit_version }} release packages
+  ansible.builtin.get_url:
+    url: "https://github.com/binwiederhier/hostit/releases/download/v{{ hostit_version }}/{{ item }}"
+    dest: "/tmp/{{ item }}"
     mode: "0644"
+  loop: "{{ hostit_deb_files }}"
+  register: hostit_deb_remote
+  when: hostit_deb_dir | length == 0
+
+- name: Copy locally built hostit packages (development override)
+  ansible.builtin.copy:
+    src: "{{ hostit_deb_dir }}/{{ item }}"
+    dest: "/tmp/{{ item }}"
+    mode: "0644"
+  loop: "{{ hostit_deb_files }}"
   register: hostit_deb_copy
-  when: hostit_deb_local | length > 0
+  when: hostit_deb_dir | length > 0
+
+# The three packages Conflict/Replace the pre-split "hostit" package, so an
+# upgrade from before the split removes it here. Its config and data stay.
+- name: Remove the pre-split hostit package
+  ansible.builtin.command: dpkg --remove --force-depends hostit
+  register: hostit_remove_monolith
+  changed_when: hostit_remove_monolith.rc == 0
+  failed_when: false
+  when: "'hostit' in ansible_facts.packages"
 
 # dpkg -i (not the apt module): same-version rebuilds are common while iterating,
-# and apt would treat them as already installed. --force-confold keeps the managed
-# /etc/hostit/server.yml instead of prompting on upgrade.
-- name: Install hostit
-  ansible.builtin.command: "dpkg -i --force-confold {{ hostit_deb_remote.dest | default(hostit_deb_copy.dest) }}"
-  when: (hostit_deb_remote.changed | default(false)) or (hostit_deb_copy.changed | default(false))
-  notify: restart hostit
+# and apt would treat them as already installed. --force-confold keeps the
+# managed configs instead of prompting on upgrade. All three in one call, since
+# they replace a common package and dpkg wants them configured together.
+- name: Install the hostit packages
+  ansible.builtin.command: >-
+    dpkg -i --force-confold
+    {{ hostit_deb_files | map('regex_replace', '^', '/tmp/') | join(' ') }}
+  when: >-
+    (hostit_deb_remote is changed) or (hostit_deb_copy is changed)
+  notify:
+    - restart hostit-control
+    - restart hostit-proxy
 
-- name: Install /etc/hostit/server.yml
+- name: Create the component config directories
+  ansible.builtin.file:
+    path: "/etc/hostit/{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop: [control, proxy]
+
+- name: Install /etc/hostit/control/control.yml
   ansible.builtin.template:
-    src: server.yml.j2
-    dest: /etc/hostit/server.yml
+    src: control.yml.j2
+    dest: /etc/hostit/control/control.yml
     owner: root
     group: root
     mode: "0600"
-  notify: restart hostit
+  notify: restart hostit-control
+
+- name: Install /etc/hostit/proxy/proxy.yml
+  ansible.builtin.template:
+    src: proxy.yml.j2
+    dest: /etc/hostit/proxy/proxy.yml
+    owner: root
+    group: root
+    mode: "0600"
+  notify: restart hostit-proxy
 
 # Optionally move app homes onto a btrfs loopback (snapshots + hard quotas).
 - name: Set up btrfs app homes
@@ -115,9 +172,18 @@
     validate: "sshd -t -f %s"
   notify: restart ssh
 
-- name: Enable and start hostit
+# hostit-node is deliberately NOT enabled: control does the machine work in
+# this shape, and running both would give one host two owners.
+- name: Enable and start hostit-control
   ansible.builtin.systemd:
-    name: hostit
+    name: hostit-control
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Enable and start hostit-proxy
+  ansible.builtin.systemd:
+    name: hostit-proxy
     enabled: true
     state: started
     daemon_reload: true

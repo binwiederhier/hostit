@@ -1,5 +1,5 @@
 # Managed by Ansible (hostit role) -- do not edit on the host.
-# All options and their defaults: see server.yml.example in the hostit source.
+# All options and their defaults: see control.yml.example in the hostit source.
 
 base-domain: {{ hostit_domain }}
 admin-token: {{ hostit_admin_token }}
@@ -7,6 +7,13 @@ tls: letsencrypt
 {% if hostit_letsencrypt_email %}
 letsencrypt-email: {{ hostit_letsencrypt_email }}
 {% endif %}
+
+# hostit-proxy terminates TLS in front and forwards here over loopback; this
+# daemon still manages the certificates and hands them to the proxy over the
+# cluster link. The machine half runs in this process (no listen-node), so the
+# cluster listener comes up on loopback for the proxy alone.
+behind-proxy: true
+listen-http: {{ hostit_control_http }}
 {% if hostit_aws_access_key_id %}
 
 # One wildcard certificate for *.{{ hostit_domain }} via Route 53 (DNS-01),
