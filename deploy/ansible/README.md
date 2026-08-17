@@ -6,17 +6,25 @@ A small, self-contained example role for running hostit on a single Linux host
 sshd for app logins, optionally puts app homes on btrfs, and starts the
 services. An upgrade is just re-running it with a newer `hostit_version`.
 
-hostit ships one package per component -- `hostit-control` (the brain),
-`hostit-proxy` (the TLS-terminating data plane) and `hostit-node` (the machine
-half). On a single box this role installs all three but runs only control and
-the proxy: control does the machine work itself, and the node package is there
-for the `hostit` CLI that gets bind-mounted into every app container, the
-per-app systemd unit, the app login shell and the sudoers grant.
+hostit ships one package per component, and runs them as three processes even
+on one machine: `hostit-control` (the registry and the decisions),
+`hostit-node` (this machine's app work: containers, users, subvolumes, port
+rules) and `hostit-proxy` (TLS on :443, routing from the table control pushes
+it). They talk over one mTLS connection each member dials; control never dials
+back.
 
-Splitting the machine half onto its own hosts is a matter of config, not a
-different role -- the "Deployment shapes" section of the administration guide
-(`/docs/admin#deployment`, source in `web/src/pages/Docs.jsx`) has a worked
-three-machine example.
+One process per job is the point. A control restart does not stop apps serving,
+and adding a second machine later is a node config on that machine rather than a
+different architecture. The "Deployment shapes" section of the administration
+guide (`/docs/admin#deployment`, source in `web/src/pages/Docs.jsx`) has the
+multi-machine version.
+
+**Upgrading from a hostit before the package split**: the role stops and removes
+the old single `hostit` service and package, installs the three, and starts them
+in order. Your data and `/etc/hostit/server.yml` are left alone; the new
+per-component configs live under `/etc/hostit/<component>/`. Expect a short
+interruption while control migrates the registry and the apps restart onto the
+new build.
 
 This is an **example** meant to be copied and adapted, not a published Galaxy
 role.

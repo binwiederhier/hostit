@@ -106,6 +106,18 @@
 
 # The three packages Conflict/Replace the pre-split "hostit" package, so an
 # upgrade from before the split removes it here. Its config and data stay.
+# Removing the package does NOT stop a running daemon: on an upgrade the old
+# hostit.service kept running and kept :443, so the new proxy could not bind and
+# the host served nothing until it was stopped by hand. Stop it first, then
+# remove it.
+- name: Stop the pre-split hostit service
+  ansible.builtin.systemd:
+    name: hostit
+    state: stopped
+    enabled: false
+  failed_when: false
+  when: "'hostit' in ansible_facts.packages"
+
 - name: Remove the pre-split hostit package
   ansible.builtin.command: dpkg --remove --force-depends hostit
   register: hostit_remove_monolith
@@ -134,7 +146,7 @@
     owner: root
     group: root
     mode: "0755"
-  loop: [control, proxy]
+  loop: [control, node, proxy]
 
 - name: Install /etc/hostit/control/control.yml
   ansible.builtin.template:
@@ -144,6 +156,15 @@
     group: root
     mode: "0600"
   notify: restart hostit-control
+
+- name: Install /etc/hostit/node/node.yml
+  ansible.builtin.template:
+    src: node.yml.j2
+    dest: /etc/hostit/node/node.yml
+    owner: root
+    group: root
+    mode: "0600"
+  notify: restart hostit-node
 
 - name: Install /etc/hostit/proxy/proxy.yml
   ansible.builtin.template:
@@ -172,14 +193,38 @@
     validate: "sshd -t -f %s"
   notify: restart ssh
 
-# hostit-node is deliberately NOT enabled: control does the machine work in
-# this shape, and running both would give one host two owners.
+# The three run as three processes, in order: control holds the registry and
+# decides, the node owns this machine's app work and dials in, the proxy
+# terminates TLS and serves the table control pushes it.
 - name: Enable and start hostit-control
   ansible.builtin.systemd:
     name: hostit-control
     enabled: true
     state: started
     daemon_reload: true
+
+# systemd calls control active the moment the process starts, but a control with
+# machine work behind it -- a quota migration, a limit sweep over every app --
+# can be minutes from serving, and it is control that mints the colocated
+# members' credentials. Starting a member before then puts a proxy on :443 with
+# nothing to serve. Wait for the thing that actually matters.
+- name: Wait for control to accept cluster dial-ins
+  ansible.builtin.wait_for:
+    host: 127.0.0.1
+    port: 2930
+    timeout: 300
+
+- name: Enable and start hostit-node
+  ansible.builtin.systemd:
+    name: hostit-node
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Wait for the colocated proxy's credentials
+  ansible.builtin.wait_for:
+    path: /var/lib/hostit/ipc/proxy-local.pem
+    timeout: 120
 
 - name: Enable and start hostit-proxy
   ansible.builtin.systemd:
