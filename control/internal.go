@@ -110,7 +110,11 @@ func (s *Server) currentRoutes() (*routeTable, error) {
 	routes := make([]routeEntry, 0, len(apps)+len(domains))
 	targets := make(map[string]string, len(apps))
 	for _, a := range apps {
-		target := fmt.Sprintf("%s:%d", s.nodeAddress(a.Host), a.Port)
+		addr := s.nodeAddress(a.Host)
+		if addr == "" {
+			continue // its node has not reported where to reach it yet
+		}
+		target := fmt.Sprintf("%s:%d", addr, a.Port)
 		targets[a.Name] = target
 		routes = append(routes, routeEntry{Host: a.Name + "." + s.config.BaseDomain, Target: target})
 	}
@@ -158,8 +162,12 @@ func (s *Server) nodeAddress(host string) string {
 	if n, err := s.apps.Store().Node(host); err == nil && n.Address != "" {
 		return n.Address
 	}
-	slog.Warn("No address for node; falling back to loopback", "node", host)
-	return "127.0.0.1"
+	// No loopback fallback for a remote node: its apps are NOT here, and
+	// pointing the proxy at this host would serve someone else's app (or
+	// nothing) under that hostname. Omitting the route 404s honestly until the
+	// node reports its address on connect.
+	slog.Warn("No address for node; omitting its routes until it reports one", "node", host)
+	return ""
 }
 
 // certMaterial is what the proxy needs to terminate TLS for one SNI name.

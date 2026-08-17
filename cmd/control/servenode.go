@@ -160,6 +160,16 @@ func scopeStates(states map[string]control.State, allowed []string) map[string]c
 // limits, then Ensure every app that should be running, so an app whose
 // container died during the outage comes back without waiting for a user.
 func rejoin(manager *control.Manager, nodeID string, remote control.NodeAgent) {
+	// Ask the node about itself first: where its apps are reachable (routing
+	// needs it, and only the node knows), which build it runs, and -- by
+	// answering at all -- that it is alive. Without this a node that hosts no
+	// apps never updated last_seen, because that was a side effect of the
+	// state poll.
+	if hb := remote.Heartbeat(); hb != nil {
+		if err := manager.RecordNodeStatus(nodeID, hb); err != nil {
+			slog.Warn("Cannot record a node's status", "node", nodeID, "error", err)
+		}
+	}
 	// Recover snapshot records the node wrote while the connection was down,
 	// BEFORE the mirror push overwrites its rows with control's older list.
 	manager.IngestNodeSnapshots(nodeID, remote)

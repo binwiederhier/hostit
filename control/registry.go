@@ -62,6 +62,20 @@ func (r *NodeRegistry) IDs() []string {
 	return ids
 }
 
+// RecordNodeStatus stores what a node reports about itself on connect: the
+// address its apps are reachable at (the proxy's routing target), the build it
+// runs, and the fact that it just answered. The address comes from the node
+// rather than an operator flag, so a node cannot be registered with the wrong
+// one -- and routing simply waits until a node has said where it is.
+func (m *Manager) RecordNodeStatus(nodeID string, hb *nodeapi.Heartbeat) error {
+	if hb.Address != "" {
+		if err := m.store.EnsureNode(nodeID, hb.Address); err != nil {
+			return err
+		}
+	}
+	return m.store.SetNodeSeen(nodeID, time.Now())
+}
+
 // SetNodeRegistry switches the manager's orchestration to multi-node routing:
 // machine work resolves each app's host to its connected agent, and mirror
 // pushes go to every connected node (filtered to its apps).

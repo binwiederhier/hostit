@@ -1,9 +1,16 @@
 package proxy
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/json"
 	"fmt"
+	"log/slog"
+	"math/big"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -12,6 +19,13 @@ import (
 )
 
 const (
+	// fallbackCertLifetime bounds the self-signed stand-in; it exists only
+	// until control is reachable again.
+	fallbackCertLifetime = 24 * time.Hour
+	// maxFallbackCerts bounds those stand-ins: the SNI comes from whoever
+	// connects, so minting one per name without a cap is a memory tap.
+	maxFallbackCerts = 64
+
 	// certRefreshMargin: refetch a cached certificate when it is this close to
 	// expiry, so renewals control performs propagate before the old one dies.
 	certRefreshMargin = 14 * 24 * time.Hour
@@ -48,7 +62,56 @@ func (p *Proxy) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, er
 		p.certMu.Unlock()
 		return cert, nil
 	}
-	return nil, fmt.Errorf("no certificate for %s", sni)
+	// Nothing cached and control unreachable: answer with a self-signed cert
+	// rather than failing the handshake. A browser warns, but the proxy can
+	// then serve its own "unavailable" page and swap in the real certificate
+	// the moment control returns -- where failing the handshake makes :443
+	// silent, which looks like the whole platform is gone.
+	return p.fallbackCert(sni)
+}
+
+// fallbackCert mints (once per name) a self-signed certificate so TLS can
+// complete while the real material is unreachable.
+func (p *Proxy) fallbackCert(sni string) (*tls.Certificate, error) {
+	p.certMu.Lock()
+	defer p.certMu.Unlock()
+	if cert, ok := p.fallbacks[sni]; ok {
+		return cert, nil
+	}
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return nil, err
+	}
+	serial, err := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
+	if err != nil {
+		return nil, err
+	}
+	tmpl := &x509.Certificate{
+		SerialNumber: serial,
+		Subject:      pkix.Name{CommonName: sni},
+		DNSNames:     []string{sni},
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     time.Now().Add(fallbackCertLifetime),
+		KeyUsage:     x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	if err != nil {
+		return nil, err
+	}
+	leaf, err := x509.ParseCertificate(der)
+	if err != nil {
+		return nil, err
+	}
+	cert := &tls.Certificate{Certificate: [][]byte{der}, PrivateKey: key, Leaf: leaf}
+	if p.fallbacks == nil {
+		p.fallbacks = make(map[string]*tls.Certificate)
+	}
+	if len(p.fallbacks) < maxFallbackCerts {
+		p.fallbacks[sni] = cert
+	}
+	slog.Warn("Serving a self-signed certificate: no cached material and control is unreachable", "sni", sni)
+	return cert, nil
 }
 
 func nearExpiry(cert *tls.Certificate) bool {

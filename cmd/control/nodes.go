@@ -29,7 +29,7 @@ var cmdNode = &cli.Command{
 			Usage:     "Register a new node and mint its mTLS certificate",
 			ArgsUsage: "<name>",
 			Flags: []cli.Flag{
-				&cli.StringFlag{Name: "address", Usage: "the node's IP or hostname, as the proxy will reach its apps"},
+				&cli.StringFlag{Name: "address", Usage: "optional: the node's address, which it otherwise reports itself on connect"},
 			},
 			Action: execNodeAdd,
 		},
@@ -80,7 +80,8 @@ func execNodeAdd(c *cli.Context) error {
 	if err := s.EnsureNode(name, c.String("address")); err != nil {
 		return err
 	}
-	fmt.Printf("Node %q registered. On the new machine, save the three PEM blocks below\n", name)
+	fmt.Printf("Node %q registered. It reports its own address when it connects,\n", name)
+	fmt.Printf("so this is all it needs. On the new machine, save the three PEM blocks below\n")
 	fmt.Printf("(e.g. under /etc/hostit/) and point the node config at them:\n\n")
 	fmt.Printf("  node-id: %s\n  control-url: <this-host>:%s\n", name, portOf(conf.ListenNode))
 	fmt.Printf("  node-cert-file: /etc/hostit/node.pem\n  node-key-file: /etc/hostit/node.key\n  cluster-ca-cert-file: /etc/hostit/cluster-ca.pem\n\n")

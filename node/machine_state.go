@@ -306,5 +306,6 @@ func (m *Machine) Heartbeat() *nodeapi.Heartbeat {
 	return &nodeapi.Heartbeat{
 		Version:      Version,
 		BtrfsCapable: m.btrfs.IsBtrfs(m.config.AppsDir),
+		Address:      m.config.AppsBindAddress,
 	}
 }

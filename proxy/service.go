@@ -65,7 +65,10 @@ type Proxy struct {
 	control *httputil.ReverseProxy
 	client  *http.Client
 	certs   map[string]*tls.Certificate
-	certMu  sync.Mutex // Protects certs
+	// fallbacks holds self-signed stand-ins minted when nothing is cached and
+	// control is unreachable, so :443 still completes a handshake.
+	fallbacks map[string]*tls.Certificate
+	certMu    sync.Mutex // Protects certs
 }
 
 // New builds a Proxy; call WatchRoutes to start the table subscription.

@@ -66,7 +66,37 @@ func TestCertSourceFetchesCachesAndSurvivesControlDown(t *testing.T) {
 	require.NoError(t, err, "the persisted cert must serve while control is down")
 	require.NotNil(t, cert2)
 
-	// An SNI nobody has material for fails the handshake (no wildcard guessing)
-	_, err = p2.GetCertificate(&tls.ClientHelloInfo{ServerName: "unknown.example.com"})
-	assert.Error(t, err)
+	// An SNI nobody has material for gets a self-signed stand-in rather than a
+	// failed handshake: :443 answering with a warning beats :443 answering
+	// nothing, which is indistinguishable from the platform being down. No
+	// wildcard guessing -- the stand-in is minted for that exact name.
+	fallback, err := p2.GetCertificate(&tls.ClientHelloInfo{ServerName: "unknown.example.com"})
+	require.NoError(t, err)
+	leaf, err := x509.ParseCertificate(fallback.Certificate[0])
+	require.NoError(t, err)
+	assert.Equal(t, []string{"unknown.example.com"}, leaf.DNSNames)
+	assert.NotEqual(t, cert2.Certificate[0], fallback.Certificate[0])
+}
+
+// With control down AND no cached certificate, the handshake used to fail
+// outright, so :443 answered nothing at all -- a wiped cache during a control
+// outage took the whole edge down. A self-signed fallback keeps the port
+// answering: the browser warns, but the proxy can then serve its own "app
+// unavailable" page instead of a connection error, and recovers the real
+// certificate as soon as control returns.
+func TestGetCertificateFallsBackToASelfSignedCert(t *testing.T) {
+	t.Parallel()
+	p := New(&Config{ControlURL: "http://127.0.0.1:1", CacheDir: t.TempDir()})
+
+	cert, err := p.GetCertificate(&tls.ClientHelloInfo{ServerName: "blog.apps.example.com"})
+	require.NoError(t, err, "the handshake must complete even with nothing cached and control down")
+	require.NotNil(t, cert)
+	leaf, err := x509.ParseCertificate(cert.Certificate[0])
+	require.NoError(t, err)
+	assert.Contains(t, leaf.DNSNames, "blog.apps.example.com")
+
+	// Reused for the next handshake rather than minted per connection.
+	again, err := p.GetCertificate(&tls.ClientHelloInfo{ServerName: "blog.apps.example.com"})
+	require.NoError(t, err)
+	assert.Equal(t, cert.Certificate[0], again.Certificate[0])
 }
