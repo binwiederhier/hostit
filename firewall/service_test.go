@@ -44,17 +44,18 @@ func TestRulesetUsesTheNodeTable(t *testing.T) {
 }
 
 // An app published off loopback is reachable over the network, so the ruleset
-// must say who may reach it: the control plane's addresses, nobody else.
+// must say who may reach it: the proxies, nobody else. (Nothing in the control
+// plane dials an app port -- a proxy does.)
 // Without this, publishing on a node's VPC address would expose every app's
 // port to anything that can route to the node -- including its public
 // interface.
 func TestRenderRulesetGuardsPortsPublishedOffLoopback(t *testing.T) {
 	rules := []Rule{{Port: 10000, UID: 1000000}}
-	out := renderRuleset("hostit_worker", rules, "10.111.32.4", []string{"10.111.32.3"})
+	out := renderRuleset("hostit_worker", rules, "10.0.0.2", []string{"10.0.0.1"})
 
 	assert.Contains(t, out, "add chain inet hostit_worker input", "an input chain exists once ports leave loopback")
-	assert.Contains(t, out, "ip saddr 10.111.32.3 tcp dport 10000 counter accept", "the control plane may reach the app")
-	assert.Contains(t, out, "ip daddr 10.111.32.4 tcp dport 10000 counter drop", "everyone else is dropped")
+	assert.Contains(t, out, "ip saddr 10.0.0.1 tcp dport 10000 counter accept", "an allowed address may reach the app")
+	assert.Contains(t, out, "ip daddr 10.0.0.2 tcp dport 10000 counter drop", "everyone else is dropped")
 	// The loopback isolation between apps on the same node is unchanged.
 	assert.Contains(t, out, "ip daddr 127.0.0.0/8 tcp dport 10000 meta skuid != { 0, 1000000 } counter drop")
 }

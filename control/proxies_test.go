@@ -69,7 +69,7 @@ func TestPushRoutesReachesEveryConnectedProxy(t *testing.T) {
 // address of the node hosting it, so moving an app moves its route.
 func TestRoutesPointAtTheHostingNode(t *testing.T) {
 	s := newTestServer(t)
-	require.NoError(t, s.apps.Store().EnsureNode("worker-2", "10.111.32.4"))
+	require.NoError(t, s.apps.Store().EnsureNode("worker-2", "10.0.0.2"))
 	app, err := s.apps.CreateApp("blog", &CreateOptions{Host: "worker-2"})
 	require.NoError(t, err)
 
@@ -81,7 +81,7 @@ func TestRoutesPointAtTheHostingNode(t *testing.T) {
 			target = route.Target
 		}
 	}
-	assert.Equal(t, fmt.Sprintf("10.111.32.4:%d", app.Port), target)
+	assert.Equal(t, fmt.Sprintf("10.0.0.2:%d", app.Port), target)
 }
 
 // An app's public hostname routes to its port; an active custom domain routes

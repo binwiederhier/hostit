@@ -87,14 +87,14 @@ func TestAppsAllowedAddressesGuardAPublishedPort(t *testing.T) {
 	require.NoError(t, os.WriteFile(path, []byte(`
 node-id: worker-2
 control-url: 10.0.0.1:2930
-apps-bind-address: 10.111.32.4
+apps-bind-address: 10.0.0.2
 apps-allowed-addresses:
-  - 10.111.32.3
+  - 10.0.0.1
 `), 0o600))
 
 	conf, err := LoadConfig(path)
 	require.NoError(t, err)
-	assert.Equal(t, []string{"10.111.32.3"}, conf.AppsAllowedAddresses)
+	assert.Equal(t, []string{"10.0.0.1"}, conf.AppsAllowedAddresses)
 
 	// Publishing off loopback with nobody allowed is refused by name.
 	conf.AppsAllowedAddresses = nil

@@ -288,7 +288,7 @@ func TestCreateArgsPublishesOnTheNodesBindAddress(t *testing.T) {
 	local := CreateArgs(nil, a, "/subvol", "/run/hostit/hostit.sock", "/usr/bin/hostit", "v1", 0, IDs{UID: 1000000, GID: 1000000}, "")
 	assert.Contains(t, local, "127.0.0.1:10000:80", "no bind address configured means loopback, as before")
 
-	remote := CreateArgs(nil, a, "/subvol", "/run/hostit/hostit.sock", "/usr/bin/hostit", "v1", 0, IDs{UID: 1000000, GID: 1000000}, "10.111.32.4")
-	assert.Contains(t, remote, "10.111.32.4:10000:80", "a remote node publishes where the proxy can reach it")
+	remote := CreateArgs(nil, a, "/subvol", "/run/hostit/hostit.sock", "/usr/bin/hostit", "v1", 0, IDs{UID: 1000000, GID: 1000000}, "10.0.0.2")
+	assert.Contains(t, remote, "10.0.0.2:10000:80", "a remote node publishes where the proxy can reach it")
 	assert.NotContains(t, remote, "127.0.0.1:10000:80")
 }
