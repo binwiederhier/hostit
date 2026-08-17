@@ -69,3 +69,43 @@ func TestReplaceAppSnapshots(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, other, 1, "other apps' snapshots are untouched")
 }
+
+// A snapshot the node recorded a moment ago must survive a mirror that does not
+// mention it yet. Control builds a mirror by READING its registry and sends it
+// afterwards, so a snapshot taken in between is genuinely newer than the
+// payload -- and the node is the one that created it, which for that moment
+// makes the node the only holder of the truth. Replacing wholesale deleted the
+// record, and a restore of a snapshot the user had just taken 404'd.
+//
+// Snapshots the payload omits are kept for apps it lists; snapshots of apps it
+// does not list are still dropped (that app left this node). Deletion is never
+// implied by absence: control tells a node to delete a snapshot explicitly
+// (see Manager.PruneSnapshots), so nothing needs absence to mean anything.
+func TestReplaceNodeMirrorKeepsASnapshotTakenSinceThePayloadWasBuilt(t *testing.T) {
+	t.Parallel()
+	s := newTestStore(t)
+	require.NoError(t, s.AddApp(&App{ID: "id1", Name: "blog", Port: 10000, Host: HostLocal}))
+	require.NoError(t, s.AddApp(&App{ID: "id2", Name: "moved", Port: 10001, Host: HostLocal}))
+	require.NoError(t, s.AddSnapshot(&Snapshot{ID: "snap-known", AppName: "blog", CreatedAt: time.Now()}))
+	require.NoError(t, s.AddSnapshot(&Snapshot{ID: "snap-fresh", AppName: "blog", CreatedAt: time.Now()}))
+	require.NoError(t, s.AddSnapshot(&Snapshot{ID: "snap-elsewhere", AppName: "moved", CreatedAt: time.Now()}))
+
+	// Control's view: it knows blog and one of its snapshots, and no longer
+	// lists "moved" as living here.
+	apps := []*App{{ID: "id1", Name: "blog", Port: 10000, Host: HostLocal}}
+	snaps := []*Snapshot{{ID: "snap-known", AppName: "blog", CreatedAt: time.Now()}}
+	require.NoError(t, s.ReplaceNodeMirror(apps, snaps))
+
+	got, err := s.Snapshots("blog")
+	require.NoError(t, err)
+	ids := make([]string, 0, len(got))
+	for _, snap := range got {
+		ids = append(ids, snap.ID)
+	}
+	assert.ElementsMatch(t, []string{"snap-known", "snap-fresh"}, ids,
+		"the snapshot control has not heard about yet is kept")
+
+	gone, err := s.Snapshots("moved")
+	require.NoError(t, err)
+	assert.Empty(t, gone, "snapshots of an app that is no longer on this node go with it")
+}
