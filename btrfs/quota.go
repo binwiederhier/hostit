@@ -56,7 +56,8 @@ func (s *Service) EnsureSimpleQuota(pool string) error {
 	case quotaModeSquota:
 		return nil
 	case quotaModeQgroup:
-		if _, err := s.runner.RunTimeout(timeout, "btrfs", "quota", "disable", pool); err != nil {
+		// Generous on purpose: see migrationTimeout.
+		if _, err := s.runner.RunTimeout(migrationTimeout, "btrfs", "quota", "disable", pool); err != nil {
 			return fmt.Errorf("cannot disable full qgroups for the squota migration: %w", err)
 		}
 	}

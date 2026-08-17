@@ -98,6 +98,24 @@ func execServe(c *cli.Context) error {
 	// Split mode: a hostit-node owns this machine's app work; this daemon is
 	// control-only and skips every machine-touching startup step and loop.
 	splitNode := conf.ListenNode != ""
+	// The Server and the shutdown channel exist before any machine work: they
+	// cost nothing to build (control.New starts no listeners) and the cluster
+	// listener below needs both.
+	srv := control.New(conf, manager, users)
+	done := make(chan struct{})
+	defer close(done)
+	// The cluster listener goes up FIRST, before anything that touches the
+	// machine. Everything below can take minutes on a real host -- a quota
+	// migration, a limit sweep over every app -- and systemd reports this unit
+	// active the moment the process starts, so a proxy started alongside it
+	// would bind :443 while control was still busy, with no credentials, no
+	// routes and (on a first install) no cached certificates to serve. It
+	// answered handshakes with a self-signed certificate instead, which took
+	// prod down on 2026-08-17. Listening early costs nothing and means a member
+	// can connect and be configured while control settles.
+	if err := listenForMembers(conf, manager, srv, done, splitNode); err != nil {
+		return err
+	}
 	// Quota accounting is the mechanism behind every per-app disk budget;
 	// idempotent, so it simply runs at every start.
 	if !splitNode {
@@ -167,7 +185,6 @@ func execServe(c *cli.Context) error {
 		// app's resolved IP and the public internet, not the host/LAN/metadata.
 		previews.SetIsolation(conf.AppPreviewIsolation != controlconf.AppPreviewIsolationOff, conf.AppPreviewAllowCIDRs)
 	}
-	srv := control.New(conf, manager, users)
 	if previews != nil {
 		srv.SetPreviews(previews)
 	}
@@ -181,10 +198,6 @@ func execServe(c *cli.Context) error {
 		}
 	}
 
-	// Periodically measure disk usage for the dashboard (btrfs qgroups do the
-	// actual enforcement at write time)
-	done := make(chan struct{})
-	defer close(done)
 	// Presume recorded intent until the first real measurement lands, so the
 	// first page load after a restart does not see every app as stopped
 	manager.SeedStates()
@@ -207,13 +220,6 @@ func execServe(c *cli.Context) error {
 		// Sweep stale qgroups (deleted subvolumes/apps whose gentle destroy lost
 		// its race); enough of them slow quota rescans until app creates time out
 		go manager.QgroupSweepLoop(6*time.Hour, done)
-	}
-	// The cluster listener. Proxies always dial in here; nodes do too when the
-	// machine half runs elsewhere, in which case each node's RPC becomes this
-	// process's NodeAgent, its States feed the cache, and every (re)connect
-	// runs the rejoin sweep.
-	if err := listenForMembers(conf, manager, srv, done, splitNode); err != nil {
-		return err
 	}
 	// Control pushes the routing table to every connected proxy as it changes,
 	// and asks each how it is on a timer -- which is both the liveness an

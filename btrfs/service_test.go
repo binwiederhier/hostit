@@ -14,9 +14,21 @@ import (
 // canned output (or an error) for a command whose joined args start with a given
 // prefix.
 type fakeRunner struct {
-	ran     []string
-	outputs map[string]string
-	errs    map[string]error
+	ran      []string
+	timeouts []time.Duration
+	outputs  map[string]string
+	errs     map[string]error
+}
+
+// timeoutFor is the deadline the runner was given for the first command
+// matching prefix.
+func (f *fakeRunner) timeoutFor(prefix string) time.Duration {
+	for i, cmd := range f.ran {
+		if strings.HasPrefix(cmd, prefix) && i < len(f.timeouts) {
+			return f.timeouts[i]
+		}
+	}
+	return 0
 }
 
 func newFakeRunner() *fakeRunner {
@@ -45,7 +57,8 @@ func (f *fakeRunner) record(args []string) (string, error) {
 
 func (f *fakeRunner) Run(args ...string) (string, error) { return f.record(args) }
 
-func (f *fakeRunner) RunTimeout(_ time.Duration, args ...string) (string, error) {
+func (f *fakeRunner) RunTimeout(d time.Duration, args ...string) (string, error) {
+	f.timeouts = append(f.timeouts, d)
 	return f.record(args)
 }
 
@@ -321,4 +334,29 @@ func TestEnsureSimpleQuotaSurfacesUnknownModeReadErrors(t *testing.T) {
 	s.enableSimpleQuota = func(pool string) error { t.Fatal("must not enable blind"); return nil }
 
 	require.Error(t, s.EnsureSimpleQuota("/apps"))
+}
+
+// The squota migration is a one-time, whole-filesystem operation, and how long
+// it takes is a property of the data: on a pool with 621 subvolumes it ran past
+// the two-minute deadline every other btrfs call gets, and was killed. The
+// kernel finished the work regardless, but hostit saw a failure, skipped
+// enabling simple quotas, and left every app uncapped until the next restart
+// happened to find the pool already migrated (prod, 2026-08-17).
+//
+// A deadline that turns a slow migration into an uncapped filesystem is worse
+// than waiting, so this one gets its own, generous.
+func TestTheQuotaMigrationIsNotKilledOnTheOrdinaryDeadline(t *testing.T) {
+	t.Parallel()
+	r := newFakeRunner()
+	r.returns("findmnt", "abcd-1234\n")
+	r.returns("cat /sys/fs/btrfs/abcd-1234/qgroups/mode", "qgroup\n")
+	s := New(r)
+	s.enableSimpleQuota = func(string) error { return nil }
+
+	require.NoError(t, s.EnsureSimpleQuota("/apps"))
+
+	assert.Greater(t, r.timeoutFor("btrfs quota disable"), 30*time.Minute,
+		"the migration gets room to finish")
+	assert.Equal(t, timeout, r.timeoutFor("findmnt"),
+		"an ordinary probe keeps the ordinary deadline")
 }

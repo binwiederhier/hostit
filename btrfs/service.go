@@ -26,6 +26,12 @@ const (
 	// for tens of seconds. Generous on purpose: a slow create beats a failed
 	// one; the point of the bound is only to never wedge a request forever.
 	timeout = 2 * time.Minute
+	// migrationTimeout bounds the one-time squota migration, which walks the
+	// whole filesystem: on a pool with hundreds of subvolumes it runs for
+	// minutes, and killing it on the ordinary deadline leaves the pool with no
+	// quota at all -- every app uncapped -- while the kernel finishes the work
+	// anyway. It is a backstop against a wedged command, not a service level.
+	migrationTimeout = time.Hour
 	// bytesPerMB converts qgroup byte counts to the MB unit used everywhere else.
 	bytesPerMB = 1024 * 1024
 )
