@@ -659,7 +659,7 @@ func TestSetKeysPersistsThemInTheRegistry(t *testing.T) {
 // (seen on stage the day the second node went in).
 func TestAssistantSandboxIdentityComesFromTheRegistry(t *testing.T) {
 	t.Parallel()
-	conf, st := newInternalTestDeps(t)
+	conf, st := newProxyTestDeps(t)
 	conf.ClaudeCodeOAuthToken = "sk-test"
 	apps := NewManager(conf, st, testServices(newFakeSystem(), newFakeRunner()))
 	t.Cleanup(apps.WaitBackground)

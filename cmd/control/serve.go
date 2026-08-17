@@ -195,7 +195,7 @@ func execServe(c *cli.Context) error {
 	// node was away converges here without waiting for a reconnect. Control is
 	// the source; this is how the registry keeps reaching the machines.
 	if splitNode {
-		go reconcileLoop(manager, done)
+		go reconcileLoop(manager, srv, done)
 	}
 	// Hourly automatic snapshots are CONTROL's decision in both modes: the
 	// sweep commands each app's node through the node agent (the local machine
@@ -207,13 +207,16 @@ func execServe(c *cli.Context) error {
 		// Sweep stale qgroups (deleted subvolumes/apps whose gentle destroy lost
 		// its race); enough of them slow quota rescans until app creates time out
 		go manager.QgroupSweepLoop(6*time.Hour, done)
-	} else {
-		// Accept the node's dial-in: its RPC becomes this process's NodeAgent,
-		// its States feed the cache, and every (re)connect runs the rejoin sweep.
-		if err := listenForNode(conf, manager, srv, done); err != nil {
-			return err
-		}
 	}
+	// The cluster listener. Proxies always dial in here; nodes do too when the
+	// machine half runs elsewhere, in which case each node's RPC becomes this
+	// process's NodeAgent, its States feed the cache, and every (re)connect
+	// runs the rejoin sweep.
+	if err := listenForMembers(conf, manager, srv, done, splitNode); err != nil {
+		return err
+	}
+	// Control pushes the routing table to every connected proxy as it changes.
+	go srv.RouteLoop(done)
 	// Screenshot previews: the sweep loop plus the single shot worker
 	if previews != nil {
 		go previews.Loop(preview.SweepInterval, done)
@@ -257,7 +260,7 @@ func ensureSessionKey(conf *config.Config, s *store.Store) error {
 // The interval is a compromise: often enough that a missed update heals on its
 // own, rare enough that the sweep is not itself load (each pass is a registry
 // read plus one RPC per node).
-func reconcileLoop(manager *control.Manager, done <-chan struct{}) {
+func reconcileLoop(manager *control.Manager, srv *control.Server, done <-chan struct{}) {
 	slog.Info("Starting node reconcile loop", "interval", reconcileInterval)
 	defer slog.Info("Stopping node reconcile loop")
 	for {
@@ -272,6 +275,9 @@ func reconcileLoop(manager *control.Manager, done <-chan struct{}) {
 			continue
 		}
 		manager.ReconcileNodes(desired)
+		// Proxies get the same treatment on the same timer: a push they missed
+		// heals here rather than waiting for the next routing change.
+		srv.PushRoutes()
 	}
 }
 

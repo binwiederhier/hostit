@@ -7,11 +7,9 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"math/big"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -118,20 +116,12 @@ func nearExpiry(cert *tls.Certificate) bool {
 	return cert.Leaf != nil && time.Until(cert.Leaf.NotAfter) < certRefreshMargin
 }
 
+// fetchCert asks control over the connection this proxy already holds. The
+// request rides its own stream, so a slow issuance for one name does not block
+// handshakes for any other.
 func (p *Proxy) fetchCert(sni string) (*tls.Certificate, error) {
-	resp, err := p.client.Get(p.conf.InternalURL + internalCertPath + "?sni=" + url.QueryEscape(sni))
+	mat, err := p.controlSink().CertFor(sni)
 	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("cert fetch for %s: status %d", sni, resp.StatusCode)
-	}
-	var mat struct {
-		CertPEM string `json:"cert_pem"`
-		KeyPEM  string `json:"key_pem"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&mat); err != nil {
 		return nil, err
 	}
 	cert, err := tls.X509KeyPair([]byte(mat.CertPEM), []byte(mat.KeyPEM))

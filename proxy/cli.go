@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -22,12 +23,36 @@ const (
 	DefaultConfigFile = "/etc/hostit/proxy/proxy.yml"
 	legacyConfigFile  = "/etc/hostit/proxy.yml"
 	readHeaderTimeout = 10 * time.Second
+	// DefaultProxyID is the colocated proxy, which exists implicitly the way
+	// the colocated node does.
+	DefaultProxyID = "local"
+	// The colocated proxy's credentials: the pair control mints for it under
+	// its own data dir, so a single-box install enrolls nothing.
+	DefaultLocalCertFile   = "/var/lib/hostit/ipc/proxy-local.pem"
+	DefaultLocalKeyFile    = "/var/lib/hostit/ipc/proxy-local.key"
+	DefaultLocalCACertFile = "/var/lib/hostit/ipc/ca.pem"
+	// clusterPort is control's member listener, used when a proxy names only
+	// control-url.
+	clusterPort = "2930"
 )
 
-// FileConfig is /etc/hostit/proxy.yml: where control is and where to listen.
+// FileConfig is /etc/hostit/proxy/proxy.yml: who this proxy is, where control
+// is, and where to listen.
 type FileConfig struct {
-	ControlURL  string `yaml:"control-url"`  // control's local HTTP listener (traffic fallback)
-	InternalURL string `yaml:"internal-url"` // control's internal listener (routes + certs); defaults to control-url
+	// ProxyID is this proxy's cluster identity, and must match the CN of its
+	// certificate. "local" is the colocated proxy.
+	ProxyID string `yaml:"proxy-id"`
+	// ControlURL is control's local HTTP listener: the dashboard/API upstream
+	// and the unknown-host fallback. ClusterURL is where this proxy dials in
+	// for its configuration, as host:port; it defaults to control-url's host
+	// with the cluster port, which is right when they share a machine.
+	ControlURL string `yaml:"control-url"`
+	ClusterURL string `yaml:"cluster-url"`
+	// The cluster credentials, minted by `hostit-control proxy add`. On a
+	// colocated proxy they are the pair control keeps under its data dir.
+	CertFile    string `yaml:"proxy-cert-file"`
+	KeyFile     string `yaml:"proxy-key-file"`
+	CACertFile  string `yaml:"cluster-ca-cert-file"`
 	ListenHTTPS string `yaml:"listen-https"` // default :443
 	ListenHTTP  string `yaml:"listen-http"`  // default :80
 	CacheDir    string `yaml:"cache-dir"`    // routes + cert cache; default /var/lib/hostit-proxy
@@ -35,7 +60,10 @@ type FileConfig struct {
 
 // LoadFileConfig reads the YAML config on top of defaults.
 func LoadFileConfig(path string) (*FileConfig, error) {
-	conf := &FileConfig{ListenHTTPS: ":443", ListenHTTP: ":80", CacheDir: "/var/lib/hostit-proxy"}
+	conf := &FileConfig{ProxyID: DefaultProxyID, ListenHTTPS: ":443", ListenHTTP: ":80", CacheDir: "/var/lib/hostit-proxy",
+		CertFile:   DefaultLocalCertFile,
+		KeyFile:    DefaultLocalKeyFile,
+		CACertFile: DefaultLocalCACertFile}
 	b, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
@@ -46,7 +74,25 @@ func LoadFileConfig(path string) (*FileConfig, error) {
 	if conf.ControlURL == "" {
 		return nil, fmt.Errorf("control-url is required")
 	}
+	if conf.ClusterURL == "" {
+		conf.ClusterURL = clusterURLFrom(conf.ControlURL)
+	}
 	return conf, nil
+}
+
+// clusterURLFrom derives control's member listener from its HTTP URL: same
+// host, the cluster port. Right when they share a machine, which is the case a
+// config should not have to spell out.
+func clusterURLFrom(controlURL string) string {
+	host := controlURL
+	if _, rest, found := strings.Cut(host, "://"); found {
+		host = rest
+	}
+	host = strings.TrimSuffix(host, "/")
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	return net.JoinHostPort(host, clusterPort)
 }
 
 // Serve runs the proxy from its config file until a termination signal.
@@ -62,10 +108,18 @@ func Serve(configPath string) error {
 	if err != nil {
 		return err
 	}
-	p := New(&Config{ControlURL: conf.ControlURL, InternalURL: conf.InternalURL, CacheDir: conf.CacheDir})
+	p := New(&Config{
+		ProxyID:    conf.ProxyID,
+		ControlURL: conf.ControlURL,
+		ClusterURL: conf.ClusterURL,
+		CertFile:   conf.CertFile,
+		KeyFile:    conf.KeyFile,
+		CACertFile: conf.CACertFile,
+		CacheDir:   conf.CacheDir,
+	})
 	done := make(chan struct{})
 	defer close(done)
-	go p.WatchRoutes(done)
+	go p.Link(done)
 
 	// :80 -- ACME HTTP-01 challenges pass through to control (which answers
 	// them), everything else redirects to HTTPS. The proxy owns the redirect

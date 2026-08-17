@@ -15,6 +15,7 @@ func newProxyApp(version string) *cli.App {
 			Name:  "serve",
 			Usage: "Run the proxy",
 			Action: func(c *cli.Context) error {
+				proxy.Version = c.App.Version // reported in the proxy's heartbeat
 				return proxy.Serve(c.String("config"))
 			},
 			Flags: []cli.Flag{

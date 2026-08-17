@@ -1,76 +1,38 @@
 package proxy
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
-	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"heckel.io/hostit/proxyapi"
 )
 
-// fakeControl is the control plane's internal surface: a routes endpoint with
-// snapshot + long-poll semantics, and app/dashboard upstreams.
-type fakeControl struct {
-	seq    atomic.Int64
-	routes atomic.Value // []Route
-	hits   atomic.Int64 // dashboard fallback hits
+// table is what control would push at this proxy.
+func table(seq int64, routes ...proxyapi.Route) *proxyapi.Table {
+	return &proxyapi.Table{Seq: seq, Routes: routes}
 }
 
-func newFakeControl(routes []Route) *fakeControl {
-	f := &fakeControl{}
-	f.seq.Store(1)
-	f.routes.Store(routes)
-	return f
-}
-
-func (f *fakeControl) set(routes []Route) {
-	f.routes.Store(routes)
-	f.seq.Add(1)
-}
-
-func (f *fakeControl) handler() http.Handler {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/internal/routes", func(w http.ResponseWriter, r *http.Request) {
-		since, _ := fmt.Sscanf("", "") // silence unused
-		_ = since
-		var sinceSeq int64
-		fmt.Sscan(r.URL.Query().Get("since"), &sinceSeq)
-		// Long-poll: wait briefly for a newer table
-		deadline := time.Now().Add(500 * time.Millisecond)
-		for f.seq.Load() == sinceSeq && time.Now().Before(deadline) {
-			time.Sleep(10 * time.Millisecond)
-		}
-		_ = json.NewEncoder(w).Encode(&Table{Seq: f.seq.Load(), Routes: f.routes.Load().([]Route)})
-	})
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		f.hits.Add(1)
-		fmt.Fprintf(w, "control saw host=%s proto=%s", r.Host, r.Header.Get("X-Forwarded-Proto"))
-	})
-	return mux
-}
-
-func TestProxyRoutesFromCacheAndFallsBackToControl(t *testing.T) {
+// The proxy serves whatever control last told it: a known host goes straight
+// to the app, everything else falls through to control, which owns the
+// "nothing here" page.
+func TestProxyRoutesWhatControlPushedAndFallsBackToControl(t *testing.T) {
 	t.Parallel()
 	appSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "app got host=%s", r.Host)
 	}))
 	defer appSrv.Close()
-
-	control := newFakeControl([]Route{{Host: "blog.example.com", Target: appSrv.Listener.Addr().String()}})
-	controlSrv := httptest.NewServer(control.handler())
+	controlSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintf(w, "control saw host=%s proto=%s", r.Host, r.Header.Get("X-Forwarded-Proto"))
+	}))
 	defer controlSrv.Close()
 
 	p := New(&Config{ControlURL: controlSrv.URL, CacheDir: t.TempDir()})
-	done := make(chan struct{})
-	t.Cleanup(func() { close(done) })
-	go p.WatchRoutes(done)
-	require.Eventually(t, func() bool { return p.Seq() >= 1 }, 3*time.Second, 10*time.Millisecond)
+	require.NoError(t, p.ApplyRoutes(table(1, proxyapi.Route{Host: "blog.example.com", Target: appSrv.Listener.Addr().String()})))
 
 	// A known app host goes straight to its target, Host preserved
 	rr := httptest.NewRecorder()
@@ -79,8 +41,7 @@ func TestProxyRoutesFromCacheAndFallsBackToControl(t *testing.T) {
 	p.ServeHTTP(rr, req)
 	assert.Equal(t, "app got host=blog.example.com", rr.Body.String())
 
-	// An unknown host falls through to control (which owns the 404 page and
-	// on-demand certs), with the original Host intact
+	// An unknown host falls through to control, with the original Host intact
 	rr = httptest.NewRecorder()
 	req = httptest.NewRequest("GET", "http://ignored/", nil)
 	req.Host = "nothing.example.com"
@@ -88,9 +49,8 @@ func TestProxyRoutesFromCacheAndFallsBackToControl(t *testing.T) {
 	assert.Contains(t, rr.Body.String(), "control saw host=nothing.example.com")
 	assert.Contains(t, rr.Body.String(), "proto=https", "the proxy tells control the visitor spoke TLS")
 
-	// A pushed route update takes effect without a restart
-	control.set([]Route{{Host: "wiki.example.com", Target: appSrv.Listener.Addr().String()}})
-	require.Eventually(t, func() bool { return p.Seq() >= 2 }, 3*time.Second, 10*time.Millisecond)
+	// A newer table takes effect without a restart
+	require.NoError(t, p.ApplyRoutes(table(2, proxyapi.Route{Host: "wiki.example.com", Target: appSrv.Listener.Addr().String()})))
 	rr = httptest.NewRecorder()
 	req = httptest.NewRequest("GET", "http://ignored/", nil)
 	req.Host = "wiki.example.com"
@@ -98,6 +58,22 @@ func TestProxyRoutesFromCacheAndFallsBackToControl(t *testing.T) {
 	assert.Equal(t, "app got host=wiki.example.com", rr.Body.String())
 }
 
+// Pushes can overlap (a connect and a change can race), so an older table must
+// be discarded rather than applied -- applying one would un-route apps that
+// already exist.
+func TestAnOlderTableIsIgnored(t *testing.T) {
+	t.Parallel()
+	p := New(&Config{ControlURL: "http://127.0.0.1:1", CacheDir: t.TempDir()})
+	require.NoError(t, p.ApplyRoutes(table(7, proxyapi.Route{Host: "blog.example.com", Target: "10.0.0.1:10000"})))
+	require.NoError(t, p.ApplyRoutes(table(3, proxyapi.Route{Host: "gone.example.com", Target: "10.0.0.1:10001"})))
+	assert.Equal(t, int64(7), p.Seq())
+	assert.Equal(t, 1, p.Heartbeat().Routes, "the newer table is still the one being served")
+	require.Len(t, p.table.Load().(*proxyapi.Table).Routes, 1)
+	assert.Equal(t, "blog.example.com", p.table.Load().(*proxyapi.Table).Routes[0].Host)
+}
+
+// A proxy that restarts while control is unreachable still serves: the last
+// table control pushed is on disk, which is the whole reason it is cached.
 func TestProxyServesFromPersistedCacheWhileControlIsDown(t *testing.T) {
 	t.Parallel()
 	appSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -106,22 +82,13 @@ func TestProxyServesFromPersistedCacheWhileControlIsDown(t *testing.T) {
 	defer appSrv.Close()
 	cacheDir := t.TempDir()
 
-	// First proxy instance learns the table and persists it.
-	control := newFakeControl([]Route{{Host: "blog.example.com", Target: appSrv.Listener.Addr().String()}})
-	controlSrv := httptest.NewServer(control.handler())
-	p1 := New(&Config{ControlURL: controlSrv.URL, CacheDir: cacheDir})
-	done1 := make(chan struct{})
-	go p1.WatchRoutes(done1)
-	require.Eventually(t, func() bool { return p1.Seq() >= 1 }, 3*time.Second, 10*time.Millisecond)
-	close(done1)
-	controlSrv.Close() // control goes DOWN
+	// The first instance is told the table and persists it.
+	p1 := New(&Config{ControlURL: "http://127.0.0.1:1", CacheDir: cacheDir})
+	require.NoError(t, p1.ApplyRoutes(table(1, proxyapi.Route{Host: "blog.example.com", Target: appSrv.Listener.Addr().String()})))
 
-	// A fresh proxy (restart) with control unreachable still routes app traffic.
-	p2 := New(&Config{ControlURL: controlSrv.URL, CacheDir: cacheDir})
-	done2 := make(chan struct{})
-	t.Cleanup(func() { close(done2) })
-	go p2.WatchRoutes(done2)
-	require.Eventually(t, func() bool { return p2.Seq() >= 1 }, 3*time.Second, 10*time.Millisecond,
+	// A fresh instance (a restart), with control unreachable, routes anyway.
+	p2 := New(&Config{ControlURL: "http://127.0.0.1:1", CacheDir: cacheDir})
+	require.Equal(t, int64(1), p2.Seq(),
 		"the persisted table at %s must load without control", filepath.Join(cacheDir, "routes.json"))
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequest("GET", "http://ignored/", nil)

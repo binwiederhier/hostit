@@ -4,20 +4,38 @@ import (
 	"bytes"
 	"crypto/tls"
 	"crypto/x509"
-	"encoding/json"
 	"encoding/pem"
-	"net/http"
-	"net/http/httptest"
 	"sync/atomic"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"heckel.io/hostit/cluster"
+	"heckel.io/hostit/proxyapi"
 )
 
-// fakeCertControl serves /internal/cert like control does, counting fetches.
-func fakeCertControl(t *testing.T, sni string) (*httptest.Server, *atomic.Int64) {
+// fakeCertSink stands in for control over the proxy's link, counting lookups.
+type fakeCertSink struct {
+	sni      string
+	material *proxyapi.CertMaterial
+	lookups  atomic.Int64
+	down     atomic.Bool
+}
+
+func (f *fakeCertSink) CertFor(sni string) (*proxyapi.CertMaterial, error) {
+	if f.down.Load() {
+		return nil, errNotLinked
+	}
+	if sni != f.sni {
+		return nil, proxyapi.ErrNoCert
+	}
+	f.lookups.Add(1)
+	return f.material, nil
+}
+
+// newFakeCertSink mints real material for one name, so what comes back has to
+// load as a working key pair.
+func newFakeCertSink(t *testing.T, sni string) *fakeCertSink {
 	t.Helper()
 	ca, err := cluster.NewCA()
 	require.NoError(t, err)
@@ -31,37 +49,30 @@ func fakeCertControl(t *testing.T, sni string) (*httptest.Server, *atomic.Int64)
 	require.NoError(t, err)
 	var key bytes.Buffer
 	require.NoError(t, pem.Encode(&key, &pem.Block{Type: "PRIVATE KEY", Bytes: keyDER}))
-	fetches := &atomic.Int64{}
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/internal/cert" || r.URL.Query().Get("sni") != sni {
-			http.NotFound(w, r)
-			return
-		}
-		fetches.Add(1)
-		_ = json.NewEncoder(w).Encode(map[string]string{"cert_pem": chain.String(), "key_pem": key.String()})
-	}))
-	return srv, fetches
+	return &fakeCertSink{sni: sni, material: &proxyapi.CertMaterial{CertPEM: chain.String(), KeyPEM: key.String()}}
 }
 
 func TestCertSourceFetchesCachesAndSurvivesControlDown(t *testing.T) {
 	t.Parallel()
-	control, fetches := fakeCertControl(t, "blog.example.com")
+	control := newFakeCertSink(t, "blog.example.com")
 	cacheDir := t.TempDir()
 
-	p := New(&Config{ControlURL: control.URL, CacheDir: cacheDir})
+	p := New(&Config{ControlURL: "http://127.0.0.1:1", CacheDir: cacheDir})
+	p.sink.Store(proxyapi.ControlSink(control))
 	hello := &tls.ClientHelloInfo{ServerName: "blog.example.com"}
 	cert, err := p.GetCertificate(hello)
 	require.NoError(t, err)
 	require.NotNil(t, cert)
 
-	// A second handshake is a memory hit, not a refetch
+	// A second handshake is a memory hit, not another lookup
 	_, err = p.GetCertificate(hello)
 	require.NoError(t, err)
-	assert.Equal(t, int64(1), fetches.Load())
+	assert.Equal(t, int64(1), control.lookups.Load())
 
 	// Control goes down; a FRESH proxy (restart) still terminates from disk
-	control.Close()
-	p2 := New(&Config{ControlURL: control.URL, CacheDir: cacheDir})
+	control.down.Store(true)
+	p2 := New(&Config{ControlURL: "http://127.0.0.1:1", CacheDir: cacheDir})
+	p2.sink.Store(proxyapi.ControlSink(control))
 	cert2, err := p2.GetCertificate(hello)
 	require.NoError(t, err, "the persisted cert must serve while control is down")
 	require.NotNil(t, cert2)

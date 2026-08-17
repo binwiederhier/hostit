@@ -131,17 +131,12 @@ type Config struct {
 	// speaks TLS to the proxy.
 	BehindProxy bool `yaml:"behind-proxy"`
 
-	// ListenNode is where control accepts hostit-node dial-ins (mTLS; per-node
-	// CN certs from the control-owned CA under data-dir/ipc). When set, this
-	// daemon runs CONTROL-ONLY: no machine work happens here until a node
-	// connects -- colocated interim: the node shares this host and its store.
+	// ListenNode is where control accepts cluster dial-ins -- nodes AND proxies
+	// (mTLS; per-member certs from the control-owned CA under data-dir/ipc).
+	// When set, this daemon runs CONTROL-ONLY: no machine work happens here
+	// until a node connects. Unset, the machine half runs in this process and
+	// the listener still comes up on loopback for the colocated proxy.
 	ListenNode string `yaml:"listen-node"`
-
-	// ListenInternal is where the internal surface (routing table, cert
-	// material for hostit-proxy; node enrollment later) listens: a unix socket
-	// path ("unix:/run/hostit/internal.sock") or a host:port. Empty disables it.
-	// Never a public address -- the transport is the auth boundary.
-	ListenInternal string `yaml:"listen-internal"`
 
 	// ClusterCertFile/ClusterKeyFile are CONTROL's cluster identity: the mTLS
 	// certificate its node listener presents (CN "control"), and

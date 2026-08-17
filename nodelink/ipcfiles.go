@@ -2,9 +2,6 @@ package nodelink
 
 import (
 	"crypto/tls"
-	"crypto/x509"
-	"encoding/pem"
-	"fmt"
 	"os"
 	"path/filepath"
 
@@ -21,7 +18,13 @@ import (
 // colocated hostit-node reads back. Remote nodes get their pair from
 // `hostit-control node add`; there is no enrollment protocol.
 
-const ipcDirName = "ipc"
+const (
+	ipcDirName = "ipc"
+	// LocalProxyFile is the colocated proxy's credential basename under the ipc
+	// dir; hostit-proxy is pointed at these files by its config, the same way a
+	// remote proxy is pointed at the pair `hostit-control proxy add` minted.
+	LocalProxyFile = "proxy-local"
+)
 
 // ListenerCreds resolves control's node-listener TLS config: the configured
 // cluster files when set, else the auto-minted colocated set under dataDir
@@ -29,7 +32,7 @@ const ipcDirName = "ipc"
 // a node's are in its Config.
 func ListenerCreds(certFile, keyFile, caFile, dataDir string) (*tls.Config, error) {
 	if certFile != "" {
-		cert, pool, err := loadClusterFiles(certFile, keyFile, caFile)
+		cert, pool, err := cluster.LoadCreds(certFile, keyFile, caFile)
 		if err != nil {
 			return nil, err
 		}
@@ -44,30 +47,13 @@ func ListenerCreds(certFile, keyFile, caFile, dataDir string) (*tls.Config, erro
 // <DataDir>/ipc that control minted for this node id.
 func DialCreds(conf *nodeconf.Config) (*tls.Config, error) {
 	if conf.NodeCertFile != "" {
-		cert, pool, err := loadClusterFiles(conf.NodeCertFile, conf.NodeKeyFile, conf.ClusterCACertFile)
+		cert, pool, err := cluster.LoadCreds(conf.NodeCertFile, conf.NodeKeyFile, conf.ClusterCACertFile)
 		if err != nil {
 			return nil, err
 		}
 		return cluster.ClientTLS(cert, pool), nil
 	}
 	return LoadNodeCreds(conf.DataDir, conf.NodeID)
-}
-
-// loadClusterFiles loads an identity pair and the CA pool; all three files
-// must be set together.
-func loadClusterFiles(certFile, keyFile, caFile string) (tls.Certificate, *x509.CertPool, error) {
-	if keyFile == "" || caFile == "" {
-		return tls.Certificate{}, nil, fmt.Errorf("a cluster certificate needs its key file and the cluster CA file")
-	}
-	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
-	if err != nil {
-		return tls.Certificate{}, nil, err
-	}
-	pool, err := loadPool(caFile)
-	if err != nil {
-		return tls.Certificate{}, nil, err
-	}
-	return cert, pool, nil
 }
 
 // EnsureIPCCreds creates (once) and loads the CA plus the "control" and
@@ -86,23 +72,29 @@ func EnsureIPCCreds(dataDir string) (*tls.Config, *cluster.CA, error) {
 		if err := writePEMPair(dir, "ca", ca.CertPEM(), ca.KeyPEM()); err != nil {
 			return nil, nil, err
 		}
-		for _, id := range []string{cluster.ControlID, store.HostLocal} {
-			cert, err := ca.Issue(id, cluster.RoleNode)
-			if err != nil {
-				return nil, nil, err
-			}
-			certPEM, keyPEM, err := EncodeCert(cert)
-			if err != nil {
-				return nil, nil, err
-			}
-			if err := writePEMPair(dir, id, certPEM, keyPEM); err != nil {
-				return nil, nil, err
-			}
-		}
 	}
 	ca, err := LoadCA(dataDir)
 	if err != nil {
 		return nil, nil, err
+	}
+	// Mint each colocated identity that is missing rather than only on the
+	// first start ever: an install that predates an identity (the proxy's, say)
+	// grows it on the next restart instead of needing its ipc dir wiped.
+	for _, id := range colocatedIdentities() {
+		if _, err := os.Stat(filepath.Join(dir, id.file+".pem")); err == nil {
+			continue
+		}
+		cert, err := ca.Issue(id.name, id.role)
+		if err != nil {
+			return nil, nil, err
+		}
+		certPEM, keyPEM, err := EncodeCert(cert)
+		if err != nil {
+			return nil, nil, err
+		}
+		if err := writePEMPair(dir, id.file, certPEM, keyPEM); err != nil {
+			return nil, nil, err
+		}
 	}
 	controlCert, err := tls.LoadX509KeyPair(filepath.Join(dir, "control.pem"), filepath.Join(dir, "control.key"))
 	if err != nil {
@@ -134,7 +126,7 @@ func LoadNodeCreds(dataDir, id string) (*tls.Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	pool, err := loadPool(filepath.Join(dir, "ca.pem"))
+	pool, err := cluster.LoadPool(filepath.Join(dir, "ca.pem"))
 	if err != nil {
 		return nil, err
 	}
@@ -148,28 +140,27 @@ func writePEMPair(dir, name, certPEM, keyPEM string) error {
 	return os.WriteFile(filepath.Join(dir, name+".key"), []byte(keyPEM), 0o600)
 }
 
-func loadPool(caPath string) (*x509.CertPool, error) {
-	b, err := os.ReadFile(caPath)
-	if err != nil {
-		return nil, err
-	}
-	pool := x509.NewCertPool()
-	if !pool.AppendCertsFromPEM(b) {
-		return nil, fmt.Errorf("no CA certificate in %s", caPath)
-	}
-	return pool, nil
-}
-
 // EncodeCert renders a tls.Certificate as PEM chain + PKCS8 key.
 func EncodeCert(cert tls.Certificate) (certPEM, keyPEM string, err error) {
-	var chain, key []byte
-	for _, der := range cert.Certificate {
-		chain = append(chain, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})...)
+	return cluster.EncodeCert(cert)
+}
+
+// colocatedIdentity is one credential pair control mints for a process on its
+// own host, so a single-box install enrolls nothing.
+type colocatedIdentity struct {
+	name string // the CN, and the id the peer registers under
+	role string
+	file string // the basename under the ipc dir
+}
+
+// colocatedIdentities are the pairs control keeps in its ipc dir: its own
+// listener identity, the colocated node's, and the colocated proxy's. The
+// proxy's file is prefixed because the node is called "local" too -- same
+// name, different role, and they cannot share a filename.
+func colocatedIdentities() []colocatedIdentity {
+	return []colocatedIdentity{
+		{name: cluster.ControlID, role: cluster.RoleNode, file: cluster.ControlID},
+		{name: store.HostLocal, role: cluster.RoleNode, file: store.HostLocal},
+		{name: store.ProxyLocal, role: cluster.RoleProxy, file: LocalProxyFile},
 	}
-	keyDER, err := x509.MarshalPKCS8PrivateKey(cert.PrivateKey)
-	if err != nil {
-		return "", "", err
-	}
-	key = pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyDER})
-	return string(chain), string(key), nil
 }

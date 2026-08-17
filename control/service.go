@@ -92,7 +92,10 @@ type Server struct {
 	// domains), captured for the internal cert endpoint; nil until Run wires TLS
 	tlsGetCert func(*tls.ClientHelloInfo) (*tls.Certificate, error)
 
-	// routesHash/routesSeq version the internal routing table (see internal.go)
+	// proxies are the connected data-plane proxies control pushes routes to
+	proxies *ProxyRegistry
+
+	// routesHash/routesSeq version the routing table (see proxies.go)
 	routesHash string
 	routesSeq  int64
 	routesMu   sync.Mutex // Protects routesHash, routesSeq
@@ -109,13 +112,14 @@ func New(conf *config.Config, apps *Manager, users *user.Manager) *Server {
 		users:          users,
 		sessions:       newSessionManager(conf.SessionKey),
 		usernameForUID: usernameForUID,
+		proxies:        NewProxyRegistry(),
 	}
 	s.exchangeGoogleCode = s.exchangeGoogleCodeLive
 	// The Manager builds the desired state control asserts on nodes; the
 	// per-app keys and limits in it need the user tables, which live here.
 	apps.SetPolicy(&serverPolicy{s})
 	// Continue the routing table's version where the last control process left
-	// off (see currentRoutes); a fresh counter would collide with what a
+	// off (see Routes); a fresh counter would collide with what a
 	// running proxy already holds.
 	if settings, err := apps.Store().Settings(); err == nil {
 		if seq, err := strconv.ParseInt(settings[store.SettingRoutesSeq], 10, 64); err == nil {
@@ -192,12 +196,6 @@ func (s *Server) Run() error {
 		return ignoreServerClosed(socketServer.Serve(socketListener))
 	})
 
-	// Optional plain-HTTP admin API listener (e.g. 127.0.0.1:2900)
-	if s.config.ListenInternal != "" {
-		if err := s.listenInternal(); err != nil {
-			return err
-		}
-	}
 	if s.config.ListenAPI != "" {
 		apiServer := &http.Server{Addr: s.config.ListenAPI, Handler: s.api, ReadHeaderTimeout: readHeaderTimeout}
 		s.servers = append(s.servers, apiServer)
@@ -333,12 +331,12 @@ func (s *Server) setupCertmagic() (*tls.Config, *certmagic.ACMEIssuer, error) {
 			return domainGetCert(hello)
 		}
 	}
-	// The internal cert endpoint hands this exact lookup to hostit-proxy, so
-	// the data plane serves the same certificates control manages. It uses the
-	// context-taking variants: the endpoint synthesizes the ClientHelloInfo,
-	// and certmagic dereferences hello.Conn/ctx on the plain GetCertificate path.
+	// CertFor hands this exact lookup to hostit-proxy, so the data plane serves
+	// the same certificates control manages. It uses the context-taking
+	// variants: the caller synthesizes the ClientHelloInfo, and certmagic
+	// dereferences hello.Conn/ctx on the plain GetCertificate path.
 	s.tlsGetCert = func(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
-		ctx, cancel := context.WithTimeout(context.Background(), internalCertTimeout)
+		ctx, cancel := context.WithTimeout(context.Background(), certTimeout)
 		defer cancel()
 		if cert, err := magic.GetCertificateWithContext(ctx, hello); err == nil {
 			return cert, nil

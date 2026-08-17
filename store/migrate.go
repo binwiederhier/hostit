@@ -251,6 +251,15 @@ var migrations = []string{
 			joined_at INTEGER NOT NULL DEFAULT 0,
 			last_seen INTEGER NOT NULL DEFAULT 0
 		);
+	`, // 20: the proxy registry -- one row per data-plane proxy. No address
+	// column: a proxy dials control and control never dials back, so the row
+	// exists to be a membership switch (and a liveness record), nothing more.
+	`
+		CREATE TABLE proxy (
+			name TEXT PRIMARY KEY,
+			registered_at INTEGER NOT NULL DEFAULT 0,
+			last_seen INTEGER NOT NULL DEFAULT 0
+		);
 	`,
 }
 

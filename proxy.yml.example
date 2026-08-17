@@ -7,9 +7,22 @@
 # with behind-proxy: true): the dashboard/API and the unknown-host fallback.
 control-url: http://127.0.0.1:2910
 
-# Control's internal surface (its listen-internal): the routing table and cert
-# material. Defaults to control-url when unset.
-internal-url: http://127.0.0.1:2920
+# This proxy's cluster identity. "local" is the colocated proxy, whose
+# certificate control mints for itself; a proxy on its own machine gets its
+# name and credentials from `hostit-control proxy add <name>`.
+# proxy-id: local
+
+# Control's cluster listener (its listen-node), where this proxy dials in for
+# its configuration. Defaults to control-url's host on port 2930, which is
+# right when the proxy shares control's machine.
+# cluster-url: 127.0.0.1:2930
+
+# The cluster credentials. The defaults are the pair control mints for the
+# colocated proxy under its data dir; a remote proxy points these at the PEM
+# blocks `hostit-control proxy add` printed.
+# proxy-cert-file: /var/lib/hostit/ipc/proxy-local.pem
+# proxy-key-file: /var/lib/hostit/ipc/proxy-local.key
+# cluster-ca-cert-file: /var/lib/hostit/ipc/ca.pem
 
 # Public listeners (defaults shown)
 # listen-https: ":443"

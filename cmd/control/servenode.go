@@ -11,6 +11,8 @@ import (
 	"heckel.io/hostit/config"
 	"heckel.io/hostit/control"
 	"heckel.io/hostit/nodelink"
+	"heckel.io/hostit/proxyapi"
+	"heckel.io/hostit/proxylink"
 	"heckel.io/hostit/store"
 )
 
@@ -18,36 +20,16 @@ const (
 	// nodeStatePoll is how often control pulls a node's batch states into its
 	// cache in split mode -- the wire version of the node's own settle cadence.
 	nodeStatePoll = 2 * time.Second
+	// defaultClusterAddr is where the member listener binds when the config
+	// names none (a fused install, where only the colocated proxy dials in).
+	defaultClusterAddr = "127.0.0.1:2930"
 )
 
-// listenForNode accepts hostit-node dial-ins on the mTLS node listener and
-// wires each registration into the control plane: connected agents live in
-// the node registry (orchestration routes each app's verbs to its hosting
-// node), a per-node poll loop feeds the state cache, and the rejoin handshake
-// pushes the node's registry mirror and re-asserts desired state.
-func listenForNode(conf *config.Config, manager *control.Manager, srv *control.Server, done <-chan struct{}) error {
-	tlsConf, err := nodelink.ListenerCreds(conf.ClusterCertFile, conf.ClusterKeyFile, conf.ClusterCACertFile, conf.DataDir)
-	if err != nil {
-		return err
-	}
-	// The colocated node exists implicitly and is always authorized.
-	if err := manager.Store().EnsureNode(store.HostLocal, "127.0.0.1"); err != nil {
-		return err
-	}
-	registry := control.NewNodeRegistry()
-	manager.SetNodeRegistry(registry)
-	srv.SetNode(control.NewRoutingAgent(manager.Store(), registry))
-	// Each node's registration supersedes its previous connection's poll loop:
-	// without this, a stale loop against a dead session raced the live one.
-	var mu sync.Mutex
-	supersede := make(map[string]chan struct{})
-	mux := http.NewServeMux()
-	// One listener admits every kind of cluster member; the certificate says
-	// which. A node is authorized by its registry row on top of that cert: the
-	// transport already proved the identity, the row is the membership switch
-	// `hostit-control node add` flips on and `node remove` off.
-	roles := map[string]*cluster.Role{}
-	roles[cluster.RoleNode] = nodelink.Role(func(nodeID string) bool {
+// nodeRole is how control admits a node: the registry row is the membership
+// switch on top of the certificate, each connection supersedes the previous
+// one's poll loop, and every (re)connect runs the rejoin handshake.
+func nodeRole(manager *control.Manager, registry *control.NodeRegistry, srv *control.Server, done <-chan struct{}, mu *sync.Mutex, supersede map[string]chan struct{}) *cluster.Role {
+	return nodelink.Role(func(nodeID string) bool {
 		_, err := manager.Store().Node(nodeID)
 		return err == nil
 	}, func(nodeID string) http.Handler {
@@ -67,20 +49,89 @@ func listenForNode(conf *config.Config, manager *control.Manager, srv *control.S
 		registry.Register(nodeID, remote)
 		go pollNodeStates(manager, registry, nodeID, remote, done, superseded)
 		go rejoin(manager, nodeID, remote)
+		// A node that just connected may have changed where its apps are
+		// reachable, which changes the routing table.
+		go srv.PushRoutes()
 	}, func(nodeID string, remote control.NodeAgent) {
 		slog.Info("Node disconnected", "node", nodeID)
 		registry.Unregister(nodeID, remote)
 	})
+}
+
+// listenForMembers accepts cluster dial-ins on the mTLS member listener. It is
+// always running, even on a single-box install: the colocated proxy is a
+// cluster member like any other, and this is the only way in.
+//
+// Nodes are admitted only in split mode (withNodes). When control runs the
+// machine half in-process there is nothing for a node to register as, and
+// admitting one would swap this process's own machine for a routing agent.
+//
+// Each node registration wires into the control plane: connected agents live
+// in the node registry (orchestration routes each app's verbs to its hosting
+// node), a per-node poll loop feeds the state cache, and the rejoin handshake
+// pushes the node's registry mirror and re-asserts desired state.
+func listenForMembers(conf *config.Config, manager *control.Manager, srv *control.Server, done <-chan struct{}, withNodes bool) error {
+	tlsConf, err := nodelink.ListenerCreds(conf.ClusterCertFile, conf.ClusterKeyFile, conf.ClusterCACertFile, conf.DataDir)
+	if err != nil {
+		return err
+	}
+	// Each node's registration supersedes its previous connection's poll loop:
+	// without this, a stale loop against a dead session raced the live one.
+	var mu sync.Mutex
+	supersede := make(map[string]chan struct{})
+	mux := http.NewServeMux()
+	// One listener admits every kind of cluster member; the certificate says
+	// which. A node is authorized by its registry row on top of that cert: the
+	// transport already proved the identity, the row is the membership switch
+	// `hostit-control node add` flips on and `node remove` off.
+	roles := map[string]*cluster.Role{}
+	if withNodes {
+		// The colocated node exists implicitly and is always authorized.
+		if err := manager.Store().EnsureNode(store.HostLocal, "127.0.0.1"); err != nil {
+			return err
+		}
+		registry := control.NewNodeRegistry()
+		manager.SetNodeRegistry(registry)
+		srv.SetNode(control.NewRoutingAgent(manager.Store(), registry))
+		roles[cluster.RoleNode] = nodeRole(manager, registry, srv, done, &mu, supersede)
+	}
+	// Proxies dial the same listener; their certificate says they are proxies,
+	// and their registry row is the membership switch `proxy remove` flips off.
+	// Every proxy that connects is handed the routing table immediately, so a
+	// proxy that just started is never serving an empty table for longer than
+	// its connect takes.
+	if err := manager.Store().EnsureProxy(store.ProxyLocal); err != nil {
+		return err
+	}
+	roles[cluster.RoleProxy] = proxylink.Role(func(proxyID string) bool {
+		_, err := manager.Store().Proxy(proxyID)
+		return err == nil
+	}, srv, func(proxyID string, agent proxyapi.ProxyAgent) {
+		slog.Info("Proxy connected", "proxy", proxyID)
+		_ = manager.Store().SetProxySeen(proxyID, time.Now())
+		srv.Proxies().Register(proxyID, agent)
+		go srv.PushRoutes()
+	}, func(proxyID string, agent proxyapi.ProxyAgent) {
+		slog.Info("Proxy disconnected", "proxy", proxyID)
+		srv.Proxies().Unregister(proxyID, agent)
+	})
 	mux.Handle("/", cluster.ConnectHandler(roles))
+	addr := conf.ListenNode
+	if addr == "" {
+		// Fused mode names no listener, but the colocated proxy still has to
+		// reach control. Loopback: on a single box there is nothing else to
+		// admit, and a remote member needs listen-node set anyway.
+		addr = defaultClusterAddr
+	}
 	httpSrv := &http.Server{
-		Addr:      conf.ListenNode,
+		Addr:      addr,
 		TLSConfig: tlsConf,
 		Handler:   mux,
 	}
 	go func() {
-		slog.Info("Listening for node dial-ins", "addr", conf.ListenNode)
+		slog.Info("Listening for cluster dial-ins", "addr", addr, "nodes", withNodes)
 		if err := httpSrv.ListenAndServeTLS("", ""); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			slog.Error("Node listener failed", "error", err)
+			slog.Error("Cluster listener failed", "error", err)
 		}
 	}()
 	return nil

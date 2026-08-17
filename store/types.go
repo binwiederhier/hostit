@@ -14,6 +14,16 @@ const (
 // its mTLS certificate). A node authenticates purely by that certificate's CN
 // matching this row's name; the row is the membership switch `node remove`
 // flips off.
+// Proxy is a registered data-plane proxy. It has no address: a proxy dials
+// control, never the other way round, so control never needs to reach it.
+type Proxy struct {
+	Name string `json:"name"`
+	// RegisteredAt is when the proxy was added; LastSeen is its last connect,
+	// which is how an operator tells a configured proxy from a serving one.
+	RegisteredAt time.Time `json:"registered_at"`
+	LastSeen     time.Time `json:"last_seen"`
+}
+
 type Node struct {
 	Name    string `json:"name"`
 	Address string `json:"address"`
