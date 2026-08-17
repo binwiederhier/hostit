@@ -96,3 +96,28 @@ func TestProxyServesFromPersistedCacheWhileControlIsDown(t *testing.T) {
 	p2.ServeHTTP(rr, req)
 	assert.Equal(t, "still serving", rr.Body.String())
 }
+
+// The link is replaced on every reconnect, and dropped for a stand-in whenever
+// it dies. Those are different concrete types, so holding them in an
+// atomic.Value panicked the whole proxy the first time control restarted under
+// it: the process exited, :443 went down, and systemd had to restart it. The
+// crash was in the recovery path, which is the one path that must not crash.
+func TestTheLinkSurvivesBeingDroppedAndReplaced(t *testing.T) {
+	t.Parallel()
+	p := New(&Config{ControlURL: "http://127.0.0.1:1", CacheDir: t.TempDir()})
+
+	// Not linked yet: a lookup fails fast rather than blocking a handshake.
+	_, err := p.controlSink().CertFor("blog.example.com")
+	assert.ErrorIs(t, err, errNotLinked)
+
+	// Connect, lose the connection, reconnect.
+	p.setSink(newFakeCertSink(t, "blog.example.com"))
+	p.dropSink()
+	_, err = p.controlSink().CertFor("blog.example.com")
+	assert.ErrorIs(t, err, errNotLinked, "a dropped link must not keep answering")
+
+	p.setSink(newFakeCertSink(t, "blog.example.com"))
+	mat, err := p.controlSink().CertFor("blog.example.com")
+	require.NoError(t, err)
+	assert.NotEmpty(t, mat.CertPEM)
+}

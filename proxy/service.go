@@ -71,7 +71,7 @@ type Proxy struct {
 	certs   map[string]*tls.Certificate
 	// sink is the link back to control, for certificate lookups; a stand-in
 	// that fails fast until the connection is up.
-	sink atomic.Value // proxyapi.ControlSink
+	sink atomic.Pointer[sinkRef]
 	// fallbacks holds self-signed stand-ins minted when nothing is cached and
 	// control is unreachable, so :443 still completes a handshake.
 	fallbacks map[string]*tls.Certificate
@@ -179,7 +179,7 @@ func (p *Proxy) Link(done <-chan struct{}) {
 		if err := p.connect(); err != nil {
 			slog.Warn("Cannot reach control; serving the cached routing table", "error", err)
 		}
-		p.sink.Store(noSink{})
+		p.dropSink()
 		select {
 		case <-done:
 			return
@@ -201,18 +201,36 @@ func (p *Proxy) connect() error {
 	defer conn.Close()
 	slog.Info("Connected to control", "addr", p.conf.ClusterURL, "proxy", p.conf.ProxyID)
 	return proxylink.ServeAgent(conn, p.conf.ProxyID, p, func(client *http.Client) {
-		p.sink.Store(proxylink.NewControlSink(client))
+		p.setSink(proxylink.NewControlSink(client))
 	})
+}
+
+// setSink and dropSink swap the link as connections come and go. They box it
+// in a fixed struct type on purpose: the stand-in and the real client are
+// different concrete types, and storing both in a bare atomic.Value panics --
+// which killed the process in exactly the path that exists to survive control
+// going away.
+func (p *Proxy) setSink(sink proxyapi.ControlSink) {
+	p.sink.Store(&sinkRef{sink: sink})
+}
+
+func (p *Proxy) dropSink() {
+	p.sink.Store(&sinkRef{})
 }
 
 // controlSink is the link to control, or a stand-in that fails fast while the
 // connection is down (so a handshake falls through to the cache immediately
 // rather than waiting on a dial).
 func (p *Proxy) controlSink() proxyapi.ControlSink {
-	if sink, ok := p.sink.Load().(proxyapi.ControlSink); ok && sink != nil {
-		return sink
+	if ref := p.sink.Load(); ref != nil && ref.sink != nil {
+		return ref.sink
 	}
 	return noSink{}
+}
+
+// sinkRef boxes the link so every store has the same concrete type.
+type sinkRef struct {
+	sink proxyapi.ControlSink
 }
 
 // noSink stands in while control is unreachable.

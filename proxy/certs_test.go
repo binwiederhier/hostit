@@ -58,7 +58,7 @@ func TestCertSourceFetchesCachesAndSurvivesControlDown(t *testing.T) {
 	cacheDir := t.TempDir()
 
 	p := New(&Config{ControlURL: "http://127.0.0.1:1", CacheDir: cacheDir})
-	p.sink.Store(proxyapi.ControlSink(control))
+	p.setSink(control)
 	hello := &tls.ClientHelloInfo{ServerName: "blog.example.com"}
 	cert, err := p.GetCertificate(hello)
 	require.NoError(t, err)
@@ -72,7 +72,7 @@ func TestCertSourceFetchesCachesAndSurvivesControlDown(t *testing.T) {
 	// Control goes down; a FRESH proxy (restart) still terminates from disk
 	control.down.Store(true)
 	p2 := New(&Config{ControlURL: "http://127.0.0.1:1", CacheDir: cacheDir})
-	p2.sink.Store(proxyapi.ControlSink(control))
+	p2.setSink(control)
 	cert2, err := p2.GetCertificate(hello)
 	require.NoError(t, err, "the persisted cert must serve while control is down")
 	require.NotNil(t, cert2)
