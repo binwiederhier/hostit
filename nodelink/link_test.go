@@ -11,6 +11,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"heckel.io/hostit/cluster"
 	"heckel.io/hostit/nodeapi"
 	"heckel.io/hostit/store"
 )
@@ -53,12 +54,14 @@ func TestCallbacksFlowOverTheDuplex(t *testing.T) {
 	t.Parallel()
 	st := &recordingCallbackStore{power: map[string]bool{}, usage: map[string]int{}, snaps: map[string]int{}, hosts: map[string]string{"blog": "node-b"}}
 	registered := make(chan struct{}, 1)
-	srv := httptest.NewServer(ConnectHandler(
-		func(string) bool { return true },
-		func(nodeID string) http.Handler { return CallbackHandler(nodeID, st) },
-		func(string, nodeapi.NodeAgent) { registered <- struct{}{} },
-		nil,
-	))
+	srv := httptest.NewServer(cluster.ConnectHandler(map[string]*cluster.Role{
+		cluster.RoleNode: Role(
+			func(string) bool { return true },
+			func(nodeID string) http.Handler { return CallbackHandler(nodeID, st) },
+			func(string, nodeapi.NodeAgent) { registered <- struct{}{} },
+			nil,
+		),
+	}))
 	defer srv.Close()
 
 	u, _ := url.Parse(srv.URL)

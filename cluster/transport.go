@@ -1,9 +1,15 @@
-// Package node is the multi-node IPC layer: a control-owned CA issuing
-// per-node identity certificates (the CN is the node id), and a duplex
-// transport that carries ordinary HTTP in both directions over one mTLS
-// connection the node dialed. Control never dials nodes; a node needs no
-// public listener. See plans/260807-hostit-multinode.md, section 4.
-package nodelink
+// Package cluster is how the parts of a hostit cluster reach each other: the
+// control-owned CA that issues a member's identity certificate (the CN is the
+// member's id, the OU its role), and the duplex transport that carries
+// ordinary HTTP in both directions over the one mTLS connection that member
+// dialed. Control never dials a member; a member needs no listener.
+//
+// It knows nothing about what nodes or proxies actually say to each other --
+// those contracts live in nodeapi and proxyapi, and their wire layers in
+// nodelink and proxylink. Keeping this package free of them is what lets
+// hostit-proxy speak the cluster protocol without linking the registry (and
+// with it SQLite) into a binary that has no database.
+package cluster
 
 import (
 	"context"
@@ -35,7 +41,7 @@ func Duplex(conn net.Conn, dialer bool, handler http.Handler) (*http.Client, *ya
 	go func() {
 		_ = http.Serve(sess, handler)
 	}()
-	return duplexClient(sess), sess, nil
+	return DuplexClient(sess), sess, nil
 }
 
 // rpcTimeout bounds a single duplex request. yamux's transport keepalive keeps
@@ -46,9 +52,9 @@ func Duplex(conn net.Conn, dialer bool, handler http.Handler) (*http.Client, *ya
 // A var, not a const, so tests can shorten it.
 var rpcTimeout = 5 * time.Minute
 
-// duplexClient builds the http.Client that carries requests to the peer, each
+// DuplexClient builds the http.Client that carries requests to the peer, each
 // on its own yamux stream, bounded by rpcTimeout.
-func duplexClient(sess *yamux.Session) *http.Client {
+func DuplexClient(sess *yamux.Session) *http.Client {
 	return &http.Client{
 		Timeout: rpcTimeout,
 		Transport: &http.Transport{

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"sync"
 
+	"heckel.io/hostit/cluster"
 	"heckel.io/hostit/nodeapi"
 	"heckel.io/hostit/store"
 )
@@ -84,7 +85,7 @@ func (l *ControlLink) post(kind string, payload any) {
 	if err != nil {
 		return
 	}
-	resp, err := client.Post("http://"+controlID+callbackPathPrefix+kind, "application/json", bytes.NewReader(body))
+	resp, err := client.Post("http://"+cluster.ControlID+callbackPathPrefix+kind, "application/json", bytes.NewReader(body))
 	if err != nil {
 		slog.Warn("Control callback failed", "kind", kind, "error", err)
 		return

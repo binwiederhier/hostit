@@ -20,6 +20,13 @@ import (
 // implements nodeapi.NodeAgent over the duplex client. Small verbs are one JSON
 // envelope per call; file bodies, tars and reads stream raw.
 
+const (
+	// errHeader/errCodeHeader carry a verb's failure across the raw file-stream
+	// responses (the JSON verbs use the rpcResp envelope instead).
+	errHeader     = "X-Hostit-Err"
+	errCodeHeader = "X-Hostit-Err-Code"
+)
+
 // rpcReq is the argument envelope for the JSON verbs. One struct for all of
 // them keeps the wire boring; every verb reads only its own fields.
 type rpcReq struct {

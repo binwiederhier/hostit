@@ -1,4 +1,4 @@
-package nodelink
+package cluster
 
 import (
 	"crypto/ecdsa"
@@ -57,10 +57,10 @@ func NewCA() (*CA, error) {
 	return &CA{cert: cert, key: key}, nil
 }
 
-// Issue signs an identity certificate whose CN is the given id (a node id, or
-// "control" for the accepting side). Both EKUs, so one cert serves whichever
-// TLS role its holder plays.
-func (c *CA) Issue(id string) (tls.Certificate, error) {
+// Issue signs an identity certificate whose CN is the given id (a member id,
+// or "control" for the accepting side) and whose OU is its role. Both EKUs, so
+// one cert serves whichever TLS role its holder plays.
+func (c *CA) Issue(id, role string) (tls.Certificate, error) {
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		return tls.Certificate{}, err
@@ -69,9 +69,13 @@ func (c *CA) Issue(id string) (tls.Certificate, error) {
 	if err != nil {
 		return tls.Certificate{}, err
 	}
+	subject := pkix.Name{CommonName: id}
+	if role != "" {
+		subject.OrganizationalUnit = []string{role}
+	}
 	tmpl := &x509.Certificate{
 		SerialNumber: serial,
-		Subject:      pkix.Name{CommonName: id},
+		Subject:      subject,
 		DNSNames:     []string{id},
 		NotBefore:    time.Now().Add(-time.Hour),
 		NotAfter:     time.Now().Add(certValidity),
@@ -196,7 +200,7 @@ func ClientTLS(cert tls.Certificate, rootCAs *x509.CertPool) *tls.Config {
 			return &cert, nil
 		},
 		RootCAs:    rootCAs,
-		ServerName: controlID,
+		ServerName: ControlID,
 		MinVersion: tls.VersionTLS13,
 	}
 }

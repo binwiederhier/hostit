@@ -12,8 +12,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"heckel.io/hostit/cluster"
 	"heckel.io/hostit/config"
-	"heckel.io/hostit/nodelink"
 	"heckel.io/hostit/store"
 	"heckel.io/hostit/user"
 )
@@ -82,9 +82,9 @@ func TestInternalCertServesPEMThroughTheCombinedLookup(t *testing.T) {
 	assert.Equal(t, http.StatusServiceUnavailable, rr.Code)
 
 	// With a lookup wired (self-signed here), PEM chain + key come back
-	ca, err := nodelink.NewCA()
+	ca, err := cluster.NewCA()
 	require.NoError(t, err)
-	cert, err := ca.Issue("blog.apps.example.com")
+	cert, err := ca.Issue("blog.apps.example.com", cluster.RoleNode)
 	require.NoError(t, err)
 	s.tlsGetCert = func(*tls.ClientHelloInfo) (*tls.Certificate, error) { return &cert, nil }
 	rr = httptest.NewRecorder()

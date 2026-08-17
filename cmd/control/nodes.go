@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/urfave/cli/v2"
+	"heckel.io/hostit/cluster"
 	"heckel.io/hostit/config"
 	"heckel.io/hostit/nodeapi"
 	"heckel.io/hostit/nodelink"
@@ -69,7 +70,7 @@ func execNodeAdd(c *cli.Context) error {
 	if err != nil {
 		return fmt.Errorf("cannot load the cluster CA (has hostit-control started once?): %w", err)
 	}
-	cert, err := ca.Issue(name)
+	cert, err := ca.Issue(name, cluster.RoleNode)
 	if err != nil {
 		return err
 	}

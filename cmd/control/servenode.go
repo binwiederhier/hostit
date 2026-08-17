@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"heckel.io/hostit/cluster"
 	"heckel.io/hostit/config"
 	"heckel.io/hostit/control"
 	"heckel.io/hostit/nodelink"
@@ -41,10 +42,12 @@ func listenForNode(conf *config.Config, manager *control.Manager, srv *control.S
 	var mu sync.Mutex
 	supersede := make(map[string]chan struct{})
 	mux := http.NewServeMux()
-	// A node is authorized by its registry row plus its CA-signed certificate:
-	// the transport already proved the identity, the row is the membership
-	// switch `hostit-control node add` flips on and `node remove` off.
-	mux.Handle("/", nodelink.ConnectHandler(func(nodeID string) bool {
+	// One listener admits every kind of cluster member; the certificate says
+	// which. A node is authorized by its registry row on top of that cert: the
+	// transport already proved the identity, the row is the membership switch
+	// `hostit-control node add` flips on and `node remove` off.
+	roles := map[string]*cluster.Role{}
+	roles[cluster.RoleNode] = nodelink.Role(func(nodeID string) bool {
 		_, err := manager.Store().Node(nodeID)
 		return err == nil
 	}, func(nodeID string) http.Handler {
@@ -67,7 +70,8 @@ func listenForNode(conf *config.Config, manager *control.Manager, srv *control.S
 	}, func(nodeID string, remote control.NodeAgent) {
 		slog.Info("Node disconnected", "node", nodeID)
 		registry.Unregister(nodeID, remote)
-	}))
+	})
+	mux.Handle("/", cluster.ConnectHandler(roles))
 	httpSrv := &http.Server{
 		Addr:      conf.ListenNode,
 		TLSConfig: tlsConf,

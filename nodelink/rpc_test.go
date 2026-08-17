@@ -17,6 +17,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"heckel.io/hostit/appctl"
+	"heckel.io/hostit/cluster"
 	"heckel.io/hostit/nodeapi"
 	"heckel.io/hostit/store"
 )
@@ -77,10 +78,10 @@ func startRPC(t *testing.T, agent nodeapi.NodeAgent) nodeapi.NodeAgent {
 	t.Helper()
 	nodeConn, controlConn := net.Pipe()
 	// Node side: serves the agent.
-	_, _, err := Duplex(nodeConn, true, RPCHandler(agent))
+	_, _, err := cluster.Duplex(nodeConn, true, RPCHandler(agent))
 	require.NoError(t, err)
 	// Control side: a client that implements nodeapi.NodeAgent.
-	client, _, err := Duplex(controlConn, false, nil)
+	client, _, err := cluster.Duplex(controlConn, false, nil)
 	require.NoError(t, err)
 	return NewRemoteAgent(client)
 }
@@ -165,10 +166,12 @@ func TestDialInRegistersARemoteAgent(t *testing.T) {
 	agent := &fakeAgentFull{written: map[string][]byte{}}
 	registered := make(chan string, 1)
 	var got nodeapi.NodeAgent
-	srv := httptest.NewServer(ConnectHandler(func(string) bool { return true }, nil, func(nodeID string, remote nodeapi.NodeAgent) {
-		got = remote
-		registered <- nodeID
-	}, nil))
+	srv := httptest.NewServer(cluster.ConnectHandler(map[string]*cluster.Role{
+		cluster.RoleNode: Role(func(string) bool { return true }, nil, func(nodeID string, remote nodeapi.NodeAgent) {
+			got = remote
+			registered <- nodeID
+		}, nil),
+	}))
 	defer srv.Close()
 
 	// The node side: plain TCP here (the mTLS identity is the transport's

@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"heckel.io/hostit/cluster"
 	"heckel.io/hostit/nodeconf"
 	"heckel.io/hostit/store"
 )
@@ -32,7 +33,7 @@ func ListenerCreds(certFile, keyFile, caFile, dataDir string) (*tls.Config, erro
 		if err != nil {
 			return nil, err
 		}
-		return ServerTLS(cert, pool), nil
+		return cluster.ServerTLS(cert, pool), nil
 	}
 	tlsConf, _, err := EnsureIPCCreds(dataDir)
 	return tlsConf, err
@@ -47,7 +48,7 @@ func DialCreds(conf *nodeconf.Config) (*tls.Config, error) {
 		if err != nil {
 			return nil, err
 		}
-		return ClientTLS(cert, pool), nil
+		return cluster.ClientTLS(cert, pool), nil
 	}
 	return LoadNodeCreds(conf.DataDir, conf.NodeID)
 }
@@ -72,21 +73,21 @@ func loadClusterFiles(certFile, keyFile, caFile string) (tls.Certificate, *x509.
 // EnsureIPCCreds creates (once) and loads the CA plus the "control" and
 // "local" identity certs; returns the TLS config for control's node listener
 // and the CA itself (`node add` mints remote-node certs with it).
-func EnsureIPCCreds(dataDir string) (*tls.Config, *CA, error) {
+func EnsureIPCCreds(dataDir string) (*tls.Config, *cluster.CA, error) {
 	dir := filepath.Join(dataDir, ipcDirName)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, nil, err
 	}
 	if _, err := os.Stat(filepath.Join(dir, "ca.pem")); err != nil {
-		ca, err := NewCA()
+		ca, err := cluster.NewCA()
 		if err != nil {
 			return nil, nil, err
 		}
 		if err := writePEMPair(dir, "ca", ca.CertPEM(), ca.KeyPEM()); err != nil {
 			return nil, nil, err
 		}
-		for _, id := range []string{controlID, store.HostLocal} {
-			cert, err := ca.Issue(id)
+		for _, id := range []string{cluster.ControlID, store.HostLocal} {
+			cert, err := ca.Issue(id, cluster.RoleNode)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -112,7 +113,7 @@ func EnsureIPCCreds(dataDir string) (*tls.Config, *CA, error) {
 
 // LoadCA reads the persisted CA (cert + signing key) back so `node add` can
 // mint a remote node's certificate.
-func LoadCA(dataDir string) (*CA, error) {
+func LoadCA(dataDir string) (*cluster.CA, error) {
 	dir := filepath.Join(dataDir, ipcDirName)
 	certPEM, err := os.ReadFile(filepath.Join(dir, "ca.pem"))
 	if err != nil {
@@ -122,7 +123,7 @@ func LoadCA(dataDir string) (*CA, error) {
 	if err != nil {
 		return nil, err
 	}
-	return NewCAFromPEM(certPEM, keyPEM)
+	return cluster.NewCAFromPEM(certPEM, keyPEM)
 }
 
 // LoadNodeCreds loads a node's identity ("local" on the colocated host) and
@@ -137,7 +138,7 @@ func LoadNodeCreds(dataDir, id string) (*tls.Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	return ClientTLS(cert, pool), nil
+	return cluster.ClientTLS(cert, pool), nil
 }
 
 func writePEMPair(dir, name, certPEM, keyPEM string) error {

@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"heckel.io/hostit/cluster"
 	"heckel.io/hostit/nodeconf"
 )
 
@@ -16,9 +17,9 @@ import (
 // files under <data-dir>/ipc, so a single-host split needs no config at all.
 func TestCredsFromConfiguredFiles(t *testing.T) {
 	t.Parallel()
-	ca, err := NewCA()
+	ca, err := cluster.NewCA()
 	require.NoError(t, err)
-	cert, err := ca.Issue("worker-9")
+	cert, err := ca.Issue("worker-9", cluster.RoleNode)
 	require.NoError(t, err)
 	certPEM, keyPEM, err := EncodeCert(cert)
 	require.NoError(t, err)

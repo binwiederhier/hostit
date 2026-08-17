@@ -6,6 +6,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"heckel.io/hostit/cluster"
 	"heckel.io/hostit/nodelink"
 	"heckel.io/hostit/store"
 )
@@ -37,7 +38,7 @@ func TestNodeAddRegistersTheNode(t *testing.T) {
 	// and register the row; the pair plus the row IS the membership.
 	ca, err := nodelink.LoadCA(dir)
 	require.NoError(t, err)
-	cert, err := ca.Issue("worker-2")
+	cert, err := ca.Issue("worker-2", cluster.RoleNode)
 	require.NoError(t, err)
 	certPEM, keyPEM, err := nodelink.EncodeCert(cert)
 	require.NoError(t, err)

@@ -1,4 +1,4 @@
-package nodelink
+package cluster
 
 import (
 	"crypto/tls"
@@ -20,9 +20,9 @@ func TestDuplexHTTPBothWays(t *testing.T) {
 	t.Parallel()
 	ca, err := NewCA()
 	require.NoError(t, err)
-	controlCert, err := ca.Issue("control")
+	controlCert, err := ca.Issue("control", RoleNode)
 	require.NoError(t, err)
-	nodeCert, err := ca.Issue("node-b")
+	nodeCert, err := ca.Issue("node-b", RoleNode)
 	require.NoError(t, err)
 
 	ln, err := tls.Listen("tcp", "127.0.0.1:0", ServerTLS(controlCert, ca.Pool()))
@@ -104,7 +104,7 @@ func TestMTLSRejectsUnknownClients(t *testing.T) {
 	t.Parallel()
 	ca, err := NewCA()
 	require.NoError(t, err)
-	controlCert, err := ca.Issue("control")
+	controlCert, err := ca.Issue("control", RoleNode)
 	require.NoError(t, err)
 	ln, err := tls.Listen("tcp", "127.0.0.1:0", ServerTLS(controlCert, ca.Pool()))
 	require.NoError(t, err)
@@ -125,7 +125,7 @@ func TestMTLSRejectsUnknownClients(t *testing.T) {
 	// No client cert at all: the handshake (or first use) must fail.
 	otherCA, err := NewCA()
 	require.NoError(t, err)
-	impostor, err := otherCA.Issue("node-x")
+	impostor, err := otherCA.Issue("node-x", RoleNode)
 	require.NoError(t, err)
 	for _, conf := range []*tls.Config{
 		{RootCAs: ca.Pool().Clone(), ServerName: "control"},
