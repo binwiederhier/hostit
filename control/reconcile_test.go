@@ -19,20 +19,20 @@ func TestReconcileOrphansRemovesOrphanSubvolume(t *testing.T) {
 	t.Parallel()
 	m, _, r := newTestDeployManager(t)
 	createTestApp(t, m, "blog")
-	require.NoError(t, m.WriteFile("blog", "x", []byte("y"), 0)) // a live app: its subvolume exists on disk
+	require.NoError(t, m.testMachine().WriteFile("blog", "x", []byte("y"), 0)) // a live app: its subvolume exists on disk
 	orphan := filepath.Join(m.config.AppsDir, "ghostid")
 	require.NoError(t, os.MkdirAll(orphan, 0o700))
 	hidden := filepath.Join(m.config.AppsDir, ".snapshots")
 	require.NoError(t, os.MkdirAll(hidden, 0o755))
 	r.reset()
 
-	m.ReconcileOrphans() // first sighting: a removal always needs a second
-	removed := m.ReconcileOrphans()
+	m.testMachine().ReconcileOrphans() // first sighting: a removal always needs a second
+	removed := m.testMachine().ReconcileOrphans()
 	assert.Contains(t, removed, "ghostid")
 	assert.Contains(t, r.ran(), "btrfs subvolume delete "+orphan)
 	assert.NoDirExists(t, orphan)
-	assert.NotContains(t, r.ran(), "btrfs subvolume delete "+m.AppSubvolume("blog"), "a live app's subvolume must be left alone")
-	assert.DirExists(t, m.AppSubvolume("blog"))
+	assert.NotContains(t, r.ran(), "btrfs subvolume delete "+m.testMachine().AppSubvolume("blog"), "a live app's subvolume must be left alone")
+	assert.DirExists(t, m.testMachine().AppSubvolume("blog"))
 	assert.DirExists(t, hidden, "hidden entries are never touched")
 }
 
@@ -53,8 +53,8 @@ func TestReconcileOrphansRemovesEmptyStubKeepsStubborn(t *testing.T) {
 	// tool refusing a plain directory; only the empty stub is then removable.
 	r.reset()
 
-	m.ReconcileOrphans() // first sighting: a removal always needs a second
-	removed := m.ReconcileOrphans()
+	m.testMachine().ReconcileOrphans() // first sighting: a removal always needs a second
+	removed := m.testMachine().ReconcileOrphans()
 	assert.Contains(t, removed, "stubid")
 	assert.NoDirExists(t, stub)
 	assert.NotContains(t, removed, "stubbornid")
@@ -76,8 +76,8 @@ func TestReconcileOrphansRemovesFileLessStubTree(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(withFile, "home", "app", "data"), []byte("x"), 0o644))
 	r.reset()
 
-	m.ReconcileOrphans() // first sighting: a removal always needs a second
-	removed := m.ReconcileOrphans()
+	m.testMachine().ReconcileOrphans() // first sighting: a removal always needs a second
+	removed := m.testMachine().ReconcileOrphans()
 	assert.Contains(t, removed, "stubtree")
 	assert.NoDirExists(t, stub)
 	assert.NotContains(t, removed, "keeptree")
@@ -92,8 +92,8 @@ func TestReconcileOrphansSweepsStrayBudgetGroups(t *testing.T) {
 	// behind; the reconcile sweeps any 1/<uid> group whose uid maps to no app.
 	runner.returns("btrfs qgroup show", "0/5 16384 16384\n1/1000000 100 100\n1/1065536 100 100\n")
 	runner.reset()
-	m.ReconcileOrphans() // first sighting: nothing is removed yet
-	m.ReconcileOrphans()
+	m.testMachine().ReconcileOrphans() // first sighting: nothing is removed yet
+	m.testMachine().ReconcileOrphans()
 	ran := runner.ran()
 	assert.Contains(t, ran, "btrfs qgroup destroy 1/1065536", "the stray group (no app on that uid) is destroyed")
 	assert.NotContains(t, ran, "btrfs qgroup destroy 1/1000000", "the live app's group must survive")
@@ -111,8 +111,8 @@ func TestReconcileOrphansLeavesOtherNodesAccountsAlone(t *testing.T) {
 		{Name: "stray", Home: "/home/somebody"},
 	}
 
-	m.ReconcileOrphans() // first sighting: nothing is removed yet
-	m.ReconcileOrphans()
+	m.testMachine().ReconcileOrphans() // first sighting: nothing is removed yet
+	m.testMachine().ReconcileOrphans()
 
 	assert.Empty(t, ops.deletedUsers, "accounts outside this node's pool are none of its business")
 }
@@ -131,16 +131,16 @@ func TestReconcileOrphanUsersNeedsTwoSightings(t *testing.T) {
 	m, ops, _ := newTestDeployManager(t)
 	createTestApp(t, m, "blog")
 	ops.accounts = []unixuser.Account{
-		{Name: "blog", Home: m.AppFiles("blog").Path()},
+		{Name: "blog", Home: m.testMachine().AppFiles("blog").Path()},
 		{Name: "newcomer", Home: filepath.Join(m.config.AppsDir, "id-not-yet-mirrored", "home", "app")},
 	}
 
-	m.ReconcileOrphans()
+	m.testMachine().ReconcileOrphans()
 	assert.Empty(t, ops.deletedUsers, "a first sighting is never enough: the app may just be mid-create")
 
 	// The app arrived in the mirror before the next sweep: never touched.
 	require.NoError(t, m.store.AddApp(&store.App{ID: "id-not-yet-mirrored", Name: "newcomer", Port: 10777, Host: store.HostLocal}))
-	m.ReconcileOrphans()
+	m.testMachine().ReconcileOrphans()
 	assert.Empty(t, ops.deletedUsers, "an account that showed up in the mirror is not an orphan")
 }
 
@@ -150,12 +150,12 @@ func TestReconcileOrphanUsersRemovesAPersistentOrphan(t *testing.T) {
 	m, ops, _ := newTestDeployManager(t)
 	createTestApp(t, m, "blog")
 	ops.accounts = []unixuser.Account{
-		{Name: "blog", Home: m.AppFiles("blog").Path()},
+		{Name: "blog", Home: m.testMachine().AppFiles("blog").Path()},
 		{Name: "ghost", Home: filepath.Join(m.config.AppsDir, "deadbeef1234", "home", "app")},
 	}
 
-	m.ReconcileOrphans()
-	m.ReconcileOrphans()
+	m.testMachine().ReconcileOrphans()
+	m.testMachine().ReconcileOrphans()
 
 	assert.Equal(t, []string{"ghost"}, ops.deletedUsers)
 	assert.Contains(t, ops.killedUsers, "ghost")
@@ -181,7 +181,7 @@ func TestReconcileBuildsAnAppMissingFromTheNode(t *testing.T) {
 	desired, err = m.DesiredState("")
 	require.NoError(t, err)
 
-	m.Reconcile(desired)
+	m.testMachine().Reconcile(desired)
 
 	assert.Contains(t, ops.createdUsers, "blog", "an app the document lists but the node lacks is provisioned")
 	assert.Contains(t, ops.authorizedKeys["blog"], testPublicKey, "its keys are asserted from the registry")
@@ -195,18 +195,18 @@ func TestReconcileSweepsWhatTheDocumentOmits(t *testing.T) {
 	t.Parallel()
 	m, _, r := newTestDeployManager(t)
 	createTestApp(t, m, "blog")
-	require.NoError(t, m.WriteFile("blog", "x", []byte("y"), 0))
+	require.NoError(t, m.testMachine().WriteFile("blog", "x", []byte("y"), 0))
 	desired, err := m.DesiredState("")
 	require.NoError(t, err)
 
 	// A subvolume of an app the document does not list.
 	require.NoError(t, os.MkdirAll(filepath.Join(m.config.AppsDir, "ghostid"), 0o755))
 	r.reset()
-	m.Reconcile(desired)
-	m.Reconcile(desired)
+	m.testMachine().Reconcile(desired)
+	m.testMachine().Reconcile(desired)
 
 	assert.Contains(t, r.ran(), "btrfs subvolume delete "+filepath.Join(m.config.AppsDir, "ghostid"))
-	assert.DirExists(t, m.AppSubvolume("blog"), "an app the document lists is never touched")
+	assert.DirExists(t, m.testMachine().AppSubvolume("blog"), "an app the document lists is never touched")
 }
 
 // A poweroff is an operator's decision, and reconcile must not undo it. The
@@ -229,10 +229,10 @@ func TestReconcileDoesNotResurrectAPoweredOffApp(t *testing.T) {
 	require.True(t, desired.Apps[0].PoweredOff, "control carries the poweroff in the desired state")
 	r.reset()
 
-	m.Reconcile(desired)
+	m.testMachine().Reconcile(desired)
 
 	assert.Contains(t, ops.createdUsers, "blog", "the app is still rebuilt: it exists, it just does not run")
-	assert.Contains(t, r.ran(), "disable --now "+m.UnitName("blog"), "and is left powered off")
+	assert.Contains(t, r.ran(), "disable --now "+m.testMachine().UnitName("blog"), "and is left powered off")
 	a, err := m.store.App("blog")
 	require.NoError(t, err)
 	assert.True(t, a.PoweredOff, "the recorded intent survives the pass")

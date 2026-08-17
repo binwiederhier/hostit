@@ -27,8 +27,8 @@ func (r *recordingAgent) Sync(state *SyncState) error {
 func TestCreatePushesMirrorToTheNode(t *testing.T) {
 	t.Parallel()
 	m, _, _ := newTestDeployManager(t)
-	rec := &recordingAgent{NodeAgent: m}
-	m.SetNodeAgent(rec)
+	rec := &recordingAgent{NodeAgent: m.testMachine()}
+	m.NodeRegistry().Register(store.HostLocal, rec)
 
 	_, err := m.CreateApp("blog", &CreateOptions{})
 	require.NoError(t, err)
@@ -49,8 +49,8 @@ func TestDeletePushesMirrorWithoutTheApp(t *testing.T) {
 	t.Parallel()
 	m, _, _ := newTestDeployManager(t)
 	createTestApp(t, m, "blog")
-	rec := &recordingAgent{NodeAgent: m}
-	m.SetNodeAgent(rec)
+	rec := &recordingAgent{NodeAgent: m.testMachine()}
+	m.NodeRegistry().Register(store.HostLocal, rec)
 
 	require.NoError(t, m.DeleteApp("blog"))
 	m.WaitBackground()
@@ -93,14 +93,14 @@ func TestPowerOffNotifiesTheSink(t *testing.T) {
 	m, _, _ := newTestDeployManager(t)
 	createTestApp(t, m, "blog")
 	sink := newFakeSink()
-	m.SetControlSink(sink)
+	m.testMachine().SetControlSink(sink)
 
-	require.NoError(t, m.Down("blog"))
+	require.NoError(t, m.testMachine().Down("blog"))
 	off, ok := sink.power["blog"]
 	require.True(t, ok, "a poweroff the node performs must reach control")
 	assert.True(t, off)
 
-	_, err := m.PowerOn("blog")
+	_, err := m.testMachine().PowerOn("blog")
 	require.NoError(t, err)
 	assert.False(t, sink.power["blog"])
 }
@@ -111,9 +111,9 @@ func TestSnapshotMutationsNotifyTheSink(t *testing.T) {
 	r.returns("inspect-internal rootid", "300\n")
 	createTestApp(t, m, "blog")
 	sink := newFakeSink()
-	m.SetControlSink(sink)
+	m.testMachine().SetControlSink(sink)
 
-	snap, err := m.TakeSnapshot("blog", "save", false)
+	snap, err := m.testMachine().TakeSnapshot("blog", "save", false)
 	require.NoError(t, err)
 	ids := func() []string {
 		out := make([]string, 0)
@@ -124,7 +124,7 @@ func TestSnapshotMutationsNotifyTheSink(t *testing.T) {
 	}
 	assert.Contains(t, ids(), snap.ID, "the record list travels with the callback")
 
-	require.NoError(t, m.DeleteSnapshot("blog", snap.ID))
+	require.NoError(t, m.testMachine().DeleteSnapshot("blog", snap.ID))
 	assert.NotContains(t, ids(), snap.ID)
 }
 
@@ -135,8 +135,8 @@ func TestCreatePushesMirrorBeforeProvision(t *testing.T) {
 	// reconcile on the node tears the half-built app down (seen live on the
 	// stage two-node setup). The row and the mirror push must come FIRST.
 	m, _, _ := newTestDeployManager(t)
-	rec := &orderRecordingAgent{recordingAgent: recordingAgent{NodeAgent: m}}
-	m.SetNodeAgent(rec)
+	rec := &orderRecordingAgent{recordingAgent: recordingAgent{NodeAgent: m.testMachine()}}
+	m.NodeRegistry().Register(store.HostLocal, rec)
 
 	_, err := m.CreateApp("blog", &CreateOptions{})
 	require.NoError(t, err)
@@ -195,8 +195,8 @@ func TestReadmeAndDescriptionRouteThroughTheNodeAgent(t *testing.T) {
 	// control's local raw view and 500ed, live on stage).
 	m, _, _ := newTestDeployManager(t)
 	createTestApp(t, m, "blog")
-	rec := &fileRoutingAgent{NodeAgent: m}
-	m.SetNodeAgent(rec)
+	rec := &fileRoutingAgent{NodeAgent: m.testMachine()}
+	m.NodeRegistry().Register(store.HostLocal, rec)
 
 	require.NoError(t, m.WriteReadme("blog", "hello"))
 	_, err := m.Readme("blog")
@@ -233,7 +233,7 @@ func TestRefreshStatesReadsThroughTheNodeAgent(t *testing.T) {
 	// fans out to the nodes), not control's own podman/systemd.
 	m, _, _ := newTestDeployManager(t)
 	createTestApp(t, m, "blog")
-	m.SetNodeAgent(&statesRoutingAgent{NodeAgent: m, states: map[string]State{
+	m.SetNodeAgent(&statesRoutingAgent{NodeAgent: m.testMachine(), states: map[string]State{
 		"blog": {Running: true, AppRunning: true, AppState: "running"},
 	}})
 
@@ -249,8 +249,8 @@ func TestRefreshStatesReadsThroughTheNodeAgent(t *testing.T) {
 func TestMirrorPushesCarryIncreasingSequences(t *testing.T) {
 	t.Parallel()
 	m, _ := newTestManager(t)
-	rec := &recordingAgent{NodeAgent: m}
-	m.SetNodeAgent(rec)
+	rec := &recordingAgent{NodeAgent: m.testMachine()}
+	m.NodeRegistry().Register(store.HostLocal, rec)
 
 	_, err := m.CreateApp("one", nil)
 	require.NoError(t, err)
@@ -337,7 +337,7 @@ func TestPortRotationSurvivesARestart(t *testing.T) {
 	m.releasePort(first)
 
 	// A new control process over the same registry.
-	second := NewManager(m.config, m.store, testServices(newFakeSystem(), newFakeRunner()))
+	second := newWiredManager(m.config, m.store, testServices(newFakeSystem(), newFakeRunner()))
 	t.Cleanup(second.WaitBackground)
 	next, err := second.allocatePort()
 	require.NoError(t, err)

@@ -37,12 +37,11 @@ func (m *Manager) CachedStates(names []string) map[string]State {
 	return cached
 }
 
-// SeedStates seeds BOTH halves' caches from recorded intent: the control
-// plane's (what the UI reads on the first page load) and the machine's (the
-// promoted seed below). Shadowing the machine method keeps the one-liner
-// callers in control and node correct for whichever half matters in that process.
+// SeedStates seeds the control plane's cache from recorded intent, so the first
+// page load after a restart does not report every app as stopped while the
+// first measurements are still coming back from the nodes. Each node seeds its
+// own cache the same way.
 func (m *Manager) SeedStates() {
-	m.Machine.SeedStates()
 	apps, err := m.store.Apps()
 	if err != nil {
 		slog.Warn("Cannot list apps to seed states", "error", err)

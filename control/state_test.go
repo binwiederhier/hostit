@@ -19,9 +19,9 @@ func TestStatesReadsRunningAndMemory(t *testing.T) {
 	// systemctl prints one line per unit, in the order asked
 	runner.returns("systemctl is-active", "active\ninactive\n")
 	// Exactly the shape podman 4.9 prints
-	runner.returns("podman stats", `[{"id":"abc","name":"`+m.ContainerName("one")+`","cpu_percent":"3.70%","mem_usage":"24.5MB / 536.9MB","pids":"11"},
+	runner.returns("podman stats", `[{"id":"abc","name":"`+m.testMachine().ContainerName("one")+`","cpu_percent":"3.70%","mem_usage":"24.5MB / 536.9MB","pids":"11"},
 	                                 {"id":"def","name":"not-ours","mem_usage":"99MB / 536.9MB"}]`)
-	states := m.States([]string{"one", "two"})
+	states := m.testMachine().States([]string{"one", "two"})
 	require.Len(t, states, 2)
 	assert.True(t, states["one"].Running)
 	assert.False(t, states["two"].Running, "the second unit was inactive")
@@ -43,7 +43,7 @@ func TestStatesReportsAppProcessState(t *testing.T) {
 	// "fresh" has no log/state file at all
 	runner.returns("systemctl is-active", "active\nactive\nactive\ninactive\n")
 
-	states := m.States([]string{"up", "paused", "fresh", "off"})
+	states := m.testMachine().States([]string{"up", "paused", "fresh", "off"})
 	require.Len(t, states, 4)
 	assert.True(t, states["up"].AppRunning, "the agent reported the app running")
 	assert.False(t, states["paused"].AppRunning, "the agent reported the app stopped")
@@ -64,7 +64,7 @@ func TestStatesReportsCrashedAppState(t *testing.T) {
 	writeAppFile(t, m, "up", "log/state", "running\n")
 	runner.returns("systemctl is-active", "active\nactive\ninactive\n")
 
-	states := m.States([]string{"crashed", "up", "off"})
+	states := m.testMachine().States([]string{"crashed", "up", "off"})
 	require.Len(t, states, 3)
 	// The breadcrumb value, not just a bool, so the UI can distinguish a crash loop
 	// that gave up from a plain stop.
@@ -80,16 +80,16 @@ func TestStatesReportsStartTimes(t *testing.T) {
 	m, _, runner := newTestDeployManager(t)
 	createTestApp(t, m, "one")
 	runner.returns("systemctl is-active", "active\n")
-	runner.returns("podman ps", m.ContainerName("one")+"|1786001000\nnot-ours|1786000000\n")
+	runner.returns("podman ps", m.testMachine().ContainerName("one")+"|1786001000\nnot-ours|1786000000\n")
 	writeAppFile(t, m, "one", "log/state", "running\n")
 
 	// The container start time comes from podman; the app start time is the state
 	// file's mtime. Pin the mtime so the assertion is exact.
-	stateFile := filepath.Join(m.AppFiles("one").Path(), "log", "state")
+	stateFile := filepath.Join(m.testMachine().AppFiles("one").Path(), "log", "state")
 	early := time.Unix(1786001111, 0)
 	require.NoError(t, os.Chtimes(stateFile, early, early))
 
-	states := m.States([]string{"one"})
+	states := m.testMachine().States([]string{"one"})
 	assert.Equal(t, int64(1786001000), states["one"].StartedAt, "container start time from podman ps")
 	assert.Equal(t, early.UnixMilli(), states["one"].AppStartedAt, "app start time from the state file mtime")
 
@@ -98,7 +98,7 @@ func TestStatesReportsStartTimes(t *testing.T) {
 	// the running state is identical before and after.
 	later := time.Unix(1786009999, 0)
 	require.NoError(t, os.Chtimes(stateFile, later, later))
-	states = m.States([]string{"one"})
+	states = m.testMachine().States([]string{"one"})
 	assert.Equal(t, later.UnixMilli(), states["one"].AppStartedAt, "the restart moved the app start time forward")
 	assert.Greater(t, states["one"].AppStartedAt, early.UnixMilli())
 }
@@ -111,7 +111,7 @@ func TestStatesDegradeRatherThanBlock(t *testing.T) {
 	// fails; the listing must still answer, just without memory numbers
 	runner.failOn("podman stats", assert.AnError)
 	runner.returns("systemctl is-active", "active\n")
-	states := m.States([]string{"one"})
+	states := m.testMachine().States([]string{"one"})
 	require.Len(t, states, 1)
 	assert.True(t, states["one"].Running, "systemd still answers")
 	assert.Equal(t, 0, states["one"].MemoryMB)
@@ -122,7 +122,7 @@ func TestCachedStatesAnswerFromMemory(t *testing.T) {
 	m, _, runner := newTestDeployManager(t)
 	createTestApp(t, m, "one")
 	runner.returns("systemctl is-active", "active\n")
-	runner.returns("podman stats", `[{"name":"`+m.ContainerName("one")+`","mem_usage":"7MB / 536.9MB"}]`)
+	runner.returns("podman stats", `[{"name":"`+m.testMachine().ContainerName("one")+`","mem_usage":"7MB / 536.9MB"}]`)
 	m.RefreshStates()
 	runner.reset()
 
@@ -168,7 +168,7 @@ func TestCachedStatesRefreshInBackgroundWhenStale(t *testing.T) {
 	m, _, runner := newTestDeployManager(t)
 	createTestApp(t, m, "one")
 	runner.returns("systemctl is-active", "active\n")
-	runner.returns("podman stats", `[{"name":"`+m.ContainerName("one")+`","mem_usage":"9MB / 536.9MB"}]`)
+	runner.returns("podman stats", `[{"name":"`+m.testMachine().ContainerName("one")+`","mem_usage":"9MB / 536.9MB"}]`)
 
 	// Nothing measured yet: the first read returns zeroes rather than blocking,
 	// and triggers a refresh that lands shortly after
@@ -182,7 +182,7 @@ func TestCachedStatesRefreshInBackgroundWhenStale(t *testing.T) {
 func TestStatesWithNoApps(t *testing.T) {
 	t.Parallel()
 	m, _, _ := newTestDeployManager(t)
-	assert.Empty(t, m.States(nil))
+	assert.Empty(t, m.testMachine().States(nil))
 }
 
 func TestStatesSurvivesBrokenOutput(t *testing.T) {
@@ -190,7 +190,7 @@ func TestStatesSurvivesBrokenOutput(t *testing.T) {
 	m, _, runner := newTestDeployManager(t)
 	createTestApp(t, m, "one")
 	runner.returns("podman stats", "not json at all")
-	states := m.States([]string{"one"})
+	states := m.testMachine().States([]string{"one"})
 	// A broken stats call must not lose the running state or crash the listing
 	require.Len(t, states, 1)
 	assert.Equal(t, 0, states["one"].MemoryMB)
@@ -201,7 +201,7 @@ func TestCachedStatesRefreshForAnAppItHasNeverSeen(t *testing.T) {
 	m, _, runner := newTestDeployManager(t)
 	createTestApp(t, m, "one")
 	runner.returns("systemctl is-active", "active\n")
-	runner.returns("podman stats", `[{"name":"`+m.ContainerName("one")+`","mem_usage":"5MB / 536.9MB"}]`)
+	runner.returns("podman stats", `[{"name":"`+m.testMachine().ContainerName("one")+`","mem_usage":"5MB / 536.9MB"}]`)
 	m.RefreshStates()
 
 	// A just-created app is the case that matters: its owner is redirected to its
@@ -209,7 +209,7 @@ func TestCachedStatesRefreshForAnAppItHasNeverSeen(t *testing.T) {
 	// would show "stopped" for ten seconds after it started.
 	createTestApp(t, m, "two")
 	runner.returns("systemctl is-active", "active\nactive\n")
-	runner.returns("podman stats", `[{"name":"`+m.ContainerName("one")+`","mem_usage":"5MB / 536.9MB"},{"name":"`+m.ContainerName("two")+`","mem_usage":"3MB / 536.9MB"}]`)
+	runner.returns("podman stats", `[{"name":"`+m.testMachine().ContainerName("one")+`","mem_usage":"5MB / 536.9MB"},{"name":"`+m.testMachine().ContainerName("two")+`","mem_usage":"3MB / 536.9MB"}]`)
 	states := m.CachedStates([]string{"two"})
 	assert.False(t, states["two"].Running, "the answer is still immediate")
 	require.Eventually(t, func() bool {
@@ -228,7 +228,7 @@ func TestLifecycleInvalidatesTheCachedState(t *testing.T) {
 	// Someone just pressed Start. Answering "stopped" for another ten seconds
 	// makes the button look broken.
 	runner.returns("systemctl is-active", "active\n")
-	_, err := m.Ensure("one") // What POST /start calls
+	_, err := m.testMachine().Ensure("one") // What POST /start calls
 	require.NoError(t, err)
 	require.Eventually(t, func() bool {
 		return m.CachedStates([]string{"one"})["one"].Running
@@ -236,7 +236,7 @@ func TestLifecycleInvalidatesTheCachedState(t *testing.T) {
 
 	// Every way to change an app's state has to do this, or the dot lies
 	runner.returns("systemctl is-active", "inactive\n")
-	require.NoError(t, m.Down("one"))
+	require.NoError(t, m.testMachine().Down("one"))
 	require.Eventually(t, func() bool {
 		return !m.CachedStates([]string{"one"})["one"].Running
 	}, 5*time.Second, 10*time.Millisecond, "stopping an app must too")

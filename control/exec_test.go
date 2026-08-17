@@ -27,7 +27,7 @@ func TestExecPassesTheTimeoutIntoTheContainer(t *testing.T) {
 	createTestApp(t, m, "blog")
 
 	runner.reset()
-	_, err := m.Exec("blog", "echo hi", 0)
+	_, err := m.testMachine().Exec("blog", "echo hi", 0)
 	require.NoError(t, err)
 	// The in-container timeout(1) is what actually bounds the command, so its
 	// value must be the default in seconds, not 0 (which would kill instantly).
@@ -38,7 +38,7 @@ func TestExecPassesTheTimeoutIntoTheContainer(t *testing.T) {
 	assert.Equal(t, node.ExecDefaultTimeout+node.ExecGraceTimeout, runner.timeouts[len(runner.timeouts)-1])
 
 	runner.reset()
-	_, err = m.Exec("blog", "echo hi", 10*time.Minute)
+	_, err = m.testMachine().Exec("blog", "echo hi", 10*time.Minute)
 	require.NoError(t, err)
 	// A request past the ceiling is clamped, not honored.
 	assert.Contains(t, runner.ran(), "timeout --kill-after 5s 300")
@@ -51,7 +51,7 @@ func TestExecReportsATimeout(t *testing.T) {
 	createTestApp(t, m, "blog")
 	runner.failOn("podman exec", realExitError(t, node.ExecTimeoutExitCode))
 
-	res, err := m.Exec("blog", "sleep 999", 0)
+	res, err := m.testMachine().Exec("blog", "sleep 999", 0)
 	require.NoError(t, err) // A timed-out command is a result, not an error
 	assert.True(t, res.TimedOut)
 	assert.Equal(t, node.ExecTimeoutExitCode, res.ExitCode)
@@ -63,7 +63,7 @@ func TestExecReportsANonZeroExit(t *testing.T) {
 	createTestApp(t, m, "blog")
 	runner.failOn("podman exec", realExitError(t, 2))
 
-	res, err := m.Exec("blog", "false", 0)
+	res, err := m.testMachine().Exec("blog", "false", 0)
 	require.NoError(t, err)
 	assert.False(t, res.TimedOut)
 	assert.Equal(t, 2, res.ExitCode)
@@ -78,7 +78,7 @@ func TestExecRefusesAPoweredOffApp(t *testing.T) {
 	// "container state improper" buried in a 200 response.
 	require.NoError(t, m.store.SetAppPoweredOff("blog", true))
 	runner.reset()
-	_, err := m.Exec("blog", "echo hi", 0)
+	_, err := m.testMachine().Exec("blog", "echo hi", 0)
 	require.ErrorIs(t, err, appctl.ErrPoweredOff)
 	assert.NotContains(t, runner.ran(), "podman exec")
 }
@@ -94,7 +94,7 @@ func TestExecStartsAStoppedContainerFirst(t *testing.T) {
 	runner.returns("container inspect", "whatever") // Exists
 	runner.returns("is-active", "inactive")
 	runner.reset()
-	_, err := m.Exec("blog", "echo hi", 0)
+	_, err := m.testMachine().Exec("blog", "echo hi", 0)
 	require.NoError(t, err)
 	joined := runner.ran()
 	assert.Contains(t, joined, "enable --now", "the container is started before the exec")

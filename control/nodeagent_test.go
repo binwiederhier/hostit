@@ -11,7 +11,7 @@ func TestHeartbeatReportsBuildAndBtrfs(t *testing.T) {
 	t.Parallel()
 	m, _, runner := newTestDeployManager(t)
 	runner.returns("stat -f", "btrfs\n")
-	hb := m.Heartbeat()
+	hb := m.testMachine().Heartbeat()
 	assert.Equal(t, node.Version, hb.Version)
 	assert.True(t, hb.BtrfsCapable)
 }

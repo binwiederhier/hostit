@@ -24,7 +24,7 @@ func TestCreateAppWiresSubvolumeAndBudget(t *testing.T) {
 	// quota rescan completes).
 	ran := r.ran()
 	assert.Contains(t, ran, "btrfs qgroup create "+group+" "+pool)
-	assert.Contains(t, ran, "btrfs subvolume snapshot -i "+group+" "+m.Workspace().BasePath(a.ImageTag)+" "+m.AppSubvolume("blog"))
+	assert.Contains(t, ran, "btrfs subvolume snapshot -i "+group+" "+m.testMachine().Workspace().BasePath(a.ImageTag)+" "+m.testMachine().AppSubvolume("blog"))
 	assert.NotContains(t, ran, "chown", "the subvolume stays root-owned for the idmap mount")
 
 	// DiskMB 0 no longer means unlimited: nothing is ever uncapped anymore (an
@@ -36,7 +36,7 @@ func TestDeleteAppRemovesSubvolumeAndBudget(t *testing.T) {
 	t.Parallel()
 	m, _, r := newTestDeployManager(t)
 	a := createTestApp(t, m, "blog")
-	subvol := m.AppSubvolume("blog")
+	subvol := m.testMachine().AppSubvolume("blog")
 	group := fmt.Sprintf("1/%d", workspace.UIDFor(a.Port))
 	r.reset()
 	require.NoError(t, m.DeleteApp("blog"))
@@ -52,7 +52,7 @@ func TestEnableDiskBudgetsMigratesThePoolToSimpleQuotas(t *testing.T) {
 	// migrates it -- disable, then enable simple -- so budgets actually enforce.
 	r.returns("findmnt", "abcd-1234\n")
 	r.returns("cat /sys/fs/btrfs/abcd-1234/qgroups/mode", "qgroup\n")
-	m.EnableDiskBudgets()
+	m.testMachine().EnableDiskBudgets()
 	assert.Contains(t, r.ran(), "btrfs quota disable "+m.config.AppsDir)
 }
 
@@ -73,7 +73,7 @@ func TestSweepStaleQgroups(t *testing.T) {
 		liveBudget+"   1.00MiB    1.00MiB   <0 member qgroups>\n"+
 		"1/9999   0.00B      0.00B     <0 member qgroups>\n")
 	r.reset()
-	m.SweepStaleQgroups()
+	m.testMachine().SweepStaleQgroups()
 
 	assert.Contains(t, r.ran(), "btrfs qgroup destroy 0/300 "+m.config.AppsDir)
 	assert.Contains(t, r.ran(), "btrfs qgroup destroy 1/9999 "+m.config.AppsDir)

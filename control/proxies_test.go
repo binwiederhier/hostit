@@ -153,7 +153,7 @@ func TestCertForServesPEMThroughTheCombinedLookup(t *testing.T) {
 func TestRouteTableVersionSurvivesAControlRestart(t *testing.T) {
 	t.Parallel()
 	conf, st := newProxyTestDeps(t)
-	first := New(conf, NewManager(conf, st, testServices(newFakeSystem(), newFakeRunner())), user.NewManager(conf, st))
+	first := New(conf, NewManager(conf, st), user.NewManager(conf, st))
 	t.Cleanup(first.apps.WaitBackground)
 	_, err := first.apps.CreateApp("one", nil)
 	require.NoError(t, err)
@@ -162,7 +162,7 @@ func TestRouteTableVersionSurvivesAControlRestart(t *testing.T) {
 	require.NotZero(t, before.Seq)
 
 	// A new control process over the same registry, with different routes.
-	second := New(conf, NewManager(conf, st, testServices(newFakeSystem(), newFakeRunner())), user.NewManager(conf, st))
+	second := New(conf, NewManager(conf, st), user.NewManager(conf, st))
 	t.Cleanup(second.apps.WaitBackground)
 	_, err = second.apps.CreateApp("two", nil)
 	require.NoError(t, err)

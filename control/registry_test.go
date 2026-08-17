@@ -13,8 +13,8 @@ func TestNodeRegistryRegisterSupersedeUnregister(t *testing.T) {
 	t.Parallel()
 	m, _, _ := newTestDeployManager(t)
 	reg := NewNodeRegistry()
-	first := &recordingAgent{NodeAgent: m}
-	second := &recordingAgent{NodeAgent: m}
+	first := &recordingAgent{NodeAgent: m.testMachine()}
+	second := &recordingAgent{NodeAgent: m.testMachine()}
 
 	reg.Register("local", first)
 	assert.Equal(t, NodeAgent(first), reg.Agent("local"))
@@ -37,8 +37,8 @@ func TestPlacementPicksTheEmptiestConnectedNode(t *testing.T) {
 	// Two apps live on "local", none on "worker-2"; both nodes are connected.
 	require.NoError(t, m.store.AddApp(&store.App{ID: "a1", Name: "one", Port: 10001, Host: store.HostLocal}))
 	require.NoError(t, m.store.AddApp(&store.App{ID: "a2", Name: "two", Port: 10002, Host: store.HostLocal}))
-	reg.Register("local", &recordingAgent{NodeAgent: m})
-	reg.Register("worker-2", &recordingAgent{NodeAgent: m})
+	reg.Register("local", &recordingAgent{NodeAgent: m.testMachine()})
+	reg.Register("worker-2", &recordingAgent{NodeAgent: m.testMachine()})
 
 	assert.Equal(t, "worker-2", m.placeNode())
 
@@ -52,8 +52,8 @@ func TestRoutingAgentRoutesByAppHost(t *testing.T) {
 	m, _, _ := newTestDeployManager(t)
 	reg := NewNodeRegistry()
 	require.NoError(t, m.store.AddApp(&store.App{ID: "a1", Name: "blog", Port: 10001, Host: "worker-2"}))
-	local := &recordingAgent{NodeAgent: m}
-	remote := &recordingAgent{NodeAgent: m}
+	local := &recordingAgent{NodeAgent: m.testMachine()}
+	remote := &recordingAgent{NodeAgent: m.testMachine()}
 	reg.Register("local", local)
 	reg.Register("worker-2", remote)
 	routing := NewRoutingAgent(m.store, reg)
@@ -93,9 +93,9 @@ func TestMachineLifecycleInvalidatesTheControlCache(t *testing.T) {
 	createTestApp(t, m, "blog")
 	m.IngestStates(map[string]State{"blog": {Running: true, AppRunning: true, AppState: "running"}})
 
-	require.NoError(t, m.Down("blog"))
+	require.NoError(t, m.testMachine().Down("blog"))
 
-	_, machineHas := m.MeasuredState("blog")
+	_, machineHas := m.testMachine().MeasuredState("blog")
 	assert.False(t, machineHas, "the machine's own cache entry is dropped")
 	cached := m.CachedStates([]string{"blog"})
 	assert.False(t, cached["blog"].Running, "the control cache must not keep serving the pre-Down state")
@@ -109,8 +109,8 @@ func TestReconcileSlicesTheDocumentPerNode(t *testing.T) {
 	t.Parallel()
 	m, _ := newTestManager(t)
 	reg := NewNodeRegistry()
-	local := &desiredRecorder{NodeAgent: m}
-	worker := &desiredRecorder{NodeAgent: m}
+	local := &desiredRecorder{NodeAgent: m.testMachine()}
+	worker := &desiredRecorder{NodeAgent: m.testMachine()}
 	reg.Register(store.HostLocal, local)
 	reg.Register("worker-2", worker)
 

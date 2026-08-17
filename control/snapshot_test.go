@@ -24,12 +24,12 @@ func TestManagerRollbackDelegatesAndBringsAppUp(t *testing.T) {
 	m, _, r := newTestDeployManager(t)
 	r.failOn("container inspect", assert.AnError) // no container yet -> Up creates one
 	require.NoError(t, m.store.AddApp(&store.App{Name: "blog", Port: 10000, Host: store.HostLocal}))
-	require.NoError(t, os.MkdirAll(m.AppFiles("blog").Path(), 0o755))
+	require.NoError(t, os.MkdirAll(m.testMachine().AppFiles("blog").Path(), 0o755))
 	writeAppFile(t, m, "blog", "hostit.yml", "mode: app\nrun: ./server")
 
-	target, err := m.TakeSnapshot("blog", "target", false)
+	target, err := m.testMachine().TakeSnapshot("blog", "target", false)
 	require.NoError(t, err)
-	require.NoError(t, m.Rollback("blog", target.ID))
+	require.NoError(t, m.testMachine().Rollback("blog", target.ID))
 
 	// A labelled safety snapshot was recorded through the delegation.
 	snaps, err := m.ListSnapshots("blog")
@@ -45,7 +45,7 @@ func TestManagerRollbackDelegatesAndBringsAppUp(t *testing.T) {
 	assert.True(t, safety.Auto)
 
 	// The app was brought back up after the rollback (Host.Up -> m.up).
-	assert.Contains(t, r.ran(), "systemctl enable --now "+m.UnitName("blog"), "the app is brought back up after rollback")
+	assert.Contains(t, r.ran(), "systemctl enable --now "+m.testMachine().UnitName("blog"), "the app is brought back up after rollback")
 }
 
 // Snapshot subvolumes are created straight into the app's budget group (-i,
@@ -57,11 +57,11 @@ func TestTakeSnapshotCreatesTheSubvolumeInsideTheBudget(t *testing.T) {
 	r.returns("inspect-internal rootid", "300\n")
 	a := createTestApp(t, m, "blog")
 	r.reset()
-	snap, err := m.TakeSnapshot("blog", "save", false)
+	snap, err := m.testMachine().TakeSnapshot("blog", "save", false)
 	require.NoError(t, err)
 	// Created INTO the budget group (-i): atomic membership, no post-hoc assign
 	// (which would leave the group unenforced until a rescan).
-	assert.Contains(t, r.ran(), fmt.Sprintf("btrfs subvolume snapshot -r -i 1/%d %s %s", workspace.UIDFor(a.Port), m.AppSubvolume("blog"), m.SnapshotPath("blog", snap.ID)))
+	assert.Contains(t, r.ran(), fmt.Sprintf("btrfs subvolume snapshot -r -i 1/%d %s %s", workspace.UIDFor(a.Port), m.testMachine().AppSubvolume("blog"), m.testMachine().SnapshotPath("blog", snap.ID)))
 	assert.NotContains(t, r.ran(), "qgroup assign")
 }
 
@@ -105,8 +105,8 @@ func TestAutoSnapshotSweepSnapshotsEveryAppThroughTheNodeAgent(t *testing.T) {
 	require.NoError(t, err)
 	_, err = m.CreateApp("two", nil)
 	require.NoError(t, err)
-	agent := &snapAgent{NodeAgent: m}
-	m.SetNodeAgent(agent)
+	agent := &snapAgent{NodeAgent: m.testMachine()}
+	m.NodeRegistry().Register(store.HostLocal, agent)
 
 	m.autoSnapshotSweep()
 
@@ -127,8 +127,8 @@ func TestAutoSnapshotSweepSkipsUnreachableApps(t *testing.T) {
 	require.NoError(t, err)
 	_, err = m.CreateApp("two", nil)
 	require.NoError(t, err)
-	agent := &snapAgent{NodeAgent: m, failFor: "one"}
-	m.SetNodeAgent(agent)
+	agent := &snapAgent{NodeAgent: m.testMachine(), failFor: "one"}
+	m.NodeRegistry().Register(store.HostLocal, agent)
 
 	m.autoSnapshotSweep()
 
@@ -167,8 +167,8 @@ func TestPruneSnapshotsDeletesBeyondRetentionThroughTheAgent(t *testing.T) {
 	}
 	_, wantPrune := retention.Apply(rs, retention.Default)
 	require.NotEmpty(t, wantPrune, "the seed must exceed the retention policy")
-	agent := &snapAgent{NodeAgent: m}
-	m.SetNodeAgent(agent)
+	agent := &snapAgent{NodeAgent: m.testMachine()}
+	m.NodeRegistry().Register(store.HostLocal, agent)
 
 	m.PruneSnapshots("blog")
 
@@ -199,7 +199,7 @@ func TestIngestNodeSnapshotsRecoversRecordsMissedWhileDisconnected(t *testing.T)
 	// An app hosted on the remote node (create places locally in tests, so the
 	// row is written directly with that node as its host).
 	require.NoError(t, m.store.AddApp(&store.App{ID: store.NewAppID(), Name: "blog", Port: 10500, Host: "worker-2"}))
-	agent := &snapshotReporter{NodeAgent: m, report: []*store.Snapshot{
+	agent := &snapshotReporter{NodeAgent: m.testMachine(), report: []*store.Snapshot{
 		{ID: "20260816-120000-lost", AppName: "blog", Label: "taken during the outage", CreatedAt: time.Now().UTC().Truncate(time.Second), Auto: true},
 	}}
 
@@ -224,7 +224,7 @@ func TestIngestNodeSnapshotsRejectsForeignApps(t *testing.T) {
 	require.NoError(t, err)
 	before, err := m.ListSnapshots("mine")
 	require.NoError(t, err)
-	agent := &snapshotReporter{NodeAgent: m, report: []*store.Snapshot{
+	agent := &snapshotReporter{NodeAgent: m.testMachine(), report: []*store.Snapshot{
 		{ID: "20260816-120000-evil", AppName: "mine", Label: "not yours", CreatedAt: time.Now().UTC()},
 	}}
 

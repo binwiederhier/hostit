@@ -19,11 +19,11 @@ func TestForkSeedsSubvolumeFromSourceAndDeploys(t *testing.T) {
 	r.returns("stat -f", "btrfs\n")
 	r.failOn("container inspect", assert.AnError) // no container yet -> Up creates one
 	require.NoError(t, m.store.AddApp(&store.App{Name: "blog", Port: 10000, Host: store.HostLocal}))
-	require.NoError(t, os.MkdirAll(m.AppSubvolume("blog"), 0o755))
+	require.NoError(t, os.MkdirAll(m.testMachine().AppSubvolume("blog"), 0o755))
 	// The fake runner materializes the snapshot destination as an empty dir, so
 	// stand in for the fork's on-disk effect: the fork's files dir exists with a
 	// config, so the background deploy resolves.
-	require.NoError(t, os.MkdirAll(m.AppFiles("blog2").Path(), 0o755))
+	require.NoError(t, os.MkdirAll(m.testMachine().AppFiles("blog2").Path(), 0o755))
 	writeAppFile(t, m, "blog2", "hostit.yml", "mode: app\nrun: ./server")
 
 	fork, err := m.Fork("blog", "blog2", "", &CreateOptions{})
@@ -34,7 +34,7 @@ func TestForkSeedsSubvolumeFromSourceAndDeploys(t *testing.T) {
 	// data AND installed packages), writable, not read-only, created straight
 	// into the fork's budget group (-i).
 	group := fmt.Sprintf("1/%d", workspace.UIDFor(fork.Port))
-	assert.Contains(t, r.ran(), "btrfs subvolume snapshot -i "+group+" "+m.AppSubvolume("blog")+" "+m.AppSubvolume("blog2"))
+	assert.Contains(t, r.ran(), "btrfs subvolume snapshot -i "+group+" "+m.testMachine().AppSubvolume("blog")+" "+m.testMachine().AppSubvolume("blog2"))
 	assert.NotContains(t, r.ran(), "btrfs subvolume snapshot -r ", "the fork seed is writable")
 
 	// A user is created, but no demo skeleton is written (the fork keeps the source's files).
@@ -46,7 +46,7 @@ func TestForkSeedsSubvolumeFromSourceAndDeploys(t *testing.T) {
 	_, err = m.store.App("blog2")
 	require.NoError(t, err)
 	require.Eventually(t, func() bool {
-		return strings.Contains(r.ran(), m.UnitName("blog2"))
+		return strings.Contains(r.ran(), m.testMachine().UnitName("blog2"))
 	}, 5*time.Second, 5*time.Millisecond, "the forked app did not deploy")
 	assert.NotContains(t, r.ran(), "chown", "a fork stays root-owned like every subvolume")
 }
@@ -57,11 +57,11 @@ func TestForkFromSnapshotSeedsFromThatSnapshot(t *testing.T) {
 	r.returns("stat -f", "btrfs\n")
 	r.failOn("container inspect", assert.AnError)
 	require.NoError(t, m.store.AddApp(&store.App{Name: "blog", Port: 10000, Host: store.HostLocal}))
-	require.NoError(t, os.MkdirAll(m.AppSubvolume("blog"), 0o755))
-	require.NoError(t, os.MkdirAll(m.AppFiles("blog2").Path(), 0o755))
+	require.NoError(t, os.MkdirAll(m.testMachine().AppSubvolume("blog"), 0o755))
+	require.NoError(t, os.MkdirAll(m.testMachine().AppFiles("blog2").Path(), 0o755))
 	writeAppFile(t, m, "blog2", "hostit.yml", "mode: app\nrun: ./server")
 
-	snap, err := m.TakeSnapshot("blog", "checkpoint", false)
+	snap, err := m.testMachine().TakeSnapshot("blog", "checkpoint", false)
 	require.NoError(t, err)
 	r.reset()
 	fork, err := m.Fork("blog", "blog2", snap.ID, &CreateOptions{})
@@ -69,8 +69,8 @@ func TestForkFromSnapshotSeedsFromThatSnapshot(t *testing.T) {
 
 	// Seeded from the snapshot's subvolume (a whole-app snapshot), not the live
 	// subvolume, and joined to the NEW app's budget group at birth (-i).
-	assert.Contains(t, r.ran(), "btrfs subvolume snapshot -i "+fmt.Sprintf("1/%d", workspace.UIDFor(fork.Port))+" "+m.SnapshotPath("blog", snap.ID)+" "+m.AppSubvolume("blog2"))
-	assert.NotContains(t, r.ran(), "btrfs subvolume snapshot "+m.AppSubvolume("blog")+" "+m.AppSubvolume("blog2"))
+	assert.Contains(t, r.ran(), "btrfs subvolume snapshot -i "+fmt.Sprintf("1/%d", workspace.UIDFor(fork.Port))+" "+m.testMachine().SnapshotPath("blog", snap.ID)+" "+m.testMachine().AppSubvolume("blog2"))
+	assert.NotContains(t, r.ran(), "btrfs subvolume snapshot "+m.testMachine().AppSubvolume("blog")+" "+m.testMachine().AppSubvolume("blog2"))
 }
 
 func TestForkFromUnknownSnapshotFails(t *testing.T) {
@@ -87,7 +87,7 @@ func TestForkSetsDiskQuota(t *testing.T) {
 	m, _, r := newTestDeployManager(t)
 	r.returns("stat -f", "btrfs\n")
 	require.NoError(t, m.store.AddApp(&store.App{Name: "blog", Port: 10000, Host: store.HostLocal}))
-	require.NoError(t, os.MkdirAll(m.AppSubvolume("blog"), 0o755))
+	require.NoError(t, os.MkdirAll(m.testMachine().AppSubvolume("blog"), 0o755))
 
 	fork, err := m.Fork("blog", "blog2", "", &CreateOptions{DiskMB: 256})
 	require.NoError(t, err)

@@ -111,6 +111,18 @@ func (m *Manager) LocalNodeLoop(done <-chan struct{}) {
 	}
 }
 
+// NodeAgent is where this manager sends machine work: the routing agent that
+// resolves each app to its hosting node.
+func (m *Manager) NodeAgent() NodeAgent {
+	return m.node
+}
+
+// NodeRegistry is where connected nodes register. It exists from construction
+// and is simply empty until one dials in.
+func (m *Manager) NodeRegistry() *NodeRegistry {
+	return m.registry
+}
+
 // SetNodeRegistry switches the manager's orchestration to multi-node routing:
 // machine work resolves each app's host to its connected agent, and mirror
 // pushes go to every connected node (filtered to its apps).

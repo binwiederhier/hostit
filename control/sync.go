@@ -19,9 +19,6 @@ import (
 // called on connect (rejoin) and after every registry mutation. A no-op in a
 // single process, where the store IS the registry.
 func (m *Manager) PushMirror() {
-	if m.node == NodeAgent(m) {
-		return
-	}
 	if m.registry == nil {
 		// Single remote agent (tests): push everything.
 		state, err := m.syncState("")
@@ -122,9 +119,6 @@ func (m *Manager) appPolicy(a *store.App) (keys []string, memoryMB, diskMB int) 
 // ReconcileNodes hands every connected node the desired state and lets each
 // converge. A no-op in a single process, where control IS the machine.
 func (m *Manager) ReconcileNodes(desired *nodeapi.DesiredState) {
-	if m.node == NodeAgent(m) {
-		return
-	}
 	m.node.Reconcile(desired)
 }
 

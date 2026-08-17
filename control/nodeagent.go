@@ -26,5 +26,6 @@ var (
 	ErrLimitReached = nodeapi.ErrLimitReached
 )
 
-// The Manager is the in-process NodeAgent of a single-box install.
-var _ NodeAgent = (*Manager)(nil)
+// The Manager is NOT a NodeAgent. It used to be, by embedding a Machine, which
+// is what made a fused daemon possible; machine work now always crosses the
+// cluster link to a node, even one sharing the host.

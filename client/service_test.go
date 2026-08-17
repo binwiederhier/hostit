@@ -10,7 +10,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"heckel.io/hostit/control"
-	"heckel.io/hostit/control/apptest"
 	"heckel.io/hostit/controlconf"
 	"heckel.io/hostit/store"
 	"heckel.io/hostit/user"
@@ -77,7 +76,7 @@ func newTestClient(t *testing.T, token string) *Client {
 	t.Cleanup(func() {
 		_ = s.Close()
 	})
-	srv := control.New(conf, control.NewManager(conf, s, apptest.NewNopServices()), user.NewManager(conf, s))
+	srv := control.New(conf, control.NewManager(conf, s), user.NewManager(conf, s))
 	httpServer := httptest.NewServer(srv.API())
 	t.Cleanup(httpServer.Close)
 	return New(httpServer.URL, token)

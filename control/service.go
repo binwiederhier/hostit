@@ -109,7 +109,7 @@ func New(conf *controlconf.Config, apps *Manager, users *user.Manager) *Server {
 	s := &Server{
 		config:         conf,
 		apps:           apps,
-		node:           apps,
+		node:           apps.NodeAgent(),
 		users:          users,
 		sessions:       newSessionManager(conf.SessionKey),
 		usernameForUID: usernameForUID,
@@ -132,7 +132,7 @@ func New(conf *controlconf.Config, apps *Manager, users *user.Manager) *Server {
 	// subscription (a sandboxed claude -p). Its tools are the app's own operations,
 	// so it is confined to one app the way an agent token is.
 	if conf.AssistantAvailable() {
-		s.assistantOps = &appOps{apps: apps, node: apps, changed: s.assistantChanged}
+		s.assistantOps = &appOps{apps: apps, node: apps.NodeAgent(), changed: s.assistantChanged}
 		s.assistant = assistant.NewManager(assistant.NewClient(conf.AnthropicAPIKey), s.assistantOps, &appTranscripts{store: apps.Store()}, conf.AssistantModel)
 		// Wire the Claude Max (subscription) backend whenever its token is configured,
 		// so selecting "Claude.ai" actually uses the subscription. Its presence is the
@@ -177,12 +177,6 @@ func New(conf *controlconf.Config, apps *Manager, users *user.Manager) *Server {
 
 // Run starts all listeners and blocks until the first one fails
 func (s *Server) Run() error {
-	// Port rules are node-local. Apply them here only when control also IS the
-	// node (no separate node listener); in a split deployment each hostit-node
-	// applies its own (Provision/Deprovision and the rejoin reconcile).
-	if s.config.ListenNode == "" {
-		s.apps.ReconcilePortRules()
-	}
 	g := &errgroup.Group{}
 
 	// Unix socket for the app-side CLI ("hostit up" etc.)

@@ -52,17 +52,36 @@ type CreateOptions struct {
 	Host        string   // Target node; empty means placement picks one (a fork pins its source's)
 }
 
-// Manager creates and deletes apps and everything that belongs to them, and
-// runs their containers as root with per-app uid mappings. It is (still) both
-// halves of the platform in one type: the embedded node.Machine is the
-// node-local half; the fields below are the control plane's (orchestration,
-// placement, port allocation from the registry).
+// Manager creates and deletes apps and everything that belongs to them: the
+// control plane's half of the platform -- orchestration, placement, port
+// allocation from the registry. It does no machine work itself and holds no
+// machinery to do it with; every container, account, subvolume and port rule
+// belongs to a node, reached through the agent below.
+//
+// It used to embed a node.Machine and be both halves at once. One process
+// doing both meant a control restart stopped the apps with it, and it made
+// "who owns this machine" a question with two answers. A node is now always a
+// node, even when it shares the host.
 type Manager struct {
-	*node.Machine
+	// appLocks serializes control's own per-app work (create against delete,
+	// rename against either). The node keeps a lock of its own for the machine
+	// work; these guard different things and must not be the same lock, since
+	// one is held across a network call to the other.
+	appLocks   map[string]*sync.Mutex
+	appLocksMu sync.Mutex // Protects appLocks
 
-	// node is where this manager's ORCHESTRATION sends machine work (provision,
-	// deprovision): itself by default (single process), or a remote node agent
-	// when control and node run as separate services (SetNodeAgent).
+	// background tracks the goroutines this manager started (teardown, mostly),
+	// so tests can wait for them and a shutdown does not race them.
+	background sync.WaitGroup
+
+	// limits is what control last asked for per app, memory and disk in MB. It
+	// is control's record of its own intent: the node enforces, control decides.
+	limits   map[string]appLimits
+	limitsMu sync.Mutex // Protects limits
+
+	// node is where ORCHESTRATION sends machine work (provision, deprovision,
+	// files, state): the routing agent that resolves each app to its hosting
+	// node, or -- in tests -- an in-process Machine standing in for one.
 	node NodeAgent
 	// registry is the connected-nodes registry in multi-node control mode
 	// (SetNodeRegistry); nil in a single process.
@@ -105,15 +124,21 @@ type Manager struct {
 
 // NewManager creates a Manager from its config, store and the node-local services
 // (real ones from node.NewSystemServices in production, fakes in tests).
-func NewManager(conf *controlconf.Config, s *store.Store, svc *node.Services) *Manager {
+func NewManager(conf *controlconf.Config, s *store.Store) *Manager {
+	registry := NewNodeRegistry()
 	m := &Manager{
-		Machine:       node.NewMachine(machineConfig(conf), s, svc),
+		registry:      registry,
+		appLocks:      make(map[string]*sync.Mutex),
+		limits:        make(map[string]appLimits),
 		reservedPorts: make(map[int]bool),
 		ctlStates:     make(map[string]State),
 		store:         s,
 		config:        conf,
 	}
-	m.node = m // single process: orchestration and machine work are the same
+	// Machine work always goes to a node, from the first line of the process:
+	// with none connected the routing agent answers "node is not connected",
+	// which is the truth on a host whose hostit-node has not started yet.
+	m.node = NewRoutingAgent(s, registry)
 	// Resume port allocation where the last process left off, so a restart does
 	// not hand out the most recently freed ports first.
 	if settings, err := s.Settings(); err == nil {
@@ -121,14 +146,62 @@ func NewManager(conf *controlconf.Config, s *store.Store, svc *node.Services) *M
 			m.nextPort = next
 		}
 	}
-	// A machine-side lifecycle change invalidates the control cache's entry,
-	// so the UI never confidently serves the pre-transition state for a TTL.
-	m.Machine.OnStateChanged(func(name string) {
-		m.ctlStatesMu.Lock()
-		delete(m.ctlStates, name)
-		m.ctlStatesMu.Unlock()
-	})
 	return m
+}
+
+// appLimits is what control asked for; zero means "no limit chosen", which the
+// effective-cap resolution turns into the default.
+type appLimits struct {
+	memoryMB int
+	diskMB   int
+}
+
+// LockApp serializes control's work on one app; the returned func unlocks.
+func (m *Manager) LockApp(name string) func() {
+	m.appLocksMu.Lock()
+	lock, ok := m.appLocks[name]
+	if !ok {
+		lock = &sync.Mutex{}
+		m.appLocks[name] = lock
+	}
+	m.appLocksMu.Unlock()
+	lock.Lock()
+	return lock.Unlock
+}
+
+// TrackedGo runs fn in the background and remembers it, so WaitBackground can
+// wait for it (tests) and a shutdown does not race it.
+func (m *Manager) TrackedGo(fn func()) {
+	m.background.Add(1)
+	go func() {
+		defer m.background.Done()
+		fn()
+	}()
+}
+
+// WaitBackground waits for the goroutines this manager started.
+func (m *Manager) WaitBackground() {
+	m.background.Wait()
+}
+
+// RecordLimits stores what control asked for; MemoryLimit and DiskLimit read it
+// back when building a spec or a desired state.
+func (m *Manager) RecordLimits(name string, memoryMB, diskMB int) {
+	m.limitsMu.Lock()
+	defer m.limitsMu.Unlock()
+	m.limits[name] = appLimits{memoryMB: memoryMB, diskMB: diskMB}
+}
+
+func (m *Manager) MemoryLimit(name string) int {
+	m.limitsMu.Lock()
+	defer m.limitsMu.Unlock()
+	return m.limits[name].memoryMB
+}
+
+func (m *Manager) DiskLimit(name string) int {
+	m.limitsMu.Lock()
+	defer m.limitsMu.Unlock()
+	return m.limits[name].diskMB
 }
 
 // machineConfig is the node config the FUSED daemon's machine half runs on:
@@ -256,7 +329,7 @@ func (m *Manager) create(name string, opts *CreateOptions, seed *seedRef) (*stor
 	// a concurrent reconcile (seen live on the stage two-node setup). The app
 	// is pinned to the workspace image it is built with, so a later
 	// Containerfile change (e.g. adding a runtime) only affects new apps.
-	m.RecordDiskLimit(name, opts.DiskMB)
+	m.RecordLimits(name, opts.MemoryMB, opts.DiskMB)
 	if err := m.store.AddApp(app); err != nil {
 		return nil, err
 	}
@@ -286,7 +359,7 @@ func (m *Manager) create(name string, opts *CreateOptions, seed *seedRef) (*stor
 		m.PushMirror()
 		return nil, err
 	}
-	m.SetMemoryLimit(name, opts.MemoryMB)
+	m.node.SetMemoryLimit(name, opts.MemoryMB)
 	// Apply the disk budget now (create and fork alike), so a new app is capped
 	// from the start rather than only after the next daemon restart: record the
 	// limit, create the app's qgroup, join the subvolume, cap it. Failure only
@@ -344,13 +417,11 @@ func (m *Manager) DeleteApp(name string) error {
 	m.pmu.Lock()
 	m.reservedPorts[a.Port] = true
 	m.pmu.Unlock()
-	m.SetTearingDown(name, true)
 	// The port's drop rule is removed by the node inside Deprovision (its
 	// firewall table, its user lookups); the port stays reserved until then.
 	m.TrackedGo(func() {
 		defer unlock()
 		defer m.releasePort(a.Port)
-		defer m.SetTearingDown(name, false)
 		m.node.Deprovision(spec)
 	})
 	return nil
@@ -402,29 +473,11 @@ func (m *Manager) validateName(name string) error {
 	} else if !errors.Is(err, store.ErrAppNotFound) {
 		return err
 	}
-	if m.UserExists(name) {
-		// The unix user of a just-deleted same-name app dies in the background;
-		// waiting the teardown out turns an instant delete-then-recreate from a
-		// spurious "already exists" into a create that simply takes a moment.
-		if !m.waitForTeardown(name) {
-			return ErrAppExists
-		}
-	}
+	// The registry is the whole answer here. Whether a just-deleted app's unix
+	// user is still going away is node-local, and the node waits for its own
+	// teardown before provisioning a name again (node.Machine.awaitTeardown) --
+	// control cannot see another machine's passwd file, and should not try.
 	return nil
-}
-
-// waitForTeardown waits (bounded) for an in-flight background teardown of this
-// name to release the unix user; false when none is running or it ran out of
-// patience -- the name really is taken then.
-func (m *Manager) waitForTeardown(name string) bool {
-	deadline := time.Now().Add(teardownWait)
-	for time.Now().Before(deadline) {
-		if !m.IsTearingDown(name) {
-			return !m.UserExists(name)
-		}
-		time.Sleep(teardownPoll)
-	}
-	return false
 }
 
 // allocatePort returns the lowest free port in the configured range

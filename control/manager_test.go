@@ -41,7 +41,7 @@ func TestSetKeysRewritesEveryAppOfTheOwner(t *testing.T) {
 	for _, name := range []string{"one", "two"} {
 		appKeys, err := m.store.AppKeys(name)
 		require.NoError(t, err)
-		require.NoError(t, m.SetKeys(name, appKeys, []string{testProfileKey}))
+		require.NoError(t, m.testMachine().SetKeys(name, appKeys, []string{testProfileKey}))
 		require.Contains(t, ops.authorizedKeys[name], testProfileKey, "app %s must get the profile key", name)
 		assert.Contains(t, ops.authorizedKeys[name], testPublicKey, "its own app key stays")
 	}
@@ -56,8 +56,8 @@ func TestCreateApp(t *testing.T) {
 	assert.Equal(t, 10000, app.Port)
 	assert.Equal(t, []string{"blog"}, ops.createdUsers)
 	assert.Equal(t, []string{testPublicKey}, ops.authorizedKeys["blog"])
-	assert.Contains(t, ops.skeletons[m.AppFiles("blog").Path()], "hostit.yml")
-	assert.Contains(t, ops.skeletons[m.AppFiles("blog").Path()], "README.md")
+	assert.Contains(t, ops.skeletons[m.testMachine().AppFiles("blog").Path()], "hostit.yml")
+	assert.Contains(t, ops.skeletons[m.testMachine().AppFiles("blog").Path()], "README.md")
 	stored, err := m.App("blog")
 	require.NoError(t, err)
 	assert.Equal(t, 10000, stored.Port)
@@ -168,11 +168,11 @@ func TestDeleteAppRemovesAppDirectory(t *testing.T) {
 	t.Parallel()
 	m, _, _ := newTestDeployManager(t)
 	createTestApp(t, m, "blog")
-	require.NoError(t, m.WriteFile("blog", "index.html", []byte("hi"), 0))
-	require.DirExists(t, m.AppSubvolume("blog"))
+	require.NoError(t, m.testMachine().WriteFile("blog", "index.html", []byte("hi"), 0))
+	require.DirExists(t, m.testMachine().AppSubvolume("blog"))
 
 	require.NoError(t, m.DeleteApp("blog"))
-	assert.NoDirExists(t, m.AppSubvolume("blog"))
+	assert.NoDirExists(t, m.testMachine().AppSubvolume("blog"))
 }
 
 func TestSetKeys(t *testing.T) {
@@ -181,10 +181,10 @@ func TestSetKeys(t *testing.T) {
 	_, err := m.CreateApp("blog", &CreateOptions{RequestKeys: []string{testPublicKey}})
 	require.NoError(t, err)
 	otherKey := "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIC24brF98CyUY18aeOGGQY3+wILYYnUUBQqICmMTvTGL other@host"
-	require.NoError(t, m.SetKeys("blog", []string{otherKey}, nil))
+	require.NoError(t, m.testMachine().SetKeys("blog", []string{otherKey}, nil))
 	assert.Equal(t, []string{otherKey}, ops.authorizedKeys["blog"])
-	require.Error(t, m.SetKeys("blog", []string{"garbage"}, nil))
-	require.ErrorIs(t, m.SetKeys("nope", []string{otherKey}, nil), store.ErrAppNotFound)
+	require.Error(t, m.testMachine().SetKeys("blog", []string{"garbage"}, nil))
+	require.ErrorIs(t, m.testMachine().SetKeys("nope", []string{otherKey}, nil), store.ErrAppNotFound)
 }
 
 func TestApps(t *testing.T) {
@@ -219,7 +219,7 @@ func newTestManagerDeps(t *testing.T) (*controlconf.Config, *store.Store, *fakeS
 func newTestManager(t *testing.T) (*Manager, *fakeSystem) {
 	t.Helper()
 	conf, s, ops := newTestManagerDeps(t)
-	m := NewManager(conf, s, testServices(ops, newFakeRunner()))
+	m := newWiredManager(conf, s, testServices(ops, newFakeRunner()))
 	// Cleanups run LIFO: registered after the store-close cleanup, this waits
 	// out the manager's background goroutines (post-create starts, delete
 	// teardowns) BEFORE the db closes and the temp dirs vanish under them --
@@ -421,8 +421,8 @@ func TestDeleteAppAnswersBeforeTeardownAndConverges(t *testing.T) {
 	t.Parallel()
 	m, ops, r := newTestDeployManager(t)
 	a := createTestApp(t, m, "blog")
-	subvol := m.AppSubvolume("blog")
-	unit, container := m.UnitName("blog"), m.ContainerName("blog")
+	subvol := m.testMachine().AppSubvolume("blog")
+	unit, container := m.testMachine().UnitName("blog"), m.testMachine().ContainerName("blog")
 	group := fmt.Sprintf("1/%d", workspace.UIDFor(a.Port))
 	r.reset()
 

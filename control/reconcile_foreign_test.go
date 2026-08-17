@@ -18,8 +18,8 @@ func TestReconcileSkipsForeignNodeContainers(t *testing.T) {
 	r.returns("podman ps --all", "hostit-app-foreign1\n")
 	r.returns("podman container inspect hostit-app-foreign1", "/some/other/pool/foreign1\n")
 
-	m.ReconcileOrphans() // first sighting: a removal always needs a second
-	removed := m.ReconcileOrphans()
+	m.testMachine().ReconcileOrphans() // first sighting: a removal always needs a second
+	removed := m.testMachine().ReconcileOrphans()
 	assert.Empty(t, removed)
 	assert.NotContains(t, r.ran(), "podman rm --force hostit-app-foreign1")
 	assert.NotContains(t, r.ran(), "disable --now hostit-app@foreign1")
@@ -32,8 +32,8 @@ func TestReconcileRemovesOwnOrphans(t *testing.T) {
 	r.returns("podman ps --all", "hostit-app-dead1\n")
 	r.returns("podman container inspect hostit-app-dead1", m.config.AppsDir+"/dead1\n")
 
-	m.ReconcileOrphans() // first sighting: a removal always needs a second
-	removed := m.ReconcileOrphans()
+	m.testMachine().ReconcileOrphans() // first sighting: a removal always needs a second
+	removed := m.testMachine().ReconcileOrphans()
 	require.NotEmpty(t, removed)
 	assert.Contains(t, r.ran(), "podman rm --force hostit-app-dead1")
 }
@@ -65,7 +65,7 @@ func TestReconcileAppliesPortRules(t *testing.T) {
 	m, ops, _ := newTestDeployManager(t)
 	createTestApp(t, m, "blog")
 	before := len(ops.portRules)
-	m.Reconcile(nil) // first sighting: a removal always needs a second
-	m.Reconcile(nil)
+	m.testMachine().Reconcile(nil) // first sighting: a removal always needs a second
+	m.testMachine().Reconcile(nil)
 	assert.Greater(t, len(ops.portRules), before, "reconcile re-applies the port rules")
 }

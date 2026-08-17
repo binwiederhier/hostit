@@ -174,7 +174,7 @@ func TestAPIAppDescription(t *testing.T) {
 	s := newTestServer(t)
 	rr := request(t, s.API(), "POST", "/api/apps", `{"name":"blog"}`, testToken)
 	require.Equal(t, http.StatusCreated, rr.Code)
-	require.NoError(t, s.apps.WriteFile("blog", "hostit.yml", []byte("description: A tiny blog\nmode: static\n"), 0))
+	require.NoError(t, s.apps.testMachine().WriteFile("blog", "hostit.yml", []byte("description: A tiny blog\nmode: static\n"), 0))
 
 	// Both the list and the single app carry it, so the page can build the
 	// prompt from whatever the app says it is
@@ -458,7 +458,7 @@ func newTestServer(t *testing.T) *Server {
 	t.Cleanup(func() {
 		_ = s.Close()
 	})
-	manager := NewManager(conf, s, apptest.NewNopServices())
+	manager := newWiredManager(conf, s, apptest.NewNopServices())
 	// LIFO: registered after the store-close cleanup, so background goroutines
 	// (post-create starts, delete teardowns) finish before the db closes.
 	t.Cleanup(manager.WaitBackground)
@@ -586,12 +586,12 @@ func TestSetNodeRepointsTheAssistantOps(t *testing.T) {
 	st, err := store.NewStore(filepath.Join(t.TempDir(), "hostit.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = st.Close() })
-	apps := NewManager(conf, st, testServices(newFakeSystem(), newFakeRunner()))
+	apps := NewManager(conf, st)
 	t.Cleanup(apps.WaitBackground)
 	s := New(conf, apps, user.NewManager(conf, st))
 	require.NotNil(t, s.assistantOps, "an assistant-configured server tracks its appOps")
 
-	routed := &snapAgent{NodeAgent: apps}
+	routed := &snapAgent{NodeAgent: apps.NodeAgent()}
 	s.SetNode(routed)
 
 	assert.Same(t, any(routed), any(s.node), "the handlers' agent is swapped")
@@ -624,7 +624,7 @@ func TestResyncAppKeysKeepsTheAppsOwnKeys(t *testing.T) {
 	s := newTestServer(t)
 	rr := request(t, s.API(), "POST", "/api/apps", fmt.Sprintf(`{"name":"blog","ssh_keys":["%s"]}`, testPublicKey), testToken)
 	require.Equal(t, http.StatusCreated, rr.Code)
-	writer := &keyWriter{NodeAgent: s.apps}
+	writer := &keyWriter{NodeAgent: s.apps.NodeAgent()}
 	s.SetNode(writer)
 
 	app, err := s.apps.App("blog")
@@ -661,7 +661,7 @@ func TestAssistantSandboxIdentityComesFromTheRegistry(t *testing.T) {
 	t.Parallel()
 	conf, st := newProxyTestDeps(t)
 	conf.ClaudeCodeOAuthToken = "sk-test"
-	apps := NewManager(conf, st, testServices(newFakeSystem(), newFakeRunner()))
+	apps := NewManager(conf, st)
 	t.Cleanup(apps.WaitBackground)
 	s := New(conf, apps, user.NewManager(conf, st))
 	require.NotNil(t, s.claudeSandbox, "the subscription backend is wired when its token is configured")

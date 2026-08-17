@@ -90,14 +90,12 @@ func execServe(c *cli.Context) error {
 	node.Version = c.App.Version
 	// The fused daemon IS the local node, so its machine services are the local
 	// node's (the firewall table is named after it).
-	manager := control.NewManager(conf, s, node.NewSystemServices(run.New(), store.HostLocal, "", nil))
+	manager := control.NewManager(conf, s)
 	users := user.NewManager(conf, s)
 	if err := ensureSessionKey(conf, s); err != nil {
 		return err
 	}
-	// Split mode: a hostit-node owns this machine's app work; this daemon is
-	// control-only and skips every machine-touching startup step and loop.
-	splitNode := conf.ListenNode != ""
+
 	// The Server and the shutdown channel exist before any machine work: they
 	// cost nothing to build (control.New starts no listeners) and the cluster
 	// listener below needs both.
@@ -113,62 +111,19 @@ func execServe(c *cli.Context) error {
 	// answered handshakes with a self-signed certificate instead, which took
 	// prod down on 2026-08-17. Listening early costs nothing and means a member
 	// can connect and be configured while control settles.
-	if err := listenForMembers(conf, manager, srv, done, splitNode); err != nil {
+	if err := listenForMembers(conf, manager, srv, done); err != nil {
 		return err
 	}
-	// Fused: this process IS the colocated node, so it registers itself and
-	// keeps its own liveness current. Otherwise the registry lists apps hosted
-	// by a node it has no row for.
-	if !splitNode {
-		if err := manager.EnsureLocalNode(); err != nil {
-			return err
-		}
-		go manager.LocalNodeLoop(done)
-	}
-	// Quota accounting is the mechanism behind every per-app disk budget;
-	// idempotent, so it simply runs at every start.
-	if !splitNode {
-		manager.EnableDiskBudgets()
-	}
-	// The daemon's file I/O goes through a raw (non-recursive) bind of the apps
-	// dir: a running container's idmapped rootfs mount covers the subvolume path
-	// in the host namespace, and root writing through that mapped view fails.
-	if !splitNode {
-		if err := manager.MountRawAppsView(filepath.Join(filepath.Dir(conf.SocketFile), "apps-raw")); err != nil {
-			return err
-		}
-	} else {
-		// The node mounts the raw view; this process still reads app files
-		// through the same path when colocated.
-		manager.UseRawAppsView(filepath.Join(filepath.Dir(conf.SocketFile), "apps-raw"))
-	}
-	// After the budgets exist: applying a stored limit re-ensures the app's
-	// budget qgroup and its cap. Migration briefly runs on the 2048M default and
-	// this corrects every group to the owner's real limit.
-	if err := applyStoredLimits(s, manager, users, splitNode); err != nil {
+	// Every machine-touching startup step belongs to hostit-node now: quota
+	// accounting, the raw apps view, the workspace image, restarting agents
+	// after an upgrade. This process holds the registry and decides; it owns no
+	// machinery to do any of that with.
+	//
+	// The stored limits are still control's to assert -- they come from the user
+	// tables -- and reach the node through the desired state on connect.
+	if err := applyStoredLimits(s, manager, users); err != nil {
 		return err
 	}
-	// Build the workspace image and export its base rootfs once. This runs in the
-	// background: it takes minutes on a small host, and the proxy must not wait.
-	go func() {
-		if splitNode {
-			return // the node builds images and restarts agents
-		}
-		if err := manager.EnsureWorkspaceBase(); err != nil {
-			slog.Warn("Cannot prepare workspace base rootfs; the first app deploy will retry", "error", err)
-		}
-		// Agents keep the behaviour of the binary they were exec'd from, so an
-		// upgrade only reaches them on a restart. In the background: this costs
-		// each app a moment, and the proxy should be up first.
-		restarted, err := manager.RestartStaleAgents(c.App.Version)
-		if err != nil {
-			slog.Warn("Cannot restart apps after upgrade", "error", err)
-		} else if len(restarted) > 0 {
-			slog.Info("Restarted apps to pick up the new version", "apps", restarted, "version", c.App.Version)
-		}
-		// Once the apps are on the current image, its predecessors are dead weight
-		manager.PruneOldWorkspaceImages()
-	}()
 	// Dashboard screenshot previews (app-preview: screenshot): a slow sweep
 	// plus debounced shots after assistant changes, one at a time, each in a
 	// locked-down podman container (the page content is untrusted).
@@ -198,15 +153,6 @@ func execServe(c *cli.Context) error {
 		srv.SetPreviews(previews)
 	}
 
-	// The registry is the source of truth: an app deleted while the daemon was
-	// down, or whose unit outlived it, leaves systemd retrying something that no
-	// longer exists
-	if !splitNode {
-		if removed := manager.ReconcileOrphans(); len(removed) > 0 {
-			slog.Info("Cleaned up leftovers of apps that no longer exist", "apps", removed)
-		}
-	}
-
 	// Presume recorded intent until the first real measurement lands, so the
 	// first page load after a restart does not see every app as stopped
 	manager.SeedStates()
@@ -216,20 +162,10 @@ func execServe(c *cli.Context) error {
 	// mid-connection, a node that drifted, or anything that changed while a
 	// node was away converges here without waiting for a reconnect. Control is
 	// the source; this is how the registry keeps reaching the machines.
-	if splitNode {
-		go reconcileLoop(manager, srv, done)
-	}
-	// Hourly automatic snapshots are CONTROL's decision in both modes: the
-	// sweep commands each app's node through the node agent (the local machine
-	// when fused, the routing agent when split; a no-op off btrfs).
+	go reconcileLoop(manager, srv, done)
+	// Hourly automatic snapshots are CONTROL's decision: the sweep commands each
+	// app's node through the node agent (a no-op off btrfs).
 	go manager.AutoSnapshotLoop(time.Hour, done)
-	if !splitNode {
-		go manager.DiskUsageLoop(done)
-		go manager.StateLoop(done)
-		// Sweep stale qgroups (deleted subvolumes/apps whose gentle destroy lost
-		// its race); enough of them slow quota rescans until app creates time out
-		go manager.QgroupSweepLoop(6*time.Hour, done)
-	}
 	// Control pushes the routing table to every connected proxy as it changes,
 	// and asks each how it is on a timer -- which is both the liveness an
 	// operator reads and how a removed proxy loses its session.
@@ -301,7 +237,7 @@ func reconcileLoop(manager *control.Manager, srv *control.Server, done <-chan st
 
 // applyStoredLimits primes the app manager with each app owner's memory and disk
 // limits, which live in the user records rather than in the app registry
-func applyStoredLimits(s *store.Store, apps *control.Manager, users *user.Manager, recordOnly bool) error {
+func applyStoredLimits(s *store.Store, apps *control.Manager, users *user.Manager) error {
 	registered, err := s.Apps()
 	if err != nil {
 		return err
@@ -320,12 +256,10 @@ func applyStoredLimits(s *store.Store, apps *control.Manager, users *user.Manage
 				}
 			}
 		}
-		apps.SetMemoryLimit(a.Name, limits.MemoryMB) // record-only either way
-		if recordOnly {
-			apps.RecordDiskLimit(a.Name, limits.DiskMB)
-		} else {
-			apps.SetDiskLimit(a.Name, limits.DiskMB)
-		}
+		// Recorded, not applied: control decides the limits and the node
+		// enforces them, so they reach the machine through the desired state
+		// on the next connect or reconcile rather than from here.
+		apps.RecordLimits(a.Name, limits.MemoryMB, limits.DiskMB)
 	}
 	return nil
 }

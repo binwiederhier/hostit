@@ -66,9 +66,9 @@ func TestAgentAppInfoIncludesReadmeAndFiles(t *testing.T) {
 	s := newTestServer(t)
 	token := newAppToken(t, s, "blog")
 	require.NoError(t, s.apps.WriteReadme("blog", "# blog\n\nThe finance dashboard.\n"))
-	require.NoError(t, s.apps.WriteFile("blog", "index.html", []byte("<h1>hi</h1>"), 0))
+	require.NoError(t, s.apps.testMachine().WriteFile("blog", "index.html", []byte("<h1>hi</h1>"), 0))
 	// The no-op system ops in these tests does not write a skeleton, so write the config
-	require.NoError(t, s.apps.WriteFile("blog", "hostit.yml", []byte("mode: app\nrun: python3 -m http.server $PORT\n"), 0))
+	require.NoError(t, s.apps.testMachine().WriteFile("blog", "hostit.yml", []byte("mode: app\nrun: python3 -m http.server $PORT\n"), 0))
 	rr := request(t, s.API(), "GET", "/api/apps/blog/info", "", token)
 	require.Equal(t, http.StatusOK, rr.Code)
 	var resp apiAgentAppResponse
@@ -101,7 +101,7 @@ func TestAgentGuideTellsAnExistingAppApartFromAStub(t *testing.T) {
 
 	// Once the app describes itself it is finished work, and an agent that
 	// starts over would destroy it
-	require.NoError(t, s.apps.WriteFile("blog", "hostit.yml", []byte("description: The finance dashboard\nmode: static\n"), 0))
+	require.NoError(t, s.apps.testMachine().WriteFile("blog", "hostit.yml", []byte("description: The finance dashboard\nmode: static\n"), 0))
 	rr = request(t, s.API(), "GET", "/api/apps/blog/info", "", token)
 	require.Equal(t, http.StatusOK, rr.Code)
 	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &resp))
@@ -232,7 +232,7 @@ func TestAgentUploadSingleFile(t *testing.T) {
 	token := newAppToken(t, s, "blog")
 	rr := request(t, s.API(), "PUT", "/api/apps/blog/files/static/app.js", "console.log(1)", token)
 	require.Equal(t, http.StatusCreated, rr.Code)
-	b, err := s.apps.ReadFile("blog", "static/app.js")
+	b, err := s.apps.testMachine().ReadFile("blog", "static/app.js")
 	require.NoError(t, err)
 	assert.Equal(t, "console.log(1)", string(b))
 	// Escapes never write outside the app. The router normalizes a raw ".." away
@@ -247,7 +247,7 @@ func TestAgentUploadSingleFile(t *testing.T) {
 	assert.Less(t, rr.Code, 500)
 	// The file lands nowhere: not inside the app, and not where the escape aimed
 	// (two levels up from the app home, i.e. under AppsDir).
-	_, err = s.apps.ReadFile("blog", "etc/passwd")
+	_, err = s.apps.testMachine().ReadFile("blog", "etc/passwd")
 	assert.Error(t, err)
 	_, statErr := os.Stat(filepath.Join(s.config.AppsDir, "etc", "passwd"))
 	assert.True(t, os.IsNotExist(statErr), "traversal must not write above the app home")
@@ -283,7 +283,7 @@ func TestAgentUploadTar(t *testing.T) {
 	s.API().ServeHTTP(w, req)
 	require.Equal(t, http.StatusCreated, w.Code)
 	assert.Contains(t, w.Body.String(), "app.py")
-	b, err := s.apps.ReadFile("blog", "app.py")
+	b, err := s.apps.testMachine().ReadFile("blog", "app.py")
 	require.NoError(t, err)
 	assert.Equal(t, content, string(b))
 }
@@ -438,7 +438,7 @@ func TestFileReadIsNeverRenderedAsAPage(t *testing.T) {
 	t.Parallel()
 	s := newTestServer(t)
 	token := newAppToken(t, s, "blog")
-	require.NoError(t, s.apps.WriteFile("blog", "evil.html", []byte("<script>alert(1)</script>"), 0))
+	require.NoError(t, s.apps.testMachine().WriteFile("blog", "evil.html", []byte("<script>alert(1)</script>"), 0))
 	// This endpoint lives on the web app's own origin, and an admin may read any
 	// user's files: a tenant's page must not execute there
 	rr := request(t, s.API(), "GET", "/api/apps/blog/files/evil.html", "", token)
@@ -498,9 +498,9 @@ func TestAgentFileStat(t *testing.T) {
 	t.Parallel()
 	s := newTestServer(t)
 	token := newAppToken(t, s, "blog")
-	require.NoError(t, s.apps.WriteFile("blog", "notes.txt", []byte("hello text"), 0))
-	require.NoError(t, s.apps.WriteFile("blog", "public/logo.png", []byte("\x89PNG\r\n\x1a\n"), 0))
-	require.NoError(t, s.apps.WriteFile("blog", "data", []byte("\x00\x01\x02bin\x00"), 0)) // no extension, binary
+	require.NoError(t, s.apps.testMachine().WriteFile("blog", "notes.txt", []byte("hello text"), 0))
+	require.NoError(t, s.apps.testMachine().WriteFile("blog", "public/logo.png", []byte("\x89PNG\r\n\x1a\n"), 0))
+	require.NoError(t, s.apps.testMachine().WriteFile("blog", "data", []byte("\x00\x01\x02bin\x00"), 0)) // no extension, binary
 
 	// A text file: metadata only, a text/* MIME, and NOT the file's bytes -- the
 	// editor uses this to avoid downloading a file just to learn what it is.
@@ -527,7 +527,7 @@ func TestAgentFileStat(t *testing.T) {
 	assert.False(t, strings.HasPrefix(info.Mime, "text/"), "want binary mime, got %q", info.Mime)
 
 	// A directory reports as a dir; without ?stat the endpoint still returns bytes.
-	require.NoError(t, s.apps.WriteFile("blog", "sub/keep.txt", []byte("x"), 0))
+	require.NoError(t, s.apps.testMachine().WriteFile("blog", "sub/keep.txt", []byte("x"), 0))
 	rr = request(t, s.API(), "GET", "/api/apps/blog/files/sub?stat=1", "", token)
 	require.Equal(t, http.StatusOK, rr.Code)
 	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &info))
@@ -550,7 +550,7 @@ func TestAgentMkdir(t *testing.T) {
 	// Create an empty folder (the file browser's "new folder").
 	rr := request(t, s.API(), "POST", "/api/apps/blog/mkdir", `{"path":"assets/img"}`, token)
 	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
-	info, err := s.apps.StatFile("blog", "assets/img")
+	info, err := s.apps.testMachine().StatFile("blog", "assets/img")
 	require.NoError(t, err)
 	assert.Equal(t, "dir", string(info.Type))
 
@@ -576,20 +576,20 @@ func TestAgentMove(t *testing.T) {
 	t.Parallel()
 	s := newTestServer(t)
 	token := newAppToken(t, s, "blog")
-	require.NoError(t, s.apps.WriteFile("blog", "a.txt", []byte("hi"), 0))
+	require.NoError(t, s.apps.testMachine().WriteFile("blog", "a.txt", []byte("hi"), 0))
 
 	// Rename/move a file within the home (the file browser's drag + rename).
 	rr := request(t, s.API(), "POST", "/api/apps/blog/move", `{"from":"a.txt","to":"public/b.txt"}`, token)
 	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
-	assert.False(t, s.apps.FileExists("blog", "a.txt"))
-	b, err := s.apps.ReadFile("blog", "public/b.txt")
+	assert.False(t, s.apps.testMachine().FileExists("blog", "a.txt"))
+	b, err := s.apps.testMachine().ReadFile("blog", "public/b.txt")
 	require.NoError(t, err)
 	assert.Equal(t, "hi", string(b))
 
 	// from and to are both required; an existing destination is not clobbered.
 	rr = request(t, s.API(), "POST", "/api/apps/blog/move", `{"from":"public/b.txt"}`, token)
 	assert.Equal(t, http.StatusBadRequest, rr.Code)
-	require.NoError(t, s.apps.WriteFile("blog", "c.txt", []byte("x"), 0))
+	require.NoError(t, s.apps.testMachine().WriteFile("blog", "c.txt", []byte("x"), 0))
 	rr = request(t, s.API(), "POST", "/api/apps/blog/move", `{"from":"c.txt","to":"public/b.txt"}`, token)
 	assert.GreaterOrEqual(t, rr.Code, 400)
 	assert.Equal(t, "hi", string(b)) // destination unchanged

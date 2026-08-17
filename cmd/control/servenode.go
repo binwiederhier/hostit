@@ -70,7 +70,7 @@ func nodeRole(manager *control.Manager, registry *control.NodeRegistry, srv *con
 // in the node registry (orchestration routes each app's verbs to its hosting
 // node), a per-node poll loop feeds the state cache, and the rejoin handshake
 // pushes the node's registry mirror and re-asserts desired state.
-func listenForMembers(conf *controlconf.Config, manager *control.Manager, srv *control.Server, done <-chan struct{}, withNodes bool) error {
+func listenForMembers(conf *controlconf.Config, manager *control.Manager, srv *control.Server, done <-chan struct{}) error {
 	tlsConf, err := nodelink.ListenerCreds(conf.ClusterCertFile, conf.ClusterKeyFile, conf.ClusterCACertFile, conf.DataDir)
 	if err != nil {
 		return err
@@ -84,17 +84,14 @@ func listenForMembers(conf *controlconf.Config, manager *control.Manager, srv *c
 	// which. A node is authorized by its registry row on top of that cert: the
 	// transport already proved the identity, the row is the membership switch
 	// `hostit-control node add` flips on and `node remove` off.
-	roles := map[string]*cluster.Role{}
-	if withNodes {
-		// The colocated node exists implicitly and is always authorized.
-		if err := manager.Store().EnsureNode(store.HostLocal, "127.0.0.1"); err != nil {
-			return err
-		}
-		registry := control.NewNodeRegistry()
-		manager.SetNodeRegistry(registry)
-		srv.SetNode(control.NewRoutingAgent(manager.Store(), registry))
-		roles[cluster.RoleNode] = nodeRole(manager, registry, srv, done, &mu, supersede)
+	// The node sharing control's host is implicitly a member, like the proxy:
+	// its credentials are ones control minted for itself, in a root-only
+	// directory here. Any other node needs its registry row.
+	if err := manager.Store().EnsureNode(store.HostLocal, "127.0.0.1"); err != nil {
+		return err
 	}
+	roles := map[string]*cluster.Role{}
+	roles[cluster.RoleNode] = nodeRole(manager, manager.NodeRegistry(), srv, done, &mu, supersede)
 	// Proxies dial the same listener; their certificate says they are proxies,
 	// and their registry row is the membership switch `proxy remove` flips off.
 	// Every proxy that connects is handed the routing table immediately, so a
@@ -137,7 +134,7 @@ func listenForMembers(conf *controlconf.Config, manager *control.Manager, srv *c
 		Handler:   mux,
 	}
 	go func() {
-		slog.Info("Listening for cluster dial-ins", "addr", addr, "nodes", withNodes)
+		slog.Info("Listening for cluster dial-ins", "addr", addr)
 		if err := httpSrv.ListenAndServeTLS("", ""); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			slog.Error("Cluster listener failed", "error", err)
 		}

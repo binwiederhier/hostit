@@ -14,7 +14,7 @@ func TestRenameAppIsCheapAndPreservesTheContainer(t *testing.T) {
 	m, ops, runner := newTestDeployManager(t)
 	a := createTestApp(t, m, "blog")
 	id := a.ID
-	oldSubvol := m.AppSubvolume("blog")
+	oldSubvol := m.testMachine().AppSubvolume("blog")
 	// Attach a token so we can prove per-app rows follow the rename.
 	require.NoError(t, m.store.AddToken(&store.Token{UserID: "u_1", Hash: "h1", AppName: "blog", Secret: "sek"}))
 	runner.reset()
@@ -33,9 +33,9 @@ func TestRenameAppIsCheapAndPreservesTheContainer(t *testing.T) {
 
 	// Durable resources are unchanged: the id-keyed subvolume, container and unit
 	// are the same as before, so nothing had to move.
-	assert.Equal(t, oldSubvol, m.AppSubvolume("shop"))
-	assert.Equal(t, workspace.ContainerName(id), m.ContainerName("shop"))
-	assert.Equal(t, workspace.UnitName(id), m.UnitName("shop"))
+	assert.Equal(t, oldSubvol, m.testMachine().AppSubvolume("shop"))
+	assert.Equal(t, workspace.ContainerName(id), m.testMachine().ContainerName("shop"))
+	assert.Equal(t, workspace.UnitName(id), m.testMachine().UnitName("shop"))
 
 	// The critical property: the (stateful) container is NOT recreated.
 	ran := runner.ran()
@@ -117,8 +117,8 @@ func TestRenameRoutesThroughTheNodeAgent(t *testing.T) {
 	t.Parallel()
 	m, _, _ := newTestDeployManager(t)
 	a := createTestApp(t, m, "blog")
-	agent := &renameAgent{NodeAgent: m.Machine}
-	m.SetNodeAgent(agent)
+	agent := &renameAgent{NodeAgent: m.testMachine()}
+	m.NodeRegistry().Register(store.HostLocal, agent)
 
 	shop, err := m.RenameApp("blog", "shop")
 	require.NoError(t, err)
@@ -134,13 +134,13 @@ func TestRenameRestoresLoginWhenFlipFails(t *testing.T) {
 	t.Parallel()
 	m, ops, _ := newTestDeployManager(t)
 	a := createTestApp(t, m, "blog")
-	agent := &renameAgent{NodeAgent: m.Machine}
+	agent := &renameAgent{NodeAgent: m.testMachine()}
 	// After the machine half succeeds, a rival app claims the target name --
 	// the racy window between control's validation and the registry flip.
 	agent.onFirst = func() {
 		require.NoError(t, m.store.AddApp(&store.App{Name: "shop", Port: 10099, Host: store.HostLocal}))
 	}
-	m.SetNodeAgent(agent)
+	m.NodeRegistry().Register(store.HostLocal, agent)
 
 	_, err := m.RenameApp("blog", "shop")
 	require.ErrorIs(t, err, ErrAppExists)
