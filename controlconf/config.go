@@ -129,8 +129,8 @@ type Config struct {
 	Breakglass         bool     `yaml:"breakglass"`           // Allow the admin token to mint a session for an admin email (no Google); for e2e/recovery
 	// BehindProxy serves the full public handler as plain HTTP on ListenHTTP (a
 	// local address) instead of terminating TLS: hostit-proxy sits in front and
-	// terminates with the cert material this daemon still manages (certmagic +
-	// the internal cert endpoint). Session cookies stay Secure -- the browser
+	// terminates with the cert material this daemon still manages (certmagic,
+	// handed over the cluster link). Session cookies stay Secure -- the browser
 	// speaks TLS to the proxy.
 	BehindProxy bool `yaml:"behind-proxy"`
 
