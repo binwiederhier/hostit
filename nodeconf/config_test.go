@@ -77,3 +77,26 @@ func TestValidateRequiresSomewhereToDialAndAWholeCertTriple(t *testing.T) {
 	conf.NodeCertFile = "/etc/hostit/node/node.pem" // key and CA missing
 	require.ErrorContains(t, conf.Validate(), "node-key-file")
 }
+
+// The allowlist is named for what it guards -- the app ports -- not for who
+// happens to be on it. The proxy is the component that dials an app; control
+// never does, so naming the key after the control plane described the wrong
+// hop and invited the wrong addresses.
+func TestAppsAllowedAddressesGuardAPublishedPort(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "node.yml")
+	require.NoError(t, os.WriteFile(path, []byte(`
+node-id: worker-2
+control-url: 10.0.0.1:2930
+apps-bind-address: 10.111.32.4
+apps-allowed-addresses:
+  - 10.111.32.3
+`), 0o600))
+
+	conf, err := LoadConfig(path)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"10.111.32.3"}, conf.AppsAllowedAddresses)
+
+	// Publishing off loopback with nobody allowed is refused by name.
+	conf.AppsAllowedAddresses = nil
+	assert.ErrorContains(t, conf.Validate(), "apps-allowed-addresses")
+}

@@ -51,10 +51,11 @@ type Config struct {
 	// sets its own private address: the proxy dials apps over the network, and
 	// a loopback-published port is unreachable from another machine.
 	AppsBindAddress string `yaml:"apps-bind-address"`
-	// ControlAddresses are the control-plane addresses allowed to reach a
-	// published app port. Ignored on a loopback node; required on a remote one,
-	// or its apps would be reachable from anything that can route to it.
-	ControlAddresses []string `yaml:"control-addresses"`
+	// AppsAllowedAddresses are the addresses allowed to reach a published app
+	// port -- in practice the proxies, which are what dials an app; control
+	// never does. Ignored on a loopback node; required on a remote one, or its
+	// apps would be reachable from anything that can route to it.
+	AppsAllowedAddresses []string `yaml:"apps-allowed-addresses"`
 
 	// DataDir holds the registry mirror control pushes (and the colocated
 	// credentials); AppsDir is the btrfs pool the app subvolumes live in;
@@ -125,8 +126,8 @@ func (c *Config) Validate() error {
 	}
 	// Publishing off loopback without naming who may connect would put every
 	// app's port on whatever networks this node is attached to.
-	if c.AppsBindAddress != "" && len(c.ControlAddresses) == 0 {
-		return errors.New("apps-bind-address requires control-addresses: who may reach a published app port")
+	if c.AppsBindAddress != "" && len(c.AppsAllowedAddresses) == 0 {
+		return errors.New("apps-bind-address requires apps-allowed-addresses: who may reach a published app port")
 	}
 	return nil
 }
