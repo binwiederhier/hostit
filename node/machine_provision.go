@@ -26,6 +26,13 @@ func (m *Machine) Provision(spec *nodeapi.ProvisionSpec) error {
 	// the background; its unix account outlives the API call. Wait it out, or
 	// the useradd collides with the dying one ("group already exists").
 	m.awaitTeardown(spec.Name)
+	// A name already taken by an account on THIS host is refused: the useradd
+	// would fail anyway, and half a provisioned app is worse than a clear no.
+	// Only the node can see its own passwd file -- control used to check this
+	// and could only ever get it right while it shared the machine's host.
+	if m.UserExists(spec.Name) {
+		return fmt.Errorf("%w: a unix account named %q already exists on this node", nodeapi.ErrAppExists, spec.Name)
+	}
 	forking := spec.SeedAppID != ""
 	// The budget qgroup exists and is capped BEFORE the subvolume, which is then
 	// snapshotted INTO it (-i): membership is atomic at creation, so the cap

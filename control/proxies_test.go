@@ -71,6 +71,9 @@ func TestPushRoutesReachesEveryConnectedProxy(t *testing.T) {
 func TestRoutesPointAtTheHostingNode(t *testing.T) {
 	s := newTestServer(t)
 	require.NoError(t, s.apps.Store().EnsureNode("worker-2", "10.0.0.2"))
+	// Registered AND connected: control provisions through the node that hosts
+	// the app, so an app cannot be placed on a node that is not there.
+	s.apps.NodeRegistry().Register("worker-2", s.apps.testMachine())
 	app, err := s.apps.CreateApp("blog", &CreateOptions{Host: "worker-2"})
 	require.NoError(t, err)
 
@@ -153,7 +156,7 @@ func TestCertForServesPEMThroughTheCombinedLookup(t *testing.T) {
 func TestRouteTableVersionSurvivesAControlRestart(t *testing.T) {
 	t.Parallel()
 	conf, st := newProxyTestDeps(t)
-	first := New(conf, NewManager(conf, st), user.NewManager(conf, st))
+	first := New(conf, newWiredManager(t, conf, st, testServices(newFakeSystem(), newFakeRunner())), user.NewManager(conf, st))
 	t.Cleanup(first.apps.WaitBackground)
 	_, err := first.apps.CreateApp("one", nil)
 	require.NoError(t, err)
@@ -162,7 +165,7 @@ func TestRouteTableVersionSurvivesAControlRestart(t *testing.T) {
 	require.NotZero(t, before.Seq)
 
 	// A new control process over the same registry, with different routes.
-	second := New(conf, NewManager(conf, st), user.NewManager(conf, st))
+	second := New(conf, newWiredManager(t, conf, st, testServices(newFakeSystem(), newFakeRunner())), user.NewManager(conf, st))
 	t.Cleanup(second.apps.WaitBackground)
 	_, err = second.apps.CreateApp("two", nil)
 	require.NoError(t, err)

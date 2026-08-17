@@ -337,7 +337,7 @@ func TestPortRotationSurvivesARestart(t *testing.T) {
 	m.releasePort(first)
 
 	// A new control process over the same registry.
-	second := newWiredManager(m.config, m.store, testServices(newFakeSystem(), newFakeRunner()))
+	second := newWiredManager(t, m.config, m.store, testServices(newFakeSystem(), newFakeRunner()))
 	t.Cleanup(second.WaitBackground)
 	next, err := second.allocatePort()
 	require.NoError(t, err)

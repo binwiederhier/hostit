@@ -321,7 +321,9 @@ func newTestDeployManager(t *testing.T) (*Manager, *fakeSystem, *fakeRunner) {
 	// in-process Machine as the node it would otherwise reach over the cluster
 	// link -- REGISTERED, not injected, so the test drives the same routing the
 	// daemon does: control resolves the app's host to a connected agent.
-	m.NodeRegistry().Register(store.HostLocal, node.NewMachine(machineConfig(conf), s, testServices(ops, runner)))
+	machine := node.NewMachine(machineConfig(conf), nodeStoreFor(t), testServices(ops, runner))
+	machine.SetControlSink(inProcessSink{st: s})
+	m.NodeRegistry().Register(store.HostLocal, machine)
 	t.Cleanup(m.WaitBackground) // see newTestManager: before db close and TempDir removal
 	return m, ops, runner
 }
@@ -673,8 +675,41 @@ func TestDownRecordsPowerOffAndPowerOnClearsIt(t *testing.T) {
 // newWiredManager is a Manager with an in-process Machine as its node, which is
 // what every test needs: control itself has no machinery, so without a node
 // wired in it can only answer "node is not connected".
-func newWiredManager(conf *controlconf.Config, s *store.Store, svc *node.Services) *Manager {
+func newWiredManager(t *testing.T, conf *controlconf.Config, s *store.Store, svc *node.Services) *Manager {
 	m := NewManager(conf, s)
-	m.NodeRegistry().Register(store.HostLocal, node.NewMachine(machineConfig(conf), s, svc))
+	machine := node.NewMachine(machineConfig(conf), nodeStoreFor(t), svc)
+	machine.SetControlSink(inProcessSink{st: s})
+	m.NodeRegistry().Register(store.HostLocal, machine)
 	return m
+}
+
+// nodeStoreFor is the node's OWN database, the way a real node has one. Sharing
+// control's would hide what the mirror does and does not carry: the mirror is
+// deliberately not the registry (it ships no app ownership, for one), so a node
+// that read control's tables directly would pass tests that production fails.
+func nodeStoreFor(t *testing.T) *store.Store {
+	t.Helper()
+	s, err := store.NewStore(filepath.Join(t.TempDir(), "node.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = s.Close() })
+	return s
+}
+
+// inProcessSink is the node's reverse channel, in one process: what a node
+// reports about itself (usage, poweroffs, snapshot records) has to reach the
+// registry, or control never learns it. In the daemon this is a callback over
+// the cluster link (nodelink.CallbackHandler); here it writes straight to
+// control's store, which is the same destination.
+type inProcessSink struct{ st *store.Store }
+
+func (s inProcessSink) PowerChanged(name string, off bool) {
+	_ = s.st.SetAppPoweredOff(name, off)
+}
+
+func (s inProcessSink) UsageChanged(name string, usedMB int) {
+	_ = s.st.UpdateAppUsage(name, usedMB)
+}
+
+func (s inProcessSink) SnapshotsChanged(name string, snaps []*store.Snapshot) {
+	_ = s.st.ReplaceAppSnapshots(name, snaps)
 }

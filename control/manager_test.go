@@ -94,11 +94,15 @@ func TestCreateAppDuplicate(t *testing.T) {
 	require.ErrorIs(t, err, ErrAppExists)
 }
 
+// A name taken by a unix account that hostit does not know about is refused --
+// by the NODE, which is the only party that can see its own passwd file.
+// Control used to check this itself, which only ever worked because it shared
+// the machine's host.
 func TestCreateAppExistingUnixUser(t *testing.T) {
 	t.Parallel()
 	m, ops := newTestManager(t)
 	ops.existingUsers = []string{"phil"}
-	_, err := m.CreateApp("phil", &CreateOptions{RequestKeys: []string{testPublicKey}})
+	err := m.testMachine().Provision(&ProvisionSpec{Name: "phil", ID: "id-phil", Port: 10000})
 	require.ErrorIs(t, err, ErrAppExists)
 }
 
@@ -219,7 +223,7 @@ func newTestManagerDeps(t *testing.T) (*controlconf.Config, *store.Store, *fakeS
 func newTestManager(t *testing.T) (*Manager, *fakeSystem) {
 	t.Helper()
 	conf, s, ops := newTestManagerDeps(t)
-	m := newWiredManager(conf, s, testServices(ops, newFakeRunner()))
+	m := newWiredManager(t, conf, s, testServices(ops, newFakeRunner()))
 	// Cleanups run LIFO: registered after the store-close cleanup, this waits
 	// out the manager's background goroutines (post-create starts, delete
 	// teardowns) BEFORE the db closes and the temp dirs vanish under them --
