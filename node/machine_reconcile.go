@@ -39,6 +39,7 @@ func (m *Machine) applyDesired(desired *nodeapi.DesiredState) {
 		// Under the app's lock, so an in-flight create finishes first and this
 		// pass then sees the account it made rather than racing it.
 		unlock := m.LockApp(app.Name)
+		rebuilt := false
 		if !m.UserExists(app.Name) {
 			// The app should be here and is not: a rebuilt node, a botched
 			// provision, an account swept by mistake. Build it from the same
@@ -51,6 +52,7 @@ func (m *Machine) applyDesired(desired *nodeapi.DesiredState) {
 			}
 			slog.Info("Provisioned an app that was missing on this node", "app", app.Name)
 			unlock = func() {}
+			rebuilt = true
 		}
 		// Keys and limits are control's to assert; re-writing them every pass
 		// is how a change that happened while this node was away lands.
@@ -60,6 +62,20 @@ func (m *Machine) applyDesired(desired *nodeapi.DesiredState) {
 		m.SetMemoryLimit(app.Name, app.MemoryMB)
 		m.SetDiskLimit(app.Name, app.DiskMB)
 		unlock()
+		// Powered off is part of the desired state, not just a flag control
+		// keeps: an app an operator stopped must come out of this pass stopped.
+		// Provisioning starts what it builds, so a rebuild would otherwise
+		// resurrect everything that was deliberately off -- and so would drift
+		// on a node that missed the poweroff. Rebuilding it at all is
+		// deliberate: the account and its subvolume should exist, so the app
+		// can be restored and powered on later.
+		if app.PoweredOff && (rebuilt || m.isActive(app.Name)) {
+			if err := m.Down(app.Name); err != nil {
+				slog.Warn("Cannot power off an app during reconcile", "app", app.Name, "error", err)
+			} else {
+				slog.Info("Powered off an app that control lists as off", "app", app.Name)
+			}
+		}
 	}
 }
 

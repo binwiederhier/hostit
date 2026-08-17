@@ -208,3 +208,32 @@ func TestReconcileSweepsWhatTheDocumentOmits(t *testing.T) {
 	assert.Contains(t, r.ran(), "btrfs subvolume delete "+filepath.Join(m.config.AppsDir, "ghostid"))
 	assert.DirExists(t, m.AppSubvolume("blog"), "an app the document lists is never touched")
 }
+
+// A poweroff is an operator's decision, and reconcile must not undo it. The
+// app is still rebuilt when the node lacks it -- the account and its subvolume
+// should exist, so data can be restored and the app powered on later -- but it
+// must not come back RUNNING. Before this, a wiped node (or an account swept
+// by mistake) quietly resurrected every app an operator had deliberately
+// stopped.
+func TestReconcileDoesNotResurrectAPoweredOffApp(t *testing.T) {
+	t.Parallel()
+	m, ops, r := newTestDeployManager(t)
+	createTestApp(t, m, "blog")
+	require.NoError(t, m.store.SetAppPoweredOff("blog", true))
+
+	// The account is gone, as it would be on a rebuilt node.
+	ops.existingUsers, ops.createdUsers = nil, nil
+	desired, err := m.DesiredState("")
+	require.NoError(t, err)
+	require.Len(t, desired.Apps, 1)
+	require.True(t, desired.Apps[0].PoweredOff, "control carries the poweroff in the desired state")
+	r.reset()
+
+	m.Reconcile(desired)
+
+	assert.Contains(t, ops.createdUsers, "blog", "the app is still rebuilt: it exists, it just does not run")
+	assert.Contains(t, r.ran(), "disable --now "+m.UnitName("blog"), "and is left powered off")
+	a, err := m.store.App("blog")
+	require.NoError(t, err)
+	assert.True(t, a.PoweredOff, "the recorded intent survives the pass")
+}
