@@ -18,6 +18,10 @@ const (
 // control, never the other way round, so control never needs to reach it.
 type Proxy struct {
 	Name string `json:"name"`
+	// Version is the build the proxy reported, and Routes how many routes it was
+	// serving, both from its last heartbeat.
+	Version string `json:"version"`
+	Routes  int    `json:"routes"`
 	// RegisteredAt is when the proxy was added; LastSeen is its last connect,
 	// which is how an operator tells a configured proxy from a serving one.
 	RegisteredAt time.Time `json:"registered_at"`

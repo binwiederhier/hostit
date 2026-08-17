@@ -49,7 +49,7 @@ func (m *Machine) ensureBudget(a *store.App) error {
 	if err := m.assignToGroup(m.appSubvolumeByID(a.ID), group); err != nil {
 		return fmt.Errorf("cannot assign the app subvolume to the disk budget of %s: %w", a.Name, err)
 	}
-	if err := m.btrfs.QgroupLimitExclusive(pool, group, effectiveDiskCapMB(m.DiskLimit(a.Name))); err != nil {
+	if err := m.btrfs.QgroupLimitExclusive(pool, group, EffectiveDiskCapMB(m.DiskLimit(a.Name))); err != nil {
 		return fmt.Errorf("cannot cap disk budget of %s: %w", a.Name, err)
 	}
 	return nil
@@ -91,9 +91,11 @@ func budgetGroup(uid int) string {
 	return btrfs.BudgetGroupPrefix + strconv.Itoa(uid)
 }
 
-// effectiveDiskCapMB maps the stored limit to the enforced one: an unset limit
-// falls back to the default cap instead of meaning unlimited.
-func effectiveDiskCapMB(diskMB int) int {
+// EffectiveDiskCapMB maps a stored limit to the enforced one: an unset limit is
+// the default cap, not unlimited. Exported because control resolves it too --
+// what control reports has to be what gets enforced, and the node keeps
+// applying it as a backstop for anything that still hands it a zero.
+func EffectiveDiskCapMB(diskMB int) int {
 	if diskMB <= 0 {
 		return DefaultDiskCapMB
 	}

@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"heckel.io/hostit/cluster"
 	"heckel.io/hostit/controlconf"
+	"heckel.io/hostit/node"
 	"heckel.io/hostit/proxyapi"
 	"heckel.io/hostit/store"
 	"heckel.io/hostit/user"
@@ -215,4 +216,32 @@ func TestProxyHeartbeatDropsARemovedProxy(t *testing.T) {
 	s.proxyHeartbeatPass()
 
 	assert.NotContains(t, s.Proxies().Agents(), "edge-1", "a removed proxy loses its session")
+}
+
+// What control says an app's disk cap is has to be what the node enforces.
+// Nothing is unlimited: the node substitutes a default cap for an unset limit,
+// which meant the API and the dashboard reported "no limit" while the
+// filesystem was hard-capping the app at 2 GB. Control resolves the effective
+// cap instead, so the number an owner sees is the number they get.
+func TestUnsetDiskLimitResolvesToTheEnforcedCap(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	u := newActiveTestUser(t, s, "owner@example.com")
+	require.NoError(t, s.apps.Store().AddApp(&store.App{Name: "blog", Port: 10000, Host: store.HostLocal, OwnerID: u.ID}))
+
+	// A zero limit means "no limit anyone chose", and the node caps it anyway --
+	// so control must report the cap rather than the zero.
+	defaults, err := s.users.Defaults()
+	require.NoError(t, err)
+	defaults.DiskMB = 0
+	require.NoError(t, s.users.SetDefaults(defaults))
+
+	_, diskMB := s.appLimits("blog")
+	assert.Equal(t, node.DefaultDiskCapMB, diskMB, "a zero limit reports the cap the node actually enforces")
+
+	desiredState, err := s.apps.DesiredState("")
+	require.NoError(t, err)
+	require.Len(t, desiredState.Apps, 1)
+	assert.Equal(t, node.DefaultDiskCapMB, desiredState.Apps[0].DiskMB,
+		"and the node is told that number rather than a zero it has to reinterpret")
 }

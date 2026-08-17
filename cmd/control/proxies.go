@@ -103,7 +103,11 @@ func execProxyList(c *cli.Context) error {
 		if !p.LastSeen.IsZero() {
 			seen = p.LastSeen.Format(time.RFC3339)
 		}
-		fmt.Printf("%-20s last seen %s\n", p.Name, seen)
+		version := p.Version
+		if version == "" {
+			version = "-"
+		}
+		fmt.Printf("%-20s %-28s %5d routes  last seen %s\n", p.Name, version, p.Routes, seen)
 	}
 	return nil
 }

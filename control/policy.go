@@ -3,6 +3,7 @@ package control
 import (
 	"log/slog"
 
+	"heckel.io/hostit/node"
 	"heckel.io/hostit/store"
 )
 
@@ -45,5 +46,8 @@ func (p *serverPolicy) Limits(a *store.App) (memoryMB, diskMB int) {
 			}
 		}
 	}
-	return limits.MemoryMB, limits.DiskMB
+	// Resolved here, not on the node: nothing is uncapped, so a zero limit is
+	// the default cap. Leaving the node to reinterpret the zero made control
+	// report "no limit" for an app the filesystem was hard-capping.
+	return limits.MemoryMB, node.EffectiveDiskCapMB(limits.DiskMB)
 }

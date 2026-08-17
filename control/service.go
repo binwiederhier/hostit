@@ -28,6 +28,7 @@ import (
 	"golang.org/x/sync/errgroup"
 	"heckel.io/hostit/assistant"
 	"heckel.io/hostit/controlconf"
+	"heckel.io/hostit/node"
 	"heckel.io/hostit/preview"
 	"heckel.io/hostit/store"
 	"heckel.io/hostit/user"
@@ -454,7 +455,7 @@ func (s *Server) appLimits(name string) (memoryMB int, diskMB int) {
 			}
 		}
 	}
-	return limits.MemoryMB, limits.DiskMB
+	return limits.MemoryMB, node.EffectiveDiskCapMB(limits.DiskMB)
 }
 
 // appResponse converts an app to its API form

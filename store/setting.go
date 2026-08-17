@@ -2,8 +2,12 @@ package store
 
 const (
 	// SettingRoutesSeq is the routing table's version, persisted because the
-	// proxy compares it across control restarts (see control/internal.go).
+	// proxy compares it across control restarts (see control/proxies.go).
 	SettingRoutesSeq = "routes_seq"
+	// SettingNextPort is where port allocation resumes, persisted so a restart
+	// does not send it back to the bottom of the range and reuse the most
+	// recently freed ports first (see Manager.allocatePort).
+	SettingNextPort = "next_port"
 
 	upsertSettingQuery  = `INSERT INTO setting (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value`
 	selectSettingsQuery = `SELECT key, value FROM setting`

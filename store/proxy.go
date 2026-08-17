@@ -10,12 +10,14 @@ const (
 	// node it exists implicitly, so a single-box install needs no enrollment.
 	ProxyLocal = "local"
 
-	proxyCols            = `name, registered_at, last_seen`
+	proxyCols            = `name, registered_at, last_seen, version, routes`
 	ensureProxyQuery     = `INSERT INTO proxy (name, registered_at) VALUES (?, ?) ON CONFLICT (name) DO NOTHING`
 	selectProxyQuery     = `SELECT ` + proxyCols + ` FROM proxy WHERE name = ?`
 	selectProxiesQuery   = `SELECT ` + proxyCols + ` FROM proxy ORDER BY name`
 	updateProxySeenQuery = `UPDATE proxy SET last_seen = ? WHERE name = ?`
-	deleteProxyQuery     = `DELETE FROM proxy WHERE name = ?`
+	// The heartbeat writes all three together: they describe one answer.
+	updateProxyStatusQuery = `UPDATE proxy SET last_seen = ?, version = ?, routes = ? WHERE name = ?`
+	deleteProxyQuery       = `DELETE FROM proxy WHERE name = ?`
 )
 
 var (
@@ -61,6 +63,12 @@ func (s *Store) SetProxySeen(name string, seen time.Time) error {
 	return err
 }
 
+// SetProxyStatus records what the proxy last reported about itself.
+func (s *Store) SetProxyStatus(name string, seen time.Time, version string, routes int) error {
+	_, err := s.db.Exec(updateProxyStatusQuery, seen.Unix(), version, routes, name)
+	return err
+}
+
 // DeleteProxy unregisters a proxy; its certificate stops being accepted at the
 // next connect, and the daemon drops the session it holds.
 func (s *Store) DeleteProxy(name string) error {
@@ -77,7 +85,7 @@ func (s *Store) DeleteProxy(name string) error {
 func scanProxy(row rowScanner) (*Proxy, error) {
 	var registeredAt, lastSeen int64
 	p := &Proxy{}
-	if err := row.Scan(&p.Name, &registeredAt, &lastSeen); err != nil {
+	if err := row.Scan(&p.Name, &registeredAt, &lastSeen, &p.Version, &p.Routes); err != nil {
 		return nil, ErrProxyNotFound
 	}
 	if registeredAt > 0 {

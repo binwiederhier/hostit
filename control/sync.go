@@ -149,7 +149,12 @@ func (m *Manager) syncState(host string) (*SyncState, error) {
 		if host != "" && hostOrLocal(a.Host) != host {
 			continue
 		}
-		state.Apps = append(state.Apps, a)
+		// A copy without the owner: who owns an app is a tenant fact the node
+		// never reads (it provisions accounts, it does not attribute them), so
+		// it has no business on every machine in the cluster.
+		mirrored := *a
+		mirrored.OwnerID = ""
+		state.Apps = append(state.Apps, &mirrored)
 		snaps, err := m.store.Snapshots(a.Name)
 		if err != nil {
 			return nil, err

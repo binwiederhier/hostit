@@ -170,8 +170,8 @@ func (s *Server) proxyHeartbeatPass() {
 			slog.Warn("A proxy did not answer its heartbeat", "proxy", id)
 			continue
 		}
-		if err := s.apps.Store().SetProxySeen(id, time.Now()); err != nil {
-			slog.Warn("Cannot record a proxy's liveness", "proxy", id, "error", err)
+		if err := s.apps.Store().SetProxyStatus(id, time.Now(), hb.Version, hb.Routes); err != nil {
+			slog.Warn("Cannot record a proxy's status", "proxy", id, "error", err)
 		}
 	}
 }

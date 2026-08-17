@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"slices"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -113,6 +114,13 @@ func NewManager(conf *controlconf.Config, s *store.Store, svc *node.Services) *M
 		config:        conf,
 	}
 	m.node = m // single process: orchestration and machine work are the same
+	// Resume port allocation where the last process left off, so a restart does
+	// not hand out the most recently freed ports first.
+	if settings, err := s.Settings(); err == nil {
+		if next, err := strconv.Atoi(settings[store.SettingNextPort]); err == nil {
+			m.nextPort = next
+		}
+	}
 	// A machine-side lifecycle change invalidates the control cache's entry,
 	// so the UI never confidently serves the pre-transition state for a TTL.
 	m.Machine.OnStateChanged(func(name string) {
@@ -447,6 +455,12 @@ func (m *Manager) allocatePort() (int, error) {
 		if !slices.Contains(used, port) && !m.reservedPorts[port] {
 			m.reservedPorts[port] = true
 			m.nextPort = port + 1
+			// Persisted, not just held: the rotation exists to leave a freed uid
+			// fallow, and a counter that resets on restart hands out the freshest
+			// ones first.
+			if err := m.store.SetSetting(store.SettingNextPort, strconv.Itoa(m.nextPort)); err != nil {
+				slog.Warn("Cannot persist the port rotation point", "error", err)
+			}
 			return port, nil
 		}
 	}

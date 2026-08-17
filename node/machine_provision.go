@@ -33,7 +33,7 @@ func (m *Machine) Provision(spec *nodeapi.ProvisionSpec) error {
 	// the group unenforced until a quota rescan completes.
 	group := budgetGroup(m.uidFor(spec.Port))
 	_ = m.btrfs.QgroupCreate(m.config.AppsDir, group)
-	if err := m.btrfs.QgroupLimitExclusive(m.config.AppsDir, group, effectiveDiskCapMB(spec.DiskMB)); err != nil {
+	if err := m.btrfs.QgroupLimitExclusive(m.config.AppsDir, group, EffectiveDiskCapMB(spec.DiskMB)); err != nil {
 		slog.Warn("Cannot cap the new app's disk budget", "app", spec.Name, "error", err)
 	}
 	// Create the app's one subvolume: a fork snapshots the seed subvolume (an

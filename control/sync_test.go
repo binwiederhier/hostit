@@ -301,3 +301,45 @@ func TestMirrorSequenceFollowsRegistryOrder(t *testing.T) {
 			"a higher sequence must never carry fewer apps than a lower one")
 	}
 }
+
+// The mirror is what a node needs to do its job, and nothing more. An app's
+// owner is a tenant fact the node has no use for -- it provisions accounts and
+// containers, it never asks who owns one -- so shipping owner_id put a person's
+// identity on every machine in the cluster for no reason.
+func TestTheMirrorDoesNotShipAppOwnership(t *testing.T) {
+	t.Parallel()
+	m, _, _ := newTestDeployManager(t)
+	require.NoError(t, m.store.AddApp(&store.App{ID: "id1", Name: "blog", Port: 10000, Host: store.HostLocal, OwnerID: "user-42"}))
+
+	state, err := m.syncState("")
+	require.NoError(t, err)
+	require.Len(t, state.Apps, 1)
+	assert.Equal(t, "blog", state.Apps[0].Name)
+	assert.Empty(t, state.Apps[0].OwnerID, "a node is not told who owns an app")
+
+	// The registry itself still knows, of course.
+	a, err := m.store.App("blog")
+	require.NoError(t, err)
+	assert.Equal(t, "user-42", a.OwnerID)
+}
+
+// Port allocation rotates through the range so a just-freed port (and the uid
+// derived from it) is left fallow: reusing one immediately started brand-new
+// apps over their disk cap, because the dying subvolume's bytes were still on
+// the budget qgroup. The rotation point lived only in memory, so a restart sent
+// allocation back to the bottom of the range and reused the most recently freed
+// ports first -- exactly the case it exists to avoid.
+func TestPortRotationSurvivesARestart(t *testing.T) {
+	t.Parallel()
+	m, _, _ := newTestDeployManager(t)
+	first, err := m.allocatePort()
+	require.NoError(t, err)
+	m.releasePort(first)
+
+	// A new control process over the same registry.
+	second := NewManager(m.config, m.store, testServices(newFakeSystem(), newFakeRunner()))
+	t.Cleanup(second.WaitBackground)
+	next, err := second.allocatePort()
+	require.NoError(t, err)
+	assert.Greater(t, next, first, "allocation continues past the last grant instead of restarting at the bottom")
+}

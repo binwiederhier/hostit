@@ -38,3 +38,22 @@ func TestProxyRegistryIsTheMembershipSwitch(t *testing.T) {
 	_, err = s.Proxy("edge-1")
 	assert.ErrorIs(t, err, ErrProxyNotFound)
 }
+
+// A proxy's heartbeat carries what it is and how much it is serving, which is
+// what makes `proxy list` as useful as `node list`: a proxy connected but
+// serving an empty table is the interesting failure, and it is invisible if all
+// you record is that it answered.
+func TestProxyStatusRecordsBuildAndRoutes(t *testing.T) {
+	t.Parallel()
+	s := newTestStore(t)
+	require.NoError(t, s.EnsureProxy("edge-1"))
+
+	seen := time.Now().Truncate(time.Second)
+	require.NoError(t, s.SetProxyStatus("edge-1", seen, "v0.13.0", 7))
+
+	p, err := s.Proxy("edge-1")
+	require.NoError(t, err)
+	assert.Equal(t, seen.Unix(), p.LastSeen.Unix())
+	assert.Equal(t, "v0.13.0", p.Version)
+	assert.Equal(t, 7, p.Routes)
+}

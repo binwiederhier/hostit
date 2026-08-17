@@ -260,6 +260,11 @@ var migrations = []string{
 			registered_at INTEGER NOT NULL DEFAULT 0,
 			last_seen INTEGER NOT NULL DEFAULT 0
 		);
+	`, // 21: what a proxy reports about itself on each heartbeat, so an operator
+	// can tell a proxy serving traffic from one that is merely connected.
+	`
+		ALTER TABLE proxy ADD COLUMN version TEXT NOT NULL DEFAULT '';
+		ALTER TABLE proxy ADD COLUMN routes INTEGER NOT NULL DEFAULT 0;
 	`,
 }
 
