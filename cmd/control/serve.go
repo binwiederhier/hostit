@@ -116,6 +116,15 @@ func execServe(c *cli.Context) error {
 	if err := listenForMembers(conf, manager, srv, done, splitNode); err != nil {
 		return err
 	}
+	// Fused: this process IS the colocated node, so it registers itself and
+	// keeps its own liveness current. Otherwise the registry lists apps hosted
+	// by a node it has no row for.
+	if !splitNode {
+		if err := manager.EnsureLocalNode(); err != nil {
+			return err
+		}
+		go manager.LocalNodeLoop(done)
+	}
 	// Quota accounting is the mechanism behind every per-app disk budget;
 	// idempotent, so it simply runs at every start.
 	if !splitNode {

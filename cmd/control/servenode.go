@@ -100,14 +100,22 @@ func listenForMembers(conf *controlconf.Config, manager *control.Manager, srv *c
 	// Every proxy that connects is handed the routing table immediately, so a
 	// proxy that just started is never serving an empty table for longer than
 	// its connect takes.
-	if err := manager.Store().EnsureProxy(store.ProxyLocal); err != nil {
-		return err
-	}
 	roles[cluster.RoleProxy] = proxylink.Role(func(proxyID string) bool {
+		// The colocated proxy is implicitly a member, like the colocated node:
+		// its certificate is one control minted for itself, in a root-only
+		// directory on this host. Its row appears when it first connects rather
+		// than being asserted at startup, so a host that runs no proxy does not
+		// list a phantom one that will only ever look stale.
+		if proxyID == store.ProxyLocal {
+			return true
+		}
 		_, err := manager.Store().Proxy(proxyID)
 		return err == nil
 	}, srv, func(proxyID string, agent proxyapi.ProxyAgent) {
 		slog.Info("Proxy connected", "proxy", proxyID)
+		if err := manager.Store().EnsureProxy(proxyID); err != nil {
+			slog.Warn("Cannot register a connected proxy", "proxy", proxyID, "error", err)
+		}
 		_ = manager.Store().SetProxySeen(proxyID, time.Now())
 		srv.Proxies().Register(proxyID, agent)
 		go srv.PushRoutes()

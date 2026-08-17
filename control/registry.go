@@ -13,6 +13,13 @@ import (
 	"heckel.io/hostit/store"
 )
 
+const (
+	// localNodeHeartbeat is how often a fused control stamps the colocated node
+	// as seen. Well inside the staleness window the cluster view uses, so a
+	// running daemon never reports its own node as quiet.
+	localNodeHeartbeat = 30 * time.Second
+)
+
 // NodeRegistry tracks the CONNECTED node agents by node id. Registration
 // happens on every dial-in; a redial supersedes the previous agent, so an
 // unregister only removes the entry if it still holds that same agent.
@@ -74,6 +81,34 @@ func (m *Manager) RecordNodeStatus(nodeID string, hb *nodeapi.Heartbeat) error {
 		}
 	}
 	return m.store.SetNodeSeen(nodeID, time.Now())
+}
+
+// EnsureLocalNode registers the colocated node and stamps it as seen. When
+// control does the machine work itself there is no node daemon to dial in and
+// report, but the node is not therefore absent: it is this process. Without
+// this the registry held apps hosted by a node it had no row for, which reads
+// as "unplaced" everywhere the fleet is described.
+func (m *Manager) EnsureLocalNode() error {
+	if err := m.store.EnsureNode(store.HostLocal, "127.0.0.1"); err != nil {
+		return err
+	}
+	return m.store.SetNodeSeen(store.HostLocal, time.Now())
+}
+
+// LocalNodeLoop keeps the colocated node's liveness current until done closes.
+// Control's own heartbeat IS the node's here, so the interval only has to be
+// short enough that a running daemon never looks stale.
+func (m *Manager) LocalNodeLoop(done <-chan struct{}) {
+	for {
+		if err := m.EnsureLocalNode(); err != nil {
+			slog.Warn("Cannot record the colocated node's liveness", "error", err)
+		}
+		select {
+		case <-done:
+			return
+		case <-time.After(localNodeHeartbeat):
+		}
+	}
 }
 
 // SetNodeRegistry switches the manager's orchestration to multi-node routing:

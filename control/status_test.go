@@ -72,3 +72,39 @@ func TestClusterStatusFlagsAMemberThatStoppedReporting(t *testing.T) {
 	assert.False(t, status.Proxies[0].Stale, "90s is a slow pass, not a dead proxy")
 	assert.True(t, status.Proxies[1].Stale, "ten minutes of silence is not a slow pass")
 }
+
+// When control does the machine work itself, it IS the node -- and it has to
+// say so. Nothing registered the colocated node in that shape, so the registry
+// held apps whose host matched no node: `node list` was empty, and the cluster
+// view told an operator that every app was on an unregistered node and "not
+// routable", about apps it was serving at that moment (prod, 2026-08-17).
+func TestTheColocatedNodeRegistersItself(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	st := s.apps.Store()
+	require.NoError(t, st.AddApp(&store.App{ID: "a1", Name: "blog", Port: 10000, Host: store.HostLocal}))
+
+	require.NoError(t, s.apps.EnsureLocalNode())
+
+	status, err := ClusterStatus(st, time.Now())
+	require.NoError(t, err)
+	require.Len(t, status.Nodes, 1)
+	assert.Equal(t, store.HostLocal, status.Nodes[0].Name)
+	assert.Equal(t, 1, status.Nodes[0].Apps)
+	assert.False(t, status.Nodes[0].Stale, "control's own liveness is the colocated node's")
+	assert.Equal(t, 0, status.Apps.Unplaced, "an app on the local node is placed")
+}
+
+// An app whose host really is missing still gets flagged -- that is the case
+// the count exists for.
+func TestClusterStatusStillFlagsATrulyUnplacedApp(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	st := s.apps.Store()
+	require.NoError(t, s.apps.EnsureLocalNode())
+	require.NoError(t, st.AddApp(&store.App{ID: "a1", Name: "orphan", Port: 10000, Host: "retired-node"}))
+
+	status, err := ClusterStatus(st, time.Now())
+	require.NoError(t, err)
+	assert.Equal(t, 1, status.Apps.Unplaced)
+}
