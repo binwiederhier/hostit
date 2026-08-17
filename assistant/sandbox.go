@@ -80,6 +80,25 @@ CMD ["/bin/bash"]
 type Sandbox struct {
 	conf      *config.Config
 	hostitBin string
+	// identity resolves an app to the uid the sandbox maps to and the app id
+	// its container is named for. The server wires the REGISTRY, which knows
+	// this for an app on any node; the default reads the local passwd file,
+	// which only knows apps that live on this host.
+	identity func(appName string) (uid, gid int, appID string, err error)
+}
+
+// Identity is the resolver signature; see Sandbox.identity.
+type Identity func(appName string) (uid, gid int, appID string, err error)
+
+// Identity resolves an app the way a turn would; exported so the wiring can be
+// tested without launching a container.
+func (s *Sandbox) Identity(appName string) (uid, gid int, appID string, err error) {
+	return s.identity(appName)
+}
+
+// SetIdentity replaces how the sandbox resolves an app's uid and id.
+func (s *Sandbox) SetIdentity(fn Identity) {
+	s.identity = fn
 }
 
 // NewSandbox builds a sandbox launcher from the daemon config; it needs
@@ -91,7 +110,7 @@ type Sandbox struct {
 // command -- mounting os.Executable() worked only while one fused binary was
 // both the daemon and the CLI.
 func NewSandbox(conf *config.Config) (*Sandbox, error) {
-	return &Sandbox{conf: conf, hostitBin: workspace.HostitBinFile}, nil
+	return &Sandbox{conf: conf, hostitBin: workspace.HostitBinFile, identity: appIdentity}, nil
 }
 
 // StreamUsage is one turn's token usage as claude reports it.
@@ -125,7 +144,7 @@ type StreamEvent struct {
 // working on a hostit app), and calls onEvent for each streamed event. It blocks
 // until claude exits (or ctx is cancelled, which kills the container).
 func (s *Sandbox) RunTurn(ctx context.Context, appName, prompt, systemPrompt string, onEvent func(StreamEvent)) error {
-	uid, gid, appID, err := appIdentity(appName)
+	uid, gid, appID, err := s.identity(appName)
 	if err != nil {
 		return err
 	}
@@ -192,7 +211,7 @@ func (s *Sandbox) RunTurn(ctx context.Context, appName, prompt, systemPrompt str
 // Shell drops into an interactive shell in the sandbox, for trying the claude
 // invocation by hand on the host (debugging without redeploys).
 func (s *Sandbox) Shell(appName string) error {
-	uid, gid, appID, err := appIdentity(appName)
+	uid, gid, appID, err := s.identity(appName)
 	if err != nil {
 		return err
 	}

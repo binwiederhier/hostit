@@ -651,3 +651,27 @@ func TestSetKeysPersistsThemInTheRegistry(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, []string{testPublicKey2}, stored, "the registry owns the app's keys")
 }
+
+// The assistant sandbox resolves an app's uid from the registry, so a turn
+// works for an app on ANY node. It used to read this host's passwd file, so an
+// app on a remote node failed with "cannot resolve app user ... is the app
+// deployed on this host?" and silently fell back to the metered API model
+// (seen on stage the day the second node went in).
+func TestAssistantSandboxIdentityComesFromTheRegistry(t *testing.T) {
+	t.Parallel()
+	conf, st := newInternalTestDeps(t)
+	conf.ClaudeCodeOAuthToken = "sk-test"
+	apps := NewManager(conf, st, testServices(newFakeSystem(), newFakeRunner()))
+	t.Cleanup(apps.WaitBackground)
+	s := New(conf, apps, user.NewManager(conf, st))
+	require.NotNil(t, s.claudeSandbox, "the subscription backend is wired when its token is configured")
+
+	// An app that lives on another node: no unix account on this host at all.
+	require.NoError(t, st.AddApp(&store.App{ID: "id9", Name: "elsewhere", Port: 10500, Host: "worker-2", UID: 1327104}))
+
+	uid, gid, appID, err := s.claudeSandbox.Identity("elsewhere")
+	require.NoError(t, err)
+	assert.Equal(t, 1327104, uid)
+	assert.Equal(t, 1327104, gid)
+	assert.Equal(t, "id9", appID)
+}

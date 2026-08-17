@@ -53,15 +53,20 @@ func (s *Server) selfApp(next func(http.ResponseWriter, *http.Request, *store.Ap
 			writeError(w, http.StatusForbidden, errors.New("no peer credentials"))
 			return
 		}
-		username, err := s.usernameForUID(uid)
+		// The registry knows every app's uid, including apps on other nodes;
+		// the passwd file only knows this host's. Ask the registry first, and
+		// keep the name lookup for rows predating the uid column.
+		a, err := s.apps.Store().AppByUID(uid)
 		if err != nil {
-			writeError(w, http.StatusForbidden, err)
-			return
-		}
-		a, err := s.apps.App(username)
-		if err != nil {
-			writeAppError(w, err)
-			return
+			username, nameErr := s.usernameForUID(uid)
+			if nameErr != nil {
+				writeError(w, http.StatusForbidden, nameErr)
+				return
+			}
+			if a, err = s.apps.App(username); err != nil {
+				writeAppError(w, err)
+				return
+			}
 		}
 		next(w, r, a)
 	}

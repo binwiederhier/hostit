@@ -13,6 +13,10 @@ const (
 		SELECT id, name, port, host, owner_id, disk_mb, created_at, image_tag, powered_off, uid
 		FROM app WHERE name = ?
 	`
+	selectAppByUIDQuery = `
+		SELECT id, name, port, host, owner_id, disk_mb, created_at, image_tag, powered_off, uid
+		FROM app WHERE uid = ?
+	`
 	selectAppsQuery = `
 		SELECT id, name, port, host, owner_id, disk_mb, created_at, image_tag, powered_off, uid
 		FROM app ORDER BY name
@@ -60,6 +64,23 @@ func (s *Store) AddApp(app *App) error {
 
 // SetAppUID records the base uid the hosting node allocated for the app; used
 // by the one-time backfill for rows created before uid recording.
+// AppByUID resolves an app from the uid its unix account and container run as.
+// That uid is recorded here, so this answers for an app on ANY node, where the
+// local passwd file only knows the apps that live on this host.
+func (s *Store) AppByUID(uid int) (*App, error) {
+	app := &App{}
+	var createdAt int64
+	err := s.db.QueryRow(selectAppByUIDQuery, uid).Scan(&app.ID, &app.Name, &app.Port, &app.Host, &app.OwnerID, &app.DiskMB, &createdAt, &app.ImageTag, &app.PoweredOff, &app.UID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrAppNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	app.CreatedAt = time.Unix(createdAt, 0)
+	return app, nil
+}
+
 func (s *Store) SetAppUID(name string, uid int) error {
 	_, err := s.db.Exec(updateAppUIDQuery, uid, name)
 	return err

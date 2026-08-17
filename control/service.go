@@ -50,10 +50,13 @@ type Server struct {
 	// assistantOps is the assistant's tool surface, kept so SetNode can repoint
 	// its node agent along with the handlers'; nil when no assistant is configured
 	assistantOps *appOps
-	sessions     *sessionManager
-	api          http.Handler
-	socket       http.Handler
-	proxy        http.Handler
+	// claudeSandbox is the subscription backend's sandbox; kept so its app
+	// identity resolver can be verified.
+	claudeSandbox *assistant.Sandbox
+	sessions      *sessionManager
+	api           http.Handler
+	socket        http.Handler
+	proxy         http.Handler
 
 	// usernameForUID maps a peer-credential UID to a username; overridden in tests
 	usernameForUID func(uid int) (string, error)
@@ -138,6 +141,21 @@ func New(conf *config.Config, apps *Manager, users *user.Manager) *Server {
 				// backend still serves, so never take the whole assistant down here.
 				slog.Error("Cannot start the Claude Max assistant backend; using the API only", "error", err)
 			} else {
+				// Resolve an app's identity from the registry, not this host's
+				// passwd file: an app on another node has no account here, and
+				// the sandbox would refuse to start for it ("cannot resolve
+				// app user ... is the app deployed on this host?").
+				sandbox.SetIdentity(func(appName string) (int, int, string, error) {
+					a, err := apps.Store().App(appName)
+					if err != nil {
+						return 0, 0, "", err
+					}
+					if a.UID == 0 {
+						return 0, 0, "", fmt.Errorf("app %q has no recorded uid yet", appName)
+					}
+					return a.UID, a.UID, a.ID, nil
+				})
+				s.claudeSandbox = sandbox
 				s.assistant.SetClaudeRunner(&claudeBackend{sandbox: sandbox})
 				slog.Info("Claude Max (subscription) backend available for the assistant")
 			}

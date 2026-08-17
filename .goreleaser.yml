@@ -60,15 +60,25 @@ builds:
       - "-s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}}"
     goos: [ linux ]
     goarch: [ arm64 ]
+# Three packages, one release: a host installs only what it runs. A node never
+# carries the control binary (which mints certificates and reads the registry),
+# and a control-only host never carries the machine tooling. They are cut from
+# the same build, so a version installed anywhere matches everywhere.
 nfpms:
-  - package_name: hostit
+  # The machine half, plus everything an app container needs: the hostit binary
+  # is bind-mounted into every container as its CLI and PID 1, and the shell /
+  # enter helpers and sudoers grant are how an owner reaches their own app.
+  - id: hostit_node_pkg
+    package_name: hostit-node
+    # Supersedes the single package the platform shipped as before the split.
+    conflicts: [hostit]
+    replaces: [hostit]
+    ids: [hostit_node_linux_amd64, hostit_node_linux_arm64, hostit_linux_amd64, hostit_linux_arm64]
     homepage: https://github.com/binwiederhier/hostit
     maintainer: Philipp C. Heckel <phil@heckel.io>
-    description: Self-hosted mini-app platform with SSH access, subdomains and TLS
+    description: hostit node -- runs this machine's app containers, users and subvolumes
     license: Apache 2.0
-    formats:
-      - deb
-      - rpm
+    formats: [deb, rpm]
     bindir: /usr/bin
     dependencies:
       - openssh-server
@@ -80,20 +90,12 @@ nfpms:
     recommends:
       - passt
     contents:
-      # Each component owns a directory under /etc/hostit and reads its own
-      # file there; the examples ship beside where they belong.
-      - src: control.yml.example
-        dst: /etc/hostit/control/control.yml.example
       - src: node.yml.example
         dst: /etc/hostit/node/node.yml.example
-      - src: hostit-control.service
-        dst: /lib/systemd/system/hostit-control.service
-      - src: hostit-proxy.service
-        dst: /lib/systemd/system/hostit-proxy.service
       - src: hostit-node.service
         dst: /lib/systemd/system/hostit-node.service
-      - src: proxy.yml.example
-        dst: /etc/hostit/proxy/proxy.yml.example
+      - src: hostit-app@.service
+        dst: /lib/systemd/system/hostit-app@.service
       - src: hostit-shell
         dst: /usr/bin/hostit-shell
         file_info:
@@ -102,16 +104,59 @@ nfpms:
         dst: /usr/bin/hostit-enter
         file_info:
           mode: 0755
-      - src: hostit-app@.service
-        dst: /lib/systemd/system/hostit-app@.service
       - src: hostit.sudoers
         dst: /etc/sudoers.d/hostit
         type: "config|noreplace"
         file_info:
           mode: 0440
     scripts:
-      postinstall: "scripts/postinst.sh"
-      postremove: "scripts/postrm.sh"
+      postinstall: "scripts/postinst-node.sh"
+      postremove: "scripts/postrm-node.sh"
+
+  # The control plane: the registry, web app and API. No machine tooling.
+  - id: hostit_control_pkg
+    package_name: hostit-control
+    # Supersedes the single package the platform shipped as before the split.
+    conflicts: [hostit]
+    replaces: [hostit]
+    ids: [hostit_control_linux_amd64, hostit_control_linux_arm64]
+    homepage: https://github.com/binwiederhier/hostit
+    maintainer: Philipp C. Heckel <phil@heckel.io>
+    description: hostit control plane -- registry, web app, REST API, placement, certificates
+    license: Apache 2.0
+    formats: [deb, rpm]
+    bindir: /usr/bin
+    contents:
+      - src: control.yml.example
+        dst: /etc/hostit/control/control.yml.example
+      - src: hostit-control.service
+        dst: /lib/systemd/system/hostit-control.service
+    scripts:
+      postinstall: "scripts/postinst-control.sh"
+      postremove: "scripts/postrm-control.sh"
+
+  # The data plane: TLS termination and routing from a cached table.
+  - id: hostit_proxy_pkg
+    package_name: hostit-proxy
+    # Supersedes the single package the platform shipped as before the split.
+    conflicts: [hostit]
+    replaces: [hostit]
+    ids: [hostit_proxy_linux_amd64, hostit_proxy_linux_arm64]
+    homepage: https://github.com/binwiederhier/hostit
+    maintainer: Philipp C. Heckel <phil@heckel.io>
+    description: hostit proxy -- terminates TLS and routes to apps from a cached table
+    license: Apache 2.0
+    formats: [deb, rpm]
+    bindir: /usr/bin
+    contents:
+      - src: proxy.yml.example
+        dst: /etc/hostit/proxy/proxy.yml.example
+      - src: hostit-proxy.service
+        dst: /lib/systemd/system/hostit-proxy.service
+    scripts:
+      postinstall: "scripts/postinst-proxy.sh"
+      postremove: "scripts/postrm-proxy.sh"
+
 archives:
   - id: hostit_linux
     ids:

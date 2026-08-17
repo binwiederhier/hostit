@@ -23,3 +23,17 @@ func TestAppUIDPersistsAndBackfills(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 1065536, b.UID)
 }
+
+// An app's uid is registry state, so it resolves without asking the local
+// passwd file -- which knows nothing about an app that lives on another node.
+func TestAppByUID(t *testing.T) {
+	s := newTestStore(t)
+	require.NoError(t, s.AddApp(&App{ID: "id1", Name: "remote", Port: 10005, Host: "worker-2", UID: 1327104}))
+
+	a, err := s.AppByUID(1327104)
+	require.NoError(t, err)
+	assert.Equal(t, "remote", a.Name)
+
+	_, err = s.AppByUID(999999)
+	assert.ErrorIs(t, err, ErrAppNotFound)
+}
