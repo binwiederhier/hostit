@@ -215,8 +215,11 @@ func execServe(c *cli.Context) error {
 	if err := listenForMembers(conf, manager, srv, done, splitNode); err != nil {
 		return err
 	}
-	// Control pushes the routing table to every connected proxy as it changes.
+	// Control pushes the routing table to every connected proxy as it changes,
+	// and asks each how it is on a timer -- which is both the liveness an
+	// operator reads and how a removed proxy loses its session.
 	go srv.RouteLoop(done)
+	go srv.ProxyHeartbeatLoop(done)
 	// Screenshot previews: the sweep loop plus the single shot worker
 	if previews != nil {
 		go previews.Loop(preview.SweepInterval, done)

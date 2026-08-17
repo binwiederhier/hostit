@@ -121,7 +121,7 @@ func execProxyRemove(c *cli.Context) error {
 	if err := s.DeleteProxy(name); err != nil {
 		return err
 	}
-	fmt.Printf("Proxy %q unregistered. Its certificate is no longer accepted; the running\n", name)
-	fmt.Printf("daemon drops its session within a reconcile interval.\n")
+	fmt.Printf("Proxy %q unregistered. Its certificate is no longer accepted, and the\n", name)
+	fmt.Printf("running daemon drops its session at the next heartbeat (within 30s).\n")
 	return nil
 }

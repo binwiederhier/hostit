@@ -33,6 +33,10 @@ const (
 	// certTimeout bounds one certificate lookup for a proxy, including a
 	// possible on-demand issuance for a custom domain nobody has asked for yet.
 	certTimeout = 90 * time.Second
+	// proxyHeartbeatInterval is how often control asks each connected proxy how
+	// it is. It doubles as the liveness record an operator reads, and as the
+	// interval within which a removed proxy loses its session.
+	proxyHeartbeatInterval = 30 * time.Second
 	// routeWatchInterval is how often control re-derives the table to notice a
 	// change worth pushing. The table is small and the query cheap, so
 	// recomputing beats threading a notification through every mutation site
@@ -127,6 +131,48 @@ func (s *Server) RouteLoop(done <-chan struct{}) {
 		}
 		pushed = table.Seq
 		s.PushRoutes()
+	}
+}
+
+// ProxyHeartbeatLoop keeps every connected proxy's liveness current until done
+// closes.
+func (s *Server) ProxyHeartbeatLoop(done <-chan struct{}) {
+	slog.Info("Starting the proxy heartbeat loop", "interval", proxyHeartbeatInterval)
+	defer slog.Info("Stopping the proxy heartbeat loop")
+	for {
+		select {
+		case <-done:
+			return
+		case <-time.After(proxyHeartbeatInterval):
+		}
+		s.proxyHeartbeatPass()
+	}
+}
+
+// proxyHeartbeatPass asks each connected proxy how it is and records that it
+// answered, so `proxy list` reports liveness rather than the moment it
+// connected. It also enforces removal: `hostit-control proxy remove` runs in a
+// separate process and only deletes the registry row, so without this a
+// removed proxy would keep its session (and keep being pushed routes) until it
+// happened to reconnect.
+func (s *Server) proxyHeartbeatPass() {
+	for id, agent := range s.proxies.Agents() {
+		if _, err := s.apps.Store().Proxy(id); errors.Is(err, store.ErrProxyNotFound) {
+			slog.Info("Proxy was removed; dropping its session", "proxy", id)
+			s.proxies.Unregister(id, agent)
+			continue
+		}
+		// A nil answer means the proxy is connected but not responding. Leave the
+		// session alone -- the transport tears it down when it actually dies, and
+		// the stale last-seen is itself the signal an operator wants to see.
+		hb := agent.Heartbeat()
+		if hb == nil {
+			slog.Warn("A proxy did not answer its heartbeat", "proxy", id)
+			continue
+		}
+		if err := s.apps.Store().SetProxySeen(id, time.Now()); err != nil {
+			slog.Warn("Cannot record a proxy's liveness", "proxy", id, "error", err)
+		}
 	}
 }
 

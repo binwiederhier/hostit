@@ -182,3 +182,37 @@ func newProxyTestDeps(t *testing.T) (*controlconf.Config, *store.Store) {
 	t.Cleanup(func() { _ = st.Close() })
 	return conf, st
 }
+
+// `proxy list` is where an operator checks a proxy is alive, so its last-seen
+// has to mean "answered recently", not "connected at some point". Control asks
+// each connected proxy how it is and records the answer.
+func TestProxyHeartbeatRecordsLiveness(t *testing.T) {
+	s := newTestServer(t)
+	require.NoError(t, s.apps.Store().EnsureProxy("edge-1"))
+	s.Proxies().Register("edge-1", &recordingProxy{tables: make(chan *proxyapi.Table, 1)})
+
+	before, err := s.apps.Store().Proxy("edge-1")
+	require.NoError(t, err)
+	require.True(t, before.LastSeen.IsZero(), "nothing has been recorded yet")
+
+	s.proxyHeartbeatPass()
+
+	after, err := s.apps.Store().Proxy("edge-1")
+	require.NoError(t, err)
+	assert.False(t, after.LastSeen.IsZero(), "a proxy that answered is recorded as seen")
+}
+
+// `proxy remove` deletes the registry row from a separate process, so the
+// running daemon has to notice: otherwise a removed proxy keeps its session and
+// keeps being handed the routing table until it happens to reconnect.
+func TestProxyHeartbeatDropsARemovedProxy(t *testing.T) {
+	s := newTestServer(t)
+	require.NoError(t, s.apps.Store().EnsureProxy("edge-1"))
+	agent := &recordingProxy{tables: make(chan *proxyapi.Table, 1)}
+	s.Proxies().Register("edge-1", agent)
+	require.NoError(t, s.apps.Store().DeleteProxy("edge-1"))
+
+	s.proxyHeartbeatPass()
+
+	assert.NotContains(t, s.Proxies().Agents(), "edge-1", "a removed proxy loses its session")
+}
