@@ -18,7 +18,7 @@ import (
 	"syscall"
 	"time"
 
-	"heckel.io/hostit/appconf"
+	"heckel.io/hostit/app"
 )
 
 const (
@@ -86,7 +86,7 @@ func (a *Agent) Run() error {
 		// container alive, until start (or reload) wakes us.
 		if a.paused.Load() {
 			slog.Info("App stopped; container stays up until it is started")
-			a.writeState(appconf.AppStateStopped)
+			a.writeState(app.StateStopped)
 			if !a.waitWake() {
 				return nil
 			}
@@ -95,7 +95,7 @@ func (a *Agent) Run() error {
 		conf := a.loadConfig()
 		if conf == nil {
 			slog.Info("No run command configured; idling until reload")
-			a.writeState(appconf.AppStateIdle)
+			a.writeState(app.StateIdle)
 			if !a.waitWake() {
 				return nil
 			}
@@ -118,7 +118,7 @@ func (a *Agent) Run() error {
 		}
 		startedAt := time.Now()
 		slog.Info("Started app command", "pid", cmd.Process.Pid, "command", conf.Command(hostitBinFile))
-		a.writeState(appconf.AppStateRunning)
+		a.writeState(app.StateRunning)
 		exited := a.waitFor(cmd) // Exactly one waiter per child (Wait must not be called twice)
 
 		// Wait for the child to exit, a reload request, or shutdown
@@ -134,7 +134,7 @@ func (a *Agent) Run() error {
 				slog.Error("App keeps crashing; stopping restarts until it is redeployed or started",
 					"crashes", a.crashes, "lastStatus", exit.status)
 				a.logNotice("App crashed %d times in a row; giving up on automatic restarts. Fix the app, then redeploy or start it.", crashLimit)
-				a.writeState(appconf.AppStateFailed)
+				a.writeState(app.StateFailed)
 				a.crashes = 0
 				if !a.waitWake() {
 					return nil
@@ -143,7 +143,7 @@ func (a *Agent) Run() error {
 			}
 			slog.Warn("App command exited, restarting", "status", exit.status,
 				"ranFor", ranFor.Round(time.Second), "delay", delay)
-			a.writeState(appconf.AppStateCrashed)
+			a.writeState(app.StateCrashed)
 			if !a.sleepFor(delay) {
 				return nil
 			}
@@ -210,7 +210,7 @@ func (a *Agent) signalWake() {
 // cannot see inside the container, so this file is how it tells a stopped or
 // crashed app (container up, nothing serving) from a healthy one. Best-effort.
 func (a *Agent) writeState(state string) {
-	path := filepath.Join(a.home, appconf.AppStateFile)
+	path := filepath.Join(a.home, app.StateFile)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err == nil {
 		_ = os.WriteFile(path, []byte(state), 0o644)
 	}
@@ -276,12 +276,12 @@ func (a *Agent) reportExit(exit childExit) {
 }
 
 // loadConfig reads hostit.yml leniently; nil means "nothing to run"
-func (a *Agent) loadConfig() *appconf.AppConfig {
+func (a *Agent) loadConfig() *app.Config {
 	b, err := os.ReadFile(filepath.Join(a.home, "hostit.yml"))
 	if err != nil {
 		return nil
 	}
-	conf, err := appconf.ParseAppConfig(b)
+	conf, err := app.ParseConfig(b)
 	if err != nil {
 		slog.Error("Cannot parse hostit.yml", "error", err)
 		return nil
@@ -295,7 +295,7 @@ func (a *Agent) loadConfig() *appconf.AppConfig {
 // prepare runs the app's build step, if it has one, before the app starts. Its
 // output goes to the app log like everything else, so a failed build is visible
 // where its owner (or their agent) is already looking.
-func (a *Agent) prepare(conf *appconf.AppConfig) error {
+func (a *Agent) prepare(conf *app.Config) error {
 	if conf.Prepare == "" {
 		return nil
 	}
@@ -316,7 +316,7 @@ func (a *Agent) prepare(conf *appconf.AppConfig) error {
 
 // startChild launches the run command in its own process group with output
 // mirrored to stdout (podman logs) and the app log file
-func (a *Agent) startChild(conf *appconf.AppConfig) (*exec.Cmd, error) {
+func (a *Agent) startChild(conf *app.Config) (*exec.Cmd, error) {
 	out, err := a.openLog()
 	if err != nil {
 		return nil, err
@@ -424,7 +424,7 @@ func restartPlan(crashes int, ranFor time.Duration) (newCrashes int, delay time.
 // checking the size only on start would let the log grow without bound.
 func (a *Agent) openLog() (*appLog, error) {
 	a.closeLog()
-	dir := filepath.Join(a.home, appconf.LogDir)
+	dir := filepath.Join(a.home, app.LogDir)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, err
 	}

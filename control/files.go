@@ -5,7 +5,7 @@ import (
 	"io/fs"
 	"strings"
 
-	"heckel.io/hostit/appconf"
+	"heckel.io/hostit/app"
 	"heckel.io/hostit/homefs"
 )
 
@@ -15,7 +15,7 @@ const (
 	// app; hostit's own instructions are not a file here (see "hostit guide").
 	readmeFile = "README.md"
 	// configFile is the app's own configuration, written by whoever builds it
-	configFile = appconf.ConfigFile
+	configFile = app.ConfigFile
 	// maxConfigSize caps hostit.yml when it is read on a request path. Apps write
 	// their own, and the app list reads one per app on every poll, so a caller
 	// must not be able to turn that into megabytes of YAML parsing.
@@ -65,7 +65,7 @@ func (m *Manager) Description(name string) string {
 	if err != nil {
 		return ""
 	}
-	conf, err := appconf.ParseAppConfig(b)
+	conf, err := app.ParseConfig(b)
 	if err != nil {
 		return ""
 	}
@@ -75,12 +75,12 @@ func (m *Manager) Description(name string) string {
 // SetDescription writes the app's one-line description into its hostit.yml,
 // replacing an existing description: line or inserting one at the top, so it lives
 // with the app's config where the assistant also keeps it current. The line
-// surgery itself is appconf.SetDescription, next to the hostit.yml parsing.
+// surgery itself is app.SetDescription, next to the hostit.yml parsing.
 func (m *Manager) SetDescription(name, desc string) error {
 	desc = strings.ReplaceAll(strings.TrimSpace(desc), "\n", " ")
 	var content string
 	if b, err := m.node.ReadFile(name, configFile); err == nil {
 		content = string(b)
 	}
-	return m.node.WriteFile(name, configFile, []byte(appconf.SetDescription(content, desc)), 0)
+	return m.node.WriteFile(name, configFile, []byte(app.SetDescription(content, desc)), 0)
 }

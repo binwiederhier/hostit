@@ -15,7 +15,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"heckel.io/hostit/appconf"
+	"heckel.io/hostit/app"
 	"heckel.io/hostit/assistant"
 	"heckel.io/hostit/store"
 )
@@ -472,7 +472,7 @@ func TestGuideExplainsTheLayoutAndTheBuildChoice(t *testing.T) {
 	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &guide))
 
 	// An agent must not have to guess where anything goes
-	for _, dir := range []string{appconf.PublicDir, appconf.BinDir, appconf.LogDir, appconf.SrcDir} {
+	for _, dir := range []string{app.PublicDir, app.BinDir, app.LogDir, app.SrcDir} {
 		assert.Contains(t, guide.Layout, dir+"/", "the layout must name %s/", dir)
 	}
 	assert.Contains(t, guide.HostitYml, "mode: static")
@@ -481,7 +481,7 @@ func TestGuideExplainsTheLayoutAndTheBuildChoice(t *testing.T) {
 	// the next session nothing to edit: the guide should push towards keeping the
 	// source here, while still saying an upload works
 	assert.Contains(t, guide.SuggestedStack, "prepare:")
-	assert.Contains(t, guide.SuggestedStack, appconf.SrcDir+"/")
+	assert.Contains(t, guide.SuggestedStack, app.SrcDir+"/")
 	assert.Contains(t, guide.SuggestedStack, "prebuilt binary")
 	assert.Contains(t, guide.Runtimes, "go")
 }

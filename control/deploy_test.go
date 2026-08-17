@@ -13,7 +13,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"heckel.io/hostit/appconf"
+	"heckel.io/hostit/app"
 	"heckel.io/hostit/appctl"
 	"heckel.io/hostit/node"
 	"heckel.io/hostit/run"
@@ -255,7 +255,7 @@ func TestLogsWorkspaceModeReadsFile(t *testing.T) {
 	m, _, _ := newTestDeployManager(t)
 	createTestApp(t, m, "blog")
 	writeAppFile(t, m, "blog", "hostit.yml", "mode: app\nrun: ./server")
-	writeAppFile(t, m, "blog", appconf.LogDir+"/app.log", "line1\nline2\nline3\n")
+	writeAppFile(t, m, "blog", app.LogDir+"/app.log", "line1\nline2\nline3\n")
 	out, err := m.Logs("blog", 2)
 	require.NoError(t, err)
 	assert.Equal(t, "line2\nline3\n", out)
@@ -350,7 +350,7 @@ func writeAppFile(t *testing.T, m *Manager, name, filename, content string) {
 	require.NoError(t, os.WriteFile(full, []byte(content), 0600))
 }
 
-func mustLoadConfig(t *testing.T, m *Manager, name string) *appconf.AppConfig {
+func mustLoadConfig(t *testing.T, m *Manager, name string) *app.Config {
 	t.Helper()
 	conf, err := m.LoadAppConfig(name)
 	require.NoError(t, err)
@@ -466,8 +466,8 @@ func TestLogsCannotBeSymlinkedToAnythingElse(t *testing.T) {
 	require.NoError(t, os.WriteFile(secret, []byte("admin-token: hunter2\n"), 0o600))
 	// The app user owns log/ inside their container, so they can point the log
 	// at anything the daemon (root) can read
-	require.NoError(t, os.MkdirAll(filepath.Join(home, appconf.LogDir), 0o755))
-	require.NoError(t, os.Symlink(secret, filepath.Join(home, appconf.LogDir, "app.log")))
+	require.NoError(t, os.MkdirAll(filepath.Join(home, app.LogDir), 0o755))
+	require.NoError(t, os.Symlink(secret, filepath.Join(home, app.LogDir, "app.log")))
 
 	out, err := m.Logs("blog", 100)
 	assert.NotContains(t, out, "hunter2", "logs must never read through a symlink")

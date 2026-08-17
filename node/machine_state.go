@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"heckel.io/hostit/appconf"
+	"heckel.io/hostit/app"
 	"heckel.io/hostit/container"
 	"heckel.io/hostit/nodeapi"
 	"heckel.io/hostit/workspace"
@@ -60,7 +60,7 @@ func (m *Machine) SeedStates() {
 		}
 		state := nodeapi.State{}
 		if !a.PoweredOff {
-			state = nodeapi.State{Running: true, AppRunning: true, AppState: appconf.AppStateRunning}
+			state = nodeapi.State{Running: true, AppRunning: true, AppState: app.StateRunning}
 		}
 		m.stateCache[a.Name] = state
 	}
@@ -168,7 +168,7 @@ func (m *Machine) States(names []string) map[string]nodeapi.State {
 		appState, appStartedAt := m.AppProcessState(name)
 		states[name] = nodeapi.State{
 			Running:      running,
-			AppRunning:   running && appState == appconf.AppStateRunning,
+			AppRunning:   running && appState == app.StateRunning,
 			AppState:     appStateFor(running, appState),
 			StartedAt:    starts[name],
 			AppStartedAt: appStartedAt,

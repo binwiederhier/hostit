@@ -6,7 +6,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"heckel.io/hostit/appconf"
+	"heckel.io/hostit/app"
 	"heckel.io/hostit/appctl"
 )
 
@@ -66,7 +66,7 @@ func TestGuideText(t *testing.T) {
 	// a file we no longer write
 	for _, want := range []string{
 		"blog", "https://blog.apps.example.com", "10001",
-		appconf.PublicDir + "/", appconf.BinDir + "/", appconf.LogDir + "/", appconf.SrcDir + "/",
+		app.PublicDir + "/", app.BinDir + "/", app.LogDir + "/", app.SrcDir + "/",
 		"hostit deploy", "hostit logs", "apt-get install", "NEVER at this home directory",
 		"https://apps.example.com/docs",
 	} {

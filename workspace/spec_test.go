@@ -8,7 +8,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"heckel.io/hostit/appconf"
+	"heckel.io/hostit/app"
 	"heckel.io/hostit/store"
 )
 
@@ -20,7 +20,7 @@ var testIDs = IDs{UID: 1001, GID: 1001, Count: 65536}
 
 func TestContainerCreateArgsWorkspaceMode(t *testing.T) {
 	t.Parallel()
-	conf := &appconf.AppConfig{Mode: appconf.ModeApp, Run: "python3 -m http.server $PORT"}
+	conf := &app.Config{Mode: app.ModeApp, Run: "python3 -m http.server $PORT"}
 	require.NoError(t, conf.Validate())
 	a := &store.App{ID: "appid123", Name: "blog", Port: 10000}
 	args := CreateArgs(conf, a, "/srv/hostit/apps/appid123", "/run/hostit/hostit.sock", "/usr/bin/hostit", testVersion, 0, testIDs, "")
@@ -55,7 +55,7 @@ func TestContainerCreateArgsWorkspaceMode(t *testing.T) {
 
 func TestCreateArgsOptionsAllPrecedeTheRootfs(t *testing.T) {
 	t.Parallel()
-	conf := &appconf.AppConfig{Mode: appconf.ModeApp, Run: "./server", Env: map[string]string{"K": "v"}}
+	conf := &app.Config{Mode: app.ModeApp, Run: "./server", Env: map[string]string{"K": "v"}}
 	a := &store.App{ID: "appid123", Name: "blog", Port: 10000}
 	args := CreateArgs(conf, a, "/apps/appid123", "/run/hostit/hostit.sock", "/usr/bin/hostit", testVersion, 512, testIDs, "")
 	// podman treats anything after --rootfs <path> as the container command, so a
@@ -76,7 +76,7 @@ func TestCreateArgsOptionsAllPrecedeTheRootfs(t *testing.T) {
 
 func TestCreateArgsHashDiffersFromTheOldImageShape(t *testing.T) {
 	t.Parallel()
-	conf := &appconf.AppConfig{Mode: appconf.ModeApp, Run: "./server"}
+	conf := &app.Config{Mode: app.ModeApp, Run: "./server"}
 	a := &store.App{ID: "appid123", Name: "blog", Port: 10000}
 	args := CreateArgs(conf, a, "/apps/appid123", "/s", "/usr/bin/hostit", testVersion, 0, testIDs, "")
 	// The pre-rootfs argv ended in [imageTag, hostitBin, agent]. The new shape must
@@ -89,10 +89,10 @@ func TestCreateArgsHashDiffersFromTheOldImageShape(t *testing.T) {
 func TestContainerConfigHashChanges(t *testing.T) {
 	t.Parallel()
 	a := &store.App{Name: "blog", Port: 10000}
-	conf1 := &appconf.AppConfig{Mode: appconf.ModeApp, Run: "./server"}
-	conf2 := &appconf.AppConfig{Mode: appconf.ModeApp, Run: "./server"}
-	conf3 := &appconf.AppConfig{Mode: appconf.ModeApp, Run: "./other"}
-	conf4 := &appconf.AppConfig{Mode: appconf.ModeApp, Run: "./server", Env: map[string]string{"K": "v"}}
+	conf1 := &app.Config{Mode: app.ModeApp, Run: "./server"}
+	conf2 := &app.Config{Mode: app.ModeApp, Run: "./server"}
+	conf3 := &app.Config{Mode: app.ModeApp, Run: "./other"}
+	conf4 := &app.Config{Mode: app.ModeApp, Run: "./server", Env: map[string]string{"K": "v"}}
 	hash1 := ConfigHash(CreateArgs(conf1, a, "/apps/x", "/s", "/b", testVersion, 0, testIDs, ""))
 	hash2 := ConfigHash(CreateArgs(conf2, a, "/apps/x", "/s", "/b", testVersion, 0, testIDs, ""))
 	hash3 := ConfigHash(CreateArgs(conf3, a, "/apps/x", "/s", "/b", testVersion, 0, testIDs, ""))
@@ -107,7 +107,7 @@ func TestContainerConfigHashChanges(t *testing.T) {
 
 func TestConfigHashIgnoresTheHostname(t *testing.T) {
 	t.Parallel()
-	conf := &appconf.AppConfig{Mode: appconf.ModeApp, Run: "./server"}
+	conf := &app.Config{Mode: app.ModeApp, Run: "./server"}
 	// Same app id (same container name), different display name: only the
 	// --hostname differs, and a rename must never recreate the (stateful)
 	// container, so the hash must not change.
@@ -120,7 +120,7 @@ func TestConfigHashIgnoresTheHostname(t *testing.T) {
 
 func TestContainerMountsTheSocketDirectory(t *testing.T) {
 	t.Parallel()
-	conf := &appconf.AppConfig{Mode: appconf.ModeStatic}
+	conf := &app.Config{Mode: app.ModeStatic}
 	a := &store.App{Name: "blog", Port: 10000}
 	args := CreateArgs(conf, a, "/srv/hostit/apps/blog", "/run/hostit/hostit.sock", "/usr/bin/hostit", testVersion, 0, IDs{UID: 1001, GID: 1001}, "")
 	joined := strings.Join(args, " ")
@@ -136,7 +136,7 @@ func TestContainerMountsTheSocketDirectory(t *testing.T) {
 
 func TestContainerUsesConmonSdnotify(t *testing.T) {
 	t.Parallel()
-	conf := &appconf.AppConfig{Mode: appconf.ModeStatic}
+	conf := &app.Config{Mode: app.ModeStatic}
 	a := &store.App{Name: "blog", Port: 10000}
 	joined := strings.Join(CreateArgs(conf, a, "/srv/hostit/apps/blog", "/run/hostit/hostit.sock", "/usr/bin/hostit", testVersion, 0, testIDs, ""), " ")
 	// conmon (not the container) signals readiness, so the app's Type=notify systemd
@@ -149,7 +149,7 @@ func TestContainerUsesConmonSdnotify(t *testing.T) {
 
 func TestEnvOrderDoesNotChangeTheConfigHash(t *testing.T) {
 	t.Parallel()
-	conf := &appconf.AppConfig{Mode: appconf.ModeApp, Run: "./server", Env: map[string]string{
+	conf := &app.Config{Mode: app.ModeApp, Run: "./server", Env: map[string]string{
 		"A": "1", "B": "2", "C": "3", "D": "4", "E": "5",
 	}}
 	a := &store.App{Name: "blog", Port: 10000}
@@ -165,7 +165,7 @@ func TestEnvOrderDoesNotChangeTheConfigHash(t *testing.T) {
 
 func TestContainerRefusesPrivilegeEscalation(t *testing.T) {
 	t.Parallel()
-	conf := &appconf.AppConfig{Mode: appconf.ModeStatic}
+	conf := &app.Config{Mode: app.ModeStatic}
 	a := &store.App{Name: "blog", Port: 10000}
 	args := CreateArgs(conf, a, "/var/lib/hostit/apps/blog", "/run/hostit/hostit.sock", "/usr/bin/hostit", testVersion, 0, testIDs, "")
 	// A setuid binary in the container (planted by the tenant, who is root there)
@@ -177,7 +177,7 @@ func TestContainerRefusesPrivilegeEscalation(t *testing.T) {
 
 func TestContainerRunsUnconfinedByAppArmor(t *testing.T) {
 	t.Parallel()
-	conf := &appconf.AppConfig{Mode: appconf.ModeStatic}
+	conf := &app.Config{Mode: app.ModeStatic}
 	a := &store.App{Name: "blog", Port: 10000}
 	args := CreateArgs(conf, a, "/var/lib/hostit/apps/blog", "/run/hostit/hostit.sock", "/usr/bin/hostit", testVersion, 0, testIDs, "")
 	// podman's default AppArmor profile forbids signals across its per-container
@@ -190,7 +190,7 @@ func TestContainerRunsUnconfinedByAppArmor(t *testing.T) {
 
 func TestContainerArgsChangeWithTheVersion(t *testing.T) {
 	t.Parallel()
-	conf := &appconf.AppConfig{Mode: appconf.ModeStatic}
+	conf := &app.Config{Mode: app.ModeStatic}
 	a := &store.App{Name: "blog", Port: 10000}
 	args := CreateArgs(conf, a, "/var/lib/hostit/apps/blog", "/run/hostit/hostit.sock", "/usr/bin/hostit", testVersion, 0, testIDs, "")
 
@@ -206,7 +206,7 @@ func TestContainerArgsChangeWithTheVersion(t *testing.T) {
 
 func TestContainerHasProcessAndMemoryLimits(t *testing.T) {
 	t.Parallel()
-	conf := &appconf.AppConfig{Mode: appconf.ModeStatic}
+	conf := &app.Config{Mode: app.ModeStatic}
 	a := &store.App{Name: "blog", Port: 10000}
 	joined := strings.Join(CreateArgs(conf, a, "/srv/hostit/apps/blog", "/run/hostit/hostit.sock", "/usr/bin/hostit", testVersion, 512, testIDs, ""), " ")
 
@@ -218,7 +218,7 @@ func TestContainerHasProcessAndMemoryLimits(t *testing.T) {
 
 func TestContainerOmitsTheMemoryFlagWhenUnlimited(t *testing.T) {
 	t.Parallel()
-	conf := &appconf.AppConfig{Mode: appconf.ModeStatic}
+	conf := &app.Config{Mode: app.ModeStatic}
 	a := &store.App{Name: "blog", Port: 10000}
 	// A zero cap means unlimited: no --memory flag at all, rather than "0m".
 	joined := strings.Join(CreateArgs(conf, a, "/srv/hostit/apps/blog", "/run/hostit/hostit.sock", "/usr/bin/hostit", testVersion, 0, testIDs, ""), " ")
@@ -227,7 +227,7 @@ func TestContainerOmitsTheMemoryFlagWhenUnlimited(t *testing.T) {
 
 func TestAppsListenOnPortEightyInside(t *testing.T) {
 	t.Parallel()
-	conf := &appconf.AppConfig{Mode: appconf.ModeApp, Run: "./bin/server"}
+	conf := &app.Config{Mode: app.ModeApp, Run: "./bin/server"}
 	a := &store.App{Name: "blog", Port: 10007}
 	joined := strings.Join(CreateArgs(conf, a, "/var/lib/hostit/apps/blog", "/run/hostit/hostit.sock", "/usr/bin/hostit", testVersion, 0, testIDs, ""), " ")
 
@@ -241,7 +241,7 @@ func TestAppsListenOnPortEightyInside(t *testing.T) {
 
 func TestWithConfigLabelInsertsBeforeTheTrailer(t *testing.T) {
 	t.Parallel()
-	conf := &appconf.AppConfig{Mode: appconf.ModeApp, Run: "./server"}
+	conf := &app.Config{Mode: app.ModeApp, Run: "./server"}
 	a := &store.App{ID: "appid123", Name: "blog", Port: 10000}
 	args := CreateArgs(conf, a, "/apps/appid123", "/run/hostit/hostit.sock", "/usr/bin/hostit", testVersion, 0, testIDs, "")
 	labeled := WithConfigLabel(args, "abc123")

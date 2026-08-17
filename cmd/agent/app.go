@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/urfave/cli/v2"
-	"heckel.io/hostit/appconf"
+	"heckel.io/hostit/app"
 	"heckel.io/hostit/appctl"
 	"heckel.io/hostit/config"
 )
@@ -131,7 +131,7 @@ func execStatus(_ *cli.Context) error {
 // execLogs prints (or follows) app logs. Following tails the agent's log file
 // directly; a plain read goes through the daemon so it works from anywhere.
 func execLogs(c *cli.Context) error {
-	logFile := filepath.Join(os.Getenv("HOME"), appconf.AppLogFile)
+	logFile := filepath.Join(os.Getenv("HOME"), app.LogFile)
 	if c.Bool("follow") {
 		if _, err := os.Stat(logFile); err != nil {
 			return errors.New("cannot follow: no agent log file yet; try \"hostit logs\" without -f")
@@ -173,7 +173,7 @@ func execStatic(c *cli.Context) error {
 	if err != nil {
 		return fmt.Errorf("cannot resolve home directory: %w", err)
 	}
-	dir := filepath.Join(home, appconf.PublicDir)
+	dir := filepath.Join(home, app.PublicDir)
 	if _, err := os.Stat(dir); err != nil {
 		return fmt.Errorf("cannot serve %s: %w", dir, err)
 	}

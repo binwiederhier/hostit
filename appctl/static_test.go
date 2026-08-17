@@ -10,7 +10,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"heckel.io/hostit/appconf"
+	"heckel.io/hostit/app"
 )
 
 func TestStaticHandlerServesFiles(t *testing.T) {
@@ -79,11 +79,11 @@ func TestStaticHandlerDoesNotEscapeRoot(t *testing.T) {
 
 func TestStaticCommandInConfig(t *testing.T) {
 	t.Parallel()
-	c := &appconf.AppConfig{Mode: appconf.ModeStatic}
+	c := &app.Config{Mode: app.ModeStatic}
 	require.NoError(t, c.Validate())
 	assert.Equal(t, `/usr/bin/hostit static`, c.Command("/usr/bin/hostit"))
 	// Other modes keep their own command
-	c = &appconf.AppConfig{Mode: appconf.ModeApp, Run: "./server"}
+	c = &app.Config{Mode: app.ModeApp, Run: "./server"}
 	require.NoError(t, c.Validate())
 	assert.Equal(t, "./server", c.Command("/usr/bin/hostit"))
 }

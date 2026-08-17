@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/urfave/cli/v2"
-	"heckel.io/hostit/appconf"
+	"heckel.io/hostit/app"
 	"heckel.io/hostit/appctl"
 	"heckel.io/hostit/config"
 	"heckel.io/hostit/workspace"
@@ -41,24 +41,24 @@ func guideText(self *appctl.SelfInfo) string {
 		"  Its port is " + strconv.Itoa(self.Port) + ", provided to your app as $PORT.\n" +
 		"\n" +
 		"WHERE THINGS GO\n" +
-		"  " + appconf.PublicDir + "/       files served on the web; static mode serves exactly this\n" +
-		"  " + appconf.BinDir + "/          binaries and scripts you run (run: ./" + appconf.BinDir + "/myapp)\n" +
-		"  " + appconf.LogDir + "/          your app's output (\"hostit logs\" reads it)\n" +
-		"  " + appconf.SrcDir + "/          your source, if you keep it here\n" +
-		"  " + appconf.DocsDir + "/         this app's own documentation; update it as you change things\n" +
+		"  " + app.PublicDir + "/       files served on the web; static mode serves exactly this\n" +
+		"  " + app.BinDir + "/          binaries and scripts you run (run: ./" + app.BinDir + "/myapp)\n" +
+		"  " + app.LogDir + "/          your app's output (\"hostit logs\" reads it)\n" +
+		"  " + app.SrcDir + "/          your source, if you keep it here\n" +
+		"  " + app.DocsDir + "/         this app's own documentation; update it as you change things\n" +
 		"  hostit.yml     how the app runs\n" +
 		"  README.md      what the app is, and its worklog -- yours to write\n" +
 		"\n" +
 		"  Directories are created as you write into them. If your app serves files\n" +
-		"  itself, point it at " + appconf.PublicDir + "/ and NEVER at this home directory: the home\n" +
+		"  itself, point it at " + app.PublicDir + "/ and NEVER at this home directory: the home\n" +
 		"  also holds hostit.yml and .ssh/, and serving it would publish them.\n" +
 		"\n" +
 		"HOW TO RUN SOMETHING\n" +
 		"  Say what this app is in hostit.yml, then run \"hostit deploy\":\n" +
 		"\n" +
-		"    mode: static          hostit serves " + appconf.PublicDir + "/, nothing to run\n" +
+		"    mode: static          hostit serves " + app.PublicDir + "/, nothing to run\n" +
 		"    mode: app             your command serves it, via:\n" +
-		"      run: ./" + appconf.BinDir + "/myapp   listening on 0.0.0.0:$PORT\n" +
+		"      run: ./" + app.BinDir + "/myapp   listening on 0.0.0.0:$PORT\n" +
 		"\n" +
 		"  Keep a one-line \"description:\" in hostit.yml. Your app's page shows it,\n" +
 		"  and it is what the next AI session starts from.\n" +
@@ -71,14 +71,14 @@ func guideText(self *appctl.SelfInfo) string {
 		"  count against your app's disk budget, and snapshots cover them too:\n" +
 		"  rolling back restores your files AND the installed software together.\n" +
 		"\n" +
-		"  Prefer keeping your source here: put it in " + appconf.SrcDir + "/ and add a build step,\n" +
+		"  Prefer keeping your source here: put it in " + app.SrcDir + "/ and add a build step,\n" +
 		"  which runs before the app starts (a failed build leaves the app alone):\n" +
 		"\n" +
-		"    prepare: cd " + appconf.SrcDir + " && go build -o ../" + appconf.BinDir + "/myapp .\n" +
-		"    run: ./" + appconf.BinDir + "/myapp\n" +
+		"    prepare: cd " + app.SrcDir + " && go build -o ../" + app.BinDir + "/myapp .\n" +
+		"    run: ./" + app.BinDir + "/myapp\n" +
 		"\n" +
 		"  It builds where it runs, so no cross-compiling and no toolchain of your\n" +
-		"  own. Uploading a prebuilt binary to " + appconf.BinDir + "/ works too, but then the app\n" +
+		"  own. Uploading a prebuilt binary to " + app.BinDir + "/ works too, but then the app\n" +
 		"  is only a binary and the next session has nothing to change.\n" +
 		"\n" +
 		"COMMANDS\n" +

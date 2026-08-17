@@ -1,9 +1,10 @@
-// Package appconf is the app's own contract: the hostit.yml schema (what an
-// app may say about how it runs, parsed and validated -- it is written by the
-// app's owner or their agent, so nothing in it may be trusted with a path
-// outside the app) and the layout of an app's home. It pairs with nodeconf,
-// which is the node daemon's config; this one is the tenant's.
-package appconf
+// Package app is the tenant side of the contract: the hostit.yml schema (what
+// an app may say about how it runs, parsed and validated -- it is written by
+// the app's owner or their agent, so nothing in it may be trusted with a path
+// outside the app) and the layout of an app's home, which both halves of the
+// system agree on. Everything a node or control needs to know about an app's
+// own files is named here, and nothing here knows about hosts or clusters.
+package app
 
 import (
 	"bytes"
@@ -22,8 +23,8 @@ var (
 	errRunWithoutApp    = errors.New("\"run:\" only applies to \"mode: app\"; a static app serves public/ and runs nothing")
 )
 
-// AppConfig is the per-app hostit.yml, written by the app owner (or Claude)
-type AppConfig struct {
+// Config is the per-app hostit.yml, written by the app owner (or Claude)
+type Config struct {
 	Description string            `yaml:"description"` // One or two lines on what this app is, kept current by whoever builds it
 	Prepare     string            `yaml:"prepare"`     // Optional: build step run once before the app starts (compile, npm run build)
 	Mode        Mode              `yaml:"mode"`        // How the app runs: ModeStatic (hostit serves PublicDir) or ModeApp (Run)
@@ -40,13 +41,13 @@ type SnapshotHooks struct {
 	Post string `yaml:"post"`
 }
 
-// LoadAppConfig parses and validates an app's hostit.yml. It takes the raw bytes
+// LoadConfig parses and validates an app's hostit.yml. It takes the raw bytes
 // rather than a path on purpose: hostit.yml is written by the tenant, so the
 // daemon must read it through the app's os.Root (which refuses a symlink out of
 // the home), never with os.ReadFile on a joined path, which would follow such a
 // link as root -- straight to /dev/zero or a root-only file.
-func LoadAppConfig(b []byte) (*AppConfig, error) {
-	c, err := ParseAppConfigStrict(b)
+func LoadConfig(b []byte) (*Config, error) {
+	c, err := ParseConfigStrict(b)
 	if err != nil {
 		return nil, fmt.Errorf("cannot parse %s: %w", ConfigFile, err)
 	}
@@ -56,22 +57,22 @@ func LoadAppConfig(b []byte) (*AppConfig, error) {
 	return c, nil
 }
 
-// ParseAppConfig parses hostit.yml content without validating it; used by the
+// ParseConfig parses hostit.yml content without validating it; used by the
 // agent, which tolerates half-written configs and simply idles on them
-func ParseAppConfig(b []byte) (*AppConfig, error) {
-	c := &AppConfig{}
+func ParseConfig(b []byte) (*Config, error) {
+	c := &Config{}
 	if err := yaml.Unmarshal(b, c); err != nil {
 		return nil, err
 	}
 	return c, nil
 }
 
-// ParseAppConfigStrict also refuses keys hostit does not know. Deploying uses
+// ParseConfigStrict also refuses keys hostit does not know. Deploying uses
 // this: a typo, or a config written against a setting that no longer exists
 // (the old "image:" mode), should say so rather than quietly doing something
 // else.
-func ParseAppConfigStrict(b []byte) (*AppConfig, error) {
-	c := &AppConfig{}
+func ParseConfigStrict(b []byte) (*Config, error) {
+	c := &Config{}
 	dec := yaml.NewDecoder(bytes.NewReader(b))
 	dec.KnownFields(true)
 	if err := dec.Decode(c); err != nil && !errors.Is(err, io.EOF) {
@@ -81,7 +82,7 @@ func ParseAppConfigStrict(b []byte) (*AppConfig, error) {
 }
 
 // Validate checks that exactly one mode is configured properly
-func (c *AppConfig) Validate() error {
+func (c *Config) Validate() error {
 	switch c.Mode {
 	case "":
 		return errNoModeConfigured
@@ -103,7 +104,7 @@ func (c *AppConfig) Validate() error {
 // app gets hostit's own file server, pointed at PublicDir: one place for the
 // files an app puts on the web, so there is nothing to configure and nothing to
 // get wrong.
-func (c *AppConfig) Command(hostitBin string) string {
+func (c *Config) Command(hostitBin string) string {
 	if c.Mode == ModeStatic {
 		return fmt.Sprintf("%s static", hostitBin)
 	}

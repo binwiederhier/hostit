@@ -1,4 +1,4 @@
-package appconf
+package app
 
 import (
 	"testing"

@@ -17,7 +17,7 @@ import (
 	"strconv"
 	"strings"
 
-	"heckel.io/hostit/appconf"
+	"heckel.io/hostit/app"
 	"heckel.io/hostit/store"
 )
 
@@ -137,7 +137,7 @@ func UnitName(id string) string {
 // the app's files live at home/app inside that same tree (no home bind mount),
 // so recreating the container (config change, daemon upgrade) keeps the files
 // and whatever the app installed, and one subvolume is the app's disk budget.
-func CreateArgs(conf *appconf.AppConfig, a *store.App, subvol, socketFile, hostitBin, version string, memoryMB int, ids IDs, bindAddr string) []string {
+func CreateArgs(conf *app.Config, a *store.App, subvol, socketFile, hostitBin, version string, memoryMB int, ids IDs, bindAddr string) []string {
 	if bindAddr == "" {
 		bindAddr = "127.0.0.1"
 	}
