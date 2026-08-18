@@ -71,7 +71,9 @@ The division is deliberate: `control.Manager` decides *what* an app needs
 - The `node` package's own tests (`node/machine_*_test.go`) cover the pure
   machine helpers; machine behavior that spans both halves (deploy, rename,
   snapshots through the Manager) lives in the control package's tests, which
-  drive the fused Manager end to end over the fakes.
+  drive a Manager with an in-process Machine registered as its node, end to end
+  over the fakes. That Machine is a stand-in for a node, not a second half of
+  the Manager: the daemon always reaches a node over the cluster link.
 
 ## The same seam is the multi-node seam (shipped)
 
@@ -80,9 +82,10 @@ every verb control may ask of a node (provision, power, files, exec,
 snapshots, sync, states). It has exactly the two implementations the design
 promised (`plans/260807-hostit-multinode.md`):
 
-- **`node.Machine`** -- the local implementation. The fused daemon's Manager
-  embeds one, so every call is a direct Go method call: zero network, zero
-  serialization.
+- **`node.Machine`** -- the machine implementation, which hostit-node serves. A
+  test registers one as its Manager's node, so every call is a direct Go method
+  call: zero network, zero serialization. It gets its OWN store, like a real
+  node, so a test cannot read what only the mirror would have carried.
 - **`node.remoteAgent`** (`node/remote.go`) -- the same interface over the
   mTLS/yamux duplex connection a `hostit-node` dials in; control's
   `routingAgent` (`control/registry.go`) resolves each app's host to the right

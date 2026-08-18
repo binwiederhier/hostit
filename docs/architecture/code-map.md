@@ -58,7 +58,7 @@ flowchart TB
         firewall
     end
     runner["run.Runner<br/><i>raw exec; run.Nop in tests</i>"]
-    mgr -->|"nodeapi verbs<br/>(direct call when fused,<br/>over the cluster link when split)"| machine
+    mgr -->|"nodeapi verbs<br/>(always over the cluster link,<br/>even to a node on this host)"| machine
     machine --> svc
     btrfs --> runner
     systemd --> runner

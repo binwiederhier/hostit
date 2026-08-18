@@ -19,10 +19,6 @@ import (
 )
 
 const (
-	// teardownWait bounds how long a create waits for a same-name background
-	// teardown (delete-then-recreate); teardownPoll is its check interval.
-	teardownWait = 30 * time.Second
-	teardownPoll = 200 * time.Millisecond
 )
 
 var (
@@ -204,7 +200,10 @@ func (m *Manager) DiskLimit(name string) int {
 	return m.limits[name].diskMB
 }
 
-// machineConfig is the node config the FUSED daemon's machine half runs on:
+// machineConfig is the node config an in-process Machine runs on. Only tests
+// build one now -- the daemon never does -- but it lives here because it is the
+// translation from a control config to a node's, and getting it wrong would
+// make a test pass on paths production never takes.
 // control does the machine work itself, so the node is always the local one
 // and the paths are control's. A split deployment's node reads its own file
 // instead -- the two configs are separate types precisely so control's
