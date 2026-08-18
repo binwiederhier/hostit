@@ -72,3 +72,29 @@ func TestControlMintsItsOwnIdentityButNotTheMembers(t *testing.T) {
 	assert.NoFileExists(t, filepath.Join(ipc, "local.pem"), "a same-host node needs no certificate")
 	assert.NoFileExists(t, filepath.Join(ipc, "proxy-local.pem"), "nor does a same-host proxy")
 }
+
+// Control used to mint a certificate for the node and the proxy sharing its
+// host. They dial the member socket now, so those pairs are private keys for a
+// path nothing takes -- and stale key material on disk is exactly what gets
+// found later and mistaken for something in use. Startup clears them, and
+// leaves what is still load-bearing: the CA remote members chain to, and
+// control's own listener identity.
+func TestStartupRemovesTheRetiredColocatedCredentials(t *testing.T) {
+	t.Parallel()
+	dataDir := t.TempDir()
+	ipc := filepath.Join(dataDir, "ipc")
+	require.NoError(t, os.MkdirAll(ipc, 0o700))
+	for _, name := range []string{"local.pem", "local.key", "proxy-local.pem", "proxy-local.key"} {
+		require.NoError(t, os.WriteFile(filepath.Join(ipc, name), []byte("stale"), 0o600))
+	}
+
+	_, _, err := EnsureIPCCreds(dataDir)
+	require.NoError(t, err)
+
+	assert.NoFileExists(t, filepath.Join(ipc, "local.pem"))
+	assert.NoFileExists(t, filepath.Join(ipc, "local.key"))
+	assert.NoFileExists(t, filepath.Join(ipc, "proxy-local.pem"))
+	assert.NoFileExists(t, filepath.Join(ipc, "proxy-local.key"))
+	assert.FileExists(t, filepath.Join(ipc, "ca.pem"))
+	assert.FileExists(t, filepath.Join(ipc, "control.pem"))
+}

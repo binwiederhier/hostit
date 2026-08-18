@@ -2,11 +2,13 @@ package nodelink
 
 import (
 	"crypto/tls"
+	"log/slog"
 	"os"
 	"path/filepath"
 
 	"heckel.io/hostit/cluster"
 	"heckel.io/hostit/nodeconf"
+	"heckel.io/hostit/store"
 )
 
 // Cluster credentials are plain files: each process presents a CA-signed
@@ -95,11 +97,35 @@ func EnsureIPCCreds(dataDir string) (*tls.Config, *cluster.CA, error) {
 			return nil, nil, err
 		}
 	}
+	removeRetiredIdentities(dir)
 	controlCert, err := tls.LoadX509KeyPair(filepath.Join(dir, "control.pem"), filepath.Join(dir, "control.key"))
 	if err != nil {
 		return nil, nil, err
 	}
 	return ca.ListenerTLS(controlCert), ca, nil
+}
+
+// retiredIdentities are pairs control used to mint for members sharing its
+// host, before they moved to the member socket. They are private keys for an
+// authentication path nothing takes any more, so control deletes them rather
+// than leaving key material lying around to be found later and mistaken for
+// something load-bearing.
+//
+// An upgrade restarts control before the node and proxy, so a member still
+// running the old binary loses its credentials for the seconds until its own
+// restart; it redials on a loop and comes back on the socket. Packages move
+// together, so that window is the upgrade itself.
+var retiredIdentities = []string{store.HostLocal, LocalProxyFile}
+
+func removeRetiredIdentities(dir string) {
+	for _, name := range retiredIdentities {
+		for _, ext := range []string{".pem", ".key"} {
+			path := filepath.Join(dir, name+ext)
+			if err := os.Remove(path); err == nil {
+				slog.Info("Removed a credential no member uses any more", "file", path)
+			}
+		}
+	}
 }
 
 // LoadCA reads the persisted CA (cert + signing key) back so `node add` can
