@@ -18,8 +18,7 @@ import (
 	"heckel.io/hostit/workspace"
 )
 
-const (
-)
+const ()
 
 var (
 	// ErrNoPortsAvailable is returned when the configured port range is exhausted.
