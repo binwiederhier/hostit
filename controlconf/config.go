@@ -99,10 +99,11 @@ type ModelOption struct {
 
 // Config is the hostit server configuration, loaded from a YAML file (see LoadConfig)
 type Config struct {
-	BaseDomain       string  `yaml:"base-domain"`       // Apps live at <app>.<base-domain>; requires wildcard DNS
-	AdminToken       string  `yaml:"admin-token"`       // Bearer token for the admin REST API
+	BaseDomain string `yaml:"base-domain"` // Apps live at <app>.<base-domain>; requires wildcard DNS
+	AdminToken string `yaml:"admin-token"` // Bearer token for the admin REST API
+	// ListenHTTP is where hostit-proxy forwards; a local address, since the
+	// proxy owns :443 in every deployment and control never binds it.
 	ListenHTTP       string  `yaml:"listen-http"`       // HTTP listener (ACME challenges + redirect, or plain proxy if TLS off)
-	ListenHTTPS      string  `yaml:"listen-https"`      // HTTPS listener (ignored if TLS off)
 	ListenAPI        string  `yaml:"listen-api"`        // Optional extra plain-HTTP admin API listener, e.g. 127.0.0.1:2900
 	SocketFile       string  `yaml:"socket-file"`       // Unix socket for the app-side CLI (peercred-authenticated)
 	DataDir          string  `yaml:"data-dir"`          // SQLite registry + ACME certs
@@ -128,13 +129,6 @@ type Config struct {
 	SessionKey         string   `yaml:"session-key"`          // Secret for signing session cookies; generated if empty
 	AdminEmails        []string `yaml:"admin-emails"`         // These emails become active admins on first login
 	Breakglass         bool     `yaml:"breakglass"`           // Allow the admin token to mint a session for an admin email (no Google); for e2e/recovery
-	// BehindProxy serves the full public handler as plain HTTP on ListenHTTP (a
-	// local address) instead of terminating TLS: hostit-proxy sits in front and
-	// terminates with the cert material this daemon still manages (certmagic,
-	// handed over the cluster link). Session cookies stay Secure -- the browser
-	// speaks TLS to the proxy.
-	BehindProxy bool `yaml:"behind-proxy"`
-
 	// ListenNode is where control accepts cluster dial-ins -- nodes AND proxies
 	// (mTLS; per-member certs from the control-owned CA under data-dir/ipc).
 	// When set, this daemon runs CONTROL-ONLY: no machine work happens here
@@ -212,7 +206,6 @@ func NewConfig() *Config {
 	return &Config{
 		ListenCluster:       cluster.DefaultSocketFile,
 		ListenHTTP:          ":80",
-		ListenHTTPS:         ":443",
 		SocketFile:          DefaultSocketFile,
 		DataDir:             "/var/lib/hostit",
 		AppsDir:             "/var/lib/hostit/apps",

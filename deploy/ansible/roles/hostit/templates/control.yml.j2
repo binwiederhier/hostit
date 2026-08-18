@@ -8,10 +8,10 @@ tls: letsencrypt
 letsencrypt-email: {{ hostit_letsencrypt_email }}
 {% endif %}
 
-# hostit-proxy terminates TLS in front and forwards here over loopback; this
-# daemon still manages the certificates and hands them to the proxy over the
-# cluster link.
-behind-proxy: true
+# hostit-proxy terminates TLS in front and forwards here over loopback. That is
+# the only shape: control never binds :443, and needs no setting to say so. It
+# still MANAGES the certificates, and hands them to the proxy over the cluster
+# link.
 listen-http: {{ hostit_control_http }}
 
 # Where members dial in. Setting it is also what stops this daemon doing the

@@ -626,7 +626,6 @@ apps.example.com.    A  <ip-of-this-host>   ; SSH and the bare domain`}
     <Snippet
       text={`base-domain: apps.example.com
 admin-token: $(openssl rand -hex 24)
-behind-proxy: true
 listen-http: 127.0.0.1:2910`}
     />
     <p>
@@ -782,7 +781,6 @@ const DeploymentPage = () => (
       text={`# /etc/hostit/control/control.yml
 base-domain: apps.example.com
 admin-token: CHANGE-ME          # openssl rand -hex 24
-behind-proxy: true
 listen-http: 127.0.0.1:2910`}
     />
     <Snippet
@@ -810,7 +808,6 @@ control-url: http://127.0.0.1:2910`}
       text={`# /etc/hostit/control/control.yml  (host 1: 10.0.0.1)
 base-domain: apps.example.com
 admin-token: CHANGE-ME
-behind-proxy: true
 listen-http: 127.0.0.1:2910
 listen-node: 10.0.0.1:2930      # nodes AND proxies dial in here`}
     />

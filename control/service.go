@@ -200,24 +200,12 @@ func (s *Server) Run() error {
 		})
 	}
 
-	// Public proxy: behind hostit-proxy (plain HTTP on a local address, cert
-	// management still here), TLS via certmagic, or plain HTTP if TLS is off.
-	if s.config.BehindProxy {
-		_, issuer, err := s.setupCertmagic()
-		if err != nil {
-			return err
-		}
-		// The full public handler on the local address hostit-proxy forwards to.
-		// ACME HTTP-01 challenges for custom domains arrive here through the
-		// proxy's :80 pass-through, so the challenge middleware wraps everything.
-		httpServer := &http.Server{Addr: s.config.ListenHTTP, Handler: issuer.HTTPChallengeHandler(s.proxy), ReadHeaderTimeout: readHeaderTimeout}
-		s.servers = append(s.servers, httpServer)
-		g.Go(func() error {
-			slog.Info("Listening for HTTP behind hostit-proxy", "addr", s.config.ListenHTTP)
-			return ignoreServerClosed(httpServer.ListenAndServe())
-		})
-		return g.Wait()
-	}
+	// hostit-proxy terminates TLS and forwards here, always: it is a component
+	// of every deployment, so control serves plain HTTP on a local address and
+	// never binds :443. It still MANAGES the certificates -- certmagic lives
+	// here, and the proxy asks for material over the cluster link.
+	//
+	// tls: off skips certificate management entirely, for development.
 	if s.config.TLS == controlconf.TLSOff {
 		httpServer := &http.Server{Addr: s.config.ListenHTTP, Handler: s.proxy, ReadHeaderTimeout: readHeaderTimeout}
 		s.servers = append(s.servers, httpServer)
@@ -225,11 +213,20 @@ func (s *Server) Run() error {
 			slog.Info("Listening for HTTP (TLS off)", "addr", s.config.ListenHTTP)
 			return ignoreServerClosed(httpServer.ListenAndServe())
 		})
-	} else {
-		if err := s.runTLSServers(g); err != nil {
-			return err
-		}
+		return g.Wait()
 	}
+	_, issuer, err := s.setupCertmagic()
+	if err != nil {
+		return err
+	}
+	// ACME HTTP-01 challenges for custom domains arrive here through the proxy's
+	// :80 pass-through, so the challenge middleware wraps everything.
+	httpServer := &http.Server{Addr: s.config.ListenHTTP, Handler: issuer.HTTPChallengeHandler(s.proxy), ReadHeaderTimeout: readHeaderTimeout}
+	s.servers = append(s.servers, httpServer)
+	g.Go(func() error {
+		slog.Info("Listening for HTTP behind hostit-proxy", "addr", s.config.ListenHTTP)
+		return ignoreServerClosed(httpServer.ListenAndServe())
+	})
 	return g.Wait()
 }
 
@@ -339,40 +336,6 @@ func (s *Server) setupCertmagic() (*tls.Config, *certmagic.ACMEIssuer, error) {
 		return s.domainMagic.GetCertificateWithContext(ctx, hello)
 	}
 	return tlsConfig, issuer, nil
-}
-
-// runTLSServers is the standalone mode: control terminates TLS itself.
-func (s *Server) runTLSServers(g *errgroup.Group) error {
-	tlsConfig, issuer, err := s.setupCertmagic()
-	if err != nil {
-		return err
-	}
-
-	// HTTP: ACME challenges + redirect everything else to HTTPS
-	httpServer := &http.Server{
-		Addr:              s.config.ListenHTTP,
-		Handler:           issuer.HTTPChallengeHandler(http.HandlerFunc(redirectHTTPS)),
-		ReadHeaderTimeout: readHeaderTimeout,
-	}
-	s.servers = append(s.servers, httpServer)
-	g.Go(func() error {
-		slog.Info("Listening for HTTP (ACME + redirect)", "addr", s.config.ListenHTTP)
-		return ignoreServerClosed(httpServer.ListenAndServe())
-	})
-
-	// HTTPS: the actual proxy
-	httpsServer := &http.Server{
-		Addr:              s.config.ListenHTTPS,
-		Handler:           s.proxy,
-		TLSConfig:         tlsConfig,
-		ReadHeaderTimeout: readHeaderTimeout,
-	}
-	s.servers = append(s.servers, httpsServer)
-	g.Go(func() error {
-		slog.Info("Listening for HTTPS", "addr", s.config.ListenHTTPS)
-		return ignoreServerClosed(httpsServer.ListenAndServeTLS("", ""))
-	})
-	return nil
 }
 
 // allowTLSHost decides whether certmagic may request a certificate for a hostname;
@@ -553,11 +516,6 @@ func usernameForUID(uid int) (string, error) {
 		return "", err
 	}
 	return u.Username, nil
-}
-
-func redirectHTTPS(w http.ResponseWriter, r *http.Request) {
-	target := "https://" + hostOnly(r.Host) + r.URL.RequestURI()
-	http.Redirect(w, r, target, http.StatusPermanentRedirect)
 }
 
 // ignoreServerClosed maps the expected shutdown error to nil

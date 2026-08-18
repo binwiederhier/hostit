@@ -4,7 +4,7 @@
 # control restarts. It dials control; control never dials it.
 
 # Where hostit-control's local HTTP listener is (its listen-http when running
-# with behind-proxy: true): the dashboard/API and the unknown-host fallback.
+# the dashboard/API upstream and the unknown-host fallback.
 control-url: http://127.0.0.1:2910
 
 # This proxy's cluster identity. "local" is the colocated proxy, whose

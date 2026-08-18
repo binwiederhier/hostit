@@ -1,8 +1,8 @@
 # Overview: four small binaries, running as root
 
 The platform is four binaries from one module (`heckel.io/hostit`), each a thin
-main over its component package: `hostit-control` (TLS termination, web app,
-REST API, the registry, placement, snapshot/retention decisions),
+main over its component package: `hostit-control` (the registry, web app, REST
+API, placement, certificate management, snapshot/retention decisions),
 `hostit-node` (the machine half: Unix users, containers, subvolumes, port
 rules -- doing only what control commands over the `nodeapi` verbs),
 `hostit-proxy` (a dumb data plane serving a cached routing table), and
@@ -22,7 +22,9 @@ flowchart TB
     end
 
     subgraph host["Host (one droplet, root)"]
-        daemon["hostit serve<br/><i>root daemon</i>"]
+        proxyd["hostit-proxy<br/><i>:443 / :80</i>"]
+        daemon["hostit-control<br/><i>registry, API, web</i>"]
+        noded["hostit-node<br/><i>this host's app work</i>"]
         sshd["sshd<br/><i>system service</i>"]
         store[("SQLite<br/>/var/lib/hostit")]
         nft["nftables<br/><i>per-app port rules</i>"]
@@ -33,12 +35,17 @@ flowchart TB
         end
     end
 
-    browser -->|"HTTPS :443"| daemon
-    agent -->|"HTTPS /api/apps/blog/*"| daemon
+    browser -->|"HTTPS :443"| proxyd
+    agent -->|"HTTPS /api/apps/blog/*"| proxyd
     ssh_client -->|"SSH :22"| sshd
 
-    daemon -->|"proxy to 127.0.0.1:port"| app1
-    daemon -->|"proxy to 127.0.0.1:port"| app2
+    proxyd -->|"the app's port"| app1
+    proxyd -->|"the app's port"| app2
+    proxyd -->|"unknown hosts, dashboard, API"| daemon
+    daemon <-->|"cluster socket"| noded
+    daemon <-->|"cluster socket"| proxyd
+    noded --> app1
+    noded --> app2
     daemon --> store
     daemon -->|"useradd, podman, systemd, nft, btrfs"| apps
     daemon --> nft
@@ -61,14 +68,17 @@ name, so a rename never moves anything on disk
 
 ## What each listener serves
 
-The daemon opens a handful of listeners in `control/service.go:Run`; a separate system
-`sshd` handles SSH. All the HTTP surfaces below are same-origin, served by the one
-root daemon.
+Control opens its listeners in `control/service.go:Run`; a separate system
+`sshd` handles SSH. It does NOT bind `:443` or `:80` -- `hostit-proxy` owns
+those, in every deployment, and there is no setting to say otherwise. Control
+still manages the certificates and hands material to the proxy over the cluster
+link (`CertFor`).
 
 | Listener | Address | Serves |
 |---|---|---|
-| HTTPS proxy | `ListenHTTPS` (`:443`) | Terminates TLS (certmagic: a wildcard cert, or issued on demand). On the web hostname it hands off to the REST/web handler; on `<app>.<base>` or a custom domain it reverse-proxies to the app's loopback port. |
-| HTTP | `ListenHTTP` (`:80`) | ACME HTTP-01 challenges, and a redirect of everything else to HTTPS. When TLS is off, this becomes the plain-HTTP proxy instead. |
+| Public handler | `ListenHTTP` (a local address, e.g. `127.0.0.1:2910`) | Everything the proxy forwards: the REST/web handler on the web hostname, and ACME HTTP-01 challenges arriving through the proxy's `:80` pass-through. With `tls: off` it is the plain-HTTP surface directly, for development. |
+| Cluster socket | `ListenCluster` (`/run/hostit/cluster.sock`) | Members sharing this host: the node and the proxy. Root-only, and the kernel identifies the caller, so no certificate is involved. |
+| Cluster mTLS | `ListenNode` (optional, e.g. `10.0.0.1:2930`) | Members on OTHER machines, authenticated by a CA-signed certificate. Absent on a single-box install. |
 | Admin API | `ListenAPI` (optional, e.g. `127.0.0.1:2900`) | The same REST/web handler over plain HTTP, for local admin use behind the firewall. |
 | Unix socket | `SocketFile` (`/run/hostit/hostit.sock`) | The app-side CLI (`hostit deploy/status/logs`, the login shell's `Self`/`Ensure`, and the sandboxed Claude Max tool calls), authorized by `SO_PEERCRED` (`control/socket.go`). World-connectable on purpose; the uid, not the caller, names the app. |
 | sshd | `:22` (system service) | App logins. sshd runs the app user's login shell, `/usr/bin/hostit-shell`, which execs into the container; see [`isolation.md`](isolation.md) and [`flows.md`](flows.md). |

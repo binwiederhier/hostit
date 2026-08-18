@@ -13,7 +13,6 @@ func TestNewConfigDefaults(t *testing.T) {
 	t.Parallel()
 	c := NewConfig()
 	assert.Equal(t, ":80", c.ListenHTTP)
-	assert.Equal(t, ":443", c.ListenHTTPS)
 	assert.Equal(t, "/run/hostit/hostit.sock", c.SocketFile)
 	assert.Equal(t, "/var/lib/hostit", c.DataDir)
 	// Under the data directory, not /srv: one place holds hostit's state
@@ -36,7 +35,6 @@ tls: "off"
 	assert.Equal(t, "secr3t", c.AdminToken)
 	assert.Equal(t, ":8080", c.ListenHTTP)
 	assert.Equal(t, TLSOff, c.TLS)
-	assert.Equal(t, ":443", c.ListenHTTPS) // Default retained
 }
 
 func TestLoadConfigInvalidYAML(t *testing.T) {
