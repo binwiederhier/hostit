@@ -179,6 +179,7 @@ func TestEnsureRefusesAPoweredOffApp(t *testing.T) {
 	// must not power it back on -- otherwise poweroff never sticks, and an
 	// auto-reconnecting terminal fights the operator.
 	require.NoError(t, m.store.SetAppPoweredOff("blog", true))
+	m.PushMirror()
 	runner.reset()
 	_, err := m.testMachine().Ensure("blog")
 	require.ErrorIs(t, err, appctl.ErrPoweredOff)
@@ -322,7 +323,7 @@ func newTestDeployManager(t *testing.T) (*Manager, *fakeSystem, *fakeRunner) {
 	// link -- REGISTERED, not injected, so the test drives the same routing the
 	// daemon does: control resolves the app's host to a connected agent.
 	machine := node.NewMachine(machineConfig(conf), nodeStoreFor(t), testServices(ops, runner))
-	machine.SetControlSink(inProcessSink{st: s})
+	machine.SetControlSink(inProcessSink{st: s, apps: m})
 	m.NodeRegistry().Register(store.HostLocal, machine)
 	t.Cleanup(m.WaitBackground) // see newTestManager: before db close and TempDir removal
 	return m, ops, runner
@@ -531,6 +532,7 @@ func TestRestartStaleAgentsLeavesPoweredOffAppsOff(t *testing.T) {
 	// container stale -- must not resurrect it: Up would recreate the container
 	// and enable the unit.
 	require.NoError(t, m.store.SetAppPoweredOff("blog", true))
+	m.PushMirror()
 	runner.reset()
 	restarted, err := m.testMachine().RestartStaleAgents("v0.3.0")
 	require.NoError(t, err)
@@ -620,6 +622,7 @@ func TestStartAppRefusesAPoweredOffApp(t *testing.T) {
 	// powered-off app must be refused with ErrPoweredOff (the API's 409, same
 	// as every other container-needing call), not a generic invalid error.
 	require.NoError(t, m.store.SetAppPoweredOff("blog", true))
+	m.PushMirror()
 	runner.reset()
 	err := m.testMachine().StartApp("blog")
 	require.ErrorIs(t, err, appctl.ErrPoweredOff)
@@ -678,7 +681,7 @@ func TestDownRecordsPowerOffAndPowerOnClearsIt(t *testing.T) {
 func newWiredManager(t *testing.T, conf *controlconf.Config, s *store.Store, svc *node.Services) *Manager {
 	m := NewManager(conf, s)
 	machine := node.NewMachine(machineConfig(conf), nodeStoreFor(t), svc)
-	machine.SetControlSink(inProcessSink{st: s})
+	machine.SetControlSink(inProcessSink{st: s, apps: m})
 	m.NodeRegistry().Register(store.HostLocal, machine)
 	return m
 }
@@ -700,10 +703,14 @@ func nodeStoreFor(t *testing.T) *store.Store {
 // registry, or control never learns it. In the daemon this is a callback over
 // the cluster link (nodelink.CallbackHandler); here it writes straight to
 // control's store, which is the same destination.
-type inProcessSink struct{ st *store.Store }
+type inProcessSink struct {
+	st   *store.Store
+	apps *Manager
+}
 
 func (s inProcessSink) PowerChanged(name string, off bool) {
 	_ = s.st.SetAppPoweredOff(name, off)
+	s.apps.InvalidateState(name)
 }
 
 func (s inProcessSink) UsageChanged(name string, usedMB int) {

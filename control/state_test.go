@@ -140,6 +140,7 @@ func TestSeedStatesFromRecordedIntent(t *testing.T) {
 	createTestApp(t, m, "up")
 	createTestApp(t, m, "off")
 	require.NoError(t, m.store.SetAppPoweredOff("off", true))
+	m.PushMirror()
 
 	// Before the first real measurement lands, the seed presumes an app is
 	// running unless its poweroff was recorded -- no red dot on a fresh start.

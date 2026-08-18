@@ -123,14 +123,6 @@ func (m *Manager) NodeRegistry() *NodeRegistry {
 	return m.registry
 }
 
-// SetNodeRegistry switches the manager's orchestration to multi-node routing:
-// machine work resolves each app's host to its connected agent, and mirror
-// pushes go to every connected node (filtered to its apps).
-func (m *Manager) SetNodeRegistry(reg *NodeRegistry) {
-	m.registry = reg
-	m.node = NewRoutingAgent(m.store, reg)
-}
-
 // placeNode picks the node for a new app: the connected node hosting the
 // fewest apps (names sort breaks ties). With nothing connected -- or no
 // registry at all (single process) -- the app lands on the local node.

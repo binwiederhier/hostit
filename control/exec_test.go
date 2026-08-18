@@ -77,6 +77,7 @@ func TestExecRefusesAPoweredOffApp(t *testing.T) {
 	// with ErrPoweredOff (the API's 409), not handed to podman to fail with
 	// "container state improper" buried in a 200 response.
 	require.NoError(t, m.store.SetAppPoweredOff("blog", true))
+	m.PushMirror()
 	runner.reset()
 	_, err := m.testMachine().Exec("blog", "echo hi", 0)
 	require.ErrorIs(t, err, appctl.ErrPoweredOff)

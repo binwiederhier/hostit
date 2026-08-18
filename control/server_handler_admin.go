@@ -185,6 +185,10 @@ func (s *Server) applyUserLimits(u *store.User) error {
 		return err
 	}
 	for _, a := range apps {
+		// Recorded here as well as asserted on the node: control decides the
+		// limits, so its own record is what the desired state and the API report
+		// -- a node that is away still gets them on its next reconcile.
+		s.apps.RecordLimits(a.Name, limits.MemoryMB, limits.DiskMB)
 		s.node.SetMemoryLimit(a.Name, limits.MemoryMB)
 		s.node.SetDiskLimit(a.Name, limits.DiskMB)
 	}

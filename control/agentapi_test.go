@@ -408,11 +408,17 @@ func TestAgentUnauthenticated(t *testing.T) {
 // straight to the store, the way create() would have. File endpoints surface a
 // missing subvolume as an error rather than conjure it, so a store-only
 // fixture that touches files needs its directories for real.
+// seedAppSubvolume gives an app that was written straight into the registry the
+// machine state a real create would have made: its subvolume, and -- through
+// the mirror -- a node that knows the app exists at all. Control's registry is
+// not the node's: a row added here reaches the node the same way every other
+// registry change does, by being pushed.
 func seedAppSubvolume(t *testing.T, s *Server, name string) {
 	t.Helper()
 	a, err := s.apps.Store().App(name)
 	require.NoError(t, err)
 	require.NoError(t, os.MkdirAll(filepath.Join(s.config.AppsDir, a.ID, "home", "app"), 0o755))
+	s.apps.PushMirror()
 }
 
 func newAppToken(t *testing.T, s *Server, appName string) string {

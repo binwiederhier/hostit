@@ -32,12 +32,11 @@ func TestNodeRegistryRegisterSupersedeUnregister(t *testing.T) {
 func TestPlacementPicksTheEmptiestConnectedNode(t *testing.T) {
 	t.Parallel()
 	m, _, _ := newTestDeployManager(t)
-	reg := NewNodeRegistry()
-	m.SetNodeRegistry(reg)
-	// Two apps live on "local", none on "worker-2"; both nodes are connected.
+	reg := m.NodeRegistry()
+	// Two apps live on "local", none on "worker-2". Local is connected by the
+	// harness; worker-2 joins here, so both are reachable.
 	require.NoError(t, m.store.AddApp(&store.App{ID: "a1", Name: "one", Port: 10001, Host: store.HostLocal}))
 	require.NoError(t, m.store.AddApp(&store.App{ID: "a2", Name: "two", Port: 10002, Host: store.HostLocal}))
-	reg.Register("local", &recordingAgent{NodeAgent: m.testMachine()})
 	reg.Register("worker-2", &recordingAgent{NodeAgent: m.testMachine()})
 
 	assert.Equal(t, "worker-2", m.placeNode())

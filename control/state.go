@@ -37,6 +37,17 @@ func (m *Manager) CachedStates(names []string) map[string]State {
 	return cached
 }
 
+// InvalidateState drops what the control cache knew about an app, so the next
+// read measures instead of serving a pre-transition answer for a whole TTL.
+// The node calls it through the callback channel the moment it starts, stops or
+// replaces an app: waiting for the next state poll would show an operator the
+// state they just changed away from.
+func (m *Manager) InvalidateState(name string) {
+	m.ctlStatesMu.Lock()
+	delete(m.ctlStates, name)
+	m.ctlStatesMu.Unlock()
+}
+
 // SeedStates seeds the control plane's cache from recorded intent, so the first
 // page load after a restart does not report every app as stopped while the
 // first measurements are still coming back from the nodes. Each node seeds its

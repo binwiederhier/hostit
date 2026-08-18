@@ -220,6 +220,7 @@ func TestReconcileDoesNotResurrectAPoweredOffApp(t *testing.T) {
 	m, ops, r := newTestDeployManager(t)
 	createTestApp(t, m, "blog")
 	require.NoError(t, m.store.SetAppPoweredOff("blog", true))
+	m.PushMirror()
 
 	// The account is gone, as it would be on a rebuilt node.
 	ops.existingUsers, ops.createdUsers = nil, nil

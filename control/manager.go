@@ -83,8 +83,8 @@ type Manager struct {
 	// files, state): the routing agent that resolves each app to its hosting
 	// node, or -- in tests -- an in-process Machine standing in for one.
 	node NodeAgent
-	// registry is the connected-nodes registry in multi-node control mode
-	// (SetNodeRegistry); nil in a single process.
+	// registry is where connected nodes live; it exists from construction and
+	// is simply empty until one dials in.
 	registry *NodeRegistry
 
 	// nextPort rotates allocation through the range (see allocatePort)
