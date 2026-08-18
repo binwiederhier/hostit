@@ -61,6 +61,12 @@ func execProxyAdd(c *cli.Context) error {
 	defer s.Close()
 	// Same cluster CA as a node's: one trust domain for the whole cluster, with
 	// the role in the certificate deciding what the holder may register as.
+	// A member on another machine dials the mTLS listener, so enrolling one
+	// without that listener configured produces instructions that cannot work:
+	// the printed control-url would carry no port at all.
+	if conf.ListenCluster == "" {
+		return fmt.Errorf("control accepts no remote members: set listen-cluster (e.g. 10.0.0.1:2930) and restart hostit-control first")
+	}
 	ca, err := nodelink.LoadCA(conf.DataDir)
 	if err != nil {
 		return fmt.Errorf("cannot load the cluster CA (has hostit-control started once?): %w", err)
@@ -78,7 +84,7 @@ func execProxyAdd(c *cli.Context) error {
 	}
 	fmt.Printf("Proxy %q registered. On the proxy machine, save the three PEM blocks below\n", name)
 	fmt.Printf("(e.g. under /etc/hostit/proxy/) and point the proxy config at them:\n\n")
-	fmt.Printf("  proxy-id: %s\n  control-url: <this-host>:%s\n", name, portOf(conf.ListenNode))
+	fmt.Printf("  proxy-id: %s\n  control-url: <this-host>:%s\n", name, portOf(conf.ListenCluster))
 	fmt.Printf("  proxy-cert-file: /etc/hostit/proxy/proxy.pem\n  proxy-key-file: /etc/hostit/proxy/proxy.key\n  cluster-ca-cert-file: /etc/hostit/proxy/cluster-ca.pem\n\n")
 	fmt.Printf("# proxy.pem\n%s\n# proxy.key\n%s\n# cluster-ca.pem\n%s\n", certPEM, keyPEM, ca.CertPEM())
 	return nil

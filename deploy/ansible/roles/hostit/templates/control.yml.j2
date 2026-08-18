@@ -14,10 +14,10 @@ letsencrypt-email: {{ hostit_letsencrypt_email }}
 # link.
 listen-http: {{ hostit_control_http }}
 
-# Where members dial in. Setting it is also what stops this daemon doing the
-# machine work itself: hostit-node owns that, even on a single host, so each
-# component is one process with one job.
-listen-node: {{ hostit_control_cluster }}
+# Where members on OTHER machines dial in (mTLS). The node and proxy sharing
+# this host use the socket at /run/hostit/cluster.sock and need no certificate,
+# so a single-box install can leave this out.
+listen-cluster: {{ hostit_control_cluster }}
 {% if hostit_aws_access_key_id %}
 
 # One wildcard certificate for *.{{ hostit_domain }} via Route 53 (DNS-01),

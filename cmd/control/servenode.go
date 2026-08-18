@@ -123,29 +123,29 @@ func listenForMembers(conf *controlconf.Config, manager *control.Manager, srv *c
 	// machine need no certificate, no CA and nothing minted in advance -- the
 	// socket's existence is the only precondition, and the kernel says who is
 	// calling. A single-box install needs no listen-node at all.
-	ln, err := cluster.ListenSocket(cluster.SocketPath(conf.ListenCluster))
+	ln, err := cluster.ListenSocket(cluster.SocketPath(conf.ClusterSocket))
 	if err != nil {
 		return fmt.Errorf("cluster socket: %w", err)
 	}
 	sockSrv := cluster.SocketServer(mux)
 	go func() {
-		slog.Info("Listening for same-host members", "socket", cluster.SocketPath(conf.ListenCluster))
+		slog.Info("Listening for same-host members", "socket", cluster.SocketPath(conf.ClusterSocket))
 		if err := sockSrv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			slog.Error("Member socket failed", "error", err)
 		}
 	}()
 	// mTLS on a real address is for members on OTHER machines, and only exists
 	// when the operator names one.
-	if conf.ListenNode == "" {
+	if conf.ListenCluster == "" {
 		return nil
 	}
 	httpSrv := &http.Server{
-		Addr:      conf.ListenNode,
+		Addr:      conf.ListenCluster,
 		TLSConfig: tlsConf,
 		Handler:   mux,
 	}
 	go func() {
-		slog.Info("Listening for remote cluster dial-ins", "addr", conf.ListenNode)
+		slog.Info("Listening for remote cluster dial-ins", "addr", conf.ListenCluster)
 		if err := httpSrv.ListenAndServeTLS("", ""); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			slog.Error("Cluster listener failed", "error", err)
 		}

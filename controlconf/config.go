@@ -129,17 +129,22 @@ type Config struct {
 	SessionKey         string   `yaml:"session-key"`          // Secret for signing session cookies; generated if empty
 	AdminEmails        []string `yaml:"admin-emails"`         // These emails become active admins on first login
 	Breakglass         bool     `yaml:"breakglass"`           // Allow the admin token to mint a session for an admin email (no Google); for e2e/recovery
-	// ListenNode is where control accepts cluster dial-ins -- nodes AND proxies
-	// (mTLS; per-member certs from the control-owned CA under data-dir/ipc).
-	// When set, this daemon runs CONTROL-ONLY: no machine work happens here
-	// until a node connects. Unset, the machine half runs in this process and
-	// the listener still comes up on loopback for the colocated proxy.
+	// ListenCluster is where members on OTHER machines dial in: mTLS, with
+	// per-member certificates from the cluster CA. Empty on a single-box
+	// install, which admits no remote members at all.
+	//
+	// It admits nodes AND proxies, which is why it is not called listen-node
+	// any more; that name is still read (see ListenNode) so an existing config
+	// keeps working.
+	ListenCluster string `yaml:"listen-cluster"`
+	// ListenNode is the retired name for ListenCluster, from when only nodes
+	// dialed in. Honored so an existing deployment keeps connecting.
 	ListenNode string `yaml:"listen-node"`
 
-	// ListenCluster is the same-host member socket: where a node and a proxy
-	// sharing this machine dial in. Always present, and needing no credentials
-	// -- the socket is root-only and the kernel identifies the caller.
-	ListenCluster string `yaml:"listen-cluster"`
+	// ClusterSocket is where members sharing this host dial in. Always present,
+	// and needing no credentials: the socket is root-only and the kernel
+	// identifies the caller.
+	ClusterSocket string `yaml:"cluster-socket"`
 
 	// ClusterCertFile/ClusterKeyFile are CONTROL's cluster identity: the mTLS
 	// certificate its node listener presents (CN "control"), and
@@ -204,7 +209,7 @@ func (c *Config) IsAdminEmail(email string) bool {
 // NewConfig returns a Config with all defaults set; BaseDomain and AdminToken must be filled in
 func NewConfig() *Config {
 	return &Config{
-		ListenCluster:       cluster.DefaultSocketFile,
+		ClusterSocket:       cluster.DefaultSocketFile,
 		ListenHTTP:          ":80",
 		SocketFile:          DefaultSocketFile,
 		DataDir:             "/var/lib/hostit",
@@ -284,6 +289,9 @@ func LoadConfig(filename string) (*Config, error) {
 	c := NewConfig()
 	if err := yaml.Unmarshal(b, c); err != nil {
 		return nil, fmt.Errorf("cannot parse config %s: %w", filename, err)
+	}
+	if c.ListenCluster == "" {
+		c.ListenCluster = c.ListenNode // the retired key
 	}
 	return c, nil
 }

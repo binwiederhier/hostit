@@ -189,8 +189,14 @@ filesystem either way: the container runs the app's one persistent subvolume
 
 Every node/control conversation rides ONE TCP connection, dialed by the node. The
 node never listens: it has no inbound port, needs no route from control, and works
-from behind NAT. `listen-node` (default 2930) is the single port control listens on
-for that dial-in; `nodelink` is the package that owns the whole exchange.
+from behind NAT.
+
+A member sharing control's host dials `cluster-socket`
+(`/run/hostit/cluster.sock`) and presents no credentials at all: the socket is
+root-only and the kernel identifies the caller. A member on another machine
+dials `listen-cluster` (an address, conventionally port 2930) with a CA-signed
+certificate. `cluster` owns the connection either way; `nodelink` and
+`proxylink` own what is said over it.
 
 The connection starts life as ordinary HTTP so it can be authorized and upgraded,
 then stops being HTTP-shaped: after the 101 both sides hand the raw socket to
@@ -204,7 +210,7 @@ node, and the node can call control, over one connection the node dialed.
 ```mermaid
 sequenceDiagram
     participant N as hostit-node
-    participant C as hostit-control (listen-node :2930)
+    participant C as hostit-control (listen-cluster :2930)
 
     Note over N,C: 1. Establish -- once per connection
     N->>C: TCP + mTLS (node cert, cluster CA)

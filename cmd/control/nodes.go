@@ -66,6 +66,12 @@ func execNodeAdd(c *cli.Context) error {
 	defer s.Close()
 	// Mint the node's identity from the cluster CA. Possession of this pair is
 	// membership (plus the registry row below); there is no join protocol.
+	// A member on another machine dials the mTLS listener, so enrolling one
+	// without that listener configured produces instructions that cannot work:
+	// the printed control-url would carry no port at all.
+	if conf.ListenCluster == "" {
+		return fmt.Errorf("control accepts no remote members: set listen-cluster (e.g. 10.0.0.1:2930) and restart hostit-control first")
+	}
 	ca, err := nodelink.LoadCA(conf.DataDir)
 	if err != nil {
 		return fmt.Errorf("cannot load the cluster CA (has hostit-control started once?): %w", err)
@@ -84,7 +90,7 @@ func execNodeAdd(c *cli.Context) error {
 	fmt.Printf("Node %q registered. It reports its own address when it connects,\n", name)
 	fmt.Printf("so this is all it needs. On the new machine, save the three PEM blocks below\n")
 	fmt.Printf("(e.g. under /etc/hostit/) and point the node config at them:\n\n")
-	fmt.Printf("  node-id: %s\n  control-url: <this-host>:%s\n", name, portOf(conf.ListenNode))
+	fmt.Printf("  node-id: %s\n  control-url: <this-host>:%s\n", name, portOf(conf.ListenCluster))
 	fmt.Printf("  node-cert-file: /etc/hostit/node.pem\n  node-key-file: /etc/hostit/node.key\n  cluster-ca-cert-file: /etc/hostit/cluster-ca.pem\n\n")
 	fmt.Printf("# node.pem\n%s\n# node.key\n%s\n# cluster-ca.pem\n%s\n", certPEM, keyPEM, ca.CertPEM())
 	return nil

@@ -801,15 +801,17 @@ control-url: http://127.0.0.1:2910`}
     <p>
       Control and the proxy stay together; two machines run nothing but apps.
       Only DNS host 1 needs to be public. On control, naming a reachable{" "}
-      <span className="mono">listen-node</span> is what makes it control-only:
-      no machine work happens there, and apps live on whichever node connects.
+      <span className="mono">listen-cluster</span> is what lets members on other
+      machines join. A node sharing control's host needs none of this -- it
+      dials the socket at <span className="mono">/run/hostit/cluster.sock</span>{" "}
+      and presents no certificate.
     </p>
     <Snippet
       text={`# /etc/hostit/control/control.yml  (host 1: 10.0.0.1)
 base-domain: apps.example.com
 admin-token: CHANGE-ME
 listen-http: 127.0.0.1:2910
-listen-node: 10.0.0.1:2930      # nodes AND proxies dial in here`}
+listen-cluster: 10.0.0.1:2930   # members on OTHER machines dial in here`}
     />
     <p>
       Enroll each node from the control host. There is no join protocol and no
