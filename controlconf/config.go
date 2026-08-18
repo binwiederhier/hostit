@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"gopkg.in/yaml.v3"
+	"heckel.io/hostit/cluster"
 )
 
 // AppPreviewMode selects how the dashboard's app cards are previewed: a live
@@ -141,6 +142,11 @@ type Config struct {
 	// the listener still comes up on loopback for the colocated proxy.
 	ListenNode string `yaml:"listen-node"`
 
+	// ListenCluster is the same-host member socket: where a node and a proxy
+	// sharing this machine dial in. Always present, and needing no credentials
+	// -- the socket is root-only and the kernel identifies the caller.
+	ListenCluster string `yaml:"listen-cluster"`
+
 	// ClusterCertFile/ClusterKeyFile are CONTROL's cluster identity: the mTLS
 	// certificate its node listener presents (CN "control"), and
 	// ClusterCACertFile is the CA every node certificate must chain to. Unset,
@@ -204,6 +210,7 @@ func (c *Config) IsAdminEmail(email string) bool {
 // NewConfig returns a Config with all defaults set; BaseDomain and AdminToken must be filled in
 func NewConfig() *Config {
 	return &Config{
+		ListenCluster:       cluster.DefaultSocketFile,
 		ListenHTTP:          ":80",
 		ListenHTTPS:         ":443",
 		SocketFile:          DefaultSocketFile,

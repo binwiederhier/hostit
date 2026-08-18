@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -31,9 +30,9 @@ const (
 	DefaultLocalCertFile   = "/var/lib/hostit/ipc/proxy-local.pem"
 	DefaultLocalKeyFile    = "/var/lib/hostit/ipc/proxy-local.key"
 	DefaultLocalCACertFile = "/var/lib/hostit/ipc/ca.pem"
-	// clusterPort is control's member listener, used when a proxy names only
-	// control-url.
-	clusterPort = "2930"
+	// defaultClusterURL is control's same-host member socket, which is where a
+	// colocated proxy dials unless told otherwise. No certificate is involved.
+	defaultClusterURL = "unix:/run/hostit/cluster.sock"
 )
 
 // FileConfig is /etc/hostit/proxy/proxy.yml: who this proxy is, where control
@@ -75,24 +74,9 @@ func LoadFileConfig(path string) (*FileConfig, error) {
 		return nil, fmt.Errorf("control-url is required")
 	}
 	if conf.ClusterURL == "" {
-		conf.ClusterURL = clusterURLFrom(conf.ControlURL)
+		conf.ClusterURL = defaultClusterURL
 	}
 	return conf, nil
-}
-
-// clusterURLFrom derives control's member listener from its HTTP URL: same
-// host, the cluster port. Right when they share a machine, which is the case a
-// config should not have to spell out.
-func clusterURLFrom(controlURL string) string {
-	host := controlURL
-	if _, rest, found := strings.Cut(host, "://"); found {
-		host = rest
-	}
-	host = strings.TrimSuffix(host, "/")
-	if h, _, err := net.SplitHostPort(host); err == nil {
-		host = h
-	}
-	return net.JoinHostPort(host, clusterPort)
 }
 
 // Serve runs the proxy from its config file until a termination signal.

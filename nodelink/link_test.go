@@ -1,10 +1,9 @@
 package nodelink
 
 import (
-	"net"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -54,7 +53,11 @@ func TestCallbacksFlowOverTheDuplex(t *testing.T) {
 	t.Parallel()
 	st := &recordingCallbackStore{power: map[string]bool{}, usage: map[string]int{}, snaps: map[string]int{}, hosts: map[string]string{"blog": "node-b"}}
 	registered := make(chan struct{}, 1)
-	srv := httptest.NewServer(cluster.ConnectHandler(map[string]*cluster.Role{
+	sockPath := filepath.Join(t.TempDir(), "cluster.sock")
+	ln, err := cluster.ListenSocket(sockPath)
+	require.NoError(t, err)
+	defer ln.Close()
+	srv := cluster.SocketServer(cluster.ConnectHandler(map[string]*cluster.Role{
 		cluster.RoleNode: Role(
 			func(string) bool { return true },
 			func(nodeID string) http.Handler { return CallbackHandler(nodeID, st) },
@@ -62,10 +65,10 @@ func TestCallbacksFlowOverTheDuplex(t *testing.T) {
 			nil,
 		),
 	}))
+	go func() { _ = srv.Serve(ln) }()
 	defer srv.Close()
 
-	u, _ := url.Parse(srv.URL)
-	conn, err := net.Dial("tcp", u.Host)
+	conn, err := cluster.DialSocket(sockPath)
 	require.NoError(t, err)
 	link := NewControlLink()
 	go func() {

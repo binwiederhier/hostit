@@ -15,6 +15,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -190,11 +191,18 @@ func (p *Proxy) Link(done <-chan struct{}) {
 
 // connect dials control and blocks until that connection dies.
 func (p *Proxy) connect() error {
-	tlsConf, err := cluster.DialCreds(p.conf.CertFile, p.conf.KeyFile, p.conf.CACertFile)
-	if err != nil {
-		return err
+	// Same host: the member socket, no credentials involved. Another machine:
+	// mTLS with the pair `hostit-control proxy add` minted.
+	var conn net.Conn
+	var err error
+	if cluster.IsSocketAddr(p.conf.ClusterURL) {
+		conn, err = cluster.DialSocket(cluster.SocketPath(p.conf.ClusterURL))
+	} else {
+		var tlsConf *tls.Config
+		if tlsConf, err = cluster.DialCreds(p.conf.CertFile, p.conf.KeyFile, p.conf.CACertFile); err == nil {
+			conn, err = tls.Dial("tcp", p.conf.ClusterURL, tlsConf)
+		}
 	}
-	conn, err := tls.Dial("tcp", p.conf.ClusterURL, tlsConf)
 	if err != nil {
 		return err
 	}

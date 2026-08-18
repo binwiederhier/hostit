@@ -1,9 +1,8 @@
 package cluster
 
 import (
-	"net"
 	"net/http"
-	"net/http/httptest"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -51,12 +50,18 @@ func TestConnectHandlerRoutesByRole(t *testing.T) {
 			},
 		}
 	}
-	srv := httptest.NewServer(ConnectHandler(map[string]*Role{RoleNode: role(), RoleProxy: role()}))
+	// The same-host path: a unix socket, where the kernel says who is calling
+	// and the header only says which name and role that caller claims.
+	path := filepath.Join(t.TempDir(), "cluster.sock")
+	ln, err := ListenSocket(path)
+	require.NoError(t, err)
+	defer ln.Close()
+	srv := SocketServer(ConnectHandler(map[string]*Role{RoleNode: role(), RoleProxy: role()}))
+	go func() { _ = srv.Serve(ln) }()
 	defer srv.Close()
 
-	// The local socket has no certificate, so the role rides a header there.
 	for _, want := range []string{RoleNode, RoleProxy} {
-		conn, err := net.Dial("tcp", srv.Listener.Addr().String())
+		conn, err := DialSocket(path)
 		require.NoError(t, err)
 		go func() { _ = Serve(conn, Peer{ID: "member-1", Role: want}, nil, nil) }()
 		select {
@@ -70,7 +75,7 @@ func TestConnectHandlerRoutesByRole(t *testing.T) {
 	}
 
 	// A role nobody registered is refused rather than defaulted.
-	conn, err := net.Dial("tcp", srv.Listener.Addr().String())
+	conn, err := DialSocket(path)
 	require.NoError(t, err)
 	defer conn.Close()
 	err = Serve(conn, Peer{ID: "member-1", Role: "auditor"}, nil, nil)

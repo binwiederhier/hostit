@@ -104,8 +104,11 @@ func ConnectHandler(roles map[string]*Role) http.Handler {
 	})
 }
 
-// peerFrom reads the far side's identity: the certificate when there is one,
-// the self-reported headers on the local socket.
+// peerFrom reads the far side's identity. Over TLS that is the certificate.
+// Over the same-host socket it is the kernel: the connecting process must be
+// root, and only then are its self-reported name and role believed. Without the
+// uid check the headers would be a free-for-all -- anything that could open the
+// socket could claim to be any node.
 func peerFrom(r *http.Request) Peer {
 	if r.TLS != nil {
 		if len(r.TLS.PeerCertificates) == 0 {
@@ -113,6 +116,10 @@ func peerFrom(r *http.Request) Peer {
 		}
 		cert := r.TLS.PeerCertificates[0]
 		return Peer{ID: cert.Subject.CommonName, Role: roleOf(cert)}
+	}
+	uid, ok := socketPeerUID(r)
+	if !ok || !trustedPeerUID(uid) {
+		return Peer{}
 	}
 	peer := Peer{ID: r.Header.Get(peerHeader), Role: r.Header.Get(roleHeader)}
 	if peer.Role == "" {

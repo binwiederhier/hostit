@@ -7,7 +7,6 @@ import (
 
 	"heckel.io/hostit/cluster"
 	"heckel.io/hostit/nodeconf"
-	"heckel.io/hostit/store"
 )
 
 // Cluster credentials are plain files: each process presents a CA-signed
@@ -153,14 +152,13 @@ type colocatedIdentity struct {
 	file string // the basename under the ipc dir
 }
 
-// colocatedIdentities are the pairs control keeps in its ipc dir: its own
-// listener identity, the colocated node's, and the colocated proxy's. The
-// proxy's file is prefixed because the node is called "local" too -- same
-// name, different role, and they cannot share a filename.
+// colocatedIdentities is control's own listener identity, and nothing else.
+// Members sharing this host used to get one each, which meant control minted
+// certificates for itself and they had to wait for the files to appear -- a
+// second precondition that once put a proxy on :443 with nothing to serve.
+// They use the member socket now, where the kernel says who is calling.
 func colocatedIdentities() []colocatedIdentity {
 	return []colocatedIdentity{
 		{name: cluster.ControlID, role: cluster.RoleNode, file: cluster.ControlID},
-		{name: store.HostLocal, role: cluster.RoleNode, file: store.HostLocal},
-		{name: store.ProxyLocal, role: cluster.RoleProxy, file: LocalProxyFile},
 	}
 }

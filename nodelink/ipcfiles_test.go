@@ -52,16 +52,23 @@ func TestCredsFromConfiguredFiles(t *testing.T) {
 
 // With no cluster files configured, control mints the colocated set under
 // <data-dir>/ipc on first use and the local node reads its pair from there.
-func TestCredsFallBackToColocatedIPCFiles(t *testing.T) {
+// Control still mints its OWN listener identity and the cluster CA, because
+// members on other machines authenticate against them. What it no longer mints
+// is a certificate per same-host member: those dial the member socket, where
+// the kernel identifies the caller, so there is nothing to issue and nothing
+// for a member to wait for.
+func TestControlMintsItsOwnIdentityButNotTheMembers(t *testing.T) {
 	t.Parallel()
 	conf := nodeconf.NewConfig()
 	conf.DataDir = t.TempDir()
 
-	listen, err := ListenerCreds("", "", "", conf.DataDir) // control side: auto-mints
+	listen, err := ListenerCreds("", "", "", conf.DataDir)
 	require.NoError(t, err)
 	assert.NotEmpty(t, listen.Certificates)
-	dial, err := DialCreds(conf) // node side: reads the minted "local" pair
-	require.NoError(t, err)
-	require.NotNil(t, dial.GetClientCertificate)
-	assert.FileExists(t, filepath.Join(conf.DataDir, "ipc", "ca.pem"))
+
+	ipc := filepath.Join(conf.DataDir, "ipc")
+	assert.FileExists(t, filepath.Join(ipc, "ca.pem"), "the CA remains: remote members chain to it")
+	assert.FileExists(t, filepath.Join(ipc, "control.pem"))
+	assert.NoFileExists(t, filepath.Join(ipc, "local.pem"), "a same-host node needs no certificate")
+	assert.NoFileExists(t, filepath.Join(ipc, "proxy-local.pem"), "nor does a same-host proxy")
 }

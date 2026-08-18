@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"sync"
@@ -20,9 +21,6 @@ const (
 	// nodeStatePoll is how often control pulls a node's batch states into its
 	// cache in split mode -- the wire version of the node's own settle cadence.
 	nodeStatePoll = 2 * time.Second
-	// defaultClusterAddr is where the member listener binds when the config
-	// names none (a fused install, where only the colocated proxy dials in).
-	defaultClusterAddr = "127.0.0.1:2930"
 )
 
 // nodeRole is how control admits a node: the registry row is the membership
@@ -121,20 +119,33 @@ func listenForMembers(conf *controlconf.Config, manager *control.Manager, srv *c
 		srv.Proxies().Unregister(proxyID, agent)
 	})
 	mux.Handle("/", cluster.ConnectHandler(roles))
-	addr := conf.ListenNode
-	if addr == "" {
-		// Fused mode names no listener, but the colocated proxy still has to
-		// reach control. Loopback: on a single box there is nothing else to
-		// admit, and a remote member needs listen-node set anyway.
-		addr = defaultClusterAddr
+	// The same-host socket is always there: a node and a proxy sharing this
+	// machine need no certificate, no CA and nothing minted in advance -- the
+	// socket's existence is the only precondition, and the kernel says who is
+	// calling. A single-box install needs no listen-node at all.
+	ln, err := cluster.ListenSocket(cluster.SocketPath(conf.ListenCluster))
+	if err != nil {
+		return fmt.Errorf("cluster socket: %w", err)
+	}
+	sockSrv := cluster.SocketServer(mux)
+	go func() {
+		slog.Info("Listening for same-host members", "socket", cluster.SocketPath(conf.ListenCluster))
+		if err := sockSrv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			slog.Error("Member socket failed", "error", err)
+		}
+	}()
+	// mTLS on a real address is for members on OTHER machines, and only exists
+	// when the operator names one.
+	if conf.ListenNode == "" {
+		return nil
 	}
 	httpSrv := &http.Server{
-		Addr:      addr,
+		Addr:      conf.ListenNode,
 		TLSConfig: tlsConf,
 		Handler:   mux,
 	}
 	go func() {
-		slog.Info("Listening for cluster dial-ins", "addr", addr)
+		slog.Info("Listening for remote cluster dial-ins", "addr", conf.ListenNode)
 		if err := httpSrv.ListenAndServeTLS("", ""); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			slog.Error("Cluster listener failed", "error", err)
 		}

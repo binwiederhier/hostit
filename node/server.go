@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"heckel.io/hostit/cluster"
 	"heckel.io/hostit/nodeconf"
 	"heckel.io/hostit/nodelink"
 	"heckel.io/hostit/preflight"
@@ -126,11 +127,18 @@ func Serve(configPath, version string) error {
 	go machine.StateLoop(done)
 	go machine.QgroupSweepLoop(6*time.Hour, done)
 
-	// Dial control forever: serve the RPC over the mTLS connection; on death,
-	// redial with backoff. Control runs its rejoin handshake on every register.
-	tlsConf, err := nodelink.DialCreds(conf)
-	if err != nil {
-		return err
+	// Dial control forever; on death, redial with backoff. Control runs its
+	// rejoin handshake on every register.
+	//
+	// Same host means the member socket: no certificate, no CA, nothing minted
+	// in advance. Another machine means mTLS.
+	sameHost := cluster.IsSocketAddr(conf.ControlURL)
+	var tlsConf *tls.Config
+	if !sameHost {
+		tlsConf, err = nodelink.DialCreds(conf)
+		if err != nil {
+			return err
+		}
 	}
 	link := nodelink.NewControlLink()
 	machine.SetControlSink(link)
@@ -157,7 +165,7 @@ func Serve(configPath, version string) error {
 			return nil
 		default:
 		}
-		conn, err := tls.DialWithDialer(&net.Dialer{Timeout: dialTimeout}, "tcp", conf.ControlURL, tlsConf)
+		conn, err := dialControl(conf.ControlURL, sameHost, tlsConf)
 		if err != nil {
 			time.Sleep(redialDelay)
 			continue
@@ -179,4 +187,15 @@ func Serve(configPath, version string) error {
 		slog.Warn("Control connection lost; redialing")
 		time.Sleep(redialDelay)
 	}
+}
+
+// dialControl opens one connection to control: the member socket when they
+// share a host, mTLS otherwise. Same-host needs no credentials at all -- the
+// socket is only openable by control's own user or root, and the kernel tells
+// control which it is.
+func dialControl(addr string, sameHost bool, tlsConf *tls.Config) (net.Conn, error) {
+	if sameHost {
+		return cluster.DialSocket(cluster.SocketPath(addr))
+	}
+	return tls.DialWithDialer(&net.Dialer{Timeout: dialTimeout}, "tcp", addr, tlsConf)
 }

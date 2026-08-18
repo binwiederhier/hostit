@@ -7,9 +7,8 @@ import (
 	"io"
 	"io/fs"
 	"net"
-	"net/http/httptest"
-	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -166,18 +165,22 @@ func TestDialInRegistersARemoteAgent(t *testing.T) {
 	agent := &fakeAgentFull{written: map[string][]byte{}}
 	registered := make(chan string, 1)
 	var got nodeapi.NodeAgent
-	srv := httptest.NewServer(cluster.ConnectHandler(map[string]*cluster.Role{
+	sockPath := filepath.Join(t.TempDir(), "cluster.sock")
+	ln, err := cluster.ListenSocket(sockPath)
+	require.NoError(t, err)
+	defer ln.Close()
+	srv := cluster.SocketServer(cluster.ConnectHandler(map[string]*cluster.Role{
 		cluster.RoleNode: Role(func(string) bool { return true }, nil, func(nodeID string, remote nodeapi.NodeAgent) {
 			got = remote
 			registered <- nodeID
 		}, nil),
 	}))
+	go func() { _ = srv.Serve(ln) }()
 	defer srv.Close()
 
 	// The node side: plain TCP here (the mTLS identity is the transport's
 	// concern, tested in transport_test.go); DialControl upgrades and serves.
-	u, _ := url.Parse(srv.URL)
-	conn, err := net.Dial("tcp", u.Host)
+	conn, err := cluster.DialSocket(sockPath)
 	require.NoError(t, err)
 	go func() {
 		require.NoError(t, ServeAgent(conn, "node-b", agent, nil))

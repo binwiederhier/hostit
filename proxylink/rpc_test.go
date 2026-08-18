@@ -1,9 +1,8 @@
 package proxylink
 
 import (
-	"net"
 	"net/http"
-	"net/http/httptest"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -45,14 +44,19 @@ func (f *fakeControl) CertFor(sni string) (*proxyapi.CertMaterial, error) {
 func link(t *testing.T, agent proxyapi.ProxyAgent, sink proxyapi.ControlSink) (proxyapi.ProxyAgent, proxyapi.ControlSink) {
 	t.Helper()
 	remote := make(chan proxyapi.ProxyAgent, 1)
-	srv := httptest.NewServer(cluster.ConnectHandler(map[string]*cluster.Role{
+	sockPath := filepath.Join(t.TempDir(), "cluster.sock")
+	ln, err := cluster.ListenSocket(sockPath)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = ln.Close() })
+	srv := cluster.SocketServer(cluster.ConnectHandler(map[string]*cluster.Role{
 		cluster.RoleProxy: Role(func(string) bool { return true }, sink, func(_ string, p proxyapi.ProxyAgent) {
 			remote <- p
 		}, nil),
 	}))
-	t.Cleanup(srv.Close)
+	go func() { _ = srv.Serve(ln) }()
+	t.Cleanup(func() { _ = srv.Close() })
 
-	conn, err := net.Dial("tcp", srv.Listener.Addr().String())
+	conn, err := cluster.DialSocket(sockPath)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = conn.Close() })
 	toControl := make(chan proxyapi.ControlSink, 1)
