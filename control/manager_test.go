@@ -438,7 +438,10 @@ func TestDeleteAppAnswersBeforeTeardownAndConverges(t *testing.T) {
 	require.ErrorIs(t, err, store.ErrAppNotFound)
 
 	// The background teardown converges to exactly what the sync delete did.
+	// Both halves: control answers the delete, the node destroys the subvolume
+	// and the budget qgroup in its own background.
 	m.WaitBackground()
+	m.testMachine().WaitBackground()
 	joined := r.ran()
 	assert.Contains(t, joined, "systemctl disable --now "+unit)
 	assert.Contains(t, joined, "podman rm --force "+container)
