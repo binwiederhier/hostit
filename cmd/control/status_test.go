@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/urfave/cli/v2"
 	"heckel.io/hostit/control"
+	"heckel.io/hostit/controlconf"
 )
 
 // The command exists and is discoverable: an operator looking for "how is the
@@ -65,4 +66,12 @@ func TestStatusOutputNamesMembersAndCallsOutSilence(t *testing.T) {
 	assert.Contains(t, got, "3 total, 1 powered off, 5 snapshots, 2.0 GB on disk")
 	assert.Contains(t, got, "not routable", "an app on an unregistered node is flagged")
 	assert.Contains(t, got, "4 total, 1 admins, 2 awaiting approval")
+}
+
+// Enrolling a member on another machine when control admits none produces
+// instructions that cannot work: the printed control-url would carry an empty
+// port. Refuse with the fix instead.
+func TestEnrollingARemoteMemberNeedsAListener(t *testing.T) {
+	conf := controlconf.NewConfig()
+	assert.Empty(t, conf.ListenCluster, "a single-box install admits no remote members")
 }
