@@ -278,7 +278,7 @@ func TestMirrorSequenceFollowsRegistryOrder(t *testing.T) {
 
 	for i := 0; i < 40; i++ {
 		require.NoError(t, m.store.AddApp(&store.App{ID: fmt.Sprintf("id%02d", i), Name: fmt.Sprintf("app%02d", i), Port: 11000 + i, Host: store.HostLocal}))
-	m.PushMirror()
+		m.PushMirror()
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
