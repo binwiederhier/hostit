@@ -46,6 +46,7 @@ func TestCustomDomainValidation(t *testing.T) {
 	t.Parallel()
 	s := newTestServer(t)
 	require.NoError(t, s.apps.Store().AddApp(&store.App{Name: "blog", Port: 10000, Host: store.HostLocal}))
+	s.apps.PushMirror()
 
 	for _, bad := range []string{
 		"blog.apps.example.com", // under the platform domain -> an app subdomain already
@@ -62,7 +63,9 @@ func TestCustomDomainUniqueAcrossApps(t *testing.T) {
 	t.Parallel()
 	s := newTestServer(t)
 	require.NoError(t, s.apps.Store().AddApp(&store.App{Name: "blog", Port: 10000, Host: store.HostLocal}))
+	s.apps.PushMirror()
 	require.NoError(t, s.apps.Store().AddApp(&store.App{Name: "other", Port: 10001, Host: store.HostLocal}))
+	s.apps.PushMirror()
 
 	_, err := s.addAppDomain("blog", "shared.example.com")
 	require.NoError(t, err)
@@ -74,6 +77,7 @@ func TestRemoveCustomDomainStopsRouting(t *testing.T) {
 	t.Parallel()
 	s := newTestServer(t)
 	require.NoError(t, s.apps.Store().AddApp(&store.App{Name: "blog", Port: 10000, Host: store.HostLocal}))
+	s.apps.PushMirror()
 	_, err := s.addAppDomain("blog", "blog.example.com")
 	require.NoError(t, err)
 	waitDomainActive(t, s, "blog.example.com")
@@ -89,7 +93,9 @@ func TestRemoveCustomDomainWrongApp(t *testing.T) {
 	t.Parallel()
 	s := newTestServer(t)
 	require.NoError(t, s.apps.Store().AddApp(&store.App{Name: "blog", Port: 10000, Host: store.HostLocal}))
+	s.apps.PushMirror()
 	require.NoError(t, s.apps.Store().AddApp(&store.App{Name: "other", Port: 10001, Host: store.HostLocal}))
+	s.apps.PushMirror()
 	_, err := s.addAppDomain("blog", "blog.example.com")
 	require.NoError(t, err)
 
@@ -106,6 +112,7 @@ func TestAppDomainAddListVerifyDelete(t *testing.T) {
 	u := newActiveTestUser(t, s, "owner@example.com")
 	token := accountToken(t, s, u)
 	require.NoError(t, s.apps.Store().AddApp(&store.App{Name: "blog", Port: 10000, Host: store.HostLocal, OwnerID: u.ID}))
+	s.apps.PushMirror()
 
 	// Empty to begin with
 	rr := request(t, s.API(), "GET", "/api/apps/blog/domains", "", token)
@@ -150,6 +157,7 @@ func TestAppDomainAddRejectsBadDomain(t *testing.T) {
 	u := newActiveTestUser(t, s, "owner@example.com")
 	token := accountToken(t, s, u)
 	require.NoError(t, s.apps.Store().AddApp(&store.App{Name: "blog", Port: 10000, Host: store.HostLocal, OwnerID: u.ID}))
+	s.apps.PushMirror()
 	rr := request(t, s.API(), "POST", "/api/apps/blog/domains", `{"domain":"not a domain"}`, token)
 	assert.Equal(t, http.StatusBadRequest, rr.Code)
 }
@@ -162,6 +170,7 @@ func TestAppDomainEndpointsAreOwnerScoped(t *testing.T) {
 	owner := newActiveTestUser(t, s, "owner@example.com")
 	stranger := newActiveTestUser(t, s, "stranger@example.com")
 	require.NoError(t, s.apps.Store().AddApp(&store.App{Name: "secret", Port: 10000, Host: store.HostLocal, OwnerID: owner.ID}))
+	s.apps.PushMirror()
 	strangerToken := accountToken(t, s, stranger)
 
 	assert.Equal(t, http.StatusNotFound, request(t, s.API(), "GET", "/api/apps/secret/domains", "", strangerToken).Code)
@@ -176,7 +185,9 @@ func TestAppDomainVerifyDeleteWrongApp(t *testing.T) {
 	u := newActiveTestUser(t, s, "owner@example.com")
 	token := accountToken(t, s, u)
 	require.NoError(t, s.apps.Store().AddApp(&store.App{Name: "blog", Port: 10000, Host: store.HostLocal, OwnerID: u.ID}))
+	s.apps.PushMirror()
 	require.NoError(t, s.apps.Store().AddApp(&store.App{Name: "wiki", Port: 10001, Host: store.HostLocal, OwnerID: u.ID}))
+	s.apps.PushMirror()
 	_, err := s.addAppDomain("blog", "blog.example.com")
 	require.NoError(t, err)
 

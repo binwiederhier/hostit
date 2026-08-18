@@ -22,6 +22,7 @@ func TestForkHonorsAppLimit(t *testing.T) {
 	require.NoError(t, s.users.Update(u))
 	// ...and give them one, so they are exactly at the limit.
 	require.NoError(t, s.apps.Store().AddApp(&store.App{Name: "blog", Port: 10000, Host: store.HostLocal, OwnerID: u.ID}))
+	s.apps.PushMirror()
 	token, _, err := s.users.CreateAppToken(u.ID, "", "test")
 	require.NoError(t, err)
 

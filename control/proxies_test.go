@@ -95,6 +95,7 @@ func TestRoutesCoverPublicHostnamesAndCustomDomains(t *testing.T) {
 	s := newTestServer(t)
 	u := newActiveTestUser(t, s, "owner@example.com")
 	require.NoError(t, s.apps.Store().AddApp(&store.App{Name: "blog", Port: 10000, Host: store.HostLocal, OwnerID: u.ID}))
+	s.apps.PushMirror()
 	require.NoError(t, s.apps.Store().AddDomain(&store.Domain{Domain: "www.phil.example", AppName: "blog", Status: store.DomainActive}))
 
 	table, err := s.Routes()
@@ -113,6 +114,7 @@ func TestRoutesCoverPublicHostnamesAndCustomDomains(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, table.Seq, again.Seq)
 	require.NoError(t, s.apps.Store().AddApp(&store.App{Name: "wiki", Port: 10001, Host: store.HostLocal, OwnerID: u.ID}))
+	s.apps.PushMirror()
 	changed, err := s.Routes()
 	require.NoError(t, err)
 	assert.Greater(t, changed.Seq, table.Seq, "a change bumps the seq")
@@ -231,6 +233,7 @@ func TestUnsetDiskLimitResolvesToTheEnforcedCap(t *testing.T) {
 	s := newTestServer(t)
 	u := newActiveTestUser(t, s, "owner@example.com")
 	require.NoError(t, s.apps.Store().AddApp(&store.App{Name: "blog", Port: 10000, Host: store.HostLocal, OwnerID: u.ID}))
+	s.apps.PushMirror()
 
 	// A zero limit means "no limit anyone chose", and the node caps it anyway --
 	// so control must report the cap rather than the zero.

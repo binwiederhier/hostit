@@ -140,6 +140,7 @@ func TestReconcileOrphanUsersNeedsTwoSightings(t *testing.T) {
 
 	// The app arrived in the mirror before the next sweep: never touched.
 	require.NoError(t, m.store.AddApp(&store.App{ID: "id-not-yet-mirrored", Name: "newcomer", Port: 10777, Host: store.HostLocal}))
+	m.PushMirror()
 	m.testMachine().ReconcileOrphans()
 	assert.Empty(t, ops.deletedUsers, "an account that showed up in the mirror is not an orphan")
 }

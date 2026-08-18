@@ -24,6 +24,7 @@ func TestManagerRollbackDelegatesAndBringsAppUp(t *testing.T) {
 	m, _, r := newTestDeployManager(t)
 	r.failOn("container inspect", assert.AnError) // no container yet -> Up creates one
 	require.NoError(t, m.store.AddApp(&store.App{Name: "blog", Port: 10000, Host: store.HostLocal}))
+	m.PushMirror()
 	require.NoError(t, os.MkdirAll(m.testMachine().AppFiles("blog").Path(), 0o755))
 	writeAppFile(t, m, "blog", "hostit.yml", "mode: app\nrun: ./server")
 
@@ -199,6 +200,7 @@ func TestIngestNodeSnapshotsRecoversRecordsMissedWhileDisconnected(t *testing.T)
 	// An app hosted on the remote node (create places locally in tests, so the
 	// row is written directly with that node as its host).
 	require.NoError(t, m.store.AddApp(&store.App{ID: store.NewAppID(), Name: "blog", Port: 10500, Host: "worker-2"}))
+	m.PushMirror()
 	agent := &snapshotReporter{NodeAgent: m.testMachine(), report: []*store.Snapshot{
 		{ID: "20260816-120000-lost", AppName: "blog", Label: "taken during the outage", CreatedAt: time.Now().UTC().Truncate(time.Second), Auto: true},
 	}}

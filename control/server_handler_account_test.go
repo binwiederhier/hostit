@@ -95,6 +95,7 @@ func TestAppTokenMintedOnlyForAnOwnedApp(t *testing.T) {
 	s := newTestServer(t)
 	owner := newActiveTestUser(t, s, "owner@example.com")
 	require.NoError(t, s.apps.Store().AddApp(&store.App{Name: "blog", Port: 10000, Host: store.HostLocal, OwnerID: owner.ID}))
+	s.apps.PushMirror()
 	attacker := newActiveTestUser(t, s, "attacker@example.com")
 
 	rr := request(t, s.API(), "POST", "/api/account/tokens", `{"app_name":"blog","label":"x"}`, accountToken(t, s, attacker))

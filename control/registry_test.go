@@ -36,7 +36,9 @@ func TestPlacementPicksTheEmptiestConnectedNode(t *testing.T) {
 	// Two apps live on "local", none on "worker-2". Local is connected by the
 	// harness; worker-2 joins here, so both are reachable.
 	require.NoError(t, m.store.AddApp(&store.App{ID: "a1", Name: "one", Port: 10001, Host: store.HostLocal}))
+	m.PushMirror()
 	require.NoError(t, m.store.AddApp(&store.App{ID: "a2", Name: "two", Port: 10002, Host: store.HostLocal}))
+	m.PushMirror()
 	reg.Register("worker-2", &recordingAgent{NodeAgent: m.testMachine()})
 
 	assert.Equal(t, "worker-2", m.placeNode())
@@ -51,6 +53,11 @@ func TestRoutingAgentRoutesByAppHost(t *testing.T) {
 	m, _, _ := newTestDeployManager(t)
 	reg := NewNodeRegistry()
 	require.NoError(t, m.store.AddApp(&store.App{ID: "a1", Name: "blog", Port: 10001, Host: "worker-2"}))
+	// The stand-in machine plays worker-2 here, so it has to be registered as
+	// worker-2 to receive that node's slice of the mirror: control sends each
+	// node only the apps it hosts.
+	m.NodeRegistry().Register("worker-2", m.testMachine())
+	m.PushMirror()
 	local := &recordingAgent{NodeAgent: m.testMachine()}
 	remote := &recordingAgent{NodeAgent: m.testMachine()}
 	reg.Register("local", local)

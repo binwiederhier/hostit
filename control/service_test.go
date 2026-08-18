@@ -470,6 +470,7 @@ func TestTLSIsOnlyIssuedForTheWebAppAndRegisteredApps(t *testing.T) {
 	t.Parallel()
 	s := newTestServer(t)
 	require.NoError(t, s.apps.Store().AddApp(&store.App{Name: "blog", Port: 10000, Host: store.HostLocal}))
+	s.apps.PushMirror()
 
 	// Allowed: the web app itself and a real app's subdomain
 	assert.NoError(t, s.allowTLSHost("apps.example.com"))
@@ -498,6 +499,7 @@ func registerAppWithBackend(t *testing.T, s *Server, name, backendURL string) {
 	port, err := strconv.Atoi(u.Port())
 	require.NoError(t, err)
 	require.NoError(t, s.apps.Store().AddApp(&store.App{Name: name, Port: port, Host: store.HostLocal}))
+	s.apps.PushMirror()
 }
 
 func request(t *testing.T, h http.Handler, method, path, body, token string) *httptest.ResponseRecorder {
@@ -529,7 +531,9 @@ func TestAppsListIsPersonalEvenForAdmins(t *testing.T) {
 	require.NoError(t, err)
 	other := newActiveTestUser(t, s, "someone@example.com")
 	require.NoError(t, s.apps.Store().AddApp(&store.App{Name: "mine", Port: 10000, Host: store.HostLocal, OwnerID: admin.ID}))
+	s.apps.PushMirror()
 	require.NoError(t, s.apps.Store().AddApp(&store.App{Name: "theirs", Port: 10001, Host: store.HostLocal, OwnerID: other.ID}))
+	s.apps.PushMirror()
 
 	// The dashboard says "N of M apps used" next to this list, and that count is
 	// the caller's own. Someone else's app in there is just confusing.

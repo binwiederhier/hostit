@@ -42,6 +42,7 @@ func TestAssistantRejectsNonOwner(t *testing.T) {
 	s := newAssistantTestServer(t)
 	owner := newActiveTestUser(t, s, "owner@example.com")
 	require.NoError(t, s.apps.Store().AddApp(&store.App{Name: "secret", Port: 10000, Host: store.HostLocal, OwnerID: owner.ID}))
+	s.apps.PushMirror()
 	other := newActiveTestUser(t, s, "other@example.com")
 	otherToken, _, err := s.users.CreateToken(other.ID, "t")
 	require.NoError(t, err)
@@ -58,6 +59,7 @@ func TestAssistantRefusesCrossSiteRequests(t *testing.T) {
 	s := newAssistantTestServer(t)
 	owner := newActiveTestUser(t, s, "owner@example.com")
 	require.NoError(t, s.apps.Store().AddApp(&store.App{Name: "blog", Port: 10000, Host: store.HostLocal, OwnerID: owner.ID}))
+	s.apps.PushMirror()
 	value, err := s.sessions.encode(owner.ID)
 	require.NoError(t, err)
 	cookie := &http.Cookie{Name: s.cookieName(sessionCookieName), Value: value}

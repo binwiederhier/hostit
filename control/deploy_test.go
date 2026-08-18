@@ -605,6 +605,7 @@ func TestUpRefusesAnAppThatWasDeletedMeanwhile(t *testing.T) {
 	createTestApp(t, m, "blog")
 	writeAppFile(t, m, "blog", "hostit.yml", "mode: static")
 	require.NoError(t, m.store.RemoveApp("blog"))
+	m.PushMirror()
 	runner.reset()
 
 	// Creating an app starts it in the background; deleting it a second later

@@ -19,6 +19,7 @@ func TestForkSeedsSubvolumeFromSourceAndDeploys(t *testing.T) {
 	r.returns("stat -f", "btrfs\n")
 	r.failOn("container inspect", assert.AnError) // no container yet -> Up creates one
 	require.NoError(t, m.store.AddApp(&store.App{Name: "blog", Port: 10000, Host: store.HostLocal}))
+	m.PushMirror()
 	require.NoError(t, os.MkdirAll(m.testMachine().AppSubvolume("blog"), 0o755))
 	// The fake runner materializes the snapshot destination as an empty dir, so
 	// stand in for the fork's on-disk effect: the fork's files dir exists with a
@@ -57,6 +58,7 @@ func TestForkFromSnapshotSeedsFromThatSnapshot(t *testing.T) {
 	r.returns("stat -f", "btrfs\n")
 	r.failOn("container inspect", assert.AnError)
 	require.NoError(t, m.store.AddApp(&store.App{Name: "blog", Port: 10000, Host: store.HostLocal}))
+	m.PushMirror()
 	require.NoError(t, os.MkdirAll(m.testMachine().AppSubvolume("blog"), 0o755))
 	require.NoError(t, os.MkdirAll(m.testMachine().AppFiles("blog2").Path(), 0o755))
 	writeAppFile(t, m, "blog2", "hostit.yml", "mode: app\nrun: ./server")
@@ -78,6 +80,7 @@ func TestForkFromUnknownSnapshotFails(t *testing.T) {
 	m, _, r := newTestDeployManager(t)
 	r.returns("stat -f", "btrfs\n")
 	require.NoError(t, m.store.AddApp(&store.App{Name: "blog", Port: 10000, Host: store.HostLocal}))
+	m.PushMirror()
 	_, err := m.Fork("blog", "blog2", "nosuchsnap", &CreateOptions{})
 	assert.ErrorIs(t, err, store.ErrSnapshotNotFound)
 }
@@ -87,6 +90,7 @@ func TestForkSetsDiskQuota(t *testing.T) {
 	m, _, r := newTestDeployManager(t)
 	r.returns("stat -f", "btrfs\n")
 	require.NoError(t, m.store.AddApp(&store.App{Name: "blog", Port: 10000, Host: store.HostLocal}))
+	m.PushMirror()
 	require.NoError(t, os.MkdirAll(m.testMachine().AppSubvolume("blog"), 0o755))
 
 	fork, err := m.Fork("blog", "blog2", "", &CreateOptions{DiskMB: 256})
@@ -109,7 +113,9 @@ func TestForkRejectsExistingName(t *testing.T) {
 	m, _, r := newTestDeployManager(t)
 	r.returns("stat -f", "btrfs\n")
 	require.NoError(t, m.store.AddApp(&store.App{Name: "blog", Port: 10000, Host: store.HostLocal}))
+	m.PushMirror()
 	require.NoError(t, m.store.AddApp(&store.App{Name: "blog2", Port: 10001, Host: store.HostLocal}))
+	m.PushMirror()
 	_, err := m.Fork("blog", "blog2", "", &CreateOptions{})
 	assert.ErrorIs(t, err, ErrAppExists)
 }

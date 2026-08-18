@@ -16,6 +16,7 @@ func TestTerminalRequiresAppOwner(t *testing.T) {
 	s := newTestServer(t)
 	owner := newActiveTestUser(t, s, "owner@example.com")
 	require.NoError(t, s.apps.Store().AddApp(&store.App{Name: "blog", Port: 10000, Host: store.HostLocal, OwnerID: owner.ID}))
+	s.apps.PushMirror()
 	stranger := newActiveTestUser(t, s, "stranger@example.com")
 
 	// A non-owner is refused, and the app's existence is not revealed

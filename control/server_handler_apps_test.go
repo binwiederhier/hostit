@@ -32,6 +32,7 @@ func TestAppRename(t *testing.T) {
 	u := newActiveTestUser(t, s, "owner@example.com")
 	token := accountToken(t, s, u)
 	require.NoError(t, s.apps.Store().AddApp(&store.App{Name: "blog", Port: 10000, Host: store.HostLocal, OwnerID: u.ID}))
+	s.apps.PushMirror()
 
 	rr := request(t, s.API(), "POST", "/api/apps/blog/rename", `{"new_name":"journal"}`, token)
 	require.Equal(t, http.StatusOK, rr.Code)
@@ -52,7 +53,9 @@ func TestAppRenameRejections(t *testing.T) {
 	u := newActiveTestUser(t, s, "owner@example.com")
 	token := accountToken(t, s, u)
 	require.NoError(t, s.apps.Store().AddApp(&store.App{Name: "blog", Port: 10000, Host: store.HostLocal, OwnerID: u.ID}))
+	s.apps.PushMirror()
 	require.NoError(t, s.apps.Store().AddApp(&store.App{Name: "wiki", Port: 10001, Host: store.HostLocal, OwnerID: u.ID}))
+	s.apps.PushMirror()
 
 	// A malformed new name is a bad request, not a 500
 	assert.Equal(t, http.StatusBadRequest, request(t, s.API(), "POST", "/api/apps/blog/rename", `{"new_name":"NOPE!"}`, token).Code)
@@ -68,6 +71,7 @@ func TestAppSetDescription(t *testing.T) {
 	u := newActiveTestUser(t, s, "owner@example.com")
 	token := accountToken(t, s, u)
 	require.NoError(t, s.apps.Store().AddApp(&store.App{Name: "blog", Port: 10000, Host: store.HostLocal, OwnerID: u.ID}))
+	s.apps.PushMirror()
 	seedAppSubvolume(t, s, "blog")
 
 	rr := request(t, s.API(), "PUT", "/api/apps/blog/description", `{"description":"A tiny blog"}`, token)
@@ -98,6 +102,7 @@ func TestAppRotateToken(t *testing.T) {
 	u := newActiveTestUser(t, s, "owner@example.com")
 	token := accountToken(t, s, u)
 	require.NoError(t, s.apps.Store().AddApp(&store.App{Name: "blog", Port: 10000, Host: store.HostLocal, OwnerID: u.ID}))
+	s.apps.PushMirror()
 
 	before, err := s.users.AppToken(u.ID, "blog")
 	require.NoError(t, err)
@@ -132,6 +137,7 @@ func TestNonAdminCannotSeeAnothersApp(t *testing.T) {
 	owner := newActiveTestUser(t, s, "owner@example.com")
 	stranger := newActiveTestUser(t, s, "stranger@example.com")
 	require.NoError(t, s.apps.Store().AddApp(&store.App{Name: "secret", Port: 10000, Host: store.HostLocal, OwnerID: owner.ID}))
+	s.apps.PushMirror()
 	strangerToken := accountToken(t, s, stranger)
 
 	for _, tc := range []struct {
@@ -156,7 +162,9 @@ func TestAppScopedTokenCannotTouchAnotherApp(t *testing.T) {
 	s := newTestServer(t)
 	owner := newActiveTestUser(t, s, "owner@example.com")
 	require.NoError(t, s.apps.Store().AddApp(&store.App{Name: "blog", Port: 10000, Host: store.HostLocal, OwnerID: owner.ID}))
+	s.apps.PushMirror()
 	require.NoError(t, s.apps.Store().AddApp(&store.App{Name: "wiki", Port: 10001, Host: store.HostLocal, OwnerID: owner.ID}))
+	s.apps.PushMirror()
 	scoped := appScopedToken(t, s, owner, "blog")
 
 	// Its own app is reachable
@@ -175,6 +183,7 @@ func TestAppPreviewScreenshotServed(t *testing.T) {
 	token := accountToken(t, s, u)
 	a := &store.App{Name: "blog", Port: 10000, Host: store.HostLocal, OwnerID: u.ID}
 	require.NoError(t, s.apps.Store().AddApp(a))
+	s.apps.PushMirror()
 
 	// No shot yet: not found
 	assert.Equal(t, http.StatusNotFound, request(t, s.API(), "GET", "/api/apps/blog/preview.png", "", token).Code)
@@ -200,6 +209,7 @@ func TestAppPreviewHiddenOutsideScreenshotMode(t *testing.T) {
 	token := accountToken(t, s, u)
 	a := &store.App{Name: "blog", Port: 10000, Host: store.HostLocal, OwnerID: u.ID}
 	require.NoError(t, s.apps.Store().AddApp(a))
+	s.apps.PushMirror()
 	dir := preview.Dir(s.config.DataDir)
 	require.NoError(t, os.MkdirAll(dir, 0o700))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, a.ID+".png"), []byte("fakepng"), 0o600))
@@ -215,6 +225,7 @@ func TestAppPreviewRefreshQueuesOrRejects(t *testing.T) {
 	u := newActiveTestUser(t, s, "owner@example.com")
 	token := accountToken(t, s, u)
 	require.NoError(t, s.apps.Store().AddApp(&store.App{Name: "blog", Port: 10000, Host: store.HostLocal, OwnerID: u.ID}))
+	s.apps.PushMirror()
 
 	// Not wired (no preview manager in the test server) -> treated as not-found
 	assert.Equal(t, http.StatusNotFound, request(t, s.API(), "POST", "/api/apps/blog/preview", "", token).Code)
@@ -235,6 +246,7 @@ func TestAppResponseCarriesPreviewMode(t *testing.T) {
 	u := newActiveTestUser(t, s, "owner@example.com")
 	token := accountToken(t, s, u)
 	require.NoError(t, s.apps.Store().AddApp(&store.App{Name: "blog", Port: 10000, Host: store.HostLocal, OwnerID: u.ID}))
+	s.apps.PushMirror()
 
 	rr := request(t, s.API(), "GET", "/api/apps/blog", "", token)
 	require.Equal(t, http.StatusOK, rr.Code)

@@ -278,6 +278,7 @@ func TestMirrorSequenceFollowsRegistryOrder(t *testing.T) {
 
 	for i := 0; i < 40; i++ {
 		require.NoError(t, m.store.AddApp(&store.App{ID: fmt.Sprintf("id%02d", i), Name: fmt.Sprintf("app%02d", i), Port: 11000 + i, Host: store.HostLocal}))
+	m.PushMirror()
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -310,6 +311,7 @@ func TestTheMirrorDoesNotShipAppOwnership(t *testing.T) {
 	t.Parallel()
 	m, _, _ := newTestDeployManager(t)
 	require.NoError(t, m.store.AddApp(&store.App{ID: "id1", Name: "blog", Port: 10000, Host: store.HostLocal, OwnerID: "user-42"}))
+	m.PushMirror()
 
 	state, err := m.syncState("")
 	require.NoError(t, err)

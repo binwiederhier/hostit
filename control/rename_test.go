@@ -139,6 +139,7 @@ func TestRenameRestoresLoginWhenFlipFails(t *testing.T) {
 	// the racy window between control's validation and the registry flip.
 	agent.onFirst = func() {
 		require.NoError(t, m.store.AddApp(&store.App{Name: "shop", Port: 10099, Host: store.HostLocal}))
+		m.PushMirror()
 	}
 	m.NodeRegistry().Register(store.HostLocal, agent)
 

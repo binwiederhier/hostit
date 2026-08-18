@@ -42,6 +42,7 @@ func TestDeleteUserTransfersOrDeletesTheirApps(t *testing.T) {
 	leaving := newActiveTestUser(t, s, "leaving@example.com")
 	staying := newActiveTestUser(t, s, "staying@example.com")
 	require.NoError(t, s.apps.Store().AddApp(&store.App{Name: "blog", Port: 10000, Host: store.HostLocal, OwnerID: leaving.ID}))
+	s.apps.PushMirror()
 
 	// Deleting a person should not silently take their work with them, so the
 	// caller has to say which they meant
@@ -56,6 +57,7 @@ func TestDeleteUserTransfersOrDeletesTheirApps(t *testing.T) {
 	// The other choice really does remove them
 	other := newActiveTestUser(t, s, "other@example.com")
 	require.NoError(t, s.apps.Store().AddApp(&store.App{Name: "wiki", Port: 10001, Host: store.HostLocal, OwnerID: other.ID}))
+	s.apps.PushMirror()
 	rr = request(t, s.API(), "DELETE", "/api/users/"+other.ID+"?apps=delete", "", testToken)
 	require.Equal(t, http.StatusOK, rr.Code)
 	_, err = s.apps.Store().App("wiki")
@@ -125,6 +127,7 @@ func TestDeleteUserRefusesAnUnusableTransfer(t *testing.T) {
 	s := newTestServer(t)
 	leaving := newActiveTestUser(t, s, "leaving@example.com")
 	require.NoError(t, s.apps.Store().AddApp(&store.App{Name: "blog", Port: 10000, Host: store.HostLocal, OwnerID: leaving.ID}))
+	s.apps.PushMirror()
 
 	for _, query := range []string{
 		"?apps=transfer",                           // to nobody
@@ -146,8 +149,11 @@ func TestUpdateUserAppliesLimitsToTheirAppsLive(t *testing.T) {
 	owner := newActiveTestUser(t, s, "owner@example.com")
 	other := newActiveTestUser(t, s, "other@example.com")
 	require.NoError(t, s.apps.Store().AddApp(&store.App{Name: "blog", Port: 10000, Host: store.HostLocal, OwnerID: owner.ID}))
+	s.apps.PushMirror()
 	require.NoError(t, s.apps.Store().AddApp(&store.App{Name: "wiki", Port: 10001, Host: store.HostLocal, OwnerID: owner.ID}))
+	s.apps.PushMirror()
 	require.NoError(t, s.apps.Store().AddApp(&store.App{Name: "docs", Port: 10002, Host: store.HostLocal, OwnerID: other.ID}))
+	s.apps.PushMirror()
 
 	// A limit change must reach the owner's apps NOW, not at the next daemon
 	// restart: the qgroup cap and the container memory cap key off what the

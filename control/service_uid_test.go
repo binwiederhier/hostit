@@ -24,7 +24,9 @@ func TestBackfillUIDsFillsOnlyZeroRows(t *testing.T) {
 	m, _, _ := newTestDeployManager(t)
 	// A pre-uid-column row (uid 0) and a row that already has one
 	require.NoError(t, m.store.AddApp(&store.App{Name: "old", Port: 10007, Host: store.HostLocal}))
+	m.PushMirror()
 	require.NoError(t, m.store.AddApp(&store.App{Name: "done", Port: 10008, Host: store.HostLocal, UID: 42}))
+	m.PushMirror()
 
 	m.BackfillUIDs()
 
