@@ -8,32 +8,6 @@ everything imaginable -- if it is not written down here it is not planned.
 - is "hostit apps" api really necessary?
 - what is v1/self and why is it not just the same api as the main api?
 
-## Multi-node: the four-service split (BUILT on the multinode branch)
-
-Shipped design (2026-08-16): FOUR binaries, each its own systemd service,
-colocatable on one host -- `hostit-control` (web app + API, owns the SQLite
-registry, placement, certs, assistant, snapshot/retention decisions),
-`hostit-node` (dials control; all machine-local ops as `node.Machine`, doing
-only what control commands over the `nodeapi` verbs), `hostit-proxy` (dials
-control; dumb data plane from a cached routing table) and `hostit` (CLI +
-in-container agent). Identity is per-node mTLS certificates as plain config
-files (`node-cert-file`/`node-key-file`/`cluster-ca-cert-file`), minted by
-`hostit-control node add`; colocated nodes use the auto-minted set under
-data-dir/ipc. There is no join protocol. Packages: `control`, `node`,
-`nodeapi` (contract), `proxy`; the old `app`/`server`/`noded` are gone.
-Design history: `plans/260807-hostit-multinode.md`,
-`plans/260815-hostit-nodeagent.md`, `plans/260816-hostit-package-architecture.md`.
-
-Running on the two-node stage (colocated split), full e2e green. Remaining
-before calling multi-node DONE:
-
-- **A genuinely remote node** (second droplet) has never been exercised; the
-  one-host stage masks cross-host assumptions (two bugs of exactly that shape
-  were found and fixed on 2026-08-16: assistant tools and rename both ran on
-  control's local machine). Bring up a real second node, run the full e2e.
-- **Prod cutover** from the fused v0.12.0 daemon to the split services:
-  ansible units, migration order, and an explicitly approved release.
-
 ## Resource allocation
 
 Today an app's RAM/disk caps are fixed at creation from the owner's defaults
@@ -55,6 +29,67 @@ qgroup), CPU is uncapped, and nothing exposes any of it for editing.
 - **User-editable within the pool.** The owner can edit each app's allocation
   themselves in the app's Settings, as long as the user's pool covers it --
   admins set pools, users divide them. Admin UI keeps setting pools per user.
+
+## App capabilities: credentials an app uses but never holds
+
+People want to build apps that use AI. Putting an API key in the app's
+environment makes the tenant pay, makes the key a thing that leaks into a repo
+or a log, and leaves hostit with no idea what was spent. Once a second want
+appears (read-only GitHub, read-only database) the one-off version is clearly
+wrong: three bespoke endpoints, three grant models, three audit trails.
+
+So the thing to build is not an AI feature: **hostit holds the credential, the
+app uses a capability, and nothing secret enters the container**. AI is the
+first capability; GitHub is the second, and exists mainly to prove the
+abstraction is real. Full design, including what each capability carries and why
+a database does NOT fit the same mechanism:
+`plans/260818-app-capabilities.md`.
+
+- **Identity is already solved.** An app calls hostit over the unix socket its
+  CLI uses; SO_PEERCRED gives the uid, `store.AppByUID` gives the app, the row
+  gives the owner and its grants. An app on a remote node reaches its own node's
+  socket and the node relays over the cluster link, the way the snapshot and
+  usage callbacks already travel.
+- **Budget is the owner's** (decided): `user.Limits` already carries per-person
+  limits and assistant usage is already recorded by owner (`UsageByOwner`), with
+  per-request attribution to the calling app so an owner can see which app spent
+  what. Over budget is a clean error, the way a full disk gives EDQUOT.
+- **Refuse cleanly when unconfigured.** If `controlconf.AssistantAvailable()` is
+  false the capability does not exist, and says so -- an instance with no
+  backend must not look broken to an app.
+- **Not done until documented and proven**: `hostit info` (so an agent building
+  an app discovers it), the user manual in `web/src/pages/Docs.jsx`, and a real
+  app that uses it end to end (a translation app is a good first one).
+- **Open before coding**: is streaming in v1 (SSE through the node relay is the
+  difference between a small feature and a real one), and are owner-provided
+  credentials (GitHub, needing profile-level OAuth) in scope or is v1
+  operator-provided AI only.
+
+## The hostit binary: two tools sharing a name
+
+`cmd/agent/cmd.go` says it outright -- "two tools that happen to share a
+binary", switched by `insideContainer()`. Inside a container `hostit` is PID 1
+(the agent supervising the app's run command), the tenant CLI (deploy/logs/
+restart over the peercred socket) and the MCP server. On the host it is the
+operator's REST client (`hostit apps`) plus the shell/enter helpers. That is why
+`hostit` reads as a peer of `hostit-control` and `hostit-node` when it is not:
+one half of it is, and the other half belongs inside containers.
+
+Related to the open question above about whether `hostit apps` is necessary at
+all -- answering that first may shrink this.
+
+- **Split it.** Keep `hostit` as the container-only tool (agent + tenant CLI +
+  MCP), shipped by `hostit-node` and bind-mounted into containers, never a host
+  command. Give the host its own CLI carrying `apps` plus dispatch to the
+  components.
+- **The host CLI should know what is installed**, so `hostit control ...` and
+  `hostit node ...` work and a component that is not installed says so in a
+  sentence naming what this machine is. Options: a wrapper script (cheapest, but
+  its help cannot know what it dispatches to), or in-binary dispatch that execs
+  the sibling (preferred: one help text, no extra process, and it can hide
+  commands for components this host does not run).
+- **Blocked on a name** for the host command. Renaming breaks muscle memory and
+  scripts, so decide before starting.
 
 ## Web app
 
@@ -119,14 +154,11 @@ definitions and the conversation prefix are cache-marked, so repeat turns pay th
 
 ## Smaller things
 
-- **Remove port-min/port-max from the config, hardcode the range.** The
-  per-app loopback port range is an implementation detail nobody should tune;
-  a config knob just invites broken installs (uids derive from ports, so
-  changing the range on an existing install corrupts the uid mapping).
-
 - **Remove assistant-models / assistant-model from the config?** Probably
   subsumed by the model-picker rework below: the available models should be
-  derived from which credentials are configured, not hand-listed in YAML.
+  derived from which credentials are configured, not hand-listed in YAML. The
+  app-capabilities work needs the same answer -- what an app may call should
+  follow from what is configured, not a second hand-written list.
 
 - **Assistant model picker: show models, not backends.** Instead of just
   "claude.ai" in the UI, list the actual models, driven by which credentials
@@ -242,6 +274,24 @@ definitions and the conversation prefix are cache-marked, so repeat turns pay th
 ## Done (recent)
 
 Kept briefly for context; prune when stale.
+
+- **Multi-node, and then the fused daemon's removal (v0.13.x -> v0.14.0,
+  2026-08-18).** Four binaries, each its own service: `hostit-control` (registry,
+  web app, API, placement, certificates, retention decisions), `hostit-node`
+  (this machine's app work), `hostit-proxy` (TLS and routing from a table
+  control pushes it), `hostit` (CLI + in-container agent). control holds no
+  machinery at all: machine work always crosses the cluster link, including to
+  the node sharing its host. A genuinely remote node runs on stage; prod cut
+  over and runs the three processes.
+
+  A member sharing control's host dials a root-only unix socket
+  (`cluster-socket`), presenting no credentials -- the kernel identifies the
+  caller. mTLS on `listen-cluster` is for members on other machines only.
+  `behind-proxy` is gone (the proxy terminates TLS in every deployment), and
+  `listen-node` became `listen-cluster` (it admits proxies too; the old key is
+  still read). Design history: `plans/260807-hostit-multinode.md`,
+  `plans/260815-hostit-nodeagent.md`,
+  `plans/260816-hostit-package-architecture.md`.
 
 - **Idmapped-rootfs storage shipped end to end (v0.10.0, 2026-08-14).** Apps run
   `--rootfs <subvol>:idmap` on root-owned trees; creation is a ~0.3-0.6s
