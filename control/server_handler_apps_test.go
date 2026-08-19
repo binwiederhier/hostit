@@ -254,3 +254,53 @@ func TestAppResponseCarriesPreviewMode(t *testing.T) {
 	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &resp))
 	assert.Equal(t, "screenshot", resp.PreviewMode)
 }
+
+// The snapshot settings round-trip through hostit.yml: what the UI PUTs comes
+// back on the next GET, and lands in the app's own file rather than a registry
+// column, so an owner editing hostit.yml by hand and an owner using Settings
+// are changing the same thing.
+func TestAppSetSnapshotConfig(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	u := newActiveTestUser(t, s, "owner@example.com")
+	token := accountToken(t, s, u)
+	require.NoError(t, s.apps.Store().AddApp(&store.App{Name: "blog", Port: 10000, Host: store.HostLocal, OwnerID: u.ID}))
+	s.apps.PushMirror()
+	seedAppSubvolume(t, s, "blog")
+	require.Equal(t, http.StatusOK, request(t, s.API(), "PUT", "/api/apps/blog/description", `{"description":"A tiny blog"}`, token).Code)
+
+	body := `{"interval":"6h","pre":"sqlite3 a.db \".backup b.db\"","post":"rm -f b.db"}`
+	rr := request(t, s.API(), "PUT", "/api/apps/blog/snapshot-config", body, token)
+	require.Equal(t, http.StatusOK, rr.Code)
+
+	var resp apiAppResponse
+	rr = request(t, s.API(), "GET", "/api/apps/blog", "", token)
+	require.Equal(t, http.StatusOK, rr.Code)
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &resp))
+	assert.Equal(t, "6h", resp.Snapshot.Interval)
+	assert.Equal(t, `sqlite3 a.db ".backup b.db"`, resp.Snapshot.Pre)
+	assert.Equal(t, "rm -f b.db", resp.Snapshot.Post)
+	assert.Equal(t, "3h0m0s", resp.Snapshot.DefaultInterval, "the UI needs the default to label an unset interval")
+	assert.Equal(t, "A tiny blog", resp.Description, "editing snapshots must not disturb the rest of hostit.yml")
+}
+
+// An interval hostit cannot parse is refused rather than written: the file
+// would otherwise hold a value that only fails later, on deploy.
+func TestAppSetSnapshotConfigRejectsABadInterval(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	u := newActiveTestUser(t, s, "owner@example.com")
+	token := accountToken(t, s, u)
+	require.NoError(t, s.apps.Store().AddApp(&store.App{Name: "blog", Port: 10000, Host: store.HostLocal, OwnerID: u.ID}))
+	s.apps.PushMirror()
+	seedAppSubvolume(t, s, "blog")
+
+	rr := request(t, s.API(), "PUT", "/api/apps/blog/snapshot-config", `{"interval":"whenever"}`, token)
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+
+	rr = request(t, s.API(), "GET", "/api/apps/blog", "", token)
+	require.Equal(t, http.StatusOK, rr.Code)
+	var resp apiAppResponse
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &resp))
+	assert.Empty(t, resp.Snapshot.Interval, "the rejected value must not have been written")
+}

@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"time"
 
+	"heckel.io/hostit/app"
 	"heckel.io/hostit/retention"
 	"heckel.io/hostit/snapshot"
 	"heckel.io/hostit/store"
@@ -48,40 +49,88 @@ func (m *Manager) IngestNodeSnapshots(nodeID string, agent NodeAgent) {
 	}
 }
 
-// AutoSnapshotLoop drives the hourly automatic snapshots from the control
-// plane: every tick it sweeps the registry and commands each app's node
-// through the node agent. The node no longer snapshots on its own timer, so
-// a snapshot can only happen while control is connected -- its record always
-// reaches the registry (the snapshot-during-outage loss is gone by design).
-func (m *Manager) AutoSnapshotLoop(interval time.Duration, done <-chan struct{}) {
-	slog.Info("Starting snapshot loop", "interval", interval)
+// AutoSnapshotLoop drives the automatic snapshots from the control plane:
+// every tick it sweeps the registry and commands the node of each app that is
+// due. The node no longer snapshots on its own timer, so a snapshot can only
+// happen while control is connected -- its record always reaches the registry
+// (the snapshot-during-outage loss is gone by design).
+//
+// The tick is not the cadence. Each app has its own interval (its hostit.yml,
+// else app.DefaultSnapshotInterval) and its own slot within it, so the fleet is
+// spread across the window instead of moving as one -- see snapshotsched.go.
+func (m *Manager) AutoSnapshotLoop(done <-chan struct{}) {
+	slog.Info("Starting snapshot loop", "tick", snapshotTick, "defaultInterval", app.DefaultSnapshotInterval)
 	defer slog.Info("Stopping snapshot loop")
 	for {
 		select {
-		case <-time.After(interval):
+		case <-time.After(snapshotTick):
 		case <-done:
 			return
 		}
-		m.autoSnapshotSweep()
+		m.autoSnapshotSweep(time.Now())
 	}
 }
 
-// autoSnapshotSweep snapshots every app through the node agent and prunes
-// each app's records afterwards. An unreachable node only skips its own
-// apps: no snapshot happens there, so nothing can be lost.
-func (m *Manager) autoSnapshotSweep() {
+// autoSnapshotSweep snapshots the apps due on this tick and prunes each one's
+// records afterwards. An unreachable node only skips its own apps: no snapshot
+// happens there, so nothing can be lost.
+func (m *Manager) autoSnapshotSweep(now time.Time) {
 	apps, err := m.store.Apps()
 	if err != nil {
 		slog.Warn("Cannot list apps for the snapshot sweep", "error", err)
 		return
 	}
 	for _, a := range apps {
+		if !snapshotDue(a.Name, m.snapshotInterval(a.Name), m.lastAutoSnapshot(a.Name), now) {
+			continue
+		}
 		if _, err := m.node.TakeSnapshot(a.Name, snapshot.AutoSnapshotLabel, true); err != nil {
 			slog.Warn("Automatic snapshot failed", "app", a.Name, "error", err)
 			continue
 		}
 		m.PruneSnapshots(a.Name)
 	}
+}
+
+// snapshotInterval is how often an app wants snapshotting. An unreadable or
+// invalid hostit.yml falls back to the default rather than stopping snapshots:
+// a broken config should not quietly leave an app without recovery points, and
+// the owner already sees the parse error on deploy.
+func (m *Manager) snapshotInterval(name string) time.Duration {
+	b, err := m.node.ReadFileMax(name, configFile, maxConfigSize)
+	if err != nil {
+		return app.DefaultSnapshotInterval
+	}
+	conf, err := app.ParseConfig(b)
+	if err != nil {
+		return app.DefaultSnapshotInterval
+	}
+	d, err := conf.SnapshotInterval()
+	if err != nil {
+		slog.Warn("Ignoring an invalid snapshot.interval", "app", name, "error", err)
+		return app.DefaultSnapshotInterval
+	}
+	return d
+}
+
+// lastAutoSnapshot is when hostit last snapshotted this app on its own. The
+// pre-deploy safety snapshot counts (it is recorded automatic too), and should:
+// the interval exists to guarantee a recent recovery point, and a deploy just
+// made one -- taking another minutes later would only churn the pool. An app
+// the owner snapshots by hand still gets its own cadence, since those records
+// are not automatic.
+func (m *Manager) lastAutoSnapshot(name string) time.Time {
+	snaps, err := m.store.Snapshots(name)
+	if err != nil {
+		return time.Time{}
+	}
+	var newest time.Time
+	for _, s := range snaps {
+		if s.Auto && s.CreatedAt.After(newest) {
+			newest = s.CreatedAt
+		}
+	}
+	return newest
 }
 
 // PruneSnapshots applies the retention policy to an app's records and

@@ -72,6 +72,38 @@ func (m *Manager) Description(name string) string {
 	return strings.TrimSpace(conf.Description)
 }
 
+// SnapshotConfig is the app's snapshot section as hostit.yml has it: the two
+// hooks and the requested interval, all raw strings so the UI shows exactly
+// what the tenant wrote. An unreadable or unparseable file reports empty,
+// which the UI renders as "the default".
+func (m *Manager) SnapshotConfig(name string) app.SnapshotHooks {
+	b, err := m.node.ReadFileMax(name, configFile, maxConfigSize)
+	if err != nil {
+		return app.SnapshotHooks{}
+	}
+	conf, err := app.ParseConfig(b)
+	if err != nil {
+		return app.SnapshotHooks{}
+	}
+	return conf.Snapshot
+}
+
+// SetSnapshotConfig writes the snapshot section back, leaving the rest of the
+// tenant's hostit.yml untouched (app.SetSnapshotConfig does the line surgery).
+// The interval is validated first: a value hostit cannot parse would otherwise
+// be written to the file and only surface as an error on the next deploy.
+func (m *Manager) SetSnapshotConfig(name string, hooks app.SnapshotHooks) error {
+	probe := &app.Config{Snapshot: hooks}
+	if _, err := probe.SnapshotInterval(); err != nil {
+		return err
+	}
+	var content string
+	if b, err := m.node.ReadFile(name, configFile); err == nil {
+		content = string(b)
+	}
+	return m.node.WriteFile(name, configFile, []byte(app.SetSnapshotConfig(content, hooks)), 0)
+}
+
 // SetDescription writes the app's one-line description into its hostit.yml,
 // replacing an existing description: line or inserting one at the top, so it lives
 // with the app's config where the assistant also keeps it current. The line

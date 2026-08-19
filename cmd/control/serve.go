@@ -163,9 +163,10 @@ func execServe(c *cli.Context) error {
 	// node was away converges here without waiting for a reconnect. Control is
 	// the source; this is how the registry keeps reaching the machines.
 	go reconcileLoop(manager, srv, done)
-	// Hourly automatic snapshots are CONTROL's decision: the sweep commands each
-	// app's node through the node agent (a no-op off btrfs).
-	go manager.AutoSnapshotLoop(time.Hour, done)
+	// Automatic snapshots are CONTROL's decision: the sweep commands each app's
+	// node through the node agent (a no-op off btrfs). Each app has its own
+	// cadence and its own slot within it, so the loop owns its tick.
+	go manager.AutoSnapshotLoop(done)
 	// Control pushes the routing table to every connected proxy as it changes,
 	// and asks each how it is on a timer -- which is both the liveness an
 	// operator reads and how a removed proxy loses its session.

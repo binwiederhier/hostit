@@ -131,39 +131,11 @@ host uid, no host podman or store, peercred socket).
 The dashboard can create, manage and delete apps and drive them in the browser
 (chat, terminal). These round out the in-browser experience.
 
-- **Installable PWA.** Make the dashboard (`apps.example.com`) installable to the home
-  screen / dock. Add `web/public/manifest.webmanifest` (name, `display: standalone`,
-  `theme_color`, `start_url: "/"`, icons) linked from `index.html`; 192/512px + a
-  maskable icon generated from a hostit glyph; and a minimal service worker that
-  caches the app shell (JS/CSS) but is **network-first** for `/api/*` and app previews
-  so it never serves stale data. HTTPS is already in place; everything drops into
-  `web/public/` and is embedded into the Go binary. No new runtime deps.
 - **Ask host-vs-build in the new-app modal.** When creating an app, let the owner
   pick their intent: "just host my existing app" or "build one here". The choice
   sets the initial app-detail tab -- host leans on details/deploy, build opens the
   split chat+preview workspace -- so each person lands in the surface that fits what
   they came to do.
-## Assistant (AI chat) cost
-
-The built-in assistant calls the Anthropic Messages API with the operator's API
-key, so every turn is metered pay-per-token and adds up fast. Per-user/per-app
-token and dollar usage is now tracked (admin user list), which is the visibility
-these levers act on. Prompt caching is already in place: the system prompt, tool
-definitions and the conversation prefix are cache-marked, so repeat turns pay the
-~10x-cheaper cache-read rate. The remaining levers, roughly by impact:
-
-- **Model routing.** Default is `claude-sonnet-5` ($3/$15 per M in/out). Route
-  simple turns (small edits, questions) to Haiku (~10x cheaper) and escalate to
-  Sonnet only for hard work. Even a crude heuristic (cheap model unless the last
-  turn used tools heavily / the ask is large) saves a lot.
-- **Tune the thinking / effort budget.** Adaptive thinking bills at the output rate
-  ($15/M). Dial effort down for routine turns; reserve high effort for hard ones.
-- **Compact the transcript.** Context is capped at recent turns, but long sessions
-  still grow the cached prefix (cache writes cost 1.25x). Summarize old turns into a
-  short recap to keep the prefix small.
-- **Spend caps.** Now that usage is tracked, add a per-user or per-app budget that
-  warns (or soft-stops the built-in chat) at a threshold, turning the usage data
-  into cost control, not just visibility.
 
 ## Snapshots and quotas
 

@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -21,6 +22,8 @@ var (
 	errUnknownMode      = errors.New("unknown mode; use \"mode: static\" or \"mode: app\"")
 	errNoRunCommand     = errors.New("\"mode: app\" needs a \"run:\" command, which must listen on 0.0.0.0:$PORT")
 	errRunWithoutApp    = errors.New("\"run:\" only applies to \"mode: app\"; a static app serves public/ and runs nothing")
+
+	errBadSnapshotInterval = errors.New("snapshot.interval must be a duration (\"3h\", \"45m\") or 0 to turn automatic snapshots off")
 )
 
 // Config is the per-app hostit.yml, written by the app owner (or Claude)
@@ -37,8 +40,39 @@ type Config struct {
 // flush or .backup a database into a consistent file), Post after (to clean up).
 // If Pre fails the snapshot is aborted, so a torn state is never captured.
 type SnapshotHooks struct {
-	Pre  string `yaml:"pre"`
-	Post string `yaml:"post"`
+	Pre      string `yaml:"pre"`
+	Post     string `yaml:"post"`
+	Interval string `yaml:"interval"`
+}
+
+// DefaultSnapshotInterval is how often an app is snapshotted when its
+// hostit.yml does not say. Every hour was too often: it spikes the pool and the
+// cleaner for apps that change a few times a day, and the pre-deploy snapshot
+// already covers the moment most rollbacks want.
+const DefaultSnapshotInterval = 3 * time.Hour
+
+// SnapshotInterval is how often this app wants automatic snapshots: the default
+// when unset, and zero when the owner wrote 0 to opt out. An unparseable value
+// is an error rather than a silent fallback -- a typo here would otherwise
+// leave an app on a cadence its owner believes they changed.
+func (c *Config) SnapshotInterval() (time.Duration, error) {
+	raw := strings.TrimSpace(c.Snapshot.Interval)
+	if raw == "" {
+		return DefaultSnapshotInterval, nil
+	}
+	d, err := time.ParseDuration(raw)
+	if err != nil {
+		// Bare "0" is not a duration to ParseDuration's eyes, but it is the
+		// documented way to opt out, so it is read before the error surfaces.
+		if raw == "0" {
+			return 0, nil
+		}
+		return 0, fmt.Errorf("%w: %q is not a duration like \"3h\" or \"45m\"", errBadSnapshotInterval, raw)
+	}
+	if d < 0 {
+		return 0, fmt.Errorf("%w: %q is negative", errBadSnapshotInterval, raw)
+	}
+	return d, nil
 }
 
 // LoadConfig parses and validates an app's hostit.yml. It takes the raw bytes
@@ -96,6 +130,9 @@ func (c *Config) Validate() error {
 		}
 	default:
 		return fmt.Errorf("%w: %q", errUnknownMode, c.Mode)
+	}
+	if _, err := c.SnapshotInterval(); err != nil {
+		return err
 	}
 	return nil
 }

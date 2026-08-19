@@ -338,7 +338,7 @@ const SnapshotsPage = () => (
     />
     <p>
       hostit snapshots your whole app -- its files and everything it installed
-      -- before every deploy and hourly, so you can always go back. Snapshots
+      -- before every deploy and every few hours, so you can always go back. Snapshots
       are instant and cheap; take one yourself anytime from the Snapshots tab,{" "}
       <span className="mono">hostit apps snapshot</span>, or the API.
     </p>
@@ -939,7 +939,7 @@ const AdminPage = () => (
       <span className="mono">data-dir</span> (accounts, apps, tokens, domains,
       snapshot metadata) and the app files under{" "}
       <span className="mono">apps-dir</span>. Back up both. hostit already
-      snapshots each app hourly, but those snapshots live on the same disk and
+      snapshots each app periodically, but those snapshots live on the same disk and
       are not a substitute for an off-box backup.
     </p>
     <Snippet

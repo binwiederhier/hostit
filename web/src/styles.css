@@ -3458,6 +3458,35 @@ body.ws-resizing iframe {
 }
 
 /* Settings dialog sections (description, API token, custom domains) */
+/* A labelled row in Settings: the label sits above its input, and the pair
+   stacks with the others -- used by the snapshot interval and hooks. */
+.settings-field {
+  display: block;
+  margin-bottom: 10px;
+}
+
+.settings-field > span {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.settings-input {
+  width: 100%;
+  font: inherit;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.settings-input.mono {
+  font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 13px;
+}
+
 .settings-desc {
   width: 100%;
   resize: vertical;

@@ -937,6 +937,9 @@ const AppSettings = ({ app, showToast, onCopyToken, onRegenerateToken, hasToken,
   const navigate = useNavigate();
   const [desc, setDesc] = useState(app.description || "");
   const [savingDesc, setSavingDesc] = useState(false);
+  const snap = app.snapshot || {};
+  const [snapCfg, setSnapCfg] = useState({ interval: snap.interval || "", pre: snap.pre || "", post: snap.post || "" });
+  const [savingSnap, setSavingSnap] = useState(false);
   const [showRename, setShowRename] = useState(false);
   const [domains, setDomains] = useState(null);
   const [input, setInput] = useState("");
@@ -967,6 +970,26 @@ const AppSettings = ({ app, showToast, onCopyToken, onRegenerateToken, hasToken,
       setError(err.message);
     } finally {
       setSavingDesc(false);
+    }
+  };
+
+  const snapDirty =
+    snapCfg.interval !== (snap.interval || "") ||
+    snapCfg.pre !== (snap.pre || "") ||
+    snapCfg.post !== (snap.post || "");
+
+  const saveSnapshots = async () => {
+    if (savingSnap) return;
+    setSavingSnap(true);
+    setError("");
+    try {
+      await api.put(`/api/apps/${encodeURIComponent(name)}/snapshot-config`, snapCfg);
+      showToast("Snapshot settings saved");
+      if (onSaved) onSaved();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSavingSnap(false);
     }
   };
 
@@ -1179,6 +1202,55 @@ const AppSettings = ({ app, showToast, onCopyToken, onRegenerateToken, hasToken,
         <div className="btn-row" style={{ justifyContent: "flex-start" }}>
           <button type="button" className="btn btn-small btn-primary" onClick={saveDescription} disabled={savingDesc || desc.trim() === (app.description || "").trim()}>
             {savingDesc ? "Saving..." : "Save description"}
+          </button>
+        </div>
+      </section>
+
+      <section className="ov-section">
+        <h3>Snapshots</h3>
+        <p className="hint">
+          hostit snapshots this app automatically, and before every deploy. Leave the interval blank for the
+          default ({snap.default_interval || "3h"}), or set <span className="mono">0</span> to turn automatic
+          snapshots off -- pre-deploy snapshots still happen. Saved to <span className="mono">hostit.yml</span>.
+        </p>
+        <label className="settings-field">
+          <span>Interval</span>
+          <input
+            type="text"
+            className="settings-input"
+            value={snapCfg.interval}
+            onChange={(e) => setSnapCfg({ ...snapCfg, interval: e.target.value })}
+            placeholder={`${snap.default_interval || "3h"} (default)`}
+          />
+        </label>
+        <p className="hint">
+          If the app has a database, these commands run in the container around each snapshot, so what is
+          captured is consistent. A failing <span className="mono">pre</span> command cancels the snapshot
+          rather than saving a torn state.
+        </p>
+        <label className="settings-field">
+          <span>Before (pre)</span>
+          <input
+            type="text"
+            className="settings-input mono"
+            value={snapCfg.pre}
+            onChange={(e) => setSnapCfg({ ...snapCfg, pre: e.target.value })}
+            placeholder={'sqlite3 data/app.db ".backup data/app.snap.db"'}
+          />
+        </label>
+        <label className="settings-field">
+          <span>After (post)</span>
+          <input
+            type="text"
+            className="settings-input mono"
+            value={snapCfg.post}
+            onChange={(e) => setSnapCfg({ ...snapCfg, post: e.target.value })}
+            placeholder="rm -f data/app.snap.db"
+          />
+        </label>
+        <div className="btn-row" style={{ justifyContent: "flex-start" }}>
+          <button type="button" className="btn btn-small btn-primary" onClick={saveSnapshots} disabled={savingSnap || !snapDirty}>
+            {savingSnap ? "Saving..." : "Save snapshot settings"}
           </button>
         </div>
       </section>

@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 
+	"heckel.io/hostit/app"
 	"heckel.io/hostit/store"
 )
 
@@ -364,4 +366,39 @@ func (s *Server) callerDiskLimit(c *caller) (int, error) {
 		return 0, err
 	}
 	return limits.DiskMB, nil
+}
+
+// snapshotConfigFor is the app's snapshot settings for the API, with the
+// default interval alongside so the UI can say "3h (default)" rather than
+// pretending the app chose it.
+func (s *Server) snapshotConfigFor(name string) apiSnapshotConfig {
+	h := s.apps.SnapshotConfig(name)
+	return apiSnapshotConfig{
+		Interval:        h.Interval,
+		Pre:             h.Pre,
+		Post:            h.Post,
+		DefaultInterval: app.DefaultSnapshotInterval.String(),
+	}
+}
+
+// handleAppsSetSnapshotConfig updates the snapshot section of the app's
+// hostit.yml: how often it is snapshotted, and the hooks run around one.
+func (s *Server) handleAppsSetSnapshotConfig(w http.ResponseWriter, r *http.Request, c *caller) {
+	a, err := s.ownedApp(c, r.PathValue("name"))
+	if err != nil {
+		writeAppError(w, err)
+		return
+	}
+	var req apiSnapshotConfig
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8192)).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	hooks := app.SnapshotHooks{Interval: strings.TrimSpace(req.Interval), Pre: req.Pre, Post: req.Post}
+	if err := s.apps.SetSnapshotConfig(a.Name, hooks); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	s.logAction(c, a.Name, "snapshot", "Updated the snapshot settings")
+	writeJSON(w, http.StatusOK, s.appResponseFor(c, a, s.firstActiveDomain(a.Name)))
 }

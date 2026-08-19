@@ -5,7 +5,8 @@
 A snapshot is an instant, space-shared, read-only copy of an app's entire
 subvolume -- its files, `hostit.yml`, AND the installed software around them,
 since the subvolume is the container's whole filesystem. hostit takes them
-automatically -- once every hour, and once right before every deploy -- and the
+automatically -- every three hours by default, and once right before every
+deploy -- and the
 owner or an agent can take a labelled one at any time to mark "this is a good
 state". The app page shows them as a timeline, newest first, with the reason for
 each. Any snapshot can be restored: **rollback** replaces the live subvolume with
@@ -26,7 +27,7 @@ age while recent ones stay dense.
 Deploying, editing files over SSH, installing packages, or letting an agent
 rewrite an app are all easy ways to break a working app. The intent is that there
 is *always* a recent point to go back to, without the owner having to think about
-it: hourly plus pre-deploy automatic snapshots give a floor, and manual labelled
+it: the periodic plus pre-deploy automatic snapshots give a floor, and manual labelled
 snapshots give agents and owners a way to bookmark known-good states before a
 risky change. Because a snapshot covers the whole subvolume, "risky change" now
 includes system-level ones: an `apt-get` upgrade that breaks the app rolls back
@@ -51,7 +52,9 @@ tradeoff -- a very old manual bookmark can eventually be pruned).
 Automatic (no user action):
 - Before every deploy, `up` takes a pre-deploy snapshot (best effort; a failure
   never blocks the deploy).
-- An hourly loop snapshots every app.
+- A loop snapshots each app on its own cadence (`snapshot.interval` in the
+  app's hostit.yml, else three hours), staggered so the fleet does not move as
+  one; see `control/snapshotsched.go`.
 
 Manual and rollback:
 1. Owner/agent takes a snapshot (Snapshots tab "Take snapshot",
@@ -107,10 +110,10 @@ Core logic in the `snapshot/` service (`snapshot/service.go`), bound to the
 - `Service.DeleteSnapshot`: removes the subvolume then the record (never orphan
   a subvolume).
 - Control side (`control/snapshot.go`): `Manager.AutoSnapshotLoop` sweeps
-  every app hourly through the node agent (started from
+  each due app through the node agent (started from
   `cmd/control/serve.go` in both fused and split mode);
   `Manager.PruneSnapshots` applies `retention.Apply` to the registry rows and
-  commands `DeleteSnapshot` for what falls outside -- after the hourly sweep
+  commands `DeleteSnapshot` for what falls outside -- after the sweep
   and after every manual take and rollback.
 - Labels for unattended snapshots: "Automated snapshot" and
   "Automated snapshot before deploy".

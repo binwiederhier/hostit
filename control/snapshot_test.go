@@ -95,7 +95,32 @@ func (a *snapAgent) DeleteSnapshot(name, id string) error {
 	return nil
 }
 
-// The hourly automatic snapshot is a CONTROL decision: the sweep walks the
+// makeOverdue leaves an app with one very old automatic snapshot and nothing
+// newer, so the sweep must take another whatever its slot says. It REPLACES the
+// app's rows because creating an app deploys it, and that deploy's own safety
+// snapshot would otherwise be the app's most recent one -- which is exactly
+// what stops it being due.
+//
+// The sweep tests are about what the sweep COMMANDS, not about when an app is
+// due (that is snapshotsched_test.go), so they say "this app is due" out loud
+// rather than depending on the wall clock landing in the right slot. The wait
+// matters: that deploy runs in the background, so replacing the rows without it
+// races the snapshot it is about to add.
+func makeOverdue(t *testing.T, m *Manager, names ...string) {
+	t.Helper()
+	m.WaitBackground() // the create's deploy snapshot must land BEFORE it is replaced
+	for _, name := range names {
+		require.NoError(t, m.store.ReplaceAppSnapshots(name, []*store.Snapshot{{
+			ID:        "overdue-" + name,
+			AppName:   name,
+			Label:     snapshot.AutoSnapshotLabel,
+			CreatedAt: time.Now().UTC().Add(-30 * 24 * time.Hour),
+			Auto:      true,
+		}}))
+	}
+}
+
+// The automatic snapshot is a CONTROL decision: the sweep walks the
 // registry and commands each app's node through the node agent, so a node
 // never snapshots on its own timer (and a snapshot can never happen while
 // control is away to lose its record).
@@ -106,10 +131,11 @@ func TestAutoSnapshotSweepSnapshotsEveryAppThroughTheNodeAgent(t *testing.T) {
 	require.NoError(t, err)
 	_, err = m.CreateApp("two", nil)
 	require.NoError(t, err)
+	makeOverdue(t, m, "one", "two")
 	agent := &snapAgent{NodeAgent: m.testMachine()}
 	m.NodeRegistry().Register(store.HostLocal, agent)
 
-	m.autoSnapshotSweep()
+	m.autoSnapshotSweep(time.Now())
 
 	assert.ElementsMatch(t, []string{"one", "two"}, agent.takes)
 	for i := range agent.takes {
@@ -128,10 +154,11 @@ func TestAutoSnapshotSweepSkipsUnreachableApps(t *testing.T) {
 	require.NoError(t, err)
 	_, err = m.CreateApp("two", nil)
 	require.NoError(t, err)
+	makeOverdue(t, m, "one", "two")
 	agent := &snapAgent{NodeAgent: m.testMachine(), failFor: "one"}
 	m.NodeRegistry().Register(store.HostLocal, agent)
 
-	m.autoSnapshotSweep()
+	m.autoSnapshotSweep(time.Now())
 
 	assert.Equal(t, []string{"two"}, agent.takes)
 	assert.Empty(t, agent.deletes["one"], "control must not prune an app it could not snapshot")

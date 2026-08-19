@@ -31,6 +31,18 @@ type apiSetKeysRequest struct {
 	SSHKeys []string `json:"ssh_keys"`
 }
 
+// apiSnapshotConfig is an app's snapshot settings as hostit.yml holds them. An
+// empty interval means the app has not chosen one and takes the default, which
+// is why the default is reported alongside rather than substituted -- the UI
+// has to show the difference between "3h because I said so" and "3h because
+// that is the default".
+type apiSnapshotConfig struct {
+	Interval        string `json:"interval"`
+	Pre             string `json:"pre"`
+	Post            string `json:"post"`
+	DefaultInterval string `json:"default_interval,omitempty"`
+}
+
 // apiSetDescriptionRequest is the body of PUT /api/apps/{name}/description
 type apiSetDescriptionRequest struct {
 	Description string `json:"description"`
@@ -85,6 +97,8 @@ type apiAppResponse struct {
 	Description string     `json:"description"`
 	CreatedAt   time.Time  `json:"created_at"`
 	SSH         apiSSHInfo `json:"ssh"`
+	// Snapshot is what hostit.yml asks for, so Settings can show and edit it
+	Snapshot apiSnapshotConfig `json:"snapshot"`
 	// CustomDomain is the first verified (active) custom domain, empty if none; the
 	// web app prefers it over the default subdomain for links and previews.
 	CustomDomain string `json:"custom_domain,omitempty"`
