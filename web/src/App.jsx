@@ -165,15 +165,30 @@ const LoadFailed = ({ message, onRetry }) => (
   </div>
 );
 
+// The dashboard and the profile are tables and grids, and 920px squeezes them
+// for no reason on a normal screen. The docs stay narrow (prose wants a short
+// measure) and the app page stays full-bleed, so this is a third width rather
+// than a new default.
+const roomyPath = (pathname) => pathname === "/" || pathname === "/profile";
+
+// RoutedMain is <main> with the width the current route wants. It exists as its
+// own component because App renders the Router, so only a child of it can read
+// the location.
+const RoutedMain = ({ children }) => {
+  const { pathname } = useLocation();
+  return <main className={"container" + (roomyPath(pathname) ? " container-roomy" : "")}>{children}</main>;
+};
+
 const Nav = ({ account, appHeader }) => {
   // The app detail page runs full width; the nav widens to match, so the logo and
   // links slide out to the left edge and the avatar to the right.
   const { pathname } = useLocation();
   const wide = /^\/app\/[^/]+(\/[^/]+)?$/.test(pathname);
+  const roomy = roomyPath(pathname);
   // On phones the app's back+name replaces the logo, so there is a single top bar.
   const onApp = wide && appHeader;
   return (
-    <header className={"nav" + (wide ? " nav-wide" : "") + (onApp ? " nav-hasappid" : "")}>
+    <header className={"nav" + (wide ? " nav-wide" : "") + (roomy ? " nav-roomy" : "") + (onApp ? " nav-hasappid" : "")}>
       <div className="nav-inner">
       <Link to="/" className="nav-brand">
         <Wordmark />
@@ -402,7 +417,7 @@ const App = () => {
     <BrowserRouter>
       <AppHeaderContext.Provider value={setAppHeader}>
         <Nav account={account} appHeader={appHeader} />
-        <main className="container">
+        <RoutedMain>
           <Routes>
             <Route path="/" element={<Dashboard account={account} refreshAccount={refreshAccount} />} />
             <Route path="/app/:name" element={<AppDetail account={account} refreshAccount={refreshAccount} />} />
@@ -411,7 +426,7 @@ const App = () => {
             <Route path="/admin" element={<Admin account={account} />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
-        </main>
+        </RoutedMain>
       </AppHeaderContext.Provider>
     </BrowserRouter>
   );

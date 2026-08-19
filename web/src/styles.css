@@ -183,6 +183,13 @@ p {
   padding: 24px 16px 48px;
 }
 
+/* The dashboard and profile hold tables and card grids rather than prose, so
+   they get more room than the reading width. Must follow .container: same
+   specificity, so the later rule is the one that wins. */
+.container-roomy {
+  max-width: 1240px;
+}
+
 .center-page {
   min-height: 100vh;
   display: flex;
@@ -239,6 +246,12 @@ p {
 /* Full width on the app detail page, matching its full-bleed workspace */
 .nav-wide .nav-inner {
   max-width: 100vw;
+}
+
+/* The nav tracks the page's own width, so the wordmark stays above the content
+   rather than floating inside it. */
+.nav-roomy .nav-inner {
+  max-width: 1240px;
 }
 
 .nav-brand {
