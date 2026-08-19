@@ -5,9 +5,9 @@
 # request to its app. It is a cluster member -- it dials control, is handed the
 # routing table over that connection, and asks for certificates through it.
 #
-# Sharing a host with control, everything else defaults: the proxy is "local",
-# it dials 127.0.0.1:2930, and it reads the credentials control mints for it
-# under its data dir. A proxy on its own machine instead needs proxy-id,
-# cluster-url and the three credential files that `hostit-control proxy add`
-# prints.
+# Sharing a host with control, everything else defaults: the proxy is "local"
+# and reaches control over the member socket, where the kernel identifies the
+# caller -- no certificate, no CA, nothing to wait for. A proxy on its own
+# machine instead needs proxy-id, cluster-url and the three credential files
+# that `hostit-control proxy add` prints.
 control-url: http://{{ hostit_control_http }}

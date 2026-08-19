@@ -15,9 +15,11 @@ on one device streams to all of them.
 
 A model picker sits in the input row, listing every model this instance can run:
 the operator's Claude subscription first, then the metered API, with a rule
-between the groups and a small monochrome mark per item. The same model can
-appear in both groups ("Sonnet 5" twice) because the two differ in who pays, not
-in what runs -- the mark and its tooltip are what tell them apart. The list
+between the groups and the vendor's own mark per item (the Claude burst, the
+Anthropic A). The same model can appear in both groups ("Sonnet 5" twice)
+because the two differ in who pays, not in what runs, so the mark is the only
+thing that tells them apart -- which is why it is the glyph a person already
+recognises rather than a shape we invented. The list
 follows from which credentials are configured; there is nothing to allowlist and
 no per-user filter. When a turn runs long enough to hit its
 step limit, the chat shows a calm "paused, say continue" notice rather than an

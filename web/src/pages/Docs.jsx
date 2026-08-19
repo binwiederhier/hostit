@@ -187,9 +187,9 @@ const AssistantPage = () => (
       The picker beside the message box chooses the model. It lists everything
       this server can run, grouped by where the turn runs: the operator's Claude
       subscription above the rule, the metered Anthropic API below it. Both can
-      offer the same model, so "Sonnet 5" may appear twice -- the mark beside
-      each name (and its tooltip) says which is which. Each app remembers what
-      it last used.
+      offer the same model, so "Sonnet 5" may appear twice -- the Claude or
+      Anthropic mark beside each name says which is which. Each app remembers
+      what it last used.
     </p>
     <p className="hint">
       The built-in assistant needs the server to be configured with an AI key.

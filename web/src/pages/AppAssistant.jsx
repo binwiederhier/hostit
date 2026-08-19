@@ -362,34 +362,23 @@ const AssistantText = ({ item, modes }) => {
   );
 };
 
-// backendName is what the glyph means, spelled out. The same model can be
-// offered by both backends, so two rows can read "Sonnet 5" and differ only by
-// their mark -- the tooltip is what tells them apart on a first encounter.
-const backendName = (backend) =>
-  backend === "claude" ? "Claude subscription" : "Anthropic API";
-
-// BackendMark is the small monochrome glyph that says which backend an option
-// runs on: the operator's Claude subscription, or the metered Anthropic API.
-// Monochrome and inline on purpose -- it is a distinction, not a brand.
+// BackendMark is the vendor's own mark, drawn in the current text colour: the
+// Claude burst for the operator's subscription, the Anthropic A for the metered
+// API. Two rows can read "Sonnet 5" and differ only by this glyph, so it has to
+// be the one a person already recognises rather than a shape we invented.
 const BackendMark = ({ backend }) =>
   backend === "claude" ? (
-    <svg className="asst-modeldd-mark" viewBox="0 0 16 16" aria-hidden="true">
+    <svg className="asst-modeldd-mark" viewBox="0 0 24 24" aria-hidden="true">
       <path
-        d="M8 2l1.6 4.4L14 8l-4.4 1.6L8 14l-1.6-4.4L2 8l4.4-1.6z"
+        d="m4.714 15.956 4.718-2.648.079-.23-.08-.128h-.23l-.79-.048-2.695-.073-2.337-.097-2.265-.122-.57-.121-.535-.704.055-.353.48-.321.685.06 1.518.104 2.277.157 1.651.098 2.447.255h.389l.054-.158-.133-.097-.103-.098-2.356-1.596-2.55-1.688-1.336-.972-.722-.491L2 6.223l-.158-1.008.656-.722.88.06.224.061.893.686 1.906 1.476 2.49 1.833.364.304.146-.104.018-.072-.164-.274-1.354-2.446-1.445-2.49-.644-1.032-.17-.619a3 3 0 0 1-.103-.729L6.287.133 6.7 0l.995.134.42.364.619 1.415L9.735 4.14l1.555 3.03.455.898.243.832.09.255h.159V9.01l.127-1.706.237-2.095.23-2.695.08-.76.376-.91.747-.492.583.28.48.685-.067.444-.286 1.851-.558 2.903-.365 1.942h.213l.243-.242.983-1.306 1.652-2.064.728-.82.85-.904.547-.431h1.032l.759 1.129-.34 1.166-1.063 1.347-.88 1.142-1.263 1.7-.79 1.36.074.11.188-.02 2.853-.606 1.542-.28 1.84-.315.832.388.09.395-.327.807-1.967.486-2.307.462-3.436.813-.043.03.049.061 1.548.146.662.036h1.62l3.018.225.79.522.473.638-.08.485-1.213.62-1.64-.389-3.825-.91-1.31-.329h-.183v.11l1.093 1.068 2.003 1.81 2.508 2.33.127.578-.321.455-.34-.049-2.204-1.657-.85-.747-1.925-1.62h-.127v.17l.443.649 2.343 3.521.122 1.08-.17.353-.607.213-.668-.122-1.372-1.924-1.415-2.168-1.141-1.943-.14.08-.674 7.254-.316.37-.728.28-.607-.461-.322-.747.322-1.476.388-1.924.316-1.53.285-1.9.17-.632-.012-.042-.14.018-1.432 1.967-2.18 2.945-1.724 1.845-.413.164-.716-.37.066-.662.401-.589 2.386-3.036 1.439-1.882.929-1.086-.006-.158h-.055L4.138 18.56l-1.13.146-.485-.456.06-.746.231-.243 1.907-1.312Z"
         fill="currentColor"
       />
     </svg>
   ) : (
-    <svg className="asst-modeldd-mark" viewBox="0 0 16 16" aria-hidden="true">
-      <rect
-        x="2.5"
-        y="2.5"
-        width="11"
-        height="11"
-        rx="2.5"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.6"
+    <svg className="asst-modeldd-mark" viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        d="M17.304 3.541h-3.672l6.696 16.918H24Zm-10.608 0L0 20.459h3.744l1.37-3.553h7.005l1.369 3.553h3.744L10.536 3.541Zm-.371 10.223L8.616 7.82l2.291 5.945Z"
+        fill="currentColor"
       />
     </svg>
   );
@@ -418,7 +407,7 @@ const ModelDropdown = ({ modes, mode, onChange, disabled }) => {
         disabled={disabled}
         aria-haspopup="menu"
         aria-expanded={open}
-        title={current ? `${current.label} (${backendName(current.backend)})` : "Choose model"}
+        title="Choose model"
       >
         {current && <BackendMark backend={current.backend} />}
         <span className="asst-modeldd-label">
@@ -466,7 +455,6 @@ const ModelDropdown = ({ modes, mode, onChange, disabled }) => {
                   ? " asst-modeldd-divider"
                   : "")
               }
-              title={`${m.label} (${backendName(m.backend)})`}
               onClick={() => {
                 onChange(m.id);
                 setOpen(false);
