@@ -165,6 +165,28 @@ definitions and the conversation prefix are cache-marked, so repeat turns pay th
 
 ## Smaller things
 
+- **An MCP server people can actually point an agent at.** `hostit mcp` already
+  exists (`cmd/agent/mcp.go`) but it is hidden, stdio-only, and built for one
+  caller: it runs INSIDE the assistant sandbox as the app's uid and reaches the
+  daemon over the peercred socket, which is what scopes it to a single app. So
+  it cannot be used from a laptop.
+
+  What is missing is the outside-in version: a user runs `hostit mcp` (or points
+  Claude Desktop at a URL) authenticated by their API token, and gets hostit's
+  tools for the apps that token can reach -- list apps, read/write files, deploy,
+  logs, snapshots, create an app. Today an external agent gets the same job done
+  by reading the prompt on the app page and making HTTP calls, which works but
+  puts the whole API surface in the model's context.
+
+  Open questions: token-scoped (one app) vs account-scoped (all of them, with
+  the app as a tool argument); stdio for a local binary vs streamable HTTP so
+  there is nothing to install; and whether the tool set is literally
+  `assistant/tools.go:ToolDefs` reused, which would keep the two surfaces from
+  drifting. Worth checking against the app-capabilities plan
+  (`plans/260818-app-capabilities.md`) -- that one is about an app calling OUT,
+  this one is about an agent calling IN, and they should not invent two auth
+  stories.
+
 - **Could a static app skip the container entirely?** Today every app gets a
   container, a unix user, a subvolume and a systemd unit, even one that is just
   files on disk. `mode: static` is already served by hostit itself, so for that
