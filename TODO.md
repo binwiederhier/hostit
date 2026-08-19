@@ -172,7 +172,13 @@ definitions and the conversation prefix are cache-marked, so repeat turns pay th
   follow from what is configured, not a second hand-written list.
 
 - **Assistant model picker: show models, not backends.** DESIGN SETTLED
-  2026-08-18, not built. Today the dropdown mixes a backend ("Claude.ai") with
+  2026-08-18. STARTED: `assistant/backend.go` has the registry, the two backends
+  and the catalog/lookup/default, with tests (commit d04d573). Everything below
+  is still unwired -- `controlconf.ModeOptions`/`IsValidMode`, the per-app mode
+  resolution, the dropdown and the admin view all still use the old flat list,
+  and `assistant-models` / `assistant-model` / the per-user allowlist are still
+  there. Next step is controlconf building an `assistant.Credentials` from its
+  keys and delegating, then the two UI surfaces. Today the dropdown mixes a backend ("Claude.ai") with
   API models, so picking one tells you nothing about which model runs or who
   pays, and the catalog is hand-listed in YAML (`assistant-models`) where it can
   disagree with what the credentials can actually serve.
