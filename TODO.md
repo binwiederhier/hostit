@@ -45,6 +45,19 @@ abstraction is real. Full design, including what each capability carries and why
 a database does NOT fit the same mechanism:
 `plans/260818-app-capabilities.md`.
 
+**Read `plans/260818-hostit-broker-design.md` alongside it** (2026-08-18, draft,
+nothing built; a Slidev deck of the same material sits beside it). It answers
+the same question -- an app using a credential it never holds -- but generalizes
+the mechanism: instead of hostit growing one capability per integration, hostit
+becomes a generic MCP client. An owner connects an MCP server once and approves
+specific tools; each app is granted a subset of those; the app POSTs
+`{server, tool, args}` to a loopback listener in its own container and never
+sees a credential. The two plans disagree on shape, and that is the decision to
+make before either is built: capability-per-integration (fewer moving parts, one
+implementation per thing) versus one broker (one implementation total, but a
+registry, an OAuth client, per-owner secret custody and a control->node
+credential push). AI would still be a capability under either.
+
 - **Identity is already solved.** An app calls hostit over the unix socket its
   CLI uses; SO_PEERCRED gives the uid, `store.AppByUID` gives the app, the row
   gives the owner and its grants. An app on a remote node reaches its own node's
@@ -165,6 +178,16 @@ definitions and the conversation prefix are cache-marked, so repeat turns pay th
 
 ## Smaller things
 
+- **Decide the credential-brokering shape before building either plan.** See
+  the paragraph under "App capabilities" above. The broker design's own build
+  order starts with a scoped, revocable static token from the upstream service,
+  precisely so hostit's first cut needs no OAuth client at all -- worth taking
+  seriously, because the OAuth half (dynamic client registration, PKCE, refresh
+  rotation, encrypted per-owner custody in control) is most of its cost. Its
+  open questions that hostit owns regardless of shape: what encrypts a stored
+  credential at rest, how control decides which nodes need a push and when a
+  node purges one, and whose credential a collaborator-shared app uses.
+
 - **An MCP server people can actually point an agent at.** `hostit mcp` already
   exists (`cmd/agent/mcp.go`) but it is hidden, stdio-only, and built for one
   caller: it runs INSIDE the assistant sandbox as the app's uid and reaches the
@@ -182,10 +205,13 @@ definitions and the conversation prefix are cache-marked, so repeat turns pay th
   the app as a tool argument); stdio for a local binary vs streamable HTTP so
   there is nothing to install; and whether the tool set is literally
   `assistant/tools.go:ToolDefs` reused, which would keep the two surfaces from
-  drifting. Worth checking against the app-capabilities plan
-  (`plans/260818-app-capabilities.md`) -- that one is about an app calling OUT,
-  this one is about an agent calling IN, and they should not invent two auth
-  stories.
+  drifting. Worth checking against both credential plans
+  (`plans/260818-app-capabilities.md`, `plans/260818-hostit-broker-design.md`)
+  -- those are about an app calling OUT, this one is about an agent calling IN,
+  and they should not invent two auth stories. The broker design already carries
+  this as its item #6 and expects it to be cheap once the broker exists: the
+  same "call an approved tool as owner X" function, wrapped in a server adapter
+  instead of an HTTP relay.
 
 - **Could a static app skip the container entirely?** Today every app gets a
   container, a unix user, a subvolume and a systemd unit, even one that is just
