@@ -1548,8 +1548,10 @@ th:last-child {
    app's dense panels */
 /* Docs is a two-pane docs site: a sticky sidebar (User guide / Administration
    guide) and one page of content at a time. The /docs route widens the container. */
+/* Matches .container-roomy: the docs render their own <main>, so the width has
+   to be repeated here rather than shared. */
 .docs-container {
-  max-width: 1120px;
+  max-width: 1240px;
 }
 
 .docs-shell {
@@ -3518,6 +3520,10 @@ body.ws-resizing iframe {
 
 .applist tbody tr:last-child td {
   border-bottom: none;
+}
+
+.applist-row {
+  cursor: pointer;
 }
 
 .applist-row:hover {

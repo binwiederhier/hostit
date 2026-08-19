@@ -261,13 +261,24 @@ const formatUptime = (startedAt) => {
 
 // One row of the list view: the same facts a card carries, at a glance.
 const AppRow = ({ app }) => {
+  const navigate = useNavigate();
   const running = app.running;
   const crashed = running && app.app_state === "failed";
   const status = app.archived ? "archived" : crashed ? "crashed" : running ? "running" : "powered off";
   const publicUrl = app.custom_domain ? `https://${app.custom_domain}` : app.url;
   const publicHost = app.custom_domain || app.url.replace(/^https?:\/\//, "");
+  // The whole row opens the app, the way the whole card does. Clicks that land
+  // on a link or a button are left alone -- the public-URL link in this row
+  // goes somewhere else entirely, and a modified click on the name should still
+  // open a new tab rather than navigate this one.
+  const openApp = (e) => {
+    if (e.target.closest("a, button")) {
+      return;
+    }
+    navigate(`/app/${app.name}`);
+  };
   return (
-    <tr className="applist-row">
+    <tr className="applist-row" onClick={openApp}>
       <td className="applist-name">
         <span className="appcard-avatar applist-avatar" style={avatarStyle(app.id)}>{app.name.slice(0, 2)}</span>
         <span className="applist-id">

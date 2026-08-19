@@ -165,11 +165,11 @@ const LoadFailed = ({ message, onRetry }) => (
   </div>
 );
 
-// The dashboard and the profile are tables and grids, and 920px squeezes them
-// for no reason on a normal screen. The docs stay narrow (prose wants a short
-// measure) and the app page stays full-bleed, so this is a third width rather
-// than a new default.
-const roomyPath = (pathname) => pathname === "/" || pathname === "/profile";
+// The dashboard, profile and admin views are tables and grids, and 920px
+// squeezes them for no reason on a normal screen. The docs match this width
+// through their own .docs-container (they render their own <main>); the app
+// page is the one exception, staying full-bleed.
+const roomyPath = (pathname) => pathname === "/" || pathname === "/profile" || pathname === "/admin";
 
 // RoutedMain is <main> with the width the current route wants. It exists as its
 // own component because App renders the Router, so only a child of it can read
