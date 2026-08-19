@@ -333,7 +333,7 @@ const formatTime = (t) =>
         .toLowerCase()
     : "";
 
-// responseMeta is the hover caption for a reply, e.g. "11:43 pm, Claude.ai".
+// responseMeta is the hover caption for a reply, e.g. "11:43 pm, Opus 5".
 const responseMeta = (item, modes) => {
   const parts = [];
   if (item.time) parts.push(formatTime(item.time));
@@ -343,7 +343,7 @@ const responseMeta = (item, modes) => {
 };
 
 // AssistantText renders one assistant reply; on hover it reveals a small caption
-// after the last line with the reply's time and model ("11:43 pm, Claude.ai").
+// after the last line with the reply's time and model ("11:43 pm, Opus 5").
 const AssistantText = ({ item, modes }) => {
   const meta = responseMeta(item, modes);
   return (
@@ -361,6 +361,12 @@ const AssistantText = ({ item, modes }) => {
     </div>
   );
 };
+
+// backendName is what the glyph means, spelled out. The same model can be
+// offered by both backends, so two rows can read "Sonnet 5" and differ only by
+// their mark -- the tooltip is what tells them apart on a first encounter.
+const backendName = (backend) =>
+  backend === "claude" ? "Claude subscription" : "Anthropic API";
 
 // BackendMark is the small monochrome glyph that says which backend an option
 // runs on: the operator's Claude subscription, or the metered Anthropic API.
@@ -412,7 +418,7 @@ const ModelDropdown = ({ modes, mode, onChange, disabled }) => {
         disabled={disabled}
         aria-haspopup="menu"
         aria-expanded={open}
-        title="Choose model"
+        title={current ? `${current.label} (${backendName(current.backend)})` : "Choose model"}
       >
         {current && <BackendMark backend={current.backend} />}
         <span className="asst-modeldd-label">
@@ -460,6 +466,7 @@ const ModelDropdown = ({ modes, mode, onChange, disabled }) => {
                   ? " asst-modeldd-divider"
                   : "")
               }
+              title={`${m.label} (${backendName(m.backend)})`}
               onClick={() => {
                 onChange(m.id);
                 setOpen(false);

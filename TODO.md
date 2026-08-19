@@ -165,49 +165,6 @@ definitions and the conversation prefix are cache-marked, so repeat turns pay th
 
 ## Smaller things
 
-- **Remove assistant-models / assistant-model from the config?** Probably
-  subsumed by the model-picker rework below: the available models should be
-  derived from which credentials are configured, not hand-listed in YAML. The
-  app-capabilities work needs the same answer -- what an app may call should
-  follow from what is configured, not a second hand-written list.
-
-- **Assistant model picker: show models, not backends.** DESIGN SETTLED
-  2026-08-18. STARTED: `assistant/backend.go` has the registry, the two backends
-  and the catalog/lookup/default, with tests (commit d04d573). Everything below
-  is still unwired -- `controlconf.ModeOptions`/`IsValidMode`, the per-app mode
-  resolution, the dropdown and the admin view all still use the old flat list,
-  and `assistant-models` / `assistant-model` / the per-user allowlist are still
-  there. Next step is controlconf building an `assistant.Credentials` from its
-  keys and delegating, then the two UI surfaces. Today the dropdown mixes a backend ("Claude.ai") with
-  API models, so picking one tells you nothing about which model runs or who
-  pays, and the catalog is hand-listed in YAML (`assistant-models`) where it can
-  disagree with what the credentials can actually serve.
-
-  An option becomes a (backend, model) pair with a backend-prefixed id --
-  `claude-opus-5` vs `anthropic-opus-5` -- because the same model is reachable
-  both ways and they bill differently. `ID` is the selection key, and the
-  provider's own model string is a separate field.
-
-  - **The catalog derives from configured credentials.** claude-code-oauth-token
-    -> Fable 5, Opus 5, Sonnet 5 (backend "claude"); anthropic-api-key -> Haiku
-    4.5, Sonnet 5, Opus 5 (backend "anthropic"); both -> both groups, a divider
-    between them, a small monochrome icon per item. `assistant-models` goes.
-  - **A backend registry, now** (name, is-configured, models, run-a-turn), so a
-    future agent or provider is one implementation and the picker, validation
-    and admin view follow. This is the reason to touch the code at all.
-  - **The config type moves to `assistant.Config`**, inlined into
-    controlconf.Config with `yaml:",inline"` so the FILE stays flat and nothing
-    breaks. The assistant owns what a backend is; controlconf never learns.
-  - **Default is hardcoded, not configured**: the claude backend's Opus when the
-    subscription is configured, else the anthropic backend's Sonnet. The app's
-    remembered choice (`store.AppAssistantMode`) still wins over it -- that is a
-    user choice, not config. `assistant-model` disappears entirely.
-  - **No per-user allowlist and no per-user model settings** (decided): any
-    active user may use any configured backend, including the subscription. The
-    instance approves signups, and that is the control. If spend needs bounding
-    later, the per-owner budget in `plans/260818-app-capabilities.md` is where it
-    belongs, not a second allowlist.
-
 - **CHANGELOG.md per release.** Keep a CHANGELOG.md listing changes per
   version, updated with every release. Retroactively create the history for
   all existing tags from the commit messages and TODO.md's evolution through
@@ -286,6 +243,20 @@ definitions and the conversation prefix are cache-marked, so repeat turns pay th
 ## Done (recent)
 
 Kept briefly for context; prune when stale.
+
+- **Assistant model picker: models, not backends (2026-08-18, on stage).** The
+  dropdown used to mix a backend ("Claude.ai") with a flat list of API models
+  hand-listed in YAML, so a choice said nothing about which model ran or who
+  paid, and the list could disagree with what the credentials could serve. An
+  option is now a (backend, model) pair with a backend-prefixed id
+  (`claude-opus-5` vs `anthropic-opus-5`), and the catalog is DERIVED from the
+  configured credentials by a backend registry (`assistant/backend.go`): a new
+  provider is one file, not an edit in the config, the dropdown, a validator and
+  an admin page. `assistant-models`, `assistant-model`, the per-user allowlist
+  and the admin "Assistant access" table are all gone; the default is hardcoded
+  (the subscription's Opus, else the API's Sonnet) and the app's remembered
+  choice still wins over it. Verified by e2e: a real turn on every catalog
+  option, plus a cross-backend switch.
 
 - **btrfs simple quotas (2026-08-16, live on stage and prod).** It turned out to be a correctness fix, not just a
   performance one: classic qgroups NEVER enforced the budgets, because seeding

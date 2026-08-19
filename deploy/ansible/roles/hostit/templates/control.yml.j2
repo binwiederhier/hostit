@@ -54,13 +54,11 @@ breakglass: {{ hostit_breakglass | default(false) | lower }}
 
 # Built-in assistant on the metered Anthropic API.
 anthropic-api-key: {{ hostit_anthropic_api_key }}
-{% if hostit_assistant_model %}
-assistant-model: {{ hostit_assistant_model }}
-{% endif %}
 {% endif %}
 {% if hostit_claude_code_oauth_token %}
 
-# Claude.ai: a Claude Pro/Max subscription token additionally offers Claude.ai as a
-# model, run as `claude -p` in a sandbox container. Its presence is the whole switch.
+# The operator's Claude subscription (Pro/Max): its models are offered alongside
+# the API's, run as `claude -p` in a sandbox container. Its presence is the whole
+# switch.
 claude-code-oauth-token: {{ hostit_claude_code_oauth_token }}
 {% endif %}

@@ -46,7 +46,6 @@ hostit_breakglass: false        # let the admin token mint a session without Goo
 # Built-in AI assistant (in-browser agent). Each credential's presence is the whole
 # switch; leave both empty to disable the assistant.
 hostit_anthropic_api_key: ""              # metered Anthropic API models
-hostit_assistant_model: ""                # default model for API turns
 hostit_claude_code_oauth_token: ""        # additionally offers Claude.ai (claude setup-token)
 
 # Optional wildcard TLS via Route 53 (DNS-01), so a brand-new app serves TLS at

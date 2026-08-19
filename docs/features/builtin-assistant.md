@@ -13,10 +13,13 @@ seconds). The conversation is persisted server-side, so a reload -- or a second
 device, or a phone -- picks it up exactly where it left off, and a turn started
 on one device streams to all of them.
 
-A model picker sits in the input row. Depending on what the operator configured
-and what the user is allowed, it offers the metered API models (Sonnet, Opus,
-Haiku, ...) and/or "Claude.ai", which runs the turn on the operator's Claude Max
-subscription instead of the metered API. When a turn runs long enough to hit its
+A model picker sits in the input row, listing every model this instance can run:
+the operator's Claude subscription first, then the metered API, with a rule
+between the groups and a small monochrome mark per item. The same model can
+appear in both groups ("Sonnet 5" twice) because the two differ in who pays, not
+in what runs -- the mark and its tooltip are what tell them apart. The list
+follows from which credentials are configured; there is nothing to allowlist and
+no per-user filter. When a turn runs long enough to hit its
 step limit, the chat shows a calm "paused, say continue" notice rather than an
 error, because nothing failed.
 
@@ -146,9 +149,9 @@ the tool call on the event stream tells the browser to reload the preview.
 `assistant/anthropic.go:completer` is the interface so the loop is testable.
 `maxTokens` is 16000 per reply.
 
-**The "Claude.ai" subscription backend.** `config.ExternalClaudeMode`
-(`"external-claude"`, labelled `config.ExternalClaudeLabel` = `"Claude.ai"`)
-routes a turn to `assistant/claude.go:Manager.runClaudeTurn`, which calls
+**The subscription backend.** An option whose backend is `claude` (ids like
+`claude-opus-5`, see `assistant/backend.go`) routes a turn to
+`assistant/claude.go:Manager.runClaudeTurn`, which calls
 `assistant/claude.go:ClaudeRunner` -- implemented by
 `control/assistantclaude.go:claudeBackend` over `assistant/sandbox.go:Sandbox`.
 The sandbox runs a pinned `claude -p` inside a locked-down podman container
@@ -169,12 +172,16 @@ same-origin gate and a keepalive), `handleAssistantStop`,
 `handleAssistantUpload` / `handleAssistantUploadDelete` (chat attachments into
 `uploads/`, images read back with a 6 MB cap so the model can see them).
 
-**Modes and permissions** (`control/assistantmodes.go`): `assistantOptions`
-computes the modes a user may pick (External Claude + allowed API models),
-`resolveMode` picks the mode a turn actually runs (request -> app's remembered
-mode -> global default -> first allowed), and the choice is persisted per app
-via `store.Store.SetAppAssistantMode`. `config.Config.ModeOptions` /
-`IsValidMode` / `DefaultAPIModel` back this.
+**Modes** (`assistant/backend.go`, `control/assistantmodes.go`): a `Backend` is
+a place turns can run, registered from its own file's `init()`, and `Catalog`
+turns the configured credentials into the options offered -- an operator who
+sets a key gets exactly the models that key can serve and cannot list one it
+cannot. `resolveMode` picks what a turn runs (request -> the app's remembered
+choice -> `assistant.Default`, which is the subscription's Opus, else the API's
+Sonnet), persisted per app via `store.Store.SetAppAssistantMode`. A remembered
+choice naming a credential since removed simply does not resolve, so pulling a
+key downgrades the next turn instead of failing it. Adding a backend is one new
+file, not an edit in the config, the dropdown, a validator and an admin page.
 
 **Persistence and accounting.** `control/assistantops.go:appTranscripts` stores
 the conversation as one JSON blob (`store/assistant.go`, keyed on app id so it

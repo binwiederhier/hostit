@@ -330,15 +330,16 @@ already in `<data-dir>/certs` keep working either way.
 ### Built-in assistant (optional)
 
 The in-browser chat that builds and changes an app is off until the server has an
-AI key. Two ways to power it, both configured in `control.yml`:
+AI key. Two ways to power it, both configured in `control.yml`. Which models the
+picker offers follows from which of these keys is set -- there is no model list
+to maintain:
 
 ```yaml
 # Metered Anthropic API (pay per token):
 anthropic-api-key: sk-ant-...
-assistant-model: claude-sonnet-5
 
-# Additionally offer Claude.ai (a Claude Pro/Max subscription), run per turn as
-# `claude -p` in a locked-down podman sandbox. Setting the token is the whole
+# Additionally offer the operator's Claude subscription (Pro/Max), run per turn
+# as `claude -p` in a locked-down podman sandbox. Setting the token is the whole
 # switch; there is no backend selector. Get the token with: claude setup-token
 claude-code-oauth-token: ...
 ```

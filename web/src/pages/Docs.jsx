@@ -183,6 +183,14 @@ const AssistantPage = () => (
       a live preview beside the chat. Its only tools are that one app's own
       operations, so it can never touch another app or the host.
     </p>
+    <p>
+      The picker beside the message box chooses the model. It lists everything
+      this server can run, grouped by where the turn runs: the operator's Claude
+      subscription above the rule, the metered Anthropic API below it. Both can
+      offer the same model, so "Sonnet 5" may appear twice -- the mark beside
+      each name (and its tooltip) says which is which. Each app remembers what
+      it last used.
+    </p>
     <p className="hint">
       The built-in assistant needs the server to be configured with an AI key.
       If it is off, use SSH or your own agent (below).
@@ -741,9 +749,9 @@ const ConfigPage = () => (
           <tr>
             <td className="mono">claude-code-oauth-token</td>
             <td>
-              Additionally offers Claude.ai (a Claude Pro/Max subscription) as a
-              model, run in a sandbox. Its presence is the whole switch; there
-              is no backend selector.
+              Additionally offers the models of a Claude Pro/Max subscription,
+              run in a sandbox. Its presence is the whole switch; there is no
+              backend selector.
             </td>
           </tr>
         </tbody>
@@ -914,9 +922,16 @@ const AdminPage = () => (
       API models, and/or a Claude Pro/Max subscription token (
       <span className="mono">claude-code-oauth-token</span> from{" "}
       <span className="mono">claude setup-token</span>) to additionally offer
-      Claude.ai, run in a locked-down podman sandbox. Each credential's presence
-      is the whole switch. On the Admin page you choose which models people may
-      pick, the default, and who may use the assistant at all.
+      that subscription's models, run in a locked-down podman sandbox. Each
+      credential's presence is the whole switch.
+    </p>
+    <p>
+      There is no model list to maintain: the picker offers exactly what the
+      configured credentials can serve, so adding a key adds its models and
+      removing one takes them away. Every user who can sign in can use the
+      assistant -- an instance approves its signups, and that is the control.
+      What people spend is bounded per user by the AI budget on this page, and{" "}
+      <span className="mono">Usage</span> shows it per owner.
     </p>
     <h3>Backups</h3>
     <p>

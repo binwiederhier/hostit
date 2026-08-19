@@ -31,7 +31,6 @@ import (
 	"net/http"
 	"os"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -779,35 +778,12 @@ func skipAssistantIfOptedOut(t *testing.T) {
 	}
 }
 
-// assistantSettingsReset clears the server's assistant restrictions once per
-// suite run. The mode-filtering test restricts them globally, and a run killed
-// by -timeout (or a hand-run curl) skips its cleanup, so the NEXT run would
-// otherwise start against a restricted catalog and fail tests that have
-// nothing to do with restrictions. Resetting up front makes every run start
-// from the same server state instead of inheriting the last one's.
-var assistantSettingsReset sync.Once
-
-// resetAssistantSettings returns the server to unrestricted assistant defaults:
-// external allowed, no model allow-list. This IS the shipped default, so it is
-// safe to assert as a baseline rather than echoing whatever was found.
-func (e *env) resetAssistantSettings() {
-	e.t.Helper()
-	assistantSettingsReset.Do(func() {
-		e.doJSON("PATCH", "/api/settings", e.token, map[string]any{
-			"assistant": map[string]any{
-				"external_allowed": true,
-				"allowed_models":   []string{},
-			},
-		}, nil, http.StatusOK)
-	})
-}
-
+// The catalog is derived from the configured credentials, and every option
+// names the backend that runs it -- there is no operator catalog to set and no
+// per-user filter to apply.
 func TestAssistantCatalogAndPerAppModes(t *testing.T) {
 	skipAssistantIfOptedOut(t)
 	e := newEnv(t)
-	e.resetAssistantSettings()
-	d := e.assistantDefaults()
-	require.NotEmpty(t, asSlice(d["models"]), "the API model catalog is offered")
 
 	name := uniqueName("e2e-mode")
 	e.createApp(name)
@@ -815,70 +791,23 @@ func TestAssistantCatalogAndPerAppModes(t *testing.T) {
 
 	var tr map[string]any
 	e.get("/api/apps/"+name+"/assistant", e.token, &tr)
-	ids := modeIDs(tr)
-	require.NotEmpty(t, ids, "the app offers assistant modes")
-	assert.NotEmpty(t, tr["mode"], "a default mode is resolved for the app")
-	if contains(ids, "external-claude") {
-		assert.Equal(t, true, d["external_configured"], "external offered only when the subscription is configured")
+	modes := asSlice(tr["modes"])
+	require.NotEmpty(t, modes, "the app offers assistant modes")
+	assert.NotEmpty(t, tr["mode"], "a mode is resolved for the app")
+
+	for _, m := range modes {
+		opt := m.(map[string]any)
+		backend, _ := opt["backend"].(string)
+		id, _ := opt["id"].(string)
+		assert.Contains(t, []string{"claude", "anthropic"}, backend, "every option names its backend")
+		assert.True(t, strings.HasPrefix(id, backend+"-"), "the id carries the backend: %s", id)
 	}
-}
 
-func TestAssistantGlobalDefaultsFilterModes(t *testing.T) {
-	skipAssistantIfOptedOut(t)
-	e := newEnv(t)
-	e.resetAssistantSettings()
-	orig := e.assistantDefaults()
-	// Restore the unrestricted baseline rather than what was found: echoing the
-	// observed state would perpetuate residue from an earlier killed run.
-	t.Cleanup(func() {
-		e.doJSON("PATCH", "/api/settings", e.token, map[string]any{
-			"assistant": map[string]any{
-				"external_allowed": true,
-				"allowed_models":   []string{},
-				"default_mode":     orig["default_mode"],
-			},
-		}, nil, http.StatusOK)
-	})
-	first := fmt.Sprint(asSlice(orig["models"])[0].(map[string]any)["id"])
-
-	// Restrict the catalog to one model and disallow External Claude.
-	e.doJSON("PATCH", "/api/settings", e.token, map[string]any{
-		"assistant": map[string]any{
-			"external_allowed": false,
-			"allowed_models":   []string{first},
-		},
-	}, nil, http.StatusOK)
-
-	name := uniqueName("e2e-filter")
-	e.createApp(name)
-	t.Cleanup(func() { e.deleteApp(name) })
-	var tr map[string]any
-	e.get("/api/apps/"+name+"/assistant", e.token, &tr)
-	ids := modeIDs(tr)
-	assert.NotContains(t, ids, "external-claude", "external is filtered out when disallowed")
-	assert.Equal(t, []string{first}, ids, "only the allowed model is offered")
-}
-
-func TestAssistantPerUserOverride(t *testing.T) {
-	skipAssistantIfOptedOut(t)
-	e := newEnv(t)
-	email := uniqueName("e2e-user") + "@example.com"
-	var u map[string]any
-	e.doJSON("POST", "/api/users", e.token, map[string]string{"email": email, "role": "user"}, &u, http.StatusCreated)
-	uid := fmt.Sprint(u["id"])
-	t.Cleanup(func() { e.status("DELETE", "/api/users/"+uid+"?apps=delete", e.token) })
-
-	assert.Equal(t, false, u["assistant_has_override"], "a new user inherits the global default")
-
-	e.doJSON("PATCH", "/api/users/"+uid, e.token, map[string]any{
-		"assistant_external_allowed": false,
-		"assistant_allowed_models":   []string{"claude-sonnet-5"},
-	}, &u, http.StatusOK)
-	assert.Equal(t, false, u["assistant_external_allowed"])
-	assert.Equal(t, true, u["assistant_has_override"])
-
-	e.doJSON("PATCH", "/api/users/"+uid, e.token, map[string]any{"assistant_clear_override": true}, &u, http.StatusOK)
-	assert.Equal(t, false, u["assistant_has_override"], "clearing the override reverts to the default")
+	// The resolved mode is one of the offered options rather than a stale id
+	// from a credential this instance no longer has. (Which one wins, and that
+	// an app remembers its choice, is control/assistantmodes_test.go -- asserting
+	// it here would mean paying for a real turn.)
+	assert.Contains(t, modeIDs(tr), tr["mode"], "the resolved mode is offered")
 }
 
 // TestAssistantEveryModelRunsATurn drives one real turn per configured model --
@@ -889,27 +818,31 @@ func TestAssistantPerUserOverride(t *testing.T) {
 func TestAssistantEveryModelRunsATurn(t *testing.T) {
 	skipAssistantIfOptedOut(t)
 	e := newEnv(t)
-	e.resetAssistantSettings()
-	d := e.assistantDefaults()
 
 	name := uniqueName("e2e-turn")
 	e.createApp(name)
 	t.Cleanup(func() { e.deleteApp(name) })
 
+	options := e.assistantOptions(name)
+	require.NotEmpty(t, options, "the server offers at least one mode")
+
 	const ask = "Reply with the single word: ok. Do not use any tools."
-	for _, m := range asSlice(d["models"]) {
-		id := fmt.Sprint(m.(map[string]any)["id"])
+	for _, o := range options {
+		id := fmt.Sprint(o["id"])
 		types, turnErr := e.assistantTurn(name, id, ask)
 		assert.Emptyf(t, turnErr, "model %s turn errored: %s", id, turnErr)
 		assert.Containsf(t, types, "done", "model %s turn completed", id)
 	}
 
-	if d["external_configured"] == true {
-		_, extErr := e.assistantTurn(name, "external-claude", "List the files, then say ok.")
-		assert.Empty(t, extErr, "external turn should succeed")
-		first := fmt.Sprint(asSlice(d["models"])[0].(map[string]any)["id"])
-		_, apiErr := e.assistantTurn(name, first, ask)
-		assert.Empty(t, apiErr, "switching to a model after External Claude must not fail on duplicate tool ids")
+	// Switching backends mid-conversation is what the tool-id repair guards: the
+	// subscription runner and the API loop mint ids differently, and a history
+	// carrying both had 400'd on duplicate tool_result ids.
+	claude, api := firstOfBackend(options, "claude"), firstOfBackend(options, "anthropic")
+	if claude != "" && api != "" {
+		_, subErr := e.assistantTurn(name, claude, "List the files, then say ok.")
+		assert.Empty(t, subErr, "the subscription turn should succeed")
+		_, apiErr := e.assistantTurn(name, api, ask)
+		assert.Empty(t, apiErr, "switching backends must not fail on duplicate tool ids")
 	}
 }
 
@@ -921,16 +854,15 @@ func TestAssistantEveryModelRunsATurn(t *testing.T) {
 func TestAssistantBuildsSomething(t *testing.T) {
 	skipAssistantIfOptedOut(t)
 	e := newEnv(t)
-	e.resetAssistantSettings()
-	d := e.assistantDefaults()
-	mode := cheapestMode(d)
-	if mode == "" {
-		t.Skip("no assistant configured on this server")
-	}
 
 	name := uniqueName("e2e-build")
 	app := e.createApp(name)
 	t.Cleanup(func() { e.deleteApp(name) })
+
+	mode := cheapestMode(e.assistantOptions(name))
+	if mode == "" {
+		t.Skip("no assistant configured on this server")
+	}
 
 	// One turn, fully specified so the model has nothing to decide
 	const ask = "Create the file public/index.html containing exactly the text ASSISTANT-BUILT-THIS " +
@@ -948,31 +880,42 @@ func TestAssistantBuildsSomething(t *testing.T) {
 // prices, so a Haiku-family model wins by naming convention, then the first
 // catalog model, then External Claude (subscription, so not metered per token).
 // Empty means no assistant is configured at all.
-func cheapestMode(d map[string]any) string {
-	models := asSlice(d["models"])
-	for _, m := range models {
-		if mm, ok := m.(map[string]any); ok && strings.Contains(strings.ToLower(fmt.Sprint(mm["id"])), "haiku") {
-			return fmt.Sprint(mm["id"])
+func cheapestMode(options []map[string]any) string {
+	for _, o := range options {
+		if strings.Contains(strings.ToLower(fmt.Sprint(o["id"])), "haiku") {
+			return fmt.Sprint(o["id"])
 		}
 	}
-	if len(models) > 0 {
-		if mm, ok := models[0].(map[string]any); ok {
-			return fmt.Sprint(mm["id"])
-		}
-	}
-	if d["external_configured"] == true {
-		return "external-claude"
+	if len(options) > 0 {
+		return fmt.Sprint(options[0]["id"])
 	}
 	return ""
 }
 
-func (e *env) assistantDefaults() map[string]any {
-	// The assistant defaults are part of the global settings call, not a separate
-	// endpoint: GET /api/settings returns them under "assistant".
-	var s map[string]any
-	e.get("/api/settings", e.token, &s)
-	d, _ := s["assistant"].(map[string]any)
-	return d
+// assistantOptions is the catalog as an app sees it. There is no operator
+// catalog to read any more: what this instance can run follows from which
+// credentials are configured, so the app's own endpoint is the only source.
+func (e *env) assistantOptions(name string) []map[string]any {
+	var tr map[string]any
+	e.get("/api/apps/"+name+"/assistant", e.token, &tr)
+	var out []map[string]any
+	for _, m := range asSlice(tr["modes"]) {
+		if mm, ok := m.(map[string]any); ok {
+			out = append(out, mm)
+		}
+	}
+	return out
+}
+
+// firstOfBackend is the first option a backend offers, or "" when that backend
+// is not configured here.
+func firstOfBackend(options []map[string]any, backend string) string {
+	for _, o := range options {
+		if fmt.Sprint(o["backend"]) == backend {
+			return fmt.Sprint(o["id"])
+		}
+	}
+	return ""
 }
 
 // assistantTurn starts a turn on the given mode and reads the event stream until
@@ -1030,15 +973,6 @@ func modeIDs(tr map[string]any) []string {
 func asSlice(v any) []any {
 	s, _ := v.([]any)
 	return s
-}
-
-func contains(ss []string, s string) bool {
-	for _, x := range ss {
-		if x == s {
-			return true
-		}
-	}
-	return false
 }
 
 // TestChurnDeleteRecreate proves the lifecycle stays fast and correct under

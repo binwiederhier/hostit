@@ -89,10 +89,10 @@ func TestDedupeToolIDsPreservesModelTag(t *testing.T) {
 	// earlier External Claude replies.
 	out := dedupeToolIDs([]Message{
 		{Role: "user", Content: []ContentBlock{{Type: "text", Text: "hi"}}},
-		{Role: "assistant", Content: []ContentBlock{{Type: "text", Text: "hello"}}, Model: "external-claude"},
+		{Role: "assistant", Content: []ContentBlock{{Type: "text", Text: "hello"}}, Model: "claude-opus-5"},
 	})
 	require.Len(t, out, 2)
-	assert.Equal(t, "external-claude", out[1].Model, "the repair keeps the model tag")
+	assert.Equal(t, "claude-opus-5", out[1].Model, "the repair keeps the model tag")
 }
 
 func TestThinkingOmittedForHaiku(t *testing.T) {
