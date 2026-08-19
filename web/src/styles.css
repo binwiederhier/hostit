@@ -693,6 +693,11 @@ p {
   background: var(--status-down);
 }
 
+/* Archived: grey, because the app is put away rather than broken. */
+.status-archived {
+  background: var(--muted);
+}
+
 /* A lifecycle action is in flight: pulse blue so it reads as "working", not settled. */
 .status-pending {
   background: var(--status-pending);

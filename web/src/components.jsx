@@ -34,12 +34,17 @@ export const CopyButton = ({ text, small = true, disabled = false, children }) =
 };
 
 // Green when the app's run: process is up, orange when only its container is up
-// (booted but not serving), red when the container is down, and a pulsing blue
-// while a lifecycle action is in flight. The title carries the state for anyone
+// (booted but not serving), red when the container is down, grey when it is
+// archived, and a pulsing blue while a lifecycle action is in flight. The title carries the state for anyone
 // who cannot see the color.
-export const StatusDot = ({ running, appRunning, appState, pending }) => {
+export const StatusDot = ({ running, appRunning, appState, pending, archived }) => {
   if (pending) {
     return <span className="status-dot status-pending" title="working" />;
+  }
+  // Archived reads grey rather than red: the app is not down, it is put away,
+  // and red would have someone looking for a fault to fix.
+  if (archived) {
+    return <span className="status-dot status-archived" title="archived" />;
   }
   // A crash loop that gave up: the container is up but the app failed repeatedly
   // and hostit stopped restarting it. Distinct from a plain "container up, app

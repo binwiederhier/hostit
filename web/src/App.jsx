@@ -201,7 +201,7 @@ const Nav = ({ account, appHeader }) => {
             </svg>
           </Link>
           <span className="nav-appid-name">{appHeader.name}</span>
-          <StatusDot running={appHeader.running} appRunning={appHeader.appRunning} appState={appHeader.appState} pending={appHeader.pending} />
+          <StatusDot running={appHeader.running} appRunning={appHeader.appRunning} appState={appHeader.appState} pending={appHeader.pending} archived={appHeader.archived} />
         </div>
       )}
       {/* Inline on wide screens; on narrow ones these move into the profile menu,

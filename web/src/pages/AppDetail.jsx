@@ -1715,7 +1715,7 @@ const AppDetail = ({ account, refreshAccount }) => {
   const setAppHeader = useSetAppHeader();
   useEffect(() => {
     if (app) {
-      setAppHeader({ name: app.name, running: app.running, appRunning: app.app_running, appState: app.app_state, pending: !!pending || refreshing });
+      setAppHeader({ name: app.name, running: app.running, appRunning: app.app_running, appState: app.app_state, pending: !!pending || refreshing, archived: !!app.archived });
     }
   }, [app, pending, refreshing, setAppHeader]);
   useEffect(() => () => setAppHeader(null), [setAppHeader]);
@@ -1973,7 +1973,7 @@ const AppDetail = ({ account, refreshAccount }) => {
           </Link>
           <div className="ws-idrow">
             <span className="ws-name">{app.name}</span>
-            <StatusDot running={app.running} appRunning={app.app_running} appState={app.app_state} pending={statusPending} />
+            <StatusDot running={app.running} appRunning={app.app_running} appState={app.app_state} pending={statusPending} archived={!!app.archived} />
             {pending ? (
               <span className="status-label status-label-pending">
                 {pending.label}
