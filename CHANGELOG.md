@@ -18,6 +18,11 @@ default, or on-disk state is called out as **Breaking** or **Upgrade note**.
   archived, so they explain it instead of planning work that will be rejected.
 - `POST /api/apps/{app}/archive` and `/unarchive` are on the app-scoped agent
   API, so an agent asked to shelve an app can, and can undo it.
+- **Preview screenshots stop coming out blank.** Chrome gets a longer rendering
+  budget (25s, paused while network fetches are outstanding, so it is not a
+  timeout a slow app burns through) and is told to finish compositing before the
+  capture -- the other way a card came out white despite the page having
+  rendered.
 
 ## v0.16.0 (2026-08-19)
 

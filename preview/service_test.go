@@ -5,6 +5,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -331,4 +332,28 @@ func TestRefreshEnqueuesEvenWhenTheCacheSaysStopped(t *testing.T) {
 	})
 	m.Refresh("fresh")
 	require.Eventually(t, func() bool { return runner.shots() == 1 }, 5*time.Second, 5*time.Millisecond)
+}
+
+// A blank white card means the shot was taken before the page painted. Two
+// flags prevent that and are easy to lose in a refactor, so they are pinned:
+// the virtual-time budget gives a slow app time to render (chrome pauses that
+// clock while network fetches are outstanding, so this is a rendering budget,
+// not a network timeout), and running all compositor stages before the draw
+// stops the capture happening mid-paint.
+func TestShotWaitsForThePageToRender(t *testing.T) {
+	t.Parallel()
+	runner := &fakeRunner{}
+	m := newTestManager(t, runner, []App{{ID: "aaa", Name: "up", URL: "https://up.example.com", Running: true}})
+	m.Sweep()
+	require.Eventually(t, func() bool { return runner.shots() == 1 }, 5*time.Second, 5*time.Millisecond)
+
+	cmd := strings.Join(runner.lastShot(), " ")
+	assert.Contains(t, cmd, "--virtual-time-budget="+virtualTimeBudgetMS)
+	assert.Contains(t, cmd, "--run-all-compositor-stages-before-draw")
+
+	budget, err := strconv.Atoi(virtualTimeBudgetMS)
+	require.NoError(t, err)
+	assert.GreaterOrEqual(t, budget, 20000, "a slow app needs more than a couple of seconds to paint")
+	assert.Less(t, time.Duration(budget)*time.Millisecond, screenshotTimeout,
+		"the budget must fit inside the container timeout, or the run is killed mid-render")
 }

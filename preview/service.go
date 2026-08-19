@@ -47,6 +47,14 @@ const (
 	image = "docker.io/zenika/alpine-chrome:latest"
 	// screenshotTimeout bounds one container run; a hung page must not stall the queue
 	screenshotTimeout = 90 * time.Second
+	// virtualTimeBudgetMS is how long chrome is given to render before the shot.
+	// It is a rendering budget rather than a network timeout: chrome pauses this
+	// clock while fetches are outstanding, so a slow app does not eat it waiting
+	// for its first byte. Ten seconds still produced blank white cards for apps
+	// that paint late (a framework booting, fonts, an image); this is generous
+	// on purpose, and costs nothing for a page that finishes early -- the shot is
+	// taken as soon as the page settles.
+	virtualTimeBudgetMS = "25000"
 	// pullTimeout bounds the one-off image pull at startup
 	pullTimeout = 10 * time.Minute
 	// debounceDelay is how long after the LAST assistant change a shot fires
@@ -352,7 +360,10 @@ func (m *Manager) shoot(a App) error {
 	args = append(args, "-v", workDir+":/out:U", image,
 		"--headless", "--no-sandbox", "--disable-gpu", "--hide-scrollbars",
 		"--window-size="+windowSize, "--force-device-scale-factor="+deviceScaleFactor,
-		"--virtual-time-budget=10000",
+		"--virtual-time-budget="+virtualTimeBudgetMS,
+		// Without this the capture can happen mid-paint, which is the other way
+		// a card comes out white even though the page had rendered.
+		"--run-all-compositor-stages-before-draw",
 		"--screenshot=/out/"+shotFile, a.URL)
 	_, err := m.runner.RunTimeout(screenshotTimeout, args...)
 	if err != nil {
