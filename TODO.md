@@ -157,15 +157,36 @@ definitions and the conversation prefix are cache-marked, so repeat turns pay th
   app-capabilities work needs the same answer -- what an app may call should
   follow from what is configured, not a second hand-written list.
 
-- **Assistant model picker: show models, not backends.** Instead of just
-  "claude.ai" in the UI, list the actual models, driven by which credentials
-  are configured. Anthropic API key configured -> "Haiku 4.5", "Sonnet 5",
-  "Opus 5" (anthropic logo icon). claude.ai token (claude-code-oauth-token)
-  configured -> "Sonnet 5", "Opus 5", "Fable 5" (claude icon). Both -> both
-  sets, separated by a divider, distinguished by icon; only one -> only that
-  set. Example (only the claude.ai token):
-  `<claude icon> Fable 5 / Opus 5 / Sonnet 5`; with both, the same list
-  followed by a divider and `<anthropic logo> Opus 5 / Sonnet 5 / Haiku 4.5`.
+- **Assistant model picker: show models, not backends.** DESIGN SETTLED
+  2026-08-18, not built. Today the dropdown mixes a backend ("Claude.ai") with
+  API models, so picking one tells you nothing about which model runs or who
+  pays, and the catalog is hand-listed in YAML (`assistant-models`) where it can
+  disagree with what the credentials can actually serve.
+
+  An option becomes a (backend, model) pair with a backend-prefixed id --
+  `claude-opus-5` vs `anthropic-opus-5` -- because the same model is reachable
+  both ways and they bill differently. `ID` is the selection key, and the
+  provider's own model string is a separate field.
+
+  - **The catalog derives from configured credentials.** claude-code-oauth-token
+    -> Fable 5, Opus 5, Sonnet 5 (backend "claude"); anthropic-api-key -> Haiku
+    4.5, Sonnet 5, Opus 5 (backend "anthropic"); both -> both groups, a divider
+    between them, a small monochrome icon per item. `assistant-models` goes.
+  - **A backend registry, now** (name, is-configured, models, run-a-turn), so a
+    future agent or provider is one implementation and the picker, validation
+    and admin view follow. This is the reason to touch the code at all.
+  - **The config type moves to `assistant.Config`**, inlined into
+    controlconf.Config with `yaml:",inline"` so the FILE stays flat and nothing
+    breaks. The assistant owns what a backend is; controlconf never learns.
+  - **Default is hardcoded, not configured**: the claude backend's Opus when the
+    subscription is configured, else the anthropic backend's Sonnet. The app's
+    remembered choice (`store.AppAssistantMode`) still wins over it -- that is a
+    user choice, not config. `assistant-model` disappears entirely.
+  - **No per-user allowlist and no per-user model settings** (decided): any
+    active user may use any configured backend, including the subscription. The
+    instance approves signups, and that is the control. If spend needs bounding
+    later, the per-owner budget in `plans/260818-app-capabilities.md` is where it
+    belongs, not a second allowlist.
 
 - **CHANGELOG.md per release.** Keep a CHANGELOG.md listing changes per
   version, updated with every release. Retroactively create the history for
