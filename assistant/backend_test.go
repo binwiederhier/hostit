@@ -64,15 +64,27 @@ func TestLookupRefusesAnOptionThisInstanceCannotRun(t *testing.T) {
 
 // The default is fixed, not configured: the subscription's Opus when it exists
 // (already paid for), else the API's Sonnet.
-func TestDefaultPrefersTheSubscription(t *testing.T) {
+// The default is simply the head of the catalog, so the catalog's own order is
+// the only place a preference is expressed: the subscription group first, each
+// group strongest-first. No second ranking to keep in agreement with it.
+func TestDefaultIsTheFirstOptionOffered(t *testing.T) {
 	t.Parallel()
-	d, ok := Default(Credentials{AnthropicAPIKey: "k", ClaudeCodeOAuthToken: "t"})
+	both := Credentials{AnthropicAPIKey: "k", ClaudeCodeOAuthToken: "t"}
+	d, ok := Default(both)
+	require.True(t, ok)
+	assert.Equal(t, Catalog(both)[0].ID, d.ID)
+	assert.Equal(t, "claude-opus-5", d.ID, "the subscription wins when both are configured")
+
+	api := Credentials{AnthropicAPIKey: "k"}
+	d, ok = Default(api)
+	require.True(t, ok)
+	assert.Equal(t, Catalog(api)[0].ID, d.ID)
+	assert.Equal(t, "anthropic-opus-5", d.ID, "with only the API, its first model")
+
+	sub := Credentials{ClaudeCodeOAuthToken: "t"}
+	d, ok = Default(sub)
 	require.True(t, ok)
 	assert.Equal(t, "claude-opus-5", d.ID)
-
-	d, ok = Default(Credentials{AnthropicAPIKey: "k"})
-	require.True(t, ok)
-	assert.Equal(t, "anthropic-sonnet-5", d.ID)
 
 	_, ok = Default(Credentials{})
 	assert.False(t, ok, "nothing configured has no default")

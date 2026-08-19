@@ -49,7 +49,7 @@ func TestResolveModePrefersTheRequestThenTheAppsChoice(t *testing.T) {
 	// The subscription goes away: the remembered choice on it no longer resolves.
 	require.NoError(t, s.apps.Store().SetAppAssistantMode("blog", "claude-opus-5"))
 	s.config.ClaudeCodeOAuthToken = ""
-	assert.Equal(t, "anthropic-sonnet-5", s.resolveMode("", "blog"), "falls back rather than failing the turn")
+	assert.Equal(t, "anthropic-opus-5", s.resolveMode("", "blog"), "falls back to the default rather than failing the turn")
 }
 
 // With the subscription configured it supplies the default, since it is already
@@ -61,5 +61,5 @@ func TestResolveModeDefaultsToTheSubscription(t *testing.T) {
 	assert.Equal(t, "claude-opus-5", s.resolveMode("", "no-such-app"))
 
 	s.config.ClaudeCodeOAuthToken = ""
-	assert.Equal(t, "anthropic-sonnet-5", s.resolveMode("", "no-such-app"))
+	assert.Equal(t, "anthropic-opus-5", s.resolveMode("", "no-such-app"), "without it, the API's first model")
 }

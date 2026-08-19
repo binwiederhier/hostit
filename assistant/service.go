@@ -262,7 +262,7 @@ func (m *Manager) runLoop(s *session, app, userID, userText, mode string, attach
 	// this backend, the runner says it can actually run.
 	if option.Backend == BackendClaude && m.claude == nil {
 		s.publish(Event{Type: evtNotice, Text: "Claude is configured but its sandbox is unavailable; using the API."})
-		if fallback, ok := Lookup(m.creds, BackendAnthropic+"-sonnet-5"); ok {
+		if fallback, ok := m.apiFallback(); ok {
 			option = fallback
 		} else {
 			s.publish(Event{Type: evtNotice, Text: "No API key is configured either."})
@@ -273,7 +273,7 @@ func (m *Manager) runLoop(s *session, app, userID, userText, mode string, attach
 		if err := m.runClaudeTurn(ctx, s, app, history, userText, option); err == nil {
 			return // handled the turn (published done) or was cancelled
 		} else {
-			fallback, hasFallback := Lookup(m.creds, BackendAnthropic+"-sonnet-5")
+			fallback, hasFallback := m.apiFallback()
 			if !hasFallback {
 				s.publish(Event{Type: evtNotice, Text: fmt.Sprintf("Claude is unavailable (%s), and no API key is configured.", err.Error())})
 				return
@@ -284,6 +284,23 @@ func (m *Manager) runLoop(s *session, app, userID, userText, mode string, attach
 	}
 
 	m.runAPILoop(ctx, s, app, option, history)
+}
+
+// apiFallback is where a turn lands when the subscription cannot run it: the
+// API's Sonnet, because a forced fallback should not silently escalate cost,
+// and otherwise whatever the API does offer. The second half matters -- looking
+// up one slug and giving up would report "no API key is configured" on an
+// instance that has one.
+func (m *Manager) apiFallback() (Option, bool) {
+	if o, ok := Lookup(m.creds, BackendAnthropic+"-sonnet-5"); ok {
+		return o, true
+	}
+	for _, o := range Catalog(m.creds) {
+		if o.Backend == BackendAnthropic {
+			return o, true
+		}
+	}
+	return Option{}, false
 }
 
 // thinkingFor returns the extended-thinking config for a model, or nil for models

@@ -121,25 +121,17 @@ permissions), `handleUsersInvite`, `handleUsersDelete` (with the
 delete-or-transfer decision, `store/user.go:TransferApps`), `handleDomainsList`/
 `Add`/`Delete`, and `handleSettingsGet`/`Update` for the global default limits.
 
-**Per-user assistant access.** This is layered like limits but stored
-separately. `store/assistantprefs.go`: a `user_assistant` row
-(`UserAssistant{ExternalAllowed, AllowedModels}`) is an explicit override; a
-missing row inherits the global defaults held in `setting`
-(`SettingAssistantDefaultExternal`, `SettingAssistantDefaultModels`,
-`SettingAssistantDefaultMode`). `control/assistantmodes.go` resolves it:
-`effectiveUserAssistant` (override else defaults), `assistantOptions` (the modes
-a user may actually pick -- External Claude only if configured and allowed, plus
-the permitted API models), `fillUserAssistant` (populates the admin API
-response), and `applyUserAssistant` (persists an admin change, merging omitted
-fields, or clearing the override). Whether External Claude / an API model is even
-offered still ultimately depends on the operator's config credentials
-(`config.Config.ClaudeBackendEnabled` / `AssistantEnabled`).
+**Per-user assistant access.** There is none, by decision (2026-08-18). Any
+active user may pick any mode the instance can run: the catalog follows from the
+operator's credentials (`assistant.Catalog`), an instance approves its signups,
+and that is the control. What a user may SPEND is still bounded, by the per-user
+AI budget in `user.Limits` -- that is where cost belongs, rather than a second
+allowlist that could disagree with it. `store/assistantprefs.go` now holds only
+the per-app remembered choice.
 
 **Frontend.** `web/src/pages/Admin.jsx`: the users table (`UserRow`), inline
-limit editing, `AssistantAccess` (per-user External Claude toggle and model
-allowlist, greyed when the subscription is not configured), `AssistantDefaults`
-(the global defaults), and the allowed-domains and default-limits panels. Each
-row shows the user's assistant spend (`formatUSD` / `formatTokens`).
+limit editing, and the allowed-domains and default-limits panels. Each row shows
+the user's assistant spend (`formatUSD` / `formatTokens`).
 
 ## Other notes
 

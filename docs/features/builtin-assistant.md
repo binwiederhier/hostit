@@ -179,8 +179,8 @@ a place turns can run, registered from its own file's `init()`, and `Catalog`
 turns the configured credentials into the options offered -- an operator who
 sets a key gets exactly the models that key can serve and cannot list one it
 cannot. `resolveMode` picks what a turn runs (request -> the app's remembered
-choice -> `assistant.Default`, which is the subscription's Opus, else the API's
-Sonnet), persisted per app via `store.Store.SetAppAssistantMode`. A remembered
+choice -> `assistant.Default`, which is simply the head of the catalog, so the
+menu's own order is the only place a preference lives), persisted per app via `store.Store.SetAppAssistantMode`. A remembered
 choice naming a credential since removed simply does not resolve, so pulling a
 key downgrades the next turn instead of failing it. Adding a backend is one new
 file, not an edit in the config, the dropdown, a validator and an admin page.

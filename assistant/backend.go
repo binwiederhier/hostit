@@ -121,24 +121,22 @@ func Lookup(creds Credentials, id string) (Option, bool) {
 }
 
 // Default is the option a turn uses when the app has never chosen one, or when
-// its choice names something this instance no longer offers: the subscription's
-// Opus when that backend is configured, else the API's Sonnet. Deliberately not
-// configurable -- an operator who wants something else sets it per app, and a
-// config key here only ever named a model someone had to keep in sync.
+// its choice names something this instance no longer offers. It is the head of
+// the catalog, which means the ordering the menu already shows IS the
+// preference: the subscription group first (an operator pays for it up front),
+// each group strongest-first. Naming preferred models here instead would be a
+// second ranking to keep in agreement with the first, and it would silently
+// stop applying the moment a model was renamed.
+//
+// Deliberately not configurable -- an operator who wants something else sets it
+// per app, and a config key here only ever named a model someone had to keep in
+// sync with the backends.
 func Default(creds Credentials) (Option, bool) {
 	catalog := Catalog(creds)
-	for _, want := range []string{BackendClaude + "-opus-5", BackendAnthropic + "-sonnet-5"} {
-		for _, o := range catalog {
-			if o.ID == want {
-				return o, true
-			}
-		}
+	if len(catalog) == 0 {
+		return Option{}, false
 	}
-	// Neither preferred model is available: any configured option beats none.
-	if len(catalog) > 0 {
-		return catalog[0], true
-	}
-	return Option{}, false
+	return catalog[0], true
 }
 
 // DefaultCostModel prices usage recorded before per-turn model attribution

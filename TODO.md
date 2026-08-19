@@ -265,8 +265,8 @@ Kept briefly for context; prune when stale.
   provider is one file, not an edit in the config, the dropdown, a validator and
   an admin page. `assistant-models`, `assistant-model`, the per-user allowlist
   and the admin "Assistant access" table are all gone; the default is hardcoded
-  (the subscription's Opus, else the API's Sonnet) and the app's remembered
-  choice still wins over it. Verified by e2e: a real turn on every catalog
+  (the head of the catalog, so the menu order is the only preference) and the
+  app's remembered choice still wins over it. Verified by e2e: a real turn on every catalog
   option, plus a cross-backend switch.
 
 - **btrfs simple quotas (2026-08-16, live on stage and prod).** It turned out to be a correctness fix, not just a
