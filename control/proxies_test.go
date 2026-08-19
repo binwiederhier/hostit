@@ -108,6 +108,19 @@ func TestRoutesCoverPublicHostnamesAndCustomDomains(t *testing.T) {
 	assert.Equal(t, "127.0.0.1:10000", hosts["blog.apps.example.com"])
 	assert.Equal(t, "127.0.0.1:10000", hosts["www.phil.example"], "an active custom domain routes to the same app")
 
+	// An app can hold several active custom domains (e.g. a redirect app that
+	// answers for every legacy hostname); every one of them routes directly.
+	require.NoError(t, s.apps.Store().AddDomain(&store.Domain{Domain: "blog.phil.example", AppName: "blog", Status: store.DomainActive}))
+	require.NoError(t, s.apps.Store().AddDomain(&store.Domain{Domain: "old.phil.example", AppName: "blog", Status: store.DomainActive}))
+	table, err = s.Routes()
+	require.NoError(t, err)
+	hosts = map[string]string{}
+	for _, route := range table.Routes {
+		hosts[route.Host] = route.Target
+	}
+	assert.Equal(t, "127.0.0.1:10000", hosts["blog.phil.example"], "second custom domain routes directly too")
+	assert.Equal(t, "127.0.0.1:10000", hosts["old.phil.example"], "third custom domain routes directly too")
+
 	// The seq moves only when the content does, so a proxy is not handed a new
 	// table for every tick of the watch loop.
 	again, err := s.Routes()

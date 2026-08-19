@@ -48,7 +48,7 @@ func TestFKsFollowRename(t *testing.T) {
 	assert.Equal(t, "shop", domains[0].AppName)
 	active, err := s.ActiveDomains()
 	require.NoError(t, err)
-	assert.Equal(t, "blog.example.com", active["shop"])
+	assert.Equal(t, []string{"blog.example.com"}, active["shop"])
 
 	events, err := s.AppEvents("shop", 10)
 	require.NoError(t, err)

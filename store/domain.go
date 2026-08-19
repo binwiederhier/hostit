@@ -50,23 +50,22 @@ func (s *Store) AllDomains() ([]*Domain, error) {
 	return s.queryDomains(selectAllDomainsQuery)
 }
 
-// ActiveDomains returns each app's first verified (active) custom domain in one
-// query, so the app-list endpoint does not run a domain lookup per app.
-func (s *Store) ActiveDomains() (map[string]string, error) {
+// ActiveDomains returns each app's verified (active) custom domains, oldest first,
+// in one query, so the routing table and the app-list endpoint do not run a domain
+// lookup per app.
+func (s *Store) ActiveDomains() (map[string][]string, error) {
 	rows, err := s.db.Query(activeDomainsQuery, DomainActive)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	byApp := make(map[string]string)
+	byApp := make(map[string][]string)
 	for rows.Next() {
 		var app, domain string
 		if err := rows.Scan(&app, &domain); err != nil {
 			return nil, err
 		}
-		if _, seen := byApp[app]; !seen { // oldest active wins (ORDER BY created_at)
-			byApp[app] = domain
-		}
+		byApp[app] = append(byApp[app], domain) // oldest first (ORDER BY created_at)
 	}
 	return byApp, rows.Err()
 }

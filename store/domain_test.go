@@ -59,6 +59,19 @@ func TestRemoveAppDeletesDomains(t *testing.T) {
 	assert.ErrorIs(t, err, ErrAppDomainNotFound)
 }
 
+func TestActiveDomainsReturnsAllPerApp(t *testing.T) {
+	t.Parallel()
+	s := newTestStore(t)
+	require.NoError(t, s.AddApp(&App{Name: "blog", Port: 10000, Host: HostLocal}))
+	require.NoError(t, s.AddDomain(&Domain{Domain: "a.example.com", AppName: "blog", Status: DomainActive, CreatedAt: time.Now().Add(-2 * time.Hour)}))
+	require.NoError(t, s.AddDomain(&Domain{Domain: "b.example.com", AppName: "blog", Status: DomainActive, CreatedAt: time.Now().Add(-1 * time.Hour)}))
+	require.NoError(t, s.AddDomain(&Domain{Domain: "c.example.com", AppName: "blog", Status: DomainPending, CreatedAt: time.Now()}))
+
+	active, err := s.ActiveDomains()
+	require.NoError(t, err)
+	assert.Equal(t, []string{"a.example.com", "b.example.com"}, active["blog"], "all active domains, oldest first; pending excluded")
+}
+
 func TestAllDomains(t *testing.T) {
 	t.Parallel()
 	s := newTestStore(t)

@@ -165,7 +165,11 @@ func (s *Server) handleAppsList(w http.ResponseWriter, r *http.Request, c *calle
 	}
 	resp := make([]*apiAppResponse, 0, len(apps))
 	for _, a := range apps {
-		resp = append(resp, s.appResponseFor(c, a, activeDomains[a.Name]))
+		domain := ""
+		if l := activeDomains[a.Name]; len(l) > 0 {
+			domain = l[0] // the list endpoint shows the oldest active domain
+		}
+		resp = append(resp, s.appResponseFor(c, a, domain))
 	}
 	writeJSON(w, http.StatusOK, s.withState(resp))
 }

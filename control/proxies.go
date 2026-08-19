@@ -199,8 +199,12 @@ func (s *Server) Routes() (*proxyapi.Table, error) {
 		targets[a.Name] = target
 		routes = append(routes, proxyapi.Route{Host: a.Name + "." + s.config.BaseDomain, Target: target})
 	}
-	for appName, domain := range domains {
-		if target, ok := targets[appName]; ok {
+	for appName, appDomains := range domains {
+		target, ok := targets[appName]
+		if !ok {
+			continue
+		}
+		for _, domain := range appDomains {
 			routes = append(routes, proxyapi.Route{Host: domain, Target: target})
 		}
 	}
