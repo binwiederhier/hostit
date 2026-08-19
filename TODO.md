@@ -140,18 +140,7 @@ definitions and the conversation prefix are cache-marked, so repeat turns pay th
 
 ## Snapshots and quotas
 
-- **DONE: btrfs simple quotas (squotas).** Shipped on the multinode branch,
-  live on stage 2026-08-16. It turned out to be a correctness fix, not just a
-  performance one: classic qgroups NEVER enforced the budgets, because seeding
-  an app from the shared base marks the fs quota state inconsistent and the
-  kernel stops enforcing until a rescan completes (which churn keeps
-  re-triggering -- so effectively never; verified 300MB written past a 200MB
-  cap). EnableDiskBudgets now ensures squota mode at startup, migrating a
-  classic-qgroups pool automatically (disable + enable-simple via ioctl, no
-  btrfs-progs 6.7 needed; kernel 6.7+ required -- stage and prod run 6.8).
-  Migration resets usage accounting: pre-existing extents are never counted.
-  Rescans are gone wholesale, which should also fix the >2min prod snapshot
-  item below (re-measure after the prod release).
+
 - **Default snapshot cadence: every 3 hours, spread across apps.** Hourly
   auto-snapshots of every app at once spike the pool (and the cleaner);
   default to 3h per app instead and STAGGER apps across the interval so
@@ -256,6 +245,22 @@ definitions and the conversation prefix are cache-marked, so repeat turns pay th
 ## Done (recent)
 
 Kept briefly for context; prune when stale.
+
+- **btrfs simple quotas (2026-08-16, live on stage and prod).** It turned out to be a correctness fix, not just a
+  performance one: classic qgroups NEVER enforced the budgets, because seeding
+  an app from the shared base marks the fs quota state inconsistent and the
+  kernel stops enforcing until a rescan completes (which churn keeps
+  re-triggering -- so effectively never; verified 300MB written past a 200MB
+  cap). EnableDiskBudgets now ensures squota mode at startup, migrating a
+  classic-qgroups pool automatically (disable + enable-simple via ioctl, no
+  btrfs-progs 6.7 needed; kernel 6.7+ required -- stage and prod run 6.8).
+  Migration resets usage accounting: pre-existing extents are never counted.
+  Rescans are gone wholesale, which should also fix the >2min prod snapshot
+  item below (re-measure after the prod release).
+
+  The migration is also why an upgraded pool reports near-zero disk usage for a
+  while: squota counts extents written after it was enabled, so pre-existing app
+  data is not in the total. Enforcement is unaffected.
 
 - **Reconcile sweeps orphaned unix accounts (2026-08-16).** An orphan's gid
   squats the uid block its old port maps to, so the next app allocated that port
