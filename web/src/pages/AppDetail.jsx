@@ -950,6 +950,9 @@ const AppSettings = ({ app, showToast, onCopyToken, onRegenerateToken, hasToken,
   const [desc, setDesc] = useState(app.description || "");
   const [savingDesc, setSavingDesc] = useState(false);
   const snap = app.snapshot || {};
+  // Go prints a duration as "3h0m0s"; a placeholder should read "3h".
+  const prettyDuration = (d) => (d || "").replace(/0m0s$/, "").replace(/(\dh)0m$/, "$1").replace(/^0s$/, "0");
+  const defaultInterval = prettyDuration(snap.default_interval) || "3h";
   const [snapCfg, setSnapCfg] = useState({ interval: snap.interval || "", pre: snap.pre || "", post: snap.post || "" });
   const [savingSnap, setSavingSnap] = useState(false);
   const [showRename, setShowRename] = useState(false);
@@ -1222,7 +1225,7 @@ const AppSettings = ({ app, showToast, onCopyToken, onRegenerateToken, hasToken,
         <h3>Snapshots</h3>
         <p className="hint">
           hostit snapshots this app automatically, and before every deploy. Leave the interval blank for the
-          default ({snap.default_interval || "3h"}), or set <span className="mono">0</span> to turn automatic
+          default ({defaultInterval}), or set <span className="mono">0</span> to turn automatic
           snapshots off -- pre-deploy snapshots still happen. Saved to <span className="mono">hostit.yml</span>.
         </p>
         <label className="settings-field">
@@ -1232,7 +1235,7 @@ const AppSettings = ({ app, showToast, onCopyToken, onRegenerateToken, hasToken,
             className="settings-input"
             value={snapCfg.interval}
             onChange={(e) => setSnapCfg({ ...snapCfg, interval: e.target.value })}
-            placeholder={`${snap.default_interval || "3h"} (default)`}
+            placeholder={`${defaultInterval} (default)`}
           />
         </label>
         <p className="hint">
