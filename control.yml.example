@@ -48,7 +48,6 @@ admin-token: CHANGE-ME
 #
 # Metered Anthropic API (pay per token, uses your API credit):
 # anthropic-api-key: sk-ant-...
-# assistant-model: claude-sonnet-5           # default model for API turns
 #
 # Additionally offer Claude.ai (your Claude Pro/Max subscription) as a model in the
 # chat, run per turn as `claude -p` in a locked-down podman sandbox (tools restricted
@@ -57,9 +56,6 @@ admin-token: CHANGE-ME
 # claude-code-oauth-token: ...
 #
 # Optional: the model menu shown in the chat (id + human label).
-# assistant-models:
-#   - {id: claude-sonnet-5, label: "Sonnet (balanced)"}
-#   - {id: claude-haiku-4-5, label: "Haiku (fast, cheap)"}
 
 # How the dashboard's app cards are previewed: "live" embeds each running app
 # in a scaled-down iframe (default), "screenshot" shows a headless-chrome

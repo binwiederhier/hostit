@@ -147,7 +147,6 @@ type Config struct {
 	// Built-in coding assistant (the in-browser agent). An empty API key disables it.
 	AnthropicAPIKey string `yaml:"anthropic-api-key"` // Anthropic API key for the built-in assistant; empty disables it
 
-
 	// Optional Claude Max backend for the assistant: a subscription OAuth token
 	// (from `claude setup-token`) that drives `claude -p` inside a sandbox
 	// container instead of the metered API. Empty disables the backend. The token

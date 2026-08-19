@@ -112,7 +112,6 @@ func (s *Store) RemoveUser(id string) error {
 	if _, err := s.db.Exec(deleteCollaboratorsByUserQuery, id); err != nil {
 		return err
 	}
-	_, err = s.db.Exec(deleteUserAssistantQuery, id)
 	return err
 }
 
