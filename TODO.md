@@ -101,6 +101,20 @@ host uid, no host podman or store, peercred socket).
 
 ## Web app
 
+- **Dashboard list view.** The dashboard is cards only. Add a list view (dense
+  rows: name, state, owner, RAM/disk, last deploy) and remember the choice per
+  user. Cards are good for a handful of apps and poor for thirty.
+
+- **Archive and unarchive an app.** Archiving powers the app off and keeps it
+  off: it cannot be powered on, deployed to, or started by a login, and it stops
+  taking new snapshots. Retention keeps running so the archive shrinks over time,
+  but must keep AT LEAST the weeklies -- an archived app is one someone may want
+  back a year later, and silently pruning it to nothing defeats the point.
+  Unarchiving restores it to a normal powered-off app. Registry: a flag on the
+  app row (distinct from powered_off, which an owner flips freely); the node
+  refuses power-on and deploy for archived apps the way it refuses a
+  powered-off one; retention gains an archived policy.
+
 The dashboard can create, manage and delete apps and drive them in the browser
 (chat, terminal). These round out the in-browser experience.
 
