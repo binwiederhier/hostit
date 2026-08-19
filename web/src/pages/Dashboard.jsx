@@ -233,6 +233,134 @@ const AppCard = ({ app, onToast }) => {
   );
 };
 
+// The dashboard remembers how you like to look at your apps. Cards are good for
+// a handful; a dense list is what makes thirty of them readable. Kept in
+// localStorage rather than the account: it is a per-device viewing preference,
+// like a window size, not something worth a registry column and a round trip.
+const VIEW_KEY = "hostit.appview";
+const readView = () => {
+  try {
+    return localStorage.getItem(VIEW_KEY) === "list" ? "list" : "cards";
+  } catch {
+    return "cards"; // private mode, or storage disabled
+  }
+};
+
+// How long the container has been up, from the Unix SECONDS the API reports --
+// not a Date string, which is what makes new Date(started_at) land in 1970.
+const formatUptime = (startedAt) => {
+  if (!startedAt) {
+    return "--";
+  }
+  const secs = Math.max(0, Math.floor(Date.now() / 1000) - startedAt);
+  if (secs < 60) return `${secs}s`;
+  if (secs < 3600) return `${Math.floor(secs / 60)}m`;
+  if (secs < 86400) return `${Math.floor(secs / 3600)}h`;
+  return `${Math.floor(secs / 86400)}d`;
+};
+
+// One row of the list view: the same facts a card carries, at a glance.
+const AppRow = ({ app }) => {
+  const running = app.running;
+  const crashed = running && app.app_state === "failed";
+  const status = crashed ? "crashed" : running ? "running" : "powered off";
+  const publicUrl = app.custom_domain ? `https://${app.custom_domain}` : app.url;
+  const publicHost = app.custom_domain || app.url.replace(/^https?:\/\//, "");
+  return (
+    <tr className="applist-row">
+      <td className="applist-name">
+        <span className="appcard-avatar applist-avatar" style={avatarStyle(app.id)}>{app.name.slice(0, 2)}</span>
+        <span className="applist-id">
+          <Link className="applist-nm" to={`/app/${app.name}`}>{app.name}</Link>
+          <a className="applist-url" href={publicUrl} target="_blank" rel="noreferrer">{publicHost}</a>
+        </span>
+      </td>
+      <td>
+        <span className={"appcard-pill" + (crashed ? " crashed" : running ? "" : " off")}>
+          <span className="appcard-dot" />
+          {status}
+        </span>
+      </td>
+      <td className="applist-desc">{app.description || <span className="appcard-nodesc">--</span>}</td>
+      {app.owner_email && <td className="applist-owner">{app.owner_name || app.owner_email}</td>}
+      <td className="applist-num">{running ? `${app.cpu_percent || 0}%` : "--"}</td>
+      <td className="applist-num">{running ? mbLabel(app.memory_mb, app.memory_limit_mb) : "--"}</td>
+      <td className="applist-num">{mbLabel(app.disk_mb, app.disk_limit_mb)}</td>
+      {/* Uptime, not "last deploy": a deploy restarts the app so the two track
+          each other closely, but the API has no deploy timestamp and a column
+          claiming one would be wrong after a plain reboot. */}
+      <td className="applist-num" title={app.started_at ? new Date(app.started_at * 1000).toLocaleString() : ""}>
+        {running ? formatUptime(app.started_at) : "--"}
+      </td>
+    </tr>
+  );
+};
+
+// The list itself. The owner column only exists when the API reports owners
+// (an admin's view, or a shared app), so a single-owner dashboard is not left
+// with a column of its own name repeated.
+const AppList = ({ apps }) => {
+  const anyOwner = apps.some((a) => a.owner_email);
+  return (
+    <div className="applist-wrap">
+      <table className="applist">
+        <thead>
+          <tr>
+            <th>App</th>
+            <th>Status</th>
+            <th>Description</th>
+            {anyOwner && <th>Owner</th>}
+            <th className="applist-num">CPU</th>
+            <th className="applist-num">RAM</th>
+            <th className="applist-num">Disk</th>
+            <th className="applist-num">Uptime</th>
+          </tr>
+        </thead>
+        <tbody>
+          {apps.map((app) => (
+            <AppRow key={app.name} app={app} />
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+};
+
+// The cards/list switch.
+const ViewToggle = ({ view, onChange }) => (
+  <div className="dash-viewtoggle" role="group" aria-label="How to show apps">
+    <button
+      type="button"
+      className={"dash-viewbtn" + (view === "cards" ? " on" : "")}
+      onClick={() => onChange("cards")}
+      title="Card view"
+      aria-label="Card view"
+      aria-pressed={view === "cards"}
+    >
+      <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+        <rect x="1" y="1" width="6" height="6" rx="1.4" />
+        <rect x="9" y="1" width="6" height="6" rx="1.4" />
+        <rect x="1" y="9" width="6" height="6" rx="1.4" />
+        <rect x="9" y="9" width="6" height="6" rx="1.4" />
+      </svg>
+    </button>
+    <button
+      type="button"
+      className={"dash-viewbtn" + (view === "list" ? " on" : "")}
+      onClick={() => onChange("list")}
+      title="List view"
+      aria-label="List view"
+      aria-pressed={view === "list"}
+    >
+      <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+        <rect x="1" y="2" width="14" height="2" rx="1" />
+        <rect x="1" y="7" width="14" height="2" rx="1" />
+        <rect x="1" y="12" width="14" height="2" rx="1" />
+      </svg>
+    </button>
+  </div>
+);
+
 // The stats strip above the grid: turns the list into an at-a-glance overview.
 const AppsSummary = ({ apps }) => {
   const running = apps.filter((a) => a.running).length;
@@ -256,6 +384,7 @@ const Dashboard = ({ account, refreshAccount }) => {
   const [creating, setCreating] = useState(false);
   const [adding, setAdding] = useState(false);
   const [toast, setToast] = useState("");
+  const [view, setView] = useState(readView);
   const toastTimer = useRef(null);
   const inputRef = useRef(null);
   // A single page-level snackbar (not per card): the cards lift with a transform
@@ -264,6 +393,14 @@ const Dashboard = ({ account, refreshAccount }) => {
     setToast(message);
     clearTimeout(toastTimer.current);
     toastTimer.current = setTimeout(() => setToast(""), 2500);
+  }, []);
+  const changeView = useCallback((next) => {
+    setView(next);
+    try {
+      localStorage.setItem(VIEW_KEY, next);
+    } catch {
+      // Storage can be unavailable; the choice then lasts for this page only.
+    }
   }, []);
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -359,12 +496,19 @@ const Dashboard = ({ account, refreshAccount }) => {
       )}
       {!empty && apps !== null && apps.length > 0 && (
         <>
-          <AppsSummary apps={apps} />
-          <div className="dash-grid">
-            {apps.map((app) => (
-              <AppCard key={app.name} app={app} onToast={showToast} />
-            ))}
+          <div className="dash-summaryrow">
+            <AppsSummary apps={apps} />
+            <ViewToggle view={view} onChange={changeView} />
           </div>
+          {view === "list" ? (
+            <AppList apps={apps} />
+          ) : (
+            <div className="dash-grid">
+              {apps.map((app) => (
+                <AppCard key={app.name} app={app} onToast={showToast} />
+              ))}
+            </div>
+          )}
         </>
       )}
       {adding && (

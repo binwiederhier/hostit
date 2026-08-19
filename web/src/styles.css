@@ -3460,6 +3460,152 @@ body.ws-resizing iframe {
 /* Settings dialog sections (description, API token, custom domains) */
 /* A labelled row in Settings: the label sits above its input, and the pair
    stacks with the others -- used by the snapshot interval and hooks. */
+/* The dashboard's cards/list switch, and the list itself. */
+.dash-summaryrow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.dash-viewtoggle {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+}
+
+.dash-viewbtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.dash-viewbtn svg {
+  width: 14px;
+  height: 14px;
+}
+
+.dash-viewbtn:hover {
+  color: var(--text);
+}
+
+.dash-viewbtn.on {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+/* Wide on a phone, so the table scrolls inside its own box rather than
+   pushing the page sideways. */
+.applist-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.applist {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.applist th {
+  text-align: left;
+  padding: 10px 12px;
+  color: var(--muted);
+  font-weight: 500;
+  font-size: 12px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.applist td {
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+
+.applist tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.applist-row:hover {
+  background: var(--surface-2);
+}
+
+.applist-name {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.applist-avatar {
+  width: 26px;
+  height: 26px;
+  font-size: 11px;
+  flex: none;
+}
+
+.applist-id {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.applist-nm {
+  color: var(--text);
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.applist-nm:hover {
+  text-decoration: underline;
+}
+
+.applist-url {
+  color: var(--muted);
+  font-size: 11px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.applist-url:hover {
+  color: var(--text);
+}
+
+.applist-desc {
+  color: var(--muted);
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.applist-owner {
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+/* Digits line up when they are in a column of digits. */
+.applist-num {
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
 .settings-field {
   display: block;
   margin-bottom: 10px;
