@@ -7,11 +7,17 @@ import (
 	"strings"
 )
 
-// site holds the built React app (see web/ and "make web"). The directory is
-// committed with a placeholder so the package always builds; a real build
-// overwrites it.
+// site holds the built React app (see web/ and "make web"). Only .gitkeep is
+// committed -- enough for the package to build without a web build, and no more:
+// the built index.html used to be tracked as a placeholder, which meant every
+// `make web` dirtied the tree and goreleaser refused to cut a release. A binary
+// built without the web app simply has no index.html, and serveIndex answers
+// 404 for the UI while the API still works.
 //
-//go:embed site
+// "all:" because go:embed skips dot-files otherwise, and .gitkeep is the only
+// file present in a fresh checkout.
+//
+//go:embed all:site
 var site embed.FS
 
 const (

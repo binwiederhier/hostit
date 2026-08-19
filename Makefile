@@ -37,13 +37,16 @@ web: web-deps web-build
 web-deps:
 	cd web && $(NPM) install
 
-# The built app is embedded via control/site (see control/web.go); .gitignore keeps
-# the generated assets out of git, but index.html stays as a placeholder
+# The built app is embedded via control/site (see control/web.go). Everything
+# there is generated and gitignored; .gitkeep is the one tracked file, so it is
+# put back after the wipe -- deleting it would leave the tree dirty, which is
+# exactly what this arrangement exists to avoid.
 web-build:
 	cd web && $(NPM) run build
 	rm -rf control/site
 	mkdir -p control/site
 	cp -r web/build/. control/site/
+	touch control/site/.gitkeep
 
 deb:
 	scripts/mkdeb.sh $(VERSION) amd64
