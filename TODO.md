@@ -114,10 +114,6 @@ host uid, no host podman or store, peercred socket).
 
 ## Web app
 
-- **Dashboard list view.** The dashboard is cards only. Add a list view (dense
-  rows: name, state, owner, RAM/disk, last deploy) and remember the choice per
-  user. Cards are good for a handful of apps and poor for thirty.
-
 - **Archive and unarchive an app.** Archiving powers the app off and keeps it
   off: it cannot be powered on, deployed to, or started by a login, and it stops
   taking new snapshots. Retention keeps running so the archive shrinks over time,
@@ -136,17 +132,6 @@ The dashboard can create, manage and delete apps and drive them in the browser
   sets the initial app-detail tab -- host leans on details/deploy, build opens the
   split chat+preview workspace -- so each person lands in the surface that fits what
   they came to do.
-
-## Snapshots and quotas
-
-
-- **Default snapshot cadence: every 3 hours, spread across apps.** Hourly
-  auto-snapshots of every app at once spike the pool (and the cleaner);
-  default to 3h per app instead and STAGGER apps across the interval so
-  snapshot load is flat. Make the interval configurable per app in hostit.yml
-  (snapshot.interval; 0 disables) and editable in the app Settings UI, next
-  to the existing snapshot.pre/post hook commands -- surface those hooks in
-  the UI too.
 
 ## Smaller things
 
@@ -195,11 +180,6 @@ The dashboard can create, manage and delete apps and drive them in the browser
   gets interesting, since both assume a container to enter). If the answer is
   "only SSH and run_command", a static app could stay container-less until
   something asks for one.
-
-- **CHANGELOG.md per release.** Keep a CHANGELOG.md listing changes per
-  version, updated with every release. Retroactively create the history for
-  all existing tags from the commit messages and TODO.md's evolution through
-  git history (git log --first-parent per tag range is a good starting point).
 
 - **Can htop inside the container show only the container's resources?** Today
   it reads the host's /proc: all cores, all memory, everyone's load. Options:
@@ -274,6 +254,25 @@ The dashboard can create, manage and delete apps and drive them in the browser
 ## Done (recent)
 
 Kept briefly for context; prune when stale.
+
+- **A per-release CHANGELOG (2026-08-19).** CHANGELOG.md now covers every tag
+  back to v0.1.0, reconstructed from the git history. It stays true because
+  `make release` depends on `changelog-check`, which refuses to build a tag the
+  file does not describe -- writing the entry is part of releasing rather than
+  something to remember afterwards.
+
+- **Dashboard list view (2026-08-19).** A cards/list toggle beside the summary
+  strip; the list adds the owner column cards never had. The choice lives in
+  localStorage, being a per-device viewing preference rather than account state.
+  The last column is uptime, not "last deploy": the API has no deploy timestamp
+  and a column claiming one would lie after a plain reboot.
+
+- **Snapshot cadence (2026-08-19).** Every app was snapshotted hourly on the
+  same tick. Now three hours by default, per-app via `snapshot.interval` in
+  hostit.yml (0 opts out), and staggered by a hash of the app name so the fleet
+  does not move as one. An app two intervals behind stops waiting for its slot.
+  Settings gained a Snapshots section for the interval and the pre/post hooks,
+  which had never been in the UI at all.
 
 - **Assistant model picker: models, not backends (2026-08-18, on stage).** The
   dropdown used to mix a backend ("Claude.ai") with a flat list of API models

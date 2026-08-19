@@ -54,8 +54,14 @@ deb:
 deb-arm64:
 	scripts/mkdeb.sh $(VERSION) arm64
 
-release: clean deps web check
+release: clean deps web check changelog-check
 	goreleaser release --clean
+
+# A release is not complete until CHANGELOG.md describes it, so the check is a
+# prerequisite of `release` rather than a habit. Snapshots skip it: they are
+# untagged builds for stage, not releases.
+changelog-check:
+	scripts/changelog-check.sh
 
 release-snapshot: clean deps web check
 	goreleaser release --snapshot --clean
