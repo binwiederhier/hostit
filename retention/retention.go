@@ -34,6 +34,13 @@ type Policy struct {
 // Default keeps a dense recent history and thins it out with age.
 var Default = Policy{Last: 50, Daily: 7, Weekly: 4, Monthly: 3}
 
+// Archived is the policy for a shelved app: no dense recent history to keep,
+// since the app cannot change while archived, but a long monthly tail, because
+// the reason to archive rather than delete is that someone may want it back a
+// year later. Last: 1 is the floor -- whatever else ages out, the newest
+// snapshot survives, so an archive is never pruned to nothing.
+var Archived = Policy{Last: 1, Monthly: 12}
+
 // Apply partitions snapshots into those to keep and those to prune under the
 // policy. Every snapshot -- manual and automatic alike -- is subject to it, so
 // none lives forever. Input need not be sorted; the result is order-independent.

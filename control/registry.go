@@ -192,6 +192,22 @@ func (ra *routingAgent) route(name string) (NodeAgent, error) {
 	return ra.agentFor(a.Host)
 }
 
+// routeRunnable is route for the verbs that would make an app RUN, and refuses
+// an archived one. Every such verb goes through here rather than each handler
+// checking, so a verb added later cannot quietly forget: stopping and reading
+// stay on plain route, since an archived app must still be inspectable and
+// windable-down.
+func (ra *routingAgent) routeRunnable(name string) (NodeAgent, error) {
+	a, err := ra.store.App(name)
+	if err != nil {
+		return nil, err
+	}
+	if a.Archived {
+		return nil, ErrArchived
+	}
+	return ra.agentFor(a.Host)
+}
+
 func (ra *routingAgent) Provision(spec *ProvisionSpec) error {
 	agent, err := ra.agentFor(spec.Host)
 	if err != nil {
@@ -210,7 +226,7 @@ func (ra *routingAgent) Deprovision(spec *DeprovisionSpec) {
 }
 
 func (ra *routingAgent) Ensure(name string) (string, error) {
-	agent, err := ra.route(name)
+	agent, err := ra.routeRunnable(name)
 	if err != nil {
 		return "", err
 	}
@@ -218,7 +234,7 @@ func (ra *routingAgent) Ensure(name string) (string, error) {
 }
 
 func (ra *routingAgent) Up(name string) (string, error) {
-	agent, err := ra.route(name)
+	agent, err := ra.routeRunnable(name)
 	if err != nil {
 		return "", err
 	}
@@ -234,7 +250,7 @@ func (ra *routingAgent) Down(name string) error {
 }
 
 func (ra *routingAgent) PowerOn(name string) (string, error) {
-	agent, err := ra.route(name)
+	agent, err := ra.routeRunnable(name)
 	if err != nil {
 		return "", err
 	}
@@ -242,7 +258,7 @@ func (ra *routingAgent) PowerOn(name string) (string, error) {
 }
 
 func (ra *routingAgent) Restart(name string) error {
-	agent, err := ra.route(name)
+	agent, err := ra.routeRunnable(name)
 	if err != nil {
 		return err
 	}
@@ -250,7 +266,7 @@ func (ra *routingAgent) Restart(name string) error {
 }
 
 func (ra *routingAgent) StartApp(name string) error {
-	agent, err := ra.route(name)
+	agent, err := ra.routeRunnable(name)
 	if err != nil {
 		return err
 	}
@@ -266,7 +282,7 @@ func (ra *routingAgent) StopApp(name string) error {
 }
 
 func (ra *routingAgent) RestartApp(name string) error {
-	agent, err := ra.route(name)
+	agent, err := ra.routeRunnable(name)
 	if err != nil {
 		return err
 	}

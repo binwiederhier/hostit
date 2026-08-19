@@ -84,6 +84,11 @@ type App struct {
 	// here, not inferred from systemd, where a never-enabled unit also reads
 	// "disabled" and a fresh app would look powered off.
 	PoweredOff bool `json:"powered_off"`
+	// Archived is a stronger, deliberate shelving: the app cannot be powered on,
+	// deployed to, or started by a login, and it stops taking new snapshots. It
+	// is not powered_off, which an owner flips freely -- an archived app has to
+	// be brought back before it can run at all.
+	Archived bool `json:"archived"`
 }
 
 // Snapshot is one point-in-time btrfs snapshot of an app's home. Auto records how

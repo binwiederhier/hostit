@@ -265,6 +265,12 @@ var migrations = []string{
 	`
 		ALTER TABLE proxy ADD COLUMN version TEXT NOT NULL DEFAULT '';
 		ALTER TABLE proxy ADD COLUMN routes INTEGER NOT NULL DEFAULT 0;
+	`, // 22: archiving -- an app shelved rather than deleted. Separate from
+	// powered_off, which an owner flips freely: an archived app refuses to power
+	// on or deploy at all, and stops taking new snapshots, while its existing
+	// ones thin out to monthly rollups.
+	`
+		ALTER TABLE app ADD COLUMN archived INTEGER NOT NULL DEFAULT 0;
 	`,
 }
 

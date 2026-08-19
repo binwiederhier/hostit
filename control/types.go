@@ -99,6 +99,9 @@ type apiAppResponse struct {
 	SSH         apiSSHInfo `json:"ssh"`
 	// Snapshot is what hostit.yml asks for, so Settings can show and edit it
 	Snapshot apiSnapshotConfig `json:"snapshot"`
+	// Archived is the app shelved: powered off, refusing to run, and taking no
+	// new snapshots until it is brought back
+	Archived bool `json:"archived"`
 	// CustomDomain is the first verified (active) custom domain, empty if none; the
 	// web app prefers it over the default subdomain for links and previews.
 	CustomDomain string `json:"custom_domain,omitempty"`

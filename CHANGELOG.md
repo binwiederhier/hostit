@@ -7,6 +7,24 @@ changed rather than what an operator had to do about it; from v0.15.0 on, each
 release is written down as it is cut. Anything that changes a config file, a
 default, or on-disk state is called out as **Breaking** or **Upgrade note**.
 
+## Unreleased
+
+- **Snapshot cadence is per app, and staggered.** Every app used to be
+  snapshotted hourly on the same tick, which spiked the pool and the cleaner
+  together. The default is now every three hours, apps are spread across that
+  window by a hash of their name, and an app can set
+  `snapshot.interval` in its own hostit.yml (`0` opts out; pre-deploy snapshots
+  still happen). Settings gained a Snapshots section for the interval and the
+  pre/post hooks, which had never been in the UI.
+- **Archive and unarchive an app.** A shelved app powers off and refuses to run
+  -- no power-on, no deploy, no starting from an SSH login -- and stops taking
+  new snapshots. Its history thins to monthly rollups for a year, never to
+  nothing, so an app archived today is still recoverable next year.
+- **A dashboard list view**, toggled beside the summary strip and remembered per
+  device. Dense rows with the owner column cards never had.
+- **A changelog**, with `make release` refusing to build a tag it does not
+  describe.
+
 ## v0.15.0 (2026-08-18)
 
 The assistant's model picker is derived from what is configured, rather than

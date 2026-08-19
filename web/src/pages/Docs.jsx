@@ -342,6 +342,28 @@ const SnapshotsPage = () => (
       are instant and cheap; take one yourself anytime from the Snapshots tab,{" "}
       <span className="mono">hostit apps snapshot</span>, or the API.
     </p>
+    <p>
+      The automatic cadence is every three hours by default, and apps are spread
+      across that window rather than all snapshotting at once. Change it per app
+      in <strong>Settings</strong> or in <span className="mono">hostit.yml</span>:
+      set <span className="mono">snapshot.interval</span> to a duration like{" "}
+      <span className="mono">45m</span>, or to <span className="mono">0</span> to
+      turn the automatic ones off -- the pre-deploy snapshot still happens either
+      way. The same section holds the <span className="mono">pre</span> and{" "}
+      <span className="mono">post</span> hook commands, which are how an app with
+      a database gets a consistent copy.
+    </p>
+    <h3>Archiving</h3>
+    <p>
+      <strong>Archive</strong> an app you are done with but do not want to
+      delete: it powers off and stays off -- it cannot be powered on, deployed
+      to, or started by an SSH login -- and it stops taking new snapshots, since
+      it can no longer change. Its existing history keeps thinning, but monthly
+      snapshots are kept for a year and the most recent one is never removed, so
+      an archived app is still there to bring back later.{" "}
+      <strong>Unarchive</strong> returns it to an ordinary powered-off app, which
+      you then power on when you want it. Both are in the app's Actions menu.
+    </p>
     <h3>Rollback</h3>
     <p>
       Roll back to any snapshot from the chat, the Snapshots tab,{" "}

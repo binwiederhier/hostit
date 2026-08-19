@@ -402,3 +402,47 @@ func (s *Server) handleAppsSetSnapshotConfig(w http.ResponseWriter, r *http.Requ
 	s.logAction(c, a.Name, "snapshot", "Updated the snapshot settings")
 	writeJSON(w, http.StatusOK, s.appResponseFor(c, a, s.firstActiveDomain(a.Name)))
 }
+
+// handleAppsArchive shelves an app: powered off, refusing to run, and taking no
+// new snapshots until it is unarchived.
+func (s *Server) handleAppsArchive(w http.ResponseWriter, r *http.Request, c *caller) {
+	a, err := s.ownedApp(c, r.PathValue("name"))
+	if err != nil {
+		writeAppError(w, err)
+		return
+	}
+	if err := s.apps.Archive(a.Name); err != nil {
+		writeAppError(w, err)
+		return
+	}
+	s.logAction(c, a.Name, "archive", "Archived the app")
+	// Re-read: the row fetched above predates the change, so responding with it
+	// would tell the UI the app is still live.
+	writeJSON(w, http.StatusOK, s.appResponseFor(c, s.reread(a), s.firstActiveDomain(a.Name)))
+}
+
+// handleAppsUnarchive brings a shelved app back as an ordinary powered-off app.
+func (s *Server) handleAppsUnarchive(w http.ResponseWriter, r *http.Request, c *caller) {
+	a, err := s.ownedApp(c, r.PathValue("name"))
+	if err != nil {
+		writeAppError(w, err)
+		return
+	}
+	if err := s.apps.Unarchive(a.Name); err != nil {
+		writeAppError(w, err)
+		return
+	}
+	s.logAction(c, a.Name, "unarchive", "Brought the app back from the archive")
+	writeJSON(w, http.StatusOK, s.appResponseFor(c, s.reread(a), s.firstActiveDomain(a.Name)))
+}
+
+// reread returns the app's current row, or the one it was given if the lookup
+// fails. Handlers that change a stored flag respond with the app AFTER their
+// change, not the copy they authorized against.
+func (s *Server) reread(a *store.App) *store.App {
+	fresh, err := s.apps.Store().App(a.Name)
+	if err != nil {
+		return a
+	}
+	return fresh
+}

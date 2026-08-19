@@ -114,16 +114,6 @@ host uid, no host podman or store, peercred socket).
 
 ## Web app
 
-- **Archive and unarchive an app.** Archiving powers the app off and keeps it
-  off: it cannot be powered on, deployed to, or started by a login, and it stops
-  taking new snapshots. Retention keeps running so the archive shrinks over time,
-  but must keep AT LEAST the weeklies -- an archived app is one someone may want
-  back a year later, and silently pruning it to nothing defeats the point.
-  Unarchiving restores it to a normal powered-off app. Registry: a flag on the
-  app row (distinct from powered_off, which an owner flips freely); the node
-  refuses power-on and deploy for archived apps the way it refuses a
-  powered-off one; retention gains an archived policy.
-
 The dashboard can create, manage and delete apps and drive them in the browser
 (chat, terminal). These round out the in-browser experience.
 
@@ -254,6 +244,16 @@ The dashboard can create, manage and delete apps and drive them in the browser
 ## Done (recent)
 
 Kept briefly for context; prune when stale.
+
+- **Archive and unarchive an app (2026-08-19).** A shelved app powers off and
+  refuses to run: the guard sits on `routingAgent.routeRunnable`, the one place
+  control reaches a node for a verb that would start something, so a verb added
+  later cannot forget it. Stopping and inspecting still work. It takes no new
+  snapshots (it cannot change) and its history is kept under
+  `retention.Archived` -- monthly rollups for a year, with the newest snapshot
+  as a floor so an archive never empties. `archived` is its own registry column,
+  not `powered_off`, so leaving the archive returns the app to the power state
+  it had rather than to a guess.
 
 - **A per-release CHANGELOG (2026-08-19).** CHANGELOG.md now covers every tag
   back to v0.1.0, reconstructed from the git history. It stays true because

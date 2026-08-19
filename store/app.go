@@ -10,19 +10,19 @@ import (
 const (
 	insertAppQuery = `INSERT INTO app (id, name, port, host, owner_id, created_at, image_tag, uid) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
 	selectAppQuery = `
-		SELECT id, name, port, host, owner_id, disk_mb, created_at, image_tag, powered_off, uid
+		SELECT id, name, port, host, owner_id, disk_mb, created_at, image_tag, powered_off, uid, archived
 		FROM app WHERE name = ?
 	`
 	selectAppByUIDQuery = `
-		SELECT id, name, port, host, owner_id, disk_mb, created_at, image_tag, powered_off, uid
+		SELECT id, name, port, host, owner_id, disk_mb, created_at, image_tag, powered_off, uid, archived
 		FROM app WHERE uid = ?
 	`
 	selectAppsQuery = `
-		SELECT id, name, port, host, owner_id, disk_mb, created_at, image_tag, powered_off, uid
+		SELECT id, name, port, host, owner_id, disk_mb, created_at, image_tag, powered_off, uid, archived
 		FROM app ORDER BY name
 	`
 	selectAppsByOwnerQuery = `
-		SELECT id, name, port, host, owner_id, disk_mb, created_at, image_tag, powered_off, uid
+		SELECT id, name, port, host, owner_id, disk_mb, created_at, image_tag, powered_off, uid, archived
 		FROM app WHERE owner_id = ? ORDER BY name
 	`
 	selectAppHostQuery         = `SELECT host FROM app WHERE name = ?`
@@ -30,6 +30,7 @@ const (
 	selectPortsQuery           = `SELECT port FROM app ORDER BY port`
 	updateAppUsageQuery        = `UPDATE app SET disk_mb = ? WHERE name = ?`
 	updateAppPoweredOffQuery   = `UPDATE app SET powered_off = ? WHERE name = ?`
+	updateAppArchivedQuery     = `UPDATE app SET archived = ? WHERE name = ?`
 	updateAppUIDQuery          = `UPDATE app SET uid = ? WHERE name = ?`
 	deleteAppQuery             = `DELETE FROM app WHERE name = ?`
 	renameAppQuery             = `UPDATE app SET name = ? WHERE name = ?`
@@ -70,7 +71,7 @@ func (s *Store) AddApp(app *App) error {
 func (s *Store) AppByUID(uid int) (*App, error) {
 	app := &App{}
 	var createdAt int64
-	err := s.db.QueryRow(selectAppByUIDQuery, uid).Scan(&app.ID, &app.Name, &app.Port, &app.Host, &app.OwnerID, &app.DiskMB, &createdAt, &app.ImageTag, &app.PoweredOff, &app.UID)
+	err := s.db.QueryRow(selectAppByUIDQuery, uid).Scan(&app.ID, &app.Name, &app.Port, &app.Host, &app.OwnerID, &app.DiskMB, &createdAt, &app.ImageTag, &app.PoweredOff, &app.UID, &app.Archived)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrAppNotFound
 	}
@@ -90,6 +91,15 @@ func (s *Store) SetAppUID(name string, uid int) error {
 // caller's concern (the server keeps the old owner on as a collaborator).
 func (s *Store) SetAppOwner(name, ownerID string) error {
 	_, err := s.db.Exec(setAppOwnerQuery, ownerID, name)
+	return err
+}
+
+// SetAppArchived shelves an app, or brings it back. Archiving is deliberately
+// not the same switch as poweroff: the two are independent columns so an app
+// leaving the archive returns to the power state it had, rather than to a
+// guess.
+func (s *Store) SetAppArchived(name string, archived bool) error {
+	_, err := s.db.Exec(updateAppArchivedQuery, archived, name)
 	return err
 }
 
@@ -148,7 +158,7 @@ func (s *Store) ImageTagsInUse() (map[string]bool, error) {
 func (s *Store) App(name string) (*App, error) {
 	var app App
 	var createdAt int64
-	err := s.db.QueryRow(selectAppQuery, name).Scan(&app.ID, &app.Name, &app.Port, &app.Host, &app.OwnerID, &app.DiskMB, &createdAt, &app.ImageTag, &app.PoweredOff, &app.UID)
+	err := s.db.QueryRow(selectAppQuery, name).Scan(&app.ID, &app.Name, &app.Port, &app.Host, &app.OwnerID, &app.DiskMB, &createdAt, &app.ImageTag, &app.PoweredOff, &app.UID, &app.Archived)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrAppNotFound
 	} else if err != nil {
@@ -262,7 +272,7 @@ func (s *Store) queryApps(query string, args ...any) ([]*App, error) {
 	for rows.Next() {
 		var app App
 		var createdAt int64
-		if err := rows.Scan(&app.ID, &app.Name, &app.Port, &app.Host, &app.OwnerID, &app.DiskMB, &createdAt, &app.ImageTag, &app.PoweredOff, &app.UID); err != nil {
+		if err := rows.Scan(&app.ID, &app.Name, &app.Port, &app.Host, &app.OwnerID, &app.DiskMB, &createdAt, &app.ImageTag, &app.PoweredOff, &app.UID, &app.Archived); err != nil {
 			return nil, err
 		}
 		app.CreatedAt = time.Unix(createdAt, 0)

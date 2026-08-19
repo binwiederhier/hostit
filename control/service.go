@@ -483,6 +483,7 @@ func (s *Server) appResponse(a *store.App, customDomain string) *apiAppResponse 
 		// What the app says it is, straight from its hostit.yml; empty for a stub
 		Description: s.apps.Description(a.Name),
 		Snapshot:    s.snapshotConfigFor(a.Name),
+		Archived:    a.Archived,
 		CreatedAt:   a.CreatedAt,
 		SSH: apiSSHInfo{
 			User:    a.Name,

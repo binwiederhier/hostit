@@ -134,6 +134,7 @@ const RestartIcon = mi(<><path d="M13 8a5 5 0 1 1-1.5-3.5" /><path d="M13 3v2.2h
 const RebootIcon = mi(<><path d="M3.2 8a4.8 4.8 0 1 0 1.4-3.4" /><path d="M4.6 2.3v2.3h2.3" /><path d="M8 5v3" /></>);
 const PowerIcon = mi(<><path d="M8 2.2v5" /><path d="M4.6 4.6a4.6 4.6 0 1 0 6.8 0" /></>);
 const TrashIcon = mi(<><path d="M3 4.5h10" /><path d="M6.5 4.5V3h3v1.5" /><path d="M4.5 4.5l.6 8.5a1 1 0 0 0 1 .9h3.8a1 1 0 0 0 1-.9l.6-8.5" /></>);
+const ArchiveIcon = mi(<><path d="M2.5 4.5h11" /><path d="M3.5 4.5v8a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1v-8" /><path d="M6.5 7.5h3" /></>);
 const ForkIcon = mi(<><circle cx="4.5" cy="4" r="1.6" /><circle cx="11.5" cy="4" r="1.6" /><circle cx="8" cy="12.5" r="1.6" /><path d="M4.5 5.6v1.4a2 2 0 0 0 2 2H8m3.5-3.4v1.4a2 2 0 0 1-2 2H8m0 0v1.9" /></>);
 const DotsIcon = () => (
   <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
@@ -332,7 +333,7 @@ const MenuItem = ({ icon, label, onClick, disabled, danger, title }) => (
 // delete -- dividers between the groups. Only one app verb is ever the sensible
 // next move, and when the container is off there is no app to act on, so that
 // group is dropped.
-const ActionsMenu = ({ running, appRunning, busy, onAction, onDelete, canDelete = true, onSsh, onByoa, onFork }) => {
+const ActionsMenu = ({ running, appRunning, busy, onAction, onDelete, canDelete = true, onSsh, onByoa, onFork, archived, onArchive, onUnarchive }) => {
   const { open, setOpen, ref } = useDropdown();
 
   const run = (action) => {
@@ -372,7 +373,9 @@ const ActionsMenu = ({ running, appRunning, busy, onAction, onDelete, canDelete 
             <MenuItem icon={<ForkIcon />} label="Fork app" onClick={pick(onFork)} />
             <div className="menu-sep" />
           </div>
-          {running && (
+          {/* An archived app is offered none of the lifecycle verbs: every one
+              of them would be refused, so showing them would only mislead. */}
+          {!archived && running && (
             <>
               {appVerbs.map((a) => (
                 <MenuItem key={a.verb} icon={a.icon} label={a.label} onClick={() => run(a.verb)} />
@@ -381,14 +384,23 @@ const ActionsMenu = ({ running, appRunning, busy, onAction, onDelete, canDelete 
             </>
           )}
 
-          {running ? (
-            <>
-              <MenuItem icon={<RebootIcon />} label="Reboot" onClick={() => run("reboot")} />
-              <MenuItem icon={<PowerIcon />} label="Power off" onClick={() => run("poweroff")} />
-            </>
-          ) : (
-            <MenuItem icon={<PowerIcon />} label="Power on" onClick={() => run("poweron")} />
-          )}
+          {!archived &&
+            (running ? (
+              <>
+                <MenuItem icon={<RebootIcon />} label="Reboot" onClick={() => run("reboot")} />
+                <MenuItem icon={<PowerIcon />} label="Power off" onClick={() => run("poweroff")} />
+              </>
+            ) : (
+              <MenuItem icon={<PowerIcon />} label="Power on" onClick={() => run("poweron")} />
+            ))}
+          <div className="menu-sep" />
+          <MenuItem
+            icon={<ArchiveIcon />}
+            label={archived ? "Unarchive app" : "Archive app"}
+            onClick={pick(archived ? onUnarchive : onArchive)}
+            disabled={!canDelete}
+            title={canDelete ? undefined : "Only the owner can archive the app"}
+          />
           <div className="menu-sep" />
           <MenuItem
             icon={<TrashIcon />}
@@ -1814,6 +1826,19 @@ const AppDetail = ({ account, refreshAccount }) => {
   // target state. That is the only way to show a reboot or an app restart honestly,
   // since both end in the same running state they began in -- "done" means a start
   // time newer than the one we saw, not merely "running" again.
+  // Archiving is not a lifecycle verb: it changes what the app IS rather than
+  // what it is doing, so it does not go through the pending/transition machinery
+  // (there is no container state to wait for).
+  const setArchived = async (archived) => {
+    setError("");
+    try {
+      await api.post(`/api/apps/${encodeURIComponent(name)}/${archived ? "archive" : "unarchive"}`);
+      await load();
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
   const lifecycle = async (action) => {
     if (pending) {
       return;
@@ -1913,13 +1938,15 @@ const AppDetail = ({ account, refreshAccount }) => {
     ? null
     : refreshing
       ? "Refreshing preview"
-      : !app.running
-        ? "Powered off"
-        : crashed
-          ? "App crashed"
-          : app.app_running
-            ? ""
-            : "App stopped";
+      : app.archived
+        ? "Archived"
+        : !app.running
+          ? "Powered off"
+          : crashed
+            ? "App crashed"
+            : app.app_running
+              ? ""
+              : "App stopped";
   const statusPending = !!pending || refreshing;
 
   return (
@@ -1993,6 +2020,9 @@ const AppDetail = ({ account, refreshAccount }) => {
                 canDelete={!!app.is_owner}
                 onSsh={() => setShowSsh(true)}
                 onByoa={() => setShowPrompt(true)}
+                archived={!!app.archived}
+                onArchive={() => setArchived(true)}
+                onUnarchive={() => setArchived(false)}
                 onFork={() => {
                   setForkSnapshotId(null);
                   setShowFork(true);

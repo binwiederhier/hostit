@@ -304,3 +304,32 @@ func TestAppSetSnapshotConfigRejectsABadInterval(t *testing.T) {
 	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &resp))
 	assert.Empty(t, resp.Snapshot.Interval, "the rejected value must not have been written")
 }
+
+// The archive round trip over the API, including the state it puts the app in
+// and the refusal that follows.
+func TestAppArchiveAndUnarchive(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	u := newActiveTestUser(t, s, "owner@example.com")
+	token := accountToken(t, s, u)
+	require.NoError(t, s.apps.Store().AddApp(&store.App{Name: "blog", Port: 10000, Host: store.HostLocal, OwnerID: u.ID}))
+	s.apps.PushMirror()
+	seedAppSubvolume(t, s, "blog")
+
+	rr := request(t, s.API(), "POST", "/api/apps/blog/archive", "", token)
+	require.Equal(t, http.StatusOK, rr.Code)
+	var resp apiAppResponse
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &resp))
+	assert.True(t, resp.Archived)
+
+	// Deploying an archived app is a conflict, not a 500 or a silent success.
+	assert.Equal(t, http.StatusConflict, request(t, s.API(), "POST", "/api/apps/blog/deploy", "", token).Code)
+
+	rr = request(t, s.API(), "POST", "/api/apps/blog/unarchive", "", token)
+	require.Equal(t, http.StatusOK, rr.Code)
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &resp))
+	assert.False(t, resp.Archived)
+
+	// And it is deployable again.
+	assert.NotEqual(t, http.StatusConflict, request(t, s.API(), "POST", "/api/apps/blog/deploy", "", token).Code)
+}

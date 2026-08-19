@@ -52,6 +52,10 @@ tradeoff -- a very old manual bookmark can eventually be pruned).
 Automatic (no user action):
 - Before every deploy, `up` takes a pre-deploy snapshot (best effort; a failure
   never blocks the deploy).
+- An ARCHIVED app takes no new snapshots (it cannot change) and its history is
+  kept under `retention.Archived` -- monthly rollups for a year, plus the newest
+  snapshot as a floor, so the archive thins but never empties. See
+  `control/archive.go`.
 - A loop snapshots each app on its own cadence (`snapshot.interval` in the
   app's hostit.yml, else three hours), staggered so the fleet does not move as
   one; see `control/snapshotsched.go`.

@@ -178,7 +178,7 @@ const AppCard = ({ app, onToast }) => {
   // A crash loop that gave up shows red "crashed", not the green "running" its
   // still-up container would otherwise imply.
   const crashed = running && app.app_state === "failed";
-  const status = crashed ? "crashed" : running ? "running" : "powered off";
+  const status = app.archived ? "archived" : crashed ? "crashed" : running ? "running" : "powered off";
   // Prefer a verified custom domain over the default subdomain for the link.
   const publicUrl = app.custom_domain ? `https://${app.custom_domain}` : app.url;
   const publicHost = app.custom_domain || app.url.replace(/^https?:\/\//, "");
@@ -263,7 +263,7 @@ const formatUptime = (startedAt) => {
 const AppRow = ({ app }) => {
   const running = app.running;
   const crashed = running && app.app_state === "failed";
-  const status = crashed ? "crashed" : running ? "running" : "powered off";
+  const status = app.archived ? "archived" : crashed ? "crashed" : running ? "running" : "powered off";
   const publicUrl = app.custom_domain ? `https://${app.custom_domain}` : app.url;
   const publicHost = app.custom_domain || app.url.replace(/^https?:\/\//, "");
   return (

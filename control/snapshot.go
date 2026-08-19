@@ -81,6 +81,12 @@ func (m *Manager) autoSnapshotSweep(now time.Time) {
 		return
 	}
 	for _, a := range apps {
+		if a.Archived {
+			// A shelved app cannot change, so another snapshot would be a copy
+			// of the last one. Its existing history still thins out, below.
+			m.PruneSnapshots(a.Name)
+			continue
+		}
 		if !snapshotDue(a.Name, m.snapshotInterval(a.Name), m.lastAutoSnapshot(a.Name), now) {
 			continue
 		}
@@ -133,6 +139,17 @@ func (m *Manager) lastAutoSnapshot(name string) time.Time {
 	return newest
 }
 
+// retentionPolicy is the policy an app's history is kept under: the dense
+// default while it is live, and monthly rollups once it is archived -- an
+// archived app is one someone may want back a year later, so its history thins
+// but never disappears.
+func (m *Manager) retentionPolicy(name string) retention.Policy {
+	if m.archived(name) {
+		return retention.Archived
+	}
+	return retention.Default
+}
+
 // PruneSnapshots applies the retention policy to an app's records and
 // commands the node to delete whatever falls outside it. Retention is the
 // control plane's decision: the node deletes exactly what it is told to and
@@ -147,7 +164,7 @@ func (m *Manager) PruneSnapshots(name string) {
 	for i, s := range snaps {
 		rs[i] = retention.Snapshot{ID: s.ID, App: s.AppName, Label: s.Label, CreatedAt: s.CreatedAt, Auto: s.Auto}
 	}
-	_, prune := retention.Apply(rs, retention.Default)
+	_, prune := retention.Apply(rs, m.retentionPolicy(name))
 	for _, p := range prune {
 		if err := m.node.DeleteSnapshot(name, p.ID); err != nil {
 			slog.Warn("Cannot delete pruned snapshot", "app", name, "id", p.ID, "error", err)
