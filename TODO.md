@@ -78,10 +78,18 @@ one half of it is, and the other half belongs inside containers.
 Related to the open question above about whether `hostit apps` is necessary at
 all -- answering that first may shrink this.
 
-- **Split it.** Keep `hostit` as the container-only tool (agent + tenant CLI +
-  MCP), shipped by `hostit-node` and bind-mounted into containers, never a host
-  command. Give the host its own CLI carrying `apps` plus dispatch to the
-  components.
+The stronger argument is least privilege, not naming. The binary bind-mounted
+into every container -- where the tenant is root -- also contains control's
+TLS/ACME, OAuth, podman/systemd/nftables/store, assistant and admin-API code.
+None of that should be present there. This is defense in depth, NOT a fix for a
+live hole: the container already contains the tenant (userns to an unprivileged
+host uid, no host podman or store, peercred socket).
+
+- **Split it.** Keep a minimal container-only binary (supervise `run:`, reap
+  zombies, static-serve, talk to the peercred socket) shipped by `hostit-node`
+  and bind-mounted into containers, never a host command. Give the host its own
+  CLI carrying `apps` plus dispatch to the components. Reaping may also be the
+  answer to the zombie-processes entry below.
 - **The host CLI should know what is installed**, so `hostit control ...` and
   `hostit node ...` work and a component that is not installed says so in a
   sentence naming what this machine is. Options: a wrapper script (cheapest, but
@@ -183,26 +191,13 @@ definitions and the conversation prefix are cache-marked, so repeat turns pay th
   (cgroup v2 namespaces hide other containers' PIDs already; the meminfo/cpu
   view is the missing piece).
 
-- **DONE (2026-08-16): reconcile sweeps orphaned unix accounts.** The rejoin
-  Reconcile now removes app accounts whose home is in THIS node's pool and
-  whose id matches no mirror row (`Machine.reconcileUsers`, on the new
-  `unixuser.List`). The old note here called it self-healing -- it was not:
-  the orphan's gid squats the uid block its old port maps to, so the next app
-  allocated that port fails to create outright ("groupadd: GID already
-  exists", hit live on stage by a fork e2e). The pool-scoped filter is
-  load-bearing: colocated nodes share one /etc/passwd, so an unscoped sweep
-  would delete the other node's app accounts.
-
-- **DONE (2026-08-16): snapshot records survive a reconnect.** On rejoin
-  control reads the node's own records (`Manager.IngestNodeSnapshots`, the
-  `nodeapi` Snapshots verb) BEFORE pushing the mirror back, so a snapshot that
-  completed as the connection dropped is recovered instead of being overwritten
-  by control's older list. Records are accepted only for apps that node hosts,
-  the same scoping the reverse-channel callbacks enforce.
-
-- **hostit-node hangs on stop.** During the 2026-08-16 stage deploy, stopping
-  hostit-node timed out after systemd's 90s stop-sigterm window and the
-  process was SIGKILLed. Something ignores the shutdown signal or blocks the
+- **hostit-node hangs on stop -- REPRODUCE BEFORE CHASING.** Seen once, during
+  the 2026-08-16 stage deploy. It has not recurred: prod's node reports
+  NRestarts=0 and restarted cleanly through five deploys on 2026-08-18, and the
+  shutdown path has changed since (the signal handler closes the live
+  connection, and the fused removal took the machine loops out of control).
+  Either it is fixed or it needs a fresh reproduction; do not go hunting on the
+  strength of the note below alone. What was seen: stopping
   exit path -- suspects: the control dial loop's redial sleep, a loop stuck
   in a long btrfs command, or the duplex session not unblocking Accept on
   close. Reproduce with `systemctl stop hostit-node` + goroutine dump
@@ -229,29 +224,16 @@ definitions and the conversation prefix are cache-marked, so repeat turns pay th
   stage had). Is btrfs "that bad"? No -- but quotas + churn debt make its
   transaction commits that bad.
 
-- **Does the hostit daemon actually need to run as root?** It drives podman,
-  systemctl, useradd/usermod, nftables and btrfs -- audit which of those truly
-  require root vs could run under a dedicated user with specific capabilities or a
-  narrow sudoers grant, and whether the attack surface of a root daemon can be cut.
+- **Make hostit-control unprivileged.** The audit this used to ask for is
+  done: control drives none of podman, systemctl, useradd, nftables or btrfs any
+  more (the node does), and it binds no privileged port (the proxy owns :443).
+  Two things still need privilege, both machine-shaped work sitting in the wrong
+  process: screenshot previews drive podman, and the assistant sandbox spawns
+  `claude -p` as the app's uid. Move both to the node and control becomes a
+  process holding a database, a certificate manager and an HTTP handler --
+  runnable as its own user. The cluster socket already trusts control's own uid
+  rather than root, so the transport does not stand in the way.
 
-- **Split the in-container agent into its own binary (`cmd/init`).** Today one binary
-  is daemon + CLI + in-container agent, bind-mounted read-only into every app
-  container and run as PID 1 via `hostit agent`. A separate, minimal `init` binary
-  linking only the agent code (supervise `run:`, reap zombies, static-serve, talk to
-  the peercred socket) would be bind-mounted instead, so the daemon's TLS/ACME,
-  OAuth, podman/systemd/nft/store, assistant and admin-API code is not even present
-  where the tenant is root. Defense-in-depth / least privilege, NOT a fix for a live
-  hole: the container's isolation (userns to an unprivileged host uid, no host
-  podman/nft/store, peercred socket) already contains the tenant, and the extra
-  daemon subcommands are inert in the container today; nothing secret is compiled in
-  (secrets live in `/etc/hostit/server.yml`). Trade-off: it costs the "one Go binary"
-  property (a stated selling point in the intro deck + docs) and adds a second build
-  target and a separately-versioned bind-mount. Preferred shape: keep the shared
-  packages (`appctl`, `agent`, `run`) and add a thin `cmd/init/main.go` that links
-  only the agent; `cmd/hostit` (or root `main.go`) stays the daemon/CLI; update
-  `workspace.CreateArgs` to mount the init binary and the preflight/`RestartStaleAgents`
-  accordingly. Worth doing if/when the in-container surface grows; skippable while the
-  agent stays tiny. Discussed 2026-08-12.
 
 - **Dev/stage -> promote to prod (the "we work in prod" problem).** Right now the
   only copy of an app is the live one, so every edit (and every assistant change) is
@@ -274,6 +256,18 @@ definitions and the conversation prefix are cache-marked, so repeat turns pay th
 ## Done (recent)
 
 Kept briefly for context; prune when stale.
+
+- **Reconcile sweeps orphaned unix accounts (2026-08-16).** An orphan's gid
+  squats the uid block its old port maps to, so the next app allocated that port
+  failed to create at all ("groupadd: GID already exists", hit live by a fork
+  e2e). `Machine.reconcileUsers` removes accounts whose home is in THIS node's
+  pool and whose id matches no mirror row; the pool scoping is load-bearing,
+  since colocated nodes share one /etc/passwd.
+
+- **Snapshot records survive a reconnect (2026-08-16).** On rejoin control reads
+  the node's own records before pushing the mirror back, so a snapshot that
+  completed as the connection dropped is recovered rather than overwritten by
+  control's older list.
 
 - **Multi-node, and then the fused daemon's removal (v0.13.x -> v0.14.0,
   2026-08-18).** Four binaries, each its own service: `hostit-control` (registry,
@@ -412,7 +406,7 @@ Kept briefly for context; prune when stale.
 - Chat file uploads: drag-and-drop or "+" to save files into the app's uploads/, with
   images shown to the model as vision.
 
-- **DONE (2026-08-16): e2e settings residue.** The mode-filtering test
+- **E2E settings residue (2026-08-16).** The mode-filtering test
   restricts assistant settings globally and a run killed by -timeout skips its
   cleanup, so the NEXT run started against a restricted catalog. The suite now
   resets those settings once per run and the test restores the shipped default
