@@ -1,7 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { marked } from "marked";
 import DOMPurify from "dompurify";
-import { reduceChatEvent, formatTokens, formatDuration, filesFromClipboard } from "../chat";
+import {
+  reduceChatEvent,
+  formatTokens,
+  formatDuration,
+  filesFromClipboard,
+} from "../chat";
 
 // The in-browser coding agent. It POSTs a message to the daemon's assistant
 // endpoint and reads the loop back as Server-Sent Events -- the model's thinking,
@@ -30,7 +35,9 @@ const WORKING_WORDS = [
 // Bespoke, minimal outline icons per tool -- one shared 16x16 stroke style, drawn
 // in the accent colour (see .asst-tool-svg). Replaces the emoji.
 const TOOL_ICON_PATHS = {
-  list_files: <path d="M2.2 4.4c0-.5.4-.9.9-.9h2.4l1.3 1.4h6.1c.5 0 .9.4.9.9v5.9c0 .5-.4.9-.9.9H3.1a.9.9 0 0 1-.9-.9z" />,
+  list_files: (
+    <path d="M2.2 4.4c0-.5.4-.9.9-.9h2.4l1.3 1.4h6.1c.5 0 .9.4.9.9v5.9c0 .5-.4.9-.9.9H3.1a.9.9 0 0 1-.9-.9z" />
+  ),
   read_file: (
     <>
       <path d="M9 2.6H5.1a.8.8 0 0 0-.8.8v9.2c0 .5.3.8.8.8h5.8a.8.8 0 0 0 .8-.8V5.5z" />
@@ -68,7 +75,9 @@ const TOOL_ICON_PATHS = {
       <path d="M8 5.2V8l2 1.3" />
     </>
   ),
-  list_snapshots: <path d="M6 4.6h6.5M6 8h6.5M6 11.4h6.5M3.4 4.6h.01M3.4 8h.01M3.4 11.4h.01" />,
+  list_snapshots: (
+    <path d="M6 4.6h6.5M6 8h6.5M6 11.4h6.5M3.4 4.6h.01M3.4 8h.01M3.4 11.4h.01" />
+  ),
   rollback: (
     <>
       <path d="M3.4 8a4.6 4.6 0 1 0 1.4-3.3" />
@@ -79,14 +88,32 @@ const TOOL_ICON_PATHS = {
 };
 
 const ToolIcon = ({ tool }) => (
-  <svg className="asst-tool-svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+  <svg
+    className="asst-tool-svg"
+    viewBox="0 0 16 16"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.4"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
     {TOOL_ICON_PATHS[tool] || TOOL_ICON_PATHS._default}
   </svg>
 );
 
 // A run of tool calls gets a "layers" mark.
 const GroupIcon = () => (
-  <svg className="asst-tool-svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+  <svg
+    className="asst-tool-svg"
+    viewBox="0 0 16 16"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.4"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
     <path d="M8 2.4l5.6 3-5.6 3-5.6-3z" />
     <path d="M2.6 8.6l5.4 2.9 5.4-2.9" />
   </svg>
@@ -118,7 +145,9 @@ const summarize = (tool, input) => {
     case "refresh_preview":
       return "Refreshed the preview";
     case "snapshot":
-      return a.label ? `Saved snapshot "${truncate(a.label, 40)}"` : "Saved a snapshot";
+      return a.label
+        ? `Saved snapshot "${truncate(a.label, 40)}"`
+        : "Saved a snapshot";
     case "list_snapshots":
       return "Listed snapshots";
     case "rollback":
@@ -137,7 +166,10 @@ const prettyInput = (input) => {
 };
 
 const Markdown = ({ text }) => {
-  const html = useMemo(() => DOMPurify.sanitize(marked.parse(text || "")), [text]);
+  const html = useMemo(
+    () => DOMPurify.sanitize(marked.parse(text || "")),
+    [text],
+  );
   return <div className="asst-md" dangerouslySetInnerHTML={{ __html: html }} />;
 };
 
@@ -148,16 +180,30 @@ const Markdown = ({ text }) => {
 const ToolCall = ({ item, busy }) => {
   const [open, setOpen] = useState(false);
   const running = item.output == null && busy;
-  const cls = ["asst-tool", item.isError ? "asst-tool-error" : "", running ? "asst-tool-running" : ""].join(" ").trim();
+  const cls = [
+    "asst-tool",
+    item.isError ? "asst-tool-error" : "",
+    running ? "asst-tool-running" : "",
+  ]
+    .join(" ")
+    .trim();
   return (
     <div className={cls}>
-      <button type="button" className="asst-tool-head" onClick={() => setOpen((o) => !o)}>
+      <button
+        type="button"
+        className="asst-tool-head"
+        onClick={() => setOpen((o) => !o)}
+      >
         <span className="asst-tool-icon" aria-hidden="true">
           <ToolIcon tool={item.tool} />
         </span>
-        <span className="asst-tool-summary">{summarize(item.tool, item.input)}</span>
+        <span className="asst-tool-summary">
+          {summarize(item.tool, item.input)}
+        </span>
         {running && <span className="asst-tool-spinner" aria-hidden="true" />}
-        {!running && item.isError && <span className="asst-tool-badge">error</span>}
+        {!running && item.isError && (
+          <span className="asst-tool-badge">error</span>
+        )}
         <span className="asst-tool-chev" aria-hidden="true">
           {open ? "▾" : "▸"}
         </span>
@@ -202,18 +248,27 @@ const ToolGroup = ({ tools, active, busy }) => {
   // the group never keeps spinning once the turn is done.
   const busyGroup = active || (busy && running);
   const open = override ?? busyGroup;
-  const current = tools.find((t) => t.output == null) || tools[tools.length - 1];
+  const current =
+    tools.find((t) => t.output == null) || tools[tools.length - 1];
   return (
     <div className="asst-group">
-      <button type="button" className="asst-group-head" onClick={() => setOverride(!open)}>
+      <button
+        type="button"
+        className="asst-group-head"
+        onClick={() => setOverride(!open)}
+      >
         <span className="asst-tool-icon" aria-hidden="true">
           <GroupIcon />
         </span>
         <span className="asst-tool-summary">
-          {busyGroup ? summarize(current.tool, current.input) : `${tools.length} actions`}
+          {busyGroup
+            ? summarize(current.tool, current.input)
+            : `${tools.length} actions`}
         </span>
         {busyGroup && <span className="asst-tool-spinner" aria-hidden="true" />}
-        {!busyGroup && anyError && <span className="asst-tool-badge">error</span>}
+        {!busyGroup && anyError && (
+          <span className="asst-tool-badge">error</span>
+        )}
         <span className="asst-tool-chev" aria-hidden="true">
           {open ? "▾" : "▸"}
         </span>
@@ -246,7 +301,14 @@ const renderTranscript = (items, busy, modes) => {
       // growing from one call to many keeps the same element type and key here and
       // updates in place instead of remounting. The trailing run while busy is the
       // active one.
-      out.push(<ToolGroup key={group[0].id} tools={group} active={busy && i === items.length} busy={busy} />);
+      out.push(
+        <ToolGroup
+          key={group[0].id}
+          tools={group}
+          active={busy && i === items.length}
+          busy={busy}
+        />,
+      );
     } else {
       out.push(<Turn key={items[i].id} item={items[i]} modes={modes} />);
       i++;
@@ -260,12 +322,16 @@ const renderTranscript = (items, busy, modes) => {
 const modelLabel = (id, modes) => {
   if (!id) return "";
   const m = (modes || []).find((o) => o.id === id);
-  if (m) return m.label;
-  return id === "external-claude" ? "External Claude" : id;
+  return m ? m.label : id;
 };
 
 // formatTime renders a reply's timestamp like "11:43 pm".
-const formatTime = (t) => (t ? new Date(t * 1000).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }).toLowerCase() : "");
+const formatTime = (t) =>
+  t
+    ? new Date(t * 1000)
+        .toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
+        .toLowerCase()
+    : "";
 
 // responseMeta is the hover caption for a reply, e.g. "11:43 pm, Claude.ai".
 const responseMeta = (item, modes) => {
@@ -287,8 +353,7 @@ const AssistantText = ({ item, modes }) => {
         {meta && (
           <>
             {/* A real space (not a margin) so it collapses when the caption wraps to
-                its own line -- CSS can't detect line-start, but a space handles it. */}
-            {" "}
+                its own line -- CSS can't detect line-start, but a space handles it. */}{" "}
             <span className="asst-response-meta">{meta}</span>
           </>
         )}
@@ -296,6 +361,32 @@ const AssistantText = ({ item, modes }) => {
     </div>
   );
 };
+
+// BackendMark is the small monochrome glyph that says which backend an option
+// runs on: the operator's Claude subscription, or the metered Anthropic API.
+// Monochrome and inline on purpose -- it is a distinction, not a brand.
+const BackendMark = ({ backend }) =>
+  backend === "claude" ? (
+    <svg className="asst-modeldd-mark" viewBox="0 0 16 16" aria-hidden="true">
+      <path
+        d="M8 2l1.6 4.4L14 8l-4.4 1.6L8 14l-1.6-4.4L2 8l4.4-1.6z"
+        fill="currentColor"
+      />
+    </svg>
+  ) : (
+    <svg className="asst-modeldd-mark" viewBox="0 0 16 16" aria-hidden="true">
+      <rect
+        x="2.5"
+        y="2.5"
+        width="11"
+        height="11"
+        rx="2.5"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+      />
+    </svg>
+  );
 
 // ModelDropdown is a subtle model picker inside the input row (right-aligned, in
 // the ChatGPT style): a borderless grey text pill showing the current model with a
@@ -323,12 +414,31 @@ const ModelDropdown = ({ modes, mode, onChange, disabled }) => {
         aria-expanded={open}
         title="Choose model"
       >
-        <span className="asst-modeldd-label">{current ? current.label : "Model"}</span>
-        <svg className="asst-modeldd-caret" viewBox="0 0 10 6" aria-hidden="true">
-          <path d="M1 1l4 4 4-4" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+        {current && <BackendMark backend={current.backend} />}
+        <span className="asst-modeldd-label">
+          {current ? current.label : "Model"}
+        </span>
+        <svg
+          className="asst-modeldd-caret"
+          viewBox="0 0 10 6"
+          aria-hidden="true"
+        >
+          <path
+            d="M1 1l4 4 4-4"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
         </svg>
         {/* On a phone the label + caret collapse to a thin vertical kebab (see CSS). */}
-        <svg className="asst-modeldd-kebab" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+        <svg
+          className="asst-modeldd-kebab"
+          viewBox="0 0 16 16"
+          fill="currentColor"
+          aria-hidden="true"
+        >
           <circle cx="8" cy="3.1" r="1.35" />
           <circle cx="8" cy="8" r="1.35" />
           <circle cx="8" cy="12.9" r="1.35" />
@@ -336,21 +446,41 @@ const ModelDropdown = ({ modes, mode, onChange, disabled }) => {
       </button>
       {open && (
         <div className="asst-modeldd-menu" role="menu">
-          {modes.map((m) => (
+          {modes.map((m, i) => (
             <button
               type="button"
               key={m.id}
               role="menuitem"
-              className={"asst-modeldd-item" + (m.id === mode ? " active" : "")}
+              // A rule between the groups: the same model can appear in both,
+              // and what separates them is who pays.
+              className={
+                "asst-modeldd-item" +
+                (m.id === mode ? " active" : "") +
+                (i > 0 && modes[i - 1].backend !== m.backend
+                  ? " asst-modeldd-divider"
+                  : "")
+              }
               onClick={() => {
                 onChange(m.id);
                 setOpen(false);
               }}
             >
+              <BackendMark backend={m.backend} />
               <span className="asst-modeldd-item-label">{m.label}</span>
               {m.id === mode && (
-                <svg className="asst-modeldd-check" viewBox="0 0 16 16" aria-hidden="true">
-                  <path d="M3 8.5l3.5 3.5L13 4.5" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
+                <svg
+                  className="asst-modeldd-check"
+                  viewBox="0 0 16 16"
+                  aria-hidden="true"
+                >
+                  <path
+                    d="M3 8.5l3.5 3.5L13 4.5"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.9"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
                 </svg>
               )}
             </button>
@@ -376,7 +506,16 @@ const Turn = ({ item, modes }) => {
     case "paused":
       return (
         <div className="asst-turn asst-paused">
-          <svg className="asst-paused-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <svg
+            className="asst-paused-icon"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
             <circle cx="12" cy="12" r="9" />
             <path d="M12 11v5" />
             <path d="M12 8h.01" />
@@ -399,8 +538,14 @@ const WorkingIndicator = ({ tokens }) => {
   const [elapsed, setElapsed] = useState(0); // seconds since this turn started
   const startRef = useRef(Date.now());
   useEffect(() => {
-    const words = setInterval(() => setI((n) => (n + 1) % WORKING_WORDS.length), 2500);
-    const clock = setInterval(() => setElapsed(Math.floor((Date.now() - startRef.current) / 1000)), 1000);
+    const words = setInterval(
+      () => setI((n) => (n + 1) % WORKING_WORDS.length),
+      2500,
+    );
+    const clock = setInterval(
+      () => setElapsed(Math.floor((Date.now() - startRef.current) / 1000)),
+      1000,
+    );
     return () => {
       clearInterval(words);
       clearInterval(clock);
@@ -426,7 +571,12 @@ const WorkingIndicator = ({ tokens }) => {
   );
 };
 
-const AppAssistant = ({ name, onClose, embedded = false, onPreviewRefresh }) => {
+const AppAssistant = ({
+  name,
+  onClose,
+  embedded = false,
+  onPreviewRefresh,
+}) => {
   const [items, setItems] = useState([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -461,8 +611,12 @@ const AppAssistant = ({ name, onClose, embedded = false, onPreviewRefresh }) => 
   // or another device continues from.
   const loadTranscript = useCallback(async () => {
     try {
-      const r = await fetch(`/api/apps/${encodeURIComponent(name)}/assistant`, { credentials: "same-origin" });
-      const data = r.ok ? await r.json() : { items: [], running: false, modes: [], mode: "" };
+      const r = await fetch(`/api/apps/${encodeURIComponent(name)}/assistant`, {
+        credentials: "same-origin",
+      });
+      const data = r.ok
+        ? await r.json()
+        : { items: [], running: false, modes: [], mode: "" };
       // Stable, position-based ids: the transcript is append-only and never
       // reorders, so keying by index means the done-reconcile reuses the existing
       // DOM instead of remounting the whole list (which flickered).
@@ -489,76 +643,100 @@ const AppAssistant = ({ name, onClose, embedded = false, onPreviewRefresh }) => 
   // Apply one streamed event. The run is server-owned and broadcast, so these
   // arrive for anyone's turn on this app, not just ours. itemsRef mirrors items so
   // several events in one tick chain correctly and the reducer sees fresh state.
-  const handleEvent = useCallback((ev) => {
-    if (ev.type === "done") {
-      setBusy(false);
-      const mutated = turnMutatedRef.current;
-      turnMutatedRef.current = false;
-      // Reconcile to the committed transcript, then -- only if this turn actually
-      // changed the app -- reload the preview ONCE and show it as an explicit
-      // "Refreshing preview" action. We deliberately do not reload mid-turn: a
-      // burst of file writes would otherwise reload the preview out from under
-      // someone testing the app. The action is a client-only UI affordance, not
-      // part of the model's transcript, so it is added after the reconcile.
-      loadTranscript().then(() => {
-        if (!mutated) {
-          return;
-        }
-        setItems((cur) => {
-          const next = [...cur, { id: cur.length, kind: "tool", tool: "refresh_preview", input: "{}", output: "" }];
-          itemsRef.current = next;
-          return next;
+  const handleEvent = useCallback(
+    (ev) => {
+      if (ev.type === "done") {
+        setBusy(false);
+        const mutated = turnMutatedRef.current;
+        turnMutatedRef.current = false;
+        // Reconcile to the committed transcript, then -- only if this turn actually
+        // changed the app -- reload the preview ONCE and show it as an explicit
+        // "Refreshing preview" action. We deliberately do not reload mid-turn: a
+        // burst of file writes would otherwise reload the preview out from under
+        // someone testing the app. The action is a client-only UI affordance, not
+        // part of the model's transcript, so it is added after the reconcile.
+        loadTranscript().then(() => {
+          if (!mutated) {
+            return;
+          }
+          setItems((cur) => {
+            const next = [
+              ...cur,
+              {
+                id: cur.length,
+                kind: "tool",
+                tool: "refresh_preview",
+                input: "{}",
+                output: "",
+              },
+            ];
+            itemsRef.current = next;
+            return next;
+          });
+          if (onPreviewRefresh) {
+            onPreviewRefresh();
+          }
         });
-        if (onPreviewRefresh) {
-          onPreviewRefresh();
-        }
-      });
-      return;
-    }
-    if (ev.type === "error") {
-      setBusy(false);
-      const next = [...itemsRef.current, { id: itemsRef.current.length, kind: "error", text: ev.error }];
+        return;
+      }
+      if (ev.type === "error") {
+        setBusy(false);
+        const next = [
+          ...itemsRef.current,
+          { id: itemsRef.current.length, kind: "error", text: ev.error },
+        ];
+        itemsRef.current = next;
+        setItems(next);
+        return;
+      }
+      if (ev.type === "paused") {
+        // The turn hit its step limit: nothing failed, so show a calm "say continue"
+        // notice rather than an error.
+        setBusy(false);
+        const next = [
+          ...itemsRef.current,
+          { id: itemsRef.current.length, kind: "paused", text: ev.text },
+        ];
+        itemsRef.current = next;
+        setItems(next);
+        return;
+      }
+      if (ev.type === "model") {
+        // Which model is answering this turn; tag the replies that follow with it.
+        currentModelRef.current = ev.text || "";
+        setTurnTokens(0); // a new turn is starting; reset the counter
+        turnMutatedRef.current = false; // ...and its "did anything change" flag
+        setBusy(true);
+        return;
+      }
+      if (ev.type === "usage") {
+        // Running token total for the turn; drives the live counter.
+        setTurnTokens(ev.usage?.output_tokens || 0);
+        setBusy(true);
+        return;
+      }
+      setBusy(true);
+      const { items: next, refreshPreview } = reduceChatEvent(
+        itemsRef.current,
+        ev,
+        currentModelRef.current,
+      );
       itemsRef.current = next;
       setItems(next);
-      return;
-    }
-    if (ev.type === "paused") {
-      // The turn hit its step limit: nothing failed, so show a calm "say continue"
-      // notice rather than an error.
-      setBusy(false);
-      const next = [...itemsRef.current, { id: itemsRef.current.length, kind: "paused", text: ev.text }];
-      itemsRef.current = next;
-      setItems(next);
-      return;
-    }
-    if (ev.type === "model") {
-      // Which model is answering this turn; tag the replies that follow with it.
-      currentModelRef.current = ev.text || "";
-      setTurnTokens(0); // a new turn is starting; reset the counter
-      turnMutatedRef.current = false; // ...and its "did anything change" flag
-      setBusy(true);
-      return;
-    }
-    if (ev.type === "usage") {
-      // Running token total for the turn; drives the live counter.
-      setTurnTokens(ev.usage?.output_tokens || 0);
-      setBusy(true);
-      return;
-    }
-    setBusy(true);
-    const { items: next, refreshPreview } = reduceChatEvent(itemsRef.current, ev, currentModelRef.current);
-    itemsRef.current = next;
-    setItems(next);
-    // Note a successful mutating tool; the reload itself waits for end of turn.
-    if (refreshPreview) {
-      turnMutatedRef.current = true;
-    }
-  }, [loadTranscript, onPreviewRefresh]);
+      // Note a successful mutating tool; the reload itself waits for end of turn.
+      if (refreshPreview) {
+        turnMutatedRef.current = true;
+      }
+    },
+    [loadTranscript, onPreviewRefresh],
+  );
 
   // Live event stream (SSE). Every watcher subscribes, so a run started on any
   // device shows up here; EventSource reconnects on its own if the link drops.
   useEffect(() => {
-    const es = new EventSource(`/api/apps/${encodeURIComponent(name)}/assistant/stream`);
+    const es = new EventSource(
+      `/api/apps/${encodeURIComponent(name)}/assistant/stream`,
+    );
     es.onmessage = (e) => {
       try {
         handleEvent(JSON.parse(e.data));
@@ -584,23 +762,35 @@ const AppAssistant = ({ name, onClose, embedded = false, onPreviewRefresh }) => 
         uploading: true,
       }));
       setAttachments((prev) => [...prev, ...temps]);
-      const dropTemps = () => setAttachments((prev) => prev.filter((a) => !temps.some((t) => t.tempId === a.tempId)));
+      const dropTemps = () =>
+        setAttachments((prev) =>
+          prev.filter((a) => !temps.some((t) => t.tempId === a.tempId)),
+        );
       try {
         const form = new FormData();
         files.forEach((f) => form.append("file", f));
-        const r = await fetch(`/api/apps/${encodeURIComponent(name)}/assistant/upload`, {
-          method: "POST",
-          credentials: "same-origin",
-          body: form,
-        });
+        const r = await fetch(
+          `/api/apps/${encodeURIComponent(name)}/assistant/upload`,
+          {
+            method: "POST",
+            credentials: "same-origin",
+            body: form,
+          },
+        );
         if (!r.ok) {
           const body = await r.json().catch(() => null);
-          handleEvent({ type: "error", error: body?.error || `upload failed (${r.status})` });
+          handleEvent({
+            type: "error",
+            error: body?.error || `upload failed (${r.status})`,
+          });
           dropTemps();
           return;
         }
         const added = await r.json();
-        setAttachments((prev) => [...prev.filter((a) => !temps.some((t) => t.tempId === a.tempId)), ...(added || [])]);
+        setAttachments((prev) => [
+          ...prev.filter((a) => !temps.some((t) => t.tempId === a.tempId)),
+          ...(added || []),
+        ]);
       } catch (err) {
         handleEvent({ type: "error", error: err.message });
         dropTemps();
@@ -637,10 +827,13 @@ const AppAssistant = ({ name, onClose, embedded = false, onPreviewRefresh }) => 
     const a = attachments[i];
     setAttachments((prev) => prev.filter((_, j) => j !== i));
     if (a?.path) {
-      fetch(`/api/apps/${encodeURIComponent(name)}/assistant/upload?path=${encodeURIComponent(a.path)}`, {
-        method: "DELETE",
-        credentials: "same-origin",
-      }).catch(() => {});
+      fetch(
+        `/api/apps/${encodeURIComponent(name)}/assistant/upload?path=${encodeURIComponent(a.path)}`,
+        {
+          method: "DELETE",
+          credentials: "same-origin",
+        },
+      ).catch(() => {});
     }
   };
 
@@ -664,7 +857,10 @@ const AppAssistant = ({ name, onClose, embedded = false, onPreviewRefresh }) => 
         body: JSON.stringify({
           message,
           mode,
-          attachments: ready.map((a) => ({ path: a.path, media_type: a.media_type })),
+          attachments: ready.map((a) => ({
+            path: a.path,
+            media_type: a.media_type,
+          })),
         }),
       });
       if (r.status === 409) {
@@ -673,7 +869,10 @@ const AppAssistant = ({ name, onClose, embedded = false, onPreviewRefresh }) => 
       if (!r.ok) {
         // The server sends {"error": "..."} (e.g. rate limited); show that, not raw JSON.
         const body = await r.json().catch(() => null);
-        handleEvent({ type: "error", error: body?.error || `request failed (${r.status})` });
+        handleEvent({
+          type: "error",
+          error: body?.error || `request failed (${r.status})`,
+        });
       }
     } catch (err) {
       handleEvent({ type: "error", error: err.message });
@@ -718,10 +917,24 @@ const AppAssistant = ({ name, onClose, embedded = false, onPreviewRefresh }) => 
       {!embedded && (
         <header className="asst-header">
           <span className="asst-title">
-            <span className="asst-title-app">{name}</span> &middot; AI assistant (preview)
+            <span className="asst-title-app">{name}</span> &middot; AI assistant
+            (preview)
           </span>
-          <button type="button" className="term-btn asst-close" onClick={onClose} title="Close" aria-label="Close">
-            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+          <button
+            type="button"
+            className="term-btn asst-close"
+            onClick={onClose}
+            title="Close"
+            aria-label="Close"
+          >
+            <svg
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
               <path d="M4 4l8 8M12 4l-8 8" />
             </svg>
           </button>
@@ -731,8 +944,9 @@ const AppAssistant = ({ name, onClose, embedded = false, onPreviewRefresh }) => 
       <div className="asst-transcript" ref={scrollRef}>
         {loaded && items.length === 0 && (
           <p className="asst-empty">
-            Ask me to build or change <strong>{name}</strong> &mdash; in plain English. I can read and write its files
-            and run commands in its container, then publish. Try: &ldquo;add a leaderboard&rdquo;.
+            Ask me to build or change <strong>{name}</strong> &mdash; in plain
+            English. I can read and write its files and run commands in its
+            container, then publish. Try: &ldquo;add a leaderboard&rdquo;.
           </p>
         )}
         {renderTranscript(items, busy, modes)}
@@ -742,12 +956,22 @@ const AppAssistant = ({ name, onClose, embedded = false, onPreviewRefresh }) => 
       {attachments.length > 0 && (
         <div className="asst-attachments">
           {attachments.map((a, i) => (
-            <span className={"asst-chip" + (a.is_image ? " asst-chip-img" : "")} key={a.tempId || a.path}>
-              {a.uploading && <span className="asst-chip-spin" aria-hidden="true" />}
+            <span
+              className={"asst-chip" + (a.is_image ? " asst-chip-img" : "")}
+              key={a.tempId || a.path}
+            >
+              {a.uploading && (
+                <span className="asst-chip-spin" aria-hidden="true" />
+              )}
               <span className="asst-chip-name" title={a.path || a.name}>
                 {a.name || a.path}
               </span>
-              <button type="button" className="asst-chip-x" onClick={() => removeAttachment(i)} aria-label="Remove attachment">
+              <button
+                type="button"
+                className="asst-chip-x"
+                onClick={() => removeAttachment(i)}
+                aria-label="Remove attachment"
+              >
                 &times;
               </button>
             </span>
@@ -775,7 +999,14 @@ const AppAssistant = ({ name, onClose, embedded = false, onPreviewRefresh }) => 
           title="Attach files"
           aria-label="Attach files"
         >
-          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
+          <svg
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            aria-hidden="true"
+          >
             <path d="M8 3.5v9M3.5 8h9" />
           </svg>
         </button>
@@ -789,9 +1020,22 @@ const AppAssistant = ({ name, onClose, embedded = false, onPreviewRefresh }) => 
           rows={1}
           disabled={busy}
         />
-        {modes.length > 1 && <ModelDropdown modes={modes} mode={mode} onChange={setMode} disabled={busy} />}
+        {modes.length > 1 && (
+          <ModelDropdown
+            modes={modes}
+            mode={mode}
+            onChange={setMode}
+            disabled={busy}
+          />
+        )}
         {busy ? (
-          <button type="button" className="btn asst-send asst-stop" onClick={stop} title="Stop" aria-label="Stop">
+          <button
+            type="button"
+            className="btn asst-send asst-stop"
+            onClick={stop}
+            title="Stop"
+            aria-label="Stop"
+          >
             <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
               <rect x="4" y="4" width="8" height="8" rx="1.5" />
             </svg>
@@ -802,12 +1046,21 @@ const AppAssistant = ({ name, onClose, embedded = false, onPreviewRefresh }) => 
             className="btn btn-primary asst-send"
             onClick={() => send()}
             disabled={
-              attachments.some((a) => a.uploading) || (!input.trim() && !attachments.some((a) => a.path))
+              attachments.some((a) => a.uploading) ||
+              (!input.trim() && !attachments.some((a) => a.path))
             }
             title="Send"
             aria-label="Send"
           >
-            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <svg
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
               <path d="M3 8h10M9 4l4 4-4 4" />
             </svg>
           </button>
@@ -819,14 +1072,24 @@ const AppAssistant = ({ name, onClose, embedded = false, onPreviewRefresh }) => 
   // Embedded (Direction C): the chat is a panel on the app page, not a modal.
   if (embedded) {
     return (
-      <div className="asst-window asst-embedded" onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={onDrop}>
+      <div
+        className="asst-window asst-embedded"
+        onDragOver={onDragOver}
+        onDragLeave={onDragLeave}
+        onDrop={onDrop}
+      >
         {inner}
       </div>
     );
   }
   return (
     <div className="modal-backdrop" role="dialog" aria-modal="true">
-      <div className="asst-window" onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={onDrop}>
+      <div
+        className="asst-window"
+        onDragOver={onDragOver}
+        onDragLeave={onDragLeave}
+        onDrop={onDrop}
+      >
         {inner}
       </div>
     </div>

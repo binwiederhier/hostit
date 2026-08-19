@@ -24,84 +24,7 @@ const formatTokens = (n) =>
       : String(n || 0);
 
 // One user row with locally edited limit fields; Save appears once dirty.
-// AssistantAccess sets, per user, whether External Claude is available and which
-// API models they may pick (an empty allowlist means all). A "*" in the summary
-// marks an explicit override; without one the user inherits the global default.
-const AssistantAccess = ({ user, catalog, externalConfigured, onPatch }) => {
-  const [busy, setBusy] = useState(false);
-  const models = user.assistant_allowed_models || [];
-  const allModels = models.length === 0;
-  const patch = async (body) => {
-    setBusy(true);
-    try {
-      await onPatch(user, body);
-    } finally {
-      setBusy(false);
-    }
-  };
-  const toggleModel = (id) => {
-    let set = allModels ? catalog.map((m) => m.id) : models.slice();
-    set = set.includes(id) ? set.filter((x) => x !== id) : [...set, id];
-    const all = catalog.length > 0 && catalog.every((m) => set.includes(m.id));
-    patch({ assistant_allowed_models: all ? [] : set });
-  };
-  const enabled = allModels
-    ? catalog.length
-    : models.filter((m) => catalog.some((c) => c.id === m)).length;
-  const external = user.assistant_external_allowed && externalConfigured;
-  return (
-    <details className="asst-access">
-      <summary title="Assistant access">
-        {external ? "External + " : ""}
-        {enabled}/{catalog.length} models
-        {user.assistant_has_override ? " *" : ""}
-      </summary>
-      <div className="asst-access-body">
-        <label className={externalConfigured ? "" : "cell-muted"}>
-          <input
-            type="checkbox"
-            checked={user.assistant_external_allowed}
-            disabled={busy || !externalConfigured}
-            onChange={(e) =>
-              patch({ assistant_external_allowed: e.target.checked })
-            }
-          />
-          External Claude{externalConfigured ? "" : " (not configured)"}
-        </label>
-        {catalog.map((m) => (
-          <label key={m.id}>
-            <input
-              type="checkbox"
-              checked={allModels || models.includes(m.id)}
-              disabled={busy}
-              onChange={() => toggleModel(m.id)}
-            />
-            {m.label}
-          </label>
-        ))}
-        {user.assistant_has_override && (
-          <button
-            type="button"
-            className="btn btn-small"
-            disabled={busy}
-            onClick={() => patch({ assistant_clear_override: true })}
-          >
-            Reset to default
-          </button>
-        )}
-      </div>
-    </details>
-  );
-};
-
-const UserRow = ({
-  user,
-  defaults,
-  catalog,
-  externalConfigured,
-  onPatch,
-  onDelete,
-}) => {
+const UserRow = ({ user, defaults, onPatch, onDelete }) => {
   const [appLimit, setAppLimit] = useState(numOrEmpty(user.app_limit));
   const [memoryMb, setMemoryMb] = useState(numOrEmpty(user.memory_mb));
   const [diskMb, setDiskMb] = useState(numOrEmpty(user.disk_mb));
@@ -209,14 +132,6 @@ const UserRow = ({
             </button>
           )}
         </div>
-      </td>
-      <td>
-        <AssistantAccess
-          user={user}
-          catalog={catalog || []}
-          externalConfigured={externalConfigured}
-          onPatch={onPatch}
-        />
       </td>
       <td className="cell-actions">
         <div className="btn-row">
@@ -616,7 +531,7 @@ const AllowedDomains = ({ setError }) => {
   );
 };
 
-const Defaults = ({ settings, asstDefaults, onSaved, setError }) => {
+const Defaults = ({ settings, onSaved, setError }) => {
   const [appLimit, setAppLimit] = useState(
     numOrEmpty(settings.default_app_limit),
   );
@@ -686,13 +601,6 @@ const Defaults = ({ settings, asstDefaults, onSaved, setError }) => {
           {busy ? "Saving..." : saved ? "Saved!" : "Save"}
         </button>
       </form>
-      {asstDefaults && (
-        <AssistantDefaults
-          defaults={asstDefaults}
-          onSaved={onSaved}
-          setError={setError}
-        />
-      )}
     </div>
   );
 };
@@ -852,7 +760,6 @@ const AdminInner = () => {
   const [apps, setApps] = useState(null);
   const [settings, setSettings] = useState(null);
   const [cluster, setCluster] = useState(null);
-  const [asstDefaults, setAsstDefaults] = useState(null);
   const [error, setError] = useState("");
 
   const load = useCallback(async () => {
@@ -867,8 +774,6 @@ const AdminInner = () => {
       setApps(a);
       setSettings(s);
       setCluster(c);
-      // The assistant defaults are part of the settings response now.
-      setAsstDefaults(s.assistant);
     } catch (err) {
       setError(err.message);
     }
@@ -923,7 +828,6 @@ const AdminInner = () => {
                   <th>Role</th>
                   <th>Status</th>
                   <th>Apps</th>
-                  <th>Assistant</th>
                   <th>Agent access</th>
                   <th>Limits (apps / mem MB / disk MB)</th>
                   <th aria-label="Actions" />
@@ -935,8 +839,6 @@ const AdminInner = () => {
                     key={user.id}
                     user={user}
                     defaults={settings}
-                    catalog={asstDefaults?.models || []}
-                    externalConfigured={!!asstDefaults?.external_configured}
                     onPatch={patchUser}
                     onDelete={setDeleting}
                   />
@@ -954,98 +856,9 @@ const AdminInner = () => {
       <AllowedDomains setError={setError} />
       <AllApps apps={apps} error={error} />
       {settings !== null && (
-        <Defaults
-          settings={settings}
-          asstDefaults={asstDefaults}
-          onSaved={load}
-          setError={setError}
-        />
+        <Defaults settings={settings} onSaved={load} setError={setError} />
       )}
     </>
-  );
-};
-
-// AssistantDefaults edits the global defaults new users inherit: whether External
-// Claude is allowed, the default agent, and which models are available. Changing a
-// default re-fetches the users so their inherited access updates too.
-const AssistantDefaults = ({ defaults, onSaved, setError }) => {
-  const [busy, setBusy] = useState(false);
-  const models = defaults.allowed_models || [];
-  const allModels = models.length === 0;
-  const catalog = defaults.models || [];
-  const save = async (body) => {
-    setBusy(true);
-    setError("");
-    try {
-      // Assistant defaults are part of the settings call now, nested under "assistant".
-      await api.patch("/api/settings", { assistant: body });
-      await onSaved();
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setBusy(false);
-    }
-  };
-  const toggleModel = (id) => {
-    let set = allModels ? catalog.map((m) => m.id) : models.slice();
-    set = set.includes(id) ? set.filter((x) => x !== id) : [...set, id];
-    const all = catalog.length > 0 && catalog.every((m) => set.includes(m.id));
-    save({ allowed_models: all ? [] : set });
-  };
-  const modeOptions = [
-    ...(defaults.external_configured
-      ? [{ id: "external-claude", label: "Claude.ai" }]
-      : []),
-    ...catalog,
-  ];
-  return (
-    <div className="defaults-assistant">
-      <h3>Assistant</h3>
-      <p className="hint">
-        Which agent new conversations use, and what each user may pick (unless
-        overridden per user).
-      </p>
-      <div className="asst-defaults">
-        <label>
-          <input
-            type="checkbox"
-            checked={defaults.external_allowed}
-            disabled={busy || !defaults.external_configured}
-            onChange={(e) => save({ external_allowed: e.target.checked })}
-          />
-          Allow External Claude
-          {defaults.external_configured ? "" : " (subscription not configured)"}
-        </label>
-        <label className="asst-defaults-mode">
-          Default agent
-          <select
-            value={defaults.default_mode}
-            disabled={busy}
-            onChange={(e) => save({ default_mode: e.target.value })}
-          >
-            {modeOptions.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <div className="asst-defaults-models">
-          <span className="hint">Models available by default</span>
-          {catalog.map((m) => (
-            <label key={m.id}>
-              <input
-                type="checkbox"
-                checked={allModels || models.includes(m.id)}
-                disabled={busy}
-                onChange={() => toggleModel(m.id)}
-              />
-              {m.label}
-            </label>
-          ))}
-        </div>
-      </div>
-    </div>
   );
 };
 

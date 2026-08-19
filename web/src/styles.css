@@ -2282,6 +2282,29 @@ th:last-child {
   background: var(--bg);
 }
 
+/* The backend mark: which credential pays for this option. Monochrome and
+   dimmed, so it reads as a distinction rather than a logo. */
+.asst-modeldd-mark {
+  width: 12px;
+  height: 12px;
+  flex: none;
+  margin-right: 7px;
+  opacity: 0.55;
+}
+
+.asst-modeldd-item-label {
+  flex: 1;
+  text-align: left;
+}
+
+/* A rule above the first item of the second group: the same model can appear in
+   both, and the line is what says they are not the same choice. */
+.asst-modeldd-divider {
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
+  padding-top: 9px;
+}
+
 .asst-modeldd-item.active {
   font-weight: 600;
 }
