@@ -3487,6 +3487,23 @@ body.ws-resizing iframe {
   color: var(--text);
 }
 
+/* The archived filter sits with the view toggle but carries a count, so it is
+   wider than the icon-only buttons and gets its own pill. */
+.dash-archivedbtn {
+  width: auto;
+  gap: 5px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.dash-archivedbtn svg {
+  width: 13px;
+  height: 13px;
+}
+
 .dash-viewbtn.on {
   background: var(--surface-2);
   color: var(--text);
@@ -3494,6 +3511,13 @@ body.ws-resizing iframe {
 
 /* Wide on a phone, so the table scrolls inside its own box rather than
    pushing the page sideways. */
+.dash-allarchived {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--muted);
+}
+
 .applist-wrap {
   overflow-x: auto;
   border: 1px solid var(--border);

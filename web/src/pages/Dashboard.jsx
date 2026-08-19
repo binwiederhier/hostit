@@ -246,6 +246,37 @@ const readView = () => {
   }
 };
 
+// Archived apps are hidden by default: they are the ones deliberately put away,
+// so they should not crowd the ones being worked on. Remembered the same way as
+// the view, and for the same reason.
+const ARCHIVED_KEY = "hostit.showarchived";
+const readShowArchived = () => {
+  try {
+    return localStorage.getItem(ARCHIVED_KEY) === "1";
+  } catch {
+    return false;
+  }
+};
+
+// The archived filter, shown only when the account HAS archived apps -- a switch
+// for something that does not exist is just a question the reader has to answer.
+const ArchivedToggle = ({ on, count, onChange }) => (
+  <button
+    type="button"
+    className={"dash-viewbtn dash-archivedbtn" + (on ? " on" : "")}
+    onClick={() => onChange(!on)}
+    title={on ? `Hide ${count} archived` : `Show ${count} archived`}
+    aria-pressed={on}
+  >
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M2.5 4.5h11" />
+      <path d="M3.5 4.5v8a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1v-8" />
+      <path d="M6.5 7.5h3" />
+    </svg>
+    <span>{count}</span>
+  </button>
+);
+
 // How long the container has been up, from the Unix SECONDS the API reports --
 // not a Date string, which is what makes new Date(started_at) land in 1970.
 const formatUptime = (startedAt) => {
@@ -375,6 +406,7 @@ const Dashboard = ({ account, refreshAccount }) => {
   const [adding, setAdding] = useState(false);
   const [toast, setToast] = useState("");
   const [view, setView] = useState(readView);
+  const [showArchived, setShowArchived] = useState(readShowArchived);
   const toastTimer = useRef(null);
   const inputRef = useRef(null);
   // A single page-level snackbar (not per card): the cards lift with a transform
@@ -390,6 +422,14 @@ const Dashboard = ({ account, refreshAccount }) => {
       localStorage.setItem(VIEW_KEY, next);
     } catch {
       // Storage can be unavailable; the choice then lasts for this page only.
+    }
+  }, []);
+  const changeShowArchived = useCallback((next) => {
+    setShowArchived(next);
+    try {
+      localStorage.setItem(ARCHIVED_KEY, next ? "1" : "0");
+    } catch {
+      // As above: the choice then lasts for this page only.
     }
   }, []);
   const navigate = useNavigate();
@@ -460,6 +500,8 @@ const Dashboard = ({ account, refreshAccount }) => {
 
   const formProps = { name, setName, onSubmit: create, creating, atLimit, inputRef };
   const empty = apps !== null && apps.length === 0;
+  const archivedCount = (apps || []).filter((a) => a.archived).length;
+  const shown = showArchived ? apps || [] : (apps || []).filter((a) => !a.archived);
 
   return (
     <>
@@ -471,7 +513,12 @@ const Dashboard = ({ account, refreshAccount }) => {
           </span>
         </div>
         <div className="header-actions">
-          {!empty && apps !== null && apps.length > 0 && <ViewToggle view={view} onChange={changeView} />}
+          {!empty && apps !== null && apps.length > 0 && (
+            <>
+              {archivedCount > 0 && <ArchivedToggle on={showArchived} count={archivedCount} onChange={changeShowArchived} />}
+              <ViewToggle view={view} onChange={changeView} />
+            </>
+          )}
           {!empty && (
             <button type="button" className="btn btn-primary btn-withicon" onClick={() => setAdding(true)} disabled={atLimit}>
               New app
@@ -489,11 +536,20 @@ const Dashboard = ({ account, refreshAccount }) => {
       )}
       {!empty && apps !== null && apps.length > 0 && (
         <>
-          {view === "list" ? (
-            <AppList apps={apps} />
+          {shown.length === 0 ? (
+            // Every app is archived and hidden: say so, rather than showing the
+            // same blank page an account with no apps at all would get.
+            <div className="card dash-allarchived">
+              All {archivedCount} of your apps are archived.{" "}
+              <button type="button" className="btn btn-small" onClick={() => changeShowArchived(true)}>
+                Show archived
+              </button>
+            </div>
+          ) : view === "list" ? (
+            <AppList apps={shown} />
           ) : (
             <div className="dash-grid">
-              {apps.map((app) => (
+              {shown.map((app) => (
                 <AppCard key={app.name} app={app} onToast={showToast} />
               ))}
             </div>
