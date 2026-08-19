@@ -165,6 +165,17 @@ definitions and the conversation prefix are cache-marked, so repeat turns pay th
 
 ## Smaller things
 
+- **Could a static app skip the container entirely?** Today every app gets a
+  container, a unix user, a subvolume and a systemd unit, even one that is just
+  files on disk. `mode: static` is already served by hostit itself, so for that
+  mode the container may be buying nothing but startup cost, memory and a
+  quota's worth of bookkeeping. Worth asking what a container-less static app
+  would still need (the app's own uid for file ownership, snapshots, disk
+  accounting, the assistant's run_command and SSH -- which is where it probably
+  gets interesting, since both assume a container to enter). If the answer is
+  "only SSH and run_command", a static app could stay container-less until
+  something asks for one.
+
 - **CHANGELOG.md per release.** Keep a CHANGELOG.md listing changes per
   version, updated with every release. Retroactively create the history for
   all existing tags from the commit messages and TODO.md's evolution through

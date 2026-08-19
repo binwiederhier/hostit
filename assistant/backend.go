@@ -61,7 +61,11 @@ type Option struct {
 	ID      string `json:"id"`      // "claude-opus-5", "anthropic-haiku-4-5"
 	Label   string `json:"label"`   // "Opus 5"
 	Backend string `json:"backend"` // "claude", "anthropic" -- the icon, too
-	Model   string `json:"-"`       // what the backend is asked for
+	// Model is what the backend is asked for. It ships to the browser only so the
+	// chat can name replies recorded BEFORE options existed: those carry a bare
+	// provider model string, and matching it back to an option is what keeps an
+	// old transcript from reading "claude-haiku-4-5-20251001".
+	Model string `json:"model"`
 }
 
 // registry holds the known backends in the order their groups are offered.

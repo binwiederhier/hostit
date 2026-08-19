@@ -19,7 +19,10 @@ func TestCatalogFollowsTheConfiguredCredentials(t *testing.T) {
 	for _, o := range api {
 		assert.Equal(t, BackendAnthropic, o.Backend)
 	}
-	assert.Equal(t, "anthropic-haiku-4-5", api[0].ID, "the metered API leads with the cheap model")
+	// Both groups read strongest-first, so a reader scanning the menu compares
+	// like with like instead of one list running up and the other down.
+	assert.Equal(t, []string{"anthropic-opus-5", "anthropic-sonnet-5", "anthropic-haiku-4-5"},
+		[]string{api[0].ID, api[1].ID, api[2].ID}, "the API group runs strongest to cheapest")
 
 	sub := Catalog(Credentials{ClaudeCodeOAuthToken: "t"})
 	require.NotEmpty(t, sub)

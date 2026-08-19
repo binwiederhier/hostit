@@ -2220,14 +2220,8 @@ th:last-child {
   cursor: default;
 }
 
-.asst-modeldd-caret {
-  width: 9px;
-  height: 6px;
-  flex: 0 0 auto;
-}
-
 /* Phone-only kebab: hidden until the input row gets tight, then it replaces the
-   label + caret so the picker is just a thin vertical dots button. */
+   label so the picker is just a thin vertical dots button. */
 .asst-modeldd-kebab {
   display: none;
   width: 16px;
@@ -2240,8 +2234,7 @@ th:last-child {
     gap: 0;
     padding: 0 6px;
   }
-  .asst-modeldd-label,
-  .asst-modeldd-caret {
+  .asst-modeldd-label {
     display: none;
   }
   .asst-modeldd-kebab {
@@ -2249,11 +2242,15 @@ th:last-child {
   }
 }
 
+.asst-modeldd-btn .asst-modeldd-mark {
+  margin-right: 2px;
+}
+
 .asst-modeldd-menu {
   position: absolute;
   bottom: calc(100% + 8px);
   right: 0;
-  min-width: 200px;
+  min-width: 162px;
   padding: 5px;
   background: var(--surface);
   border: 1px solid var(--border);
@@ -2295,6 +2292,9 @@ th:last-child {
 }
 
 .asst-modeldd-item-label {
+  /* Never wrap a model name: the selected row also carries a check, and "Haiku
+     4.5" broke across two lines when the menu got narrower. */
+  white-space: nowrap;
   flex: 1;
   text-align: left;
 }

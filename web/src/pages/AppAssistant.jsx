@@ -317,12 +317,28 @@ const renderTranscript = (items, busy, modes) => {
   return out;
 };
 
-// modelLabel turns a mode id into its human label (from the options), so a reply
-// reads "Sonnet 5", not "claude-sonnet-5".
+// modelLabel turns a mode id into its human name, so a reply reads "Claude
+// Sonnet 5", not "claude-sonnet-5". The backend is part of the name here even
+// though the dropdown leaves it to the mark: a caption has no group above it to
+// borrow context from, and both backends offer a "Sonnet 5".
 const modelLabel = (id, modes) => {
   if (!id) return "";
-  const m = (modes || []).find((o) => o.id === id);
-  return m ? m.label : id;
+  // Every subscription reply from before the picker rework is tagged with the
+  // one mode id that existed then. Show it the name it was shown under at the
+  // time rather than a dead slug -- these are real replies in real histories.
+  if (id === "external-claude") return "Claude.ai";
+  const list = modes || [];
+  // Replies recorded before options existed carry the provider's model string
+  // ("claude-sonnet-5"). Those were always metered-API turns -- a subscription
+  // turn was tagged "external-claude" -- so the API option is the right name for
+  // them, and the subscription option is only a last resort.
+  const m =
+    list.find((o) => o.id === id) ||
+    list.find((o) => o.model === id && o.backend !== "claude") ||
+    list.find((o) => o.model === id);
+  if (!m) return id;
+  const vendor = m.backend ? m.backend[0].toUpperCase() + m.backend.slice(1) : "";
+  return vendor ? `${vendor} ${m.label}` : m.label;
 };
 
 // formatTime renders a reply's timestamp like "11:43 pm".
@@ -333,7 +349,7 @@ const formatTime = (t) =>
         .toLowerCase()
     : "";
 
-// responseMeta is the hover caption for a reply, e.g. "11:43 pm, Opus 5".
+// responseMeta is the hover caption for a reply, e.g. "11:43 pm, Claude Opus 5".
 const responseMeta = (item, modes) => {
   const parts = [];
   if (item.time) parts.push(formatTime(item.time));
@@ -343,7 +359,7 @@ const responseMeta = (item, modes) => {
 };
 
 // AssistantText renders one assistant reply; on hover it reveals a small caption
-// after the last line with the reply's time and model ("11:43 pm, Opus 5").
+// after the last line with the reply's time and model ("11:43 pm, Claude Opus 5").
 const AssistantText = ({ item, modes }) => {
   const meta = responseMeta(item, modes);
   return (
@@ -413,21 +429,7 @@ const ModelDropdown = ({ modes, mode, onChange, disabled }) => {
         <span className="asst-modeldd-label">
           {current ? current.label : "Model"}
         </span>
-        <svg
-          className="asst-modeldd-caret"
-          viewBox="0 0 10 6"
-          aria-hidden="true"
-        >
-          <path
-            d="M1 1l4 4 4-4"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
-        {/* On a phone the label + caret collapse to a thin vertical kebab (see CSS). */}
+        {/* On a phone the label collapses to a thin vertical kebab (see CSS). */}
         <svg
           className="asst-modeldd-kebab"
           viewBox="0 0 16 16"

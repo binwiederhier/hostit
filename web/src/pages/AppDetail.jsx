@@ -2025,12 +2025,14 @@ const AppDetail = ({ account, refreshAccount }) => {
           {/* Preview controls: only meaningful in the assistant view, right-aligned. */}
           {((app.assistant_enabled && view === "assistant") || view === "editor") && (
             <div className="ws-viewtabs-right">
+              {/* Hidden rather than disabled with the preview off: there is no
+                  preview to refresh, so the control has nothing to explain. */}
+              {previewOn && (
               <button
                 type="button"
                 className="ws-viewtab ws-preview-ctl"
                 onClick={view === "assistant" ? reloadPreview : () => setFilesPreviewNonce((n) => n + 1)}
                 title="Refresh the preview"
-                disabled={!previewOn}
               >
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
                   <path d="M20 11a8 8 0 1 0-.6 4" />
@@ -2038,6 +2040,7 @@ const AppDetail = ({ account, refreshAccount }) => {
                 </svg>
                 Refresh
               </button>
+              )}
               <button
                 type="button"
                 className={"ws-viewtab ws-preview-ctl" + (previewOn ? " on" : "")}

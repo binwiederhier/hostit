@@ -596,3 +596,39 @@ func TestStablePrefixUsesOneHourCache(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, string(b), `"ttl":"1h"`)
 }
+
+// A reply is tagged with the OPTION that produced it, not the provider's model
+// string: both backends can serve the same model, so "claude-sonnet-5" alone
+// does not say which one answered (or who paid). The chat renders this tag, and
+// it has to resolve against the catalog.
+func TestReplyIsTaggedWithTheOptionThatRanIt(t *testing.T) {
+	t.Parallel()
+	fc := &fakeCompleter{replies: []response{
+		{StopReason: "end_turn", Content: []ContentBlock{{Type: "text", Text: "ok"}}},
+	}}
+	m := NewManager(fc, newFakeOps(), NewMemoryStore(), Credentials{AnthropicAPIKey: "k"})
+
+	ch, cancel, err := m.Subscribe("blog")
+	require.NoError(t, err)
+	defer cancel()
+	require.NoError(t, m.Send("blog", "", "hi", "anthropic-sonnet-5"))
+	events := drainUntilDone(t, ch)
+	require.Eventually(t, func() bool { return !m.Running("blog") }, 2*time.Second, 5*time.Millisecond)
+
+	// The provider is still asked for its own model string.
+	require.NotEmpty(t, fc.calls)
+	assert.Equal(t, "claude-sonnet-5", fc.calls[0].Model, "the API is asked for the model it knows")
+
+	// What watchers and the transcript see is the option id.
+	var modelEvent string
+	for _, e := range events {
+		if e.Type == evtModel {
+			modelEvent = e.Text
+		}
+	}
+	assert.Equal(t, "anthropic-sonnet-5", modelEvent, "the turn announces the option that ran")
+
+	history := m.load("blog")
+	require.NotEmpty(t, history)
+	assert.Equal(t, "anthropic-sonnet-5", history[len(history)-1].Model, "the stored reply names the option")
+}

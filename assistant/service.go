@@ -283,7 +283,7 @@ func (m *Manager) runLoop(s *session, app, userID, userText, mode string, attach
 		}
 	}
 
-	m.runAPILoop(ctx, s, app, option.Model, history)
+	m.runAPILoop(ctx, s, app, option, history)
 }
 
 // thinkingFor returns the extended-thinking config for a model, or nil for models
@@ -305,18 +305,24 @@ func outputConfigFor(model string) *outputConfig {
 	return &outputConfig{Effort: assistantEffort}
 }
 
-// runAPILoop is the metered-API turn: the model-call-and-tools loop, driven with
-// the given model. history already carries the user's message and has been shown
-// and saved by the caller.
-func (m *Manager) runAPILoop(ctx context.Context, s *session, app, model string, history []Message) {
+// runAPILoop is the metered-API turn: the model-call-and-tools loop, driven by
+// the chosen option. history already carries the user's message and has been
+// shown and saved by the caller.
+//
+// The option carries two model strings and they are not interchangeable: the
+// API is asked for option.Model (what Anthropic calls it), while the reply is
+// TAGGED with option.ID (which backend served it), because both backends offer
+// the same models and only the id says who ran the turn.
+func (m *Manager) runAPILoop(ctx context.Context, s *session, app string, option Option, history []Message) {
+	model := option.Model
 	// Repair any duplicate tool ids first: a transcript with External Claude turns
 	// can carry tool_use ids that repeat across turns, which the Messages API
 	// rejects. This re-mints them uniquely (and persists the repair when the turn
 	// saves), so switching to an API model after using External Claude just works.
 	history = dedupeToolIDs(history)
-	// Tell watchers which model is answering this turn (so the chat can badge the
-	// reply, and show the fallback model truthfully when External Claude failed).
-	s.publish(Event{Type: evtModel, Text: model})
+	// Tell watchers which option is answering this turn (so the chat can badge the
+	// reply, and name the fallback truthfully when the subscription failed).
+	s.publish(Event{Type: evtModel, Text: option.ID})
 	var turn Usage // running token totals for this turn, published as it grows
 	for iter := 0; iter < maxIterations; iter++ {
 		resp, err := m.client.complete(ctx, request{
@@ -361,7 +367,7 @@ func (m *Manager) runAPILoop(ctx context.Context, s *session, app, model string,
 		// stored: an adaptive thinking block carries internal fields we do not
 		// round-trip, and the model does not need its earlier thinking echoed back.
 		toolUses := m.publishReply(s, resp.Content)
-		history = append(history, Message{Role: roleAssistant, Content: withoutThinking(resp.Content), Model: model, Time: time.Now().Unix()})
+		history = append(history, Message{Role: roleAssistant, Content: withoutThinking(resp.Content), Model: option.ID, Time: time.Now().Unix()})
 		m.save(app, history)
 		if len(toolUses) == 0 {
 			// No tool calls: the model has said its piece and is done.
