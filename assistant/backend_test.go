@@ -25,8 +25,9 @@ func TestCatalogFollowsTheConfiguredCredentials(t *testing.T) {
 		[]string{api[0].ID, api[1].ID, api[2].ID}, "the API group runs strongest to cheapest")
 
 	sub := Catalog(Credentials{ClaudeCodeOAuthToken: "t"})
-	require.NotEmpty(t, sub)
-	assert.Equal(t, "claude-opus-5", sub[0].ID, "a subscription turn costs the same, so lead with the strongest")
+	require.Len(t, sub, 3)
+	assert.Equal(t, []string{"claude-fable-5", "claude-opus-5", "claude-sonnet-5"},
+		[]string{sub[0].ID, sub[1].ID, sub[2].ID}, "the subscription group leads with Fable")
 
 	both := Catalog(Credentials{AnthropicAPIKey: "k", ClaudeCodeOAuthToken: "t"})
 	assert.Len(t, both, len(api)+len(sub))
@@ -73,7 +74,7 @@ func TestDefaultIsTheFirstOptionOffered(t *testing.T) {
 	d, ok := Default(both)
 	require.True(t, ok)
 	assert.Equal(t, Catalog(both)[0].ID, d.ID)
-	assert.Equal(t, "claude-opus-5", d.ID, "the subscription wins when both are configured")
+	assert.Equal(t, "claude-fable-5", d.ID, "the subscription wins when both are configured")
 
 	api := Credentials{AnthropicAPIKey: "k"}
 	d, ok = Default(api)
@@ -84,7 +85,7 @@ func TestDefaultIsTheFirstOptionOffered(t *testing.T) {
 	sub := Credentials{ClaudeCodeOAuthToken: "t"}
 	d, ok = Default(sub)
 	require.True(t, ok)
-	assert.Equal(t, "claude-opus-5", d.ID)
+	assert.Equal(t, "claude-fable-5", d.ID)
 
 	_, ok = Default(Credentials{})
 	assert.False(t, ok, "nothing configured has no default")

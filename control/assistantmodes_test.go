@@ -58,7 +58,7 @@ func TestResolveModeDefaultsToTheSubscription(t *testing.T) {
 	t.Parallel()
 	s := newTestServer(t)
 	s.config.AnthropicAPIKey, s.config.ClaudeCodeOAuthToken = "k", "t"
-	assert.Equal(t, "claude-opus-5", s.resolveMode("", "no-such-app"))
+	assert.Equal(t, "claude-fable-5", s.resolveMode("", "no-such-app"), "the head of the catalog")
 
 	s.config.ClaudeCodeOAuthToken = ""
 	assert.Equal(t, "anthropic-opus-5", s.resolveMode("", "no-such-app"), "without it, the API's first model")
