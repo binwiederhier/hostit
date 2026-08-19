@@ -27,6 +27,11 @@ const (
 	// does NOT reconnect: a reconnect would be refused and must never power the app
 	// back on. 4001 is in the WebSocket application-private code range.
 	terminalStatusPoweredOff = websocket.StatusCode(4001)
+	// terminalStatusArchived is the close code for an archived app. Distinct from
+	// powered-off because it is more final: the app refuses to start until it is
+	// unarchived, so the browser must stop retrying rather than count down
+	// forever against something that cannot succeed.
+	terminalStatusArchived = websocket.StatusCode(4002)
 )
 
 // handleTerminal bridges a browser terminal to an interactive shell in the app's
@@ -65,6 +70,10 @@ func (s *Server) handleTerminal(w http.ResponseWriter, r *http.Request, c *calle
 		// wrongly-refused terminal (seen once on stage, cause invisible) is
 		// undiagnosable without the server-side reason.
 		slog.Warn("Terminal refused: cannot ensure app", "app", a.Name, "error", err)
+		if errors.Is(err, ErrArchived) {
+			conn.Close(terminalStatusArchived, "app is archived")
+			return
+		}
 		if errors.Is(err, appctl.ErrPoweredOff) {
 			conn.Close(terminalStatusPoweredOff, "app is powered off")
 			return

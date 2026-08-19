@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { reconnectDelaySeconds, shouldReconnect, TERMINAL_POWERED_OFF_CODE } from "./reconnect";
+import { reconnectDelaySeconds, shouldReconnect, TERMINAL_POWERED_OFF_CODE, TERMINAL_ARCHIVED_CODE } from "./reconnect";
 
 describe("reconnectDelaySeconds", () => {
   it("doubles from 1 second per attempt", () => {
@@ -14,6 +14,11 @@ describe("reconnectDelaySeconds", () => {
 describe("shouldReconnect", () => {
   it("does not reconnect after a powered-off close", () => {
     expect(shouldReconnect(TERMINAL_POWERED_OFF_CODE)).toBe(false);
+  });
+  // An archived app refuses every attempt, so retrying forever would just be a
+  // countdown that never ends.
+  it("does not reconnect after an archived close", () => {
+    expect(shouldReconnect(TERMINAL_ARCHIVED_CODE)).toBe(false);
   });
   it("reconnects on an ordinary drop", () => {
     expect(shouldReconnect(1006)).toBe(true); // abnormal closure (network blip)

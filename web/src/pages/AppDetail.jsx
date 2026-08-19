@@ -1555,6 +1555,10 @@ const AppDetail = ({ account, refreshAccount }) => {
   const [missing, setMissing] = useState(false);
   const [pending, setPending] = useState(null); // an in-flight lifecycle transition, or null
   const [confirmDelete, setConfirmDelete] = useState(false);
+  // null when no archive dialog is open, else true (archiving) or false
+  // (bringing it back) -- the two need different words, not one generic prompt.
+  const [confirmArchive, setConfirmArchive] = useState(null);
+  const [archiving, setArchiving] = useState(false);
   const [termOpen, setTermOpen] = useState(false); // a shell session exists (mounted)
   const [termMin, setTermMin] = useState(false); // ...but hidden out of the way
   const [termConnecting, setTermConnecting] = useState(false); // opening, not yet connected
@@ -1834,11 +1838,16 @@ const AppDetail = ({ account, refreshAccount }) => {
   // (there is no container state to wait for).
   const setArchived = async (archived) => {
     setError("");
+    setArchiving(true);
     try {
       await api.post(`/api/apps/${encodeURIComponent(name)}/${archived ? "archive" : "unarchive"}`);
       await load();
+      setConfirmArchive(null);
     } catch (err) {
       setError(err.message);
+      setConfirmArchive(null);
+    } finally {
+      setArchiving(false);
     }
   };
 
@@ -2024,8 +2033,8 @@ const AppDetail = ({ account, refreshAccount }) => {
                 onSsh={() => setShowSsh(true)}
                 onByoa={() => setShowPrompt(true)}
                 archived={!!app.archived}
-                onArchive={() => setArchived(true)}
-                onUnarchive={() => setArchived(false)}
+                onArchive={() => setConfirmArchive(true)}
+                onUnarchive={() => setConfirmArchive(false)}
                 onFork={() => {
                   setForkSnapshotId(null);
                   setShowFork(true);
@@ -2295,6 +2304,44 @@ const AppDetail = ({ account, refreshAccount }) => {
       )}
       {confirmDelete && (
         <DeleteAppDialog name={app.name} onCancel={() => setConfirmDelete(false)} onDeleted={deleted} />
+      )}
+      {confirmArchive === true && (
+        <ConfirmDialog
+          title="Archive this app?"
+          confirmLabel="Archive"
+          busy={archiving}
+          onConfirm={() => setArchived(true)}
+          onCancel={() => setConfirmArchive(null)}
+        >
+          <p>
+            <b>{app.name}</b> will be powered off and kept off. It cannot be
+            powered on, deployed to, or started by an SSH login until you
+            unarchive it, and <b>{app.url.replace(/^https?:\/\//, "")}</b> will
+            stop serving.
+          </p>
+          <p>
+            It stops taking new snapshots, since it can no longer change. The
+            ones it has keep thinning out, but a monthly snapshot is kept for a
+            year and the most recent one is never removed -- so you can bring it
+            back later.
+          </p>
+          <p>Nothing is deleted, and unarchiving is a click away.</p>
+        </ConfirmDialog>
+      )}
+      {confirmArchive === false && (
+        <ConfirmDialog
+          title="Unarchive this app?"
+          confirmLabel="Unarchive"
+          busy={archiving}
+          onConfirm={() => setArchived(false)}
+          onCancel={() => setConfirmArchive(null)}
+        >
+          <p>
+            <b>{app.name}</b> becomes an ordinary powered-off app: you can power
+            it on, deploy to it, and it resumes automatic snapshots.
+          </p>
+          <p>It is not started for you -- power it on when you want it back.</p>
+        </ConfirmDialog>
       )}
       {toast && (
         <div className="snackbar" role="status" aria-live="polite">

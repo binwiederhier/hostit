@@ -282,7 +282,6 @@ const AppRow = ({ app }) => {
         </span>
       </td>
       <td className="applist-desc">{app.description || <span className="appcard-nodesc">--</span>}</td>
-      {app.owner_email && <td className="applist-owner">{app.owner_name || app.owner_email}</td>}
       <td className="applist-num">{running ? `${app.cpu_percent || 0}%` : "--"}</td>
       <td className="applist-num">{running ? mbLabel(app.memory_mb, app.memory_limit_mb) : "--"}</td>
       <td className="applist-num">{mbLabel(app.disk_mb, app.disk_limit_mb)}</td>
@@ -296,11 +295,8 @@ const AppRow = ({ app }) => {
   );
 };
 
-// The list itself. The owner column only exists when the API reports owners
-// (an admin's view, or a shared app), so a single-owner dashboard is not left
-// with a column of its own name repeated.
+// The list itself.
 const AppList = ({ apps }) => {
-  const anyOwner = apps.some((a) => a.owner_email);
   return (
     <div className="applist-wrap">
       <table className="applist">
@@ -309,7 +305,6 @@ const AppList = ({ apps }) => {
             <th>App</th>
             <th>Status</th>
             <th>Description</th>
-            {anyOwner && <th>Owner</th>}
             <th className="applist-num">CPU</th>
             <th className="applist-num">RAM</th>
             <th className="applist-num">Disk</th>
@@ -360,22 +355,6 @@ const ViewToggle = ({ view, onChange }) => (
     </button>
   </div>
 );
-
-// The stats strip above the grid: turns the list into an at-a-glance overview.
-const AppsSummary = ({ apps }) => {
-  const running = apps.filter((a) => a.running).length;
-  const diskMB = apps.reduce((sum, a) => sum + (a.disk_mb || 0), 0);
-  const disk = diskMB >= 1024 ? `${(diskMB / 1024).toFixed(1)} GB` : `${diskMB} MB`;
-  const ramMB = apps.reduce((sum, a) => sum + (a.running ? a.memory_mb || 0 : 0), 0);
-  const ram = ramMB >= 1024 ? `${(ramMB / 1024).toFixed(1)} GB` : `${ramMB} MB`;
-  return (
-    <div className="dash-summary">
-      <div className="dash-stat"><div className="k">Running</div><div className="v">{running}<small> / {apps.length}</small></div></div>
-      <div className="dash-stat"><div className="k">Memory used</div><div className="v">{ram}</div></div>
-      <div className="dash-stat"><div className="k">Disk used</div><div className="v">{disk}</div></div>
-    </div>
-  );
-};
 
 const Dashboard = ({ account, refreshAccount }) => {
   const [apps, setApps] = useState(null);
@@ -474,11 +453,14 @@ const Dashboard = ({ account, refreshAccount }) => {
   return (
     <>
       <div className="page-header">
-        <h1>Apps</h1>
-        <div className="header-actions">
+        <div className="page-title">
+          <h1>Apps</h1>
           <span className="usage">
             {account.usage.apps} of {account.limits.app_limit} apps
           </span>
+        </div>
+        <div className="header-actions">
+          {!empty && apps !== null && apps.length > 0 && <ViewToggle view={view} onChange={changeView} />}
           {!empty && (
             <button type="button" className="btn btn-primary btn-withicon" onClick={() => setAdding(true)} disabled={atLimit}>
               New app
@@ -496,10 +478,6 @@ const Dashboard = ({ account, refreshAccount }) => {
       )}
       {!empty && apps !== null && apps.length > 0 && (
         <>
-          <div className="dash-summaryrow">
-            <AppsSummary apps={apps} />
-            <ViewToggle view={view} onChange={changeView} />
-          </div>
           {view === "list" ? (
             <AppList apps={apps} />
           ) : (

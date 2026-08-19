@@ -191,6 +191,15 @@ p {
   padding: 16px;
 }
 
+/* The app count sits beside the heading rather than in the actions, so the
+   right-hand side is controls only. */
+.page-title {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+}
+
 .page-header {
   display: flex;
   align-items: baseline;
@@ -1154,41 +1163,6 @@ th:last-child {
   width: 14px;
   height: 14px;
   flex: none;
-}
-.dash-summary {
-  display: flex;
-  gap: 10px;
-  margin-bottom: 16px;
-  flex-wrap: wrap;
-}
-.dash-stat {
-  flex: 1;
-  min-width: 130px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--surface);
-  padding: 13px 16px;
-}
-.dash-stat .k {
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--faint);
-}
-.dash-stat .v {
-  font-size: 22px;
-  font-weight: 700;
-  letter-spacing: -0.01em;
-  margin-top: 3px;
-  font-variant-numeric: tabular-nums;
-}
-.dash-stat .v small {
-  font-size: 13px;
-  color: var(--muted);
-  font-weight: 500;
-}
-.dash-stat .v.alert {
-  color: var(--status-degraded);
 }
 
 .dash-grid {
@@ -3461,14 +3435,6 @@ body.ws-resizing iframe {
 /* A labelled row in Settings: the label sits above its input, and the pair
    stacks with the others -- used by the snapshot interval and hooks. */
 /* The dashboard's cards/list switch, and the list itself. */
-.dash-summaryrow {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
 .dash-viewtoggle {
   display: inline-flex;
   gap: 2px;

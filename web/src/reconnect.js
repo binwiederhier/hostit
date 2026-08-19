@@ -10,11 +10,16 @@ export function reconnectDelaySeconds(attempt) {
 // application-private code range (4000-4999).
 export const TERMINAL_POWERED_OFF_CODE = 4001;
 
+// TERMINAL_ARCHIVED_CODE is the close code for an archived app (server:
+// terminalStatusArchived). Archiving is even more final than a poweroff: the app
+// refuses to start at all until it is unarchived, so retrying is pointless.
+export const TERMINAL_ARCHIVED_CODE = 4002;
+
 // shouldReconnect decides whether a terminal drop should trigger a reconnect. A
 // powered-off close is deliberate and final until the operator powers the app back
 // on, so it must NOT reconnect: a reconnect would be refused and must never power
 // the app back on. Every other close (a network blip, a container restart) heals by
 // reconnecting.
 export function shouldReconnect(closeCode) {
-  return closeCode !== TERMINAL_POWERED_OFF_CODE;
+  return closeCode !== TERMINAL_POWERED_OFF_CODE && closeCode !== TERMINAL_ARCHIVED_CODE;
 }

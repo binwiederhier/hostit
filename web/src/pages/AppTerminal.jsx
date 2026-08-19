@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
-import { reconnectDelaySeconds, shouldReconnect } from "../reconnect";
+import { reconnectDelaySeconds, shouldReconnect, TERMINAL_ARCHIVED_CODE } from "../reconnect";
 
 // A shell in the app's container, in the browser. The websocket streams raw
 // terminal bytes both ways (binary), and a text frame carries the size whenever
@@ -130,7 +130,13 @@ const AppTerminal = ({ name, onClose, onMinimize, onReady, onSessionEnd, onSsh, 
           stoppedRef.current = true;
           setStopped(true);
           setReconnect({ active: false, seconds: 0 });
-          term.write("\r\n\x1b[33mThis app is powered off. Power it on to use the terminal.\x1b[0m\r\n");
+          // Say which of the two final states this is: powering on fixes one and
+          // does nothing for the other.
+          const why =
+            event.code === TERMINAL_ARCHIVED_CODE
+              ? "This app is archived. Unarchive it to use the terminal."
+              : "This app is powered off. Power it on to use the terminal.";
+          term.write(`\r\n\x1b[33m${why}\x1b[0m\r\n`);
           return;
         }
         scheduleReconnect();
