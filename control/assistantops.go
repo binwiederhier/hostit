@@ -189,3 +189,9 @@ func (o *appOps) ListSnapshots(name string) (string, error) {
 func secondsToDuration(seconds int) time.Duration {
 	return time.Duration(seconds) * time.Second
 }
+
+// Archived reports whether the app is shelved, so the assistant's prompt can
+// say so before the model plans work that will be refused.
+func (o *appOps) Archived(name string) bool {
+	return o.apps.archived(name)
+}

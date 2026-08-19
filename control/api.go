@@ -64,8 +64,6 @@ func (s *Server) newAPIHandler() http.Handler {
 	route(mux, "POST", "/apps/{name}/token", s.requireActive(s.handleAppsRotateToken))
 	route(mux, "PUT", "/apps/{name}/description", s.requireActive(s.handleAppsSetDescription))
 	route(mux, "PUT", "/apps/{name}/snapshot-config", s.requireActive(s.handleAppsSetSnapshotConfig))
-	route(mux, "POST", "/apps/{name}/archive", s.requireActive(s.handleAppsArchive))
-	route(mux, "POST", "/apps/{name}/unarchive", s.requireActive(s.handleAppsUnarchive))
 	route(mux, "POST", "/apps/{name}/rename", s.requireActive(s.handleAppsRename))
 	route(mux, "POST", "/apps/{name}/fork", s.requireActive(s.handleAppsFork))
 	route(mux, "GET", "/apps/{name}/collaborators", s.requireActive(s.handleCollaboratorsList))

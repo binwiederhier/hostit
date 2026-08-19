@@ -36,6 +36,10 @@ type AppOps interface {
 	Snapshot(app, label string) (string, error)
 	ListSnapshots(app string) (string, error)
 	Rollback(app, id string) (string, error)
+	// Archived reports whether the app is shelved. Not a tool the model calls --
+	// it shapes the system prompt, so the model knows before it plans rather
+	// than after a refusal.
+	Archived(app string) bool
 }
 
 // ToolDefs exposes the tool definitions for another driver of the same app

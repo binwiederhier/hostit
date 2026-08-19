@@ -345,7 +345,7 @@ func (m *Manager) runAPILoop(ctx context.Context, s *session, app string, option
 		resp, err := m.client.complete(ctx, request{
 			Model:        model,
 			MaxTokens:    maxTokens,
-			System:       cachedSystem(systemPrompt(app)),
+			System:       cachedSystem(systemPrompt(app, m.ops.Archived(app))),
 			Messages:     apiRequestMessages(history),
 			Tools:        cachedToolDefs(),
 			Thinking:     thinkingFor(model),
@@ -538,8 +538,25 @@ func (m *Manager) save(app string, history []Message) {
 // systemPrompt sets the model's stance: it is working on one hostit app, it makes
 // changes with the tools, and the app serves itself. Kept short on purpose --
 // the model learns the specifics by reading the app's own files.
-func systemPrompt(app string) string {
-	return fmt.Sprintf(`You are hostit's built-in coding assistant, working on a single app named %q.
+// archivedNote leads the system prompt when the app is shelved. It goes FIRST
+// because it changes what the rest of the prompt means: the instruction to
+// deploy after a config change cannot be followed at all until the app is
+// brought back.
+func archivedNote(archived bool) string {
+	if !archived {
+		return ""
+	}
+	return `IMPORTANT: this app is ARCHIVED. It is powered off and refuses to run: deploy, power on, ` +
+		`taking a snapshot and running a command are all rejected, and its subdomain serves nothing. ` +
+		`You can still read and write its files. If the user asks for anything that needs the app running, ` +
+		`say it has to be unarchived first (the Actions menu on the app page, or POST /api/apps/{app}/unarchive) ` +
+		`rather than attempting it and reporting the refusal.
+
+`
+}
+
+func systemPrompt(app string, archived bool) string {
+	return archivedNote(archived) + fmt.Sprintf(`You are hostit's built-in coding assistant, working on a single app named %q.
 
 hostit is a mini-app platform. Each app has a home directory you act on with your tools:
 - public/     files served on the web (a "static" app serves exactly this)

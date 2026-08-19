@@ -357,8 +357,9 @@ const SnapshotsPage = () => (
     <p>
       <strong>Archive</strong> an app you are done with but do not want to
       delete: it powers off and stays off -- it cannot be powered on, deployed
-      to, or started by an SSH login -- and it stops taking new snapshots, since
-      it can no longer change. Its existing history keeps thinning, but monthly
+      to, or started by an SSH login -- and it stops taking new snapshots, your
+      own included, since it can no longer change. Its files stay readable and
+      writable, so you can look at it or prepare it before bringing it back. Its existing history keeps thinning, but monthly
       snapshots are kept for a year and the most recent one is never removed, so
       an archived app is still there to bring back later.{" "}
       <strong>Unarchive</strong> returns it to an ordinary powered-off app, which

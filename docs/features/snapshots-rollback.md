@@ -52,7 +52,8 @@ tradeoff -- a very old manual bookmark can eventually be pruned).
 Automatic (no user action):
 - Before every deploy, `up` takes a pre-deploy snapshot (best effort; a failure
   never blocks the deploy).
-- An ARCHIVED app takes no new snapshots (it cannot change) and its history is
+- An ARCHIVED app takes no new snapshots -- on demand or from the sweep; the
+  refusal comes from `routingAgent.routeRunnable` (it cannot change anyway) and its history is
   kept under `retention.Archived` -- monthly rollups for a year, plus the newest
   snapshot as a floor, so the archive thins but never empties. See
   `control/archive.go`.

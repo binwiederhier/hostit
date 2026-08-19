@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -28,12 +29,15 @@ func (f *fakeCompleter) complete(_ context.Context, req request) (*response, err
 
 // fakeOps is an in-memory stand-in for the app's REST operations
 type fakeOps struct {
-	files  map[string]string
-	writes []string
-	execFn func(command string) ExecResult
+	files    map[string]string
+	writes   []string
+	execFn   func(command string) ExecResult
+	archived bool
 }
 
 func newFakeOps() *fakeOps { return &fakeOps{files: map[string]string{}} }
+
+func (f *fakeOps) Archived(_ string) bool { return f.archived }
 
 func (f *fakeOps) ListFiles(_, _ string) (string, error) { return "hostit.yml\npublic/", nil }
 func (f *fakeOps) ReadFile(_, path string) (string, error) {
@@ -631,4 +635,18 @@ func TestReplyIsTaggedWithTheOptionThatRanIt(t *testing.T) {
 	history := m.load("blog")
 	require.NotEmpty(t, history)
 	assert.Equal(t, "anthropic-sonnet-5", history[len(history)-1].Model, "the stored reply names the option")
+}
+
+// The assistant is told when the app it is working on is archived. Without it,
+// the model plans a deploy, is refused, and has to guess why -- and it would
+// keep suggesting "power it on", which archiving is precisely what refuses.
+func TestSystemPromptSaysWhenTheAppIsArchived(t *testing.T) {
+	t.Parallel()
+	live := systemPrompt("blog", false)
+	assert.NotContains(t, strings.ToLower(live), "archived", "a normal app's prompt says nothing about archiving")
+
+	shelved := systemPrompt("blog", true)
+	assert.Contains(t, strings.ToLower(shelved), "archived")
+	// It must name the way out, since every running verb is refused until then.
+	assert.Contains(t, strings.ToLower(shelved), "unarchive")
 }

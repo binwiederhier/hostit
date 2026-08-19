@@ -44,6 +44,11 @@ func (s *Server) newAgentRoutes(mux *http.ServeMux) {
 	// The container ("power") verbs, and the app-process verbs, kept distinct
 	route(mux, "POST", "/apps/{app}/poweron", s.requireApp(s.handleAgentPowerOn))
 	route(mux, "POST", "/apps/{app}/poweroff", s.requireApp(s.handleAgentPowerOff))
+	// Archiving is the app's own state, so an app-scoped token may set it. It is
+	// reversible from the same token: an archived app keeps answering the file
+	// and info endpoints, so nothing can strand itself here.
+	route(mux, "POST", "/apps/{app}/archive", s.requireApp(s.handleAgentArchive))
+	route(mux, "POST", "/apps/{app}/unarchive", s.requireApp(s.handleAgentUnarchive))
 	route(mux, "POST", "/apps/{app}/reboot", s.requireApp(s.handleAgentReboot))
 	route(mux, "POST", "/apps/{app}/start", s.requireApp(s.handleAgentStart))
 	route(mux, "POST", "/apps/{app}/stop", s.requireApp(s.handleAgentStop))
@@ -285,6 +290,14 @@ func (s *Server) agentGuide(appName, description string) *apiAgentInfoResponse {
 			description + ". Do not rebuild it from scratch. Read its README.md (the app's worklog) and its " +
 			"files first, then make only the changes you were asked for."
 	}
+	// An archived app refuses most of what follows, so say it before the workflow
+	// rather than letting the agent discover it one 409 at a time.
+	if s.apps.archived(name) {
+		whereYouAre = "This app is ARCHIVED: it is powered off and refuses to run. Deploy, power on, run and " +
+			"snapshot are all rejected, and its subdomain serves nothing; you can still read and write its " +
+			"files. POST " + appsPath(name) + "/unarchive brings it back (it stays powered off; power it on " +
+			"after). Everything below applies once it is unarchived. " + whereYouAre
+	}
 	// The owner may have built this app with hostit's own assistant before switching
 	// to you. Reading that session first is the difference between continuing their
 	// work and starting over.
@@ -364,6 +377,7 @@ func (s *Server) agentGuide(appName, description string) *apiAgentInfoResponse {
 			{Method: "DELETE", Path: "" + appsPath(name) + "/snapshots/{id}", What: "Delete one snapshot"},
 			{Method: "POST", Path: "" + appsPath(name) + "/start|stop|restart", What: "The run: command: start, stop, or restart it (fast; container stays up)"},
 			{Method: "POST", Path: "" + appsPath(name) + "/poweron|poweroff|reboot", What: "The container: power it on, off, or reboot it"},
+			{Method: "POST", Path: "" + appsPath(name) + "/archive|unarchive", What: "Shelve the app (powered off, refuses to run, takes no new snapshots) or bring it back"},
 		},
 		Notes: []string{
 			"Apps also accept SSH: the owner's SSH keys work, and you can scp/rsync into the app's home directory.",
@@ -374,4 +388,26 @@ func (s *Server) agentGuide(appName, description string) *apiAgentInfoResponse {
 			"The owner's live preview always shows your latest deploy: hostit tags preview requests with a ?hostit_preview=<n> query parameter and serves them with caching disabled, so you do not need to do anything special. Just do not 404 or error on an unknown query string.",
 		},
 	}
+}
+
+// handleAgentArchive shelves the app: powered off, refusing to run, and taking
+// no new snapshots until it is unarchived.
+func (s *Server) handleAgentArchive(w http.ResponseWriter, _ *http.Request, c *caller, a *store.App) {
+	if err := s.apps.Archive(a.Name); err != nil {
+		writeAppError(w, err)
+		return
+	}
+	s.logAction(c, a.Name, "archive", "Archived the app")
+	// The app AFTER the change: the row the caller authorized against predates it.
+	writeJSON(w, http.StatusOK, s.appResponseFor(c, s.reread(a), s.firstActiveDomain(a.Name)))
+}
+
+// handleAgentUnarchive brings the app back as an ordinary powered-off app.
+func (s *Server) handleAgentUnarchive(w http.ResponseWriter, _ *http.Request, c *caller, a *store.App) {
+	if err := s.apps.Unarchive(a.Name); err != nil {
+		writeAppError(w, err)
+		return
+	}
+	s.logAction(c, a.Name, "unarchive", "Brought the app back from the archive")
+	writeJSON(w, http.StatusOK, s.appResponseFor(c, s.reread(a), s.firstActiveDomain(a.Name)))
 }

@@ -306,7 +306,7 @@ func (ra *routingAgent) Logs(name string, lines int) (string, error) {
 }
 
 func (ra *routingAgent) Exec(name, command string, timeout time.Duration) (*ExecResult, error) {
-	agent, err := ra.route(name)
+	agent, err := ra.routeRunnable(name)
 	if err != nil {
 		return nil, err
 	}
@@ -452,7 +452,7 @@ func (ra *routingAgent) SetDiskLimit(name string, diskMB int) {
 }
 
 func (ra *routingAgent) TakeSnapshot(name, label string, auto bool) (*store.Snapshot, error) {
-	agent, err := ra.route(name)
+	agent, err := ra.routeRunnable(name)
 	if err != nil {
 		return nil, err
 	}

@@ -7,6 +7,18 @@ changed rather than what an operator had to do about it; from v0.15.0 on, each
 release is written down as it is cut. Anything that changes a config file, a
 default, or on-disk state is called out as **Breaking** or **Upgrade note**.
 
+## Unreleased
+
+- **Archiving is honest to agents and to the API.** An archived app now refuses
+  `run` and new snapshots as *archived* rather than as "powered off; power it on
+  first" -- advice that could not be followed, since powering on is what
+  archiving refuses. On-demand snapshots are refused too, not just skipped by
+  the sweep, which is what "it stops taking new snapshots" always promised.
+- The built-in assistant and the `/info` agent guide are told when an app is
+  archived, so they explain it instead of planning work that will be rejected.
+- `POST /api/apps/{app}/archive` and `/unarchive` are on the app-scoped agent
+  API, so an agent asked to shelve an app can, and can undo it.
+
 ## v0.16.0 (2026-08-19)
 
 - **Snapshot cadence is per app, and staggered.** Every app used to be

@@ -121,3 +121,40 @@ func TestArchivedRetentionKeepsTheMonthlies(t *testing.T) {
 	assert.GreaterOrEqual(t, len(months), 6, "monthly rollups are kept, got %d", len(months))
 	assert.Less(t, len(keep), 100, "the dense recent history is not kept forever")
 }
+
+// Running a command needs the app running, so an archived app must say so in
+// the terms that can actually be acted on. It used to answer "powered off;
+// power it on first" -- true, but a dead end, because powering on is exactly
+// what archiving refuses.
+func TestArchivedAppRefusesExecAsArchived(t *testing.T) {
+	t.Parallel()
+	m, _ := newTestManager(t)
+	_, err := m.CreateApp("shelved", nil)
+	require.NoError(t, err)
+	m.WaitBackground()
+	require.NoError(t, m.Archive("shelved"))
+
+	_, err = m.node.Exec("shelved", "echo hi", time.Second)
+	assert.ErrorIs(t, err, ErrArchived, "the refusal names the state the caller has to change")
+}
+
+// "It stops taking new snapshots" is what the archive dialog and the docs
+// promise, so an on-demand snapshot has to be refused too -- not just skipped
+// by the sweep. Otherwise an archive that is supposed to shrink quietly grows.
+func TestArchivedAppRefusesNewSnapshots(t *testing.T) {
+	t.Parallel()
+	m, _ := newTestManager(t)
+	_, err := m.CreateApp("shelved", nil)
+	require.NoError(t, err)
+	m.WaitBackground()
+	require.NoError(t, m.Archive("shelved"))
+
+	_, err = m.node.TakeSnapshot("shelved", "by hand", false)
+	assert.ErrorIs(t, err, ErrArchived)
+
+	// Deleting still works: retention has to keep thinning what is already there.
+	snaps, err := m.store.Snapshots("shelved")
+	require.NoError(t, err)
+	require.NotEmpty(t, snaps, "the app has snapshots from before it was archived")
+	assert.NotErrorIs(t, m.node.DeleteSnapshot("shelved", snaps[0].ID), ErrArchived)
+}

@@ -333,3 +333,28 @@ func TestAppArchiveAndUnarchive(t *testing.T) {
 	// And it is deployable again.
 	assert.NotEqual(t, http.StatusConflict, request(t, s.API(), "POST", "/api/apps/blog/deploy", "", token).Code)
 }
+
+// An app-scoped token can shelve and restore its own app. It cannot strand
+// itself: an archived app still answers the endpoints this token needs to undo
+// it, which is what makes exposing archive here safe.
+func TestAgentTokenCanArchiveAndUnarchiveItsOwnApp(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	u := newActiveTestUser(t, s, "owner@example.com")
+	require.NoError(t, s.apps.Store().AddApp(&store.App{Name: "blog", Port: 10000, Host: store.HostLocal, OwnerID: u.ID}))
+	s.apps.PushMirror()
+	seedAppSubvolume(t, s, "blog")
+	appToken := appScopedToken(t, s, u, "blog")
+
+	require.Equal(t, http.StatusOK, request(t, s.API(), "POST", "/api/apps/blog/archive", "", appToken).Code)
+	assert.Equal(t, http.StatusConflict, request(t, s.API(), "POST", "/api/apps/blog/deploy", "", appToken).Code,
+		"the app it just shelved refuses to deploy")
+
+	// The guide it reads says so, rather than leaving it to discover by 409.
+	rr := request(t, s.API(), "GET", "/api/apps/blog/info", "", appToken)
+	require.Equal(t, http.StatusOK, rr.Code)
+	assert.Contains(t, rr.Body.String(), "ARCHIVED")
+
+	require.Equal(t, http.StatusOK, request(t, s.API(), "POST", "/api/apps/blog/unarchive", "", appToken).Code)
+	assert.NotEqual(t, http.StatusConflict, request(t, s.API(), "POST", "/api/apps/blog/deploy", "", appToken).Code)
+}
