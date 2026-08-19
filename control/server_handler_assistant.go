@@ -73,10 +73,10 @@ func (s *Server) handleAssistant(w http.ResponseWriter, r *http.Request, c *call
 		}
 		attachments = append(attachments, att)
 	}
-	// Resolve the mode the turn runs on: the requested option if this user may use
-	// it, else the app's remembered mode / the global default. Persist it (best
-	// effort) so the app remembers the choice.
-	mode := s.resolveMode(c.userID(), req.Mode, a.Name)
+	// Resolve the mode the turn runs on: the requested option if this instance
+	// can run it, else the app's remembered mode, else the default. Persist it
+	// (best effort) so the app remembers the choice.
+	mode := s.resolveMode(req.Mode, a.Name)
 	_ = s.apps.Store().SetAppAssistantMode(a.Name, mode)
 	if err := s.assistant.Send(a.Name, c.userID(), req.Message, mode, attachments...); err != nil {
 		switch {
@@ -323,15 +323,15 @@ func (s *Server) handleAssistantTranscript(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	// The mode dropdown: the options this user may pick, and the one the app will
-	// use next (its remembered choice, resolved against the current permissions).
-	modes := s.assistantOptions(c.userID())
+	// The mode dropdown: every option this instance can run, and the one the app
+	// will use next (its remembered choice, resolved against what is configured).
+	modes := s.assistantOptions()
 	writeJSON(w, http.StatusOK, &apiAssistantTranscript{
 		Enabled: true,
 		Items:   items,
 		Running: s.assistant.Running(a.Name),
 		Modes:   modes,
-		Mode:    s.resolveMode(c.userID(), "", a.Name),
+		Mode:    s.resolveMode("", a.Name),
 	})
 }
 
@@ -340,6 +340,6 @@ type apiAssistantTranscript struct {
 	Enabled bool               `json:"enabled"`
 	Running bool               `json:"running"`
 	Items   []assistant.Item   `json:"items"`
-	Modes   []apiAssistantMode `json:"modes"` // the options this user may pick
+	Modes   []assistant.Option `json:"modes"` // every option this instance can run
 	Mode    string             `json:"mode"`  // the one the app will use next
 }

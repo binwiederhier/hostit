@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"strings"
 	"time"
 
 	"heckel.io/hostit/assistant"
@@ -37,9 +36,8 @@ func (s *Server) handleUsersList(w http.ResponseWriter, _ *http.Request, _ *call
 		r := newUserResponse(u, count)
 		if usage, ok := usageByOwner[u.ID]; ok {
 			r.AssistantTokens = usage.InputTokens + usage.OutputTokens + usage.CacheWriteTokens + usage.CacheReadTokens
-			r.AssistantCostUSD = assistant.CostUSD(usage, s.config.AssistantModel)
+			r.AssistantCostUSD = assistant.CostUSD(usage, assistant.DefaultCostModel)
 		}
-		s.fillUserAssistant(r, u.ID)
 		resp = append(resp, r)
 	}
 	writeJSON(w, http.StatusOK, resp)
@@ -150,10 +148,6 @@ func (s *Server) handleUsersUpdate(w http.ResponseWriter, r *http.Request, c *ca
 		writeAppError(w, err)
 		return
 	}
-	if err := s.applyUserAssistant(u.ID, &req); err != nil {
-		writeAppError(w, err)
-		return
-	}
 	// A limit change must reach the user's running apps now: the qgroup cap and
 	// the container memory cap key off what the manager has recorded, and
 	// applyStoredLimits only re-syncs at daemon startup.
@@ -169,7 +163,6 @@ func (s *Server) handleUsersUpdate(w http.ResponseWriter, r *http.Request, c *ca
 		return
 	}
 	resp := newUserResponse(u, count)
-	s.fillUserAssistant(resp, u.ID)
 	writeJSON(w, http.StatusOK, resp)
 }
 
@@ -260,12 +253,10 @@ func (s *Server) handleSettingsGet(w http.ResponseWriter, _ *http.Request, _ *ca
 		writeAppError(w, err)
 		return
 	}
-	settings, _ := s.apps.Store().Settings()
 	writeJSON(w, http.StatusOK, &apiSettingsResponse{
 		DefaultAppLimit: defaults.AppLimit,
 		DefaultMemoryMB: defaults.MemoryMB,
 		DefaultDiskMB:   defaults.DiskMB,
-		Assistant:       s.assistantDefaults(settings),
 	})
 }
 
@@ -292,33 +283,6 @@ func (s *Server) handleSettingsUpdate(w http.ResponseWriter, r *http.Request, c 
 	if err := s.users.SetDefaults(defaults); err != nil {
 		writeAppError(w, err)
 		return
-	}
-	// Assistant defaults are part of the same settings call rather than a separate
-	// endpoint; only the fields present in the body are changed.
-	if a := req.Assistant; a != nil {
-		st := s.apps.Store()
-		if a.ExternalAllowed != nil {
-			if err := st.SetSetting(store.SettingAssistantDefaultExternal, boolStr(*a.ExternalAllowed)); err != nil {
-				writeAppError(w, err)
-				return
-			}
-		}
-		if a.AllowedModels != nil {
-			if err := st.SetSetting(store.SettingAssistantDefaultModels, strings.Join(*a.AllowedModels, ",")); err != nil {
-				writeAppError(w, err)
-				return
-			}
-		}
-		if a.DefaultMode != nil {
-			if *a.DefaultMode != "" && !s.config.IsValidMode(*a.DefaultMode) {
-				writeError(w, http.StatusBadRequest, errInvalidMode(*a.DefaultMode))
-				return
-			}
-			if err := st.SetSetting(store.SettingAssistantDefaultMode, *a.DefaultMode); err != nil {
-				writeAppError(w, err)
-				return
-			}
-		}
 	}
 	// Echo the merged settings (limits + assistant) back, so one round-trip writes and reads.
 	s.handleSettingsGet(w, r, c)

@@ -133,7 +133,7 @@ func New(conf *controlconf.Config, apps *Manager, users *user.Manager) *Server {
 	// so it is confined to one app the way an agent token is.
 	if conf.AssistantAvailable() {
 		s.assistantOps = &appOps{apps: apps, node: apps.NodeAgent(), changed: s.assistantChanged}
-		s.assistant = assistant.NewManager(assistant.NewClient(conf.AnthropicAPIKey), s.assistantOps, &appTranscripts{store: apps.Store()}, conf.AssistantModel)
+		s.assistant = assistant.NewManager(assistant.NewClient(conf.AnthropicAPIKey), s.assistantOps, &appTranscripts{store: apps.Store()}, credentials(conf))
 		// Wire the Claude Max (subscription) backend whenever its token is configured,
 		// so selecting "Claude.ai" actually uses the subscription. Its presence is the
 		// whole switch; there is no separate backend setting. (Previously the option

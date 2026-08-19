@@ -187,9 +187,6 @@ type apiUserResponse struct {
 	// The user's effective assistant permissions: may they use External Claude, and
 	// which API models. HasOverride is true when these are an explicit per-user
 	// setting rather than the inherited global default.
-	AssistantExternalAllowed bool     `json:"assistant_external_allowed"`
-	AssistantAllowedModels   []string `json:"assistant_allowed_models"`
-	AssistantHasOverride     bool     `json:"assistant_has_override"`
 }
 
 // apiInviteUserRequest is the body of POST /api/users: an admin handing out
@@ -222,12 +219,6 @@ type apiUpdateUserRequest struct {
 	AppLimitSet bool `json:"-"`
 	MemoryMBSet bool `json:"-"`
 	DiskMBSet   bool `json:"-"`
-
-	// Assistant permissions. ExternalAllowed/AllowedModels set an explicit override;
-	// ClearOverride reverts the user to the global default instead.
-	AssistantExternalAllowed *bool     `json:"assistant_external_allowed"`
-	AssistantAllowedModels   *[]string `json:"assistant_allowed_models"`
-	AssistantClearOverride   bool      `json:"assistant_clear_override"`
 }
 
 // UnmarshalJSON records which limit fields were present in the request body
@@ -248,26 +239,16 @@ func (r *apiUpdateUserRequest) UnmarshalJSON(b []byte) error {
 
 // apiSettingsResponse is the global default limits
 type apiSettingsResponse struct {
-	DefaultAppLimit int                   `json:"default_app_limit"`
-	DefaultMemoryMB int                   `json:"default_memory_mb"`
-	DefaultDiskMB   int                   `json:"default_disk_mb"`
-	Assistant       *apiAssistantDefaults `json:"assistant"` // global assistant defaults + model catalog
+	DefaultAppLimit int `json:"default_app_limit"`
+	DefaultMemoryMB int `json:"default_memory_mb"`
+	DefaultDiskMB   int `json:"default_disk_mb"`
 }
 
 // apiUpdateSettingsRequest is the body of PATCH /api/settings
 type apiUpdateSettingsRequest struct {
-	DefaultAppLimit *int                        `json:"default_app_limit"`
-	DefaultMemoryMB *int                        `json:"default_memory_mb"`
-	DefaultDiskMB   *int                        `json:"default_disk_mb"`
-	Assistant       *apiAssistantDefaultsUpdate `json:"assistant"`
-}
-
-// apiAssistantDefaultsUpdate is the assistant-defaults portion of a settings update;
-// each field is optional and only the ones present are changed.
-type apiAssistantDefaultsUpdate struct {
-	ExternalAllowed *bool     `json:"external_allowed"`
-	AllowedModels   *[]string `json:"allowed_models"`
-	DefaultMode     *string   `json:"default_mode"`
+	DefaultAppLimit *int `json:"default_app_limit"`
+	DefaultMemoryMB *int `json:"default_memory_mb"`
+	DefaultDiskMB   *int `json:"default_disk_mb"`
 }
 
 // apiAgentEndpoint documents one endpoint in the agent-facing API index

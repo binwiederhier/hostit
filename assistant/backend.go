@@ -136,3 +136,8 @@ func Default(creds Credentials) (Option, bool) {
 	}
 	return Option{}, false
 }
+
+// DefaultCostModel prices usage recorded before per-turn model attribution
+// existed. Sonnet sits between the cheap and expensive models, so a mixed
+// history is neither flattered nor exaggerated.
+const DefaultCostModel = "claude-sonnet-5"

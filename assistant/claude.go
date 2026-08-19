@@ -7,8 +7,6 @@ import (
 	"encoding/json"
 	"log/slog"
 	"time"
-
-	"heckel.io/hostit/controlconf"
 )
 
 // ClaudeRunner runs one assistant turn on the Claude Max backend: it launches the
@@ -37,9 +35,9 @@ func (m *Manager) SetClaudeRunner(r ClaudeRunner) {
 // published "done"), and a non-nil error when the SUBSCRIPTION was unavailable --
 // the signal for the caller to fall back to the API backend. On that error path it
 // deliberately saves nothing, so the fallback turn starts from a clean transcript.
-func (m *Manager) runClaudeTurn(ctx context.Context, s *session, app string, history []Message, userText string) error {
+func (m *Manager) runClaudeTurn(ctx context.Context, s *session, app string, history []Message, userText string, option Option) error {
 	prior := history[:len(history)-1] // everything before the user message just added
-	s.publish(Event{Type: evtModel, Text: controlconf.ExternalClaudeMode})
+	s.publish(Event{Type: evtModel, Text: option.ID})
 	acc := &claudeAccumulator{}
 	usage, err := m.claude.RunTurn(ctx, app, buildClaudePrompt(prior, userText), systemPrompt(app), func(ev Event) {
 		s.publish(ev)
@@ -56,7 +54,7 @@ func (m *Manager) runClaudeTurn(ctx context.Context, s *session, app string, his
 	if err != nil {
 		if ctx.Err() != nil {
 			acc.flush() // cancelled (Stop / timeout): keep what was done, end cleanly
-			tagModel(acc.messages, controlconf.ExternalClaudeMode)
+			tagModel(acc.messages, option.ID)
 			m.save(app, append(history, acc.messages...))
 			s.publish(Event{Type: evtDone})
 			return nil
@@ -66,7 +64,7 @@ func (m *Manager) runClaudeTurn(ctx context.Context, s *session, app string, his
 	// Persist what the agent did, reconstructed from the same ordered stream the
 	// subscribers saw, so a reload shows this turn (badged as External Claude).
 	acc.flush()
-	tagModel(acc.messages, controlconf.ExternalClaudeMode)
+	tagModel(acc.messages, option.ID)
 	m.save(app, append(history, acc.messages...))
 	s.publish(Event{Type: evtDone})
 	return nil

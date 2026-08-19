@@ -126,7 +126,7 @@ func TestAgentAssistantTranscriptGivesContextToAnExternalAgent(t *testing.T) {
 	// Switch the assistant on with a store we can seed, as if the owner had already
 	// chatted with the built-in assistant before switching to an external agent.
 	sessions := assistant.NewMemoryStore()
-	s.assistant = assistant.NewManager(assistant.NewClient("test-key"), &appOps{apps: s.apps}, sessions, "test-model")
+	s.assistant = assistant.NewManager(assistant.NewClient("test-key"), &appOps{apps: s.apps}, sessions, assistant.Credentials{AnthropicAPIKey: "k"})
 	require.NoError(t, sessions.Save("blog", []assistant.Message{
 		{Role: "user", Content: []assistant.ContentBlock{{Type: "text", Text: "add a dark mode toggle"}}},
 		{Role: "assistant", Content: []assistant.ContentBlock{{Type: "text", Text: "Done, the toggle is in the header."}}},
@@ -651,7 +651,7 @@ func TestAppResponseReportsAssistantAvailability(t *testing.T) {
 	assert.False(t, resp.AssistantEnabled)
 
 	// With the assistant configured, the field flips true and the tab appears.
-	s.assistant = assistant.NewManager(assistant.NewClient("test-key"), &appOps{apps: s.apps}, assistant.NewMemoryStore(), "test-model")
+	s.assistant = assistant.NewManager(assistant.NewClient("test-key"), &appOps{apps: s.apps}, assistant.NewMemoryStore(), assistant.Credentials{AnthropicAPIKey: "k"})
 	rr = request(t, s.API(), "GET", "/api/apps/blog", "", userToken)
 	require.Equal(t, http.StatusOK, rr.Code)
 	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &resp))

@@ -74,28 +74,12 @@ const (
 	// what a wildcard certificate requires (Let's Encrypt does not issue
 	// wildcards over HTTP-01)
 	DNSProviderRoute53 = "route53"
-	// DefaultAssistantModel is the model the built-in assistant uses unless the
-	// operator names another one
-	DefaultAssistantModel = "claude-sonnet-5"
-
-	// ExternalClaudeMode is the assistant mode that runs on the operator's Claude
-	// Max subscription (the sandboxed claude -p). Every other mode is an API model
-	// id (e.g. "claude-sonnet-5"). The UI shows one dropdown: this plus the models.
-	ExternalClaudeMode  = "external-claude"
-	ExternalClaudeLabel = "Claude.ai"
 )
 
 var (
 	errBaseDomainRequired = errors.New("base-domain is required, e.g. apps.example.com")
 	errAdminTokenRequired = errors.New("admin-token is required; generate one with e.g. openssl rand -hex 24")
 )
-
-// ModelOption is one selectable model in the assistant's mode dropdown: an id
-// the API understands (or ExternalClaudeMode) and a human label.
-type ModelOption struct {
-	ID    string `yaml:"id" json:"id"`
-	Label string `yaml:"label" json:"label"`
-}
 
 // Config is the hostit server configuration, loaded from a YAML file (see LoadConfig)
 type Config struct {
@@ -162,13 +146,7 @@ type Config struct {
 
 	// Built-in coding assistant (the in-browser agent). An empty API key disables it.
 	AnthropicAPIKey string `yaml:"anthropic-api-key"` // Anthropic API key for the built-in assistant; empty disables it
-	AssistantModel  string `yaml:"assistant-model"`   // Model the assistant uses; defaults to DefaultAssistantModel
 
-	// AssistantModels is the catalog of API models offered in the assistant's
-	// mode dropdown (alongside External Claude, when the subscription is set up).
-	// Order is the display order; the first is the default API model and the
-	// fallback target when External Claude is unavailable.
-	AssistantModels []ModelOption `yaml:"assistant-models"`
 
 	// Optional Claude Max backend for the assistant: a subscription OAuth token
 	// (from `claude setup-token`) that drives `claude -p` inside a sandbox
@@ -217,48 +195,7 @@ func NewConfig() *Config {
 		TLS:                 TLSLetsEncrypt,
 		AppPreview:          AppPreviewLive,
 		AppPreviewIsolation: AppPreviewIsolationStrict,
-		AssistantModel:      DefaultAssistantModel,
-		AssistantModels: []ModelOption{
-			{ID: "claude-sonnet-5", Label: "Sonnet 5"},
-			{ID: "claude-opus-5", Label: "Opus 5"},
-			{ID: "claude-haiku-4-5-20251001", Label: "Haiku 4.5"},
-		},
 	}
-}
-
-// ModeOptions returns the full assistant mode catalog for the dropdown: External
-// Claude first (only when the subscription is configured), then the API models in
-// configured order. The operator's per-user allowlist filters this further.
-func (c *Config) ModeOptions() []ModelOption {
-	opts := make([]ModelOption, 0, len(c.AssistantModels)+1)
-	if c.ClaudeBackendEnabled() {
-		opts = append(opts, ModelOption{ID: ExternalClaudeMode, Label: ExternalClaudeLabel})
-	}
-	opts = append(opts, c.AssistantModels...)
-	return opts
-}
-
-// IsValidMode reports whether mode is External Claude or one of the configured
-// API models (i.e. something a turn may actually run).
-func (c *Config) IsValidMode(mode string) bool {
-	if mode == ExternalClaudeMode {
-		return c.ClaudeBackendEnabled()
-	}
-	for _, m := range c.AssistantModels {
-		if m.ID == mode {
-			return true
-		}
-	}
-	return false
-}
-
-// DefaultAPIModel is the first configured API model: the default for API turns
-// and the target when External Claude falls back. Falls back to AssistantModel.
-func (c *Config) DefaultAPIModel() string {
-	if len(c.AssistantModels) > 0 {
-		return c.AssistantModels[0].ID
-	}
-	return c.AssistantModel
 }
 
 // WebEnabled reports whether Google login (and thus the web app) is configured

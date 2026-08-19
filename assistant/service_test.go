@@ -120,7 +120,7 @@ func TestRunExecutesToolThenFinishes(t *testing.T) {
 		}},
 		{StopReason: "end_turn", Content: []ContentBlock{{Type: "text", Text: "Done."}}},
 	}}
-	m := NewManager(fc, ops, NewMemoryStore(), "test-model")
+	m := NewManager(fc, ops, NewMemoryStore(), Credentials{AnthropicAPIKey: "k"})
 
 	events := runTurn(t, m, "blog", "make a hello page")
 
@@ -153,7 +153,7 @@ func TestRollbackRunsDirectly(t *testing.T) {
 		{StopReason: "tool_use", Content: []ContentBlock{toolUse("tu_1", "rollback", `{"id":"snap-1"}`)}},
 		{StopReason: "end_turn", Content: []ContentBlock{{Type: "text", Text: "Rolled back."}}},
 	}}
-	m := NewManager(fc, newFakeOps(), NewMemoryStore(), "test-model")
+	m := NewManager(fc, newFakeOps(), NewMemoryStore(), Credentials{AnthropicAPIKey: "k"})
 
 	events := runTurn(t, m, "blog", "roll back to snap-1")
 
@@ -177,7 +177,7 @@ func TestToolErrorIsReportedButLoopContinues(t *testing.T) {
 		{StopReason: "tool_use", Content: []ContentBlock{toolUse("tu_1", "read_file", `{"path":"missing.txt"}`)}},
 		{StopReason: "end_turn", Content: []ContentBlock{{Type: "text", Text: "That file does not exist yet."}}},
 	}}
-	m := NewManager(fc, ops, NewMemoryStore(), "test-model")
+	m := NewManager(fc, ops, NewMemoryStore(), Credentials{AnthropicAPIKey: "k"})
 
 	events := runTurn(t, m, "blog", "read missing.txt")
 
@@ -197,7 +197,7 @@ func TestRunStopsAtStepLimit(t *testing.T) {
 	t.Parallel()
 	// A model that never stops asking for tools must not loop forever
 	fc := &endlessToolCompleter{}
-	m := NewManager(fc, newFakeOps(), NewMemoryStore(), "test-model")
+	m := NewManager(fc, newFakeOps(), NewMemoryStore(), Credentials{AnthropicAPIKey: "k"})
 
 	// Hitting the step limit is surfaced as a friendly "paused" notice (say
 	// "continue" to resume), not an error: nothing actually failed.
@@ -216,7 +216,7 @@ func TestTranscriptPersistsAcrossRuns(t *testing.T) {
 		{StopReason: "end_turn", Content: []ContentBlock{{Type: "text", Text: "second reply"}}},
 		{StopReason: "end_turn", Content: []ContentBlock{{Type: "text", Text: "third reply"}}},
 	}}
-	m := NewManager(fc, ops, NewMemoryStore(), "test-model")
+	m := NewManager(fc, ops, NewMemoryStore(), Credentials{AnthropicAPIKey: "k"})
 
 	runTurn(t, m, "blog", "hello")
 	runTurn(t, m, "blog", "again")
@@ -245,11 +245,11 @@ func TestTranscriptIsPersistedAndRendered(t *testing.T) {
 		}},
 		{StopReason: "end_turn", Content: []ContentBlock{{Type: "text", Text: "Done."}}},
 	}}
-	runTurn(t, NewManager(fc, ops, store, "m"), "blog", "make a page")
+	runTurn(t, NewManager(fc, ops, store, Credentials{AnthropicAPIKey: "k"}), "blog", "make a page")
 
 	// A different manager on the same store recovers the conversation as display
 	// items -- what a reload or another device sees.
-	items, err := NewManager(&fakeCompleter{}, ops, store, "m").Transcript("blog")
+	items, err := NewManager(&fakeCompleter{}, ops, store, Credentials{AnthropicAPIKey: "k"}).Transcript("blog")
 	require.NoError(t, err)
 	kinds := make([]string, len(items))
 	var tool Item
@@ -265,7 +265,7 @@ func TestTranscriptIsPersistedAndRendered(t *testing.T) {
 	assert.Contains(t, tool.Output, "wrote 2 bytes", "the tool result must be folded onto its call")
 
 	// Reset clears the stored conversation
-	m := NewManager(&fakeCompleter{}, ops, store, "m")
+	m := NewManager(&fakeCompleter{}, ops, store, Credentials{AnthropicAPIKey: "k"})
 	require.NoError(t, m.Reset("blog"))
 	items, err = m.Transcript("blog")
 	require.NoError(t, err)
@@ -275,7 +275,7 @@ func TestTranscriptIsPersistedAndRendered(t *testing.T) {
 func TestRunReportsAPIError(t *testing.T) {
 	t.Parallel()
 	fc := &fakeCompleter{} // no replies -> complete returns an error
-	m := NewManager(fc, newFakeOps(), NewMemoryStore(), "test-model")
+	m := NewManager(fc, newFakeOps(), NewMemoryStore(), Credentials{AnthropicAPIKey: "k"})
 
 	events := runTurn(t, m, "blog", "hi")
 	require.NotEmpty(t, events)
@@ -287,7 +287,7 @@ func TestBroadcastsToEverySubscriber(t *testing.T) {
 	fc := &fakeCompleter{replies: []response{
 		{StopReason: "end_turn", Content: []ContentBlock{{Type: "text", Text: "broadcast"}}, Usage: usage{OutputTokens: 7}},
 	}}
-	m := NewManager(fc, newFakeOps(), NewMemoryStore(), "test-model")
+	m := NewManager(fc, newFakeOps(), NewMemoryStore(), Credentials{AnthropicAPIKey: "k"})
 
 	// Two devices watching the same app both see the same stream.
 	ch1, c1, err1 := m.Subscribe("blog")
@@ -311,7 +311,7 @@ func TestPublishesTokenUsage(t *testing.T) {
 	fc := &fakeCompleter{replies: []response{
 		{StopReason: "end_turn", Content: []ContentBlock{{Type: "text", Text: "hi"}}, Usage: usage{InputTokens: 100, OutputTokens: 42}},
 	}}
-	m := NewManager(fc, newFakeOps(), NewMemoryStore(), "test-model")
+	m := NewManager(fc, newFakeOps(), NewMemoryStore(), Credentials{AnthropicAPIKey: "k"})
 	ch, cancel, err := m.Subscribe("blog")
 	require.NoError(t, err)
 	defer cancel()
@@ -345,7 +345,7 @@ func TestSecondSenderIsRejectedWhileBusy(t *testing.T) {
 	t.Parallel()
 	// A model call that blocks until released keeps the turn "running".
 	g := &gateCompleter{entered: make(chan struct{}, 1), release: make(chan struct{})}
-	m := NewManager(g, newFakeOps(), NewMemoryStore(), "test-model")
+	m := NewManager(g, newFakeOps(), NewMemoryStore(), Credentials{AnthropicAPIKey: "k"})
 
 	require.NoError(t, m.Send("blog", "", "one", ""))
 	<-g.entered // the run is now mid-call, so the app is busy
@@ -364,7 +364,7 @@ func TestRunContinuesWithoutASubscriber(t *testing.T) {
 	fc := &fakeCompleter{replies: []response{
 		{StopReason: "end_turn", Content: []ContentBlock{{Type: "text", Text: "done anyway"}}},
 	}}
-	m := NewManager(fc, newFakeOps(), store, "test-model")
+	m := NewManager(fc, newFakeOps(), store, Credentials{AnthropicAPIKey: "k"})
 
 	require.NoError(t, m.Send("blog", "", "hello", ""))
 	require.Eventually(t, func() bool { return !m.Running("blog") }, 3*time.Second, 10*time.Millisecond)
@@ -381,7 +381,7 @@ func TestRunContinuesWithoutASubscriber(t *testing.T) {
 func TestReserveRunCapsConcurrentTurnsPerUser(t *testing.T) {
 	t.Parallel()
 	g := &gateCompleter{entered: make(chan struct{}, 10), release: make(chan struct{})}
-	m := NewManager(g, newFakeOps(), NewMemoryStore(), "test-model") // maxRunsPerUser = 3
+	m := NewManager(g, newFakeOps(), NewMemoryStore(), Credentials{AnthropicAPIKey: "k"}) // maxRunsPerUser = 3
 
 	for i := 1; i <= 3; i++ {
 		require.NoError(t, m.Send(fmt.Sprintf("app%d", i), "u1", "go", ""))
@@ -406,7 +406,7 @@ func TestReserveRunCapsTurnsPerHour(t *testing.T) {
 		{StopReason: "end_turn", Content: []ContentBlock{{Type: "text", Text: "a"}}},
 		{StopReason: "end_turn", Content: []ContentBlock{{Type: "text", Text: "b"}}},
 	}}
-	m := NewManager(fc, newFakeOps(), NewMemoryStore(), "test-model")
+	m := NewManager(fc, newFakeOps(), NewMemoryStore(), Credentials{AnthropicAPIKey: "k"})
 	m.maxRunsPerHour = 2
 
 	// Two turns finish, but their starts still count against the hourly window.
@@ -446,7 +446,7 @@ func TestRecentHistoryWindowsToLastTurns(t *testing.T) {
 
 func TestSubscriberCap(t *testing.T) {
 	t.Parallel()
-	m := NewManager(&fakeCompleter{}, newFakeOps(), NewMemoryStore(), "test-model")
+	m := NewManager(&fakeCompleter{}, newFakeOps(), NewMemoryStore(), Credentials{AnthropicAPIKey: "k"})
 	var cancels []func()
 	for i := 0; i < maxSubsPerApp; i++ {
 		_, cancel, err := m.Subscribe("blog")
@@ -469,7 +469,7 @@ func TestSubscriberCap(t *testing.T) {
 func TestResetRefusedWhileRunning(t *testing.T) {
 	t.Parallel()
 	g := &gateCompleter{entered: make(chan struct{}, 1), release: make(chan struct{})}
-	m := NewManager(g, newFakeOps(), NewMemoryStore(), "test-model")
+	m := NewManager(g, newFakeOps(), NewMemoryStore(), Credentials{AnthropicAPIKey: "k"})
 
 	require.NoError(t, m.Send("blog", "", "go", ""))
 	<-g.entered
@@ -483,7 +483,7 @@ func TestResetRefusedWhileRunning(t *testing.T) {
 func TestStopCancelsRunningTurn(t *testing.T) {
 	t.Parallel()
 	g := &ctxGateCompleter{entered: make(chan struct{}, 1)}
-	m := NewManager(g, newFakeOps(), NewMemoryStore(), "test-model")
+	m := NewManager(g, newFakeOps(), NewMemoryStore(), Credentials{AnthropicAPIKey: "k"})
 
 	ch, cancel, err := m.Subscribe("blog")
 	require.NoError(t, err)

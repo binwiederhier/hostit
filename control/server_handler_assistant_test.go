@@ -33,7 +33,7 @@ func TestAssistantEndpointRequiresAuth(t *testing.T) {
 func newAssistantTestServer(t *testing.T) *Server {
 	t.Helper()
 	s := newTestServer(t)
-	s.assistant = assistant.NewManager(assistant.NewClient("test-key"), &appOps{apps: s.apps}, assistant.NewMemoryStore(), "test-model")
+	s.assistant = assistant.NewManager(assistant.NewClient("test-key"), &appOps{apps: s.apps}, assistant.NewMemoryStore(), assistant.Credentials{AnthropicAPIKey: "k"})
 	return s
 }
 

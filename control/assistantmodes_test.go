@@ -1,60 +1,65 @@
 package control
 
 import (
-	"encoding/json"
-	"net/http"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"heckel.io/hostit/assistant"
+	"heckel.io/hostit/store"
 )
 
-// The assistant defaults are folded into the global /api/settings call rather than
-// living on their own /api/assistant-defaults endpoint.
-func TestAssistantDefaultsGet(t *testing.T) {
+// The dropdown is what the credentials can serve, not a list an operator
+// maintains: there is no catalog setting and no per-user allowlist any more, so
+// these come straight from the assistant's registry.
+func TestAssistantOptionsFollowTheConfiguredCredentials(t *testing.T) {
 	t.Parallel()
 	s := newTestServer(t)
-	rr := request(t, s.API(), "GET", "/api/settings", "", testToken)
-	require.Equal(t, http.StatusOK, rr.Code)
-	var resp apiSettingsResponse
-	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &resp))
-	require.NotNil(t, resp.Assistant, "settings carries the assistant defaults")
-	// The API model catalog is surfaced so the admin UI can offer them
-	require.NotEmpty(t, resp.Assistant.Models)
-	assert.Equal(t, "claude-sonnet-5", resp.Assistant.Models[0].ID)
-	assert.Empty(t, resp.Assistant.AllowedModels, "no allowlist configured means all models")
+
+	s.config.AnthropicAPIKey, s.config.ClaudeCodeOAuthToken = "", ""
+	assert.Empty(t, s.assistantOptions(), "nothing configured offers nothing")
+
+	s.config.AnthropicAPIKey = "k"
+	api := s.assistantOptions()
+	require.NotEmpty(t, api)
+	for _, o := range api {
+		assert.Equal(t, assistant.BackendAnthropic, o.Backend)
+	}
+
+	s.config.ClaudeCodeOAuthToken = "t"
+	both := s.assistantOptions()
+	assert.Greater(t, len(both), len(api))
+	assert.Equal(t, assistant.BackendClaude, both[0].Backend, "the subscription group leads")
 }
 
-func TestAssistantDefaultsUpdate(t *testing.T) {
+// A turn runs what the app last chose; a request overrides it; and a choice
+// this instance can no longer run falls back to the default instead of failing.
+func TestResolveModePrefersTheRequestThenTheAppsChoice(t *testing.T) {
 	t.Parallel()
 	s := newTestServer(t)
+	s.config.AnthropicAPIKey, s.config.ClaudeCodeOAuthToken = "k", "t"
+	u := newActiveTestUser(t, s, "owner@example.com")
+	require.NoError(t, s.apps.Store().AddApp(&store.App{Name: "blog", Port: 10000, Host: store.HostLocal, OwnerID: u.ID}))
 
-	// The update echoes the resulting settings back, so one round-trip both writes
-	// and reads. A partial body changes only the fields it names.
-	body := `{"assistant":{"external_allowed":true,"allowed_models":["claude-opus-5"],"default_mode":"claude-opus-5"}}`
-	rr := request(t, s.API(), "PATCH", "/api/settings", body, testToken)
-	require.Equal(t, http.StatusOK, rr.Code)
-	var resp apiSettingsResponse
-	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &resp))
-	require.NotNil(t, resp.Assistant)
-	assert.True(t, resp.Assistant.ExternalAllowed)
-	assert.Equal(t, []string{"claude-opus-5"}, resp.Assistant.AllowedModels)
-	assert.Equal(t, "claude-opus-5", resp.Assistant.DefaultMode)
+	assert.Equal(t, "anthropic-haiku-4-5", s.resolveMode("anthropic-haiku-4-5", "blog"), "an explicit request wins")
 
-	// And it persisted: a fresh GET reads the same defaults
-	rr = request(t, s.API(), "GET", "/api/settings", "", testToken)
-	require.Equal(t, http.StatusOK, rr.Code)
-	var reread apiSettingsResponse
-	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &reread))
-	require.NotNil(t, reread.Assistant)
-	assert.True(t, reread.Assistant.ExternalAllowed)
-	assert.Equal(t, []string{"claude-opus-5"}, reread.Assistant.AllowedModels)
-	assert.Equal(t, "claude-opus-5", reread.Assistant.DefaultMode)
+	require.NoError(t, s.apps.Store().SetAppAssistantMode("blog", "anthropic-opus-5"))
+	assert.Equal(t, "anthropic-opus-5", s.resolveMode("", "blog"), "else the app's remembered choice")
+
+	// The subscription goes away: the remembered choice on it no longer resolves.
+	require.NoError(t, s.apps.Store().SetAppAssistantMode("blog", "claude-opus-5"))
+	s.config.ClaudeCodeOAuthToken = ""
+	assert.Equal(t, "anthropic-sonnet-5", s.resolveMode("", "blog"), "falls back rather than failing the turn")
 }
 
-func TestAssistantDefaultsUpdateRejectsUnknownMode(t *testing.T) {
+// With the subscription configured it supplies the default, since it is already
+// paid for.
+func TestResolveModeDefaultsToTheSubscription(t *testing.T) {
 	t.Parallel()
 	s := newTestServer(t)
-	rr := request(t, s.API(), "PATCH", "/api/settings", `{"assistant":{"default_mode":"no-such-model"}}`, testToken)
-	assert.Equal(t, http.StatusBadRequest, rr.Code)
+	s.config.AnthropicAPIKey, s.config.ClaudeCodeOAuthToken = "k", "t"
+	assert.Equal(t, "claude-opus-5", s.resolveMode("", "no-such-app"))
+
+	s.config.ClaudeCodeOAuthToken = ""
+	assert.Equal(t, "anthropic-sonnet-5", s.resolveMode("", "no-such-app"))
 }

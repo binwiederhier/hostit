@@ -44,7 +44,7 @@ func TestClaudeBackendRunsTurnAndStores(t *testing.T) {
 		usage: Usage{InputTokens: 10, OutputTokens: 20, CacheReadTokens: 5},
 	}
 	store := NewMemoryStore()
-	m := NewManager(&fakeCompleter{}, newFakeOps(), store, "test-model")
+	m := NewManager(&fakeCompleter{}, newFakeOps(), store, Credentials{AnthropicAPIKey: "k", ClaudeCodeOAuthToken: "t"})
 	m.SetClaudeRunner(runner)
 
 	events := runTurn(t, m, "blog", "make a hello page")
@@ -122,7 +122,7 @@ func TestAPITurnRepairsCollidingToolIDsFromExternalTurns(t *testing.T) {
 		{Role: "user", Content: []ContentBlock{{Type: "tool_result", ToolUseID: "call_1", Content: "b"}}},
 	}))
 	fc := &fakeCompleter{replies: []response{{StopReason: "end_turn", Content: []ContentBlock{{Type: "text", Text: "done"}}}}}
-	m := NewManager(fc, newFakeOps(), store, "test-model")
+	m := NewManager(fc, newFakeOps(), store, Credentials{AnthropicAPIKey: "k", ClaudeCodeOAuthToken: "t"})
 
 	runTurn(t, m, "blog", "three") // no claude runner set: an API turn
 
@@ -159,7 +159,7 @@ func TestClaudeBackendPairsParallelToolResults(t *testing.T) {
 		{Type: "tool_result", Output: "content-b"},
 		{Type: "text", Text: "done"},
 	}}
-	m := NewManager(&fakeCompleter{}, newFakeOps(), NewMemoryStore(), "test-model")
+	m := NewManager(&fakeCompleter{}, newFakeOps(), NewMemoryStore(), Credentials{AnthropicAPIKey: "k", ClaudeCodeOAuthToken: "t"})
 	m.SetClaudeRunner(runner)
 	runTurn(t, m, "blog", "read both files")
 
@@ -185,7 +185,7 @@ func TestClaudeBackendFallsBackToAPIWhenSubscriptionFails(t *testing.T) {
 		{StopReason: "end_turn", Content: []ContentBlock{{Type: "text", Text: "Handled by the API instead."}}},
 	}}
 	store := NewMemoryStore()
-	m := NewManager(fc, newFakeOps(), store, "test-model")
+	m := NewManager(fc, newFakeOps(), store, Credentials{AnthropicAPIKey: "k", ClaudeCodeOAuthToken: "t"})
 	m.SetClaudeRunner(runner)
 
 	events := runTurn(t, m, "blog", "do the thing") // empty mode defaults to External Claude here
@@ -218,7 +218,7 @@ func TestClaudeBackendFallsBackToAPIWhenSubscriptionFails(t *testing.T) {
 func TestClaudeBackendReplaysHistoryForContinuity(t *testing.T) {
 	t.Parallel()
 	runner := &fakeClaudeRunner{events: []Event{{Type: "text", Text: "ok"}}}
-	m := NewManager(&fakeCompleter{}, newFakeOps(), NewMemoryStore(), "test-model")
+	m := NewManager(&fakeCompleter{}, newFakeOps(), NewMemoryStore(), Credentials{AnthropicAPIKey: "k", ClaudeCodeOAuthToken: "t"})
 	m.SetClaudeRunner(runner)
 
 	// First turn: no prior context, so the prompt is just the message.

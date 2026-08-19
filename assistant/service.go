@@ -13,8 +13,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"heckel.io/hostit/controlconf"
 )
 
 const (
@@ -55,10 +53,11 @@ var (
 // not by the request that started it -- so a run keeps going when the sender
 // leaves, and every subscriber (browser, phone) sees the same stream.
 type Manager struct {
-	client   completer
-	ops      AppOps
-	store    Store
-	model    string
+	client completer
+	ops    AppOps
+	store  Store
+	// creds is which backends this instance can run, for resolving a turn's mode.
+	creds    Credentials
 	claude   ClaudeRunner // non-nil switches turns to the Claude Max sandbox backend
 	sessions map[string]*session
 	mu       sync.Mutex // Protects sessions
@@ -80,12 +79,12 @@ type userRuns struct {
 
 // NewManager wires the loop to a model client, the app operations it drives, and
 // the store that persists each app's conversation
-func NewManager(client completer, ops AppOps, store Store, model string) *Manager {
+func NewManager(client completer, ops AppOps, store Store, creds Credentials) *Manager {
 	return &Manager{
 		client:         client,
 		ops:            ops,
 		store:          store,
-		model:          model,
+		creds:          creds,
 		sessions:       make(map[string]*session),
 		maxRunsPerUser: defaultMaxRunsPerUser,
 		maxRunsPerHour: defaultMaxRunsPerHour,
@@ -235,13 +234,15 @@ func (m *Manager) runLoop(s *session, app, userID, userText, mode string, attach
 	defer cancel()
 	s.setCancel(cancel) // so Stop can cancel this run
 
-	// An empty mode means "the sensible default": External Claude when configured,
-	// else the API model. The server usually resolves a concrete mode first.
-	if mode == "" {
-		if m.claude != nil {
-			mode = controlconf.ExternalClaudeMode
-		} else {
-			mode = m.model
+	// A mode is an option id ("claude-opus-5", "anthropic-sonnet-5"): a backend
+	// AND a model, because the same model runs both ways and bills differently.
+	// The server resolves one before calling; an empty or unknown id here falls
+	// back to whatever this instance can run.
+	option, ok := Lookup(m.creds, mode)
+	if !ok {
+		if option, ok = Default(m.creds); !ok {
+			s.publish(Event{Type: evtNotice, Text: "The assistant has no model configured."})
+			return
 		}
 	}
 
@@ -252,19 +253,37 @@ func (m *Manager) runLoop(s *session, app, userID, userText, mode string, attach
 	m.save(app, history)
 	s.publish(Event{Type: evtUser, Text: display})
 
-	// External Claude mode: run the subscription-backed agent in its sandbox. If the
-	// subscription is unavailable, tell the user and fall back to the API backend so
-	// a lapsed/expired subscription never leaves the assistant dead.
-	if mode == controlconf.ExternalClaudeMode && m.claude != nil {
-		if err := m.runClaudeTurn(ctx, s, app, history, userText); err == nil {
+	// The subscription backend runs the agent in its sandbox. If the subscription
+	// is unavailable, say so and fall back to the metered API, so a lapsed token
+	// never leaves the assistant dead.
+	// The runner is nil when the sandbox could not be built (no podman, a bad
+	// image) even though the token is configured, so it is checked here rather
+	// than assumed from the credential: the credential says the operator INTENDS
+	// this backend, the runner says it can actually run.
+	if option.Backend == BackendClaude && m.claude == nil {
+		s.publish(Event{Type: evtNotice, Text: "Claude is configured but its sandbox is unavailable; using the API."})
+		if fallback, ok := Lookup(m.creds, BackendAnthropic+"-sonnet-5"); ok {
+			option = fallback
+		} else {
+			s.publish(Event{Type: evtNotice, Text: "No API key is configured either."})
+			return
+		}
+	}
+	if option.Backend == BackendClaude {
+		if err := m.runClaudeTurn(ctx, s, app, history, userText, option); err == nil {
 			return // handled the turn (published done) or was cancelled
 		} else {
-			s.publish(Event{Type: evtNotice, Text: fmt.Sprintf("External Claude is unavailable (%s). Falling back to %s.", err.Error(), m.model)})
-			mode = m.model
+			fallback, hasFallback := Lookup(m.creds, BackendAnthropic+"-sonnet-5")
+			if !hasFallback {
+				s.publish(Event{Type: evtNotice, Text: fmt.Sprintf("Claude is unavailable (%s), and no API key is configured.", err.Error())})
+				return
+			}
+			s.publish(Event{Type: evtNotice, Text: fmt.Sprintf("Claude is unavailable (%s). Falling back to %s.", err.Error(), fallback.Label)})
+			option = fallback
 		}
 	}
 
-	m.runAPILoop(ctx, s, app, apiModel(mode, m.model), history)
+	m.runAPILoop(ctx, s, app, option.Model, history)
 }
 
 // thinkingFor returns the extended-thinking config for a model, or nil for models
@@ -284,15 +303,6 @@ func outputConfigFor(model string) *outputConfig {
 		return nil
 	}
 	return &outputConfig{Effort: assistantEffort}
-}
-
-// apiModel resolves the API model id for a turn: the selected mode when it names a
-// model, or the fallback (External Claude and empty resolve to the fallback).
-func apiModel(mode, fallback string) string {
-	if mode == "" || mode == controlconf.ExternalClaudeMode {
-		return fallback
-	}
-	return mode
 }
 
 // runAPILoop is the metered-API turn: the model-call-and-tools loop, driven with
