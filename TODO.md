@@ -112,17 +112,6 @@ host uid, no host podman or store, peercred socket).
 - **Blocked on a name** for the host command. Renaming breaks muscle memory and
   scripts, so decide before starting.
 
-## Web app
-
-The dashboard can create, manage and delete apps and drive them in the browser
-(chat, terminal). These round out the in-browser experience.
-
-- **Ask host-vs-build in the new-app modal.** When creating an app, let the owner
-  pick their intent: "just host my existing app" or "build one here". The choice
-  sets the initial app-detail tab -- host leans on details/deploy, build opens the
-  split chat+preview workspace -- so each person lands in the surface that fits what
-  they came to do.
-
 ## Smaller things
 
 - **Decide the credential-brokering shape before building either plan.** See

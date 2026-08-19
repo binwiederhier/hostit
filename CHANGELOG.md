@@ -7,7 +7,7 @@ changed rather than what an operator had to do about it; from v0.15.0 on, each
 release is written down as it is cut. Anything that changes a config file, a
 default, or on-disk state is called out as **Breaking** or **Upgrade note**.
 
-## Unreleased
+## v0.16.0 (2026-08-19)
 
 - **Snapshot cadence is per app, and staggered.** Every app used to be
   snapshotted hourly on the same tick, which spiked the pool and the cleaner
@@ -20,10 +20,16 @@ default, or on-disk state is called out as **Breaking** or **Upgrade note**.
   -- no power-on, no deploy, no starting from an SSH login -- and stops taking
   new snapshots. Its history thins to monthly rollups for a year, never to
   nothing, so an app archived today is still recoverable next year.
-- **A dashboard list view**, toggled beside the summary strip and remembered per
-  device. Dense rows with the owner column cards never had.
+- **A dashboard list view**, toggled beside the New app button and remembered
+  per device: dense rows for a fleet that cards make you scroll through.
 - **A changelog**, with `make release` refusing to build a tag it does not
   describe.
+- The dashboard header loses its three stat boxes, the app count moves beside
+  the heading, and app rows are clickable. The dashboard, profile, admin and
+  docs pages all widen to 1240px.
+- **Upgrade note:** this runs one schema migration (an additive `archived`
+  column on `app`). Automatic snapshots change from hourly to every three
+  hours on upgrade -- per-app if an app sets `snapshot.interval`.
 
 ## v0.15.0 (2026-08-18)
 
