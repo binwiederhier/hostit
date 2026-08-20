@@ -43,6 +43,15 @@ func (l *ControlLink) SetClient(client *http.Client) {
 	l.client = client
 }
 
+// Client returns the live session's client, or nil between connections. The
+// app-socket relay uses it directly: unlike the fire-and-forget callbacks, a
+// relayed request has a caller waiting for the answer.
+func (l *ControlLink) Client() *http.Client {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.client
+}
+
 // The callback payloads; control's node listener side decodes them.
 type powerCallback struct {
 	Name       string `json:"name"`

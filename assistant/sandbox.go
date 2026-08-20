@@ -221,7 +221,7 @@ func (s *Sandbox) Shell(appName string) error {
 	}
 	name := containerName(appID)
 	args := append(s.baseArgs(name, uid, gid), "-it", image, "/bin/bash")
-	fmt.Fprintf(os.Stderr, "==> shell in sandbox %s (app=%s uid=%d). Try: claude --version; hostit mcp --socket %s\n", name, appName, uid, s.conf.SocketFile)
+	fmt.Fprintf(os.Stderr, "==> shell in sandbox %s (app=%s uid=%d). Try: claude --version; hostit mcp --socket %s\n", name, appName, uid, s.conf.ControlSocketFile)
 	cmd := exec.Command(podman, args...)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 	return cmd.Run()
@@ -233,7 +233,7 @@ func (s *Sandbox) Shell(appName string) error {
 // dir, and carrying the subscription plus the flags that keep claude
 // non-interactive and away from its auto-updater.
 func (s *Sandbox) baseArgs(name string, uid, gid int) []string {
-	socketDir := filepath.Dir(s.conf.SocketFile)
+	socketDir := filepath.Dir(s.conf.ControlSocketFile)
 	return []string{
 		"run", "--rm", "--name", name,
 		"--uidmap", fmt.Sprintf("0:%d:%d", uid, assistantUIDCount),
@@ -267,7 +267,7 @@ func (s *Sandbox) baseArgs(name string, uid, gid int) []string {
 // an argument, because --mcp-config is variadic and would swallow a trailing
 // positional prompt.
 func (s *Sandbox) claudeArgs(systemPrompt string) []string {
-	mcpConfig := fmt.Sprintf(`{"mcpServers":{"hostit":{"command":%q,"args":["mcp","--socket",%q]}}}`, s.hostitBin, s.conf.SocketFile)
+	mcpConfig := fmt.Sprintf(`{"mcpServers":{"hostit":{"command":%q,"args":["mcp","--socket",%q]}}}`, s.hostitBin, s.conf.ControlSocketFile)
 	args := []string{
 		"claude", "-p",
 		"--output-format", "stream-json",

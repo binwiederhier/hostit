@@ -67,9 +67,17 @@ const (
 	// have it keep working (see ResolveConfigFile), so upgrading the package
 	// does not strand a running daemon.
 	LegacyServerConfigFile = "/etc/hostit/server.yml"
-	// DefaultSocketFile is the daemon's app-side unix socket; the in-container
-	// CLI dials it to reach the daemon.
+	// DefaultSocketFile is the APP socket: the in-container CLI dials it, and
+	// since the relay work it is served by hostit-node on every host. Control
+	// keeps the path in its config only to hand it to things that name it (the
+	// assistant sandbox mounts its directory).
 	DefaultSocketFile = "/run/hostit/hostit.sock"
+	// DefaultControlSocketFile is control's OWN unix socket: the operator CLI
+	// (peer uid 0 = admin, no token) and the assistant sandbox, which needs
+	// control's full registry to resolve a remote-node app's uid. Distinct from
+	// the app socket so a worker node can never serve -- or answer for -- the
+	// admin surface.
+	DefaultControlSocketFile = "/run/hostit/control.sock"
 	// DNSProviderRoute53 enables DNS-01 challenges via AWS Route 53, which is
 	// what a wildcard certificate requires (Let's Encrypt does not issue
 	// wildcards over HTTP-01)
@@ -89,7 +97,8 @@ type Config struct {
 	// proxy owns :443 in every deployment and control never binds it.
 	ListenHTTP       string  `yaml:"listen-http"`       // HTTP listener (ACME challenges + redirect, or plain proxy if TLS off)
 	ListenAPI        string  `yaml:"listen-api"`        // Optional extra plain-HTTP admin API listener, e.g. 127.0.0.1:2900
-	SocketFile       string  `yaml:"socket-file"`       // Unix socket for the app-side CLI (peercred-authenticated)
+	SocketFile       string  `yaml:"socket-file"`       // The app socket (served by hostit-node; control only names it)
+	ControlSocketFile string `yaml:"control-socket-file"` // Control's own socket: operator CLI + assistant sandbox
 	DataDir          string  `yaml:"data-dir"`          // SQLite registry + ACME certs
 	AppsDir          string  `yaml:"apps-dir"`          // Home directories of app users
 	APIHost          string  `yaml:"api-host"`          // Hostname routed to the admin API; defaults to <base-domain>
@@ -189,6 +198,7 @@ func NewConfig() *Config {
 		ClusterSocket:       cluster.DefaultSocketFile,
 		ListenHTTP:          ":80",
 		SocketFile:          DefaultSocketFile,
+		ControlSocketFile:   DefaultControlSocketFile,
 		DataDir:             "/var/lib/hostit",
 		AppsDir:             "/var/lib/hostit/apps",
 		TLS:                 TLSLetsEncrypt,

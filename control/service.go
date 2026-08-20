@@ -204,7 +204,7 @@ func (s *Server) Run() error {
 	socketServer := &http.Server{Handler: s.socket, ConnContext: socketConnContext, ReadHeaderTimeout: readHeaderTimeout}
 	s.servers = append(s.servers, socketServer)
 	g.Go(func() error {
-		slog.Info("Listening on unix socket", "socket", s.config.SocketFile)
+		slog.Info("Listening on unix socket", "socket", s.config.ControlSocketFile)
 		return ignoreServerClosed(socketServer.Serve(socketListener))
 	})
 
@@ -376,18 +376,18 @@ func (s *Server) allowTLSHost(name string) error {
 
 // listenSocket creates the CLI unix socket, replacing any stale socket file
 func (s *Server) listenSocket() (net.Listener, error) {
-	if err := os.MkdirAll(filepath.Dir(s.config.SocketFile), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(s.config.ControlSocketFile), 0o755); err != nil {
 		return nil, err
 	}
-	if err := os.Remove(s.config.SocketFile); err != nil && !errors.Is(err, os.ErrNotExist) {
+	if err := os.Remove(s.config.ControlSocketFile); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return nil, err
 	}
-	listener, err := net.Listen("unix", s.config.SocketFile)
+	listener, err := net.Listen("unix", s.config.ControlSocketFile)
 	if err != nil {
 		return nil, err
 	}
 	// World-connectable on purpose: authorization happens via SO_PEERCRED
-	if err := os.Chmod(s.config.SocketFile, 0o666); err != nil {
+	if err := os.Chmod(s.config.ControlSocketFile, 0o666); err != nil {
 		return nil, err
 	}
 	return listener, nil

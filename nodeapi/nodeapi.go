@@ -158,6 +158,15 @@ type AppDesired struct {
 }
 
 // ControlSink is the node's reverse channel to control.
+// The app-socket relay: the node serves /run/hostit/hostit.sock, resolves the
+// calling app by peer uid from its mirror, and forwards the request to control
+// under this prefix with the app named in this header. The header is only
+// meaningful on a node's authenticated duplex channel; nothing public reads it.
+const (
+	AppRelayPrefix = "/apprelay"
+	AppRelayHeader = "X-Hostit-App"
+)
+
 type ControlSink interface {
 	// PowerChanged reports a poweroff/poweron the node's own verb performed.
 	PowerChanged(name string, poweredOff bool)

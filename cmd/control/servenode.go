@@ -11,6 +11,7 @@ import (
 	"heckel.io/hostit/cluster"
 	"heckel.io/hostit/control"
 	"heckel.io/hostit/controlconf"
+	"heckel.io/hostit/nodeapi"
 	"heckel.io/hostit/nodelink"
 	"heckel.io/hostit/proxyapi"
 	"heckel.io/hostit/proxylink"
@@ -32,8 +33,13 @@ func nodeRole(manager *control.Manager, registry *control.NodeRegistry, srv *con
 		return err == nil
 	}, func(nodeID string) http.Handler {
 		// The node's reverse channel: usage, poweroffs and snapshot records it
-		// originates land in the registry through these.
-		return nodelink.CallbackHandler(nodeID, manager.Store())
+		// originates land in the registry through the callbacks, and the app
+		// socket the node serves relays its /v1 requests through /apprelay --
+		// both scoped to the apps this node hosts.
+		mux := http.NewServeMux()
+		mux.Handle("/callback/", nodelink.CallbackHandler(nodeID, manager.Store()))
+		mux.Handle(nodeapi.AppRelayPrefix+"/", srv.AppRelayHandler(nodeID))
+		return mux
 	}, func(nodeID string, remote control.NodeAgent) {
 		slog.Info("Node connected", "node", nodeID)
 		_ = manager.Store().SetNodeSeen(nodeID, time.Now())
