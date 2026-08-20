@@ -198,7 +198,10 @@ func CreateArgs(conf *app.Config, a *store.App, subvol, socketFile, hostitBin, v
 	// :idmap maps the root-owned subvolume through the container's uid mapping
 	// (disk root <-> container root), so no ownership is ever baked into the tree;
 	// requires a crun new enough to idmap a rootfs (preflight enforces it).
-	args = append(args, "--rootfs", subvol+":idmap", hostitBin, "agent")
+	// The command runs INSIDE the container, where the binary is at its mounted
+	// path -- not the host path it was mounted from. Getting this wrong is
+	// every app failing at PID 1 with "executable not found".
+	args = append(args, "--rootfs", subvol+":idmap", ContainerBinFile, "agent")
 	return args
 }
 

@@ -292,3 +292,17 @@ func TestCreateArgsPublishesOnTheNodesBindAddress(t *testing.T) {
 	assert.Contains(t, remote, "10.0.0.2:10000:80", "a remote node publishes where the proxy can reach it")
 	assert.NotContains(t, remote, "127.0.0.1:10000:80")
 }
+
+// The mount SOURCE is the host path and the exec is the CONTAINER path. On
+// stage, conflating them put the host path in the container's command and
+// every app crash-looped at PID 1 with "executable not found" -- this pins the
+// distinction so a refactor cannot re-fuse them.
+func TestCreateArgsExecsTheContainerPathNotTheHostPath(t *testing.T) {
+	t.Parallel()
+	a := &store.App{ID: "aaa", Name: "blog", Port: 10000}
+	args := CreateArgs(&app.Config{Mode: app.ModeStatic}, a, "/subvol", "/run/hostit/hostit.sock", HostBinFile, "v1", 0, IDs{UID: 1000000, GID: 1000000, Count: 65536}, "")
+	joined := strings.Join(args, " ")
+	assert.Contains(t, joined, "--volume "+HostBinFile+":"+ContainerBinFile+":ro", "mounted from the host path to the container path")
+	assert.Contains(t, joined, ContainerBinFile+" agent", "PID 1 execs the binary where the container sees it")
+	assert.NotContains(t, joined, HostBinFile+" agent", "the host path does not exist inside")
+}

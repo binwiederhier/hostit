@@ -11,6 +11,11 @@ if [ "$1" = "configure" ] || [ "$1" -ge 1 ] 2>/dev/null; then
   if [ -f /etc/shells ] && ! grep -qxF /usr/bin/hostit-shell /etc/shells; then
     echo /usr/bin/hostit-shell >> /etc/shells
   fi
+  # The shell's new home; the old path above stays registered while passwd
+  # entries migrate (see the node's login-shell sweep).
+  if [ -f /etc/shells ] && ! grep -qxF /usr/lib/hostit/bin/hostit-shell /etc/shells; then
+    echo /usr/lib/hostit/bin/hostit-shell >> /etc/shells
+  fi
   # The sudoers grant is scoped to this group; app users are added to it
   if ! getent group hostit-apps >/dev/null 2>&1; then
     groupadd --system hostit-apps
