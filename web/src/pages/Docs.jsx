@@ -52,6 +52,12 @@ const IntroPage = () => (
       caption="The dashboard: your apps, their status and resource use, and New app."
     />
     <p>
+      Two views, switched next to <strong>New app</strong>: cards, or a dense
+      list that fits a lot more apps on the screen. Your choice is remembered.
+      Archived apps are hidden until you turn them on with the toggle beside it,
+      which appears only once you have some.
+    </p>
+    <p>
       Then click <strong>New app</strong> and give it a name (lowercase letters,
       digits and dashes). Within a few seconds the app exists and already serves
       a placeholder page at{" "}

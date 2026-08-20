@@ -34,9 +34,10 @@ person's limit does not touch anyone else.
 
 The assistant permissions are separate from resource limits because the built-in
 assistant spends the operator's API budget (or their Claude Max subscription).
-An admin decides, per user (or globally), whether "Claude.ai" is offered and
-which API models are selectable, and the admin UI surfaces each user's assistant
-token spend so overspend is visible.
+There is no per-user model permission: the picker offers whatever the
+configured credentials can serve, and any active user may choose any of it. What
+bounds a user is their AI budget, which the admin UI shows alongside their spend
+-- cost is the control, not a second allowlist that could disagree with it.
 
 ## User flows
 

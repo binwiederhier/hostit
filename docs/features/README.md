@@ -16,6 +16,7 @@ One file per user-facing feature. Every file uses the **exact same structure** (
 - [ssh-access.md](ssh-access.md) -- ssh / scp / sftp / rsync into an app's container
 - [custom-domains.md](custom-domains.md) -- serve an app on your own hostname (DNS-01 certs)
 - [snapshots-rollback.md](snapshots-rollback.md) -- automatic and manual snapshots, rollback
+- [archiving.md](archiving.md) -- shelve an app instead of deleting it
 - [quotas-limits.md](quotas-limits.md) -- disk (btrfs qgroup) and memory limits, app-count limits
 - [logs.md](logs.md) -- the activity feed and live app output
 

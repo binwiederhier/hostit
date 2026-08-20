@@ -531,7 +531,7 @@ which unlocks two things:
 
 - **Snapshots and rollback.** A snapshot is an instant, space-shared copy of the
   whole app: its files AND everything it installed. hostit takes one automatically
-  before every deploy, before every assistant turn, and hourly; you (or an agent)
+  before every deploy, before every assistant turn, and every few hours; you (or an agent)
   can also take a labelled one on purpose. Rolling back restores the app to a
   snapshot -- data and installed software together, so a broken `apt` run or a
   deleted system file is undone the same way as a bad edit -- and takes a safety

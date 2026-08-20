@@ -16,6 +16,17 @@ docs/
   README.md       # this file
 ```
 
+## Releasing
+
+`make release` on a tag. It depends on `changelog-check`, which refuses to build
+a tag `CHANGELOG.md` does not describe -- so the entry is written before the
+artifacts exist, not remembered afterwards. `make release-snapshot` skips that
+check: snapshots are untagged builds for stage, not releases.
+
+Two things that used to bite: the built `control/site/index.html` is no longer
+committed (only `.gitkeep` is), because a web build overwrote it and left the
+tree dirty, which goreleaser refuses; and `GITHUB_TOKEN` must be set (`GITHUB_TOKEN=$(gh auth token) make release`).
+
 ## Where to start
 
 - New to the codebase? Read [`architecture/`](architecture/) first (the whole system,

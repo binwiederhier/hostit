@@ -25,7 +25,7 @@ flowchart TB
             b1["exported workspace image"]
         end
         subgraph snaps[".snapshots/&lt;id&gt;/  (read-only CoW, whole-app)"]
-            s1["&lt;id-A&gt;/auto-...    (hourly / pre-deploy)"]
+            s1["&lt;id-A&gt;/auto-...    (periodic / pre-deploy)"]
             s2["&lt;id-A&gt;/manual-...  (owner / assistant)"]
         end
     end
@@ -140,8 +140,11 @@ crash-consistent copy of the app's **whole subvolume** -- its files at `home/app
 AND the installed software around them (`btrfs/service.go:Snapshot` with `-r`).
 hostit takes them:
 
-- **hourly**, for every app (`snapshot/service.go:SnapshotLoop`, started from
-  `cmd/control/serve.go`), labelled `"Automated snapshot"`,
+- **on each app's own cadence** -- `snapshot.interval` in its hostit.yml, else
+  every three hours -- staggered across the interval by a hash of the app name
+  so the fleet does not snapshot as one (`control/snapshotsched.go`, swept from
+  `cmd/control/serve.go`), labelled `"Automated snapshot"`. An archived app
+  takes none,
 - **before every deploy** (labelled `"Automated snapshot before deploy"`),
 - **on demand**, labelled, by the owner or the assistant's `snapshot` tool
   (`snapshot/service.go:TakeSnapshot`),

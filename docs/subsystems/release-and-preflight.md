@@ -124,7 +124,7 @@ build the shared workspace image and export its base rootfs subvolume, restart
 stale agents, prune superseded images and unpinned bases (`cmd/control/serve.go`, the
 `go func`), reconcile orphaned units/containers/app-subvolumes/budget-qgroups
 against the registry (`app/reconcile.go`), and start the periodic loops (disk
-usage, state, hourly snapshots, custom-domain retry).
+usage, state, periodic snapshots, custom-domain retry).
 
 ## Why agents only upgrade on a restart
 

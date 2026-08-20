@@ -46,8 +46,9 @@ switch** -- there is no `assistant-backend` setting:
 - `anthropic-api-key` set (`config.Config.AnthropicAPIKey`) enables the metered
   API backend.
 - `claude-code-oauth-token` set (`config.Config.ClaudeCodeOAuthToken`, from
-  `claude setup-token`) enables the "Claude.ai" subscription backend, which
-  drives a sandboxed `claude -p` on the operator's Claude Max plan.
+  `claude setup-token`) enables the subscription backend, which drives a
+  sandboxed `claude -p` on the operator's Claude plan. Its models appear in the
+  picker alongside the API's, prefixed `claude-` rather than `anthropic-`.
 
 Either credential on its own turns the assistant on
 (`config.Config.AssistantAvailable`); both being present offers both in the

@@ -3,9 +3,12 @@
 ## Description
 
 The dashboard is a single-page React app served by the hostit binary at the web
-hostname. After signing in with Google, an owner sees a grid of their apps (live
-status, CPU/RAM/disk bars, description, and a link to open each), can create a new
-app from a dialog, and can open any app into its **workspace** -- a full-page view
+hostname. After signing in with Google, an owner sees their apps -- as a grid of
+cards (live status, CPU/RAM/disk bars, description, a link to open each) or as a
+dense list, switched by a toggle beside the New app button and remembered per
+device. Archived apps are hidden behind a second toggle that appears only when
+there are any. An owner can create a new app from a dialog, and can open any app
+into its **workspace** -- a full-page view
 with tabs for the built-in Assistant, a file editor with live preview, a terminal,
 snapshots, logs, and a settings/overview area (URLs, SSH command, API token,
 custom domains, rename, delete). There is a Profile page for the owner's SSH keys
@@ -74,9 +77,29 @@ Frontend (`web/src/`, embedded and served by `control/web.go`):
   (shareable instance docs, `Docs.jsx`) and the popped-out terminal
   `/app/:name/terminal`.
 - `Login` is a card with a "Sign in with Google" link to `/auth/google`.
+- Card previews come from `preview/service.go`: a headless chrome in a
+  locked-down podman sandbox, writing one PNG per app. Two flags there are
+  load-bearing and pinned by a test -- `--virtual-time-budget` (25s, a RENDERING
+  budget: chrome pauses that clock while network fetches are outstanding, so a
+  slow app does not burn it waiting for its first byte) and
+  `--run-all-compositor-stages-before-draw`. Without them cards came out blank
+  white, either because the page had not painted yet or because the capture
+  happened mid-paint. A blank PNG is ~2KB against ~100KB for a real one, which
+  is the quickest way to spot a regression on disk.
+- Page width is per route: `App.jsx:roomyPath` gives the dashboard, profile and
+  admin views `container-roomy` (1240px), the docs match it through their own
+  `.docs-container` (they render their own `<main>`, so the width is repeated
+  rather than shared), and the app page stays full-bleed. `RoutedMain` exists
+  because `App` renders the Router, so only a child of it can read the location.
 - `web/src/pages/Dashboard.jsx`: `AppCard` (status pill, CPU/RAM/disk bars,
-  prefers a verified custom domain for the link), `AppsSummary`, and the
-  `NewAppDialog`; polls `GET /api/apps` on an interval and on reconnect.
+  prefers a verified custom domain for the link), `AppRow`/`AppList` (the dense
+  view; the whole row opens the app, with clicks on a link or button left
+  alone), `ViewToggle`, `ArchivedToggle`, and the `NewAppDialog`; polls
+  `GET /api/apps` on an interval and on reconnect. Both view choices live in
+  localStorage (`hostit.appview`, `hostit.showarchived`) -- per-device viewing
+  preferences, not account state worth a column and a round trip. An account
+  whose apps are ALL archived gets a line saying so rather than the blank page
+  an account with no apps would see.
 - `web/src/pages/AppDetail.jsx`: the workspace. Tabs (`ws-viewtabs`): Assistant
   (only if `app.assistant_enabled`), Files, Terminal, Snapshots (only if
   `app.snapshots_enabled`), Logs, plus an overview/settings area with editable

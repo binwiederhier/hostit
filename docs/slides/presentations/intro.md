@@ -159,7 +159,7 @@ zoom: 0.85
   live preview
 - **File editor** -- edit files and deploy on save, no local checkout
 - **A real shell** -- browser terminal into the container, plus `ssh`/`scp`/`rsync`
-- **Snapshots** -- automatic (hourly + pre-deploy), one-click rollback, fork into a
+- **Snapshots** -- automatic (periodic + pre-deploy), one-click rollback, fork into a
   new app
 
 </div>
