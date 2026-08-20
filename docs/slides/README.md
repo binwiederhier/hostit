@@ -23,6 +23,7 @@ cd docs/slides
 npm install
 npm run dev                              # tech overview -> http://localhost:3030
 npx slidev presentations/intro.md        # intro deck    -> http://localhost:3030
+npx slidev presentations/app-api.md      # the app API and the binary split
 ```
 
 Or without installing anything locally:

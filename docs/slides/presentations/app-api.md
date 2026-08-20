@@ -1,0 +1,385 @@
+---
+theme: seriph
+title: hostit -- the app API and the binary split
+info: |
+  Two changes that belong together: making the app-side socket a node
+  responsibility (it is control's today, so apps on a secondary node have none),
+  and splitting the hostit binary so the thing bind-mounted into every container
+  is not also the control plane. Plus what /v1/self is, and what it should be
+  called.
+layout: cover
+background: https://cover.sli.dev
+class: text-center
+transition: slide-left
+mdc: true
+---
+
+# The app API
+
+### `/v1/self`, who serves it, and the binary that speaks it
+
+<div class="mt-8 opacity-60">
+One live bug, one planned refactor, and the contract that sits between them
+</div>
+
+<div class="abs-br m-6 text-sm opacity-40">
+bug: <code>TODO.md</code> (high priority) &middot; split: <code>TODO.md</code> "two tools sharing a name"
+</div>
+
+<style>
+h1 {
+  background-color: #10b981;
+  background-image: linear-gradient(45deg, #34d399 20%, #0e7490 80%);
+  background-size: 100%;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+</style>
+
+---
+
+# What `/v1/self` is
+
+The API an app uses **about itself, from inside its own container**. Not the
+REST API, not the dashboard: a unix socket, bind-mounted in, with no token.
+
+<v-clicks>
+
+- `GET /v1/self` &middot; `POST /v1/self/deploy` &middot; `logs` &middot; `status`
+- `start|stop|restart` &middot; `poweron|poweroff|reboot` &middot; `ensure`
+- `POST /v1/self/tool/{name}` -- the MCP bridge
+- `GET /v1/connections/{provider}/token` -- new, on the `connections` branch
+
+</v-clicks>
+
+<v-click>
+
+<div class="mt-6 p-4 border border-emerald-700 rounded">
+<b>Authentication is the kernel.</b> <code>SO_PEERCRED</code> gives the calling
+process's uid; the uid maps to exactly one app. Not a token: it cannot be
+phished, copied out of a log, or replayed from another container.
+</div>
+
+</v-click>
+
+---
+
+# Who calls it
+
+Everything that acts from *inside* an app -- which is most of hostit's story.
+
+| Caller | What it does |
+|---|---|
+| the SSH login shell | `Self()`, then `Ensure()` -- **before it greets you** |
+| the tenant CLI | `hostit deploy`, `logs`, `restart`, ... |
+| `hostit mcp` | the tool bridge an agent drives |
+| app code | connections tokens (new) |
+
+<v-click>
+
+<div class="mt-4 opacity-80">
+So "the app API" is the surface behind <b>SSH</b>, <b>bring-your-own-agent</b>,
+and <b>deploy from inside</b> -- three of the four things the docs lead with.
+</div>
+
+</v-click>
+
+---
+
+# The bug: control serves it
+
+`hostit-control` owns the socket. A host running only `hostit-node` has none.
+
+```mermaid {scale: 0.58}
+flowchart LR
+  A1["app A<br/><i>on the control host</i>"] -->|"peercred: works"| C["hostit-control<br/>owns the socket"]
+  A2["app B<br/><i>on a node-only host</i>"] -.->|"no socket to call"| X(["nothing listens"])
+  N["hostit-node"] <-->|"cluster link"| C
+  style X stroke-dasharray: 4 4
+```
+
+<v-click>
+
+Apps on a secondary node: **SSH, scp and rsync fail at login**, the whole
+in-container CLI is gone, `hostit mcp` is gone.
+
+</v-click>
+
+<v-click>
+
+<div class="mt-4 p-3 border border-amber-600 rounded text-sm">
+Prod is a single host, so control and node share a machine and every app sits
+next to the socket. <b>Latent in prod, live on stage.</b> It arrived with the
+control/node split and nothing failed loudly.
+</div>
+
+</v-click>
+
+---
+
+# What still works
+
+Worth being precise, because the blast radius is smaller than "apps are broken".
+
+<div class="grid grid-cols-2 gap-4 mt-4">
+<div>
+
+**Broken** (from inside the container)
+
+- SSH / scp / rsync
+- `hostit deploy|logs|status|...`
+- `hostit mcp`, `/v1/self/tool`
+- connections tokens
+
+</div>
+<div>
+
+**Fine** (routed through control)
+
+- the whole dashboard
+- the REST API from outside
+- the app serving its own traffic
+- snapshots, retention, previews
+- the assistant -- *including* the sandbox
+
+</div>
+</div>
+
+<v-click>
+
+<div class="mt-6 opacity-80">
+The sandboxed assistant surprises people: it mounts no app home, runs next to
+control, and uses control's own socket -- so control routes its tool calls to
+the right node normally.
+</div>
+
+</v-click>
+
+---
+
+# Target: the node serves it, control decides
+
+The node owns the socket **on every host**, and relays. One path, not two.
+
+```mermaid {scale: 0.68}
+sequenceDiagram
+    participant App as app (in container)
+    participant Node as hostit-node
+    participant Control as hostit-control
+    App->>Node: GET /v1/self/... over the unix socket
+    Note over App,Node: AUTH: SO_PEERCRED -> uid -> app,<br/>from the node's own mirror registry
+    Node->>Control: same request over the cluster link, identity attached
+    Note over Node,Control: AUTH: the existing member link (mTLS, or the host socket)
+    Control->>Control: authorize: archived? powered off? policy?
+    Control->>Node: do the work
+    Node-->>App: result
+```
+
+---
+
+# Why the node must not answer locally
+
+The node already implements deploy, start, logs. Letting it answer would be
+faster and **wrong**.
+
+<v-clicks>
+
+- Control is where the guards live: `routeRunnable` refuses an archived app
+- An archived app would become deployable **from inside its own container**
+- Powered-off intent and per-app policy would be bypassed the same way
+- Two decision points is how the two shapes drift apart again
+
+</v-clicks>
+
+<v-click>
+
+<div class="mt-6 p-4 border border-emerald-700 rounded">
+A node&rarr;control&rarr;node round trip is worth one decision point. The link
+already carries traffic both ways: snapshot and usage callbacks go
+node&rarr;control today.
+</div>
+
+</v-click>
+
+---
+
+# The one thing to get right
+
+Control must trust the injected identity **only on the cluster link**.
+
+<v-clicks>
+
+- On the link: the node is trusted infrastructure, already authenticated
+- On the public API: the same header would be an impersonation header
+- So it is not a header hostit accepts -- it is a property of *that* transport
+
+</v-clicks>
+
+<v-click>
+
+<div class="mt-6 opacity-80">
+This is the part to test hardest: a request carrying the identity header
+arriving at the REST API must be refused, and there should be a test that says
+so out loud.
+</div>
+
+</v-click>
+
+---
+
+# The other half: two tools sharing a name
+
+`cmd/agent/cmd.go` says it outright. `insideContainer()` switches between them.
+
+<div class="grid grid-cols-2 gap-4 mt-4">
+<div>
+
+**Inside a container**
+
+- PID 1, supervising `run:`
+- the tenant CLI
+- the MCP server
+- talks only to the socket
+
+</div>
+<div>
+
+**On the host**
+
+- the operator's REST client
+- `hostit apps ...`
+- shell / enter helpers
+- talks to control over TCP
+
+</div>
+</div>
+
+<v-click>
+
+<div class="mt-6 p-4 border border-amber-600 rounded">
+<b>The real argument is least privilege.</b> The binary bind-mounted into every
+container -- where the tenant is root -- also contains control's TLS/ACME,
+OAuth, podman/systemd/nftables/store, assistant and admin-API code. None of it
+belongs there. Defense in depth, <b>not</b> a live hole.
+</div>
+
+</v-click>
+
+---
+
+# Target: a container binary with one contract
+
+```mermaid {scale: 0.7}
+flowchart TB
+  subgraph C["container (tenant is root)"]
+    B["hostit-app<br/>supervise run:, reap, CLI, MCP"]
+  end
+  subgraph HOST["host"]
+    N["hostit-node<br/>serves the app socket"]
+    CTL["hostit-control"]
+    CLI["host CLI<br/>(name undecided)"]
+  end
+  B -->|"/v1/self over the socket"| N
+  N -->|"cluster link"| CTL
+  CLI -->|"REST + token"| CTL
+```
+
+<v-click>
+
+The container binary's **entire** outward dependency becomes one local socket.
+No TLS, no OAuth, no store, no podman.
+
+</v-click>
+
+---
+
+# Why the socket fix comes first
+
+<v-clicks>
+
+- The split defines a binary whose contract is `/v1/self`
+- Today that contract reads: *"control, if it happens to be on this machine"*
+- Split first and you bake the bug into a node-shipped binary
+- Fix first and it reads: *"the local node"* -- machine-scoped, same everywhere
+
+</v-clicks>
+
+<v-click>
+
+<div class="mt-6 opacity-80">
+They also touch the same code exactly once: <code>control/socket.go</code> holds
+the unix listener and the peercred mapping. The fix moves those to the node and
+leaves the handlers with control -- a move the split wanted anyway.
+</div>
+
+</v-click>
+
+<v-click>
+
+<div class="mt-4 p-3 border border-emerald-700 rounded text-sm">
+The split stays blocked only on <b>naming the host command</b>, not on this.
+</div>
+
+</v-click>
+
+---
+
+# So: what should it be called?
+
+`/v1/self` is about to become a versioned contract between two binaries. Worth
+naming deliberately.
+
+| Option | Reads as | Against |
+|---|---|---|
+| `/v1/self` (keep) | "this app, whoever asks" | vague in docs; "self" of what? |
+| **`/v1/app`** | "the app's own API" | -- |
+| `/v1/agent` | "for agents" | **agent is overloaded**: PID 1 is the agent, and BYO-agent means an AI |
+
+<v-click>
+
+<div class="mt-6 p-4 border border-emerald-700 rounded">
+Recommendation: <b><code>/v1/app</code></b>, paired with a container binary
+named for the same thing. Keep <code>/v1/self</code> answering as an alias --
+it is bind-mounted into running containers, so it cannot be renamed in one step.
+</div>
+
+</v-click>
+
+---
+
+# Order of work
+
+<v-clicks>
+
+1. **Failing test**: an app on a remote node can reach `/v1/self` (nothing proves this today)
+2. Move the listener and peercred mapping to `hostit-node`
+3. Relay over the cluster link; control keeps every authorization
+4. Refuse the identity header on the public API, with a test that says so
+5. Verify on stage with an app on **stage-2** -- the case that has never worked
+6. Then the rename, with the old path aliased
+7. Then the binary split, once the host command has a name
+
+</v-clicks>
+
+<v-click>
+
+<div class="mt-6 opacity-80">
+Prod is single-host, so none of this is user-visible there today -- but socket
+ownership does move from control to node, which is a live change to how SSH
+login is served. Deliberate, not discovered.
+</div>
+
+</v-click>
+
+---
+layout: center
+class: text-center
+---
+
+# One socket, one contract, one decision point
+
+<div class="mt-6 opacity-70">
+The node serves it because the node is the machine.<br/>
+Control decides because control is the registry.<br/>
+The container binary speaks it and knows nothing else.
+</div>
