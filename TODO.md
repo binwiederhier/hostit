@@ -160,6 +160,76 @@ host uid, no host podman or store, peercred socket).
   "only SSH and run_command", a static app could stay container-less until
   something asks for one.
 
+- **hostit-node hangs on stop -- REPRODUCE BEFORE CHASING.** Seen once, during
+  the 2026-08-16 stage deploy. It has not recurred: prod's node reports
+  NRestarts=0 and restarted cleanly through five deploys on 2026-08-18, and the
+  shutdown path has changed since (the signal handler closes the live
+  connection, and the fused removal took the machine loops out of control).
+  Either it is fixed or it needs a fresh reproduction; do not go hunting on the
+  strength of the note below alone. What was seen: stopping
+  exit path -- suspects: the control dial loop's redial sleep, a loop stuck
+  in a long btrfs command, or the duplex session not unblocking Accept on
+  close. Reproduce with `systemctl stop hostit-node` + goroutine dump
+  (SIGQUIT), then fix the shutdown ordering.
+
+- **There are a lot of zombie processes.** Find who is not reaping: suspects
+  are the in-container agent (PID 1 must reap everything -- check its SIGCHLD
+  handling around run:/exec/terminal children), podman exec sessions from the
+  web terminal, the assistant sandbox containers, and the preview screenshot
+  runs. `ps -eo stat,ppid,comm | grep ^Z` on stage/prod, group by PPID, then
+  fix the parent.
+
+- **Why does a read-only snapshot on prod take >2 minutes?** Taking a manual
+  snapshot should be a metadata CoW operation (sub-second on an idle pool; the
+  create path proves it). Suspects, in likely order: the snapshot waits on the
+  current btrfs transaction, which the kernel cleaner (processing deleted
+  subvolumes) or a quota rescan can hold for a long time on 1 vCPU (the stage
+  e2e post-mortems measured 45s under a rescan backlog); qgroup accounting on
+  snapshot create with many qgroups; or the pre/post snapshot hooks in the
+  container, which run synchronously. Measure on prod: time a bare `btrfs
+  subvolume snapshot -r` next to the API call, check `btrfs quota rescan -s`,
+  the cleaner's CPU time, and qgroup counts (the stale-qgroup sweep from the
+  multinode branch is not on prod yet -- prod may be carrying the same debt
+  stage had). Is btrfs "that bad"? No -- but quotas + churn debt make its
+  transaction commits that bad.
+
+- **Make hostit-control unprivileged.** The audit this used to ask for is
+  done: control drives none of podman, systemctl, useradd, nftables or btrfs any
+  more (the node does), and it binds no privileged port (the proxy owns :443).
+  Two things still need privilege, both machine-shaped work sitting in the wrong
+  process: screenshot previews drive podman, and the assistant sandbox spawns
+  `claude -p` as the app's uid. Move both to the node and control becomes a
+  process holding a database, a certificate manager and an HTTP handler --
+  runnable as its own user. The cluster socket already trusts control's own uid
+  rather than root, so the transport does not stand in the way.
+
+
+- **Dev/stage -> promote to prod (the "we work in prod" problem).** Right now the
+  only copy of an app is the live one, so every edit (and every assistant change) is
+  in production. Give each app an optional **staging** environment -- its own
+  container + subdomain (e.g. `stage.<app>.<base>` or `<app>-stage`) sharing nothing
+  live -- where changes and deploys land first, then a **Promote** action swaps it
+  into prod atomically (blue/green: build/verify on stage, then flip the proxy /
+  rename, keeping the old prod as instant rollback). Ties into the fork primitive
+  (a stage is a fork that promotes back). Big feature; likely a `hostit promote`
+  verb + a store notion of two environments per app.
+- **Secrets.** `env:` values live in `hostit.yml`, which sits in the app's home
+  and is served if someone points a web server at the wrong directory. A real
+  secret store (or at least a separate file that is never in `public/`) would
+  make it safe to put credentials in an app.
+- **Log following.** `GET /api/apps/{app}/logs?lines=N` is a snapshot. An agent
+  watching a slow start has to poll.
+- **Long jobs.** `POST /api/apps/{app}/run` is bounded at five minutes, so a first
+  `npm install` on a small box can outlast it. Anything longer has to become a
+  `prepare:` step, which is fine but not obvious.
+
+## Deferred
+
+Explored and deliberately not being done, kept for the reasoning rather than the
+intent. Each says what was measured, so picking one up later starts from
+evidence -- and so the same idea is not re-proposed and re-investigated in six
+months.
+
 - **Can htop inside the container show only the container's resources?**
   EXPLORED 2026-08-19 on stage (podman 4.9.3, crun 1.14.1, Ubuntu 24.04). What
   is true today:
@@ -236,68 +306,6 @@ host uid, no host podman or store, peercred socket).
   Resource allocation above), which argues for doing this WITH that work rather
   than before it.
 
-- **hostit-node hangs on stop -- REPRODUCE BEFORE CHASING.** Seen once, during
-  the 2026-08-16 stage deploy. It has not recurred: prod's node reports
-  NRestarts=0 and restarted cleanly through five deploys on 2026-08-18, and the
-  shutdown path has changed since (the signal handler closes the live
-  connection, and the fused removal took the machine loops out of control).
-  Either it is fixed or it needs a fresh reproduction; do not go hunting on the
-  strength of the note below alone. What was seen: stopping
-  exit path -- suspects: the control dial loop's redial sleep, a loop stuck
-  in a long btrfs command, or the duplex session not unblocking Accept on
-  close. Reproduce with `systemctl stop hostit-node` + goroutine dump
-  (SIGQUIT), then fix the shutdown ordering.
-
-- **There are a lot of zombie processes.** Find who is not reaping: suspects
-  are the in-container agent (PID 1 must reap everything -- check its SIGCHLD
-  handling around run:/exec/terminal children), podman exec sessions from the
-  web terminal, the assistant sandbox containers, and the preview screenshot
-  runs. `ps -eo stat,ppid,comm | grep ^Z` on stage/prod, group by PPID, then
-  fix the parent.
-
-- **Why does a read-only snapshot on prod take >2 minutes?** Taking a manual
-  snapshot should be a metadata CoW operation (sub-second on an idle pool; the
-  create path proves it). Suspects, in likely order: the snapshot waits on the
-  current btrfs transaction, which the kernel cleaner (processing deleted
-  subvolumes) or a quota rescan can hold for a long time on 1 vCPU (the stage
-  e2e post-mortems measured 45s under a rescan backlog); qgroup accounting on
-  snapshot create with many qgroups; or the pre/post snapshot hooks in the
-  container, which run synchronously. Measure on prod: time a bare `btrfs
-  subvolume snapshot -r` next to the API call, check `btrfs quota rescan -s`,
-  the cleaner's CPU time, and qgroup counts (the stale-qgroup sweep from the
-  multinode branch is not on prod yet -- prod may be carrying the same debt
-  stage had). Is btrfs "that bad"? No -- but quotas + churn debt make its
-  transaction commits that bad.
-
-- **Make hostit-control unprivileged.** The audit this used to ask for is
-  done: control drives none of podman, systemctl, useradd, nftables or btrfs any
-  more (the node does), and it binds no privileged port (the proxy owns :443).
-  Two things still need privilege, both machine-shaped work sitting in the wrong
-  process: screenshot previews drive podman, and the assistant sandbox spawns
-  `claude -p` as the app's uid. Move both to the node and control becomes a
-  process holding a database, a certificate manager and an HTTP handler --
-  runnable as its own user. The cluster socket already trusts control's own uid
-  rather than root, so the transport does not stand in the way.
-
-
-- **Dev/stage -> promote to prod (the "we work in prod" problem).** Right now the
-  only copy of an app is the live one, so every edit (and every assistant change) is
-  in production. Give each app an optional **staging** environment -- its own
-  container + subdomain (e.g. `stage.<app>.<base>` or `<app>-stage`) sharing nothing
-  live -- where changes and deploys land first, then a **Promote** action swaps it
-  into prod atomically (blue/green: build/verify on stage, then flip the proxy /
-  rename, keeping the old prod as instant rollback). Ties into the fork primitive
-  (a stage is a fork that promotes back). Big feature; likely a `hostit promote`
-  verb + a store notion of two environments per app.
-- **Secrets.** `env:` values live in `hostit.yml`, which sits in the app's home
-  and is served if someone points a web server at the wrong directory. A real
-  secret store (or at least a separate file that is never in `public/`) would
-  make it safe to put credentials in an app.
-- **Log following.** `GET /api/apps/{app}/logs?lines=N` is a snapshot. An agent
-  watching a slow start has to poll.
-- **Long jobs.** `POST /api/apps/{app}/run` is bounded at five minutes, so a first
-  `npm install` on a small box can outlast it. Anything longer has to become a
-  `prepare:` step, which is fine but not obvious.
 ## Done (recent)
 
 Kept briefly for context; prune when stale.
