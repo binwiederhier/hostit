@@ -110,7 +110,7 @@ func (s *Sandbox) SetIdentity(fn Identity) {
 // command -- mounting os.Executable() worked only while one fused binary was
 // both the daemon and the CLI.
 func NewSandbox(conf *controlconf.Config) (*Sandbox, error) {
-	return &Sandbox{conf: conf, hostitBin: workspace.HostitBinFile, identity: appIdentity}, nil
+	return &Sandbox{conf: conf, hostitBin: workspace.HostBinFile, identity: appIdentity}, nil
 }
 
 // StreamUsage is one turn's token usage as claude reports it.
@@ -252,7 +252,7 @@ func (s *Sandbox) baseArgs(name string, uid, gid int) []string {
 		"--env", "DISABLE_TELEMETRY=1",
 		"--env", "DISABLE_ERROR_REPORTING=1",
 		"--env", "DISABLE_AUTOUPDATER=1",
-		"--volume", s.hostitBin + ":" + s.hostitBin + ":ro",
+		"--volume", s.hostitBin + ":" + workspace.ContainerBinFile + ":ro",
 		"--volume", socketDir + ":" + socketDir + ":ro",
 	}
 }
@@ -267,7 +267,7 @@ func (s *Sandbox) baseArgs(name string, uid, gid int) []string {
 // an argument, because --mcp-config is variadic and would swallow a trailing
 // positional prompt.
 func (s *Sandbox) claudeArgs(systemPrompt string) []string {
-	mcpConfig := fmt.Sprintf(`{"mcpServers":{"hostit":{"command":%q,"args":["mcp","--socket",%q]}}}`, s.hostitBin, s.conf.ControlSocketFile)
+	mcpConfig := fmt.Sprintf(`{"mcpServers":{"hostit":{"command":%q,"args":["mcp","--socket",%q]}}}`, workspace.ContainerBinFile, s.conf.ControlSocketFile)
 	args := []string{
 		"claude", "-p",
 		"--output-format", "stream-json",

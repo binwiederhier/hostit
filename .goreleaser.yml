@@ -39,6 +39,20 @@ builds:
       - "-s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}}"
     goos: [ linux ]
     goarch: [ arm64 ]
+  - id: hostit_app_linux_amd64
+    binary: hostit-app
+    main: ./cmd/app
+    ldflags:
+      - "-s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}}"
+    goos: [ linux ]
+    goarch: [ amd64 ]
+  - id: hostit_app_linux_arm64
+    binary: hostit-app
+    main: ./cmd/app
+    ldflags:
+      - "-s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}}"
+    goos: [ linux ]
+    goarch: [ arm64 ]
   - id: hostit_node_linux_amd64
     binary: hostit-node
     main: ./cmd/node
@@ -96,6 +110,28 @@ nfpms:
         dst: /lib/systemd/system/hostit-node.service
       - src: hostit-app@.service
         dst: /lib/systemd/system/hostit-app@.service
+      # The container binary, deliberately OFF $PATH: it is bind-mounted into
+      # every container as /usr/bin/hostit, and nothing an operator types lives
+      # in /usr/lib/hostit/bin. The src is goreleaser's per-arch dist dir; the
+      # version suffix tracks the default GOAMD64/GOARM64 targets, and a wrong
+      # guess fails the build loudly rather than shipping a broken package.
+      - src: "dist/hostit_app_linux_{{ .Arch }}_linux_{{ .Arch }}_{{ if eq .Arch \"amd64\" }}v1{{ else }}v8.0{{ end }}/hostit-app"
+        dst: /usr/lib/hostit/bin/hostit-app
+        file_info:
+          mode: 0755
+      # The login shell and its privileged half, at their new home -- and at the
+      # old one for ONE release: existing app users' passwd entries name
+      # /usr/bin/hostit-shell until the node's usermod sweep rewrites them, and
+      # dropping the old path before that sweep runs would lock everyone out of
+      # SSH between dpkg and the node restart.
+      - src: hostit-shell
+        dst: /usr/lib/hostit/bin/hostit-shell
+        file_info:
+          mode: 0755
+      - src: hostit-enter
+        dst: /usr/lib/hostit/bin/hostit-enter
+        file_info:
+          mode: 0755
       - src: hostit-shell
         dst: /usr/bin/hostit-shell
         file_info:

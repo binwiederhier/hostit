@@ -53,7 +53,7 @@ func TestUpWorkspaceModeUnchangedOnlyReloadsAgent(t *testing.T) {
 	conf := mustLoadConfig(t, m, "blog")
 	ids, err := m.testMachine().LookupIDs("blog")
 	require.NoError(t, err)
-	hash := workspace.ConfigHash(workspace.CreateArgs(conf, a, m.testMachine().AppSubvolume("blog"), m.config.SocketFile, workspace.HostitBinFile, node.Version, 0, ids, ""))
+	hash := workspace.ConfigHash(workspace.CreateArgs(conf, a, m.testMachine().AppSubvolume("blog"), m.config.SocketFile, workspace.HostBinFile, node.Version, 0, ids, ""))
 	runner.returns("container inspect", hash)
 	runner.returns("is-active", "active")
 	// The app's subvolume already exists (steady state), so the deploy must not

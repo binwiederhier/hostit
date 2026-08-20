@@ -210,7 +210,7 @@ func (m *Machine) apply(a *store.App, conf *app.Config, allowReload bool) (strin
 
 	// Recreate the container if the desired config differs from the running one
 	started := time.Now()
-	desired := workspace.CreateArgs(conf, a, m.AppSubvolume(name), m.config.SocketFile, workspace.HostitBinFile, Version, m.MemoryLimit(name), ids, m.config.AppsBindAddress)
+	desired := workspace.CreateArgs(conf, a, m.AppSubvolume(name), m.config.SocketFile, workspace.HostBinFile, Version, m.MemoryLimit(name), ids, m.config.AppsBindAddress)
 	hash := workspace.ConfigHash(desired)
 	current, err := m.container.Inspect(m.ContainerName(name), inspectHashFormat)
 	recreated := false
