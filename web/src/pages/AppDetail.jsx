@@ -1,6 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { api, ApiError, isNetworkError } from "../api";
+import { viewFromSlug, VIEW_TO_SLUG } from "../views";
 import { useReconnect } from "../hooks";
 import { CopyButton, ErrorBanner, Loading, Snippet, StatusDot } from "../components";
 import { useSetAppHeader } from "../appHeader";
@@ -417,10 +418,24 @@ const ActionsMenu = ({ running, appRunning, busy, onAction, onDelete, canDelete 
 };
 
 
-// The URL slug for each workspace view and back; "files" is the public name of
-// the internal "editor" view. Unknown slugs fall back to the remembered view.
-const SLUG_TO_VIEW = { assistant: "assistant", files: "editor", terminal: "terminal", snapshots: "snapshots", logs: "logs", settings: "settings" };
-const VIEW_TO_SLUG = { assistant: "assistant", editor: "files", terminal: "terminal", snapshots: "snapshots", logs: "logs", settings: "settings" };
+// UnknownView answers a URL naming a view that does not exist -- a typo'd
+// link, or the internal view name where the public slug belongs. It used to
+// fall back silently to the remembered tab, which showed a page that answered
+// a different question than the URL asked.
+const UnknownView = ({ name, slug }) => (
+  <div className="card">
+    <h2>No such view</h2>
+    <p className="empty">
+      There is no <span className="mono">{slug}</span> view. The tabs are{" "}
+      <span className="mono">assistant</span>, <span className="mono">files</span>,{" "}
+      <span className="mono">terminal</span>, <span className="mono">snapshots</span>,{" "}
+      <span className="mono">logs</span> and <span className="mono">settings</span>.
+    </p>
+    <Link className="btn" to={`/app/${encodeURIComponent(name)}`}>
+      Back to {name}
+    </Link>
+  </div>
+);
 
 // rememberedView is the last tab this app was on (per app, across sessions).
 const rememberedView = (name) => {
@@ -1574,11 +1589,15 @@ const AppDetail = ({ account, refreshAccount }) => {
   const [toast, setToast] = useState(""); // a 3s "Copied"/"Regenerated" snackbar
   // Remember the last view per app (also seeded by the new-app intent).
   // The view lives in the URL (/app/<name>/files etc.), so every tab is deep-
-  // linkable; a bare /app/<name> falls back to the per-app remembered view.
-  // "files" is the public slug for the internal "editor" view.
-  const view = SLUG_TO_VIEW[viewSlug] || rememberedView(name);
+  // linkable; a bare /app/<name> falls back to the per-app remembered view,
+  // and an unknown slug is null -- rendered as a not-found further down, after
+  // the hooks (an early return here would change the hook order).
+  const view = viewFromSlug(viewSlug, rememberedView(name));
   const setView = (v) => navigate(`/app/${encodeURIComponent(name)}/${VIEW_TO_SLUG[v] || "assistant"}`);
   useEffect(() => {
+    if (view === null) {
+      return; // an unknown slug must not overwrite the remembered view
+    }
     try {
       localStorage.setItem("hostit.view." + name, view);
     } catch {
@@ -1917,6 +1936,9 @@ const AppDetail = ({ account, refreshAccount }) => {
 
   if (missing) {
     return <NotFound name={name} />;
+  }
+  if (view === null) {
+    return <UnknownView name={name} slug={viewSlug} />;
   }
   if (error && app === null) {
     return (
