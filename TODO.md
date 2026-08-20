@@ -8,61 +8,6 @@ everything imaginable -- if it is not written down here it is not planned.
 - is "hostit apps" api really necessary?
 - what is v1/self and why is it not just the same api as the main api?
 
-## High priority
-
-- **BUG: an app on a REMOTE node has no daemon socket.** Found 2026-08-19 while
-  proving the connections PoC; diagnosed 2026-08-19 after a wrong first guess
-  (recorded because the wrong guess is instructive: the symptom looked exactly
-  like a stale mount, and two rounds of mount forensics went nowhere).
-
-  The app-side unix socket `/run/hostit/hostit.sock` -- the `/v1/self/*` surface
-  -- is served by **hostit-control**. On a host running only hostit-node there
-  is no such socket: stage-2's `/run/hostit` holds `apps-raw` and nothing else.
-  Apps placed there therefore cannot use it, and everything that rides on it
-  fails from inside the container:
-
-  - the in-container CLI (`hostit deploy`, `logs`, `snapshot`),
-  - the MCP bridge the sandboxed assistant backend uses
-    (`assistant/sandbox.go` runs `hostit mcp --socket <path>`),
-  - the connections token endpoint added on the `connections` branch.
-
-  Evidence: on stage, apps on host `local` (phdemo, thatphilguy, tictactoe,
-  xray) work; apps on `hostit-stage-2` (sockdebug, test123, e2e-filter-*) do
-  not. The container's `/run/hostit` is inode 2260 -- stage-2's own directory,
-  dated when that node was built -- while the control host's is 2036 and holds
-  the socket.
-
-  **Prod is unaffected because it is a single host**: control and node share a
-  machine, so every app sits next to the socket. This is a gap that opened with
-  the control/node split and only shows on a multi-node instance.
-
-  **What this actually costs, on a multi-node instance:**
-
-  - **SSH, scp and rsync to the app fail outright**, not degrade: the login
-    shell calls `Self()` first and exits 1 with "cannot identify app" before it
-    greets anyone (`cmd/agent/shell.go:execShell`).
-  - The whole in-container CLI: `hostit deploy`, `logs`, `status`,
-    `start|stop|restart`, `poweron|poweroff|reboot`.
-  - `hostit mcp` and the `/v1/self/tool/{name}` bridge from inside the app.
-  - The connections token endpoint (the `connections` branch).
-
-  **What still works**, because it is routed through control rather than the
-  socket: the whole dashboard (deploy, logs, files, terminal, snapshots,
-  rollback), the REST API from outside, the app serving its own traffic,
-  automatic snapshots, retention, previews -- and the built-in assistant,
-  INCLUDING the sandboxed subscription backend, which mounts no app home, runs
-  next to control and uses control's own socket.
-
-  So a secondary-node app is fully usable from the dashboard and unreachable
-  from inside itself or over SSH -- which is exactly the "bring your own agent"
-  and "ssh in and poke at it" story hostit leads with.
-
-  The fix is for **hostit-node to serve the app socket locally and relay
-  `/v1/self/*` to control over the cluster link**, which already carries traffic
-  both ways (the snapshot and usage callbacks go node->control today). The node
-  knows which app a peer uid is, so the peercred authentication stays where it
-  is; only the answering moves.
-
 ## Resource allocation
 
 Today an app's RAM/disk caps are fixed at creation from the owner's defaults
@@ -132,40 +77,6 @@ credential push). AI would still be a capability under either.
   difference between a small feature and a real one), and are owner-provided
   credentials (GitHub, needing profile-level OAuth) in scope or is v1
   operator-provided AI only.
-
-## The hostit binary: two tools sharing a name
-
-`cmd/agent/cmd.go` says it outright -- "two tools that happen to share a
-binary", switched by `insideContainer()`. Inside a container `hostit` is PID 1
-(the agent supervising the app's run command), the tenant CLI (deploy/logs/
-restart over the peercred socket) and the MCP server. On the host it is the
-operator's REST client (`hostit apps`) plus the shell/enter helpers. That is why
-`hostit` reads as a peer of `hostit-control` and `hostit-node` when it is not:
-one half of it is, and the other half belongs inside containers.
-
-Related to the open question above about whether `hostit apps` is necessary at
-all -- answering that first may shrink this.
-
-The stronger argument is least privilege, not naming. The binary bind-mounted
-into every container -- where the tenant is root -- also contains control's
-TLS/ACME, OAuth, podman/systemd/nftables/store, assistant and admin-API code.
-None of that should be present there. This is defense in depth, NOT a fix for a
-live hole: the container already contains the tenant (userns to an unprivileged
-host uid, no host podman or store, peercred socket).
-
-- **Split it.** Keep a minimal container-only binary (supervise `run:`, reap
-  zombies, static-serve, talk to the peercred socket) shipped by `hostit-node`
-  and bind-mounted into containers, never a host command. Give the host its own
-  CLI carrying `apps` plus dispatch to the components. Reaping may also be the
-  answer to the zombie-processes entry below.
-- **The host CLI should know what is installed**, so `hostit control ...` and
-  `hostit node ...` work and a component that is not installed says so in a
-  sentence naming what this machine is. Options: a wrapper script (cheapest, but
-  its help cannot know what it dispatches to), or in-binary dispatch that execs
-  the sibling (preferred: one help text, no extra process, and it can hide
-  commands for components this host does not run).
-- **Blocked on a name** for the host command. Renaming breaks muscle memory and
-  scripts, so decide before starting.
 
 ## Smaller things
 
@@ -391,6 +302,28 @@ months.
 ## Done (recent)
 
 Kept briefly for context; prune when stale.
+
+- **The node owns the app socket (2026-08-20, the high-priority bug).** An app
+  on a node-only host had no daemon socket at all: no SSH, no in-container CLI,
+  no MCP bridge. hostit-node now serves /run/hostit/hostit.sock on every host,
+  authenticates by SO_PEERCRED against its own mirror (which carries each
+  hosted app's uid) and relays to control over the cluster link -- never
+  answering locally, so control keeps every guard; an archived app's deploy is
+  refused with "archived" THROUGH the relay, and a test drives that. Control's
+  own socket moved to /run/hostit/control.sock (operator CLI, assistant
+  sandbox). Proven on stage: a stage-2 app ran `hostit logs|status|deploy` from
+  inside for the first time.
+
+- **The binary split (2026-08-20).** hostit-app (package appcli) is the
+  in-container command set, shipped at /usr/lib/hostit/bin/hostit-app and
+  mounted into containers as /usr/bin/hostit -- tenants type what they always
+  typed. hostit became the front door (`hostit control|node|proxy ...` execs
+  the sibling; `hostit apps` is a deprecated alias), the apps commands moved
+  onto hostit-control beside their registry, and the login shell moved to
+  /usr/lib/hostit/bin with a usermod sweep on node start (old path shipped one
+  release so a failed sweep strands nobody). The lesson that cost an hour on
+  stage: the mount SOURCE is the host path and the exec is the CONTAINER path;
+  conflating them crash-looped every app at PID 1, and a test now pins it.
 
 - **Archive and unarchive an app (2026-08-19).** A shelved app powers off and
   refuses to run: the guard sits on `routingAgent.routeRunnable`, the one place

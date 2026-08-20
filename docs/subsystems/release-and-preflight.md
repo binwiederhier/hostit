@@ -19,7 +19,8 @@ whole host contract:
 
 | Packaged file | Destination | Role |
 |---|---|---|
-| `hostit` | `/usr/bin/hostit` | the one binary (daemon, CLI, agent, shell, enter, mcp) |
+| `hostit` | `/usr/bin/hostit` | the operator's front door (dispatch, shell/enter entry points) |
+| `hostit-app` | `/usr/lib/hostit/bin/hostit-app` | the container binary, mounted in as `/usr/bin/hostit` |
 | `hostit.service` | `/lib/systemd/system/` | the daemon unit |
 | `hostit-app@.service` | `/lib/systemd/system/` | the per-app template unit |
 | `hostit-shell` | `/usr/bin/` (0755) | app users' login shell |
@@ -130,7 +131,7 @@ usage, state, periodic snapshots, custom-domain retry).
 
 An app's **agent is PID 1 inside its container**, exec'd from the hostit binary as
 it was at container-create time. The binary is **bind-mounted** into the container
-as a file (`workspace/spec.go:appendCommonMounts`), so replacing `/usr/bin/hostit`
+as a file (`workspace/spec.go:appendCommonMounts`), so replacing the mounted binary
 on the host swaps the file, but a **running container keeps the inode it started
 with** -- the old agent behaviour keeps running until the container is recreated.
 

@@ -194,7 +194,7 @@ tenant can still hand-edit them; public keys are not secrets.
 ## Tenant vs operator: SSH lands in the container
 
 An SSH session must never reach a host shell. The app user's login shell is
-hostit's own (`userShellFile = /usr/bin/hostit-shell`, set at
+hostit's own (`userShellFile = /usr/lib/hostit/bin/hostit-shell`, set at
 `node/machine.go`), and the path from sshd to a shell is a chain that only ever
 lands the caller in **their own** container:
 

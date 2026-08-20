@@ -68,7 +68,7 @@ sequenceDiagram
     participant podman
     User->>sshd: ssh blog@host (public key)
     sshd->>sshd: match key in blog's authorized_keys
-    sshd->>shell: exec /usr/bin/hostit-shell "$@"
+    sshd->>shell: exec /usr/lib/hostit/bin/hostit-shell "$@"
     shell->>appctl: Self() + Ensure() (identify app, start container)
     shell->>User: login banner (interactive only)
     shell->>enter: exec sudo -n hostit-enter <TERM> [-c cmd]

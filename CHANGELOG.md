@@ -9,20 +9,20 @@ default, or on-disk state is called out as **Breaking** or **Upgrade note**.
 
 ## Unreleased
 
-- **Archiving is honest to agents and to the API.** An archived app now refuses
-  `run` and new snapshots as *archived* rather than as "powered off; power it on
-  first" -- advice that could not be followed, since powering on is what
-  archiving refuses. On-demand snapshots are refused too, not just skipped by
-  the sweep, which is what "it stops taking new snapshots" always promised.
-- The built-in assistant and the `/info` agent guide are told when an app is
-  archived, so they explain it instead of planning work that will be rejected.
-- `POST /api/apps/{app}/archive` and `/unarchive` are on the app-scoped agent
-  API, so an agent asked to shelve an app can, and can undo it.
-- **Preview screenshots stop coming out blank.** Chrome gets a longer rendering
-  budget (25s, paused while network fetches are outstanding, so it is not a
-  timeout a slow app burns through) and is told to finish compositing before the
-  capture -- the other way a card came out white despite the page having
-  rendered.
+- **An app on a secondary node has a working socket.** hostit-node serves the
+  app socket on every host and relays to control over the cluster link, so SSH,
+  the in-container CLI, the MCP bridge and connections tokens work wherever an
+  app is placed. Control keeps every guard: the relay changes who carries the
+  request, not who decides.
+- **The binary split.** `hostit-app` is the container binary (mounted in as
+  `/usr/bin/hostit`; tenants type nothing new), `hostit` is the operator's
+  front door (`hostit control ...`), and the apps commands live on
+  `hostit-control` -- `hostit apps` survives as a deprecated alias.
+- **Upgrade notes:** control listens on `/run/hostit/control.sock` now (new
+  `control-socket-file` key); the login shell moved to
+  `/usr/lib/hostit/bin/hostit-shell` with an automatic usermod sweep, and the
+  old path keeps working for this release. Containers are recreated on upgrade
+  as usual and pick up the new binary.
 
 ## v0.16.0 (2026-08-19)
 
