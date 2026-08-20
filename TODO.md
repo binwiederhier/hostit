@@ -123,13 +123,25 @@ host uid, no host podman or store, peercred socket).
   reach hostit daemon at /run/hostit/hostit.sock ... no such file or directory",
   while the same command in an app from last week works.
 
+  **PROD IS NOT AFFECTED** (checked 2026-08-19 by creating a real app there:
+  it sees `hostit.sock` and `hostit logs` works; the app was deleted after).
+  This is a stage condition, so it is a latent bug rather than a live outage.
+
   It survives a container power cycle, a `podman rm -f` plus power-on, a
   hostit-node restart and a hostit-control restart, which rules out "the socket
-  was recreated after the container started". The directory the container binds
-  is a different inode from the one control creates its socket in --
-  `hostit-control.service` already carries a comment about deliberately NOT
-  using RuntimeDirectory for this reason, so something else is replacing the
-  directory. Not chased further.
+  was recreated after the container started". Not RuntimeDirectory (the control
+  unit carries a comment about deliberately avoiding it, for exactly this
+  reason) and not tmpfiles.d (there is no hostit entry).
+
+  The lead worth following: `node/machine_deploy.go:MountRawAppsView` runs on
+  every node start and does mount surgery in the socket's own directory --
+  `mount --make-rprivate`, `umount -R`, `mount --bind`, `mount --make-private`
+  on `/run/hostit/apps-raw`. On a path that is not yet a mount point, the
+  propagation changes land on the containing mount, which is `/run`. Stage had
+  several node restarts today; prod had one clean deploy. That fits every
+  symptom, including why old containers keep working and new ones do not, but it
+  is a hypothesis -- reproduce it by restarting hostit-node and then creating an
+  app before concluding.
 
   It breaks the in-container CLI for every new app (deploy, logs, snapshot from
   inside), and it is what stopped the connections PoC from shipping a demo app:
