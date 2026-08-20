@@ -11,7 +11,6 @@ import (
 	"github.com/urfave/cli/v2"
 	"heckel.io/hostit/client"
 	"heckel.io/hostit/controlconf"
-	"heckel.io/hostit/nodeconf"
 )
 
 var (
@@ -379,13 +378,14 @@ func resolveTransport(host, token, socketFile string, socketExists bool) (transp
 	return transportSocket, nil
 }
 
-// localSocketFile is the daemon's socket path from the node config (the socket
-// is the node's); a plain operator may not be able to read it, so an
-// unreadable or missing config falls back to the built-in default rather than
-// failing
+// localSocketFile is CONTROL's socket: operator commands are control-plane
+// operations, and the app socket (the node's) refuses them since the relay
+// split. Control's config names a non-default path when there is one; a plain
+// operator may not be able to read that file, so failures fall back to the
+// built-in default rather than erroring.
 func localSocketFile() string {
-	if conf, err := nodeconf.LoadConfig(nodeconf.DefaultConfigFile); err == nil && conf.SocketFile != "" {
-		return conf.SocketFile
+	if conf, err := controlconf.LoadConfig(controlconf.DefaultControlConfigFile); err == nil && conf.ControlSocketFile != "" {
+		return conf.ControlSocketFile
 	}
 	return controlconf.DefaultControlSocketFile
 }
