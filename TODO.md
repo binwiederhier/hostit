@@ -8,6 +8,61 @@ everything imaginable -- if it is not written down here it is not planned.
 - is "hostit apps" api really necessary?
 - what is v1/self and why is it not just the same api as the main api?
 
+## High priority
+
+- **BUG: an app on a REMOTE node has no daemon socket.** Found 2026-08-19 while
+  proving the connections PoC; diagnosed 2026-08-19 after a wrong first guess
+  (recorded because the wrong guess is instructive: the symptom looked exactly
+  like a stale mount, and two rounds of mount forensics went nowhere).
+
+  The app-side unix socket `/run/hostit/hostit.sock` -- the `/v1/self/*` surface
+  -- is served by **hostit-control**. On a host running only hostit-node there
+  is no such socket: stage-2's `/run/hostit` holds `apps-raw` and nothing else.
+  Apps placed there therefore cannot use it, and everything that rides on it
+  fails from inside the container:
+
+  - the in-container CLI (`hostit deploy`, `logs`, `snapshot`),
+  - the MCP bridge the sandboxed assistant backend uses
+    (`assistant/sandbox.go` runs `hostit mcp --socket <path>`),
+  - the connections token endpoint added on the `connections` branch.
+
+  Evidence: on stage, apps on host `local` (phdemo, thatphilguy, tictactoe,
+  xray) work; apps on `hostit-stage-2` (sockdebug, test123, e2e-filter-*) do
+  not. The container's `/run/hostit` is inode 2260 -- stage-2's own directory,
+  dated when that node was built -- while the control host's is 2036 and holds
+  the socket.
+
+  **Prod is unaffected because it is a single host**: control and node share a
+  machine, so every app sits next to the socket. This is a gap that opened with
+  the control/node split and only shows on a multi-node instance.
+
+  **What this actually costs, on a multi-node instance:**
+
+  - **SSH, scp and rsync to the app fail outright**, not degrade: the login
+    shell calls `Self()` first and exits 1 with "cannot identify app" before it
+    greets anyone (`cmd/agent/shell.go:execShell`).
+  - The whole in-container CLI: `hostit deploy`, `logs`, `status`,
+    `start|stop|restart`, `poweron|poweroff|reboot`.
+  - `hostit mcp` and the `/v1/self/tool/{name}` bridge from inside the app.
+  - The connections token endpoint (the `connections` branch).
+
+  **What still works**, because it is routed through control rather than the
+  socket: the whole dashboard (deploy, logs, files, terminal, snapshots,
+  rollback), the REST API from outside, the app serving its own traffic,
+  automatic snapshots, retention, previews -- and the built-in assistant,
+  INCLUDING the sandboxed subscription backend, which mounts no app home, runs
+  next to control and uses control's own socket.
+
+  So a secondary-node app is fully usable from the dashboard and unreachable
+  from inside itself or over SSH -- which is exactly the "bring your own agent"
+  and "ssh in and poke at it" story hostit leads with.
+
+  The fix is for **hostit-node to serve the app socket locally and relay
+  `/v1/self/*` to control over the cluster link**, which already carries traffic
+  both ways (the snapshot and usage callbacks go node->control today). The node
+  knows which app a peer uid is, so the peercred authentication stays where it
+  is; only the answering moves.
+
 ## Resource allocation
 
 Today an app's RAM/disk caps are fixed at creation from the owner's defaults
@@ -113,38 +168,6 @@ host uid, no host podman or store, peercred socket).
   scripts, so decide before starting.
 
 ## Smaller things
-
-- **BUG: an app on a REMOTE node has no daemon socket.** Found 2026-08-19 while
-  proving the connections PoC; diagnosed 2026-08-19 after a wrong first guess
-  (recorded because the wrong guess is instructive: the symptom looked exactly
-  like a stale mount, and two rounds of mount forensics went nowhere).
-
-  The app-side unix socket `/run/hostit/hostit.sock` -- the `/v1/self/*` surface
-  -- is served by **hostit-control**. On a host running only hostit-node there
-  is no such socket: stage-2's `/run/hostit` holds `apps-raw` and nothing else.
-  Apps placed there therefore cannot use it, and everything that rides on it
-  fails from inside the container:
-
-  - the in-container CLI (`hostit deploy`, `logs`, `snapshot`),
-  - the MCP bridge the sandboxed assistant backend uses
-    (`assistant/sandbox.go` runs `hostit mcp --socket <path>`),
-  - the connections token endpoint added on the `connections` branch.
-
-  Evidence: on stage, apps on host `local` (phdemo, thatphilguy, tictactoe,
-  xray) work; apps on `hostit-stage-2` (sockdebug, test123, e2e-filter-*) do
-  not. The container's `/run/hostit` is inode 2260 -- stage-2's own directory,
-  dated when that node was built -- while the control host's is 2036 and holds
-  the socket.
-
-  **Prod is unaffected because it is a single host**: control and node share a
-  machine, so every app sits next to the socket. This is a gap that opened with
-  the control/node split and only shows on a multi-node instance.
-
-  The fix is for **hostit-node to serve the app socket locally and relay
-  `/v1/self/*` to control over the cluster link**, which already carries traffic
-  both ways (the snapshot and usage callbacks go node->control today). The node
-  knows which app a peer uid is, so the peercred authentication stays where it
-  is; only the answering moves.
 
 - **Private apps: only the owner can reach them.** hostit apps are public URLs.
   That is fine for a blog and wrong for a personal dashboard holding a connected
