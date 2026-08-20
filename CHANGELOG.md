@@ -7,7 +7,7 @@ changed rather than what an operator had to do about it; from v0.15.0 on, each
 release is written down as it is cut. Anything that changes a config file, a
 default, or on-disk state is called out as **Breaking** or **Upgrade note**.
 
-## Unreleased
+## v0.17.0 (2026-08-20)
 
 - **An app on a secondary node has a working socket.** hostit-node serves the
   app socket on every host and relays to control over the cluster link, so SSH,
@@ -19,6 +19,10 @@ default, or on-disk state is called out as **Breaking** or **Upgrade note**.
   a remote-node app died with "runuser: user does not exist". The pty now runs
   on the app's node and streams over the cluster link. An archived app also
   refuses a terminal now, like everything else.
+- An unknown workspace view in the URL (`/app/<name>/<typo>`) shows a
+  "No such view" page instead of silently rendering the remembered tab.
+- Browser e2e suite grown to 14 specs (terminal, dashboard views, archiving,
+  the model picker, snapshot settings, the editor's save-and-deploy).
 - **The binary split.** `hostit-app` is the container binary (mounted in as
   `/usr/bin/hostit`; tenants type nothing new), `hostit` is the operator's
   front door (`hostit control ...`), and the apps commands live on
