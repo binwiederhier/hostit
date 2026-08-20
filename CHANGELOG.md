@@ -14,6 +14,11 @@ default, or on-disk state is called out as **Breaking** or **Upgrade note**.
   the in-container CLI and the MCP bridge work wherever an
   app is placed. Control keeps every guard: the relay changes who carries the
   request, not who decides.
+- **The browser terminal works for apps on any node.** Control used to ask the
+  node for the shell command and then run it on its own host, so a terminal to
+  a remote-node app died with "runuser: user does not exist". The pty now runs
+  on the app's node and streams over the cluster link. An archived app also
+  refuses a terminal now, like everything else.
 - **The binary split.** `hostit-app` is the container binary (mounted in as
   `/usr/bin/hostit`; tenants type nothing new), `hostit` is the operator's
   front door (`hostit control ...`), and the apps commands live on

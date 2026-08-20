@@ -326,6 +326,17 @@ Kept briefly for context; prune when stale.
   sandbox). Proven on stage: a stage-2 app ran `hostit logs|status|deploy` from
   inside for the first time.
 
+- **The browser terminal runs its pty on the app's node (2026-08-20).** Third
+  bug of the socket family, found live in a browser demo: control executed the
+  node-supplied "runuser <app>" on its own host, where the user does not exist
+  -- the terminal had never worked for a remote-node app. NodeAgent.Terminal
+  replaces TerminalCommand: a live session streamed over a raw yamux stream on
+  the existing cluster connection (hand-rolled 101 upgrade, framed input, raw
+  output), bridged to the browser websocket by control. Covered end to end
+  over a real duplex in nodelink's tests. Proven in the browser: created an
+  app on stage-2, got the SSH banner in the terminal, ran hostit status/logs,
+  and deployed a page from inside it.
+
 - **The binary split (2026-08-20).** hostit-app (package appcli) is the
   in-container command set, shipped at /usr/lib/hostit/bin/hostit-app and
   mounted into containers as /usr/bin/hostit -- tenants type what they always
