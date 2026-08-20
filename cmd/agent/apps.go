@@ -387,7 +387,7 @@ func localSocketFile() string {
 	if conf, err := nodeconf.LoadConfig(nodeconf.DefaultConfigFile); err == nil && conf.SocketFile != "" {
 		return conf.SocketFile
 	}
-	return controlconf.DefaultSocketFile
+	return controlconf.DefaultControlSocketFile
 }
 
 // readKeyFlags resolves --ssh-key values: file paths are read, literals passed through

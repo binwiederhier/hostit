@@ -142,6 +142,15 @@ func Serve(configPath, version string) error {
 	}
 	link := nodelink.NewControlLink()
 	machine.SetControlSink(link)
+	// The app socket: served HERE on every host, relayed to control over the
+	// link. Started before the dial loop so the file exists the moment a
+	// container starts; requests before the first connection answer 502, which
+	// the in-container CLI can retry, unlike a missing socket file.
+	appSocket, err := ServeAppSocket(conf.SocketFile, s, link)
+	if err != nil {
+		return err
+	}
+	defer appSocket.Close()
 	// A termination signal closes the live connection: ServeAgent blocks on the
 	// session and would otherwise ignore SIGTERM until systemd SIGKILLs us
 	// after its stop timeout.

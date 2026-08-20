@@ -19,27 +19,39 @@ func (s *Server) socketHandler() http.Handler {
 }
 
 func (s *Server) newSocketHandler() http.Handler {
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /v1/self", s.selfApp(s.handleSelf))
-	mux.HandleFunc("POST /v1/self/ensure", s.selfApp(s.handleSelfEnsure)) // SSH login provisions the workspace
-	// The same lifecycle verbs the web app and admin CLI use, split into the app
-	// process (start/stop/restart) and its container (poweron/poweroff/reboot).
-	mux.HandleFunc("POST /v1/self/deploy", s.selfApp(s.handleSelfDeploy))
-	mux.HandleFunc("POST /v1/self/start", s.selfApp(s.handleSelfStart))
-	mux.HandleFunc("POST /v1/self/stop", s.selfApp(s.handleSelfStop))
-	mux.HandleFunc("POST /v1/self/restart", s.selfApp(s.handleSelfRestart))
-	mux.HandleFunc("POST /v1/self/poweron", s.selfApp(s.handleSelfPowerOn))
-	mux.HandleFunc("POST /v1/self/poweroff", s.selfApp(s.handleSelfPowerOff))
-	mux.HandleFunc("POST /v1/self/reboot", s.selfApp(s.handleSelfReboot))
-	mux.HandleFunc("GET /v1/self/status", s.selfApp(s.handleSelfStatus))
-	mux.HandleFunc("GET /v1/self/logs", s.selfApp(s.handleSelfLogs))
-	// One app-scoped tool call (the sandboxed Claude Max backend reaches its tools
-	// through here, over the same peercred-authenticated socket the app CLI uses).
-	mux.HandleFunc("POST /v1/self/tool/{name}", s.selfApp(s.handleSelfTool))
+	// Control's own socket resolves the app by the caller's peer uid. The same
+	// /v1 surface is ALSO served per node over the cluster link (nodeRelayMux),
+	// where the app is named by the node instead -- see AppRelayHandler.
+	mux := s.selfMux(s.selfApp)
 	// The operator API rides the same socket: authenticate() grants global admin
 	// to peer uid 0, so root's CLI works without a token. Scoped to /api on
 	// purpose; the web app and OAuth endpoints have no business on a local socket.
 	mux.Handle(apiPrefix+"/", s.api)
+	return mux
+}
+
+// selfMux registers the whole app-facing /v1 surface against a pluggable app
+// resolver, so the same handlers serve control's own socket (peercred resolves
+// the app) and the per-node relay (the authenticated node names the app). The
+// routes exist once; only "who is asking" differs.
+func (s *Server) selfMux(wrap func(func(http.ResponseWriter, *http.Request, *store.App)) http.HandlerFunc) *http.ServeMux {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /v1/self", wrap(s.handleSelf))
+	mux.HandleFunc("POST /v1/self/ensure", wrap(s.handleSelfEnsure)) // SSH login provisions the workspace
+	// The same lifecycle verbs the web app and admin CLI use, split into the app
+	// process (start/stop/restart) and its container (poweron/poweroff/reboot).
+	mux.HandleFunc("POST /v1/self/deploy", wrap(s.handleSelfDeploy))
+	mux.HandleFunc("POST /v1/self/start", wrap(s.handleSelfStart))
+	mux.HandleFunc("POST /v1/self/stop", wrap(s.handleSelfStop))
+	mux.HandleFunc("POST /v1/self/restart", wrap(s.handleSelfRestart))
+	mux.HandleFunc("POST /v1/self/poweron", wrap(s.handleSelfPowerOn))
+	mux.HandleFunc("POST /v1/self/poweroff", wrap(s.handleSelfPowerOff))
+	mux.HandleFunc("POST /v1/self/reboot", wrap(s.handleSelfReboot))
+	mux.HandleFunc("GET /v1/self/status", wrap(s.handleSelfStatus))
+	mux.HandleFunc("GET /v1/self/logs", wrap(s.handleSelfLogs))
+	// One app-scoped tool call (the sandboxed Claude Max backend reaches its tools
+	// through here, over the same peercred-authenticated socket the app CLI uses).
+	mux.HandleFunc("POST /v1/self/tool/{name}", wrap(s.handleSelfTool))
 	return mux
 }
 

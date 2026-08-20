@@ -21,7 +21,7 @@ import (
 func testSandbox() *Sandbox {
 	return &Sandbox{
 		conf: &controlconf.Config{
-			SocketFile:           "/run/hostit/hostit.sock",
+			ControlSocketFile:           "/run/hostit/hostit.sock",
 			DataDir:              "/var/lib/hostit",
 			ClaudeCodeOAuthToken: "sk-test-subscription-token",
 		},
