@@ -3620,6 +3620,39 @@ body.ws-resizing iframe {
   font-variant-numeric: tabular-nums;
 }
 
+/* One connected account: name and status on the left, the action on the right. */
+.conn-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.conn-row:last-of-type {
+  border-bottom: none;
+}
+
+.conn-id {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.conn-name {
+  font-weight: 600;
+}
+
+.conn-note {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.conn-form {
+  padding-top: 10px;
+}
+
 .settings-field {
   display: block;
   margin-bottom: 10px;

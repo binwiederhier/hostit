@@ -42,6 +42,12 @@ func (s *Server) handleGoogleCallback(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, errors.New("invalid login state, please try again"))
 		return
 	}
+	// A connection's consent comes back here too, so that connecting an account
+	// needs no second redirect URI registered with the provider. The state says
+	// which flow this is; anything else is an ordinary login.
+	if s.connectionFromState(w, r, stateCookie.Value) {
+		return
+	}
 	code := r.URL.Query().Get("code")
 	if code == "" {
 		writeError(w, http.StatusBadRequest, errors.New("missing authorization code"))

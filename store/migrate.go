@@ -271,6 +271,25 @@ var migrations = []string{
 	// ones thin out to monthly rollups.
 	`
 		ALTER TABLE app ADD COLUMN archived INTEGER NOT NULL DEFAULT 0;
+	`, // 23: connections -- accounts an OWNER connected once (Google, GitHub, an
+	// IMAP mailbox) which their apps can be granted. secret holds ciphertext,
+	// never a usable credential; the key lives outside the database.
+	`
+		CREATE TABLE connection (
+			user_id TEXT NOT NULL,
+			provider TEXT NOT NULL,
+			kind TEXT NOT NULL,
+			secret TEXT NOT NULL,
+			scopes TEXT NOT NULL DEFAULT '',
+			meta TEXT NOT NULL DEFAULT '',
+			created_at INTEGER NOT NULL,
+			PRIMARY KEY (user_id, provider)
+		);
+		CREATE TABLE app_connection (
+			app_id TEXT NOT NULL,
+			provider TEXT NOT NULL,
+			PRIMARY KEY (app_id, provider)
+		);
 	`,
 }
 

@@ -27,6 +27,7 @@ import (
 	"github.com/caddyserver/certmagic"
 	"golang.org/x/sync/errgroup"
 	"heckel.io/hostit/assistant"
+	"heckel.io/hostit/connections"
 	"heckel.io/hostit/controlconf"
 	"heckel.io/hostit/node"
 	"heckel.io/hostit/preview"
@@ -55,9 +56,12 @@ type Server struct {
 	// identity resolver can be verified.
 	claudeSandbox *assistant.Sandbox
 	sessions      *sessionManager
-	api           http.Handler
-	socket        http.Handler
-	proxy         http.Handler
+	// connections is credential custody for owner-connected accounts (Google,
+	// GitHub, IMAP); nil only if its key could not be loaded.
+	connections *connectionManager
+	api         http.Handler
+	socket      http.Handler
+	proxy       http.Handler
 
 	// usernameForUID maps a peer-credential UID to a username; overridden in tests
 	usernameForUID func(uid int) (string, error)
@@ -116,6 +120,19 @@ func New(conf *controlconf.Config, apps *Manager, users *user.Manager) *Server {
 		proxies:        NewProxyRegistry(),
 	}
 	s.exchangeGoogleCode = s.exchangeGoogleCodeLive
+	// Connections reuse the instance's Google OAuth client and come back on the
+	// same /auth/callback the login uses, told apart by the state parameter --
+	// so trying this needs no Google console setup. See
+	// plans/260819-connections.md, which records that a production instance
+	// should register a dedicated redirect URI instead.
+	if key, err := connections.LoadOrCreateKey(conf.DataDir); err != nil {
+		slog.Warn("Connections disabled: cannot load the credential key", "error", err)
+	} else {
+		s.connections = newConnectionManager(apps.Store(), key, connectionConfig{
+			ClientID:     conf.GoogleClientID,
+			ClientSecret: conf.GoogleClientSecret,
+		})
+	}
 	// The Manager builds the desired state control asserts on nodes; the
 	// per-app keys and limits in it need the user tables, which live here.
 	apps.SetPolicy(&serverPolicy{s})

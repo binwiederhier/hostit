@@ -114,6 +114,37 @@ host uid, no host podman or store, peercred socket).
 
 ## Smaller things
 
+- **BUG: a newly created app cannot reach the daemon socket.** Found on stage
+  2026-08-19 while proving the connections PoC. An app container created today
+  has a STALE `/run/hostit` bind: it contains only `apps-raw`, while the host's
+  directory (and the node's own mount namespace, checked with `nsenter`) has
+  `hostit.sock` in it. Older containers still work, so this is not a config
+  problem -- `hostit logs` inside a container created today answers "cannot
+  reach hostit daemon at /run/hostit/hostit.sock ... no such file or directory",
+  while the same command in an app from last week works.
+
+  It survives a container power cycle, a `podman rm -f` plus power-on, a
+  hostit-node restart and a hostit-control restart, which rules out "the socket
+  was recreated after the container started". The directory the container binds
+  is a different inode from the one control creates its socket in --
+  `hostit-control.service` already carries a comment about deliberately NOT
+  using RuntimeDirectory for this reason, so something else is replacing the
+  directory. Not chased further.
+
+  It breaks the in-container CLI for every new app (deploy, logs, snapshot from
+  inside), and it is what stopped the connections PoC from shipping a demo app:
+  the token endpoint had to be proven in an older container instead.
+
+- **Private apps: only the owner can reach them.** hostit apps are public URLs.
+  That is fine for a blog and wrong for a personal dashboard holding a connected
+  Google account -- one URL guess away from being someone else's mail reader.
+  Enforce at the proxy: an app marked private serves only a request carrying the
+  owner's (or a named collaborator's) hostit session, everything else gets 403.
+  The proxy already holds the routing table control pushes it, so the flag rides
+  along the same path. This is the companion to the connections work
+  (`plans/260819-connections.md`); connections are not finished without it, and
+  it is useful on its own.
+
 - **Decide the credential-brokering shape before building either plan.** See
   the paragraph under "App capabilities" above. The broker design's own build
   order starts with a scoped, revocable static token from the upstream service,

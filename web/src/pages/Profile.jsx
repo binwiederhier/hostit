@@ -233,11 +233,143 @@ const Tokens = () => {
   );
 };
 
+// Connections: accounts the owner connects once and can then grant to their
+// apps. The credential itself is never shown or returned -- this page says WHAT
+// is connected, and the app settings say which apps may use it.
+const Connections = () => {
+  const [items, setItems] = useState(null);
+  const [error, setError] = useState("");
+  const [form, setForm] = useState(null); // the provider whose paste-form is open
+  const [values, setValues] = useState({});
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      setItems(await api.get("/api/connections"));
+    } catch (err) {
+      setError(err.message);
+      setItems([]);
+    }
+  }, []);
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const startOAuth = async (p) => {
+    setError("");
+    try {
+      // The server answers with the provider's consent URL rather than
+      // redirecting, so the browser leaves the SPA deliberately.
+      const res = await api.post(`/api/connections/${p.provider}/start`, {});
+      window.location.href = res.message;
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  const saveStatic = async (p) => {
+    setBusy(true);
+    setError("");
+    try {
+      await api.put(`/api/connections/${p.provider}`, values);
+      setForm(null);
+      setValues({});
+      await load();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const disconnect = async (p) => {
+    if (!window.confirm(`Disconnect ${p.label}? Apps you granted it lose access immediately.`)) {
+      return;
+    }
+    setError("");
+    try {
+      await api.del(`/api/connections/${p.provider}`);
+      await load();
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  return (
+    <div className="card">
+      <h2>Connections</h2>
+      <p className="hint">
+        Connect an account once, then grant it to individual apps in their settings. Apps act as
+        you, and only reach what you grant them.
+      </p>
+      <ErrorBanner message={error} onDismiss={() => setError("")} />
+      {items === null && !error && <Loading label="Loading connections..." />}
+      {items !== null &&
+        items.map((p) => (
+          <div key={p.provider} className="conn-row">
+            <div className="conn-id">
+              <span className="conn-name">{p.label}</span>
+              <span className="conn-note">
+                {!p.available
+                  ? "not configured on this server"
+                  : p.connected
+                    ? p.meta || "connected"
+                    : p.help}
+              </span>
+            </div>
+            {p.connected ? (
+              <button type="button" className="btn btn-small" onClick={() => disconnect(p)}>
+                Disconnect
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="btn btn-small btn-primary"
+                disabled={!p.available}
+                onClick={() => (p.kind === "oauth" ? startOAuth(p) : setForm(form === p.provider ? null : p.provider))}
+              >
+                Connect
+              </button>
+            )}
+          </div>
+        ))}
+      {items !== null &&
+        items
+          .filter((p) => p.provider === form)
+          .map((p) => (
+            <div key={"form-" + p.provider} className="conn-form">
+              {(p.fields || []).map((f) => (
+                <label key={f.name} className="settings-field">
+                  <span>{f.label}</span>
+                  <input
+                    type={f.secret ? "password" : "text"}
+                    className="settings-input"
+                    placeholder={f.placeholder}
+                    value={values[f.name] || ""}
+                    onChange={(e) => setValues({ ...values, [f.name]: e.target.value })}
+                  />
+                </label>
+              ))}
+              <div className="btn-row" style={{ justifyContent: "flex-start" }}>
+                <button type="button" className="btn btn-small btn-primary" onClick={() => saveStatic(p)} disabled={busy}>
+                  {busy ? "Saving..." : "Save"}
+                </button>
+                <button type="button" className="btn btn-small" onClick={() => setForm(null)}>
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ))}
+    </div>
+  );
+};
+
 const Profile = () => (
   <>
     <div className="page-header">
       <h1>Profile</h1>
     </div>
+    <Connections />
     <SshKeys />
     <Tokens />
   </>
