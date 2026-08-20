@@ -13,7 +13,8 @@ func newControlApp(version string) *cli.App {
 		// every container this daemon creates and records it as the agents'
 		// version, so an empty one would make the stale-agent check match
 		// forever and agents would stop being restarted on upgrades.
-		Version:  version,
-		Commands: []*cli.Command{cmdServe, cmdStatus, cmdApps, cmdNode, cmdProxy},
+		Version:              version,
+		Commands:             []*cli.Command{cmdServe, cmdStatus, cmdApp, cmdNode, cmdProxy},
+		EnableBashCompletion: true,
 	}
 }

@@ -24,21 +24,29 @@ func subCommand(cmd *cli.Command, name string) *cli.Command {
 	return nil
 }
 
+// The operator command is singular like `node` and `proxy`; the plural stays
+// as an alias because v0.17.0 shipped it and scripts may already say it.
+func TestAppCommandIsSingularWithAppsAlias(t *testing.T) {
+	t.Parallel()
+	assert.Equal(t, "app", cmdApp.Name)
+	assert.Contains(t, cmdApp.Aliases, "apps")
+}
+
 func TestAppsPowerAndSnapshotAreGrouped(t *testing.T) {
 	t.Parallel()
-	power := subCommand(cmdApps, "power")
+	power := subCommand(cmdApp, "power")
 	require.NotNil(t, power, "apps has a power group")
 	for _, name := range []string{"on", "off", "reboot"} {
 		assert.NotNil(t, subCommand(power, name), "power has %q", name)
 	}
-	snapshot := subCommand(cmdApps, "snapshot")
+	snapshot := subCommand(cmdApp, "snapshot")
 	require.NotNil(t, snapshot, "apps has a snapshot group")
 	for _, name := range []string{"list", "create", "delete"} {
 		assert.NotNil(t, subCommand(snapshot, name), "snapshot has %q", name)
 	}
 	// The old flat commands are gone, folded into the groups above
 	for _, name := range []string{"poweron", "poweroff", "snapshots", "rmsnapshot"} {
-		assert.Nil(t, subCommand(cmdApps, name), "%q should be grouped, not top-level", name)
+		assert.Nil(t, subCommand(cmdApp, name), "%q should be grouped, not top-level", name)
 	}
 }
 

@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/urfave/cli/v2"
+
+	"heckel.io/hostit/clitable"
 	"heckel.io/hostit/cluster"
 	"heckel.io/hostit/controlconf"
 	"heckel.io/hostit/nodeapi"
@@ -110,13 +112,15 @@ func execNodeList(c *cli.Context) error {
 		fmt.Println("No nodes.")
 		return nil
 	}
+	rows := make([][]string, 0, len(nodes))
 	for _, n := range nodes {
 		seen := "never"
 		if !n.LastSeen.IsZero() {
 			seen = n.LastSeen.Format(time.RFC3339)
 		}
-		fmt.Printf("%-20s %-20s last seen %s\n", n.Name, n.Address, seen)
+		rows = append(rows, []string{n.Name, dashIfEmpty(n.Address), seen})
 	}
+	fmt.Println(clitable.Render([]string{"NAME", "ADDRESS", "LAST SEEN"}, rows))
 	return nil
 }
 

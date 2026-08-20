@@ -3,9 +3,12 @@ package main
 import (
 	"errors"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/urfave/cli/v2"
+
+	"heckel.io/hostit/clitable"
 	"heckel.io/hostit/cluster"
 	"heckel.io/hostit/controlconf"
 	"heckel.io/hostit/nodeapi"
@@ -104,6 +107,7 @@ func execProxyList(c *cli.Context) error {
 		fmt.Println("No proxies.")
 		return nil
 	}
+	rows := make([][]string, 0, len(proxies))
 	for _, p := range proxies {
 		seen := "never"
 		if !p.LastSeen.IsZero() {
@@ -111,9 +115,9 @@ func execProxyList(c *cli.Context) error {
 		}
 		// The version, not the whole build string: the commit and timestamp make
 		// the row wrap (see `status` for the same trim).
-		version := dashIfEmpty(shortVersion(p.Version))
-		fmt.Printf("%-20s %-28s %5d routes  last seen %s\n", p.Name, version, p.Routes, seen)
+		rows = append(rows, []string{p.Name, dashIfEmpty(shortVersion(p.Version)), strconv.Itoa(p.Routes), seen})
 	}
+	fmt.Println(clitable.Render([]string{"NAME", "VERSION", "ROUTES", "LAST SEEN"}, rows))
 	return nil
 }
 

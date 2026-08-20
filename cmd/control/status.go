@@ -3,9 +3,12 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/urfave/cli/v2"
+
+	"heckel.io/hostit/clitable"
 	"heckel.io/hostit/control"
 	"heckel.io/hostit/controlconf"
 )
@@ -45,30 +48,39 @@ func execStatus(c *cli.Context) error {
 
 func printStatus(c *cli.Context, status *control.Status) {
 	w := c.App.Writer
-	fmt.Fprintf(w, "NODES (%d)\n", len(status.Nodes))
+	fmt.Fprintln(w, clitable.Title(fmt.Sprintf("NODES (%d)", len(status.Nodes))))
 	if len(status.Nodes) == 0 {
 		fmt.Fprintf(w, "  none registered\n")
-	}
-	for _, n := range status.Nodes {
-		fmt.Fprintf(w, "  %-20s %-16s %3d apps   %s\n", n.Name, dashIfEmpty(n.Address), n.Apps, seenLabel(n.LastSeen, n.Stale, status.Snapshot))
+	} else {
+		rows := make([][]string, 0, len(status.Nodes))
+		for _, n := range status.Nodes {
+			rows = append(rows, []string{n.Name, dashIfEmpty(n.Address), strconv.Itoa(n.Apps), seenLabel(n.LastSeen, n.Stale, status.Snapshot)})
+		}
+		fmt.Fprintln(w, clitable.Render([]string{"NAME", "ADDRESS", "APPS", "SEEN"}, rows))
 	}
 
-	fmt.Fprintf(w, "\nPROXIES (%d)\n", len(status.Proxies))
+	fmt.Fprintln(w)
+	fmt.Fprintln(w, clitable.Title(fmt.Sprintf("PROXIES (%d)", len(status.Proxies))))
 	if len(status.Proxies) == 0 {
 		fmt.Fprintf(w, "  none registered\n")
-	}
-	for _, p := range status.Proxies {
-		fmt.Fprintf(w, "  %-20s %-16s %3d routes %s\n", p.Name, dashIfEmpty(shortVersion(p.Version)), p.Routes, seenLabel(p.LastSeen, p.Stale, status.Snapshot))
+	} else {
+		rows := make([][]string, 0, len(status.Proxies))
+		for _, p := range status.Proxies {
+			rows = append(rows, []string{p.Name, dashIfEmpty(shortVersion(p.Version)), strconv.Itoa(p.Routes), seenLabel(p.LastSeen, p.Stale, status.Snapshot)})
+		}
+		fmt.Fprintln(w, clitable.Render([]string{"NAME", "VERSION", "ROUTES", "SEEN"}, rows))
 	}
 
-	fmt.Fprintf(w, "\nAPPS\n")
+	fmt.Fprintln(w)
+	fmt.Fprintln(w, clitable.Title("APPS"))
 	fmt.Fprintf(w, "  %d total, %d powered off, %d snapshots, %s on disk\n",
 		status.Apps.Total, status.Apps.PoweredOff, status.Apps.Snapshots, humanMB(status.Apps.DiskUsedMB))
 	if status.Apps.Unplaced > 0 {
 		fmt.Fprintf(w, "  %d on a node that is not registered -- they are not routable\n", status.Apps.Unplaced)
 	}
 
-	fmt.Fprintf(w, "\nPEOPLE\n")
+	fmt.Fprintln(w)
+	fmt.Fprintln(w, clitable.Title("PEOPLE"))
 	fmt.Fprintf(w, "  %d total, %d admins", status.People.Total, status.People.Admins)
 	if status.People.Pending > 0 {
 		fmt.Fprintf(w, ", %d awaiting approval", status.People.Pending)

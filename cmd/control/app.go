@@ -6,10 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/urfave/cli/v2"
+
 	"heckel.io/hostit/client"
+	"heckel.io/hostit/clitable"
 	"heckel.io/hostit/controlconf"
 )
 
@@ -17,9 +20,10 @@ var (
 	// Named for what it manages, not for who may use it: an account token drives
 	// its owner's apps through exactly these commands, and calling that "admin"
 	// suggested a privilege it never required.
-	cmdApps = &cli.Command{
-		Name:  "apps",
-		Usage: "Manage apps on a hostit server via its REST API",
+	cmdApp = &cli.Command{
+		Name:    "app",
+		Aliases: []string{"apps"}, // v0.17.0 shipped the plural; scripts may say it
+		Usage:   "Manage apps on a hostit server via its REST API",
 		Flags: []cli.Flag{
 			&cli.StringFlag{Name: "host", Aliases: []string{"H"}, EnvVars: []string{"HOSTIT_HOST"}, Usage: "remote API base URL, e.g. https://hostit.apps.example.com (default: the local unix socket)"},
 			&cli.StringFlag{Name: "token", Aliases: []string{"t"}, EnvVars: []string{"HOSTIT_TOKEN"}, Usage: "account or admin API token (needed with --host)"},
@@ -153,7 +157,7 @@ func execAppsAdd(c *cli.Context) error {
 		return err
 	}
 	if c.NArg() != 1 {
-		return errors.New("usage: hostit apps add <name>")
+		return errors.New("usage: hostit control app add <name>")
 	}
 	keys, err := readKeyFlags(c.StringSlice("ssh-key"))
 	if err != nil {
@@ -182,7 +186,7 @@ func execRemoteAction(verb string) cli.ActionFunc {
 			return err
 		}
 		if c.NArg() != 1 {
-			return fmt.Errorf("usage: hostit apps %s <name>", verb)
+			return fmt.Errorf("usage: hostit control app %s <name>", verb)
 		}
 		name := c.Args().First()
 		switch verb {
@@ -240,7 +244,7 @@ func execRemoteLogs(c *cli.Context) error {
 		return err
 	}
 	if c.NArg() != 1 {
-		return errors.New("usage: hostit apps logs [-n <lines>] <name>  (flags come before the name)")
+		return errors.New("usage: hostit control app logs [-n <lines>] <name>  (flags come before the name)")
 	}
 	out, err := cl.Logs(c.Args().First(), c.Int("lines"))
 	if err != nil {
@@ -256,7 +260,7 @@ func execRemoteRun(c *cli.Context) error {
 		return err
 	}
 	if c.NArg() < 2 {
-		return errors.New(`usage: hostit apps run <name> "<command>"`)
+		return errors.New(`usage: hostit control app run <name> "<command>"`)
 	}
 	res, err := cl.Run(c.Args().First(), strings.Join(c.Args().Slice()[1:], " "), c.Int("timeout"))
 	if err != nil {
@@ -288,9 +292,11 @@ func execAppsList(c *cli.Context) error {
 		fmt.Println("No apps.")
 		return nil
 	}
+	rows := make([][]string, 0, len(apps))
 	for _, app := range apps {
-		fmt.Printf("%-20s %-12s %-40s port %d, created %s\n", app.Name, app.ID, app.URL, app.Port, app.CreatedAt.Format("2006-01-02"))
+		rows = append(rows, []string{app.Name, app.ID, app.URL, strconv.Itoa(app.Port), app.CreatedAt.Format("2006-01-02")})
 	}
+	fmt.Println(clitable.Render([]string{"NAME", "ID", "URL", "PORT", "CREATED"}, rows))
 	return nil
 }
 
@@ -300,7 +306,7 @@ func execAppsRemove(c *cli.Context) error {
 		return err
 	}
 	if c.NArg() != 1 {
-		return errors.New("usage: hostit apps remove <name>")
+		return errors.New("usage: hostit control app remove <name>")
 	}
 	name := c.Args().First()
 	if !c.Bool("force") {
@@ -326,7 +332,7 @@ func execAppsKeys(c *cli.Context) error {
 		return err
 	}
 	if c.NArg() != 1 || len(c.StringSlice("ssh-key")) == 0 {
-		return errors.New("usage: hostit apps keys <name> --ssh-key <key-or-file> [--ssh-key ...]")
+		return errors.New("usage: hostit control app keys <name> --ssh-key <key-or-file> [--ssh-key ...]")
 	}
 	keys, err := readKeyFlags(c.StringSlice("ssh-key"))
 	if err != nil {

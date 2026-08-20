@@ -346,7 +346,7 @@ const SnapshotsPage = () => (
       hostit snapshots your whole app -- its files and everything it installed
       -- before every deploy and every few hours, so you can always go back. Snapshots
       are instant and cheap; take one yourself anytime from the Snapshots tab,{" "}
-      <span className="mono">hostit apps snapshot</span>, or the API.
+      <span className="mono">hostit control app snapshot</span>, or the API.
     </p>
     <p>
       The automatic cadence is every three hours by default, and apps are spread
@@ -374,7 +374,7 @@ const SnapshotsPage = () => (
     <h3>Rollback</h3>
     <p>
       Roll back to any snapshot from the chat, the Snapshots tab,{" "}
-      <span className="mono">hostit apps rollback</span>, or{" "}
+      <span className="mono">hostit control app rollback</span>, or{" "}
       <span className="mono">
         POST /api/apps/&#123;app&#125;/snapshots/&#123;id&#125;/restore
       </span>
@@ -389,7 +389,7 @@ const SnapshotsPage = () => (
       <strong>Fork</strong> an app into a new one seeded from a copy of its
       entire filesystem -- files, data and installed packages (its own
       subdomain, user and container). Use the snapshot menu on the app page,{" "}
-      <span className="mono">hostit apps fork</span>, or{" "}
+      <span className="mono">hostit control app fork</span>, or{" "}
       <span className="mono">POST /api/apps/&#123;app&#125;/fork</span>. Fork
       the current state, or a specific snapshot.
     </p>
@@ -408,7 +408,7 @@ const DomainsPage = () => (
     <p>
       Serve an app on your own hostname on top of its subdomain. Add it from the
       app page's Actions menu (or{" "}
-      <span className="mono">hostit apps domain add</span>); hostit shows the
+      <span className="mono">hostit control app domain add</span>); hostit shows the
       two DNS records to create and obtains the certificate over DNS-01, which
       works even when the server is not publicly reachable. The app is then
       reachable at both its{" "}

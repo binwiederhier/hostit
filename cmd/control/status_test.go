@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/urfave/cli/v2"
+
 	"heckel.io/hostit/control"
 	"heckel.io/hostit/controlconf"
 )
@@ -53,9 +54,10 @@ func TestStatusOutputNamesMembersAndCallsOutSilence(t *testing.T) {
 	assert.Contains(t, got, "NODES (2)")
 	assert.Contains(t, got, "worker-1")
 	assert.Contains(t, got, "10.0.0.2")
-	assert.Contains(t, got, "3 apps")
+	assert.Contains(t, got, "APPS", "the node table names its columns")
 	assert.Contains(t, got, "PROXIES (1)")
-	assert.Contains(t, got, "7 routes")
+	assert.Contains(t, got, "ROUTES", "the proxy table names its columns")
+	assert.Contains(t, got, "7")
 	assert.Contains(t, got, "v0.13.0", "the build is shown")
 	assert.NotContains(t, got, "built today", "but not its whole build string")
 
