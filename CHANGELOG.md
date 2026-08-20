@@ -11,7 +11,7 @@ default, or on-disk state is called out as **Breaking** or **Upgrade note**.
 
 - **An app on a secondary node has a working socket.** hostit-node serves the
   app socket on every host and relays to control over the cluster link, so SSH,
-  the in-container CLI, the MCP bridge and connections tokens work wherever an
+  the in-container CLI and the MCP bridge work wherever an
   app is placed. Control keeps every guard: the relay changes who carries the
   request, not who decides.
 - **The binary split.** `hostit-app` is the container binary (mounted in as

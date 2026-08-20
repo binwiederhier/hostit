@@ -22,8 +22,8 @@ import (
 //
 // This used to be control's listener, which meant a host running only
 // hostit-node had no socket at all: apps placed there lost SSH (the login
-// shell calls the socket before greeting anyone), the whole in-container CLI,
-// the MCP bridge and connections tokens. Serving it here -- on every host, not
+// shell calls the socket before greeting anyone) and the whole in-container CLI,
+// and the MCP bridge. Serving it here -- on every host, not
 // just where control is absent -- keeps one code path for both deployment
 // shapes, which is precisely what the old arrangement did not have.
 //
