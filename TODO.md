@@ -196,6 +196,40 @@ host uid, no host podman or store, peercred socket).
      /sys/fs/cgroup/memory.current` and `memory.max` are already correct, and
      the app page shows accurate RAM and disk. Cheapest, and leaves htop wrong.
 
+  **The danger, measured.** Masking /proc only masks the FILES. With a fake
+  meminfo bind-mounted, `free` reported 512 MB while the `sysinfo(2)` syscall
+  and `sysconf(_SC_PHYS_PAGES)` both still reported the host's 961 MB in the
+  same container. lxcfs has the same limitation (intercepting the syscall would
+  need seccomp notify, which it does not do). So this does not make the
+  container honest -- it makes it inconsistent: htop and free would say one
+  thing while a language runtime sizing itself off the syscall says another, and
+  "hostit reports two different memory totals" is a worse bug to be told about
+  than "htop shows the host's".
+
+  Other risks worth weighing:
+
+  - It puts a FAILURE mode into a file that currently cannot fail. /proc/meminfo
+    is the kernel's today and always reads; behind lxcfs, a daemon restart (a
+    package upgrade, a crash) leaves every existing container's mount stale and
+    reads return ENOTCONN until each container is restarted.
+  - It is a privileged, tenant-reachable surface: a root FUSE daemon on the node
+    serving files every tenant reads and can hammer. Today that read path is the
+    kernel.
+  - Masking cpuinfo changes tenant app BEHAVIOUR, not just what htop draws:
+    nginx `worker_processes auto`, JVM heap sizing and older Go runtimes size
+    themselves off the visible core count.
+  - It is a new per-node dependency. If a node lacks the daemon and the mount
+    source is missing, podman refuses to start the container -- a missing
+    package wedges every app on that node unless the mount is conditional, and a
+    conditional mount means the feature silently does not apply there.
+  - Untested here: FUSE under this container setup specifically (per-app uid
+    blocks via --uidmap plus an idmapped --rootfs). It needs proving before it
+    is designed around.
+
+  Set that against the payoff, which is htop drawing a nicer number: the app
+  page already shows accurate memory and disk, and `/sys/fs/cgroup/memory.max`
+  is correct inside the container today.
+
   Worth knowing before picking: the CPU half is NOT wrong yet. `cpu.max` reads
   `max`, so an app really can use every core, and `nproc` showing all of them is
   honest today. It only becomes a lie once per-app CPU limits exist (see
