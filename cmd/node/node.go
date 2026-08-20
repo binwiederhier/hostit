@@ -5,11 +5,12 @@ import (
 	"heckel.io/hostit/node"
 )
 
-// newNodeApp is the hostit-node command line: serve and join.
+// newNodeApp is the hostit-node command line: serve and status.
 func newNodeApp(version string) *cli.App {
 	return &cli.App{
-		Name:  "hostit-node",
-		Usage: "hostit's machine half: runs apps on this host and serves control's node RPC",
+		Name:    "hostit-node",
+		Version: version,
+		Usage:   "hostit's machine half: runs apps on this host and serves control's node RPC",
 		Commands: []*cli.Command{
 			{
 				Name:  "serve",
@@ -21,6 +22,8 @@ func newNodeApp(version string) *cli.App {
 					&cli.StringFlag{Name: "config", Aliases: []string{"c"}, Value: node.DefaultConfigFile, Usage: "node config file"},
 				},
 			},
+			cmdStatus,
 		},
+		EnableBashCompletion: true,
 	}
 }

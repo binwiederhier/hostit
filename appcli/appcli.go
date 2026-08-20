@@ -17,9 +17,10 @@ import (
 // New is the container CLI.
 func New(version string) *cli.App {
 	return &cli.App{
-		Name:     "hostit",
-		Version:  version,
-		Usage:    "manage this app: deploy it, restart it, read its logs",
-		Commands: []*cli.Command{cmdDeploy, cmdStart, cmdStop, cmdRestart, cmdPowerOn, cmdPowerOff, cmdReboot, cmdStatus, cmdLogs, cmdInfo, cmdGuide, cmdStatic, cmdAgent, cmdMCP},
+		Name:                 "hostit",
+		Version:              version,
+		Usage:                "manage this app: deploy it, restart it, read its logs",
+		Commands:             []*cli.Command{cmdDeploy, cmdStart, cmdStop, cmdRestart, cmdPowerOn, cmdPowerOff, cmdReboot, cmdStatus, cmdLogs, cmdInfo, cmdGuide, cmdStatic, cmdAgent, cmdMCP},
+		EnableBashCompletion: true,
 	}
 }

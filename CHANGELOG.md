@@ -7,6 +7,30 @@ changed rather than what an operator had to do about it; from v0.15.0 on, each
 release is written down as it is cut. Anything that changes a config file, a
 default, or on-disk state is called out as **Breaking** or **Upgrade note**.
 
+## Unreleased
+
+- **`hostit control apps` is now `hostit control app`**, singular like `node`
+  and `proxy`. The plural keeps working as an alias; `hostit apps` still prints
+  its deprecation note and forwards.
+- **New: `hostit node status`** shows the node's own view: identity, whether
+  its control link is up, and the apps control has placed on this host. Works
+  on a worker host with no control anywhere near it. Served over a new
+  root-only socket (`/run/hostit/node.sock`, key `node-socket-file`).
+- **New: `hostit proxy status` and `hostit proxy route list`** show what the
+  proxy is actually serving from its cache -- link state, table sequence, route
+  count, and the routes themselves. Served over a new root-only socket
+  (`/run/hostit/proxy.sock`, key `proxy-socket-file`). Both answer while
+  control is down, which is the whole point of the cache.
+- **Tab completion** for `hostit`, `hostit-control`, `hostit-node` and
+  `hostit-proxy`, bash and zsh, shipped in each package. The front door
+  completes its siblings' subcommands too (`hostit control app <TAB>`).
+- **Readable tables.** Every CLI list (`status`, `app list`, `node list`,
+  `proxy list`, snapshots, domains, routes) now prints a bordered table with
+  headers; piped output degrades to plain text.
+- The node now tells its link layer when the control connection drops, so
+  callbacks between redials are dropped cleanly instead of posted into a dead
+  session (and `hostit node status` reports the link honestly).
+
 ## v0.17.0 (2026-08-20)
 
 - **An app on a secondary node has a working socket.** hostit-node serves the

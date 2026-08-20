@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"syscall"
@@ -30,15 +31,16 @@ func New(version string) *cli.App {
 		commands = append(commands, dispatchCommand(name))
 	}
 	return &cli.App{
-		Name:     "hostit",
-		Version:  version,
-		Usage:    "self-hosted mini-app platform: isolated apps with SSH access, subdomains and TLS",
-		Commands: commands,
+		Name:                 "hostit",
+		Version:              version,
+		Usage:                "self-hosted mini-app platform: isolated apps with SSH access, subdomains and TLS",
+		Commands:             commands,
+		EnableBashCompletion: true,
 	}
 }
 
 // dispatchCommand execs the sibling binary with the remaining arguments, so
-// `hostit control apps list` IS `hostit-control apps list`.
+// `hostit control app list` IS `hostit-control app list`.
 func dispatchCommand(name string) *cli.Command {
 	return &cli.Command{
 		Name:            name,
@@ -46,6 +48,11 @@ func dispatchCommand(name string) *cli.Command {
 		SkipFlagParsing: true, // the sibling owns its flags; parsing them here would eat --config
 		Action: func(c *cli.Context) error {
 			return execSibling("hostit-"+name, c.Args().Slice())
+		},
+		// urfave strips the completion flag before dispatch, so passthrough
+		// alone cannot answer `hostit control <TAB>`: ask the sibling.
+		BashComplete: func(c *cli.Context) {
+			completeSibling(c.App.Writer, "hostit-"+name, c.Args().Slice())
 		},
 	}
 }
@@ -56,13 +63,30 @@ func dispatchCommand(name string) *cli.Command {
 // catch up, and the notice tells them where to.
 var cmdAppsAlias = &cli.Command{
 	Name:            "apps",
-	Usage:           "Deprecated: use `hostit control apps ...`",
+	Usage:           "Deprecated: use `hostit control app ...`",
 	SkipFlagParsing: true,
 	Hidden:          true,
 	Action: func(c *cli.Context) error {
-		fmt.Fprintln(os.Stderr, "note: `hostit apps` moved to `hostit control apps`; this alias will go away")
-		return execSibling("hostit-control", append([]string{"apps"}, c.Args().Slice()...))
+		fmt.Fprintln(os.Stderr, "note: `hostit apps` moved to `hostit control app`; this alias will go away")
+		return execSibling("hostit-control", append([]string{"app"}, c.Args().Slice()...))
 	},
+	BashComplete: func(c *cli.Context) {
+		completeSibling(c.App.Writer, "hostit-control", append([]string{"app"}, c.Args().Slice()...))
+	},
+}
+
+// completeSibling asks the component binary for its completions by re-running
+// it with the flag urfave stripped. A subprocess, not an exec: the caller is
+// mid-completion and wants the output, not to become the sibling. A missing
+// component suggests nothing, which is the right answer on a machine without it.
+func completeSibling(w io.Writer, binary string, args []string) {
+	path, err := exec.LookPath(binary)
+	if err != nil {
+		return
+	}
+	cmd := exec.Command(path, append(args, "--generate-bash-completion")...)
+	cmd.Stdout = w
+	_ = cmd.Run()
 }
 
 // execSibling replaces this process with the component binary. A missing one

@@ -1,10 +1,15 @@
 package main
 
 import (
+	"bytes"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/go-jose/go-jose/v4/testutils/require"
 	"github.com/stretchr/testify/assert"
+
 	"heckel.io/hostit/appctl"
 )
 
@@ -43,4 +48,25 @@ func TestLoginBanner(t *testing.T) {
 		assert.Contains(t, banner, want, "the banner must mention %q", want)
 	}
 	assert.True(t, strings.HasSuffix(banner, "\n"))
+}
+
+// Tab completion: every hostit binary answers --generate-bash-completion, and
+// the front door forwards the question to the sibling that owns the commands
+// (urfave strips the flag before dispatch, so passthrough alone cannot).
+func TestFrontDoorEnablesCompletion(t *testing.T) {
+	t.Parallel()
+	assert.True(t, New("v0.0.0-test").EnableBashCompletion)
+}
+
+func TestCompletionDelegatesToSibling(t *testing.T) {
+	dir := t.TempDir()
+	fake := "#!/bin/sh\nif [ \"$1\" = \"app\" ] && [ \"$2\" = \"--generate-bash-completion\" ]; then echo list; echo add; fi\n"
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "hostit-control"), []byte(fake), 0o755))
+	t.Setenv("PATH", dir)
+	app := New("v0.0.0-test")
+	var out bytes.Buffer
+	app.Writer = &out
+	require.NoError(t, app.Run([]string{"hostit", "control", "app", "--generate-bash-completion"}))
+	assert.Contains(t, out.String(), "list", "the sibling's completions are the front door's completions")
+	assert.Contains(t, out.String(), "add")
 }

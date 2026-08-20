@@ -31,3 +31,7 @@ control-url: http://127.0.0.1:2910
 # Where the routing table and certificate material persist, so a proxy restart
 # during a control outage still serves. Default shown.
 # cache-dir: /var/lib/hostit-proxy
+
+# The proxy's own root-only status socket, which `hostit proxy status` and
+# `hostit proxy route list` read.
+#proxy-socket-file: /run/hostit/proxy.sock

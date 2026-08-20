@@ -33,3 +33,6 @@ control-url: "127.0.0.1:2930"
 data-dir: /var/lib/hostit
 apps-dir: /var/lib/hostit/apps
 socket-file: /run/hostit/hostit.sock
+
+# The node's own root-only status socket, which `hostit node status` reads.
+#node-socket-file: /run/hostit/node.sock

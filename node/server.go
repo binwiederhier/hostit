@@ -172,6 +172,12 @@ func Serve(configPath, version string) error {
 		return err
 	}
 	defer appSocket.Close()
+	// The node's own status socket, root-only: what `hostit node status` reads.
+	statusSocket, err := ServeStatusSocket(conf.NodeSocketFile, conf, s, link, version)
+	if err != nil {
+		return err
+	}
+	defer statusSocket.Close()
 	// A termination signal closes the live connection: ServeAgent blocks on the
 	// session and would otherwise ignore SIGTERM until systemd SIGKILLs us
 	// after its stop timeout.

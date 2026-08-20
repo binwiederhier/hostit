@@ -20,6 +20,9 @@ const (
 	LegacyConfigFile = "/etc/hostit/server.yml"
 	// localNodeID is the colocated node: control mints its credentials itself.
 	localNodeID = "local"
+	// DefaultNodeSocketFile is the node's root-only status socket, next to the
+	// app socket and control's socket under /run/hostit.
+	DefaultNodeSocketFile = "/run/hostit/node.sock"
 )
 
 // Config is the node's OWN configuration -- deliberately not the control
@@ -63,16 +66,21 @@ type Config struct {
 	DataDir    string `yaml:"data-dir"`
 	AppsDir    string `yaml:"apps-dir"`
 	SocketFile string `yaml:"socket-file"`
+	// NodeSocketFile is the node's own root-only status socket, which is what
+	// `hostit node status` reads. Named like control's control-socket-file: the
+	// unprefixed socket-file already means the app socket.
+	NodeSocketFile string `yaml:"node-socket-file"`
 }
 
 // NewConfig returns a node config with the packaged defaults; only where to
 // dial has none.
 func NewConfig() *Config {
 	return &Config{
-		NodeID:     localNodeID,
-		DataDir:    "/var/lib/hostit",
-		AppsDir:    "/var/lib/hostit/apps",
-		SocketFile: "/run/hostit/hostit.sock",
+		NodeID:         localNodeID,
+		DataDir:        "/var/lib/hostit",
+		AppsDir:        "/var/lib/hostit/apps",
+		SocketFile:     "/run/hostit/hostit.sock",
+		NodeSocketFile: DefaultNodeSocketFile,
 	}
 }
 

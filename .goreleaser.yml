@@ -145,6 +145,16 @@ nfpms:
         type: "config|noreplace"
         file_info:
           mode: 0440
+      # Tab completion for the front door and this package's daemon CLI; the
+      # scripts ask the binary itself, so they never go stale.
+      - src: scripts/completion/hostit.bash
+        dst: /usr/share/bash-completion/completions/hostit
+      - src: scripts/completion/_hostit
+        dst: /usr/share/zsh/vendor-completions/_hostit
+      - src: scripts/completion/hostit-node.bash
+        dst: /usr/share/bash-completion/completions/hostit-node
+      - src: scripts/completion/_hostit-node
+        dst: /usr/share/zsh/vendor-completions/_hostit-node
     scripts:
       postinstall: "scripts/postinst-node.sh"
       postremove: "scripts/postrm-node.sh"
@@ -167,6 +177,10 @@ nfpms:
         dst: /etc/hostit/control/control.yml.example
       - src: hostit-control.service
         dst: /lib/systemd/system/hostit-control.service
+      - src: scripts/completion/hostit-control.bash
+        dst: /usr/share/bash-completion/completions/hostit-control
+      - src: scripts/completion/_hostit-control
+        dst: /usr/share/zsh/vendor-completions/_hostit-control
     scripts:
       postinstall: "scripts/postinst-control.sh"
       postremove: "scripts/postrm-control.sh"
@@ -189,6 +203,10 @@ nfpms:
         dst: /etc/hostit/proxy/proxy.yml.example
       - src: hostit-proxy.service
         dst: /lib/systemd/system/hostit-proxy.service
+      - src: scripts/completion/hostit-proxy.bash
+        dst: /usr/share/bash-completion/completions/hostit-proxy
+      - src: scripts/completion/_hostit-proxy
+        dst: /usr/share/zsh/vendor-completions/_hostit-proxy
     scripts:
       postinstall: "scripts/postinst-proxy.sh"
       postremove: "scripts/postrm-proxy.sh"

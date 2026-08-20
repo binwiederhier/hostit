@@ -33,6 +33,9 @@ const (
 	// defaultClusterURL is control's same-host member socket, which is where a
 	// colocated proxy dials unless told otherwise. No certificate is involved.
 	defaultClusterURL = "unix:/run/hostit/cluster.sock"
+	// DefaultSocketFile is the proxy's root-only status socket, next to the
+	// other hostit sockets under /run/hostit.
+	DefaultSocketFile = "/run/hostit/proxy.sock"
 )
 
 // FileConfig is /etc/hostit/proxy/proxy.yml: who this proxy is, where control
@@ -55,6 +58,9 @@ type FileConfig struct {
 	ListenHTTPS string `yaml:"listen-https"` // default :443
 	ListenHTTP  string `yaml:"listen-http"`  // default :80
 	CacheDir    string `yaml:"cache-dir"`    // routes + cert cache; default /var/lib/hostit-proxy
+	// SocketFile is the proxy's own root-only status socket, which is what
+	// `hostit proxy status` and `hostit proxy route list` read.
+	SocketFile string `yaml:"proxy-socket-file"`
 }
 
 // LoadFileConfig reads the YAML config on top of defaults.
@@ -62,7 +68,8 @@ func LoadFileConfig(path string) (*FileConfig, error) {
 	conf := &FileConfig{ProxyID: DefaultProxyID, ListenHTTPS: ":443", ListenHTTP: ":80", CacheDir: "/var/lib/hostit-proxy",
 		CertFile:   DefaultLocalCertFile,
 		KeyFile:    DefaultLocalKeyFile,
-		CACertFile: DefaultLocalCACertFile}
+		CACertFile: DefaultLocalCACertFile,
+		SocketFile: DefaultSocketFile}
 	b, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
@@ -104,6 +111,13 @@ func Serve(configPath string) error {
 	done := make(chan struct{})
 	defer close(done)
 	go p.Link(done)
+	// The proxy's own status socket, root-only: what `hostit proxy status` and
+	// `hostit proxy route list` read.
+	statusSocket, err := ServeStatusSocket(conf.SocketFile, p)
+	if err != nil {
+		return err
+	}
+	defer statusSocket.Close()
 
 	// :80 -- ACME HTTP-01 challenges pass through to control (which answers
 	// them), everything else redirects to HTTPS. The proxy owns the redirect

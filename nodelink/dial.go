@@ -42,8 +42,10 @@ func Role(authorize func(nodeID string) bool, callbacks func(nodeID string) http
 
 // ServeAgent is the node's side after dialing: it serves its NodeAgent over
 // the duplex and blocks until the connection dies. onLink receives the client
-// for the node's own callbacks to control.
+// for the node's own callbacks to control -- and nil when this connection
+// ends, so nothing keeps posting into a dead session between redials.
 func ServeAgent(conn net.Conn, nodeID string, agent nodeapi.NodeAgent, onLink func(client *http.Client)) error {
+	defer onLink(nil)
 	peer := cluster.Peer{ID: nodeID, Role: cluster.RoleNode}
 	return cluster.Serve(conn, peer, RPCHandler(agent), onLink)
 }
