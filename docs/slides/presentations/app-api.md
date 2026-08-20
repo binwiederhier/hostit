@@ -377,6 +377,123 @@ hostit node ... / hostit proxy ...   # only what is installed here
 
 ---
 
+# Every host command, and where it lives
+
+<div class="grid grid-cols-2 gap-8 text-sm mt-3">
+<div>
+
+**`/usr/bin/hostit`** &mdash; the front door<br>
+<code>control&nbsp;...</code> <code>node&nbsp;...</code> <code>proxy&nbsp;...</code><br>
+<code>apps&nbsp;...</code> <i>(deprecated alias)</i>
+
+<div class="mt-4"></div>
+
+**`/usr/bin/hostit-control`**<br>
+<code>serve</code><br>
+<code>node add|list|remove</code><br>
+<code>proxy add|list|remove</code><br>
+<code>status</code>
+
+<div class="mt-4"></div>
+
+**`/usr/bin/hostit-node`**, **`hostit-proxy`**<br>
+<code>serve</code>
+
+</div>
+<div>
+
+**`hostit-control apps ...`**<br>
+<i class="opacity-60">every one of these moves off the agent binary</i>
+
+<div class="mt-3"></div>
+
+<code>add</code> <code>list</code> <code>remove</code> <code>keys</code><br>
+<code>deploy</code> <code>start</code> <code>stop</code> <code>restart</code><br>
+<code>power on|off|reboot</code><br>
+<code>snapshot list|create|delete</code><br>
+<code>rollback</code> <code>fork</code><br>
+<code>logs</code> <code>run</code><br>
+<code>domain list|add|verify|rm</code>
+
+</div>
+</div>
+
+<v-click>
+
+<div class="mt-4 p-3 border border-emerald-700 rounded text-sm">
+Nothing an operator types lives in <code>/usr/lib/hostit/bin</code>, and nothing
+in <code>/usr/bin</code> is bind-mounted into a container. That is the whole
+rule.
+</div>
+
+</v-click>
+
+---
+
+# Every in-container command
+
+All of these move to **`hostit-app`**, which is mounted in as `/usr/bin/hostit`
+-- so what a tenant types does not change at all.
+
+<div class="grid grid-cols-2 gap-6 text-sm mt-2">
+<div>
+
+**The app's own lifecycle**
+
+`deploy` &middot; `start` &middot; `stop` &middot; `restart`
+`poweron` &middot; `poweroff` &middot; `reboot`
+`status` &middot; `logs`
+
+</div>
+<div>
+
+**For agents, and for PID 1**
+
+`info` &middot; `guide` -- what this app is
+`mcp` -- the tool bridge
+`agent` -- supervise `run:`, reap
+`static` -- serve `public/`
+
+</div>
+</div>
+
+<v-click>
+
+<div class="mt-4 p-3 border border-emerald-700 rounded text-sm">
+Host path: <code>/usr/lib/hostit/bin/hostit-app</code>. In-container path:
+<code>/usr/bin/hostit</code>. Same file, two names -- and the only thing it can
+reach is the app socket.
+</div>
+
+</v-click>
+
+---
+
+# The two that are not commands
+
+`hostit-shell` and `hostit-enter` are entry points, not things anyone types.
+
+<div class="text-sm">
+
+| Binary | Path | Invoked by |
+|---|---|---|
+| `hostit-shell` | `/usr/lib/hostit/bin/hostit-shell` | sshd, via `/etc/passwd` |
+| `hostit-enter` | `/usr/lib/hostit/bin/hostit-enter` | `hostit-shell`, as root |
+
+</div>
+
+<v-clicks>
+
+- `hostit-shell` is the app user's **login shell**; it calls `Self()` and
+  `Ensure()` on the socket before greeting anyone
+- `hostit-enter` is the privileged half: it is how the browser terminal enters
+  the container, rather than going straight to `podman exec`
+- Neither belongs on `$PATH`, and neither is part of the operator's CLI
+
+</v-clicks>
+
+---
+
 # What moving hostit-shell costs
 
 It is every app user's login shell, recorded in `/etc/passwd`.
@@ -463,6 +580,8 @@ answering, whenever the rename happens.
 # Order of work
 
 <v-clicks>
+
+**The goal is 1-5. Everything after it is follow-on work.**
 
 1. **Failing test**: an app on a remote node can reach `/v1/self` (nothing proves this today)
 2. Move the listener and peercred mapping to `hostit-node`
