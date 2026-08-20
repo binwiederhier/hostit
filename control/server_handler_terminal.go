@@ -6,12 +6,9 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
-	"os"
-	"os/exec"
 	"time"
 
 	"github.com/coder/websocket"
-	"github.com/creack/pty"
 	"heckel.io/hostit/appctl"
 )
 
@@ -46,11 +43,7 @@ func (s *Server) handleTerminal(w http.ResponseWriter, r *http.Request, c *calle
 		writeAppError(w, err)
 		return
 	}
-	prog, args, err := s.node.TerminalCommand(a.Name)
-	if err != nil {
-		writeAppError(w, err)
-		return
-	}
+
 	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
 		OriginPatterns: s.config.WebHostnames(), // only our own web origins may connect
 	})
@@ -85,29 +78,24 @@ func (s *Server) handleTerminal(w http.ResponseWriter, r *http.Request, c *calle
 	ctx, cancel := context.WithTimeout(r.Context(), terminalMaxDuration)
 	defer cancel()
 
-	// A pty so the login shell (and the podman exec it leads to) has a real
-	// terminal; its master is what we bridge to the browser. TERM makes colours
-	// and readline behave, exactly as an SSH client's TERM would.
-	cmd := exec.CommandContext(ctx, prog, args...)
-	cmd.Env = append(os.Environ(), "TERM=xterm-256color")
-	ptmx, err := pty.Start(cmd)
+	// The pty runs ON THE APP'S NODE -- the only machine where the app's user
+	// exists -- and arrives here as a byte stream over the cluster link (or
+	// in-process for a colocated node). Control used to exec the shell itself,
+	// which worked exactly as long as every app was on control's own host.
+	session, err := s.node.Terminal(a.Name)
 	if err != nil {
+		slog.Warn("Terminal refused: cannot start shell", "app", a.Name, "error", err)
 		conn.Close(websocket.StatusInternalError, "cannot start shell")
 		return
 	}
-	defer func() {
-		_ = ptmx.Close()
-		if cmd.Process != nil {
-			_ = cmd.Process.Kill()
-		}
-	}()
+	defer session.Close()
 
 	// Shell output -> browser
 	go func() {
 		defer cancel()
 		buf := make([]byte, 4096)
 		for {
-			n, err := ptmx.Read(buf)
+			n, err := session.Read(buf)
 			if n > 0 {
 				if conn.Write(ctx, websocket.MessageBinary, buf[:n]) != nil {
 					return
@@ -131,11 +119,11 @@ func (s *Server) handleTerminal(w http.ResponseWriter, r *http.Request, c *calle
 				Rows uint16 `json:"rows"`
 			}
 			if json.Unmarshal(data, &rs) == nil && rs.Cols > 0 && rs.Rows > 0 {
-				_ = pty.Setsize(ptmx, &pty.Winsize{Cols: rs.Cols, Rows: rs.Rows})
+				_ = session.Resize(rs.Cols, rs.Rows)
 			}
 			continue
 		}
-		if _, err := ptmx.Write(data); err != nil {
+		if _, err := session.Write(data); err != nil {
 			return
 		}
 	}

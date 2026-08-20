@@ -46,12 +46,14 @@ type Peer struct {
 
 // Role is how one kind of member is admitted. Authorize decides whether this
 // peer may connect at all, Callbacks is what the peer may call back through,
-// and Register hands over the client aimed at the peer and returns the cleanup
-// to run when the connection dies.
+// and Register hands over the client aimed at the peer -- plus a dialer for
+// raw streams on the same session, which is what an interactive terminal
+// rides: a pty is a byte stream, not a request -- and returns the cleanup to
+// run when the connection dies.
 type Role struct {
 	Authorize func(peer Peer) bool
 	Callbacks func(peer Peer) http.Handler
-	Register  func(peer Peer, client *http.Client) (onClose func())
+	Register  func(peer Peer, client *http.Client, dial func() (net.Conn, error)) (onClose func())
 }
 
 // ConnectHandler is control's side: it hijacks the upgrade request's
@@ -94,7 +96,7 @@ func ConnectHandler(roles map[string]*Role) http.Handler {
 			_ = conn.Close()
 			return
 		}
-		onClose := role.Register(peer, client)
+		onClose := role.Register(peer, client, func() (net.Conn, error) { return sess.OpenStream() })
 		if onClose != nil {
 			go func() {
 				<-sess.CloseChan()

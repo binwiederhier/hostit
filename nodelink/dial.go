@@ -26,11 +26,11 @@ func Role(authorize func(nodeID string) bool, callbacks func(nodeID string) http
 			}
 			return callbacks(peer.ID)
 		},
-		Register: func(peer cluster.Peer, client *http.Client) func() {
+		Register: func(peer cluster.Peer, client *http.Client, dial func() (net.Conn, error)) func() {
 			// The agent is built once per connection and handed to both sides of
 			// the lifecycle, so the disconnect that fires when this session dies
 			// cannot unregister a NEWER connection's agent.
-			agent := NewRemoteAgent(client)
+			agent := NewRemoteAgent(client, dial)
 			register(peer.ID, agent)
 			if disconnect == nil {
 				return nil

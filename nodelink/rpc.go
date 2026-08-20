@@ -1,9 +1,11 @@
 package nodelink
 
 import (
+	"bufio"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"net/http"
 	"os"
@@ -103,6 +105,14 @@ func decodeErr(resp *rpcResp) error {
 // RPCHandler serves a NodeAgent over HTTP: JSON verbs at /v1/{verb}, raw
 // streams for file content. This is what hostit-node mounts on its dialed
 // connection; the transport (mTLS identity) is the caller's concern.
+// The terminal's in-band framing, control -> node: a pty's input can be any
+// byte, so keystrokes and resizes need an envelope to stay apart. Output flows
+// back raw -- it is all pty bytes, nothing to distinguish.
+const (
+	terminalFrameData   = 'd'
+	terminalFrameResize = 'r'
+)
+
 func RPCHandler(agent nodeapi.NodeAgent) http.Handler {
 	mux := http.NewServeMux()
 	verb := func(name string, fn func(*rpcReq) *rpcResp) {
@@ -184,12 +194,10 @@ func RPCHandler(agent nodeapi.NodeAgent) http.Handler {
 		}
 		return &rpcResp{Exec: res}
 	})
-	verb("terminal", func(q *rpcReq) *rpcResp {
-		cmd, args, err := agent.TerminalCommand(q.Name)
-		if err != nil {
-			return fail(err)
-		}
-		return &rpcResp{Cmd: cmd, Args: args}
+	// The terminal is not a verb: it hijacks its stream and bridges the pty,
+	// because a shell is a byte stream with a caller waiting at both ends.
+	mux.HandleFunc("GET /v1/terminal/{name}", func(w http.ResponseWriter, r *http.Request) {
+		serveTerminal(w, r, agent)
 	})
 	verb("listfiles", func(q *rpcReq) *rpcResp {
 		listing, err := agent.ListFiles(q.Name, q.Path)
@@ -277,4 +285,64 @@ func errString(err error) string {
 func writeRPC(w http.ResponseWriter, resp *rpcResp) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)
+}
+
+// serveTerminal is the node's side of a browser terminal: it starts the login
+// shell on a local pty (agent.Terminal -- the only machine where the app's
+// user exists), hijacks the duplex stream, and bridges the two until either
+// side hangs up. Input arrives framed (data vs resize); output leaves raw.
+func serveTerminal(w http.ResponseWriter, r *http.Request, agent nodeapi.NodeAgent) {
+	session, err := agent.Terminal(r.PathValue("name"))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	hj, ok := w.(http.Hijacker)
+	if !ok {
+		_ = session.Close()
+		http.Error(w, "cannot hijack this connection", http.StatusInternalServerError)
+		return
+	}
+	conn, buf, err := hj.Hijack()
+	if err != nil {
+		_ = session.Close()
+		return
+	}
+	defer conn.Close()
+	defer session.Close()
+	_ = buf.Flush()
+	if _, err := conn.Write([]byte("HTTP/1.1 101 Switching Protocols\r\n\r\n")); err != nil {
+		return
+	}
+
+	// pty -> stream, raw.
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_, _ = io.Copy(conn, session)
+	}()
+
+	// stream -> pty, framed.
+	reader := bufio.NewReader(conn)
+	for {
+		header := make([]byte, 3)
+		if _, err := io.ReadFull(reader, header); err != nil {
+			break
+		}
+		payload := make([]byte, int(header[1])<<8|int(header[2]))
+		if _, err := io.ReadFull(reader, payload); err != nil {
+			break
+		}
+		switch header[0] {
+		case terminalFrameData:
+			if _, err := session.Write(payload); err != nil {
+				return
+			}
+		case terminalFrameResize:
+			if len(payload) == 4 {
+				_ = session.Resize(uint16(payload[0])<<8|uint16(payload[1]), uint16(payload[2])<<8|uint16(payload[3]))
+			}
+		}
+	}
+	<-done
 }

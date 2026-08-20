@@ -313,12 +313,12 @@ func (ra *routingAgent) Exec(name, command string, timeout time.Duration) (*Exec
 	return agent.Exec(name, command, timeout)
 }
 
-func (ra *routingAgent) TerminalCommand(name string) (string, []string, error) {
-	agent, err := ra.route(name)
+func (ra *routingAgent) Terminal(name string) (nodeapi.TerminalSession, error) {
+	agent, err := ra.routeRunnable(name)
 	if err != nil {
-		return "", nil, err
+		return nil, err
 	}
-	return agent.TerminalCommand(name)
+	return agent.Terminal(name)
 }
 
 func (ra *routingAgent) ListFiles(name, dir string) (*Listing, error) {

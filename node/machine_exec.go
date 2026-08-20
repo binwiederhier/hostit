@@ -3,11 +3,13 @@ package node
 import (
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/creack/pty"
 	"heckel.io/hostit/nodeapi"
 	"heckel.io/hostit/workspace"
 )
@@ -81,11 +83,51 @@ func (m *Machine) Exec(name, command string, timeout time.Duration) (*nodeapi.Ex
 // identical to an SSH session: the same banner, the same TERM and colours, the
 // same entry into the container. runuser drops from the root daemon to the app
 // user so the socket sees the right identity, just as sshd would.
-func (m *Machine) TerminalCommand(name string) (string, []string, error) {
+func (m *Machine) terminalCommand(name string) (string, []string, error) {
 	if _, err := m.store.App(name); err != nil {
 		return "", nil, err
 	}
 	return "runuser", []string{"-u", name, "--", userShellFile}, nil
+}
+
+// Terminal starts the login shell on a pty ON THIS MACHINE, which is the only
+// place "runuser <app>" means anything -- the user exists here and nowhere
+// else. Its predecessor returned the command for the caller to exec, which was
+// wrong the moment the caller stopped being on the app's machine: control ran
+// "runuser watchme" on its own host and got "user does not exist".
+func (m *Machine) Terminal(name string) (nodeapi.TerminalSession, error) {
+	prog, args, err := m.terminalCommand(name)
+	if err != nil {
+		return nil, err
+	}
+	cmd := exec.Command(prog, args...)
+	cmd.Env = append(os.Environ(), "TERM=xterm-256color")
+	ptmx, err := pty.Start(cmd)
+	if err != nil {
+		return nil, err
+	}
+	return &localTerminal{ptmx: ptmx, cmd: cmd}, nil
+}
+
+// localTerminal is a pty-backed session on the app's own machine.
+type localTerminal struct {
+	ptmx *os.File
+	cmd  *exec.Cmd
+}
+
+func (t *localTerminal) Read(p []byte) (int, error)  { return t.ptmx.Read(p) }
+func (t *localTerminal) Write(p []byte) (int, error) { return t.ptmx.Write(p) }
+
+func (t *localTerminal) Resize(cols, rows uint16) error {
+	return pty.Setsize(t.ptmx, &pty.Winsize{Cols: cols, Rows: rows})
+}
+
+func (t *localTerminal) Close() error {
+	_ = t.ptmx.Close()
+	if t.cmd.Process != nil {
+		_ = t.cmd.Process.Kill()
+	}
+	return nil
 }
 
 // execTimeout keeps a caller's request inside what the host can afford

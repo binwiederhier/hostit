@@ -1,16 +1,21 @@
 package nodelink
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
+	"strings"
+	"sync"
 	"time"
 
+	"heckel.io/hostit/cluster"
 	"heckel.io/hostit/nodeapi"
 	"heckel.io/hostit/store"
 )
@@ -20,13 +25,18 @@ import (
 // routing is the underlying session.
 type remoteAgent struct {
 	c *http.Client
+	// dial opens a raw stream on the same session; nil in tests that only
+	// exercise the JSON verbs. The terminal rides these: a pty is a byte
+	// stream, and forcing it through request/response would mean polling.
+	dial func() (net.Conn, error)
 }
 
 var _ nodeapi.NodeAgent = (*remoteAgent)(nil)
 
-// NewRemoteAgent wraps a duplex client into a NodeAgent.
-func NewRemoteAgent(c *http.Client) nodeapi.NodeAgent {
-	return &remoteAgent{c: c}
+// NewRemoteAgent wraps a duplex client into a NodeAgent. dial opens raw
+// streams on the same connection, for the terminal.
+func NewRemoteAgent(c *http.Client, dial func() (net.Conn, error)) nodeapi.NodeAgent {
+	return &remoteAgent{c: c, dial: dial}
 }
 
 // call posts one JSON verb and decodes the envelope (including sentinel errors).
@@ -89,12 +99,70 @@ func (a *remoteAgent) Exec(name, command string, timeout time.Duration) (*nodeap
 	return resp.Exec, nil
 }
 
-func (a *remoteAgent) TerminalCommand(name string) (string, []string, error) {
-	resp, err := a.call("terminal", &rpcReq{Name: name})
-	if err != nil {
-		return "", nil, err
+func (a *remoteAgent) Terminal(name string) (nodeapi.TerminalSession, error) {
+	if a.dial == nil {
+		return nil, errors.New("terminal: no stream dialer on this connection")
 	}
-	return resp.Cmd, resp.Args, nil
+	stream, err := a.dial()
+	if err != nil {
+		return nil, err
+	}
+	// A hand-rolled upgrade on a fresh stream: the node's RPC handler hijacks
+	// it and bridges the pty. http.Client cannot do this -- it never hands the
+	// underlying connection back -- and both ends of this wire are ours.
+	if _, err := fmt.Fprintf(stream, "GET /v1/terminal/%s HTTP/1.1\r\nHost: %s\r\nUpgrade: hostit-terminal\r\nConnection: Upgrade\r\n\r\n", url.PathEscape(name), cluster.ControlID); err != nil {
+		_ = stream.Close()
+		return nil, err
+	}
+	br := bufio.NewReader(stream)
+	resp, err := http.ReadResponse(br, nil)
+	if err != nil {
+		_ = stream.Close()
+		return nil, err
+	}
+	if resp.StatusCode != http.StatusSwitchingProtocols {
+		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		_ = stream.Close()
+		return nil, fmt.Errorf("terminal refused: %s", strings.TrimSpace(string(msg)))
+	}
+	return &remoteTerminal{stream: stream, r: br}, nil
+}
+
+// remoteTerminal frames keystrokes and resizes toward the node and reads the
+// pty's output raw. The framing exists for exactly one reason: resize has to
+// travel in-band on the same stream, and a pty's input bytes can be anything,
+// so the two need an envelope to stay apart.
+type remoteTerminal struct {
+	stream net.Conn
+	r      *bufio.Reader // may hold pty bytes that arrived with the 101
+	mu     sync.Mutex    // Protects writes: frames must not interleave
+}
+
+func (t *remoteTerminal) Read(p []byte) (int, error) { return t.r.Read(p) }
+
+func (t *remoteTerminal) Write(p []byte) (int, error) {
+	if err := t.writeFrame(terminalFrameData, p); err != nil {
+		return 0, err
+	}
+	return len(p), nil
+}
+
+func (t *remoteTerminal) Resize(cols, rows uint16) error {
+	payload := []byte{byte(cols >> 8), byte(cols), byte(rows >> 8), byte(rows)}
+	return t.writeFrame(terminalFrameResize, payload)
+}
+
+func (t *remoteTerminal) Close() error { return t.stream.Close() }
+
+func (t *remoteTerminal) writeFrame(kind byte, payload []byte) error {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	header := []byte{kind, byte(len(payload) >> 8), byte(len(payload))}
+	if _, err := t.stream.Write(header); err != nil {
+		return err
+	}
+	_, err := t.stream.Write(payload)
+	return err
 }
 
 func (a *remoteAgent) ListFiles(name, dir string) (*nodeapi.Listing, error) {

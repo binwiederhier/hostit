@@ -81,7 +81,12 @@ type NodeAgent interface {
 	Status(name string) (string, error)
 	Logs(name string, lines int) (string, error)
 	Exec(name, command string, timeout time.Duration) (*ExecResult, error)
-	TerminalCommand(name string) (string, []string, error)
+	// Terminal opens an interactive shell in the app's container, as a byte
+	// stream with out-of-band resize. It replaces the old TerminalCommand,
+	// which returned a command for the CALLER to exec -- correct only when the
+	// caller was on the app's machine, which control no longer is: run on the
+	// control host, "runuser <app>" named a user that only exists on the node.
+	Terminal(name string) (TerminalSession, error)
 
 	// Files: each resolves through os.OpenRoot on this machine's real path.
 	ListFiles(name, dir string) (*Listing, error)
@@ -166,6 +171,14 @@ const (
 	AppRelayPrefix = "/apprelay"
 	AppRelayHeader = "X-Hostit-App"
 )
+
+// TerminalSession is one live browser terminal: Reads are the pty's output,
+// Writes are keystrokes, Resize follows the browser window. Closing it ends
+// the shell.
+type TerminalSession interface {
+	io.ReadWriteCloser
+	Resize(cols, rows uint16) error
+}
 
 type ControlSink interface {
 	// PowerChanged reports a poweroff/poweron the node's own verb performed.

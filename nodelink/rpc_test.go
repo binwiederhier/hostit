@@ -82,7 +82,7 @@ func startRPC(t *testing.T, agent nodeapi.NodeAgent) nodeapi.NodeAgent {
 	// Control side: a client that implements nodeapi.NodeAgent.
 	client, _, err := cluster.Duplex(controlConn, false, nil)
 	require.NoError(t, err)
-	return NewRemoteAgent(client)
+	return NewRemoteAgent(client, nil)
 }
 
 // fakeAgentFull adds the file verbs with real signatures (the embedded

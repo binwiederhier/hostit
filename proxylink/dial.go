@@ -25,7 +25,7 @@ func Role(authorize func(proxyID string) bool, sink proxyapi.ControlSink, regist
 			}
 			return CallbackHandler(sink)
 		},
-		Register: func(peer cluster.Peer, client *http.Client) func() {
+		Register: func(peer cluster.Peer, client *http.Client, _ func() (net.Conn, error)) func() {
 			agent := NewRemoteProxy(client)
 			register(peer.ID, agent)
 			if disconnect == nil {

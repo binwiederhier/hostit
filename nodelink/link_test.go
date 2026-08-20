@@ -1,6 +1,9 @@
 package nodelink
 
 import (
+	"bytes"
+	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -133,4 +136,120 @@ func TestCallbacksAreScopedToTheCallingNode(t *testing.T) {
 
 	// An unknown app is refused too (no host to match).
 	assert.Equal(t, http.StatusForbidden, post("power", `{"name":"ghost","powered_off":true}`))
+}
+
+// fakeTerminal is an in-memory pty: it echoes writes back upper-cased (so the
+// test can tell an echo from a passthrough) and records resizes.
+type fakeTerminal struct {
+	out     chan []byte
+	resizes chan [2]uint16
+	closed  chan struct{}
+}
+
+func newFakeTerminal() *fakeTerminal {
+	return &fakeTerminal{out: make(chan []byte, 16), resizes: make(chan [2]uint16, 16), closed: make(chan struct{})}
+}
+
+func (f *fakeTerminal) Read(p []byte) (int, error) {
+	select {
+	case b := <-f.out:
+		return copy(p, b), nil
+	case <-f.closed:
+		return 0, io.EOF
+	}
+}
+
+func (f *fakeTerminal) Write(p []byte) (int, error) {
+	f.out <- bytes.ToUpper(p)
+	return len(p), nil
+}
+
+func (f *fakeTerminal) Resize(cols, rows uint16) error {
+	f.resizes <- [2]uint16{cols, rows}
+	return nil
+}
+
+func (f *fakeTerminal) Close() error {
+	select {
+	case <-f.closed:
+	default:
+		close(f.closed)
+	}
+	return nil
+}
+
+type terminalAgent struct {
+	fakeAgentFull
+	term *fakeTerminal
+}
+
+func (a *terminalAgent) Terminal(name string) (nodeapi.TerminalSession, error) {
+	if name != "blog" {
+		return nil, errors.New("unknown app")
+	}
+	return a.term, nil
+}
+
+// A browser terminal for a remote-node app rides the cluster link as a raw
+// stream: hand-rolled upgrade, framed input, raw output. This drives the whole
+// path over a REAL duplex -- the hijack on the node side, the 101 parse and
+// framing on control's -- because every piece of it is hand-written wire code,
+// exactly where a unit test of either half proves nothing about the pair.
+func TestTerminalBridgesOverTheDuplex(t *testing.T) {
+	sockPath := filepath.Join(t.TempDir(), "cluster.sock")
+	ln, err := cluster.ListenSocket(sockPath)
+	require.NoError(t, err)
+	defer ln.Close()
+
+	agents := make(chan nodeapi.NodeAgent, 1)
+	srv := cluster.SocketServer(cluster.ConnectHandler(map[string]*cluster.Role{
+		cluster.RoleNode: Role(
+			func(string) bool { return true },
+			nil,
+			func(_ string, agent nodeapi.NodeAgent) { agents <- agent },
+			nil,
+		),
+	}))
+	go func() { _ = srv.Serve(ln) }()
+	defer srv.Close()
+
+	conn, err := cluster.DialSocket(sockPath)
+	require.NoError(t, err)
+	term := newFakeTerminal()
+	go func() {
+		_ = ServeAgent(conn, "node-b", &terminalAgent{term: term}, func(*http.Client) {})
+	}()
+
+	var remote nodeapi.NodeAgent
+	select {
+	case remote = <-agents:
+	case <-time.After(3 * time.Second):
+		t.Fatal("node never registered")
+	}
+
+	sess, err := remote.Terminal("blog")
+	require.NoError(t, err)
+	defer sess.Close()
+
+	// Keystrokes arrive at the pty; its output comes back raw.
+	_, err = sess.Write([]byte("hello"))
+	require.NoError(t, err)
+	buf := make([]byte, 64)
+	n, err := sess.Read(buf)
+	require.NoError(t, err)
+	assert.Equal(t, "HELLO", string(buf[:n]), "the fake pty echoes upper-cased")
+
+	// A resize travels in-band and lands as a resize, not as input.
+	require.NoError(t, sess.Resize(120, 40))
+	select {
+	case rs := <-term.resizes:
+		assert.Equal(t, [2]uint16{120, 40}, rs)
+	case <-time.After(3 * time.Second):
+		t.Fatal("resize never arrived")
+	}
+
+	// An unknown app is refused during the upgrade, not after it.
+	_, err = remote.Terminal("ghost")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unknown app")
 }

@@ -1,6 +1,7 @@
 package cluster
 
 import (
+	"net"
 	"net/http"
 	"path/filepath"
 	"testing"
@@ -44,7 +45,7 @@ func TestConnectHandlerRoutesByRole(t *testing.T) {
 	role := func() *Role {
 		return &Role{
 			Authorize: func(Peer) bool { return true },
-			Register: func(peer Peer, _ *http.Client) func() {
+			Register: func(peer Peer, _ *http.Client, _ func() (net.Conn, error)) func() {
 				admitted <- peer
 				return nil
 			},
