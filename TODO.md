@@ -114,38 +114,37 @@ host uid, no host podman or store, peercred socket).
 
 ## Smaller things
 
-- **BUG: a newly created app cannot reach the daemon socket.** Found on stage
-  2026-08-19 while proving the connections PoC. An app container created today
-  has a STALE `/run/hostit` bind: it contains only `apps-raw`, while the host's
-  directory (and the node's own mount namespace, checked with `nsenter`) has
-  `hostit.sock` in it. Older containers still work, so this is not a config
-  problem -- `hostit logs` inside a container created today answers "cannot
-  reach hostit daemon at /run/hostit/hostit.sock ... no such file or directory",
-  while the same command in an app from last week works.
+- **BUG: an app on a REMOTE node has no daemon socket.** Found 2026-08-19 while
+  proving the connections PoC; diagnosed 2026-08-19 after a wrong first guess
+  (recorded because the wrong guess is instructive: the symptom looked exactly
+  like a stale mount, and two rounds of mount forensics went nowhere).
 
-  **PROD IS NOT AFFECTED** (checked 2026-08-19 by creating a real app there:
-  it sees `hostit.sock` and `hostit logs` works; the app was deleted after).
-  This is a stage condition, so it is a latent bug rather than a live outage.
+  The app-side unix socket `/run/hostit/hostit.sock` -- the `/v1/self/*` surface
+  -- is served by **hostit-control**. On a host running only hostit-node there
+  is no such socket: stage-2's `/run/hostit` holds `apps-raw` and nothing else.
+  Apps placed there therefore cannot use it, and everything that rides on it
+  fails from inside the container:
 
-  It survives a container power cycle, a `podman rm -f` plus power-on, a
-  hostit-node restart and a hostit-control restart, which rules out "the socket
-  was recreated after the container started". Not RuntimeDirectory (the control
-  unit carries a comment about deliberately avoiding it, for exactly this
-  reason) and not tmpfiles.d (there is no hostit entry).
+  - the in-container CLI (`hostit deploy`, `logs`, `snapshot`),
+  - the MCP bridge the sandboxed assistant backend uses
+    (`assistant/sandbox.go` runs `hostit mcp --socket <path>`),
+  - the connections token endpoint added on the `connections` branch.
 
-  The lead worth following: `node/machine_deploy.go:MountRawAppsView` runs on
-  every node start and does mount surgery in the socket's own directory --
-  `mount --make-rprivate`, `umount -R`, `mount --bind`, `mount --make-private`
-  on `/run/hostit/apps-raw`. On a path that is not yet a mount point, the
-  propagation changes land on the containing mount, which is `/run`. Stage had
-  several node restarts today; prod had one clean deploy. That fits every
-  symptom, including why old containers keep working and new ones do not, but it
-  is a hypothesis -- reproduce it by restarting hostit-node and then creating an
-  app before concluding.
+  Evidence: on stage, apps on host `local` (phdemo, thatphilguy, tictactoe,
+  xray) work; apps on `hostit-stage-2` (sockdebug, test123, e2e-filter-*) do
+  not. The container's `/run/hostit` is inode 2260 -- stage-2's own directory,
+  dated when that node was built -- while the control host's is 2036 and holds
+  the socket.
 
-  It breaks the in-container CLI for every new app (deploy, logs, snapshot from
-  inside), and it is what stopped the connections PoC from shipping a demo app:
-  the token endpoint had to be proven in an older container instead.
+  **Prod is unaffected because it is a single host**: control and node share a
+  machine, so every app sits next to the socket. This is a gap that opened with
+  the control/node split and only shows on a multi-node instance.
+
+  The fix is for **hostit-node to serve the app socket locally and relay
+  `/v1/self/*` to control over the cluster link**, which already carries traffic
+  both ways (the snapshot and usage callbacks go node->control today). The node
+  knows which app a peer uid is, so the peercred authentication stays where it
+  is; only the answering moves.
 
 - **Private apps: only the owner can reach them.** hostit apps are public URLs.
   That is fine for a blog and wrong for a personal dashboard holding a connected
