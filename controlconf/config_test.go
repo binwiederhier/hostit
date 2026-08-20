@@ -69,7 +69,7 @@ func TestValidate(t *testing.T) {
 			t.Parallel()
 			c := NewConfig()
 			c.BaseDomain = "apps.example.com"
-			c.AdminToken = "secr3t"
+			c.AdminToken = "secr3t-secr3t-secr3t"
 			tt.modify(c)
 			err := c.Validate()
 			if tt.wantErr == "" {
@@ -92,7 +92,7 @@ func TestWildcardTLS(t *testing.T) {
 	t.Parallel()
 	c := NewConfig()
 	c.BaseDomain = "apps.example.com"
-	c.AdminToken = "secr3t"
+	c.AdminToken = "secr3t-secr3t-secr3t"
 	// Without a DNS provider, certificates are issued per app on demand
 	assert.False(t, c.WildcardTLS())
 	c.DNSProvider = DNSProviderRoute53
@@ -107,7 +107,7 @@ func TestValidateDNSProvider(t *testing.T) {
 	t.Parallel()
 	c := NewConfig()
 	c.BaseDomain = "apps.example.com"
-	c.AdminToken = "secr3t"
+	c.AdminToken = "secr3t-secr3t-secr3t"
 	c.DNSProvider = "cloudflare"
 	err := c.Validate()
 	require.Error(t, err)
@@ -204,4 +204,18 @@ func TestListenClusterHonoursTheRetiredListenNodeKey(t *testing.T) {
 
 	// And the same-host socket has a name of its own.
 	assert.Equal(t, "/run/hostit/cluster.sock", NewConfig().ClusterSocket)
+}
+
+// A short admin token is brute-forceable over HTTPS at line rate; the config
+// suggests `openssl rand -hex 24` and this enforces a floor. 16 characters is
+// deliberately below any generated token, so only hand-typed weak secrets fail.
+func TestValidateRefusesAShortAdminToken(t *testing.T) {
+	conf := NewConfig()
+	conf.BaseDomain = "apps.example.com"
+	conf.AdminToken = "hunter2"
+	err := conf.Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "16")
+	conf.AdminToken = "0d772c6a8db50b16565b8cd12d318720"
+	assert.NoError(t, conf.Validate())
 }

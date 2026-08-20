@@ -5,10 +5,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
 	"heckel.io/hostit/proxyapi"
 )
 
@@ -120,4 +122,31 @@ func TestTheLinkSurvivesBeingDroppedAndReplaced(t *testing.T) {
 	mat, err := p.controlSink().CertFor("blog.example.com")
 	require.NoError(t, err)
 	assert.NotEmpty(t, mat.CertPEM)
+}
+
+// A client-seeded X-Forwarded-For must not survive the proxy: whatever the
+// target logs as the chain's origin has to start with what the proxy saw, not
+// what the client claimed.
+func TestProxyStripsInboundForwardedFor(t *testing.T) {
+	t.Parallel()
+	var gotXFF string
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotXFF = r.Header.Get("X-Forwarded-For")
+	}))
+	t.Cleanup(target.Close)
+	p := New(&Config{ProxyID: "edge-1", ControlURL: target.URL, ClusterURL: "c:2930", CacheDir: t.TempDir()})
+	require.NoError(t, p.ApplyRoutes(&proxyapi.Table{Seq: 1, Routes: []proxyapi.Route{
+		{Host: "blog.example.com", Target: strings.TrimPrefix(target.URL, "http://")},
+	}}))
+
+	// The app route and the control fallback both forward; check both.
+	for _, host := range []string{"blog.example.com", "unknown.example.com"} {
+		req := httptest.NewRequest("GET", "http://"+host+"/", nil)
+		req.Host = host
+		req.RemoteAddr = "203.0.113.9:4711"
+		req.Header.Set("X-Forwarded-For", "1.2.3.4") // the client's lie
+		rr := httptest.NewRecorder()
+		p.ServeHTTP(rr, req)
+		assert.Equal(t, "203.0.113.9", gotXFF, "host %s: the chain starts at the proxy, not the client", host)
+	}
 }

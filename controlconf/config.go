@@ -82,6 +82,9 @@ const (
 	// what a wildcard certificate requires (Let's Encrypt does not issue
 	// wildcards over HTTP-01)
 	DNSProviderRoute53 = "route53"
+	// minAdminTokenChars is the floor Validate puts under the admin token: far
+	// below any generated token, so only hand-typed weak secrets fail.
+	minAdminTokenChars = 16
 )
 
 var (
@@ -266,6 +269,12 @@ func (c *Config) Validate() error {
 	}
 	if c.AdminToken == "" {
 		return errAdminTokenRequired
+	}
+	// The token is compared in constant time, but nothing beats a large token
+	// space: a hand-typed secret is brute-forceable over HTTPS at line rate.
+	// The floor is far below any generated token, so only weak ones fail.
+	if len(c.AdminToken) < minAdminTokenChars {
+		return fmt.Errorf("admin-token is too short (%d chars, minimum %d); generate one with e.g. openssl rand -hex 24", len(c.AdminToken), minAdminTokenChars)
 	}
 	if c.TLS != TLSLetsEncrypt && c.TLS != TLSOff {
 		return fmt.Errorf("invalid tls mode %q, must be %q or %q", c.TLS, TLSLetsEncrypt, TLSOff)

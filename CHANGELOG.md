@@ -27,6 +27,11 @@ default, or on-disk state is called out as **Breaking** or **Upgrade note**.
 - **Readable tables.** Every CLI list (`status`, `app list`, `node list`,
   `proxy list`, snapshots, domains, routes) now prints a bordered table with
   headers; piped output degrades to plain text.
+- **Breaking: `admin-token` must be at least 16 characters.** A short
+  hand-typed token is brute-forceable over HTTPS at line rate; the compare is
+  constant-time, so the token space is the only defense. Generated tokens
+  (`openssl rand -hex 24`) are unaffected; hostit-control refuses to start on
+  a shorter one and says so.
 - The node now tells its link layer when the control connection drops, so
   callbacks between redials are dropped cleanly instead of posted into a dead
   session (and `hostit node status` reports the link honestly).
