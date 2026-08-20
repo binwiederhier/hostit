@@ -80,6 +80,18 @@ credential push). AI would still be a capability under either.
 
 ## Smaller things
 
+- **BUG: assistant image uploads broken on the subscription backend.** Reported
+  2026-08-20: uploading an image to the chat while a claude-* mode is selected
+  does not work, and the assistant then says it cannot do anything with the
+  image at all. Plausible shape (unverified): the API loop reads uploads back
+  into the request as image content blocks (`assistant/content.go:
+  buildUserContent`), but the sandboxed `claude -p` backend gets only the
+  prompt text -- the sandbox mounts no app home and the uploads live in the
+  app's `uploads/`, so the model has neither the bytes nor a tool that could
+  fetch them. Verify on stage with one upload per backend, then decide: teach
+  buildClaudePrompt to reference the upload path via an MCP tool the sandbox
+  can call, or say honestly in the UI that images need an API model.
+
 - **Private apps: only the owner can reach them.** hostit apps are public URLs.
   That is fine for a blog and wrong for a personal dashboard holding a connected
   Google account -- one URL guess away from being someone else's mail reader.
