@@ -179,6 +179,23 @@ host uid, no host podman or store, peercred socket).
   (`plans/260819-connections.md`); connections are not finished without it, and
   it is useful on its own.
 
+- **A redirect (alias) domain type.** Today a custom domain only routes traffic
+  to its app: `store.Domain` (store/types.go) has no redirect field, and the
+  proxy (proxy/cli.go, proxy/service.go) only does the http->https hop. So apex
+  canonicalization (professornoodle.com to www.professornoodle.com) and legacy
+  hostname redirects have to live in each app, which every app reinvents:
+  yayagram now does an apex->www 301 in its own handler, websrv does the
+  heckel.io WordPress-URL redirects. Give a domain a `RedirectTo` (empty routes
+  to the app as today; set issues a 301): add the column plus migration, an
+  optional `redirect_to` on `POST /api/apps/{app}/domains` (and a CLI
+  `--redirect-to www.example.com`, with a `--redirect-to-primary` convenience
+  targeting the app's own canonical domain), and a check in the proxy that 301s
+  before routing, right next to the http->https redirect it already owns. Cert
+  issuance is unchanged (the same `_acme-challenge` delegation). Then apex->www
+  is a platform concern instead of per-app code, and the app-level redirect
+  hacks retire. Prompted 2026-08-20 by moving professornoodle.com onto hostit,
+  where the bare apex had no native way to reach www.
+
 - **Decide the credential-brokering shape before building either plan.** See
   the paragraph under "App capabilities" above. The broker design's own build
   order starts with a scoped, revocable static token from the upstream service,

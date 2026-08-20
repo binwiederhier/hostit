@@ -324,6 +324,117 @@ The split stays blocked only on <b>naming the host command</b>, not on this.
 
 ---
 
+# The binaries, and where they live
+
+`/usr/lib/hostit/bin` is not on `$PATH` -- the container binary cannot be run on
+the host by accident.
+
+| Binary | Lives in | Who runs it |
+|---|---|---|
+| `hostit` | `/usr/bin` | the operator |
+| `hostit-control` `-node` `-proxy` | `/usr/bin` | systemd, `hostit` dispatch |
+| **`hostit-app`** | `/usr/lib/hostit/bin` | mounted in **as `/usr/bin/hostit`** |
+| `hostit-shell` | `/usr/lib/hostit/bin` | sshd (the app's login shell) |
+| `hostit-enter` | `/usr/lib/hostit/bin` | `hostit-shell` |
+
+<v-click>
+
+<div class="mt-3 p-3 border border-emerald-700 rounded text-sm">
+The host filename and the command tenants type are <b>different things</b>:
+mounting <code>hostit-app</code> in as <code>/usr/bin/hostit</code> keeps
+<code>hostit deploy</code> working inside the container. That is what unblocks
+the naming question.
+</div>
+
+</v-click>
+
+---
+
+# One command for the operator
+
+The commands belong to the component binaries. `hostit` is the front door that
+execs them -- one help text, and it knows what is installed.
+
+```
+hostit-control apps list          # the command lives here
+hostit control apps list          # ... and this is the same thing
+hostit-control node add worker-1
+hostit-control status
+hostit node ... / hostit proxy ...   # only what is installed here
+```
+
+<v-clicks>
+
+- **`hostit apps` moves onto `hostit-control`** -- one registry, one surface.
+  It sits in the agent binary today only because the CLI code happened to live
+  there.
+- Not `hostit-cluster`: that is a third name for what control already is, and
+  "cluster" fits nodes and proxies, not apps.
+- Local over the socket (no token); `--host`/`--token` from a laptop, as today.
+- A component that is not installed says so, naming what this machine is.
+
+</v-clicks>
+
+---
+
+# What moving hostit-shell costs
+
+It is every app user's login shell, recorded in `/etc/passwd`.
+
+```
+useradd --shell /usr/bin/hostit-shell ...      # today
+```
+
+<v-clicks>
+
+- Moving it means `usermod --shell` for **every existing app user** on upgrade
+- Get it wrong and SSH is refused for everyone: the failure is a lockout
+- So: migrate on node start, verify the new path exists **before** touching a
+  single user, and leave the old binary in place until the sweep has run
+
+</v-clicks>
+
+<v-click>
+
+<div class="mt-4 p-3 border border-amber-600 rounded text-sm">
+Chosen deliberately over leaving a compatibility symlink: the symlink never goes
+away, and a login shell in <code>/usr/bin</code> invites someone to run it.
+</div>
+
+</v-click>
+
+---
+
+# Not in this round: the API prefixes
+
+<div class="mt-4">
+
+`/api/...`, `/v1/self/...`, `/internal/...` grew for three audiences and do not
+look like one decision.
+
+</div>
+
+<v-clicks>
+
+- It is worth harmonizing -- and it is not worth doing **while** moving the
+  socket and splitting the binary
+- Changing the public `/api` surface breaks tokens, scripts and the docs
+- The socket paths are the ones about to move; renaming them at the same time
+  makes one change into two
+
+</v-clicks>
+
+<v-click>
+
+<div class="mt-6 p-4 border border-emerald-700 rounded">
+Deliberately deferred. Do the socket move and the split against the paths that
+exist today, then harmonize once, with aliases, as its own change.
+</div>
+
+</v-click>
+
+---
+
 # So: what should it be called?
 
 `/v1/self` is about to become a versioned contract between two binaries. Worth
@@ -337,10 +448,12 @@ naming deliberately.
 
 <v-click>
 
-<div class="mt-6 p-4 border border-emerald-700 rounded">
-Recommendation: <b><code>/v1/app</code></b>, paired with a container binary
-named for the same thing. Keep <code>/v1/self</code> answering as an alias --
-it is bind-mounted into running containers, so it cannot be renamed in one step.
+<div class="mt-6 p-4 border border-amber-600 rounded">
+<b>Deferred with the rest of the prefixes.</b> Whatever it becomes, it needs a
+version in the path: the binary in a running container is bind-mounted and stays
+old until that container is recreated, while the daemon upgrades underneath it.
+That skew is what path versions are for -- and it is why the alias has to keep
+answering, whenever the rename happens.
 </div>
 
 </v-click>
@@ -356,8 +469,10 @@ it is bind-mounted into running containers, so it cannot be renamed in one step.
 3. Relay over the cluster link; control keeps every authorization
 4. Refuse the identity header on the public API, with a test that says so
 5. Verify on stage with an app on **stage-2** -- the case that has never worked
-6. Then the rename, with the old path aliased
-7. Then the binary split, once the host command has a name
+6. Then the split: `hostit-app` into `/usr/lib/hostit/bin`, mounted in as `/usr/bin/hostit`
+7. `hostit-shell` and `hostit-enter` move too -- with the `usermod` sweep
+8. `hostit apps` moves onto `hostit-control apps`, old spelling aliased
+9. **Last**, on its own: harmonize the API prefixes
 
 </v-clicks>
 
