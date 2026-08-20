@@ -78,41 +78,46 @@ credential push). AI would still be a capability under either.
   credentials (GitHub, needing profile-level OAuth) in scope or is v1
   operator-provided AI only.
 
-## The hostit binary: two tools sharing a name
-
-`cmd/agent/cmd.go` says it outright -- "two tools that happen to share a
-binary", switched by `insideContainer()`. Inside a container `hostit` is PID 1
-(the agent supervising the app's run command), the tenant CLI (deploy/logs/
-restart over the peercred socket) and the MCP server. On the host it is the
-operator's REST client (`hostit apps`) plus the shell/enter helpers. That is why
-`hostit` reads as a peer of `hostit-control` and `hostit-node` when it is not:
-one half of it is, and the other half belongs inside containers.
-
-Related to the open question above about whether `hostit apps` is necessary at
-all -- answering that first may shrink this.
-
-The stronger argument is least privilege, not naming. The binary bind-mounted
-into every container -- where the tenant is root -- also contains control's
-TLS/ACME, OAuth, podman/systemd/nftables/store, assistant and admin-API code.
-None of that should be present there. This is defense in depth, NOT a fix for a
-live hole: the container already contains the tenant (userns to an unprivileged
-host uid, no host podman or store, peercred socket).
-
-- **Split it.** Keep a minimal container-only binary (supervise `run:`, reap
-  zombies, static-serve, talk to the peercred socket) shipped by `hostit-node`
-  and bind-mounted into containers, never a host command. Give the host its own
-  CLI carrying `apps` plus dispatch to the components. Reaping may also be the
-  answer to the zombie-processes entry below.
-- **The host CLI should know what is installed**, so `hostit control ...` and
-  `hostit node ...` work and a component that is not installed says so in a
-  sentence naming what this machine is. Options: a wrapper script (cheapest, but
-  its help cannot know what it dispatches to), or in-binary dispatch that execs
-  the sibling (preferred: one help text, no extra process, and it can hide
-  commands for components this host does not run).
-- **Blocked on a name** for the host command. Renaming breaks muscle memory and
-  scripts, so decide before starting.
-
 ## Smaller things
+
+- **BUG: assistant image uploads broken on the subscription backend.** Reported
+  2026-08-20: uploading an image to the chat while a claude-* mode is selected
+  does not work, and the assistant then says it cannot do anything with the
+  image at all. Plausible shape (unverified): the API loop reads uploads back
+  into the request as image content blocks (`assistant/content.go:
+  buildUserContent`), but the sandboxed `claude -p` backend gets only the
+  prompt text -- the sandbox mounts no app home and the uploads live in the
+  app's `uploads/`, so the model has neither the bytes nor a tool that could
+  fetch them. Verify on stage with one upload per backend, then decide: teach
+  buildClaudePrompt to reference the upload path via an MCP tool the sandbox
+  can call, or say honestly in the UI that images need an API model.
+
+- **Private apps: only the owner can reach them.** hostit apps are public URLs.
+  That is fine for a blog and wrong for a personal dashboard holding a connected
+  Google account -- one URL guess away from being someone else's mail reader.
+  Enforce at the proxy: an app marked private serves only a request carrying the
+  owner's (or a named collaborator's) hostit session, everything else gets 403.
+  The proxy already holds the routing table control pushes it, so the flag rides
+  along the same path. This is the companion to the connections work
+  (`plans/260819-connections.md`); connections are not finished without it, and
+  it is useful on its own.
+
+- **A redirect (alias) domain type.** Today a custom domain only routes traffic
+  to its app: `store.Domain` (store/types.go) has no redirect field, and the
+  proxy (proxy/cli.go, proxy/service.go) only does the http->https hop. So apex
+  canonicalization (professornoodle.com to www.professornoodle.com) and legacy
+  hostname redirects have to live in each app, which every app reinvents:
+  yayagram now does an apex->www 301 in its own handler, websrv does the
+  heckel.io WordPress-URL redirects. Give a domain a `RedirectTo` (empty routes
+  to the app as today; set issues a 301): add the column plus migration, an
+  optional `redirect_to` on `POST /api/apps/{app}/domains` (and a CLI
+  `--redirect-to www.example.com`, with a `--redirect-to-primary` convenience
+  targeting the app's own canonical domain), and a check in the proxy that 301s
+  before routing, right next to the http->https redirect it already owns. Cert
+  issuance is unchanged (the same `_acme-challenge` delegation). Then apex->www
+  is a platform concern instead of per-app code, and the app-level redirect
+  hacks retire. Prompted 2026-08-20 by moving professornoodle.com onto hostit,
+  where the bare apex had no native way to reach www.
 
 - **Decide the credential-brokering shape before building either plan.** See
   the paragraph under "App capabilities" above. The broker design's own build
@@ -309,6 +314,28 @@ months.
 ## Done (recent)
 
 Kept briefly for context; prune when stale.
+
+- **The node owns the app socket (2026-08-20, the high-priority bug).** An app
+  on a node-only host had no daemon socket at all: no SSH, no in-container CLI,
+  no MCP bridge. hostit-node now serves /run/hostit/hostit.sock on every host,
+  authenticates by SO_PEERCRED against its own mirror (which carries each
+  hosted app's uid) and relays to control over the cluster link -- never
+  answering locally, so control keeps every guard; an archived app's deploy is
+  refused with "archived" THROUGH the relay, and a test drives that. Control's
+  own socket moved to /run/hostit/control.sock (operator CLI, assistant
+  sandbox). Proven on stage: a stage-2 app ran `hostit logs|status|deploy` from
+  inside for the first time.
+
+- **The binary split (2026-08-20).** hostit-app (package appcli) is the
+  in-container command set, shipped at /usr/lib/hostit/bin/hostit-app and
+  mounted into containers as /usr/bin/hostit -- tenants type what they always
+  typed. hostit became the front door (`hostit control|node|proxy ...` execs
+  the sibling; `hostit apps` is a deprecated alias), the apps commands moved
+  onto hostit-control beside their registry, and the login shell moved to
+  /usr/lib/hostit/bin with a usermod sweep on node start (old path shipped one
+  release so a failed sweep strands nobody). The lesson that cost an hour on
+  stage: the mount SOURCE is the host path and the exec is the CONTAINER path;
+  conflating them crash-looped every app at PID 1, and a test now pins it.
 
 - **Archive and unarchive an app (2026-08-19).** A shelved app powers off and
   refuses to run: the guard sits on `routingAgent.routeRunnable`, the one place
