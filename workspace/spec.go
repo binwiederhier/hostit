@@ -52,9 +52,15 @@ const (
 	// are spaced UIDBlockSize apart (by port) so they never overlap.
 	UIDBlockStart = 1_000_000
 
-	// HostitBinFile is where the hostit binary lives on the host AND inside
-	// every app container (bind-mounted), so the CLI works in both worlds.
-	HostitBinFile = "/usr/bin/hostit"
+	// HostBinFile is the container binary (hostit-app) on the HOST: off $PATH
+	// in /usr/lib/hostit/bin, so it cannot be run there by accident, and it
+	// carries only the in-container command set -- none of control's TLS,
+	// OAuth, store or podman code rides into a container where the tenant is
+	// root. ContainerBinFile is where it appears INSIDE: /usr/bin/hostit, so
+	// what tenants type is unchanged. The host filename and the tenant command
+	// are deliberately different things.
+	HostBinFile      = "/usr/lib/hostit/bin/hostit-app"
+	ContainerBinFile = "/usr/bin/hostit"
 
 	// PortMin/PortMax bound the per-app loopback port range. Deliberately NOT
 	// configurable: an app's uid block is derived from its port (UIDFor), so
@@ -237,7 +243,7 @@ func WithConfigLabel(args []string, hash string) []string {
 func appendCommonMounts(args []string, socketFile, hostitBin string) []string {
 	socketDir := filepath.Dir(socketFile)
 	return append(args,
-		"--volume", hostitBin+":"+hostitBin+":ro",
+		"--volume", hostitBin+":"+ContainerBinFile+":ro",
 		"--volume", socketDir+":"+socketDir+":ro")
 }
 

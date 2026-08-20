@@ -65,3 +65,15 @@ func TestResolveTransport(t *testing.T) {
 	assert.Contains(t, err.Error(), "/run/hostit/hostit.sock")
 	assert.Contains(t, err.Error(), "--host")
 }
+
+func TestActionMessages(t *testing.T) {
+	t.Parallel()
+	// "snake stoped" and "snake restared" is what deriving English from the verb
+	// gets you. App verbs act on the run: command, power verbs on the container.
+	assert.Equal(t, "blog: app started", actionMessage("start", "blog"))
+	assert.Equal(t, "blog: app stopped", actionMessage("stop", "blog"))
+	assert.Equal(t, "blog: app restarted", actionMessage("restart", "blog"))
+	assert.Equal(t, "blog: powered on", actionMessage("poweron", "blog"))
+	assert.Equal(t, "blog: powered off", actionMessage("poweroff", "blog"))
+	assert.Equal(t, "blog: rebooted", actionMessage("reboot", "blog"))
+}

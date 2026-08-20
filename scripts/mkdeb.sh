@@ -26,6 +26,8 @@ install -m 644 "$ROOT/control.yml.example" "$STAGE/etc/hostit/control/control.ym
 install -m 644 "$ROOT/hostit-control.service" "$STAGE/lib/systemd/system/hostit-control.service"
 install -m 755 "$ROOT/hostit-shell" "$STAGE/usr/bin/hostit-shell"
 install -m 755 "$ROOT/hostit-enter" "$STAGE/usr/bin/hostit-enter"
+install -D -m 755 "$ROOT/hostit-shell" "$STAGE/usr/lib/hostit/bin/hostit-shell"
+install -D -m 755 "$ROOT/hostit-enter" "$STAGE/usr/lib/hostit/bin/hostit-enter"
 install -m 644 "$ROOT/hostit-app@.service" "$STAGE/lib/systemd/system/hostit-app@.service"
 install -m 440 "$ROOT/hostit.sudoers" "$STAGE/etc/sudoers.d/hostit"
 install -m 755 "$ROOT/scripts/postinst.sh" "$STAGE/DEBIAN/postinst"

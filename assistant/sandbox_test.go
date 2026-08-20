@@ -93,8 +93,8 @@ func TestSandboxClaudeArgsAreMCPOnly(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected --mcp-config, got %v", args)
 	}
-	if !strings.Contains(mcpConfig, "/usr/local/bin/hostit") {
-		t.Errorf("mcp-config should invoke the hostit binary, got %q", mcpConfig)
+	if !strings.Contains(mcpConfig, workspace.ContainerBinFile) {
+		t.Errorf("mcp-config should invoke the binary at its in-sandbox path, got %q", mcpConfig)
 	}
 	if !strings.Contains(mcpConfig, "/run/hostit/hostit.sock") {
 		t.Errorf("mcp-config should point at the daemon socket, got %q", mcpConfig)
@@ -181,8 +181,10 @@ func TestSandboxBaseArgsLockdown(t *testing.T) {
 	}
 
 	// Only the hostit binary and the daemon socket dir are mounted, both read-only.
-	if !hasFlagValue(args, "--volume", "/usr/local/bin/hostit:/usr/local/bin/hostit:ro") {
-		t.Errorf("expected the hostit binary mounted read-only, got %v", args)
+	// The host source is wherever the binary lives (hostit-app, off $PATH); in
+	// the sandbox it appears at the container path, same as in an app container.
+	if !hasFlagValue(args, "--volume", "/usr/local/bin/hostit:"+workspace.ContainerBinFile+":ro") {
+		t.Errorf("expected the hostit binary mounted read-only at %s, got %v", workspace.ContainerBinFile, args)
 	}
 	if !hasFlagValue(args, "--volume", "/run/hostit:/run/hostit:ro") {
 		t.Errorf("expected the socket dir mounted read-only, got %v", args)
@@ -236,7 +238,7 @@ func TestSandboxSessionLogKeysOnAppID(t *testing.T) {
 	}
 }
 
-// The MCP bridge must be the AGENT binary (workspace.HostitBinFile, the one bind-
+// The MCP bridge must be the AGENT binary (workspace.HostBinFile, the one bind-
 // mounted into every app container), never this daemon's own executable: since
 // the cmd split the daemon is hostit-control, which has no "mcp" command, and
 // mounting it silently broke the sandbox's only tool surface.
@@ -245,7 +247,7 @@ func TestNewSandboxMountsTheAgentBinary(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if s.hostitBin != workspace.HostitBinFile {
-		t.Fatalf("sandbox mounts %q as the MCP bridge, want the agent binary %q", s.hostitBin, workspace.HostitBinFile)
+	if s.hostitBin != workspace.HostBinFile {
+		t.Fatalf("sandbox mounts %q as the MCP bridge, want the agent binary %q", s.hostitBin, workspace.HostBinFile)
 	}
 }

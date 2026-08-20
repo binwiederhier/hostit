@@ -9,7 +9,6 @@ import (
 
 	"github.com/urfave/cli/v2"
 	"golang.org/x/term"
-	"heckel.io/hostit/agent"
 	"heckel.io/hostit/appctl"
 	"heckel.io/hostit/controlconf"
 	"heckel.io/hostit/workspace"
@@ -34,14 +33,6 @@ var (
 		Hidden:          true,
 		SkipFlagParsing: true, // sshd passes "-c <command>"; don't let urfave eat it
 		Action:          execShell,
-	}
-
-	// cmdAgent is PID 1 inside workspace containers: it supervises the app's
-	// run command (see the agent package)
-	cmdAgent = &cli.Command{
-		Name:   "agent",
-		Hidden: true,
-		Action: execAgent,
 	}
 )
 
@@ -114,14 +105,6 @@ func loginBanner(self *appctl.SelfInfo) string {
 		"  \"hostit guide\" explains the rest (where files go, what is installed).\n" +
 		"  README.md is this app's own file: what it is, and what you changed.\n" +
 		"\n"
-}
-
-func execAgent(_ *cli.Context) error {
-	home := os.Getenv("HOME")
-	if home == "" {
-		home = "/root"
-	}
-	return agent.New(home).Run()
 }
 
 // isTerminal reports whether the given file is a terminal: it decides both

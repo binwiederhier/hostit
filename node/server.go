@@ -2,6 +2,7 @@ package node
 
 import (
 	"crypto/tls"
+	"fmt"
 	"log/slog"
 	"net"
 	"os"
@@ -17,6 +18,8 @@ import (
 	"heckel.io/hostit/preflight"
 	"heckel.io/hostit/run"
 	"heckel.io/hostit/store"
+	"heckel.io/hostit/unixuser"
+	"heckel.io/hostit/workspace"
 )
 
 // The node's configuration lives in its own leaf package (nodeconf) so that
@@ -78,6 +81,12 @@ func Serve(configPath, version string) error {
 	if err := preflight.Check(conf.AppsDir); err != nil {
 		return err
 	}
+	// The container binary is bind-mounted into every app; a missing source
+	// would have podman conjure an empty directory in its place and every app
+	// fail at PID 1, far from the cause. Refuse to start instead.
+	if _, err := os.Stat(workspace.HostBinFile); err != nil {
+		return fmt.Errorf("%s is missing (ships with the hostit-node package): %w", workspace.HostBinFile, err)
+	}
 	// The node's own SQLite: a MIRROR of the app/snapshot rows this node
 	// hosts, pushed by control (never control's registry, even colocated).
 	s, err := store.NewStore(filepath.Join(conf.DataDir, "node.db"))
@@ -97,6 +106,18 @@ func Serve(configPath, version string) error {
 	}
 	done := make(chan struct{})
 	defer close(done)
+	// Migrate app users still on the old login-shell path. Best effort and
+	// loud: the old path stays shipped this release, so a failed sweep strands
+	// nobody -- it just postpones dropping the old file.
+	go func() {
+		changed, err := unixuser.New(userShellFile, AppsGroup).SweepShellPaths(legacyUserShellFile)
+		if err != nil {
+			slog.Warn("Login-shell migration incomplete; the old path keeps working", "error", err)
+		}
+		if len(changed) > 0 {
+			slog.Info("Migrated app users to the new login shell", "users", changed, "shell", userShellFile)
+		}
+	}()
 	go func() {
 		if err := machine.EnsureWorkspaceBase(); err != nil {
 			slog.Warn("Cannot prepare workspace base rootfs; the first app deploy will retry", "error", err)
