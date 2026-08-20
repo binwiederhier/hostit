@@ -160,13 +160,47 @@ host uid, no host podman or store, peercred socket).
   "only SSH and run_command", a static app could stay container-less until
   something asks for one.
 
-- **Can htop inside the container show only the container's resources?** Today
-  it reads the host's /proc: all cores, all memory, everyone's load. Options:
-  lxcfs-style /proc masking (fuse overlay for /proc/meminfo, /proc/cpuinfo,
-  /proc/stat scaled to the cgroup limits), or podman's --systemd/cgroup
-  namespace support; check what modern podman + crun offer out of the box
-  (cgroup v2 namespaces hide other containers' PIDs already; the meminfo/cpu
-  view is the missing piece).
+- **Can htop inside the container show only the container's resources?**
+  EXPLORED 2026-08-19 on stage (podman 4.9.3, crun 1.14.1, Ubuntu 24.04). What
+  is true today:
+
+  - The container ALREADY has a private cgroup namespace: `/proc/self/cgroup` is
+    `0::/` and `/sys/fs/cgroup/memory.max` is exactly the app's limit
+    (536870912 for a 512 MB app). The truth is present inside the container.
+  - `/proc/meminfo`, `/proc/loadavg`, `/proc/uptime`, `/proc/cpuinfo` and
+    `/proc/swaps` are the HOST's, unmasked.
+  - htop 3.4.1 is not cgroup-aware: in a container capped at 256 MB it draws
+    `Mem[243M/961M]` (the host's 961 MB), the host's load average, the host's
+    swap, and the host's 13-day uptime. `free` agrees. So the tools people
+    actually run read the files that lie, not the cgroup that tells the truth.
+  - Modern podman/crun do NOT mask /proc out of the box. What the namespaces
+    already give is PID isolation (htop lists 2 processes, not the host's) and
+    cgroup isolation. The /proc view is the whole remaining gap.
+  - A bind-mount over `/proc/meminfo` DOES work here -- mounting a hand-written
+    file made `free` report 512 MB -- so the plumbing lxcfs relies on is
+    available; lxcfs would only be supplying live numbers.
+
+  Options, in cost order:
+
+  1. **lxcfs** (5.0.4-1 in the Ubuntu repos, not installed; fuse3 already is).
+     A daemon per node serving `/var/lib/lxcfs/proc/*`, bind-mounted into every
+     app container. Live and correct for meminfo, cpuinfo, stat, uptime,
+     loadavg, swaps. Cost: a new system dependency and a daemon to supervise,
+     plus the known sharp edge that restarting lxcfs leaves existing mounts
+     stale (ENOTCONN) until each container restarts.
+  2. **Static per-app files.** No daemon: write a meminfo from the app's limit
+     and bind-mount it. But the numbers never move, so MemFree/MemAvailable
+     become a frozen lie -- arguably worse than the host's moving one -- and
+     regenerating them on a timer is reimplementing lxcfs badly.
+  3. **Do nothing to /proc, document the cgroup.** `cat
+     /sys/fs/cgroup/memory.current` and `memory.max` are already correct, and
+     the app page shows accurate RAM and disk. Cheapest, and leaves htop wrong.
+
+  Worth knowing before picking: the CPU half is NOT wrong yet. `cpu.max` reads
+  `max`, so an app really can use every core, and `nproc` showing all of them is
+  honest today. It only becomes a lie once per-app CPU limits exist (see
+  Resource allocation above), which argues for doing this WITH that work rather
+  than before it.
 
 - **hostit-node hangs on stop -- REPRODUCE BEFORE CHASING.** Seen once, during
   the 2026-08-16 stage deploy. It has not recurred: prod's node reports
