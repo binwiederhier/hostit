@@ -28,4 +28,18 @@ setup("breakglass authenticate", async ({ context }) => {
   expect(res.status(), await res.text()).toBe(200);
   fs.mkdirSync(path.dirname(AUTH_FILE), { recursive: true });
   await context.storageState({ path: AUTH_FILE });
+
+  // Sweep leftovers of crashed or timed-out runs: stale e2e apps count against
+  // the test user's app limit, and the NEXT run then fails its create with a
+  // 403 that looks like an auth bug. The name prefix is unambiguous.
+  const apps = await context.request.get("/api/apps");
+  if (apps.ok()) {
+    for (const app of await apps.json()) {
+      if (/^e2e-ui-/.test(app.name)) {
+        await context.request.delete(`/api/apps/${app.name}`);
+      }
+    }
+  }
 });
+
+
