@@ -111,15 +111,19 @@ type Snapshot struct {
 // User is a person who logs in via Google; limits are nil when the global
 // default applies
 type User struct {
-	ID        string    `json:"id"`
-	Email     string    `json:"email"`
-	Name      string    `json:"name"`
-	Role      Role      `json:"role"`
-	Status    Status    `json:"status"`
-	AppLimit  *int      `json:"app_limit"`
-	MemoryMB  *int      `json:"memory_mb"`
-	DiskMB    *int      `json:"disk_mb"`
-	CreatedAt time.Time `json:"created_at"`
+	ID       string `json:"id"`
+	Email    string `json:"email"`
+	Name     string `json:"name"`
+	Role     Role   `json:"role"`
+	Status   Status `json:"status"`
+	AppLimit *int   `json:"app_limit"`
+	MemoryMB *int   `json:"memory_mb"`
+	DiskMB   *int   `json:"disk_mb"`
+	// The user's resource POOLS: the budget all their apps' effective limits
+	// must fit inside. nil derives app_limit x the per-app default.
+	MemoryPoolMB *int      `json:"memory_pool_mb"`
+	DiskPoolMB   *int      `json:"disk_pool_mb"`
+	CreatedAt    time.Time `json:"created_at"`
 }
 
 // Token is a per-user API credential; only its hash is stored

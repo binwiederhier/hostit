@@ -154,6 +154,10 @@ type apiToolResponse struct {
 type apiUsage struct {
 	Apps   int `json:"apps"`
 	DiskMB int `json:"disk_mb"`
+	// The pool allocation: the sum of this user's apps' effective limits, which
+	// is what their pools bound (usage above is what is USED; this is RESERVED).
+	PoolMemoryMB int `json:"pool_memory_mb"`
+	PoolDiskMB   int `json:"pool_disk_mb"`
 }
 
 // apiAccountResponse is GET /api/account: who the caller is and what they may use
@@ -191,16 +195,19 @@ type apiTokenResponse struct {
 
 // apiUserResponse is a user as seen by admins
 type apiUserResponse struct {
-	ID        string       `json:"id"`
-	Email     string       `json:"email"`
-	Name      string       `json:"name"`
-	Role      store.Role   `json:"role"`
-	Status    store.Status `json:"status"`
-	AppLimit  *int         `json:"app_limit"`
-	MemoryMB  *int         `json:"memory_mb"`
-	DiskMB    *int         `json:"disk_mb"`
-	AppCount  int          `json:"app_count"`
-	CreatedAt time.Time    `json:"created_at"`
+	ID       string       `json:"id"`
+	Email    string       `json:"email"`
+	Name     string       `json:"name"`
+	Role     store.Role   `json:"role"`
+	Status   store.Status `json:"status"`
+	AppLimit *int         `json:"app_limit"`
+	MemoryMB *int         `json:"memory_mb"`
+	DiskMB   *int         `json:"disk_mb"`
+	// The pools (null = derived); the admin page edits these.
+	MemoryPoolMB *int      `json:"memory_pool_mb"`
+	DiskPoolMB   *int      `json:"disk_pool_mb"`
+	AppCount     int       `json:"app_count"`
+	CreatedAt    time.Time `json:"created_at"`
 	// Built-in assistant usage summed across the user's apps: total tokens and the
 	// dollar cost. Only the built-in assistant, never a tenant's own agent.
 	AssistantTokens  int64   `json:"assistant_tokens"`
@@ -237,10 +244,15 @@ type apiUpdateUserRequest struct {
 	AppLimit *int          `json:"app_limit"`
 	MemoryMB *int          `json:"memory_mb"`
 	DiskMB   *int          `json:"disk_mb"`
+	// The pools an owner's apps draw from (null = derive app_limit x default).
+	MemoryPoolMB *int `json:"memory_pool_mb"`
+	DiskPoolMB   *int `json:"disk_pool_mb"`
 
-	AppLimitSet bool `json:"-"`
-	MemoryMBSet bool `json:"-"`
-	DiskMBSet   bool `json:"-"`
+	AppLimitSet     bool `json:"-"`
+	MemoryMBSet     bool `json:"-"`
+	DiskMBSet       bool `json:"-"`
+	MemoryPoolMBSet bool `json:"-"`
+	DiskPoolMBSet   bool `json:"-"`
 }
 
 // UnmarshalJSON records which limit fields were present in the request body
@@ -256,6 +268,8 @@ func (r *apiUpdateUserRequest) UnmarshalJSON(b []byte) error {
 	_, r.AppLimitSet = raw["app_limit"]
 	_, r.MemoryMBSet = raw["memory_mb"]
 	_, r.DiskMBSet = raw["disk_mb"]
+	_, r.MemoryPoolMBSet = raw["memory_pool_mb"]
+	_, r.DiskPoolMBSet = raw["disk_pool_mb"]
 	return nil
 }
 

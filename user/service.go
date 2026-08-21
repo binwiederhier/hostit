@@ -53,6 +53,12 @@ type Limits struct {
 	AppLimit int `json:"app_limit"`
 	MemoryMB int `json:"memory_mb"`
 	DiskMB   int `json:"disk_mb"`
+	// The pools bound the SUM of the user's apps' effective limits. A user row
+	// without an explicit pool derives app_limit x the per-app default, which
+	// keeps a pre-pool user exactly as capable as they were; 0 = unbounded
+	// (an app_limit of 0 means unlimited apps, so the derived pool follows).
+	MemoryPoolMB int `json:"memory_pool_mb"`
+	DiskPoolMB   int `json:"disk_pool_mb"`
 }
 
 // Manager owns users, tokens, profile keys and limit settings
@@ -233,6 +239,16 @@ func (m *Manager) Limits(u *store.User) (*Limits, error) {
 	}
 	if u.DiskMB != nil {
 		limits.DiskMB = *u.DiskMB
+	}
+	// Pools: explicit where set, else derived from the resolved per-app
+	// defaults, so raising a user's default raises their derived pool with it.
+	limits.MemoryPoolMB = limits.AppLimit * limits.MemoryMB
+	limits.DiskPoolMB = limits.AppLimit * limits.DiskMB
+	if u.MemoryPoolMB != nil {
+		limits.MemoryPoolMB = *u.MemoryPoolMB
+	}
+	if u.DiskPoolMB != nil {
+		limits.DiskPoolMB = *u.DiskPoolMB
 	}
 	return &limits, nil
 }

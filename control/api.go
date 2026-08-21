@@ -78,7 +78,7 @@ func (s *Server) newAPIHandler() http.Handler {
 	route(mux, "POST", "/apps/{name}/domains/{domain}/verify", s.requireActive(s.handleAppDomainVerify))
 	route(mux, "DELETE", "/apps/{name}/domains/{domain}", s.requireActive(s.handleAppDomainDelete))
 	route(mux, "GET", "/apps/{name}/terminal", s.requireActive(s.handleTerminal))
-	route(mux, "PATCH", "/apps/{name}/limits", s.requireAdmin(s.handleAppLimitsUpdate))
+	route(mux, "PATCH", "/apps/{name}/limits", s.requireActive(s.handleAppLimitsUpdate))
 	route(mux, "GET", "/apps/{name}/assistant", s.requireActive(s.handleAssistantTranscript))
 	route(mux, "GET", "/apps/{name}/assistant/stream", s.requireActive(s.handleAssistantStream))
 	route(mux, "POST", "/apps/{name}/assistant", s.requireActive(s.handleAssistant))

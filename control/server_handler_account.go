@@ -146,13 +146,17 @@ func (s *Server) accountResponse(c *caller) (*apiAccountResponse, error) {
 	for _, a := range apps {
 		diskMB += a.DiskMB
 	}
+	poolMemory, poolDisk, err := s.poolReserved(c.user.ID, "")
+	if err != nil {
+		return nil, err
+	}
 	return &apiAccountResponse{
 		Email:  c.user.Email,
 		Name:   c.user.Name,
 		Role:   c.user.Role,
 		Status: c.user.Status,
 		Limits: limits,
-		Usage:  &apiUsage{Apps: len(apps), DiskMB: diskMB},
+		Usage:  &apiUsage{Apps: len(apps), DiskMB: diskMB, PoolMemoryMB: poolMemory, PoolDiskMB: poolDisk},
 	}, nil
 }
 

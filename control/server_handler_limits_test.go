@@ -11,23 +11,6 @@ import (
 	"heckel.io/hostit/store"
 )
 
-// Editing an app's limits is ADMIN-only until per-user pools exist: an owner
-// who can raise their own caps has no cap at all.
-func TestAppLimitsPatchIsAdminOnly(t *testing.T) {
-	t.Parallel()
-	s := newTestServer(t)
-	u := newActiveTestUser(t, s, "owner@example.com")
-	token := accountToken(t, s, u)
-	require.NoError(t, s.apps.Store().AddApp(&store.App{Name: "blog", Port: 10000, Host: store.HostLocal, OwnerID: u.ID}))
-	s.apps.PushMirror()
-
-	rr := request(t, s.API(), "PATCH", "/api/apps/blog/limits", `{"memory_mb":512}`, token)
-	assert.Equal(t, http.StatusForbidden, rr.Code, "the owner may not edit their own caps")
-
-	rr = request(t, s.API(), "PATCH", "/api/apps/blog/limits", `{"memory_mb":512}`, testToken)
-	assert.Equal(t, http.StatusOK, rr.Code)
-}
-
 // The PATCH is partial: absent/0 leaves a field alone, -1 clears the override,
 // positive sets it -- and what lands is visible in the store, in control's
 // effective record, and in the response.
@@ -94,4 +77,82 @@ func TestAppResponseCarriesEffectiveLimits(t *testing.T) {
 	assert.EqualValues(t, 768, overrides["memory_mb"])
 	assert.EqualValues(t, 2000, overrides["cpu_milli"])
 	assert.EqualValues(t, 0, overrides["disk_mb"])
+}
+
+// Owners edit their own apps' RAM and disk WITHIN their pool; the pool is the
+// cap, not an admin. CPU stays admin-only, and an app-scoped (agent) token
+// may not edit limits at all -- an assistant must not raise its own caps.
+func TestOwnerEditsLimitsWithinPool(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	u := newActiveTestUser(t, s, "owner@example.com")
+	token := accountToken(t, s, u)
+	require.NoError(t, s.apps.Store().AddApp(&store.App{Name: "blog", Port: 10000, Host: store.HostLocal, OwnerID: u.ID}))
+	s.apps.PushMirror()
+
+	// Within the derived pool (3 x 512 = 1536 MB memory): fine.
+	rr := request(t, s.API(), "PATCH", "/api/apps/blog/limits", `{"memory_mb":1024}`, token)
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+	a, err := s.apps.Store().App("blog")
+	require.NoError(t, err)
+	assert.Equal(t, 1024, a.MemoryLimitMB)
+
+	// Beyond the pool: refused, and the error names the budget.
+	rr = request(t, s.API(), "PATCH", "/api/apps/blog/limits", `{"memory_mb":2048}`, token)
+	require.Equal(t, http.StatusForbidden, rr.Code)
+	assert.Contains(t, rr.Body.String(), "pool")
+
+	// CPU is not the owner's to set.
+	rr = request(t, s.API(), "PATCH", "/api/apps/blog/limits", `{"cpu_milli":2000}`, token)
+	assert.Equal(t, http.StatusForbidden, rr.Code)
+
+	// The app's own agent token is refused outright.
+	agent := appScopedToken(t, s, u, "blog")
+	rr = request(t, s.API(), "PATCH", "/api/apps/blog/limits", `{"memory_mb":512}`, agent)
+	assert.Equal(t, http.StatusForbidden, rr.Code)
+}
+
+// The pool binds admins too: one invariant, no bypass -- an admin who needs
+// more raises the user's pool. The sum counts every app of the owner.
+func TestPoolBindsAcrossAppsAndAdmins(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	u := newActiveTestUser(t, s, "owner@example.com")
+	require.NoError(t, s.apps.Store().AddApp(&store.App{Name: "blog", Port: 10000, Host: store.HostLocal, OwnerID: u.ID}))
+	require.NoError(t, s.apps.Store().AddApp(&store.App{Name: "wiki", Port: 10001, Host: store.HostLocal, OwnerID: u.ID}))
+	s.apps.PushMirror()
+
+	// Two apps at the 512 default; the second override must fit POOL - sum(others).
+	// Pool 1536: blog to 1024 fits (1024 + 512), then wiki to 1024 would need
+	// 1024 + 1024 > 1536 and is refused -- for the ADMIN too.
+	rr := request(t, s.API(), "PATCH", "/api/apps/blog/limits", `{"memory_mb":1024}`, testToken)
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+	rr = request(t, s.API(), "PATCH", "/api/apps/wiki/limits", `{"memory_mb":1024}`, testToken)
+	require.Equal(t, http.StatusForbidden, rr.Code)
+	assert.Contains(t, rr.Body.String(), "pool")
+
+	// Raising the user's pool unblocks it.
+	pool := 4096
+	u.MemoryPoolMB = &pool
+	require.NoError(t, s.apps.Store().UpdateUser(u))
+	rr = request(t, s.API(), "PATCH", "/api/apps/wiki/limits", `{"memory_mb":1024}`, testToken)
+	assert.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+}
+
+// Creating an app reserves its default allocation from the pool, so a user
+// whose pool is spent cannot mint another app into it.
+func TestCreateRefusedWhenPoolExhausted(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	u := newActiveTestUser(t, s, "owner@example.com")
+	token := accountToken(t, s, u)
+	pool := 600 // one 512 MB app fits, a second does not
+	u.MemoryPoolMB = &pool
+	require.NoError(t, s.apps.Store().UpdateUser(u))
+
+	rr := request(t, s.API(), "POST", "/api/apps", `{"name":"blog"}`, token)
+	require.Equal(t, http.StatusCreated, rr.Code, rr.Body.String())
+	rr = request(t, s.API(), "POST", "/api/apps", `{"name":"wiki"}`, token)
+	require.Equal(t, http.StatusForbidden, rr.Code)
+	assert.Contains(t, rr.Body.String(), "pool")
 }

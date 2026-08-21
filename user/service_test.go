@@ -350,3 +350,35 @@ func TestAllowDomainRefusesPublicMailProviders(t *testing.T) {
 		assert.NoError(t, err, "%q must be allowed", domain)
 	}
 }
+
+// Pools bound the SUM of a user's apps' effective limits. A user without an
+// explicit pool derives app_limit x the per-app default -- exactly as capable
+// as before pools existed, so the feature's arrival changes nobody's budget.
+func TestLimitsDerivePools(t *testing.T) {
+	t.Parallel()
+	m := newTestManager(t)
+	u := &store.User{Email: "a@example.com", Name: "A", Role: store.RoleUser, Status: store.StatusActive}
+	require.NoError(t, m.store.AddUser(u))
+
+	limits, err := m.Limits(u)
+	require.NoError(t, err)
+	assert.Equal(t, 3*512, limits.MemoryPoolMB, "derived: app_limit x per-app default")
+	assert.Equal(t, 3*2048, limits.DiskPoolMB)
+
+	// An explicit pool wins over the derivation.
+	pool := 4096
+	u.MemoryPoolMB = &pool
+	require.NoError(t, m.store.UpdateUser(u))
+	limits, err = m.Limits(u)
+	require.NoError(t, err)
+	assert.Equal(t, 4096, limits.MemoryPoolMB)
+	assert.Equal(t, 3*2048, limits.DiskPoolMB, "the other pool still derives")
+
+	// A raised per-app default raises the derived pool with it.
+	mem := 1024
+	u.MemoryPoolMB, u.MemoryMB = nil, &mem
+	require.NoError(t, m.store.UpdateUser(u))
+	limits, err = m.Limits(u)
+	require.NoError(t, err)
+	assert.Equal(t, 3*1024, limits.MemoryPoolMB)
+}

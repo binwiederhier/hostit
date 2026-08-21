@@ -2,8 +2,11 @@ package control
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
+
+	"heckel.io/hostit/store"
 )
 
 const (
@@ -25,14 +28,22 @@ type apiLimitsPatch struct {
 	CPUMilli int `json:"cpu_milli"`
 }
 
-// handleAppLimitsUpdate sets an app's per-app resource limit OVERRIDES.
-// Admin-only until per-user pools exist: an owner who can raise their own
-// caps has no cap at all. Disk applies live (the node re-caps the budget
-// qgroup); memory and CPU are recorded and take effect at the next container
-// recreation (reboot, power cycle or deploy) -- deliberately no auto-reboot,
-// since editing a number must not secretly restart a tenant's app.
+// handleAppLimitsUpdate sets an app's per-app resource limit OVERRIDES. The
+// owner (or an admin) edits RAM and disk WITHIN the owner's pool -- the pool
+// is the cap, and it binds admins too, so there is one invariant instead of a
+// bypass. CPU stays admin-set (it is a shared cap, not a pooled reservation),
+// and an app-scoped token is refused outright: it is the app's own agent, and
+// an assistant must not raise its own caps. Disk applies live (the node
+// re-caps the budget qgroup); memory and CPU are recorded and take effect at
+// the next container recreation (reboot, power cycle or deploy) --
+// deliberately no auto-reboot, since editing a number must not secretly
+// restart a tenant's app.
 func (s *Server) handleAppLimitsUpdate(w http.ResponseWriter, r *http.Request, c *caller) {
-	a, err := s.apps.App(r.PathValue("name"))
+	if c.appScope != "" {
+		writeError(w, http.StatusForbidden, errors.New("an app token cannot edit its own limits"))
+		return
+	}
+	a, err := s.ownerApp(c, r.PathValue("name"))
 	if err != nil {
 		writeAppError(w, err)
 		return
@@ -69,6 +80,14 @@ func (s *Server) handleAppLimitsUpdate(w http.ResponseWriter, r *http.Request, c
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
+	if req.CPUMilli != 0 && !c.isAdmin() {
+		writeError(w, http.StatusForbidden, errors.New("the CPU cap is set by an admin"))
+		return
+	}
+	if err := s.checkPoolFits(a, memoryMB, diskMB); err != nil {
+		writeError(w, http.StatusForbidden, err)
+		return
+	}
 	if err := s.apps.Store().UpdateAppLimits(a.Name, memoryMB, diskMB, cpuMilli); err != nil {
 		writeAppError(w, err)
 		return
@@ -88,6 +107,76 @@ func (s *Server) handleAppLimitsUpdate(w http.ResponseWriter, r *http.Request, c
 	}
 	resp := s.appResponseFor(c, a, s.firstActiveDomain(a.Name))
 	writeJSON(w, http.StatusOK, s.withState([]*apiAppResponse{resp})[0])
+}
+
+// checkPoolFits refuses new overrides that would push the SUM of the owner's
+// apps' effective limits past their pool. The new values are the app's
+// prospective overrides (0 = inherit), everything else counts at its current
+// effective value; ownerless (admin-token) apps have no pool.
+func (s *Server) checkPoolFits(a *store.App, memoryLimitMB, diskLimitMB int) error {
+	if a.OwnerID == "" {
+		return nil
+	}
+	owner, err := s.users.User(a.OwnerID)
+	if err != nil {
+		return err
+	}
+	limits, err := s.users.Limits(owner)
+	if err != nil {
+		return err
+	}
+	usedMemory, usedDisk, err := s.poolReserved(a.OwnerID, a.Name)
+	if err != nil {
+		return err
+	}
+	newMemory, newDisk := limits.MemoryMB, limits.DiskMB
+	if memoryLimitMB > 0 {
+		newMemory = memoryLimitMB
+	}
+	if diskLimitMB > 0 {
+		newDisk = diskLimitMB
+	}
+	if limits.MemoryPoolMB > 0 && usedMemory+newMemory > limits.MemoryPoolMB {
+		return fmt.Errorf("this would allocate %d MB of a %d MB memory pool (%d MB already allocated to other apps); lower another app's limit or ask an admin to raise the pool",
+			usedMemory+newMemory, limits.MemoryPoolMB, usedMemory)
+	}
+	if limits.DiskPoolMB > 0 && usedDisk+newDisk > limits.DiskPoolMB {
+		return fmt.Errorf("this would allocate %d MB of a %d MB disk pool (%d MB already allocated to other apps); lower another app's limit or ask an admin to raise the pool",
+			usedDisk+newDisk, limits.DiskPoolMB, usedDisk)
+	}
+	return nil
+}
+
+// poolReserved sums the effective memory and disk limits of an owner's apps,
+// excluding one (the app being edited counts at its NEW values, not its old).
+func (s *Server) poolReserved(ownerID, excludeApp string) (memoryMB, diskMB int, err error) {
+	owner, err := s.users.User(ownerID)
+	if err != nil {
+		return 0, 0, err
+	}
+	limits, err := s.users.Limits(owner)
+	if err != nil {
+		return 0, 0, err
+	}
+	apps, err := s.apps.Store().AppsByOwner(ownerID)
+	if err != nil {
+		return 0, 0, err
+	}
+	for _, a := range apps {
+		if a.Name == excludeApp {
+			continue
+		}
+		mem, disk := limits.MemoryMB, limits.DiskMB
+		if a.MemoryLimitMB > 0 {
+			mem = a.MemoryLimitMB
+		}
+		if a.DiskLimitMB > 0 {
+			disk = a.DiskLimitMB
+		}
+		memoryMB += mem
+		diskMB += disk
+	}
+	return memoryMB, diskMB, nil
 }
 
 // apiLimitOverrides is the admin-set per-app overrides as stored; zero means

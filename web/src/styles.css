@@ -5182,6 +5182,9 @@ body.ws-resizing iframe {
 .ov-line-top {
   align-items: flex-start;
 }
+.ov-line:last-child {
+  border-bottom: none;
+}
 .ov-urls {
   display: flex;
   flex-direction: column;

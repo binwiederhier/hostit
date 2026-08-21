@@ -144,6 +144,12 @@ func (s *Server) handleUsersUpdate(w http.ResponseWriter, r *http.Request, c *ca
 	if req.DiskMBSet {
 		u.DiskMB = req.DiskMB
 	}
+	if req.MemoryPoolMBSet {
+		u.MemoryPoolMB = req.MemoryPoolMB
+	}
+	if req.DiskPoolMBSet {
+		u.DiskPoolMB = req.DiskPoolMB
+	}
 	if err := s.users.Update(u); err != nil {
 		writeAppError(w, err)
 		return
@@ -318,16 +324,18 @@ func (s *Server) transferTarget(id, leavingID string) (*store.User, error) {
 
 func newUserResponse(u *store.User, appCount int) *apiUserResponse {
 	return &apiUserResponse{
-		ID:        u.ID,
-		Email:     u.Email,
-		Name:      u.Name,
-		Role:      u.Role,
-		Status:    u.Status,
-		AppLimit:  u.AppLimit,
-		MemoryMB:  u.MemoryMB,
-		DiskMB:    u.DiskMB,
-		AppCount:  appCount,
-		CreatedAt: u.CreatedAt,
+		ID:           u.ID,
+		Email:        u.Email,
+		Name:         u.Name,
+		Role:         u.Role,
+		Status:       u.Status,
+		AppLimit:     u.AppLimit,
+		MemoryMB:     u.MemoryMB,
+		DiskMB:       u.DiskMB,
+		MemoryPoolMB: u.MemoryPoolMB,
+		DiskPoolMB:   u.DiskPoolMB,
+		AppCount:     appCount,
+		CreatedAt:    u.CreatedAt,
 	}
 }
 

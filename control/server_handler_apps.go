@@ -336,6 +336,19 @@ func (s *Server) checkAppLimit(c *caller) error {
 		return fmt.Errorf("%w: app limit reached (%d of %d), delete an app or ask an admin to raise your limit",
 			ErrLimitReached, count, limits.AppLimit)
 	}
+	// The new app reserves its default allocation from the owner's pool.
+	usedMemory, usedDisk, err := s.poolReserved(c.user.ID, "")
+	if err != nil {
+		return err
+	}
+	if limits.MemoryPoolMB > 0 && usedMemory+limits.MemoryMB > limits.MemoryPoolMB {
+		return fmt.Errorf("%w: your memory pool is spent (%d of %d MB allocated); lower an app's limit or ask an admin to raise the pool",
+			ErrLimitReached, usedMemory, limits.MemoryPoolMB)
+	}
+	if limits.DiskPoolMB > 0 && usedDisk+limits.DiskMB > limits.DiskPoolMB {
+		return fmt.Errorf("%w: your disk pool is spent (%d of %d MB allocated); lower an app's limit or ask an admin to raise the pool",
+			ErrLimitReached, usedDisk, limits.DiskPoolMB)
+	}
 	return nil
 }
 

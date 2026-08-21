@@ -293,6 +293,14 @@ var (
 		ALTER TABLE app ADD COLUMN disk_limit_mb INTEGER NOT NULL DEFAULT 0;
 		ALTER TABLE app ADD COLUMN cpu_milli INTEGER NOT NULL DEFAULT 0;
 	`,
+		// Per-user resource POOLS: the budget an owner's apps draw from (the sum
+		// of their apps' effective limits must fit). NULL derives app_limit x the
+		// per-app default, which makes an un-pooled user exactly as capable as
+		// before pools existed.
+		`
+		ALTER TABLE user ADD COLUMN memory_pool_mb INTEGER;
+		ALTER TABLE user ADD COLUMN disk_pool_mb INTEGER;
+	`,
 	}
 )
 

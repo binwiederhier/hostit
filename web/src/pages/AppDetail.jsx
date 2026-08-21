@@ -810,6 +810,83 @@ const SshMenuIcon = () => (
 );
 
 // Rename icon next to "App name" in the Settings view.
+// ResourcesDialog edits the app's resource allocation: RAM and disk within
+// the owner's pool (the server enforces the pool; the dialog shows the
+// budget), CPU admin-set. Empty fields inherit the account defaults.
+const ResourcesDialog = ({ app, isAdmin, account, showToast, onClose, onSaved }) => {
+  useEscape(onClose);
+  const [cfg, setCfg] = useState(() => limitInputs(app.limit_overrides));
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const pool = (account && account.limits) || {};
+  const allocated = (account && account.usage) || {};
+
+  const save = async (e) => {
+    e.preventDefault();
+    if (busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      const body = limitsPatchBody(cfg, app.limit_overrides);
+      if (!isAdmin) body.cpu_milli = 0; // CPU is admin-set; 0 leaves it alone
+      await api.patch(`/api/apps/${encodeURIComponent(app.name)}/limits`, body);
+      showToast("Resources saved; RAM and CPU apply at the next reboot or deploy");
+      if (onSaved) onSaved();
+      onClose();
+    } catch (err) {
+      setError(err.message);
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true" onMouseDown={onClose}>
+      <form className="modal" onMouseDown={(e) => e.stopPropagation()} onSubmit={save}>
+        <button type="button" className="modal-x" onClick={onClose} title="Close" aria-label="Close">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
+        </button>
+        <h2>Resources for {app.name}</h2>
+        <p className="hint" style={{ marginBottom: "5px" }}>
+          Empty fields inherit your account defaults. Disk applies immediately; RAM and CPU at the
+          next reboot or deploy.
+          {pool.memory_pool_mb > 0 && (
+            <>
+              {" "}Across all your apps you may allocate <b>{pool.memory_pool_mb} MB</b> RAM
+              ({allocated.pool_memory_mb || 0} MB allocated) and <b>{pool.disk_pool_mb} MB</b> disk
+              ({allocated.pool_disk_mb || 0} MB allocated).
+            </>
+          )}
+        </p>
+        <ErrorBanner message={error} onDismiss={() => setError("")} />
+        <label className="settings-field">
+          <span>RAM (MB)</span>
+          <input type="text" className="settings-input" value={cfg.memory} onChange={(e) => setCfg({ ...cfg, memory: e.target.value })} placeholder={`${app.memory_limit_mb || 0} (inherited)`} disabled={busy} />
+        </label>
+        <label className="settings-field">
+          <span>Disk (MB)</span>
+          <input type="text" className="settings-input" value={cfg.disk} onChange={(e) => setCfg({ ...cfg, disk: e.target.value })} placeholder={`${app.disk_limit_mb || 0} (inherited)`} disabled={busy} />
+        </label>
+        {isAdmin ? (
+          <label className="settings-field">
+            <span>CPU (cores)</span>
+            <input type="text" className="settings-input" value={cfg.cpu} onChange={(e) => setCfg({ ...cfg, cpu: e.target.value })} placeholder="uncapped" disabled={busy} />
+          </label>
+        ) : (
+          app.cpu_milli > 0 && <p className="hint">CPU cap: {app.cpu_milli / 1000} cores (admin-set).</p>
+        )}
+        <div className="btn-row">
+          <button type="button" className="btn" onClick={onClose} disabled={busy}>
+            Cancel
+          </button>
+          <button type="submit" className="btn btn-primary" disabled={busy}>
+            {busy ? "Saving..." : "Save"}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+};
+
 // TransferDialog hands the app to another user. The current owner stays on as
 // a collaborator, so transferring never locks anyone out of their own work.
 const TransferDialog = ({ name, onClose, onTransferred }) => {
@@ -960,7 +1037,7 @@ const RenameDialog = ({ name, onClose, onRenamed }) => {
 // The Settings view: the app's identity + details (address, access, resources)
 // with the former Settings dialog folded in -- editable description, API token,
 // and custom domains -- all inline in one tab.
-const AppSettings = ({ app, isAdmin, showToast, onCopyToken, onRegenerateToken, hasToken, onSaved, onConfigureKeys }) => {
+const AppSettings = ({ app, isAdmin, account, showToast, onCopyToken, onRegenerateToken, hasToken, onSaved, onConfigureKeys }) => {
   const name = app.name;
   const navigate = useNavigate();
   const [desc, setDesc] = useState(app.description || "");
@@ -980,24 +1057,8 @@ const AppSettings = ({ app, isAdmin, showToast, onCopyToken, onRegenerateToken, 
   const [collabs, setCollabs] = useState(null);
   const [collabInput, setCollabInput] = useState("");
   const [showTransfer, setShowTransfer] = useState(false);
-  const [limCfg, setLimCfg] = useState(() => limitInputs(app.limit_overrides));
-  const [savingLimits, setSavingLimits] = useState(false);
+  const [showResources, setShowResources] = useState(false);
   const isOwner = !!app.is_owner;
-
-  const saveLimits = async () => {
-    if (savingLimits) return;
-    setSavingLimits(true);
-    setError("");
-    try {
-      await api.patch(`/api/apps/${encodeURIComponent(name)}/limits`, limitsPatchBody(limCfg, app.limit_overrides));
-      showToast("Limits saved; RAM and CPU apply at the next reboot or deploy");
-      if (onSaved) onSaved();
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setSavingLimits(false);
-    }
-  };
 
   const pct = (u, l) => (l ? Math.min(100, Math.round((u / l) * 100)) : 0);
   const mb = (u, l) => (l ? `${u} / ${l} MB` : `${u} MB`);
@@ -1236,7 +1297,22 @@ const AppSettings = ({ app, isAdmin, showToast, onCopyToken, onRegenerateToken, 
           )}
         </div>
         <div>
-          <h3>Resources &amp; meta</h3>
+          <h3>
+            Resources
+            {isOwner && (
+              <button
+                type="button"
+                className="copy-mini"
+                onClick={() => setShowResources(true)}
+                title="Edit resource limits"
+                aria-label="Edit resource limits"
+              >
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M11.3 2.2l2.5 2.5L6 12.5l-3.2.7.7-3.2z" />
+                </svg>
+              </button>
+            )}
+          </h3>
           <div className="ov-metric"><div className="ov-mt"><span>CPU</span><span className="mono">{app.cpu_percent || 0}%{app.cpu_milli ? ` (cap ${app.cpu_milli / 1000} cores)` : ""}</span></div><div className="ov-bar"><i style={{ width: `${app.cpu_percent || 0}%` }} /></div></div>
           <div className="ov-metric"><div className="ov-mt"><span>RAM</span><span className="mono">{mb(app.memory_mb, app.memory_limit_mb)}</span></div><div className="ov-bar"><i style={{ width: `${pct(app.memory_mb, app.memory_limit_mb)}%` }} /></div></div>
           <div className="ov-metric"><div className="ov-mt"><span>Disk</span><span className="mono">{mb(app.disk_mb, app.disk_limit_mb)}</span></div><div className="ov-bar"><i style={{ width: `${pct(app.disk_mb, app.disk_limit_mb)}%` }} /></div></div>
@@ -1302,51 +1378,6 @@ const AppSettings = ({ app, isAdmin, showToast, onCopyToken, onRegenerateToken, 
           </button>
         </div>
       </section>
-
-      {isAdmin && (
-        <section className="ov-section">
-          <h3>Resource limits</h3>
-          <p className="hint">
-            Admin-only overrides for this one app; an empty field inherits the owner&apos;s defaults
-            (CPU: uncapped). Disk applies immediately; RAM and CPU at the next reboot or deploy.
-          </p>
-          <label className="settings-field">
-            <span>RAM (MB)</span>
-            <input
-              type="text"
-              className="settings-input"
-              value={limCfg.memory}
-              onChange={(e) => setLimCfg({ ...limCfg, memory: e.target.value })}
-              placeholder={`${app.memory_limit_mb || 0} (inherited)`}
-            />
-          </label>
-          <label className="settings-field">
-            <span>Disk (MB)</span>
-            <input
-              type="text"
-              className="settings-input"
-              value={limCfg.disk}
-              onChange={(e) => setLimCfg({ ...limCfg, disk: e.target.value })}
-              placeholder={`${app.disk_limit_mb || 0} (inherited)`}
-            />
-          </label>
-          <label className="settings-field">
-            <span>CPU (cores)</span>
-            <input
-              type="text"
-              className="settings-input"
-              value={limCfg.cpu}
-              onChange={(e) => setLimCfg({ ...limCfg, cpu: e.target.value })}
-              placeholder="uncapped"
-            />
-          </label>
-          <div className="btn-row" style={{ justifyContent: "flex-start" }}>
-            <button type="button" className="btn btn-small btn-primary" onClick={saveLimits} disabled={savingLimits}>
-              {savingLimits ? "Saving..." : "Save limits"}
-            </button>
-          </div>
-        </section>
-      )}
 
       <section className="ov-section">
         <h3>Collaborators</h3>
@@ -1433,6 +1464,16 @@ const AppSettings = ({ app, isAdmin, showToast, onCopyToken, onRegenerateToken, 
       </section>
 
       {showRename && <RenameDialog name={name} onClose={() => setShowRename(false)} onRenamed={onRenamed} />}
+      {showResources && (
+        <ResourcesDialog
+          app={app}
+          isAdmin={isAdmin}
+          account={account}
+          showToast={showToast}
+          onClose={() => setShowResources(false)}
+          onSaved={onSaved}
+        />
+      )}
       {showTransfer && (
         <TransferDialog
           name={name}
@@ -2284,6 +2325,7 @@ const AppDetail = ({ account, refreshAccount }) => {
           <AppSettings
             app={app}
             isAdmin={account.role === "admin"}
+            account={account}
             showToast={showToast}
             hasToken={!!token}
             onCopyToken={copyToken}

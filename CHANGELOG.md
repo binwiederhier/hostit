@@ -9,15 +9,18 @@ default, or on-disk state is called out as **Breaking** or **Upgrade note**.
 
 ## Unreleased
 
-- **Per-app resource limits (admin-only).** `PATCH /api/apps/{name}/limits`
-  and a "Resource limits" card in the app's Settings let an admin override
-  one app's RAM, disk, and -- new -- CPU cap (cores; enforced via the
-  container's `--cpus`). An empty/cleared field inherits the owner's defaults
-  as before; CPU is uncapped unless set. Disk applies live; RAM and CPU at
-  the next reboot or deploy (no auto-restart on save). Overrides survive
-  restarts (new registry columns), outrank owner-default edits, and reach a
-  disconnected node on its next reconcile. Editing stays admin-only until
-  per-user pools exist; owners see the effective values.
+- **Per-app resource limits, bounded by per-user pools.** Owners (and
+  admins) edit one app's RAM and disk via `PATCH /api/apps/{name}/limits` or
+  the pencil on the Settings page's Resources card; empty fields inherit the
+  account defaults. Every user has a memory and disk POOL that the sum of
+  their apps' limits must fit -- unset pools derive `app limit x per-app
+  default`, so nobody's budget changed -- and the pool binds admins too: to
+  give more, raise the pool (admin Users page). Creating an app reserves its
+  default allocation, so a spent pool also refuses new apps. CPU is a new
+  admin-set cap (cores, via the container's `--cpus`); an app's own agent
+  token cannot edit limits at all. Disk applies live; RAM and CPU at the
+  next reboot or deploy (no auto-restart on save). Overrides survive
+  restarts and reach a disconnected node on its next reconcile.
 
 - **Fixed: image uploads now reach the assistant on the subscription
   backend.** The sandboxed `claude -p` turn received only prompt text, so an

@@ -28,18 +28,31 @@ const UserRow = ({ user, defaults, onPatch, onDelete }) => {
   const [appLimit, setAppLimit] = useState(numOrEmpty(user.app_limit));
   const [memoryMb, setMemoryMb] = useState(numOrEmpty(user.memory_mb));
   const [diskMb, setDiskMb] = useState(numOrEmpty(user.disk_mb));
+  const [memoryPoolMb, setMemoryPoolMb] = useState(numOrEmpty(user.memory_pool_mb));
+  const [diskPoolMb, setDiskPoolMb] = useState(numOrEmpty(user.disk_pool_mb));
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     setAppLimit(numOrEmpty(user.app_limit));
     setMemoryMb(numOrEmpty(user.memory_mb));
     setDiskMb(numOrEmpty(user.disk_mb));
+    setMemoryPoolMb(numOrEmpty(user.memory_pool_mb));
+    setDiskPoolMb(numOrEmpty(user.disk_pool_mb));
   }, [user]);
 
   const dirty =
     appLimit !== numOrEmpty(user.app_limit) ||
     memoryMb !== numOrEmpty(user.memory_mb) ||
-    diskMb !== numOrEmpty(user.disk_mb);
+    diskMb !== numOrEmpty(user.disk_mb) ||
+    memoryPoolMb !== numOrEmpty(user.memory_pool_mb) ||
+    diskPoolMb !== numOrEmpty(user.disk_pool_mb);
+
+  // The derived pool an empty field falls back to: app_limit x per-app default.
+  const derivedPool = (perApp, perAppDefault) => {
+    const apps = Number(appLimit || user.app_limit || defaults.default_app_limit || 0);
+    const each = Number(perApp || perAppDefault || 0);
+    return apps * each;
+  };
 
   const run = async (body) => {
     setBusy(true);
@@ -55,6 +68,8 @@ const UserRow = ({ user, defaults, onPatch, onDelete }) => {
       app_limit: numOrNull(appLimit),
       memory_mb: numOrNull(memoryMb),
       disk_mb: numOrNull(diskMb),
+      memory_pool_mb: numOrNull(memoryPoolMb),
+      disk_pool_mb: numOrNull(diskPoolMb),
     });
 
   return (
@@ -120,6 +135,24 @@ const UserRow = ({ user, defaults, onPatch, onDelete }) => {
             placeholder={String(defaults.default_disk_mb ?? "")}
             aria-label={`Disk limit (MB) for ${user.email}`}
             title="Disk in MB (empty = global default)"
+          />
+          <input
+            type="number"
+            min="0"
+            value={memoryPoolMb}
+            onChange={(e) => setMemoryPoolMb(e.target.value)}
+            placeholder={String(derivedPool(memoryMb, defaults.default_memory_mb))}
+            aria-label={`Memory pool (MB) for ${user.email}`}
+            title="Memory POOL in MB, the budget all their apps' limits share (empty = apps x per-app default)"
+          />
+          <input
+            type="number"
+            min="0"
+            value={diskPoolMb}
+            onChange={(e) => setDiskPoolMb(e.target.value)}
+            placeholder={String(derivedPool(diskMb, defaults.default_disk_mb))}
+            aria-label={`Disk pool (MB) for ${user.email}`}
+            title="Disk POOL in MB, the budget all their apps' limits share (empty = apps x per-app default)"
           />
           {dirty && (
             <button

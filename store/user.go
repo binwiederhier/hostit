@@ -8,23 +8,23 @@ import (
 
 const (
 	insertUserQuery = `
-		INSERT INTO user (id, email, name, role, status, app_limit, memory_mb, disk_mb, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO user (id, email, name, role, status, app_limit, memory_mb, disk_mb, memory_pool_mb, disk_pool_mb, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
 	selectUserQuery = `
-		SELECT id, email, name, role, status, app_limit, memory_mb, disk_mb, created_at
+		SELECT id, email, name, role, status, app_limit, memory_mb, disk_mb, memory_pool_mb, disk_pool_mb, created_at
 		FROM user WHERE id = ?
 	`
 	selectUserByEmailQuery = `
-		SELECT id, email, name, role, status, app_limit, memory_mb, disk_mb, created_at
+		SELECT id, email, name, role, status, app_limit, memory_mb, disk_mb, memory_pool_mb, disk_pool_mb, created_at
 		FROM user WHERE email = ?
 	`
 	selectUsersQuery = `
-		SELECT id, email, name, role, status, app_limit, memory_mb, disk_mb, created_at
+		SELECT id, email, name, role, status, app_limit, memory_mb, disk_mb, memory_pool_mb, disk_pool_mb, created_at
 		FROM user ORDER BY email
 	`
 	updateUserQuery = `
-		UPDATE user SET name = ?, role = ?, status = ?, app_limit = ?, memory_mb = ?, disk_mb = ?
+		UPDATE user SET name = ?, role = ?, status = ?, app_limit = ?, memory_mb = ?, disk_mb = ?, memory_pool_mb = ?, disk_pool_mb = ?
 		WHERE id = ?
 	`
 	deleteUserQuery = `DELETE FROM user WHERE id = ?`
@@ -51,7 +51,7 @@ func (s *Store) AddUser(u *User) error {
 		u.CreatedAt = time.Now()
 	}
 	_, err := s.db.Exec(insertUserQuery, u.ID, u.Email, u.Name, u.Role, u.Status,
-		nullableInt(u.AppLimit), nullableInt(u.MemoryMB), nullableInt(u.DiskMB), u.CreatedAt.Unix())
+		nullableInt(u.AppLimit), nullableInt(u.MemoryMB), nullableInt(u.DiskMB), nullableInt(u.MemoryPoolMB), nullableInt(u.DiskPoolMB), u.CreatedAt.Unix())
 	return err
 }
 
@@ -86,7 +86,7 @@ func (s *Store) Users() ([]*User, error) {
 // UpdateUser persists name, role, status and limit overrides
 func (s *Store) UpdateUser(u *User) error {
 	result, err := s.db.Exec(updateUserQuery, u.Name, u.Role, u.Status,
-		nullableInt(u.AppLimit), nullableInt(u.MemoryMB), nullableInt(u.DiskMB), u.ID)
+		nullableInt(u.AppLimit), nullableInt(u.MemoryMB), nullableInt(u.DiskMB), nullableInt(u.MemoryPoolMB), nullableInt(u.DiskPoolMB), u.ID)
 	if err != nil {
 		return err
 	}
@@ -153,15 +153,17 @@ func scanUserRow(rows *sql.Rows) (*User, error) {
 
 func scanUserValues(scan func(dest ...any) error) (*User, error) {
 	var u User
-	var appLimit, memoryMB, diskMB sql.NullInt64
+	var appLimit, memoryMB, diskMB, memoryPoolMB, diskPoolMB sql.NullInt64
 	var createdAt int64
-	err := scan(&u.ID, &u.Email, &u.Name, &u.Role, &u.Status, &appLimit, &memoryMB, &diskMB, &createdAt)
+	err := scan(&u.ID, &u.Email, &u.Name, &u.Role, &u.Status, &appLimit, &memoryMB, &diskMB, &memoryPoolMB, &diskPoolMB, &createdAt)
 	if err != nil {
 		return nil, err
 	}
 	u.AppLimit = intFromNull(appLimit)
 	u.MemoryMB = intFromNull(memoryMB)
 	u.DiskMB = intFromNull(diskMB)
+	u.MemoryPoolMB = intFromNull(memoryPoolMB)
+	u.DiskPoolMB = intFromNull(diskPoolMB)
 	u.CreatedAt = time.Unix(createdAt, 0)
 	return &u, nil
 }
