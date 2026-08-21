@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { api, isNetworkError } from "../api";
 import { useReconnect } from "../hooks";
-import { ErrorBanner, Loading, Wordmark } from "../components";
+import { ErrorBanner, Loading, Wordmark, pairMB, UsagePair } from "../components";
 import { previewSrc, previewShotSrc, previewScale, DESKTOP_WIDTH, DESKTOP_HEIGHT } from "../preview";
 
 // Same rule the server enforces (app.AppNamePattern)
@@ -108,7 +108,7 @@ const EmptyState = (props) => (
 );
 
 const pctOf = (used, limit) => (limit ? Math.min(100, Math.round((used / limit) * 100)) : 0);
-const mbLabel = (used, limit) => (limit ? `${used} / ${limit} MB` : `${used} MB`);
+
 
 // A stable, distinct avatar colour per app, derived from its id (not its name) so
 // it never changes on a rename. Hash the id to a hue; a fixed saturation and
@@ -223,8 +223,8 @@ const AppCard = ({ app, onToast }) => {
       <div className="appcard-desc">{app.description || <span className="appcard-nodesc">No description yet</span>}</div>
       <div className="appcard-bars">
         <div className="appcard-bar"><span className="k">CPU</span><span className="bar"><i style={{ width: `${running ? app.cpu_percent || 0 : 0}%` }} /></span><span className="v">{running ? `${app.cpu_percent || 0}%` : "--"}</span></div>
-        <div className="appcard-bar"><span className="k">RAM</span><span className="bar"><i style={{ width: `${running ? pctOf(app.memory_mb, app.memory_limit_mb) : 0}%` }} /></span><span className="v">{running ? mbLabel(app.memory_mb, app.memory_limit_mb) : "--"}</span></div>
-        <div className="appcard-bar"><span className="k">Disk</span><span className="bar"><i style={{ width: `${pctOf(app.disk_mb, app.disk_limit_mb)}%` }} /></span><span className="v">{mbLabel(app.disk_mb, app.disk_limit_mb)}</span></div>
+        <div className="appcard-bar"><span className="k">RAM</span><span className="bar"><i style={{ width: `${running ? pctOf(app.memory_mb, app.memory_limit_mb) : 0}%` }} /></span><span className="v">{running ? pairMB(app.memory_mb, app.memory_limit_mb) : "--"}</span></div>
+        <div className="appcard-bar"><span className="k">Disk</span><span className="bar"><i style={{ width: `${pctOf(app.disk_mb, app.disk_limit_mb)}%` }} /></span><span className="v">{pairMB(app.disk_mb, app.disk_limit_mb)}</span></div>
       </div>
       <div className="appcard-foot">
         <a className="btn btn-small btn-primary" href={publicUrl} target="_blank" rel="noreferrer">Open app</a>
@@ -334,8 +334,8 @@ const AppRow = ({ app }) => {
       </td>
       <td className="applist-desc">{app.description || <span className="appcard-nodesc">--</span>}</td>
       <td className="applist-num">{running ? `${app.cpu_percent || 0}%` : "--"}</td>
-      <td className="applist-num">{running ? mbLabel(app.memory_mb, app.memory_limit_mb) : "--"}</td>
-      <td className="applist-num">{mbLabel(app.disk_mb, app.disk_limit_mb)}</td>
+      <td className="applist-num">{running ? <UsagePair kind="ram" used={app.memory_mb} total={app.memory_limit_mb} /> : "--"}</td>
+      <td className="applist-num"><UsagePair kind="disk" used={app.disk_mb} total={app.disk_limit_mb} /></td>
       {/* Uptime, not "last deploy": a deploy restarts the app so the two track
           each other closely, but the API has no deploy timestamp and a column
           claiming one would be wrong after a plain reboot. */}

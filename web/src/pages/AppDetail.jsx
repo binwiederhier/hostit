@@ -4,7 +4,7 @@ import { api, ApiError, isNetworkError } from "../api";
 import { viewFromSlug, VIEW_TO_SLUG } from "../views";
 import { limitInputs, limitsPatchBody } from "../limits";
 import { useReconnect } from "../hooks";
-import { CopyButton, ErrorBanner, Loading, Snippet, StatusDot } from "../components";
+import { CopyButton, ErrorBanner, Loading, Snippet, StatusDot, pairMB } from "../components";
 import { useSetAppHeader } from "../appHeader";
 
 // xterm is heavy and only needed when a terminal is actually opened, so it is
@@ -236,8 +236,8 @@ const UsageGrid = ({ app }) => {
   return (
     <div className="ws-resources">
       <Stat label="CPU" pct={cpuPct} value={`${cpuPct}%`} detail={`CPU ${cpuPct}%`} />
-      <Stat label="RAM" pct={memPct} value={`${memPct}%`} detail={`RAM ${mb(app.memory_mb, app.memory_limit_mb)}`} />
-      <Stat label="Disk" pct={diskPct} value={`${diskPct}%`} detail={`Disk ${mb(app.disk_mb, app.disk_limit_mb)}`} />
+      <Stat label="RAM" pct={memPct} value={pairMB(app.memory_mb, app.memory_limit_mb)} detail={`RAM ${memPct}% of the app's limit`} />
+      <Stat label="Disk" pct={diskPct} value={pairMB(app.disk_mb, app.disk_limit_mb)} detail={`Disk ${diskPct}% of the app's limit`} />
     </div>
   );
 };
@@ -1378,8 +1378,8 @@ const AppSettings = ({ app, isAdmin, account, showToast, onCopyToken, onRegenera
             )}
           </h3>
           <div className="ov-metric"><div className="ov-mt"><span>CPU</span><span className="mono">{app.cpu_percent || 0}%{app.cpu_milli ? ` (cap ${app.cpu_milli / 1000} cores)` : ""}</span></div><div className="ov-bar"><i style={{ width: `${app.cpu_percent || 0}%` }} /></div></div>
-          <div className="ov-metric"><div className="ov-mt"><span>RAM</span><span className="mono">{mb(app.memory_mb, app.memory_limit_mb)}</span></div><div className="ov-bar"><i style={{ width: `${pct(app.memory_mb, app.memory_limit_mb)}%` }} /></div></div>
-          <div className="ov-metric"><div className="ov-mt"><span>Disk</span><span className="mono">{mb(app.disk_mb, app.disk_limit_mb)}</span></div><div className="ov-bar"><i style={{ width: `${pct(app.disk_mb, app.disk_limit_mb)}%` }} /></div></div>
+          <div className="ov-metric"><div className="ov-mt"><span>RAM</span><span className="mono">{pairMB(app.memory_mb, app.memory_limit_mb)}</span></div><div className="ov-bar"><i style={{ width: `${pct(app.memory_mb, app.memory_limit_mb)}%` }} /></div></div>
+          <div className="ov-metric"><div className="ov-mt"><span>Disk</span><span className="mono">{pairMB(app.disk_mb, app.disk_limit_mb)}</span></div><div className="ov-bar"><i style={{ width: `${pct(app.disk_mb, app.disk_limit_mb)}%` }} /></div></div>
         </div>
       </div>
 

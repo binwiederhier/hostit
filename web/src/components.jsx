@@ -67,14 +67,16 @@ export const formatUsage = (used, limit) => (limit ? `${used} of ${limit} MB` : 
 
 // UsagePair is the compact icon + "used/total" reading the dashboard's usage
 // strip established ("5.1/20 GB"); one shared unit per pair, GB from 1 GB up.
+export const pairMB = (u, t) => {
+  if ((t || u) >= 1024) {
+    const gb = (v) => (v / 1024).toFixed(v % 1024 ? 1 : 0);
+    return t ? `${gb(u)}/${gb(t)} GB` : `${gb(u)} GB`;
+  }
+  return t ? `${u}/${t} MB` : `${u} MB`;
+};
+
 export const UsagePair = ({ kind, used, total }) => {
-  const pair = (u, t) => {
-    if ((t || u) >= 1024) {
-      const gb = (v) => (v / 1024).toFixed(v % 1024 ? 1 : 0);
-      return t ? `${gb(u)}/${gb(t)} GB` : `${gb(u)} GB`;
-    }
-    return t ? `${u}/${t} MB` : `${u} MB`;
-  };
+  const pair = pairMB;
   return (
     <span className="usage-item" title={kind === "ram" ? "RAM used of the app's limit" : "Disk used of the app's limit"}>
       {kind === "ram" ? (
