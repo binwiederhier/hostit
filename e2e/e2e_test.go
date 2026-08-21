@@ -54,6 +54,53 @@ type env struct {
 	t     *testing.T
 }
 
+// TestMain sweeps leftovers of crashed or timed-out earlier runs before the
+// suite starts: stale e2e apps count against the app limit, and the next run
+// then fails its create with a 403 that looks like an auth bug. Only apps old
+// enough that no live run can still own them are deleted -- the playwright
+// suite may be running against the same instance right now.
+func TestMain(m *testing.M) {
+	sweepStaleApps(os.Getenv("HOSTIT_HOST"), os.Getenv("HOSTIT_TOKEN"))
+	os.Exit(m.Run())
+}
+
+func sweepStaleApps(host, token string) {
+	if host == "" || token == "" {
+		return // the suite itself refuses to run without these and says why
+	}
+	req, err := http.NewRequest("GET", host+"/api/apps", nil)
+	if err != nil {
+		return
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return
+	}
+	defer resp.Body.Close()
+	var apps []struct {
+		Name      string    `json:"name"`
+		CreatedAt time.Time `json:"created_at"`
+	}
+	if json.NewDecoder(resp.Body).Decode(&apps) != nil {
+		return
+	}
+	for _, a := range apps {
+		if !strings.HasPrefix(a.Name, "e2e-") || time.Since(a.CreatedAt) < time.Hour {
+			continue
+		}
+		del, err := http.NewRequest("DELETE", host+"/api/apps/"+a.Name, nil)
+		if err != nil {
+			continue
+		}
+		del.Header.Set("Authorization", "Bearer "+token)
+		if resp, err := http.DefaultClient.Do(del); err == nil {
+			_ = resp.Body.Close()
+			fmt.Printf("swept stale e2e app %s (created %s)\n", a.Name, a.CreatedAt.Format(time.RFC3339))
+		}
+	}
+}
+
 func newEnv(t *testing.T) *env {
 	t.Helper()
 	host, token := os.Getenv("HOSTIT_HOST"), os.Getenv("HOSTIT_TOKEN")
@@ -549,7 +596,9 @@ func TestRenameKeepsAppAlive(t *testing.T) {
 
 // nameCounter de-duplicates names minted in the same instant: the timestamp
 // component cycles every 100us, and parallel tests mint names simultaneously.
-var nameCounter atomic.Int64
+var (
+	nameCounter atomic.Int64
+)
 
 func uniqueName(prefix string) string {
 	return fmt.Sprintf("%s-%d%02d", prefix, time.Now().UnixNano()%100000, nameCounter.Add(1)%100)

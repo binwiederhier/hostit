@@ -31,11 +31,15 @@ setup("breakglass authenticate", async ({ context }) => {
 
   // Sweep leftovers of crashed or timed-out runs: stale e2e apps count against
   // the test user's app limit, and the NEXT run then fails its create with a
-  // 403 that looks like an auth bug. The name prefix is unambiguous.
+  // 403 that looks like an auth bug. Our own prefix is swept unconditionally;
+  // any other e2e-* app (the Go suite's) only when it is old enough that no
+  // live run can still own it -- both suites may target the same instance.
   const apps = await context.request.get("/api/apps");
   if (apps.ok()) {
+    const staleBefore = Date.now() - 60 * 60 * 1000;
     for (const app of await apps.json()) {
-      if (/^e2e-ui-/.test(app.name)) {
+      const stale = /^e2e-/.test(app.name) && new Date(app.created_at).getTime() < staleBefore;
+      if (/^e2e-ui-/.test(app.name) || stale) {
         await context.request.delete(`/api/apps/${app.name}`);
       }
     }
