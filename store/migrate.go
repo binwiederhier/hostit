@@ -273,6 +273,16 @@ var (
 		`
 		ALTER TABLE app ADD COLUMN archived INTEGER NOT NULL DEFAULT 0;
 	`,
+		// Slot 23 is BURNED: the abandoned connections PoC branch shipped its own
+		// entry here (CREATE TABLE connection...) and ran on stage, so databases
+		// that ever ran that branch already record version 23. This no-op keeps
+		// every history aligned -- a clean database runs nothing real, a
+		// PoC-touched one skips exactly the entry it already counted. If
+		// connections ever returns, its migration must be re-authored as a NEW
+		// entry at the tail (and tolerate its leftover tables).
+		`
+		SELECT 1;
+	`,
 		// Per-app resource limit OVERRIDES, admin-set via PATCH .../limits. 0 means
 		// no override: memory/disk fall back to the owner's defaults and CPU stays
 		// uncapped -- which is also why every existing row starts at 0, keeping
