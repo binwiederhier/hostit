@@ -67,6 +67,14 @@ export const formatUsage = (used, limit) => (limit ? `${used} of ${limit} MB` : 
 
 // UsagePair is the compact icon + "used/total" reading the dashboard's usage
 // strip established ("5.1/20 GB"); one shared unit per pair, GB from 1 GB up.
+// usageLevel maps used/total to the shared severity ladder ("" / warn / crit);
+// 75 and 90 percent, the same knees the app page's inline stats use.
+export const usageLevel = (used, total) => {
+  if (!total) return "";
+  const pct = (used / total) * 100;
+  return pct >= 90 ? "crit" : pct >= 75 ? "warn" : "";
+};
+
 export const pairMB = (u, t) => {
   if ((t || u) >= 1024) {
     const gb = (v) => (v / 1024).toFixed(v % 1024 ? 1 : 0);
@@ -77,8 +85,9 @@ export const pairMB = (u, t) => {
 
 export const UsagePair = ({ kind, used, total }) => {
   const pair = pairMB;
+  const level = usageLevel(used, total);
   return (
-    <span className="usage-item" title={kind === "ram" ? "RAM used of the app's limit" : "Disk used of the app's limit"}>
+    <span className={"usage-item" + (level ? " usage-" + level : "")} title={kind === "ram" ? "RAM used of the app's limit" : "Disk used of the app's limit"}>
       {kind === "ram" ? (
         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <rect x="2" y="4" width="12" height="8" rx="1" />

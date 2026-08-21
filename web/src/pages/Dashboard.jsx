@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { api, isNetworkError } from "../api";
 import { useReconnect } from "../hooks";
-import { ErrorBanner, Loading, Wordmark, pairMB, UsagePair } from "../components";
+import { ErrorBanner, Loading, Wordmark, pairMB, UsagePair, usageLevel } from "../components";
 import { previewSrc, previewShotSrc, previewScale, DESKTOP_WIDTH, DESKTOP_HEIGHT } from "../preview";
 
 // Same rule the server enforces (app.AppNamePattern)
@@ -223,8 +223,8 @@ const AppCard = ({ app, onToast }) => {
       <div className="appcard-desc">{app.description || <span className="appcard-nodesc">No description yet</span>}</div>
       <div className="appcard-bars">
         <div className="appcard-bar"><span className="k">CPU</span><span className="bar"><i style={{ width: `${running ? app.cpu_percent || 0 : 0}%` }} /></span><span className="v">{running ? `${app.cpu_percent || 0}%` : "--"}</span></div>
-        <div className="appcard-bar"><span className="k">RAM</span><span className="bar"><i style={{ width: `${running ? pctOf(app.memory_mb, app.memory_limit_mb) : 0}%` }} /></span><span className="v">{running ? pairMB(app.memory_mb, app.memory_limit_mb) : "--"}</span></div>
-        <div className="appcard-bar"><span className="k">Disk</span><span className="bar"><i style={{ width: `${pctOf(app.disk_mb, app.disk_limit_mb)}%` }} /></span><span className="v">{pairMB(app.disk_mb, app.disk_limit_mb)}</span></div>
+        <div className="appcard-bar"><span className="k">RAM</span><span className="bar"><i className={running ? usageLevel(app.memory_mb, app.memory_limit_mb) : ""} style={{ width: `${running ? pctOf(app.memory_mb, app.memory_limit_mb) : 0}%` }} /></span><span className={"v " + (running ? "usage-" + usageLevel(app.memory_mb, app.memory_limit_mb) : "")}>{running ? pairMB(app.memory_mb, app.memory_limit_mb) : "--"}</span></div>
+        <div className="appcard-bar"><span className="k">Disk</span><span className="bar"><i className={usageLevel(app.disk_mb, app.disk_limit_mb)} style={{ width: `${pctOf(app.disk_mb, app.disk_limit_mb)}%` }} /></span><span className={"v usage-" + usageLevel(app.disk_mb, app.disk_limit_mb)}>{pairMB(app.disk_mb, app.disk_limit_mb)}</span></div>
       </div>
       <div className="appcard-foot">
         <a className="btn btn-small btn-primary" href={publicUrl} target="_blank" rel="noreferrer">Open app</a>
@@ -527,14 +527,14 @@ const Dashboard = ({ account, refreshAccount }) => {
             </span>
             {account.limits.memory_pool_mb > 0 && (
               <>
-                <span className="usage-item" title="RAM allocated of your pool">
+                <span className={"usage-item usage-" + usageLevel(account.usage.pool_memory_mb || 0, account.limits.memory_pool_mb)} title="RAM allocated of your pool">
                   <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                     <rect x="2" y="4" width="12" height="8" rx="1" />
                     <path d="M4.5 12v2M8 12v2M11.5 12v2M4.5 2v2M8 2v2M11.5 2v2" />
                   </svg>
                   {fmtPair(account.usage.pool_memory_mb || 0, account.limits.memory_pool_mb)}
                 </span>
-                <span className="usage-item" title="Disk allocated of your pool">
+                <span className={"usage-item usage-" + usageLevel(account.usage.pool_disk_mb || 0, account.limits.disk_pool_mb)} title="Disk allocated of your pool">
                   <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                     <ellipse cx="8" cy="4" rx="6" ry="2.2" />
                     <path d="M2 4v8c0 1.2 2.7 2.2 6 2.2s6-1 6-2.2V4" />

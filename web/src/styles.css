@@ -5499,3 +5499,22 @@ input[type="number"]::-webkit-inner-spin-button {
   -webkit-appearance: none;
   margin: 0;
 }
+
+/* Usage severity: the same 75/90 knees as the app page's inline stats. An
+   empty class ("usage-") means fine and inherits its context's colour. */
+.usage-warn,
+.usage-warn svg {
+  color: var(--status-degraded);
+}
+.usage-crit,
+.usage-crit svg {
+  color: var(--danger);
+}
+.appcard-bar .bar > i.warn,
+.ov-bar > i.warn {
+  background: var(--status-degraded);
+}
+.appcard-bar .bar > i.crit,
+.ov-bar > i.crit {
+  background: var(--danger);
+}

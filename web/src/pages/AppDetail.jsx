@@ -4,7 +4,7 @@ import { api, ApiError, isNetworkError } from "../api";
 import { viewFromSlug, VIEW_TO_SLUG } from "../views";
 import { limitInputs, limitsPatchBody } from "../limits";
 import { useReconnect } from "../hooks";
-import { CopyButton, ErrorBanner, Loading, Snippet, StatusDot, pairMB } from "../components";
+import { CopyButton, ErrorBanner, Loading, Snippet, StatusDot, pairMB, usageLevel } from "../components";
 import { useSetAppHeader } from "../appHeader";
 
 // xterm is heavy and only needed when a terminal is actually opened, so it is
@@ -1378,8 +1378,8 @@ const AppSettings = ({ app, isAdmin, account, showToast, onCopyToken, onRegenera
             )}
           </h3>
           <div className="ov-metric"><div className="ov-mt"><span>CPU</span><span className="mono">{app.cpu_percent || 0}%{app.cpu_milli ? ` (cap ${app.cpu_milli / 1000} cores)` : ""}</span></div><div className="ov-bar"><i style={{ width: `${app.cpu_percent || 0}%` }} /></div></div>
-          <div className="ov-metric"><div className="ov-mt"><span>RAM</span><span className="mono">{pairMB(app.memory_mb, app.memory_limit_mb)}</span></div><div className="ov-bar"><i style={{ width: `${pct(app.memory_mb, app.memory_limit_mb)}%` }} /></div></div>
-          <div className="ov-metric"><div className="ov-mt"><span>Disk</span><span className="mono">{pairMB(app.disk_mb, app.disk_limit_mb)}</span></div><div className="ov-bar"><i style={{ width: `${pct(app.disk_mb, app.disk_limit_mb)}%` }} /></div></div>
+          <div className="ov-metric"><div className="ov-mt"><span>RAM</span><span className={"mono usage-" + usageLevel(app.memory_mb, app.memory_limit_mb)}>{pairMB(app.memory_mb, app.memory_limit_mb)}</span></div><div className="ov-bar"><i className={usageLevel(app.memory_mb, app.memory_limit_mb)} style={{ width: `${pct(app.memory_mb, app.memory_limit_mb)}%` }} /></div></div>
+          <div className="ov-metric"><div className="ov-mt"><span>Disk</span><span className={"mono usage-" + usageLevel(app.disk_mb, app.disk_limit_mb)}>{pairMB(app.disk_mb, app.disk_limit_mb)}</span></div><div className="ov-bar"><i className={usageLevel(app.disk_mb, app.disk_limit_mb)} style={{ width: `${pct(app.disk_mb, app.disk_limit_mb)}%` }} /></div></div>
         </div>
       </div>
 
