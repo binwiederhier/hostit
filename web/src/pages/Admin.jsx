@@ -6,8 +6,7 @@ import {
   formatDate,
   Loading,
   StatusDot,
-  UsagePair,
-} from "../components";
+  UsagePair, pairMB } from "../components";
 
 // Empty input means "use the global default"; the API expects null for that.
 const numOrNull = (v) => (v === "" ? null : Number(v));
@@ -185,10 +184,10 @@ const UserRow = ({ user, defaults, onPatch, onDelete }) => {
         {user.app_limit ?? <span className="cell-muted">{effectiveAppLimit}</span>}
       </td>
       <td title="The RAM budget all their apps' limits share">
-        {user.memory_pool_mb ?? <span className="cell-muted">{derivedPool(user.memory_mb, defaults.default_memory_mb)}</span>}
+        {user.memory_pool_mb != null ? pairMB(user.memory_pool_mb, 0) : <span className="cell-muted">{pairMB(derivedPool(user.memory_mb, defaults.default_memory_mb), 0)}</span>}
       </td>
       <td title="The disk budget all their apps' limits share">
-        {user.disk_pool_mb ?? <span className="cell-muted">{derivedPool(user.disk_mb, defaults.default_disk_mb)}</span>}
+        {user.disk_pool_mb != null ? pairMB(user.disk_pool_mb, 0) : <span className="cell-muted">{pairMB(derivedPool(user.disk_mb, defaults.default_disk_mb), 0)}</span>}
       </td>
       <td className="cell-actions">
         <div className="btn-row">
@@ -960,8 +959,8 @@ const AdminInner = () => {
                   <th>Apps</th>
                   <th>Agent access</th>
                   <th>App limit</th>
-                  <th>RAM pool (MB)</th>
-                  <th>Disk pool (MB)</th>
+                  <th>Max RAM</th>
+                  <th>Max Disk</th>
                   <th aria-label="Actions" />
                 </tr>
               </thead>

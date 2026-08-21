@@ -814,7 +814,7 @@ const SshMenuIcon = () => (
 // dropdown, in the same visual rhythm as the Resources card's metric rows.
 // The empty value is "inherit"; a current override that is not a preset is
 // kept as its own option rather than silently snapping to one.
-const ResourceRow = ({ label, value, onChange, presets, unit, inherit, disabled }) => {
+const ResourceRow = ({ label, value, onChange, presets, unit, inherit, disabled, max = Infinity }) => {
   const values = presets.map(String);
   const options = value !== "" && !values.includes(String(value)) ? [String(value), ...values] : values;
   const fmt = (v) => (unit === "MB" && Number(v) >= 1024 ? `${Number(v) / 1024} GB` : `${v} ${unit}`);
@@ -824,8 +824,10 @@ const ResourceRow = ({ label, value, onChange, presets, unit, inherit, disabled 
       <select className="settings-input res-select" value={String(value)} onChange={(e) => onChange(e.target.value)} disabled={disabled} aria-label={label}>
         <option value="">{inherit}</option>
         {options.map((v) => (
-          <option key={v} value={v}>
-            {fmt(v)}
+          // Anything past the pool's headroom is visible but not pickable: the
+          // menu teaches the budget instead of letting the server 403 it.
+          <option key={v} value={v} disabled={Number(v) > max}>
+            {fmt(v)}{Number(v) > max ? " (over your pool)" : ""}
           </option>
         ))}
       </select>
@@ -862,6 +864,14 @@ const ResourcesDialog = ({ app, isAdmin, account, showToast, onClose, onSaved })
   const [busy, setBusy] = useState(false);
   const pool = (account && account.limits) || {};
   const allocated = (account && account.usage) || {};
+  // What THIS app may grow to: the pool minus everyone else's allocation.
+  // Only meaningful when the viewer's own pool is the one that binds (an
+  // admin may be editing someone else's app, whose owner's pool we don't
+  // have here -- the server still enforces it).
+  const headroom = (poolMB, allocatedMB, currentMB) =>
+    !isAdmin && poolMB > 0 ? poolMB - (allocatedMB || 0) + (currentMB || 0) : Infinity;
+  const maxMemory = headroom(pool.memory_pool_mb, allocated.pool_memory_mb, app.memory_limit_mb);
+  const maxDisk = headroom(pool.disk_pool_mb, allocated.pool_disk_mb, app.disk_limit_mb);
 
   const save = async (e) => {
     e.preventDefault();
@@ -893,9 +903,10 @@ const ResourcesDialog = ({ app, isAdmin, account, showToast, onClose, onSaved })
           next reboot or deploy.
           {pool.memory_pool_mb > 0 && (
             <>
-              {" "}Across all your apps you may allocate <b>{pool.memory_pool_mb} MB</b> RAM
-              ({allocated.pool_memory_mb || 0} MB allocated) and <b>{pool.disk_pool_mb} MB</b> disk
-              ({allocated.pool_disk_mb || 0} MB allocated).
+              {" "}Across all your apps you may allocate <b>{pairMB(pool.memory_pool_mb, 0)}</b> RAM
+              and <b>{pairMB(pool.disk_pool_mb, 0)}</b> disk. You have{" "}
+              <b>{pairMB(Math.max(0, pool.memory_pool_mb - (allocated.pool_memory_mb || 0)), 0)}</b> RAM and{" "}
+              <b>{pairMB(Math.max(0, pool.disk_pool_mb - (allocated.pool_disk_mb || 0)), 0)}</b> disk available.
             </>
           )}
         </p>
@@ -909,6 +920,7 @@ const ResourcesDialog = ({ app, isAdmin, account, showToast, onClose, onSaved })
             unit="MB"
             inherit={`Default (${pool.memory_mb || 0} MB)`}
             disabled={busy}
+            max={maxMemory}
           />
           <ResourceRow
             label="Disk"
@@ -918,6 +930,7 @@ const ResourcesDialog = ({ app, isAdmin, account, showToast, onClose, onSaved })
             unit="MB"
             inherit={`Default (${pool.disk_mb || 0} MB)`}
             disabled={busy}
+            max={maxDisk}
           />
           {isAdmin ? (
             <ResourceRow
