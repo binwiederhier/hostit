@@ -418,7 +418,6 @@ const ActionsMenu = ({ running, appRunning, busy, onAction, onDelete, canDelete 
             disabled={!canDelete}
             title={canDelete ? undefined : "Only the owner can change resources"}
           />
-          <div className="menu-sep" />
           <MenuItem
             icon={<ArchiveIcon />}
             label={archived ? "Unarchive app" : "Archive app"}

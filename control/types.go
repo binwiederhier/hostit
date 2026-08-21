@@ -317,18 +317,28 @@ type apiAgentInfoResponse struct {
 
 // apiAgentAppResponse is GET /api/apps/{app}/info
 type apiAgentAppResponse struct {
-	Name      string     `json:"name"`
-	URL       string     `json:"url"`
-	Running   bool       `json:"running"`
-	DiskMB    int        `json:"disk_mb"`
-	Readme    string     `json:"readme"`
-	HostitYml string     `json:"hostit_yml"`
-	Files     *Listing   `json:"files"`
-	SSH       apiSSHInfo `json:"ssh"`
-	Hint      string     `json:"hint"`
+	Name    string `json:"name"`
+	URL     string `json:"url"`
+	Running bool   `json:"running"`
+	DiskMB  int    `json:"disk_mb"`
+	// Limits is the app's enforced resource budget, so an agent can size its
+	// work instead of discovering the caps as an OOM kill or EDQUOT.
+	Limits    apiAgentLimits `json:"limits"`
+	Readme    string         `json:"readme"`
+	HostitYml string         `json:"hostit_yml"`
+	Files     *Listing       `json:"files"`
+	SSH       apiSSHInfo     `json:"ssh"`
+	Hint      string         `json:"hint"`
 	// Guide is the full instruction set, inlined so an agent pointed at this one
 	// URL needs nothing else
 	Guide *apiAgentInfoResponse `json:"guide"`
+}
+
+// apiAgentLimits is the enforced budget shown in the per-app agent info.
+type apiAgentLimits struct {
+	MemoryMB int `json:"memory_mb"`
+	DiskMB   int `json:"disk_mb"`
+	CPUMilli int `json:"cpu_milli"` // 0 = uncapped
 }
 
 // apiAgentAssistantResponse is GET /api/apps/{app}/assistant/transcript: the

@@ -98,11 +98,13 @@ func (s *Server) handleAgentAppInfo(w http.ResponseWriter, _ *http.Request, c *c
 	}
 	hostitYml, _ := s.node.ReadFile(a.Name, "hostit.yml") // Absent is fine; the agent writes one
 	status, _ := s.node.Status(a.Name)
+	memoryMB, diskMB, cpuMilli := s.appLimits(a.Name)
 	writeJSON(w, http.StatusOK, &apiAgentAppResponse{
 		Name:      a.Name,
 		URL:       s.apps.URL(a),
 		Running:   strings.Contains(status, "active (running)"),
 		DiskMB:    a.DiskMB,
+		Limits:    apiAgentLimits{MemoryMB: memoryMB, DiskMB: diskMB, CPUMilli: cpuMilli},
 		Readme:    readme,
 		HostitYml: string(hostitYml),
 		Files:     files,
@@ -383,7 +385,8 @@ func (s *Server) agentGuide(appName, description string) *apiAgentInfoResponse {
 			"Apps also accept SSH: the owner's SSH keys work, and you can scp/rsync into the app's home directory.",
 			"Changing env: recreates the container (which ends any SSH session in it, but keeps all files and installed packages); changing mode:, prepare: or run: only restarts the app inside it.",
 			"/run is bounded: a minute by default, five at most, and its output is capped. Anything longer belongs in \"prepare:\". A command you background (with & and its output redirected) keeps running after /run returns -- useful, but nothing will stop it except POST /reboot, which replaces the container.",
-			"Your app has 512 processes and its memory limit to work with, and the disk quota is shared with everything else in the app. A build that fans out past that fails rather than taking the host with it.",
+			"The app runs inside enforced resource caps (see \"limits\" in the per-app info): allocating past the RAM cap gets the process OOM-killed, writing past the disk budget fails with \"Disk quota exceeded\" (the quota covers everything in the app, installed packages included), and a CPU cap throttles rather than kills. Plus a 512-process ceiling. Size builds accordingly -- a compile that fans out past the caps fails rather than taking the host with it.",
+			"The caps are not yours to change: the app's owner edits them in the web app (Settings -> Resources), within a per-user resource pool. This API refuses limit changes on an app token by design.",
 			"Deleting an app, renaming it, and attaching a custom domain are done by the owner in the web app, not through this API. A rename keeps the app running and changes none of its files, so nothing you build here is affected.",
 			"The owner's live preview always shows your latest deploy: hostit tags preview requests with a ?hostit_preview=<n> query parameter and serves them with caching disabled, so you do not need to do anything special. Just do not 404 or error on an unknown query string.",
 		},

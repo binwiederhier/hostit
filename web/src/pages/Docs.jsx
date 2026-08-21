@@ -911,6 +911,38 @@ apps-allowed-addresses:
   </>
 );
 
+const LimitsPage = () => (
+  <>
+    <h2>Resource limits and pools</h2>
+    <p>
+      Every app runs inside three enforced caps: <b>RAM</b> (allocating past it
+      gets the process killed and restarted), <b>disk</b> (a hard budget over
+      everything in the app -- files, installed packages and snapshots together;
+      writing past it fails with <span className="mono">Disk quota exceeded</span>),
+      and <b>CPU</b> (a cores cap; the app is throttled, never killed). New apps
+      start small -- 128 MB RAM, 256 MB disk, half a core -- because most apps
+      are small; raise what a real one needs.
+    </p>
+    <p>
+      As an owner you edit RAM and disk yourself: open the app&apos;s{" "}
+      <b>Settings</b> tab and hit the pencil on the <b>Resources</b> card (or{" "}
+      <b>Actions &rarr; Change resources</b>). Your budget is a per-user{" "}
+      <b>pool</b>: all your apps&apos; limits together must fit it, the dialog
+      shows what is left, and choices that no longer fit are grayed out. The
+      dashboard header shows your pool at a glance, and readings turn yellow at
+      75% and red at 90% everywhere they appear. Disk changes apply immediately;
+      RAM and CPU at the next reboot or deploy -- nothing restarts just because
+      you saved a number. CPU caps and pool sizes are set by an admin.
+    </p>
+    <p>
+      Your own AI agent can read the app&apos;s budget from{" "}
+      <span className="mono">GET /api/apps/&#123;app&#125;/info</span> (the{" "}
+      <span className="mono">limits</span> object) but deliberately cannot change
+      it -- an assistant must not raise its own caps.
+    </p>
+  </>
+);
+
 const AdminPage = () => (
   <>
     <h2>Users and administration</h2>
@@ -1127,6 +1159,7 @@ const guides = [
       { id: "ssh", title: "SSH and the terminal", render: SSHPage },
       { id: "snapshots", title: "Snapshots and fork", render: SnapshotsPage },
       { id: "domains", title: "Domains and renaming", render: DomainsPage },
+      { id: "limits", title: "Resource limits and pools", render: LimitsPage },
       { id: "api", title: "API reference", render: ApiPage },
     ],
   },

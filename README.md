@@ -235,12 +235,21 @@ with the usual limits. Someone an admin has explicitly denied stays denied even
 if their domain is allowed later, and removing a domain does not touch the
 accounts already approved under it -- revoking access stays a per-user decision.
 
-Limits are `app_limit` (enforced at create), `memory_mb` (podman `--memory`,
-cgroup-enforced) and `disk_mb`. Disk is a **hard** cap: one btrfs qgroup per app
-covers its whole subvolume and its snapshots combined, and a write past
-the cap fails with "Disk quota exceeded" inside the container -- wherever the app
-writes, `/home/app` and `/usr` alike. A `disk_mb` of 0 means the platform default
-(2 GB); nothing is unlimited.
+Every app runs inside three enforced caps: RAM (podman `--memory`,
+cgroup-enforced -- allocating past it OOM-kills the process), disk (a **hard**
+btrfs qgroup per app covering its subvolume and snapshots combined; a write
+past the budget fails with "Disk quota exceeded" wherever the app writes,
+`/home/app` and `/usr` alike), and CPU (`--cpus`; new apps start capped at
+0.5 cores). New apps default to 128 MB RAM and 256 MB disk.
+
+Owners edit their own apps' RAM and disk (app Settings -> Resources, or
+`PATCH /api/apps/{name}/limits`) within a per-user **pool**: the sum of all
+their apps' limits must fit it. Admins set pools per user (Admin -> Users) and
+the defaults for new users and apps (Admin -> Global defaults); an unset pool
+derives `app limit x per-app default`. The pool binds admins too -- to grant
+more, raise the pool. CPU caps are admin-set. Disk changes apply live; RAM and
+CPU at the next reboot or deploy. An app's own agent token can read the budget
+(`GET .../info` -> `limits`) but never change it.
 
 Without Google credentials configured, the web login returns 501 and the REST API
 plus CLI keep working with the admin token.

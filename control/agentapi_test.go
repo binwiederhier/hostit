@@ -692,3 +692,28 @@ func TestMissingFileIsA404NotA500(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, request(t, s.API(), "GET", "/api/apps/blog/files/nope.txt?stat=1", "", token).Code)
 	assert.Equal(t, http.StatusNotFound, request(t, s.API(), "GET", "/api/apps/blog/files?path=nope", "", token).Code)
 }
+
+// The per-app info tells the agent its resource budget: an agent that knows
+// its RAM cap sizes builds accordingly instead of discovering the limit as an
+// OOM kill mid-compile.
+func TestAgentAppInfoCarriesLimits(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	u := newActiveTestUser(t, s, "owner@example.com")
+	account := accountToken(t, s, u)
+	rr := request(t, s.API(), "POST", "/api/apps", `{"name":"blog"}`, account)
+	require.Equal(t, http.StatusCreated, rr.Code, rr.Body.String())
+	rr = request(t, s.API(), "PATCH", "/api/apps/blog/limits", `{"memory_mb":256,"cpu_milli":500}`, testToken)
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+
+	token := appScopedToken(t, s, u, "blog")
+	rr = request(t, s.API(), "GET", "/api/apps/blog/info", "", token)
+	require.Equal(t, http.StatusOK, rr.Code)
+	var resp map[string]any
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &resp))
+	limits, ok := resp["limits"].(map[string]any)
+	require.True(t, ok, "the agent learns its budget from /info")
+	assert.EqualValues(t, 256, limits["memory_mb"])
+	assert.EqualValues(t, 500, limits["cpu_milli"])
+	assert.NotZero(t, limits["disk_mb"])
+}
