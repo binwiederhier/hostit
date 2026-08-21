@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
 import {
@@ -23,33 +23,117 @@ const formatTokens = (n) =>
       ? Math.round(n / 1e3) + "k"
       : String(n || 0);
 
-// One user row with locally edited limit fields; Save appears once dirty.
-const UserRow = ({ user, defaults, onPatch, onDelete }) => {
+// Kebab is a row-overflow menu that escapes the table's scroll container: the
+// popup is position:fixed at the button's measured corner, and any outside
+// press, scroll or resize closes it (a fixed popup must not drift from a
+// scrolled-away button).
+const Kebab = ({ label, children }) => {
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState({ top: 0, right: 0 });
+  const btnRef = useRef(null);
+  useEffect(() => {
+    if (!open) return undefined;
+    const close = () => setOpen(false);
+    const onDown = (e) => {
+      if (!btnRef.current?.contains(e.target) && !e.target.closest(".kebab-menu")) close();
+    };
+    const onEsc = (e) => e.key === "Escape" && close();
+    window.addEventListener("scroll", close, true);
+    window.addEventListener("resize", close);
+    document.addEventListener("pointerdown", onDown);
+    document.addEventListener("keydown", onEsc);
+    return () => {
+      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("resize", close);
+      document.removeEventListener("pointerdown", onDown);
+      document.removeEventListener("keydown", onEsc);
+    };
+  }, [open]);
+  const toggle = () => {
+    const r = btnRef.current.getBoundingClientRect();
+    setPos({ top: r.bottom + 4, right: window.innerWidth - r.right });
+    setOpen(!open);
+  };
+  return (
+    <>
+      <button ref={btnRef} type="button" className="btn btn-small" onClick={toggle} aria-label={label} aria-expanded={open} title="More actions">
+        &#8942;
+      </button>
+      {open && (
+        <div className="kebab-menu" style={{ top: pos.top, right: pos.right }} onClick={() => setOpen(false)}>
+          {children}
+        </div>
+      )}
+    </>
+  );
+};
+
+// EditUserDialog is where a user's limits live now: app count and the two
+// pools, with the derived values as placeholders. The list shows, this edits.
+const EditUserDialog = ({ user, defaults, onCancel, onSave }) => {
   const [appLimit, setAppLimit] = useState(numOrEmpty(user.app_limit));
   const [memoryPoolMb, setMemoryPoolMb] = useState(numOrEmpty(user.memory_pool_mb));
   const [diskPoolMb, setDiskPoolMb] = useState(numOrEmpty(user.disk_pool_mb));
   const [busy, setBusy] = useState(false);
-  const [confirmAdmin, setConfirmAdmin] = useState(false);
-
-  useEffect(() => {
-    setAppLimit(numOrEmpty(user.app_limit));
-    setMemoryPoolMb(numOrEmpty(user.memory_pool_mb));
-    setDiskPoolMb(numOrEmpty(user.disk_pool_mb));
-  }, [user]);
-
-  const dirty =
-    appLimit !== numOrEmpty(user.app_limit) ||
-    memoryPoolMb !== numOrEmpty(user.memory_pool_mb) ||
-    diskPoolMb !== numOrEmpty(user.disk_pool_mb);
-
-  // The derived pool an empty field falls back to: app_limit x per-app default
-  // (the per-user per-app overrides are API-only now; the normal knob is the
-  // pool itself, with new-app sizes coming from the global defaults).
-  const derivedPool = (perApp, perAppDefault) => {
-    const apps = Number(appLimit || user.app_limit || defaults.default_app_limit || 0);
-    const each = Number(perApp ?? perAppDefault ?? 0);
-    return apps * each;
+  const derived = (perApp, perAppDefault) =>
+    Number(appLimit || user.app_limit || defaults.default_app_limit || 0) * Number(perApp ?? perAppDefault ?? 0);
+  const save = async (e) => {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      await onSave({
+        app_limit: numOrNull(appLimit),
+        memory_pool_mb: numOrNull(memoryPoolMb),
+        disk_pool_mb: numOrNull(diskPoolMb),
+      });
+    } finally {
+      setBusy(false);
+    }
   };
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true" onMouseDown={onCancel}>
+      <form className="card modal modal-sheet" onMouseDown={(e) => e.stopPropagation()} onSubmit={save}>
+        <h2>Limits for {user.email}</h2>
+        <p className="hint">
+          Empty fields fall back to the defaults (app limit) or derive from them (pools: app limit
+          x RAM/disk per new app). The pools bound what all their apps together may allocate.
+        </p>
+        <label className="settings-field">
+          <span>App limit</span>
+          <input type="number" min="0" className="settings-input" value={appLimit} onChange={(e) => setAppLimit(e.target.value)} placeholder={`${defaults.default_app_limit ?? ""} (default)`} disabled={busy} />
+        </label>
+        <label className="settings-field">
+          <span>RAM pool (MB)</span>
+          <input type="number" min="0" className="settings-input" value={memoryPoolMb} onChange={(e) => setMemoryPoolMb(e.target.value)} placeholder={`${derived(user.memory_mb, defaults.default_memory_mb)} (derived)`} disabled={busy} />
+        </label>
+        <label className="settings-field">
+          <span>Disk pool (MB)</span>
+          <input type="number" min="0" className="settings-input" value={diskPoolMb} onChange={(e) => setDiskPoolMb(e.target.value)} placeholder={`${derived(user.disk_mb, defaults.default_disk_mb)} (derived)`} disabled={busy} />
+        </label>
+        <div className="btn-row">
+          <button type="button" className="btn" onClick={onCancel} disabled={busy}>
+            Cancel
+          </button>
+          <button type="submit" className="btn btn-primary" disabled={busy}>
+            {busy ? "Saving..." : "Save"}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+};
+
+// One user row with locally edited limit fields; Save appears once dirty.
+const UserRow = ({ user, defaults, onPatch, onDelete }) => {
+  const [busy, setBusy] = useState(false);
+  const [confirmAdmin, setConfirmAdmin] = useState(false);
+  const [editing, setEditing] = useState(false);
+
+  // What the row DISPLAYS; editing happens in the dialog. Derived values are
+  // shown muted so an explicit pool reads differently from a fallback.
+  const effectiveAppLimit = user.app_limit ?? defaults.default_app_limit ?? 0;
+  const derivedPool = (perApp, perAppDefault) =>
+    Number(effectiveAppLimit) * Number(perApp ?? perAppDefault ?? 0);
 
   const run = async (body) => {
     setBusy(true);
@@ -60,12 +144,7 @@ const UserRow = ({ user, defaults, onPatch, onDelete }) => {
     }
   };
 
-  const saveLimits = () =>
-    run({
-      app_limit: numOrNull(appLimit),
-      memory_pool_mb: numOrNull(memoryPoolMb),
-      disk_pool_mb: numOrNull(diskPoolMb),
-    });
+
 
   return (
     <tr>
@@ -102,53 +181,14 @@ const UserRow = ({ user, defaults, onPatch, onDelete }) => {
           <span className="cell-muted">--</span>
         )}
       </td>
-      <td>
-        <input
-          className="limit-cell"
-          type="number"
-          min="0"
-          value={appLimit}
-          onChange={(e) => setAppLimit(e.target.value)}
-          placeholder={String(defaults.default_app_limit ?? "")}
-          aria-label={`App limit for ${user.email}`}
-          title="How many apps this user may create (empty = global default)"
-        />
+      <td title="How many apps this user may create">
+        {user.app_limit ?? <span className="cell-muted">{effectiveAppLimit}</span>}
       </td>
-      <td>
-        <input
-          className="limit-cell"
-          type="number"
-          min="0"
-          value={memoryPoolMb}
-          onChange={(e) => setMemoryPoolMb(e.target.value)}
-          placeholder={String(derivedPool(user.memory_mb, defaults.default_memory_mb))}
-          aria-label={`Memory pool (MB) for ${user.email}`}
-          title="The RAM budget all their apps' limits share (empty = apps x default)"
-        />
+      <td title="The RAM budget all their apps' limits share">
+        {user.memory_pool_mb ?? <span className="cell-muted">{derivedPool(user.memory_mb, defaults.default_memory_mb)}</span>}
       </td>
-      <td>
-        <div className="limits-inputs">
-          <input
-            className="limit-cell"
-            type="number"
-            min="0"
-            value={diskPoolMb}
-            onChange={(e) => setDiskPoolMb(e.target.value)}
-            placeholder={String(derivedPool(user.disk_mb, defaults.default_disk_mb))}
-            aria-label={`Disk pool (MB) for ${user.email}`}
-            title="The disk budget all their apps' limits share (empty = apps x default)"
-          />
-          {dirty && (
-            <button
-              type="button"
-              className="btn btn-small btn-primary"
-              onClick={saveLimits}
-              disabled={busy}
-            >
-              Save
-            </button>
-          )}
-        </div>
+      <td title="The disk budget all their apps' limits share">
+        {user.disk_pool_mb ?? <span className="cell-muted">{derivedPool(user.disk_mb, defaults.default_disk_mb)}</span>}
       </td>
       <td className="cell-actions">
         <div className="btn-row">
@@ -172,27 +212,36 @@ const UserRow = ({ user, defaults, onPatch, onDelete }) => {
               Deny
             </button>
           )}
-          <details className="kebab">
-            <summary className="btn btn-small" aria-label={`More actions for ${user.email}`} title="More actions">
-              &#8942;
-            </summary>
-            <div className="kebab-menu" onClick={(e) => e.currentTarget.closest("details").removeAttribute("open")}>
-              {user.role === "admin" ? (
-                <button type="button" onClick={() => run({ role: "user" })} disabled={busy}>
-                  Make user
-                </button>
-              ) : (
-                <button type="button" onClick={() => setConfirmAdmin(true)} disabled={busy}>
-                  Make admin
-                </button>
-              )}
-              <button type="button" className="kebab-danger" onClick={() => onDelete(user)} disabled={busy}>
-                Delete user
+          <Kebab label={`More actions for ${user.email}`}>
+            <button type="button" onClick={() => setEditing(true)} disabled={busy}>
+              Edit limits...
+            </button>
+            {user.role === "admin" ? (
+              <button type="button" onClick={() => run({ role: "user" })} disabled={busy}>
+                Make user
               </button>
-            </div>
-          </details>
+            ) : (
+              <button type="button" onClick={() => setConfirmAdmin(true)} disabled={busy}>
+                Make admin
+              </button>
+            )}
+            <button type="button" className="kebab-danger" onClick={() => onDelete(user)} disabled={busy}>
+              Delete user
+            </button>
+          </Kebab>
         </div>
       </td>
+      {editing && (
+        <EditUserDialog
+          user={user}
+          defaults={defaults}
+          onCancel={() => setEditing(false)}
+          onSave={async (body) => {
+            await onPatch(user, body);
+            setEditing(false);
+          }}
+        />
+      )}
       {confirmAdmin && (
         <MakeAdminDialog
           user={user}

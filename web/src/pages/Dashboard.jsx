@@ -527,7 +527,6 @@ const Dashboard = ({ account, refreshAccount }) => {
             </span>
             {account.limits.memory_pool_mb > 0 && (
               <>
-                <span className="usage-dot" aria-hidden="true">&middot;</span>
                 <span className="usage-item" title="RAM allocated of your pool">
                   <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                     <rect x="2" y="4" width="12" height="8" rx="1" />
@@ -535,7 +534,6 @@ const Dashboard = ({ account, refreshAccount }) => {
                   </svg>
                   {fmtPair(account.usage.pool_memory_mb || 0, account.limits.memory_pool_mb)}
                 </span>
-                <span className="usage-dot" aria-hidden="true">&middot;</span>
                 <span className="usage-item" title="Disk allocated of your pool">
                   <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                     <ellipse cx="8" cy="4" rx="6" ry="2.2" />
