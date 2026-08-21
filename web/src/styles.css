@@ -5526,3 +5526,13 @@ input[type="number"]::-webkit-inner-spin-button {
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
+
+/* The app page's inline usage row: the shared icon pairs, evenly spaced. */
+.ws-resources {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  font-size: 13px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}

@@ -4,7 +4,7 @@ import { api, ApiError, isNetworkError } from "../api";
 import { viewFromSlug, VIEW_TO_SLUG } from "../views";
 import { limitInputs, limitsPatchBody } from "../limits";
 import { useReconnect } from "../hooks";
-import { CopyButton, ErrorBanner, Loading, Snippet, StatusDot, pairMB, usageLevel } from "../components";
+import { CopyButton, ErrorBanner, Loading, Snippet, StatusDot, pairMB, usageLevel, UsagePair } from "../components";
 import { useSetAppHeader } from "../appHeader";
 
 // xterm is heavy and only needed when a terminal is actually opened, so it is
@@ -202,42 +202,23 @@ const formatUptime = (startedAt) => {
   return `${s}s`;
 };
 
-// resLevel maps a usage percent to a severity, which colours the dot and bar.
-const resLevel = (pct) => (pct >= 90 ? "hot" : pct >= 75 ? "warn" : "good");
-
-// One compact inline stat: a level-coloured dot, label and value, with a thin bar
-// under it. `detail` is the hover tooltip (the exact used/total for RAM/disk).
-// The unmetered ones (uptime) skip the dot/bar but keep the height, so the row
-// stays aligned.
-const Stat = ({ label, pct = 0, value, detail, metered = true }) => {
-  const lvl = resLevel(pct);
-  return (
-    <div className={"res" + (metered ? " res-" + lvl : "")} title={detail}>
-      <span className="res-top">
-        {metered && <span className="res-dot" aria-hidden="true" />}
-        <span className="res-k">{label}</span>
-        <span className={"res-v" + (metered && lvl === "hot" ? " res-v-hot" : "")}>{value}</span>
-      </span>
-      <span className={"res-bar" + (metered ? "" : " res-bar-empty")}>
-        {metered && <span style={{ width: `${Math.min(100, pct)}%` }} />}
-      </span>
-    </div>
-  );
-};
-
-// CPU / RAM / Disk / Uptime as a compact inline row beside the controls. RAM and
-// disk read as percent; the exact used/total is in the hover tooltip. Only
-// meaningful while the container is up, so the caller shows it only then.
+// CPU / RAM / Disk as the same compact icon pairs the rest of the UI uses --
+// no dots, no bars; severity is the shared text colour. Only meaningful while
+// the container is up, so the caller shows it only then.
 const UsageGrid = ({ app }) => {
   const cpuPct = app.cpu_percent || 0;
-  const memPct = app.memory_limit_mb ? Math.round((app.memory_mb / app.memory_limit_mb) * 100) : 0;
-  const diskPct = app.disk_limit_mb ? Math.round((app.disk_mb / app.disk_limit_mb) * 100) : 0;
-  const mb = (used, limit) => (limit ? `${used} / ${limit} MB` : `${used} MB`);
+  const cpuLevel = cpuPct >= 90 ? "crit" : cpuPct >= 75 ? "warn" : "";
   return (
     <div className="ws-resources">
-      <Stat label="CPU" pct={cpuPct} value={`${cpuPct}%`} detail={`CPU ${cpuPct}%`} />
-      <Stat label="RAM" pct={memPct} value={pairMB(app.memory_mb, app.memory_limit_mb)} detail={`RAM ${memPct}% of the app's limit`} />
-      <Stat label="Disk" pct={diskPct} value={pairMB(app.disk_mb, app.disk_limit_mb)} detail={`Disk ${diskPct}% of the app's limit`} />
+      <span className={"usage-item usage-" + cpuLevel} title={app.cpu_milli ? `CPU use; capped at ${app.cpu_milli / 1000} cores` : "CPU use"}>
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <rect x="4" y="4" width="8" height="8" rx="1" />
+          <path d="M6 1.5V4M10 1.5V4M6 12v2.5M10 12v2.5M1.5 6H4M1.5 10H4M12 6h2.5M12 10h2.5" />
+        </svg>
+        {cpuPct}%
+      </span>
+      <UsagePair kind="ram" used={app.memory_mb} total={app.memory_limit_mb} />
+      <UsagePair kind="disk" used={app.disk_mb} total={app.disk_limit_mb} />
     </div>
   );
 };
