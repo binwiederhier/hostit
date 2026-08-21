@@ -157,16 +157,15 @@ p {
   /* Raised a touch off the text-bottom line, where it sat visibly low. */
   transform: translateY(-0.08em);
   background: var(--accent);
-  animation: blink 1.1s step-end infinite;
+  animation: blink 2.4s step-end infinite;
 }
 
 /* The big gate/empty-state mark blinks like the nav one: one identity,
    one behaviour, everywhere the mark appears. */
 
-/* Two explicit opacity states under step-end, at the classic terminal rate:
-   the earlier 2.4s period held the block solid for 1.2s at a stretch, which
-   reads as "not blinking" at a glance (verified: the animation itself ran
-   fine in both engines; the tempo was the illusion). */
+/* Two explicit opacity states under step-end. The slow 2.4s period is the
+   chosen tempo -- calm, not a metronome; probing real Firefox and Chromium
+   confirmed the cycle runs correctly in both. */
 @keyframes blink {
   0%,
   49.9% {
