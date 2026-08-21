@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	"golang.org/x/crypto/ssh"
+
 	"heckel.io/hostit/controlconf"
 	"heckel.io/hostit/store"
 )
@@ -65,6 +66,24 @@ type Limits struct {
 	// (an app_limit of 0 means unlimited apps, so the derived pool follows).
 	MemoryPoolMB int `json:"memory_pool_mb"`
 	DiskPoolMB   int `json:"disk_pool_mb"`
+}
+
+// EffectiveAppLimits resolves what one app is actually held to: its own
+// admin- or owner-set overrides where present, else the resolved per-app
+// defaults. CPU has no inheritable default, so the override is the whole
+// story (0 = uncapped). Every consumer -- the API display, the desired state
+// control asserts, startup priming and the pool math -- goes through here;
+// a private copy of this logic is how a daemon restart once quietly
+// un-applied an admin's cap.
+func EffectiveAppLimits(l *Limits, a *store.App) (memoryMB, diskMB, cpuMilli int) {
+	memoryMB, diskMB = l.MemoryMB, l.DiskMB
+	if a.MemoryLimitMB > 0 {
+		memoryMB = a.MemoryLimitMB
+	}
+	if a.DiskLimitMB > 0 {
+		diskMB = a.DiskLimitMB
+	}
+	return memoryMB, diskMB, a.CPUMilli
 }
 
 // Manager owns users, tokens, profile keys and limit settings

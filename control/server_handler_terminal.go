@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+
 	"heckel.io/hostit/appctl"
 )
 

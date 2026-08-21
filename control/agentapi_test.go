@@ -15,6 +15,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
 	"heckel.io/hostit/app"
 	"heckel.io/hostit/assistant"
 	"heckel.io/hostit/store"

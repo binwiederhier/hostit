@@ -5,6 +5,7 @@ import (
 
 	"heckel.io/hostit/node"
 	"heckel.io/hostit/store"
+	"heckel.io/hostit/user"
 )
 
 // serverPolicy answers the per-app questions that need the user tables: the
@@ -48,13 +49,7 @@ func (p *serverPolicy) Limits(a *store.App) (memoryMB, diskMB int) {
 			}
 		}
 	}
-	memoryMB, diskMB = limits.MemoryMB, limits.DiskMB
-	if a.MemoryLimitMB > 0 {
-		memoryMB = a.MemoryLimitMB
-	}
-	if a.DiskLimitMB > 0 {
-		diskMB = a.DiskLimitMB
-	}
+	memoryMB, diskMB, _ = user.EffectiveAppLimits(limits, a)
 	// Resolved here, not on the node: nothing is uncapped, so a zero limit is
 	// the default cap. Leaving the node to reinterpret the zero made control
 	// report "no limit" for an app the filesystem was hard-capping.

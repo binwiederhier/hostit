@@ -26,6 +26,7 @@ import (
 
 	"github.com/caddyserver/certmagic"
 	"golang.org/x/sync/errgroup"
+
 	"heckel.io/hostit/assistant"
 	"heckel.io/hostit/controlconf"
 	"heckel.io/hostit/node"
@@ -414,14 +415,8 @@ func (s *Server) appLimits(name string) (memoryMB, diskMB, cpuMilli int) {
 			}
 		}
 	}
-	memoryMB, diskMB = limits.MemoryMB, limits.DiskMB
-	if a.MemoryLimitMB > 0 {
-		memoryMB = a.MemoryLimitMB
-	}
-	if a.DiskLimitMB > 0 {
-		diskMB = a.DiskLimitMB
-	}
-	return memoryMB, node.EffectiveDiskCapMB(diskMB), a.CPUMilli
+	memoryMB, diskMB, cpuMilli = user.EffectiveAppLimits(limits, a)
+	return memoryMB, node.EffectiveDiskCapMB(diskMB), cpuMilli
 }
 
 // appResponse converts an app to its API form

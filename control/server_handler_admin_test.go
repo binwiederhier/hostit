@@ -8,6 +8,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
 	"heckel.io/hostit/store"
 )
 
@@ -193,4 +194,23 @@ func TestClusterStatusEndpointIsAdminOnly(t *testing.T) {
 	require.NoError(t, err)
 	rr = request(t, s.API(), "GET", "/api/cluster", "", userToken)
 	assert.Equal(t, http.StatusForbidden, rr.Code)
+}
+
+// The default pools ride the settings API like the other defaults: admin-set,
+// reflected back, and negative values refused.
+func TestSettingsCarryDefaultPools(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	rr := request(t, s.API(), "PATCH", "/api/settings", `{"default_memory_pool_mb":2048,"default_disk_pool_mb":10240}`, testToken)
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+
+	rr = request(t, s.API(), "GET", "/api/settings", "", testToken)
+	require.Equal(t, http.StatusOK, rr.Code)
+	var resp map[string]any
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &resp))
+	assert.EqualValues(t, 2048, resp["default_memory_pool_mb"])
+	assert.EqualValues(t, 10240, resp["default_disk_pool_mb"])
+
+	rr = request(t, s.API(), "PATCH", "/api/settings", `{"default_memory_pool_mb":-5}`, testToken)
+	assert.Equal(t, http.StatusBadRequest, rr.Code, "negative pools are refused")
 }

@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"heckel.io/hostit/store"
+	"heckel.io/hostit/user"
 )
 
 const (
@@ -129,13 +130,8 @@ func (s *Server) checkPoolFits(a *store.App, memoryLimitMB, diskLimitMB int) err
 	if err != nil {
 		return err
 	}
-	newMemory, newDisk := limits.MemoryMB, limits.DiskMB
-	if memoryLimitMB > 0 {
-		newMemory = memoryLimitMB
-	}
-	if diskLimitMB > 0 {
-		newDisk = diskLimitMB
-	}
+	newMemory, newDisk, _ := user.EffectiveAppLimits(limits,
+		&store.App{MemoryLimitMB: memoryLimitMB, DiskLimitMB: diskLimitMB})
 	if limits.MemoryPoolMB > 0 && usedMemory+newMemory > limits.MemoryPoolMB {
 		return fmt.Errorf("this would allocate %d MB of a %d MB memory pool (%d MB already allocated to other apps); lower another app's limit or ask an admin to raise the pool",
 			usedMemory+newMemory, limits.MemoryPoolMB, usedMemory)
@@ -166,13 +162,7 @@ func (s *Server) poolReserved(ownerID, excludeApp string) (memoryMB, diskMB int,
 		if a.Name == excludeApp {
 			continue
 		}
-		mem, disk := limits.MemoryMB, limits.DiskMB
-		if a.MemoryLimitMB > 0 {
-			mem = a.MemoryLimitMB
-		}
-		if a.DiskLimitMB > 0 {
-			disk = a.DiskLimitMB
-		}
+		mem, disk, _ := user.EffectiveAppLimits(limits, a)
 		memoryMB += mem
 		diskMB += disk
 	}

@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
 	"heckel.io/hostit/controlconf"
 	"heckel.io/hostit/store"
 )
@@ -418,4 +419,16 @@ func TestDefaultPoolSettingBeatsDerivation(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 512, limits.MemoryPoolMB, "a per-user pool wins over the default")
 	assert.Equal(t, 10240, limits.DiskPoolMB)
+}
+
+// One resolution for what an app is actually held to, used by every caller
+// (API display, desired state, startup priming, pool math) -- the policy once
+// had its own copy and quietly un-applied overrides on restart.
+func TestEffectiveAppLimits(t *testing.T) {
+	t.Parallel()
+	l := &Limits{MemoryMB: 128, DiskMB: 256}
+	mem, disk, cpu := EffectiveAppLimits(l, &store.App{})
+	assert.Equal(t, []int{128, 256, 0}, []int{mem, disk, cpu}, "no overrides: the owner's defaults")
+	mem, disk, cpu = EffectiveAppLimits(l, &store.App{MemoryLimitMB: 512, CPUMilli: 1500})
+	assert.Equal(t, []int{512, 256, 1500}, []int{mem, disk, cpu}, "overrides win where set")
 }

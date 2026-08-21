@@ -13,6 +13,7 @@ import (
 
 	"heckel.io/hostit/assistant"
 	"heckel.io/hostit/store"
+	"heckel.io/hostit/user"
 )
 
 func (s *Server) handleUsersList(w http.ResponseWriter, _ *http.Request, _ *caller) {
@@ -185,18 +186,12 @@ func (s *Server) applyUserLimits(u *store.User) error {
 	}
 	for _, a := range apps {
 		// A per-app override outranks the owner's defaults: editing the USER
-		// must not clobber what an admin set on one specific app.
-		memoryMB, diskMB := limits.MemoryMB, limits.DiskMB
-		if a.MemoryLimitMB > 0 {
-			memoryMB = a.MemoryLimitMB
-		}
-		if a.DiskLimitMB > 0 {
-			diskMB = a.DiskLimitMB
-		}
-		// Recorded here as well as asserted on the node: control decides the
-		// limits, so its own record is what the desired state and the API report
-		// -- a node that is away still gets them on its next reconcile.
-		s.apps.RecordLimits(a.Name, memoryMB, diskMB, a.CPUMilli)
+		// must not clobber what an admin set on one specific app. Recorded here
+		// as well as asserted on the node: control decides the limits, so its
+		// own record is what the desired state and the API report -- a node
+		// that is away still gets them on its next reconcile.
+		memoryMB, diskMB, cpuMilli := user.EffectiveAppLimits(limits, a)
+		s.apps.RecordLimits(a.Name, memoryMB, diskMB, cpuMilli)
 		s.node.SetMemoryLimit(a.Name, memoryMB)
 		s.node.SetDiskLimit(a.Name, diskMB)
 	}

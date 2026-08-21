@@ -259,17 +259,11 @@ func applyStoredLimits(s *store.Store, apps *control.Manager, users *user.Manage
 				}
 			}
 		}
-		memoryMB, diskMB := limits.MemoryMB, limits.DiskMB
-		if a.MemoryLimitMB > 0 {
-			memoryMB = a.MemoryLimitMB
-		}
-		if a.DiskLimitMB > 0 {
-			diskMB = a.DiskLimitMB
-		}
 		// Recorded, not applied: control decides the limits and the node
 		// enforces them, so they reach the machine through the desired state
 		// on the next connect or reconcile rather than from here.
-		apps.RecordLimits(a.Name, memoryMB, diskMB, a.CPUMilli)
+		memoryMB, diskMB, cpuMilli := user.EffectiveAppLimits(limits, a)
+		apps.RecordLimits(a.Name, memoryMB, diskMB, cpuMilli)
 	}
 	return nil
 }

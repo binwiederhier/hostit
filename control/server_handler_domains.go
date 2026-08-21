@@ -14,6 +14,7 @@ import (
 
 	"github.com/caddyserver/certmagic"
 	"github.com/libdns/route53"
+
 	"heckel.io/hostit/controlconf"
 	"heckel.io/hostit/store"
 )

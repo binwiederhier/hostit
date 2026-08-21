@@ -18,8 +18,6 @@ import (
 	"heckel.io/hostit/workspace"
 )
 
-const ()
-
 var (
 	// ErrNoPortsAvailable is returned when the configured port range is exhausted.
 	// ErrInvalid wraps all request validation errors (bad names, bad keys);
@@ -47,10 +45,12 @@ type CreateOptions struct {
 	Host        string   // Target node; empty means placement picks one (a fork pins its source's)
 }
 
-// defaultCPUMilli is the CPU cap stamped onto every NEW app as its own
-// override (0.5 cores). CPU has no owner-inheritable default -- the stamp at
-// create IS the default; an admin can raise or clear it per app.
-const defaultCPUMilli = 500
+const (
+	// defaultCPUMilli is the CPU cap stamped onto every NEW app as its own
+	// override (0.5 cores). CPU has no owner-inheritable default -- the stamp
+	// at create IS the default; an admin can raise or clear it per app.
+	defaultCPUMilli = 500
+)
 
 // Manager creates and deletes apps and everything that belongs to them: the
 // control plane's half of the platform -- orchestration, placement, port
