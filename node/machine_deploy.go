@@ -156,6 +156,11 @@ func (m *Machine) Down(name string) error {
 // differ from the running ones (a recreate IS the reboot). With nothing
 // pending it stays the plain unit restart it always was.
 func (m *Machine) Restart(name string) error {
+	// The converge below can recreate the container, so it must hold the
+	// lifecycle lock: a reboot fired while the post-create start is still
+	// creating the container raced it to "name already in use" (caught by the
+	// limits e2e on stage).
+	defer m.LockApp(name)()
 	defer m.stateChanged(name)
 	a, err := m.store.App(name)
 	if err != nil {

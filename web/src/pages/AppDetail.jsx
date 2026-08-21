@@ -833,6 +833,25 @@ const ResourceRow = ({ label, value, onChange, presets, unit, inherit, disabled 
   );
 };
 
+// SnapshotIntervalSelect picks the automatic snapshot cadence from presets;
+// a custom hostit.yml value survives as its own option, and 0 turns automatic
+// snapshots off (pre-deploy snapshots still happen).
+const SnapshotIntervalSelect = ({ value, defaultLabel, onChange }) => {
+  const presets = ["1h", "3h", "6h", "12h", "24h"];
+  const options = value !== "" && value !== "0" && !presets.includes(value) ? [value, ...presets] : presets;
+  return (
+    <select className="settings-input res-select" value={value} onChange={(e) => onChange(e.target.value)} aria-label="Snapshot interval">
+      <option value="">Default ({defaultLabel})</option>
+      {options.map((v) => (
+        <option key={v} value={v}>
+          {v}
+        </option>
+      ))}
+      <option value="0">Off (pre-deploy only)</option>
+    </select>
+  );
+};
+
 // ResourcesDialog edits the app's resource allocation: RAM and disk within
 // the owner's pool (the server enforces the pool; the dialog shows the
 // budget), CPU admin-set. Empty fields inherit the account defaults.
@@ -1382,41 +1401,45 @@ const AppSettings = ({ app, isAdmin, account, showToast, onCopyToken, onRegenera
           default ({defaultInterval}), or set <span className="mono">0</span> to turn automatic
           snapshots off -- pre-deploy snapshots still happen. Saved to <span className="mono">hostit.yml</span>.
         </p>
-        <label className="settings-field">
-          <span>Interval</span>
-          <input
-            type="text"
-            className="settings-input"
-            value={snapCfg.interval}
-            onChange={(e) => setSnapCfg({ ...snapCfg, interval: e.target.value })}
-            placeholder={`${defaultInterval} (default)`}
-          />
-        </label>
-        <p className="hint">
-          If the app has a database, these commands run in the container around each snapshot, so what is
-          captured is consistent. A failing <span className="mono">pre</span> command cancels the snapshot
-          rather than saving a torn state.
-        </p>
-        <label className="settings-field">
-          <span>Before (pre)</span>
-          <input
-            type="text"
-            className="settings-input mono"
-            value={snapCfg.pre}
-            onChange={(e) => setSnapCfg({ ...snapCfg, pre: e.target.value })}
-            placeholder={'sqlite3 data/app.db ".backup data/app.snap.db"'}
-          />
-        </label>
-        <label className="settings-field">
-          <span>After (post)</span>
-          <input
-            type="text"
-            className="settings-input mono"
-            value={snapCfg.post}
-            onChange={(e) => setSnapCfg({ ...snapCfg, post: e.target.value })}
-            placeholder="rm -f data/app.snap.db"
-          />
-        </label>
+        <div className="res-rows">
+          <div className="res-row">
+            <span className="res-label">Every</span>
+            <SnapshotIntervalSelect
+              value={snapCfg.interval}
+              defaultLabel={defaultInterval}
+              onChange={(v) => setSnapCfg({ ...snapCfg, interval: v })}
+            />
+          </div>
+        </div>
+        <details className="snap-hooks" open={!!(snapCfg.pre || snapCfg.post)}>
+          <summary>Pre/post snapshot commands</summary>
+          <p className="hint">
+            If the app has a database, these run in the container around each snapshot, so what is
+            captured is consistent. A failing <span className="mono">pre</span> command cancels the
+            snapshot rather than saving a torn state. Paste whole scripts; they run with{" "}
+            <span className="mono">sh -c</span>.
+          </p>
+          <label className="settings-field">
+            <span>Before (pre)</span>
+            <textarea
+              className="settings-desc mono snap-script"
+              rows={2}
+              value={snapCfg.pre}
+              onChange={(e) => setSnapCfg({ ...snapCfg, pre: e.target.value })}
+              placeholder={'sqlite3 data/app.db ".backup data/app.snap.db"'}
+            />
+          </label>
+          <label className="settings-field">
+            <span>After (post)</span>
+            <textarea
+              className="settings-desc mono snap-script"
+              rows={2}
+              value={snapCfg.post}
+              onChange={(e) => setSnapCfg({ ...snapCfg, post: e.target.value })}
+              placeholder="rm -f data/app.snap.db"
+            />
+          </label>
+        </details>
         <div className="btn-row" style={{ justifyContent: "flex-start" }}>
           <button type="button" className="btn btn-small btn-primary" onClick={saveSnapshots} disabled={savingSnap || !snapDirty}>
             {savingSnap ? "Saving..." : "Save snapshot settings"}

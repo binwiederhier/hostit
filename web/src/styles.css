@@ -5409,3 +5409,21 @@ body.ws-resizing iframe {
   font-size: 13px;
   color: var(--muted);
 }
+
+/* Snapshot hooks: tucked away until wanted; the editors take pasted scripts. */
+.snap-hooks {
+  margin-top: 10px;
+}
+.snap-hooks summary {
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--muted);
+}
+.snap-hooks[open] summary {
+  margin-bottom: 6px;
+}
+.snap-script {
+  min-height: 44px;
+  resize: vertical;
+  white-space: pre;
+}

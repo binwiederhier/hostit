@@ -152,6 +152,17 @@ const AppTerminal = ({ name, onClose, onMinimize, onReady, onSessionEnd, onSsh, 
 
     connect();
 
+    // Keepalive: re-assert the current size every 30s. A no-op for a healthy
+    // session, but it exercises the browser->control->node path, so a dead
+    // one (an app reboot that killed the pty without closing this socket)
+    // surfaces as a socket error and the normal reconnect takes over instead
+    // of the pane freezing silently.
+    const keepalive = setInterval(() => {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        sendSize();
+      }
+    }, 30000);
+
     const dataSub = term.onData((d) => {
       if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(encoder.encode(d));
@@ -169,6 +180,7 @@ const AppTerminal = ({ name, onClose, onMinimize, onReady, onSessionEnd, onSsh, 
 
     return () => {
       disposed = true;
+      clearInterval(keepalive);
       window.removeEventListener("resize", onResize);
       document.removeEventListener("fullscreenchange", onResize);
       ro.disconnect();
@@ -260,13 +272,14 @@ const AppTerminal = ({ name, onClose, onMinimize, onReady, onSessionEnd, onSsh, 
       <div className={fixed ? "term-bar" : "term-bar term-bar-drag"} onPointerDown={startDrag}>
         {!embedded && <span className="mono">{name} &mdash; terminal</span>}
         <span className="term-bar-actions">
-          {(reconnect.active || stopped) && (
-            <button type="button" className="term-btn" onClick={() => reconnectNowRef.current()} title="Reconnect now" aria-label="Reconnect now">
-              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M13 8a5 5 0 1 1-1.5-3.6M13 2.5v2.4h-2.4" />
-              </svg>
-            </button>
-          )}
+          {/* Always available: a session can die without the socket closing
+              (a reboot recreates the container under a pty that never EOFs
+              here), and then reconnecting is the only cure. */}
+          <button type="button" className="term-btn" onClick={() => reconnectNowRef.current()} title="Reload terminal" aria-label="Reload terminal">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M13 8a5 5 0 1 1-1.5-3.6M13 2.5v2.4h-2.4" />
+            </svg>
+          </button>
           {!fixed && onMinimize && (
             <button type="button" className="term-btn" onClick={onMinimize} title="Minimize" aria-label="Minimize">
               <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
