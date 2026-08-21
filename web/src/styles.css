@@ -227,8 +227,25 @@ p {
 }
 
 .usage {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
   color: var(--muted);
   font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+.usage-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.usage-item svg {
+  width: 14px;
+  height: 14px;
+  color: var(--faint);
+}
+.usage-dot {
+  color: var(--faint);
 }
 
 /* Top nav */

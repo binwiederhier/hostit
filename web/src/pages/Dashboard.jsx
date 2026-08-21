@@ -260,8 +260,14 @@ const readShowArchived = () => {
 
 // The archived filter, shown only when the account HAS archived apps -- a switch
 // for something that does not exist is just a question the reader has to answer.
-// fmtMB renders a megabyte count compactly (1536 -> "1.5 GB").
-const fmtMB = (mb) => (mb >= 1024 ? `${(mb / 1024).toFixed(mb % 1024 ? 1 : 0)} GB` : `${mb} MB`);
+// fmtPair renders "allocated/pool" in one shared unit ("1.2/3.8 GB").
+const fmtPair = (used, total) => {
+  if (total >= 1024) {
+    const gb = (v) => (v / 1024).toFixed(v % 1024 ? 1 : 0);
+    return `${gb(used)}/${gb(total)} GB`;
+  }
+  return `${used}/${total} MB`;
+};
 
 const ArchivedToggle = ({ on, count, onChange }) => (
   <button
@@ -512,11 +518,32 @@ const Dashboard = ({ account, refreshAccount }) => {
         <div className="page-title">
           <h1>Apps</h1>
           <span className="usage">
-            {account.usage.apps} of {account.limits.app_limit} apps
+            <span className="usage-item" title="Apps created of your app limit">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <rect x="2" y="2" width="5" height="5" rx="1" /><rect x="9" y="2" width="5" height="5" rx="1" />
+                <rect x="2" y="9" width="5" height="5" rx="1" /><rect x="9" y="9" width="5" height="5" rx="1" />
+              </svg>
+              {account.usage.apps}/{account.limits.app_limit}
+            </span>
             {account.limits.memory_pool_mb > 0 && (
               <>
-                {" "}&middot; {fmtMB(Math.max(0, account.limits.memory_pool_mb - (account.usage.pool_memory_mb || 0)))} RAM free
-                {" "}&middot; {fmtMB(Math.max(0, account.limits.disk_pool_mb - (account.usage.pool_disk_mb || 0)))} disk free
+                <span className="usage-dot" aria-hidden="true">&middot;</span>
+                <span className="usage-item" title="RAM allocated of your pool">
+                  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <rect x="2" y="4" width="12" height="8" rx="1" />
+                    <path d="M4.5 12v2M8 12v2M11.5 12v2M4.5 2v2M8 2v2M11.5 2v2" />
+                  </svg>
+                  {fmtPair(account.usage.pool_memory_mb || 0, account.limits.memory_pool_mb)}
+                </span>
+                <span className="usage-dot" aria-hidden="true">&middot;</span>
+                <span className="usage-item" title="Disk allocated of your pool">
+                  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <ellipse cx="8" cy="4" rx="6" ry="2.2" />
+                    <path d="M2 4v8c0 1.2 2.7 2.2 6 2.2s6-1 6-2.2V4" />
+                    <path d="M2 8c0 1.2 2.7 2.2 6 2.2s6-1 6-2.2" />
+                  </svg>
+                  {fmtPair(account.usage.pool_disk_mb || 0, account.limits.disk_pool_mb)}
+                </span>
               </>
             )}
           </span>
