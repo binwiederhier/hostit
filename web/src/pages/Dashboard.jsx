@@ -260,6 +260,9 @@ const readShowArchived = () => {
 
 // The archived filter, shown only when the account HAS archived apps -- a switch
 // for something that does not exist is just a question the reader has to answer.
+// fmtMB renders a megabyte count compactly (1536 -> "1.5 GB").
+const fmtMB = (mb) => (mb >= 1024 ? `${(mb / 1024).toFixed(mb % 1024 ? 1 : 0)} GB` : `${mb} MB`);
+
 const ArchivedToggle = ({ on, count, onChange }) => (
   <button
     type="button"
@@ -510,6 +513,12 @@ const Dashboard = ({ account, refreshAccount }) => {
           <h1>Apps</h1>
           <span className="usage">
             {account.usage.apps} of {account.limits.app_limit} apps
+            {account.limits.memory_pool_mb > 0 && (
+              <>
+                {" "}&middot; {fmtMB(Math.max(0, account.limits.memory_pool_mb - (account.usage.pool_memory_mb || 0)))} RAM free
+                {" "}&middot; {fmtMB(Math.max(0, account.limits.disk_pool_mb - (account.usage.pool_disk_mb || 0)))} disk free
+              </>
+            )}
           </span>
         </div>
         <div className="header-actions">

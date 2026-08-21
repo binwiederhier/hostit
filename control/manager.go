@@ -47,6 +47,11 @@ type CreateOptions struct {
 	Host        string   // Target node; empty means placement picks one (a fork pins its source's)
 }
 
+// defaultCPUMilli is the CPU cap stamped onto every NEW app as its own
+// override (0.5 cores). CPU has no owner-inheritable default -- the stamp at
+// create IS the default; an admin can raise or clear it per app.
+const defaultCPUMilli = 500
+
 // Manager creates and deletes apps and everything that belongs to them: the
 // control plane's half of the platform -- orchestration, placement, port
 // allocation from the registry. It does no machine work itself and holds no
@@ -335,7 +340,7 @@ func (m *Manager) create(name string, opts *CreateOptions, seed *seedRef) (*stor
 	// a concurrent reconcile (seen live on the stage two-node setup). The app
 	// is pinned to the workspace image it is built with, so a later
 	// Containerfile change (e.g. adding a runtime) only affects new apps.
-	m.RecordLimits(name, opts.MemoryMB, opts.DiskMB, 0)
+	m.RecordLimits(name, opts.MemoryMB, opts.DiskMB, defaultCPUMilli)
 	if err := m.store.AddApp(app); err != nil {
 		return nil, err
 	}
@@ -343,7 +348,18 @@ func (m *Manager) create(name string, opts *CreateOptions, seed *seedRef) (*stor
 		_ = m.store.RemoveApp(name)
 		return nil, err
 	}
+	// Stamp the default CPU cap as the app's own override: CPU has no
+	// owner-inheritable default, so the stamp IS the default (admins can
+	// raise or clear it per app).
+	if err := m.store.UpdateAppLimits(name, 0, 0, defaultCPUMilli); err != nil {
+		slog.Warn("Cannot stamp the default CPU cap", "app", name, "error", err)
+	}
 	m.PushMirror()
+	// The node must know the caps BEFORE provision: the first container is
+	// created during the post-create start, and a cap arriving after it would
+	// make the very next deploy recreate the container for nothing.
+	m.node.SetMemoryLimit(name, opts.MemoryMB)
+	m.node.SetCPULimit(name, defaultCPUMilli)
 
 	// Build the app on this machine (subvolume, user, keys, skeleton) -- the
 	// node-local half. On failure the row goes away again (and the mirror
@@ -365,7 +381,6 @@ func (m *Manager) create(name string, opts *CreateOptions, seed *seedRef) (*stor
 		m.PushMirror()
 		return nil, err
 	}
-	m.node.SetMemoryLimit(name, opts.MemoryMB)
 	// Apply the disk budget now (create and fork alike), so a new app is capped
 	// from the start rather than only after the next daemon restart: record the
 	// limit, create the app's qgroup, join the subvolume, cap it. Failure only

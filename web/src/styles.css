@@ -5371,3 +5371,41 @@ body.ws-resizing iframe {
 .hint-warn {
   color: var(--status-down);
 }
+
+/* The Resources card heading with its inline edit affordance. */
+.ov-title-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.ov-title-row .copy-mini {
+  margin-top: 0;
+}
+
+/* The resources dialog: label + preset dropdown rows, same rhythm as the
+   Resources card's metric rows. */
+.res-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 12px 0;
+}
+.res-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.res-label {
+  width: 52px;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+.res-select {
+  flex: 1;
+}
+.res-fixed {
+  font-size: 13px;
+  color: var(--muted);
+}

@@ -810,6 +810,29 @@ const SshMenuIcon = () => (
 );
 
 // Rename icon next to "App name" in the Settings view.
+// ResourceRow is one line of the resources dialog: a label and a preset
+// dropdown, in the same visual rhythm as the Resources card's metric rows.
+// The empty value is "inherit"; a current override that is not a preset is
+// kept as its own option rather than silently snapping to one.
+const ResourceRow = ({ label, value, onChange, presets, unit, inherit, disabled }) => {
+  const values = presets.map(String);
+  const options = value !== "" && !values.includes(String(value)) ? [String(value), ...values] : values;
+  const fmt = (v) => (unit === "MB" && Number(v) >= 1024 ? `${Number(v) / 1024} GB` : `${v} ${unit}`);
+  return (
+    <div className="res-row">
+      <span className="res-label">{label}</span>
+      <select className="settings-input res-select" value={String(value)} onChange={(e) => onChange(e.target.value)} disabled={disabled} aria-label={label}>
+        <option value="">{inherit}</option>
+        {options.map((v) => (
+          <option key={v} value={v}>
+            {fmt(v)}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+};
+
 // ResourcesDialog edits the app's resource allocation: RAM and disk within
 // the owner's pool (the server enforces the pool; the dialog shows the
 // budget), CPU admin-set. Empty fields inherit the account defaults.
@@ -841,7 +864,7 @@ const ResourcesDialog = ({ app, isAdmin, account, showToast, onClose, onSaved })
 
   return (
     <div className="modal-backdrop" role="dialog" aria-modal="true" onMouseDown={onClose}>
-      <form className="modal" onMouseDown={(e) => e.stopPropagation()} onSubmit={save}>
+      <form className="card modal modal-sheet" onMouseDown={(e) => e.stopPropagation()} onSubmit={save}>
         <button type="button" className="modal-x" onClick={onClose} title="Close" aria-label="Close">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
         </button>
@@ -858,22 +881,44 @@ const ResourcesDialog = ({ app, isAdmin, account, showToast, onClose, onSaved })
           )}
         </p>
         <ErrorBanner message={error} onDismiss={() => setError("")} />
-        <label className="settings-field">
-          <span>RAM (MB)</span>
-          <input type="text" className="settings-input" value={cfg.memory} onChange={(e) => setCfg({ ...cfg, memory: e.target.value })} placeholder={`${app.memory_limit_mb || 0} (inherited)`} disabled={busy} />
-        </label>
-        <label className="settings-field">
-          <span>Disk (MB)</span>
-          <input type="text" className="settings-input" value={cfg.disk} onChange={(e) => setCfg({ ...cfg, disk: e.target.value })} placeholder={`${app.disk_limit_mb || 0} (inherited)`} disabled={busy} />
-        </label>
-        {isAdmin ? (
-          <label className="settings-field">
-            <span>CPU (cores)</span>
-            <input type="text" className="settings-input" value={cfg.cpu} onChange={(e) => setCfg({ ...cfg, cpu: e.target.value })} placeholder="uncapped" disabled={busy} />
-          </label>
-        ) : (
-          app.cpu_milli > 0 && <p className="hint">CPU cap: {app.cpu_milli / 1000} cores (admin-set).</p>
-        )}
+        <div className="res-rows">
+          <ResourceRow
+            label="RAM"
+            value={cfg.memory}
+            onChange={(v) => setCfg({ ...cfg, memory: v })}
+            presets={[128, 256, 512, 1024, 2048, 4096]}
+            unit="MB"
+            inherit={`Default (${pool.memory_mb || 0} MB)`}
+            disabled={busy}
+          />
+          <ResourceRow
+            label="Disk"
+            value={cfg.disk}
+            onChange={(v) => setCfg({ ...cfg, disk: v })}
+            presets={[256, 512, 1024, 2048, 4096, 8192, 16384]}
+            unit="MB"
+            inherit={`Default (${pool.disk_mb || 0} MB)`}
+            disabled={busy}
+          />
+          {isAdmin ? (
+            <ResourceRow
+              label="CPU"
+              value={cfg.cpu}
+              onChange={(v) => setCfg({ ...cfg, cpu: v })}
+              presets={[0.1, 0.25, 0.5, 1, 2, 4]}
+              unit="cores"
+              inherit="Uncapped"
+              disabled={busy}
+            />
+          ) : (
+            app.cpu_milli > 0 && (
+              <div className="res-row">
+                <span className="res-label">CPU</span>
+                <span className="res-fixed">{app.cpu_milli / 1000} cores (admin-set)</span>
+              </div>
+            )
+          )}
+        </div>
         <div className="btn-row">
           <button type="button" className="btn" onClick={onClose} disabled={busy}>
             Cancel
@@ -1297,7 +1342,7 @@ const AppSettings = ({ app, isAdmin, account, showToast, onCopyToken, onRegenera
           )}
         </div>
         <div>
-          <h3>
+          <h3 className="ov-title-row">
             Resources
             {isOwner && (
               <button

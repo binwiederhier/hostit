@@ -469,3 +469,17 @@ func TestDeleteThenRecreateSameNameWaitsForTheTeardown(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "blog", a.Name)
 }
+
+// A new app starts with the default CPU cap stamped as its own override --
+// CPU has no owner-inheritable default, so the stamp at create IS the default,
+// and an admin can raise or clear it per app afterwards.
+func TestCreateStampsTheDefaultCPUCap(t *testing.T) {
+	t.Parallel()
+	m, _ := newTestManager(t)
+	_, err := m.CreateApp("blog", &CreateOptions{})
+	require.NoError(t, err)
+	a, err := m.Store().App("blog")
+	require.NoError(t, err)
+	assert.Equal(t, defaultCPUMilli, a.CPUMilli)
+	assert.Equal(t, defaultCPUMilli, m.CPULimit("blog"), "recorded for the desired state too")
+}

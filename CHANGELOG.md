@@ -9,6 +9,17 @@ default, or on-disk state is called out as **Breaking** or **Upgrade note**.
 
 ## Unreleased
 
+- **New apps default to 128 MB RAM, 256 MB disk and 0.5 CPU cores.** The old
+  512/2048 defaults were generous for what a fresh app usually is; owners
+  raise limits within their pool when an app needs more. **Existing apps do
+  not change**: a migration pins every pre-existing app at its old effective
+  limits as per-app overrides (CPU stays uncapped for them), and every user
+  who already owns apps keeps their old derived budget as an explicit pool.
+  Only new apps and new users see the small defaults.
+- The dashboard header shows the pool that is left ("1.2 GB RAM free"), the
+  resources dialog picks values from preset dropdowns (custom values survive
+  as their own option), and the edit pencil sits aligned with its heading.
+
 - **Per-app resource limits, bounded by per-user pools.** Owners (and
   admins) edit one app's RAM and disk via `PATCH /api/apps/{name}/limits` or
   the pencil on the Settings page's Resources card; empty fields inherit the

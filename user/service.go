@@ -27,9 +27,13 @@ const (
 	tokenPrefixChars = 6
 
 	// Built-in limits, used when no global setting and no per-user override exists
+	// Small on purpose: a fresh app is usually a static site or a tiny
+	// service, and owners can raise limits within their pool. Existing apps
+	// were pinned at their old effective limits when these shrank (2026-08-21
+	// migration), so a default change never resizes something already running.
 	defaultAppLimit = 3
-	defaultMemoryMB = 512
-	defaultDiskMB   = 2048
+	defaultMemoryMB = 128
+	defaultDiskMB   = 256
 
 	settingAppLimit = "default_app_limit"
 	settingMemoryMB = "default_memory_mb"

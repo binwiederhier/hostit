@@ -301,6 +301,19 @@ var (
 		ALTER TABLE user ADD COLUMN memory_pool_mb INTEGER;
 		ALTER TABLE user ADD COLUMN disk_pool_mb INTEGER;
 	`,
+		// The shipped per-app defaults shrank (512/2048 -> 128/256 MB), so every
+		// app existing BEFORE the change is pinned at its old effective limit as
+		// its own override, and every user who already owns apps gets their old
+		// derived budget pinned as an explicit pool -- nothing already deployed
+		// changes size, only new apps and new users see the small defaults. The
+		// numbers are the OLD built-in defaults by design; a per-user override,
+		// where set, wins via the COALESCE.
+		`
+		UPDATE app SET memory_limit_mb = COALESCE((SELECT u.memory_mb FROM user u WHERE u.id = app.owner_id), 512) WHERE memory_limit_mb = 0;
+		UPDATE app SET disk_limit_mb = COALESCE((SELECT u.disk_mb FROM user u WHERE u.id = app.owner_id), 2048) WHERE disk_limit_mb = 0;
+		UPDATE user SET memory_pool_mb = COALESCE(memory_pool_mb, COALESCE(app_limit, 3) * COALESCE(memory_mb, 512)) WHERE id IN (SELECT DISTINCT owner_id FROM app WHERE owner_id != '');
+		UPDATE user SET disk_pool_mb = COALESCE(disk_pool_mb, COALESCE(app_limit, 3) * COALESCE(disk_mb, 2048)) WHERE id IN (SELECT DISTINCT owner_id FROM app WHERE owner_id != '');
+	`,
 	}
 )
 

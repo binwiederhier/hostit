@@ -362,8 +362,8 @@ func TestLimitsDerivePools(t *testing.T) {
 
 	limits, err := m.Limits(u)
 	require.NoError(t, err)
-	assert.Equal(t, 3*512, limits.MemoryPoolMB, "derived: app_limit x per-app default")
-	assert.Equal(t, 3*2048, limits.DiskPoolMB)
+	assert.Equal(t, 3*128, limits.MemoryPoolMB, "derived: app_limit x per-app default")
+	assert.Equal(t, 3*256, limits.DiskPoolMB)
 
 	// An explicit pool wins over the derivation.
 	pool := 4096
@@ -372,7 +372,7 @@ func TestLimitsDerivePools(t *testing.T) {
 	limits, err = m.Limits(u)
 	require.NoError(t, err)
 	assert.Equal(t, 4096, limits.MemoryPoolMB)
-	assert.Equal(t, 3*2048, limits.DiskPoolMB, "the other pool still derives")
+	assert.Equal(t, 3*256, limits.DiskPoolMB, "the other pool still derives")
 
 	// A raised per-app default raises the derived pool with it.
 	mem := 1024
@@ -381,4 +381,16 @@ func TestLimitsDerivePools(t *testing.T) {
 	limits, err = m.Limits(u)
 	require.NoError(t, err)
 	assert.Equal(t, 3*1024, limits.MemoryPoolMB)
+}
+
+// The shipped per-app defaults are deliberately small (a static site needs
+// nothing): 128 MB RAM and 256 MB disk. Existing apps were pinned at their
+// old effective limits by the migration, so only new apps see these.
+func TestShippedDefaultsAreSmall(t *testing.T) {
+	t.Parallel()
+	m := newTestManager(t)
+	defaults, err := m.Defaults()
+	require.NoError(t, err)
+	assert.Equal(t, 128, defaults.MemoryMB)
+	assert.Equal(t, 256, defaults.DiskMB)
 }
