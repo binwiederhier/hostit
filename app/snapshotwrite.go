@@ -8,7 +8,9 @@ import "strings"
 // tidy file with every comment deleted. Same reasoning as SetDescription, one
 // level deeper because snapshot: is a block.
 
-const snapshotKey = "snapshot:"
+const (
+	snapshotKey = "snapshot:"
+)
 
 // SetSnapshotConfig writes the snapshot block: it updates the keys that have a
 // value, drops the ones that do not, and removes the block entirely when

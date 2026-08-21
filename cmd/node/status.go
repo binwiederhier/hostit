@@ -20,15 +20,17 @@ import (
 
 // cmdStatus asks the RUNNING daemon over its root-only status socket: the
 // point is the live link state, which no file on disk can answer.
-var cmdStatus = &cli.Command{
-	Name:  "status",
-	Usage: "Show this node: identity, control link, and the apps placed here",
-	Flags: []cli.Flag{
-		&cli.StringFlag{Name: "config", Aliases: []string{"c"}, Value: node.DefaultConfigFile, Usage: "node config file"},
-		&cli.BoolFlag{Name: "json", Usage: "print the raw status as JSON"},
-	},
-	Action: execStatus,
-}
+var (
+	cmdStatus = &cli.Command{
+		Name:  "status",
+		Usage: "Show this node: identity, control link, and the apps placed here",
+		Flags: []cli.Flag{
+			&cli.StringFlag{Name: "config", Aliases: []string{"c"}, Value: node.DefaultConfigFile, Usage: "node config file"},
+			&cli.BoolFlag{Name: "json", Usage: "print the raw status as JSON"},
+		},
+		Action: execStatus,
+	}
+)
 
 func execStatus(c *cli.Context) error {
 	body, err := getSocket(statusSocketFile(c.String("config")), "/v1/status")

@@ -8,7 +8,9 @@ import (
 )
 
 // Set at build time via -ldflags "-X main.version=..."
-var version = "dev"
+var (
+	version = "dev"
+)
 
 func main() {
 	if err := appcli.New(version).Run(os.Args); err != nil {

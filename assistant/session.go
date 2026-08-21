@@ -21,11 +21,15 @@ const (
 
 // ErrBusy is returned when a turn is already running for an app; only one runs at
 // a time, so a second sender must wait rather than clobber the transcript.
-var ErrBusy = errors.New("a turn is already in progress for this app")
+var (
+	ErrBusy = errors.New("a turn is already in progress for this app")
+)
 
 // ErrTooManySubscribers is returned when an app already has the most stream
 // watchers it allows
-var ErrTooManySubscribers = errors.New("too many watchers for this app's assistant")
+var (
+	ErrTooManySubscribers = errors.New("too many watchers for this app's assistant")
+)
 
 // session is one app's live conversation state: whether a run is in progress and
 // who is watching. The run itself lives in a server goroutine (not a request), so

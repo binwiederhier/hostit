@@ -35,6 +35,17 @@ default, or on-disk state is called out as **Breaking** or **Upgrade note**.
 - The node now tells its link layer when the control connection drops, so
   callbacks between redials are dropped cleanly instead of posted into a dead
   session (and `hostit node status` reports the link honestly).
+- **Fixed: a node hosting no apps froze at "LAST SEEN ... ago"** in
+  `hostit control status`. The state poll doubles as the liveness heartbeat
+  but skipped empty nodes, so a node's clock stopped the moment its last app
+  left -- and a freshly added node looked dead before its first app arrived.
+  Empty nodes now answer a heartbeat instead.
+- The e2e suites now sweep stale `e2e-*` apps (older than an hour) at startup,
+  so a crashed run's leftovers cannot eat the app limit or linger in the
+  registry.
+- Removed `scripts/mkdeb.sh` and the `make deb` targets: goreleaser builds the
+  packages, and the script predated the binary split (it built the pre-split
+  single package and referenced files that no longer exist).
 
 ## v0.17.0 (2026-08-20)
 

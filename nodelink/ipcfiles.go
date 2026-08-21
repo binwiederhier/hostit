@@ -115,7 +115,9 @@ func EnsureIPCCreds(dataDir string) (*tls.Config, *cluster.CA, error) {
 // running the old binary loses its credentials for the seconds until its own
 // restart; it redials on a loop and comes back on the socket. Packages move
 // together, so that window is the upgrade itself.
-var retiredIdentities = []string{store.HostLocal, LocalProxyFile}
+var (
+	retiredIdentities = []string{store.HostLocal, LocalProxyFile}
+)
 
 func removeRetiredIdentities(dir string) {
 	for _, name := range retiredIdentities {

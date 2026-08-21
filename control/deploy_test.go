@@ -389,7 +389,9 @@ type fakeRunner struct {
 	mu                  sync.Mutex // Protects commands; the demo app deploys in the background
 }
 
-var _ run.Runner = (*fakeRunner)(nil)
+var (
+	_ run.Runner = (*fakeRunner)(nil)
+)
 
 func newFakeRunner() *fakeRunner {
 	return &fakeRunner{
@@ -401,7 +403,9 @@ func newFakeRunner() *fakeRunner {
 
 // errImageMissing is what a fake "podman image exists" returns for an image that
 // was never built or seeded, so container.ImageExists reports false.
-var errImageMissing = errors.New("image not known to the fake store")
+var (
+	errImageMissing = errors.New("image not known to the fake store")
+)
 
 // seedImage marks an image as already present in the fake store.
 func (f *fakeRunner) seedImage(tag string) {

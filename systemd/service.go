@@ -14,7 +14,9 @@ import (
 
 // systemctl is the control binary; centralized so the verb wrappers don't each
 // repeat the literal.
-const systemctl = "systemctl"
+const (
+	systemctl = "systemctl"
+)
 
 // Interface is the subset of systemctl operations the app and snapshot packages
 // depend on; the concrete *Service satisfies it, so a test can substitute a fake.
@@ -36,7 +38,9 @@ type Service struct {
 	runner run.Runner
 }
 
-var _ Interface = (*Service)(nil)
+var (
+	_ Interface = (*Service)(nil)
+)
 
 // New builds a systemd Service from a command runner.
 func New(runner run.Runner) *Service {

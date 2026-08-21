@@ -62,7 +62,8 @@ const (
 // CLI) plus the pinned claude, and nothing else. The hostit binary is
 // bind-mounted at run time (as with app containers), never baked in, and the
 // subscription is a mounted env/credential, so this image carries no secret.
-const assistantContainerfile = `FROM docker.io/library/node:22-slim
+const (
+	assistantContainerfile = `FROM docker.io/library/node:22-slim
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
       ca-certificates git \
     && rm -rf /var/lib/apt/lists/* \
@@ -71,6 +72,7 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-ins
     && mkdir -p ` + assistantContainerHome + ` && chmod 0777 ` + assistantContainerHome + `
 CMD ["/bin/bash"]
 `
+)
 
 // Sandbox runs one assistant turn as `claude -p` inside a locked-down
 // podman container on the operator's Claude Max subscription. It holds no per-app

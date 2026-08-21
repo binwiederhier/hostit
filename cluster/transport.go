@@ -50,7 +50,9 @@ func Duplex(conn net.Conn, dialer bool, handler http.Handler) (*http.Client, *ya
 // purpose: it must clear the slowest legitimate one-shot RPC (a large tar
 // upload or file read on a loaded box), so it is a hang backstop, not a SLA.
 // A var, not a const, so tests can shorten it.
-var rpcTimeout = 5 * time.Minute
+var (
+	rpcTimeout = 5 * time.Minute
+)
 
 // DuplexClient builds the http.Client that carries requests to the peer, each
 // on its own yamux stream, bounded by rpcTimeout.

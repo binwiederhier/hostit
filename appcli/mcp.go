@@ -31,15 +31,17 @@ const (
 // over the peercred-authenticated socket, which scopes it to this one app -- so
 // the model, confined to these MCP tools, can only ever touch the app the turn
 // belongs to, never the host, another app, or its own credential.
-var cmdMCP = &cli.Command{
-	Name:   "mcp",
-	Usage:  "Serve hostit's app tools over MCP (used by the sandboxed assistant backend)",
-	Hidden: true,
-	Flags: []cli.Flag{
-		&cli.StringFlag{Name: "socket", Usage: "daemon socket path; defaults to the standard location"},
-	},
-	Action: execMCP,
-}
+var (
+	cmdMCP = &cli.Command{
+		Name:   "mcp",
+		Usage:  "Serve hostit's app tools over MCP (used by the sandboxed assistant backend)",
+		Hidden: true,
+		Flags: []cli.Flag{
+			&cli.StringFlag{Name: "socket", Usage: "daemon socket path; defaults to the standard location"},
+		},
+		Action: execMCP,
+	}
+)
 
 func execMCP(c *cli.Context) error {
 	socket := c.String("socket")

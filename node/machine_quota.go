@@ -8,7 +8,9 @@ import (
 // diskUsageInterval is how often app disk usage is re-measured for the dashboard.
 // It is pure accounting (the qgroup enforces the quota), so a fixed 5 minutes is
 // plenty and there is no reason to make it configurable.
-const diskUsageInterval = 5 * time.Minute
+const (
+	diskUsageInterval = 5 * time.Minute
+)
 
 // SetDiskLimit records the disk quota for an app and re-ensures its budget
 // (subvolume + snapshots, capped on exclusive bytes: EDQUOT at the cap).

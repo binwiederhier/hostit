@@ -14,7 +14,9 @@ const (
 )
 
 // maxAppEvents bounds how many activity-log rows an app keeps.
-const maxAppEvents = 500
+const (
+	maxAppEvents = 500
+)
 
 // Event is one entry in an app's activity log (the Logs tab).
 type Event struct {

@@ -20,35 +20,37 @@ import (
 // certificate), list, remove (revoke). These act on the registry SQLite
 // directly -- same host, root-only file, WAL keeps the daemon's writes safe
 // alongside.
-var cmdNode = &cli.Command{
-	Name:  "node",
-	Usage: "Manage app-running nodes (enrollment, listing, removal)",
-	Flags: []cli.Flag{
-		&cli.StringFlag{Name: "config", Aliases: []string{"c"}, Value: controlconf.DefaultControlConfigFile, Usage: "control config file"},
-	},
-	Subcommands: []*cli.Command{
-		{
-			Name:      "add",
-			Usage:     "Register a new node and mint its mTLS certificate",
-			ArgsUsage: "<name>",
-			Flags: []cli.Flag{
-				&cli.StringFlag{Name: "address", Usage: "optional: the node's address, which it otherwise reports itself on connect"},
+var (
+	cmdNode = &cli.Command{
+		Name:  "node",
+		Usage: "Manage app-running nodes (enrollment, listing, removal)",
+		Flags: []cli.Flag{
+			&cli.StringFlag{Name: "config", Aliases: []string{"c"}, Value: controlconf.DefaultControlConfigFile, Usage: "control config file"},
+		},
+		Subcommands: []*cli.Command{
+			{
+				Name:      "add",
+				Usage:     "Register a new node and mint its mTLS certificate",
+				ArgsUsage: "<name>",
+				Flags: []cli.Flag{
+					&cli.StringFlag{Name: "address", Usage: "optional: the node's address, which it otherwise reports itself on connect"},
+				},
+				Action: execNodeAdd,
 			},
-			Action: execNodeAdd,
+			{
+				Name:   "list",
+				Usage:  "List registered nodes",
+				Action: execNodeList,
+			},
+			{
+				Name:      "remove",
+				Usage:     "Unregister a node; its certificate stops being accepted",
+				ArgsUsage: "<name>",
+				Action:    execNodeRemove,
+			},
 		},
-		{
-			Name:   "list",
-			Usage:  "List registered nodes",
-			Action: execNodeList,
-		},
-		{
-			Name:      "remove",
-			Usage:     "Unregister a node; its certificate stops being accepted",
-			ArgsUsage: "<name>",
-			Action:    execNodeRemove,
-		},
-	},
-}
+	}
+)
 
 func execNodeAdd(c *cli.Context) error {
 	if c.NArg() != 1 {

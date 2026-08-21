@@ -23,7 +23,9 @@ import (
 // are entry points sshd reaches through this binary, not commands anyone types.
 
 // components are the dispatchable siblings, in help order.
-var components = []string{"control", "node", "proxy"}
+var (
+	components = []string{"control", "node", "proxy"}
+)
 
 func New(version string) *cli.App {
 	commands := []*cli.Command{cmdShell, cmdEnter, cmdInternal, cmdAppsAlias}
@@ -61,19 +63,21 @@ func dispatchCommand(name string) *cli.Command {
 // operator's app CLI before it moved onto hostit-control, where the registry
 // is. Deprecated, not removed -- muscle memory and scripts get a release to
 // catch up, and the notice tells them where to.
-var cmdAppsAlias = &cli.Command{
-	Name:            "apps",
-	Usage:           "Deprecated: use `hostit control app ...`",
-	SkipFlagParsing: true,
-	Hidden:          true,
-	Action: func(c *cli.Context) error {
-		fmt.Fprintln(os.Stderr, "note: `hostit apps` moved to `hostit control app`; this alias will go away")
-		return execSibling("hostit-control", append([]string{"app"}, c.Args().Slice()...))
-	},
-	BashComplete: func(c *cli.Context) {
-		completeSibling(c.App.Writer, "hostit-control", append([]string{"app"}, c.Args().Slice()...))
-	},
-}
+var (
+	cmdAppsAlias = &cli.Command{
+		Name:            "apps",
+		Usage:           "Deprecated: use `hostit control app ...`",
+		SkipFlagParsing: true,
+		Hidden:          true,
+		Action: func(c *cli.Context) error {
+			fmt.Fprintln(os.Stderr, "note: `hostit apps` moved to `hostit control app`; this alias will go away")
+			return execSibling("hostit-control", append([]string{"app"}, c.Args().Slice()...))
+		},
+		BashComplete: func(c *cli.Context) {
+			completeSibling(c.App.Writer, "hostit-control", append([]string{"app"}, c.Args().Slice()...))
+		},
+	}
+)
 
 // completeSibling asks the component binary for its completions by re-running
 // it with the flag urfave stripped. A subprocess, not an exec: the caller is

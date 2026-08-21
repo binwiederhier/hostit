@@ -450,12 +450,16 @@ func (a *Agent) logNotice(format string, args ...any) {
 
 // logTimeFormat stamps each app-log line. Space-separated, no brackets, so it
 // stays readable and is trivial to strip; the container clock is UTC.
-const logTimeFormat = "2006-01-02 15:04:05"
+const (
+	logTimeFormat = "2006-01-02 15:04:05"
+)
 
 // maxLineBuffer bounds how much a single unterminated line may buffer before it is
 // flushed anyway, so an app that never prints a newline cannot grow memory without
 // bound.
-const maxLineBuffer = 64 * 1024
+const (
+	maxLineBuffer = 64 * 1024
+)
 
 // timestampWriter prefixes each complete line with a wall-clock timestamp before
 // writing it to the log, so the app's output is readable after the fact rather

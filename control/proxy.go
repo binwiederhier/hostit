@@ -46,7 +46,9 @@ func (s *Server) newProxyHandler() http.Handler {
 // previewParam is the query key the web app appends to a live-preview iframe URL
 // (and thus carries in the Referer of that iframe's same-origin sub-resources), so
 // the proxy can tell a preview load from ordinary traffic.
-const previewParam = "hostit_preview"
+const (
+	previewParam = "hostit_preview"
+)
 
 // proxyTo forwards the request to the app's port on its hosting node (the
 // loopback for local apps), preserving the original Host header and streaming

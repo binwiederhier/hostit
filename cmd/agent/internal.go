@@ -15,27 +15,31 @@ import (
 // It is hidden from the command list; the other internal commands (shell, enter,
 // agent, mcp) stay top-level because external wrappers, sudoers, the systemd unit
 // and claude's mcp-config invoke them by name.
-var cmdInternal = &cli.Command{
-	Name:        "internal",
-	Usage:       "internal debug commands (not for app owners)",
-	Hidden:      true,
-	Subcommands: []*cli.Command{cmdInternalAssistant},
-}
+var (
+	cmdInternal = &cli.Command{
+		Name:        "internal",
+		Usage:       "internal debug commands (not for app owners)",
+		Hidden:      true,
+		Subcommands: []*cli.Command{cmdInternalAssistant},
+	}
+)
 
-var cmdInternalAssistant = &cli.Command{
-	Name:      "assistant",
-	Usage:     "run one assistant turn via the sandboxed Claude Max backend (debug)",
-	ArgsUsage: "<app> [prompt]",
-	Flags: []cli.Flag{
-		// The subscription token is a CONTROL setting, so this reads control's
-		// config -- pointing it at the node's would parse (yaml is lenient) and
-		// then report the token missing from a file it never belonged in.
-		&cli.StringFlag{Name: "config", Aliases: []string{"c"}, Value: controlconf.DefaultControlConfigFile, Usage: "control config file"},
-		&cli.BoolFlag{Name: "shell", Usage: "drop into a shell in the sandbox instead of running claude (debugging)"},
-		&cli.BoolFlag{Name: "raw", Usage: "print raw event fields instead of a pretty summary"},
-	},
-	Action: execInternalAssistant,
-}
+var (
+	cmdInternalAssistant = &cli.Command{
+		Name:      "assistant",
+		Usage:     "run one assistant turn via the sandboxed Claude Max backend (debug)",
+		ArgsUsage: "<app> [prompt]",
+		Flags: []cli.Flag{
+			// The subscription token is a CONTROL setting, so this reads control's
+			// config -- pointing it at the node's would parse (yaml is lenient) and
+			// then report the token missing from a file it never belonged in.
+			&cli.StringFlag{Name: "config", Aliases: []string{"c"}, Value: controlconf.DefaultControlConfigFile, Usage: "control config file"},
+			&cli.BoolFlag{Name: "shell", Usage: "drop into a shell in the sandbox instead of running claude (debugging)"},
+			&cli.BoolFlag{Name: "raw", Usage: "print raw event fields instead of a pretty summary"},
+		},
+		Action: execInternalAssistant,
+	}
+)
 
 func execInternalAssistant(c *cli.Context) error {
 	conf, err := controlconf.LoadConfig(c.String("config"))

@@ -15,7 +15,9 @@ import (
 // indistinguishable from "off because this app is retired".
 
 // ErrArchived is what every verb that would run an archived app returns.
-var ErrArchived = errors.New("app is archived; unarchive it first")
+var (
+	ErrArchived = errors.New("app is archived; unarchive it first")
+)
 
 // Archive shelves an app: it is powered off, and refuses to come back until it
 // is unarchived. Powering off is part of archiving rather than something the

@@ -13,12 +13,16 @@ type pricing struct {
 
 // modelPricing maps an assistant model to its published per-million-token prices.
 // An unknown model falls back to the Sonnet tier, which is the default model.
-var modelPricing = map[string]pricing{
-	"claude-sonnet-5": {input: 3, output: 15, cacheWrite: 3.75, cacheRead: 0.30},
-}
+var (
+	modelPricing = map[string]pricing{
+		"claude-sonnet-5": {input: 3, output: 15, cacheWrite: 3.75, cacheRead: 0.30},
+	}
+)
 
 // sonnetPricing is the fallback (and current default) tier.
-var sonnetPricing = pricing{input: 3, output: 15, cacheWrite: 3.75, cacheRead: 0.30}
+var (
+	sonnetPricing = pricing{input: 3, output: 15, cacheWrite: 3.75, cacheRead: 0.30}
+)
 
 // CostUSD converts accumulated token usage into a dollar figure for the
 // given model. It is an estimate: usage is summed over time and priced at current

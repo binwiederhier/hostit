@@ -5,7 +5,9 @@ import "strings"
 // attachmentNotePrefix marks the text block that tells the model where uploaded
 // files were saved. It is meant for the model, not the user, so the transcript
 // display skips any block starting with it (see toItems).
-const attachmentNotePrefix = "Attached files (saved in the app): "
+const (
+	attachmentNotePrefix = "Attached files (saved in the app): "
+)
 
 // buildUserContent turns a user message plus its uploaded attachments into the
 // content blocks sent to the model, and the text shown in the transcript. Images

@@ -27,7 +27,9 @@ import (
 // pushes down it. Certificates go the other way, because the trigger is a
 // handshake for a name the proxy has never seen.
 
-var errTLSNotManaged = errors.New("tls is not managed here")
+var (
+	errTLSNotManaged = errors.New("tls is not managed here")
+)
 
 const (
 	// certTimeout bounds one certificate lookup for a proxy, including a

@@ -16,7 +16,9 @@ const (
 	testVersion = "v1.2.3-test"
 )
 
-var testIDs = IDs{UID: 1001, GID: 1001, Count: 65536}
+var (
+	testIDs = IDs{UID: 1001, GID: 1001, Count: 65536}
+)
 
 func TestContainerCreateArgsWorkspaceMode(t *testing.T) {
 	t.Parallel()

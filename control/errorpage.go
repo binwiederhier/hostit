@@ -22,7 +22,9 @@ var errorPageHTML string
 // name is free or a registered app that is merely stopped: anything else lets an
 // outsider enumerate which app names are taken. The owner learns their app is
 // down from the dashboard, not from this page.
-var errorPageTemplate = template.Must(template.New("errorpage").Parse(errorPageHTML))
+var (
+	errorPageTemplate = template.Must(template.New("errorpage").Parse(errorPageHTML))
+)
 
 // errorPageData is the template input. Title/Headline/Message come from the
 // caller; Code and Home are filled in by writeErrorPage.

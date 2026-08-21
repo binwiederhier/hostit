@@ -17,15 +17,17 @@ import (
 // and what they are carrying. It reads the registry directly, like `node list`
 // and `proxy list`, so it works with the daemon stopped -- which is exactly when
 // an operator most wants to look.
-var cmdStatus = &cli.Command{
-	Name:  "status",
-	Usage: "Show the cluster: nodes, proxies, apps and totals",
-	Flags: []cli.Flag{
-		&cli.StringFlag{Name: "config", Aliases: []string{"c"}, Value: controlconf.DefaultControlConfigFile, Usage: "control config file"},
-		&cli.BoolFlag{Name: "json", Usage: "print the raw status as JSON"},
-	},
-	Action: execStatus,
-}
+var (
+	cmdStatus = &cli.Command{
+		Name:  "status",
+		Usage: "Show the cluster: nodes, proxies, apps and totals",
+		Flags: []cli.Flag{
+			&cli.StringFlag{Name: "config", Aliases: []string{"c"}, Value: controlconf.DefaultControlConfigFile, Usage: "control config file"},
+			&cli.BoolFlag{Name: "json", Usage: "print the raw status as JSON"},
+		},
+		Action: execStatus,
+	}
+)
 
 func execStatus(c *cli.Context) error {
 	_, s, err := nodeStore(c)

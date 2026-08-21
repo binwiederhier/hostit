@@ -18,7 +18,9 @@ import (
 // errInvalid is the sentinel the Service wraps for request-validation failures.
 // A caller injects its own; the tests assert against this one to prove the
 // wrapping contract holds across the New boundary.
-var errInvalid = errors.New("invalid request")
+var (
+	errInvalid = errors.New("invalid request")
+)
 
 func TestWriteFileFromGivesNewParentDirsToTheAppUser(t *testing.T) {
 	t.Parallel()

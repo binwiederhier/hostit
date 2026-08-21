@@ -19,32 +19,34 @@ import (
 // cmdProxy is the hostit-control proxy registry: add (mint the proxy's mTLS
 // certificate), list, remove (revoke). A proxy holds no apps, so unlike a node
 // its row exists only to be the membership switch and a liveness record.
-var cmdProxy = &cli.Command{
-	Name:  "proxy",
-	Usage: "Manage data-plane proxies (enrollment, listing, removal)",
-	Flags: []cli.Flag{
-		&cli.StringFlag{Name: "config", Aliases: []string{"c"}, Value: controlconf.DefaultControlConfigFile, Usage: "control config file"},
-	},
-	Subcommands: []*cli.Command{
-		{
-			Name:      "add",
-			Usage:     "Register a new proxy and mint its mTLS certificate",
-			ArgsUsage: "<name>",
-			Action:    execProxyAdd,
+var (
+	cmdProxy = &cli.Command{
+		Name:  "proxy",
+		Usage: "Manage data-plane proxies (enrollment, listing, removal)",
+		Flags: []cli.Flag{
+			&cli.StringFlag{Name: "config", Aliases: []string{"c"}, Value: controlconf.DefaultControlConfigFile, Usage: "control config file"},
 		},
-		{
-			Name:   "list",
-			Usage:  "List registered proxies",
-			Action: execProxyList,
+		Subcommands: []*cli.Command{
+			{
+				Name:      "add",
+				Usage:     "Register a new proxy and mint its mTLS certificate",
+				ArgsUsage: "<name>",
+				Action:    execProxyAdd,
+			},
+			{
+				Name:   "list",
+				Usage:  "List registered proxies",
+				Action: execProxyList,
+			},
+			{
+				Name:      "remove",
+				Usage:     "Unregister a proxy; its certificate stops being accepted",
+				ArgsUsage: "<name>",
+				Action:    execProxyRemove,
+			},
 		},
-		{
-			Name:      "remove",
-			Usage:     "Unregister a proxy; its certificate stops being accepted",
-			ArgsUsage: "<name>",
-			Action:    execProxyRemove,
-		},
-	},
-}
+	}
+)
 
 func execProxyAdd(c *cli.Context) error {
 	if c.NArg() != 1 {

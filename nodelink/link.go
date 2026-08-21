@@ -14,7 +14,9 @@ import (
 )
 
 // callbackPathPrefix roots the callback routes on control's duplex side.
-const callbackPathPrefix = "/callback/"
+const (
+	callbackPathPrefix = "/callback/"
+)
 
 // ControlLink is the node's reverse channel to control: it implements
 // nodeapi.ControlSink by POSTing callbacks over the same duplex connection the
@@ -29,7 +31,9 @@ type ControlLink struct {
 	mu     sync.Mutex // Protects client
 }
 
-var _ nodeapi.ControlSink = (*ControlLink)(nil)
+var (
+	_ nodeapi.ControlSink = (*ControlLink)(nil)
+)
 
 // NewControlLink creates the (initially disconnected) link.
 func NewControlLink() *ControlLink {

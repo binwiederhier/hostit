@@ -334,8 +334,10 @@ func (m *Machine) reconcileContainers(known map[string]bool) []string {
 }
 
 // inspectMountsFormat lists a container's bind-mount sources, one per line.
-const inspectMountsFormat = `{{range .Mounts}}{{.Source}}
+const (
+	inspectMountsFormat = `{{range .Mounts}}{{.Source}}
 {{end}}`
+)
 
 // containerForeign reports whether the id's container exists and belongs to
 // ANOTHER node on this host: its apps-dir mount lies outside this node's

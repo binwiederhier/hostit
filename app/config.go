@@ -49,7 +49,9 @@ type SnapshotHooks struct {
 // hostit.yml does not say. Every hour was too often: it spikes the pool and the
 // cleaner for apps that change a few times a day, and the pre-deploy snapshot
 // already covers the moment most rollbacks want.
-const DefaultSnapshotInterval = 3 * time.Hour
+const (
+	DefaultSnapshotInterval = 3 * time.Hour
+)
 
 // SnapshotInterval is how often this app wants automatic snapshots: the default
 // when unset, and zero when the owner wrote 0 to opt out. An unparseable value

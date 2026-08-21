@@ -25,10 +25,12 @@ const (
 // requiredBinaries are the external commands the hostit daemon shells out to.
 // A missing one otherwise surfaces lazily, mid-operation, as a cryptic error, so
 // the preflight checks them all up front.
-var requiredBinaries = []string{
-	"podman", "btrfs", "nft", "systemctl",
-	"useradd", "usermod", "userdel", "groupadd", "groupmod", "groupdel", "pkill",
-}
+var (
+	requiredBinaries = []string{
+		"podman", "btrfs", "nft", "systemctl",
+		"useradd", "usermod", "userdel", "groupadd", "groupmod", "groupdel", "pkill",
+	}
+)
 
 // CheckHost verifies the two non-negotiable prerequisites the daemon
 // has before it touches anything: it runs as root, and every command it drives is

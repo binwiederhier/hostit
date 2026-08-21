@@ -65,7 +65,9 @@ func resolveConfigFile(path string) string {
 // sigCh receives the termination signal; the dial loop closes the live control
 // connection on it so ServeAgent unblocks instead of ignoring SIGTERM until
 // systemd's stop timeout.
-var sigCh = make(chan os.Signal, 1)
+var (
+	sigCh = make(chan os.Signal, 1)
+)
 
 // Serve runs the node daemon from its config file until a termination signal.
 // It is the machine half only: a Machine doing what control tells it to, with

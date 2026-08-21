@@ -70,15 +70,17 @@ type rpcResp struct {
 
 // The sentinels that must survive the wire: the control plane's error-to-HTTP
 // mapping (writeAppError) matches these with errors.Is.
-var wireErrs = map[string]error{
-	"powered_off":   appctl.ErrPoweredOff,
-	"app_notfound":  store.ErrAppNotFound,
-	"snap_notfound": store.ErrSnapshotNotFound,
-	"app_exists":    nodeapi.ErrAppExists,
-	"file_notfound": fs.ErrNotExist,
-	"invalid":       nodeapi.ErrInvalid,
-	"limit":         nodeapi.ErrLimitReached,
-}
+var (
+	wireErrs = map[string]error{
+		"powered_off":   appctl.ErrPoweredOff,
+		"app_notfound":  store.ErrAppNotFound,
+		"snap_notfound": store.ErrSnapshotNotFound,
+		"app_exists":    nodeapi.ErrAppExists,
+		"file_notfound": fs.ErrNotExist,
+		"invalid":       nodeapi.ErrInvalid,
+		"limit":         nodeapi.ErrLimitReached,
+	}
+)
 
 func errCode(err error) string {
 	for code, sentinel := range wireErrs {

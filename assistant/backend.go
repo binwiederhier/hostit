@@ -69,7 +69,9 @@ type Option struct {
 }
 
 // registry holds the known backends in the order their groups are offered.
-var registry []Backend
+var (
+	registry []Backend
+)
 
 // Register adds a backend to the catalog. Called from init() in each backend's
 // file, so the set of backends is the set of files that implement one.
@@ -142,4 +144,6 @@ func Default(creds Credentials) (Option, bool) {
 // DefaultCostModel prices usage recorded before per-turn model attribution
 // existed. Sonnet sits between the cheap and expensive models, so a mixed
 // history is neither flattered nor exaggerated.
-const DefaultCostModel = "claude-sonnet-5"
+const (
+	DefaultCostModel = "claude-sonnet-5"
+)
