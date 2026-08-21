@@ -29,10 +29,12 @@ func (p *serverPolicy) Keys(a *store.App) []string {
 	return append(appKeys, profileKeys...)
 }
 
-// Limits are the owner's, falling back to the global defaults for an app with
-// no owner -- resolved fresh from the registry every time, so a limit changed
-// while a node was away is asserted on the next reconcile instead of reverting
-// to whatever a control process cached at boot.
+// Limits are the app's own admin-set overrides where present, else the
+// owner's (falling back to the global defaults for an app with no owner) --
+// resolved fresh from the registry every time, so a limit changed while a
+// node was away is asserted on the next reconcile instead of reverting to
+// whatever a control process cached at boot. The override check is what keeps
+// a daemon restart from quietly un-applying an admin's per-app cap.
 func (p *serverPolicy) Limits(a *store.App) (memoryMB, diskMB int) {
 	limits, err := p.s.users.Defaults()
 	if err != nil {
@@ -46,8 +48,15 @@ func (p *serverPolicy) Limits(a *store.App) (memoryMB, diskMB int) {
 			}
 		}
 	}
+	memoryMB, diskMB = limits.MemoryMB, limits.DiskMB
+	if a.MemoryLimitMB > 0 {
+		memoryMB = a.MemoryLimitMB
+	}
+	if a.DiskLimitMB > 0 {
+		diskMB = a.DiskLimitMB
+	}
 	// Resolved here, not on the node: nothing is uncapped, so a zero limit is
 	// the default cap. Leaving the node to reinterpret the zero made control
 	// report "no limit" for an app the filesystem was hard-capping.
-	return limits.MemoryMB, node.EffectiveDiskCapMB(limits.DiskMB)
+	return memoryMB, node.EffectiveDiskCapMB(diskMB)
 }
