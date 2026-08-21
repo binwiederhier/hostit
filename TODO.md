@@ -85,6 +85,17 @@ credential push). AI would still be a capability under either.
 
 ## Smaller things
 
+- **MCP bridge: return images as image content.** `read_file` returns text, so
+  an image read through it is byte salad -- which is why attached images ride
+  the sandbox's stdin as blocks (2026-08-20 fix) instead of being fetched by
+  path. MCP has an image content type and Claude Code renders image
+  tool-results to real vision, so teaching the bridge to answer image files
+  with an image block would let the agent LOOK at any image already in the app
+  (screenshots in public/, logos), not just ones attached to the current
+  message. Composes with the stdin path, does not replace it: an attached
+  image should be unconditionally visible, not contingent on a tool call.
+  Touches appcli's mcp server and the sandbox's tool-result parsing.
+
 - **Private apps: only the owner can reach them.** hostit apps are public URLs.
   That is fine for a blog and wrong for a personal dashboard holding a connected
   Google account -- one URL guess away from being someone else's mail reader.
