@@ -390,20 +390,22 @@ func (s *Server) withState(resp []*apiAppResponse) []*apiAppResponse {
 		r.AppState = state.AppState
 		r.CPUPercent = state.CPUPercent
 		r.StartedAt, r.AppStartedAt = state.StartedAt, state.AppStartedAt
-		r.MemoryLimit, r.DiskLimit = s.appLimits(r.Name)
+		r.MemoryLimit, r.DiskLimit, r.CPUMilli = s.appLimits(r.Name)
 	}
 	return resp
 }
 
-// appLimits returns the memory and disk caps that apply to an app
-func (s *Server) appLimits(name string) (memoryMB int, diskMB int) {
+// appLimits returns the EFFECTIVE caps that apply to an app: its own
+// admin-set overrides where present, else the owner's defaults. CPU has no
+// owner default, so the override is the whole story (0 = uncapped).
+func (s *Server) appLimits(name string) (memoryMB, diskMB, cpuMilli int) {
 	a, err := s.apps.App(name)
 	if err != nil {
-		return 0, 0
+		return 0, 0, 0
 	}
 	limits, err := s.users.Defaults()
 	if err != nil {
-		return 0, 0
+		return 0, 0, 0
 	}
 	if a.OwnerID != "" {
 		if owner, err := s.users.User(a.OwnerID); err == nil {
@@ -412,7 +414,14 @@ func (s *Server) appLimits(name string) (memoryMB int, diskMB int) {
 			}
 		}
 	}
-	return limits.MemoryMB, node.EffectiveDiskCapMB(limits.DiskMB)
+	memoryMB, diskMB = limits.MemoryMB, limits.DiskMB
+	if a.MemoryLimitMB > 0 {
+		memoryMB = a.MemoryLimitMB
+	}
+	if a.DiskLimitMB > 0 {
+		diskMB = a.DiskLimitMB
+	}
+	return memoryMB, node.EffectiveDiskCapMB(diskMB), a.CPUMilli
 }
 
 // appResponse converts an app to its API form
@@ -481,10 +490,11 @@ func (s *Server) appResponse(a *store.App, customDomain string) *apiAppResponse 
 		PreviewMode:      string(s.config.AppPreview),
 		AssistantEnabled: s.assistant != nil,
 		// What the app says it is, straight from its hostit.yml; empty for a stub
-		Description: s.apps.Description(a.Name),
-		Snapshot:    s.snapshotConfigFor(a.Name),
-		Archived:    a.Archived,
-		CreatedAt:   a.CreatedAt,
+		Description:    s.apps.Description(a.Name),
+		Snapshot:       s.snapshotConfigFor(a.Name),
+		Archived:       a.Archived,
+		CreatedAt:      a.CreatedAt,
+		LimitOverrides: apiLimitOverrides{MemoryMB: a.MemoryLimitMB, DiskMB: a.DiskLimitMB, CPUMilli: a.CPUMilli},
 		SSH: apiSSHInfo{
 			User:    a.Name,
 			Host:    s.config.SSHHostname(),

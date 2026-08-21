@@ -99,6 +99,10 @@ func (f *fakeAgentFull) Rename(oldName, newName, id string) error {
 	return nil
 }
 
+func (f *fakeAgentFull) SetCPULimit(name string, cpuMilli int) {
+	f.calls = append(f.calls, fmt.Sprintf("setcpulimit:%s:%d", name, cpuMilli))
+}
+
 func (f *fakeAgentFull) Ensure(name string) (string, error) {
 	f.calls = append(f.calls, "ensure:"+name)
 	return "up", nil
@@ -205,4 +209,14 @@ func TestReadFileNotExistSurvivesTheWire(t *testing.T) {
 	remote := startRPC(t, agent)
 	_, err := remote.ReadFile("blog", "README.md")
 	require.ErrorIs(t, err, fs.ErrNotExist)
+}
+
+// The CPU verb crosses the wire like the other limits: recorded on the
+// machine side, applied at the next container recreation.
+func TestSetCPULimitRoundTrips(t *testing.T) {
+	t.Parallel()
+	agent := &fakeAgentFull{written: map[string][]byte{}}
+	remote := startRPC(t, agent)
+	remote.SetCPULimit("blog", 1500)
+	assert.Contains(t, agent.calls, "setcpulimit:blog:1500")
 }

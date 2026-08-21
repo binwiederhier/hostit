@@ -95,6 +95,7 @@ func (m *Manager) DesiredState(nodeID string) (*nodeapi.DesiredState, error) {
 				DiskMB:  diskMB,
 			},
 			MemoryMB:   memoryMB,
+			CPUMilli:   m.CPULimit(a.Name),
 			PoweredOff: a.PoweredOff,
 		})
 	}

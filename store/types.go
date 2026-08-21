@@ -89,6 +89,12 @@ type App struct {
 	// is not powered_off, which an owner flips freely -- an archived app has to
 	// be brought back before it can run at all.
 	Archived bool `json:"archived"`
+	// Per-app resource limit OVERRIDES, admin-set. 0 means no override:
+	// memory/disk fall back to the owner's defaults, CPU stays uncapped.
+	// (DiskMB above is USAGE, written by the node's usage callback.)
+	MemoryLimitMB int `json:"memory_limit_mb"`
+	DiskLimitMB   int `json:"disk_limit_mb"`
+	CPUMilli      int `json:"cpu_milli"`
 }
 
 // Snapshot is one point-in-time btrfs snapshot of an app's home. Auto records how

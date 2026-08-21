@@ -345,3 +345,20 @@ func TestPortRotationSurvivesARestart(t *testing.T) {
 	require.NoError(t, err)
 	assert.Greater(t, next, first, "allocation continues past the last grant instead of restarting at the bottom")
 }
+
+// The desired state carries the CPU cap next to memory and disk, so a node
+// that was away when the cap was set still applies it on its next reconcile.
+func TestDesiredStateCarriesCPU(t *testing.T) {
+	t.Parallel()
+	m, _ := newTestManager(t)
+	_, err := m.CreateApp("blog", &CreateOptions{})
+	require.NoError(t, err)
+	m.RecordLimits("blog", 512, 2048, 1500)
+
+	desired, err := m.DesiredState("")
+	require.NoError(t, err)
+	require.Len(t, desired.Apps, 1)
+	assert.Equal(t, 512, desired.Apps[0].MemoryMB)
+	assert.Equal(t, 1500, desired.Apps[0].CPUMilli)
+	assert.Equal(t, 1500, m.CPULimit("blog"))
+}

@@ -9,6 +9,16 @@ default, or on-disk state is called out as **Breaking** or **Upgrade note**.
 
 ## Unreleased
 
+- **Per-app resource limits (admin-only).** `PATCH /api/apps/{name}/limits`
+  and a "Resource limits" card in the app's Settings let an admin override
+  one app's RAM, disk, and -- new -- CPU cap (cores; enforced via the
+  container's `--cpus`). An empty/cleared field inherits the owner's defaults
+  as before; CPU is uncapped unless set. Disk applies live; RAM and CPU at
+  the next reboot or deploy (no auto-restart on save). Overrides survive
+  restarts (new registry columns), outrank owner-default edits, and reach a
+  disconnected node on its next reconcile. Editing stays admin-only until
+  per-user pools exist; owners see the effective values.
+
 - **Fixed: image uploads now reach the assistant on the subscription
   backend.** The sandboxed `claude -p` turn received only prompt text, so an
   attached image was invisible and the assistant said it could not do

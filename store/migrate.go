@@ -273,6 +273,16 @@ var (
 		`
 		ALTER TABLE app ADD COLUMN archived INTEGER NOT NULL DEFAULT 0;
 	`,
+		// Per-app resource limit OVERRIDES, admin-set via PATCH .../limits. 0 means
+		// no override: memory/disk fall back to the owner's defaults and CPU stays
+		// uncapped -- which is also why every existing row starts at 0, keeping
+		// upgraded apps on exactly the limits they already had. disk_mb (above)
+		// remains USAGE; the limit gets its own column.
+		`
+		ALTER TABLE app ADD COLUMN memory_limit_mb INTEGER NOT NULL DEFAULT 0;
+		ALTER TABLE app ADD COLUMN disk_limit_mb INTEGER NOT NULL DEFAULT 0;
+		ALTER TABLE app ADD COLUMN cpu_milli INTEGER NOT NULL DEFAULT 0;
+	`,
 	}
 )
 

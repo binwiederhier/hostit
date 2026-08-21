@@ -81,6 +81,11 @@ type apiAppResponse struct {
 	MemoryMB    int    `json:"memory_mb"`
 	MemoryLimit int    `json:"memory_limit_mb"`
 	CPUPercent  int    `json:"cpu_percent"` // Live container CPU use in whole percent
+	// CPUMilli is the EFFECTIVE CPU cap in millicores (0 = uncapped), like
+	// MemoryLimit/DiskLimit are the effective caps; LimitOverrides carries the
+	// admin-set per-app overrides so the UI can tell inherited from set.
+	CPUMilli       int               `json:"cpu_milli"`
+	LimitOverrides apiLimitOverrides `json:"limit_overrides"`
 
 	Running          bool   `json:"running"`        // The app's container is up
 	AppRunning       bool   `json:"app_running"`    // The run: command inside it is up

@@ -149,6 +149,7 @@ func NewManager(conf *controlconf.Config, s *store.Store) *Manager {
 type appLimits struct {
 	memoryMB int
 	diskMB   int
+	cpuMilli int
 }
 
 // LockApp serializes control's work on one app; the returned func unlocks.
@@ -181,10 +182,17 @@ func (m *Manager) WaitBackground() {
 
 // RecordLimits stores what control asked for; MemoryLimit and DiskLimit read it
 // back when building a spec or a desired state.
-func (m *Manager) RecordLimits(name string, memoryMB, diskMB int) {
+func (m *Manager) RecordLimits(name string, memoryMB, diskMB, cpuMilli int) {
 	m.limitsMu.Lock()
 	defer m.limitsMu.Unlock()
-	m.limits[name] = appLimits{memoryMB: memoryMB, diskMB: diskMB}
+	m.limits[name] = appLimits{memoryMB: memoryMB, diskMB: diskMB, cpuMilli: cpuMilli}
+}
+
+// CPULimit returns the app's recorded CPU cap in millicores; 0 is uncapped.
+func (m *Manager) CPULimit(name string) int {
+	m.limitsMu.Lock()
+	defer m.limitsMu.Unlock()
+	return m.limits[name].cpuMilli
 }
 
 func (m *Manager) MemoryLimit(name string) int {
@@ -327,7 +335,7 @@ func (m *Manager) create(name string, opts *CreateOptions, seed *seedRef) (*stor
 	// a concurrent reconcile (seen live on the stage two-node setup). The app
 	// is pinned to the workspace image it is built with, so a later
 	// Containerfile change (e.g. adding a runtime) only affects new apps.
-	m.RecordLimits(name, opts.MemoryMB, opts.DiskMB)
+	m.RecordLimits(name, opts.MemoryMB, opts.DiskMB, 0)
 	if err := m.store.AddApp(app); err != nil {
 		return nil, err
 	}

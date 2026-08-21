@@ -210,7 +210,7 @@ func (m *Machine) apply(a *store.App, conf *app.Config, allowReload bool) (strin
 
 	// Recreate the container if the desired config differs from the running one
 	started := time.Now()
-	desired := workspace.CreateArgs(conf, a, m.AppSubvolume(name), m.config.SocketFile, workspace.HostBinFile, Version, m.MemoryLimit(name), ids, m.config.AppsBindAddress)
+	desired := workspace.CreateArgs(conf, a, m.AppSubvolume(name), m.config.SocketFile, workspace.HostBinFile, Version, m.MemoryLimit(name), m.CPULimit(name), ids, m.config.AppsBindAddress)
 	hash := workspace.ConfigHash(desired)
 	current, err := m.container.Inspect(m.ContainerName(name), inspectHashFormat)
 	recreated := false
@@ -360,6 +360,21 @@ func (m *Machine) SetMemoryLimit(name string, memoryMB int) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.memoryMB[name] = memoryMB
+}
+
+// SetCPULimit records the app's CPU cap in millicores; applied on the next
+// container (re)creation, exactly like the memory cap.
+func (m *Machine) SetCPULimit(name string, cpuMilli int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.cpuMilli[name] = cpuMilli
+}
+
+// CPULimit returns the recorded CPU cap of an app in millicores.
+func (m *Machine) CPULimit(name string) int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.cpuMilli[name]
 }
 
 // MemoryLimit returns the recorded memory cap of an app.

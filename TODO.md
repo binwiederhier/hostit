@@ -7,16 +7,10 @@ keeps only the last few days for context.
 
 ## Resource allocation
 
-Today an app's RAM/disk caps are fixed at creation from the owner's defaults
-(user.memory_mb / user.disk_mb -> container --memory and the btrfs budget
-qgroup), CPU is uncapped, and nothing exposes any of it for editing.
+Per-app editing shipped 2026-08-20 (admin-only PATCH + Settings card, CPU cap
+via --cpus, persisted overrides; plans/260820-per-app-resources.md). What
+remains is the pool model that would let owners edit within bounds:
 
-- **Per-app resource editing.** There is no way to change an app's RAM, disk or
-  CPU allocation after creation. Add PATCH-able per-app limits (memory_mb,
-  disk_mb, cpu) in the API and the app Settings view. The plumbing mostly
-  exists: SetMemoryLimit recreates the container with the new cap, SetDiskLimit
-  re-caps the budget qgroup live; CPU needs a new --cpus/CPUWeight knob on the
-  container.
 - **Per-user RAM and disk pool.** Replace (or back) the per-app defaults with a
   per-user POOL: a user has, say, 2 GB RAM and 10 GB disk total, and their apps
   draw from it. Creating an app (or raising its limits) reserves from the pool;

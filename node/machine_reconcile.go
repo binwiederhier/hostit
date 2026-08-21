@@ -60,6 +60,7 @@ func (m *Machine) applyDesired(desired *nodeapi.DesiredState) {
 			slog.Warn("Cannot apply app keys during reconcile", "app", app.Name, "error", err)
 		}
 		m.SetMemoryLimit(app.Name, app.MemoryMB)
+		m.SetCPULimit(app.Name, app.CPUMilli)
 		m.SetDiskLimit(app.Name, app.DiskMB)
 		unlock()
 		// Powered off is part of the desired state, not just a flag control

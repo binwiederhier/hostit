@@ -255,7 +255,7 @@ func TestUnsetDiskLimitResolvesToTheEnforcedCap(t *testing.T) {
 	defaults.DiskMB = 0
 	require.NoError(t, s.users.SetDefaults(defaults))
 
-	_, diskMB := s.appLimits("blog")
+	_, diskMB, _ := s.appLimits("blog")
 	assert.Equal(t, node.DefaultDiskCapMB, diskMB, "a zero limit reports the cap the node actually enforces")
 
 	desiredState, err := s.apps.DesiredState("")

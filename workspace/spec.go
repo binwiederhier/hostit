@@ -143,7 +143,7 @@ func UnitName(id string) string {
 // the app's files live at home/app inside that same tree (no home bind mount),
 // so recreating the container (config change, daemon upgrade) keeps the files
 // and whatever the app installed, and one subvolume is the app's disk budget.
-func CreateArgs(conf *app.Config, a *store.App, subvol, socketFile, hostitBin, version string, memoryMB int, ids IDs, bindAddr string) []string {
+func CreateArgs(conf *app.Config, a *store.App, subvol, socketFile, hostitBin, version string, memoryMB, cpuMilli int, ids IDs, bindAddr string) []string {
 	if bindAddr == "" {
 		bindAddr = "127.0.0.1"
 	}
@@ -162,6 +162,9 @@ func CreateArgs(conf *app.Config, a *store.App, subvol, socketFile, hostitBin, v
 		"--uidmap", fmt.Sprintf("0:%d:%d", ids.UID, ids.Count),
 		"--gidmap", fmt.Sprintf("0:%d:%d", ids.GID, ids.Count),
 		"--network", "slirp4netns")
+	if cpuMilli > 0 {
+		args = append(args, "--cpus", fmt.Sprintf("%.2f", float64(cpuMilli)/1000))
+	}
 	if memoryMB > 0 {
 		args = append(args, "--memory", strconv.Itoa(memoryMB)+"m")
 	}

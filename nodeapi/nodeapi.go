@@ -112,6 +112,9 @@ type NodeAgent interface {
 	Rename(oldName, newName, id string) error
 	SetMemoryLimit(name string, memoryMB int)
 	SetDiskLimit(name string, diskMB int)
+	// SetCPULimit records the app's CPU cap in millicores (0 = uncapped);
+	// like memory, it is applied on the next container (re)creation.
+	SetCPULimit(name string, cpuMilli int)
 
 	// Snapshots: the subvolume work; metadata stays on the control plane.
 	// Snapshots reports the records this node holds for the apps it hosts.
@@ -159,6 +162,7 @@ type DesiredState struct {
 type AppDesired struct {
 	ProvisionSpec
 	MemoryMB   int  `json:"memory_mb"`
+	CPUMilli   int  `json:"cpu_milli"`
 	PoweredOff bool `json:"powered_off"`
 }
 

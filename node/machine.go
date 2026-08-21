@@ -131,6 +131,7 @@ type Machine struct {
 	// keep them; the authoritative values come from the owner's limits
 	memoryMB map[string]int
 	diskMB   map[string]int
+	cpuMilli map[string]int
 	// background tracks the manager's fire-and-forget goroutines -- delete
 	// teardowns and the post-create start -- so tests (and a graceful shutdown,
 	// if it ever wants to) can wait for them instead of racing their I/O.
@@ -183,6 +184,7 @@ func NewMachine(conf *Config, s *store.Store, svc *Services) *Machine {
 		firewall:        svc.Firewall,
 		homefs:          homefs.New(nodeapi.ErrInvalid),
 		memoryMB:        make(map[string]int),
+		cpuMilli:        make(map[string]int),
 		synced:          make(chan struct{}),
 		diskMB:          make(map[string]int),
 		tearingDown:     make(map[string]bool),

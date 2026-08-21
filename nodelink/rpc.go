@@ -42,6 +42,7 @@ type rpcReq struct {
 	Max         int64    `json:"max,omitempty"`
 	TimeoutSec  int      `json:"timeout_sec,omitempty"`
 	MemoryMB    int      `json:"memory_mb,omitempty"`
+	CPUMilli    int      `json:"cpu_milli,omitempty"`
 	DiskMB      int      `json:"disk_mb,omitempty"`
 	Auto        bool     `json:"auto,omitempty"`
 	AppKeys     []string `json:"app_keys,omitempty"`
@@ -224,6 +225,7 @@ func RPCHandler(agent nodeapi.NodeAgent) http.Handler {
 	verb("rename", func(q *rpcReq) *rpcResp { return okErr(agent.Rename(q.Name, q.To, q.ID)) })
 	verb("setmemorylimit", func(q *rpcReq) *rpcResp { agent.SetMemoryLimit(q.Name, q.MemoryMB); return &rpcResp{OK: true} })
 	verb("setdisklimit", func(q *rpcReq) *rpcResp { agent.SetDiskLimit(q.Name, q.DiskMB); return &rpcResp{OK: true} })
+	verb("setcpulimit", func(q *rpcReq) *rpcResp { agent.SetCPULimit(q.Name, q.CPUMilli); return &rpcResp{OK: true} })
 	verb("snapshot", func(q *rpcReq) *rpcResp {
 		snap, err := agent.TakeSnapshot(q.Name, q.Label, q.Auto)
 		if err != nil {

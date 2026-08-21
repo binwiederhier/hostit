@@ -442,6 +442,15 @@ func (ra *routingAgent) SetMemoryLimit(name string, memoryMB int) {
 	agent.SetMemoryLimit(name, memoryMB)
 }
 
+func (ra *routingAgent) SetCPULimit(name string, cpuMilli int) {
+	agent, err := ra.route(name)
+	if err != nil {
+		slog.Warn("Cannot set cpu limit; node not connected", "app", name)
+		return
+	}
+	agent.SetCPULimit(name, cpuMilli)
+}
+
 func (ra *routingAgent) SetDiskLimit(name string, diskMB int) {
 	agent, err := ra.route(name)
 	if err != nil {

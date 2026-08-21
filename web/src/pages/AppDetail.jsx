@@ -2,6 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react"
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { api, ApiError, isNetworkError } from "../api";
 import { viewFromSlug, VIEW_TO_SLUG } from "../views";
+import { limitInputs, limitsPatchBody } from "../limits";
 import { useReconnect } from "../hooks";
 import { CopyButton, ErrorBanner, Loading, Snippet, StatusDot } from "../components";
 import { useSetAppHeader } from "../appHeader";
@@ -959,7 +960,7 @@ const RenameDialog = ({ name, onClose, onRenamed }) => {
 // The Settings view: the app's identity + details (address, access, resources)
 // with the former Settings dialog folded in -- editable description, API token,
 // and custom domains -- all inline in one tab.
-const AppSettings = ({ app, showToast, onCopyToken, onRegenerateToken, hasToken, onSaved, onConfigureKeys }) => {
+const AppSettings = ({ app, isAdmin, showToast, onCopyToken, onRegenerateToken, hasToken, onSaved, onConfigureKeys }) => {
   const name = app.name;
   const navigate = useNavigate();
   const [desc, setDesc] = useState(app.description || "");
@@ -979,7 +980,24 @@ const AppSettings = ({ app, showToast, onCopyToken, onRegenerateToken, hasToken,
   const [collabs, setCollabs] = useState(null);
   const [collabInput, setCollabInput] = useState("");
   const [showTransfer, setShowTransfer] = useState(false);
+  const [limCfg, setLimCfg] = useState(() => limitInputs(app.limit_overrides));
+  const [savingLimits, setSavingLimits] = useState(false);
   const isOwner = !!app.is_owner;
+
+  const saveLimits = async () => {
+    if (savingLimits) return;
+    setSavingLimits(true);
+    setError("");
+    try {
+      await api.patch(`/api/apps/${encodeURIComponent(name)}/limits`, limitsPatchBody(limCfg, app.limit_overrides));
+      showToast("Limits saved; RAM and CPU apply at the next reboot or deploy");
+      if (onSaved) onSaved();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSavingLimits(false);
+    }
+  };
 
   const pct = (u, l) => (l ? Math.min(100, Math.round((u / l) * 100)) : 0);
   const mb = (u, l) => (l ? `${u} / ${l} MB` : `${u} MB`);
@@ -1219,7 +1237,7 @@ const AppSettings = ({ app, showToast, onCopyToken, onRegenerateToken, hasToken,
         </div>
         <div>
           <h3>Resources &amp; meta</h3>
-          <div className="ov-metric"><div className="ov-mt"><span>CPU</span><span className="mono">{app.cpu_percent || 0}%</span></div><div className="ov-bar"><i style={{ width: `${app.cpu_percent || 0}%` }} /></div></div>
+          <div className="ov-metric"><div className="ov-mt"><span>CPU</span><span className="mono">{app.cpu_percent || 0}%{app.cpu_milli ? ` (cap ${app.cpu_milli / 1000} cores)` : ""}</span></div><div className="ov-bar"><i style={{ width: `${app.cpu_percent || 0}%` }} /></div></div>
           <div className="ov-metric"><div className="ov-mt"><span>RAM</span><span className="mono">{mb(app.memory_mb, app.memory_limit_mb)}</span></div><div className="ov-bar"><i style={{ width: `${pct(app.memory_mb, app.memory_limit_mb)}%` }} /></div></div>
           <div className="ov-metric"><div className="ov-mt"><span>Disk</span><span className="mono">{mb(app.disk_mb, app.disk_limit_mb)}</span></div><div className="ov-bar"><i style={{ width: `${pct(app.disk_mb, app.disk_limit_mb)}%` }} /></div></div>
         </div>
@@ -1284,6 +1302,51 @@ const AppSettings = ({ app, showToast, onCopyToken, onRegenerateToken, hasToken,
           </button>
         </div>
       </section>
+
+      {isAdmin && (
+        <section className="ov-section">
+          <h3>Resource limits</h3>
+          <p className="hint">
+            Admin-only overrides for this one app; an empty field inherits the owner&apos;s defaults
+            (CPU: uncapped). Disk applies immediately; RAM and CPU at the next reboot or deploy.
+          </p>
+          <label className="settings-field">
+            <span>RAM (MB)</span>
+            <input
+              type="text"
+              className="settings-input"
+              value={limCfg.memory}
+              onChange={(e) => setLimCfg({ ...limCfg, memory: e.target.value })}
+              placeholder={`${app.memory_limit_mb || 0} (inherited)`}
+            />
+          </label>
+          <label className="settings-field">
+            <span>Disk (MB)</span>
+            <input
+              type="text"
+              className="settings-input"
+              value={limCfg.disk}
+              onChange={(e) => setLimCfg({ ...limCfg, disk: e.target.value })}
+              placeholder={`${app.disk_limit_mb || 0} (inherited)`}
+            />
+          </label>
+          <label className="settings-field">
+            <span>CPU (cores)</span>
+            <input
+              type="text"
+              className="settings-input"
+              value={limCfg.cpu}
+              onChange={(e) => setLimCfg({ ...limCfg, cpu: e.target.value })}
+              placeholder="uncapped"
+            />
+          </label>
+          <div className="btn-row" style={{ justifyContent: "flex-start" }}>
+            <button type="button" className="btn btn-small btn-primary" onClick={saveLimits} disabled={savingLimits}>
+              {savingLimits ? "Saving..." : "Save limits"}
+            </button>
+          </div>
+        </section>
+      )}
 
       <section className="ov-section">
         <h3>Collaborators</h3>
@@ -2220,6 +2283,7 @@ const AppDetail = ({ account, refreshAccount }) => {
         <div className={"ws-settingswrap" + (view === "settings" ? "" : " ws-inactive")}>
           <AppSettings
             app={app}
+            isAdmin={account.role === "admin"}
             showToast={showToast}
             hasToken={!!token}
             onCopyToken={copyToken}

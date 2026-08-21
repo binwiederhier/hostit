@@ -276,6 +276,10 @@ func (a *remoteAgent) SetMemoryLimit(name string, memoryMB int) {
 	_ = a.do("setmemorylimit", &rpcReq{Name: name, MemoryMB: memoryMB})
 }
 
+func (a *remoteAgent) SetCPULimit(name string, cpuMilli int) {
+	_ = a.do("setcpulimit", &rpcReq{Name: name, CPUMilli: cpuMilli})
+}
+
 func (a *remoteAgent) SetDiskLimit(name string, diskMB int) {
 	_ = a.do("setdisklimit", &rpcReq{Name: name, DiskMB: diskMB})
 }

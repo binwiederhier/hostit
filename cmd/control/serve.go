@@ -237,8 +237,9 @@ func reconcileLoop(manager *control.Manager, srv *control.Server, done <-chan st
 	}
 }
 
-// applyStoredLimits primes the app manager with each app owner's memory and disk
-// limits, which live in the user records rather than in the app registry
+// applyStoredLimits primes the app manager with each app's effective limits:
+// its own admin-set overrides where present, else its owner's defaults from
+// the user records. CPU has no owner default; the override is the whole story.
 func applyStoredLimits(s *store.Store, apps *control.Manager, users *user.Manager) error {
 	registered, err := s.Apps()
 	if err != nil {
@@ -258,10 +259,17 @@ func applyStoredLimits(s *store.Store, apps *control.Manager, users *user.Manage
 				}
 			}
 		}
+		memoryMB, diskMB := limits.MemoryMB, limits.DiskMB
+		if a.MemoryLimitMB > 0 {
+			memoryMB = a.MemoryLimitMB
+		}
+		if a.DiskLimitMB > 0 {
+			diskMB = a.DiskLimitMB
+		}
 		// Recorded, not applied: control decides the limits and the node
 		// enforces them, so they reach the machine through the desired state
 		// on the next connect or reconcile rather than from here.
-		apps.RecordLimits(a.Name, limits.MemoryMB, limits.DiskMB)
+		apps.RecordLimits(a.Name, memoryMB, diskMB, a.CPUMilli)
 	}
 	return nil
 }

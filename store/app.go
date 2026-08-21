@@ -10,19 +10,19 @@ import (
 const (
 	insertAppQuery = `INSERT INTO app (id, name, port, host, owner_id, created_at, image_tag, uid) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
 	selectAppQuery = `
-		SELECT id, name, port, host, owner_id, disk_mb, created_at, image_tag, powered_off, uid, archived
+		SELECT id, name, port, host, owner_id, disk_mb, created_at, image_tag, powered_off, uid, archived, memory_limit_mb, disk_limit_mb, cpu_milli
 		FROM app WHERE name = ?
 	`
 	selectAppByUIDQuery = `
-		SELECT id, name, port, host, owner_id, disk_mb, created_at, image_tag, powered_off, uid, archived
+		SELECT id, name, port, host, owner_id, disk_mb, created_at, image_tag, powered_off, uid, archived, memory_limit_mb, disk_limit_mb, cpu_milli
 		FROM app WHERE uid = ?
 	`
 	selectAppsQuery = `
-		SELECT id, name, port, host, owner_id, disk_mb, created_at, image_tag, powered_off, uid, archived
+		SELECT id, name, port, host, owner_id, disk_mb, created_at, image_tag, powered_off, uid, archived, memory_limit_mb, disk_limit_mb, cpu_milli
 		FROM app ORDER BY name
 	`
 	selectAppsByOwnerQuery = `
-		SELECT id, name, port, host, owner_id, disk_mb, created_at, image_tag, powered_off, uid, archived
+		SELECT id, name, port, host, owner_id, disk_mb, created_at, image_tag, powered_off, uid, archived, memory_limit_mb, disk_limit_mb, cpu_milli
 		FROM app WHERE owner_id = ? ORDER BY name
 	`
 	selectAppHostQuery         = `SELECT host FROM app WHERE name = ?`
@@ -35,6 +35,7 @@ const (
 	deleteAppQuery             = `DELETE FROM app WHERE name = ?`
 	renameAppQuery             = `UPDATE app SET name = ? WHERE name = ?`
 	setAppOwnerQuery           = `UPDATE app SET owner_id = ? WHERE name = ?`
+	updateAppLimitsQuery       = `UPDATE app SET memory_limit_mb = ?, disk_limit_mb = ?, cpu_milli = ? WHERE name = ?`
 	// After the app is renamed, keep assistant_session's name mirror (its primary
 	// key) truthful, so a later app that reuses the freed name cannot collide with a
 	// stale row. Every other per-app table keys on app_id and needs no update.
@@ -71,7 +72,7 @@ func (s *Store) AddApp(app *App) error {
 func (s *Store) AppByUID(uid int) (*App, error) {
 	app := &App{}
 	var createdAt int64
-	err := s.db.QueryRow(selectAppByUIDQuery, uid).Scan(&app.ID, &app.Name, &app.Port, &app.Host, &app.OwnerID, &app.DiskMB, &createdAt, &app.ImageTag, &app.PoweredOff, &app.UID, &app.Archived)
+	err := s.db.QueryRow(selectAppByUIDQuery, uid).Scan(&app.ID, &app.Name, &app.Port, &app.Host, &app.OwnerID, &app.DiskMB, &createdAt, &app.ImageTag, &app.PoweredOff, &app.UID, &app.Archived, &app.MemoryLimitMB, &app.DiskLimitMB, &app.CPUMilli)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrAppNotFound
 	}
@@ -158,7 +159,7 @@ func (s *Store) ImageTagsInUse() (map[string]bool, error) {
 func (s *Store) App(name string) (*App, error) {
 	var app App
 	var createdAt int64
-	err := s.db.QueryRow(selectAppQuery, name).Scan(&app.ID, &app.Name, &app.Port, &app.Host, &app.OwnerID, &app.DiskMB, &createdAt, &app.ImageTag, &app.PoweredOff, &app.UID, &app.Archived)
+	err := s.db.QueryRow(selectAppQuery, name).Scan(&app.ID, &app.Name, &app.Port, &app.Host, &app.OwnerID, &app.DiskMB, &createdAt, &app.ImageTag, &app.PoweredOff, &app.UID, &app.Archived, &app.MemoryLimitMB, &app.DiskLimitMB, &app.CPUMilli)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrAppNotFound
 	} else if err != nil {
@@ -182,6 +183,16 @@ func (s *Store) AppHost(name string) (string, error) {
 // Apps returns all registered apps, sorted by name
 func (s *Store) Apps() ([]*App, error) {
 	return s.queryApps(selectAppsQuery)
+}
+
+// UpdateAppLimits records the app's admin-set limit overrides; zeros clear
+// them (back to owner defaults / uncapped CPU).
+func (s *Store) UpdateAppLimits(name string, memoryLimitMB, diskLimitMB, cpuMilli int) error {
+	res, err := s.db.Exec(updateAppLimitsQuery, memoryLimitMB, diskLimitMB, cpuMilli, name)
+	if err != nil {
+		return err
+	}
+	return checkAffected(res, ErrAppNotFound)
 }
 
 // AppsByOwner returns the apps owned by a user, sorted by name
@@ -272,7 +283,7 @@ func (s *Store) queryApps(query string, args ...any) ([]*App, error) {
 	for rows.Next() {
 		var app App
 		var createdAt int64
-		if err := rows.Scan(&app.ID, &app.Name, &app.Port, &app.Host, &app.OwnerID, &app.DiskMB, &createdAt, &app.ImageTag, &app.PoweredOff, &app.UID, &app.Archived); err != nil {
+		if err := rows.Scan(&app.ID, &app.Name, &app.Port, &app.Host, &app.OwnerID, &app.DiskMB, &createdAt, &app.ImageTag, &app.PoweredOff, &app.UID, &app.Archived, &app.MemoryLimitMB, &app.DiskLimitMB, &app.CPUMilli); err != nil {
 			return nil, err
 		}
 		app.CreatedAt = time.Unix(createdAt, 0)
