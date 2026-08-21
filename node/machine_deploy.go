@@ -150,11 +150,28 @@ func (m *Machine) Down(name string) error {
 	return m.systemd.DisableNow(m.UnitName(name))
 }
 
-// Restart restarts the app's service (and thus its container)
+// Restart reboots the app's container, converging pending container config on
+// the way: a recorded memory or CPU cap is exactly what "applies at the next
+// reboot" promises, and apply recreates the container when the desired args
+// differ from the running ones (a recreate IS the reboot). With nothing
+// pending it stays the plain unit restart it always was.
 func (m *Machine) Restart(name string) error {
 	defer m.stateChanged(name)
-	if _, err := m.store.App(name); err != nil {
+	a, err := m.store.App(name)
+	if err != nil {
 		return err
+	}
+	conf, err := m.LoadAppConfig(name)
+	if err != nil {
+		conf = nil // fall back to an idle workspace, as powerOn does
+	}
+	if ids, err := m.LookupIDs(name); err == nil {
+		desired := workspace.CreateArgs(conf, a, m.AppSubvolume(name), m.config.SocketFile, workspace.HostBinFile, Version, m.MemoryLimit(name), m.CPULimit(name), ids, m.config.AppsBindAddress)
+		current, err := m.container.Inspect(m.ContainerName(name), inspectHashFormat)
+		if err != nil || strings.TrimSpace(current) != workspace.ConfigHash(desired) {
+			_, err := m.apply(a, conf, false)
+			return err
+		}
 	}
 	return m.systemd.Restart(m.UnitName(name))
 }
