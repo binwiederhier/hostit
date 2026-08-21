@@ -7,7 +7,7 @@ changed rather than what an operator had to do about it; from v0.15.0 on, each
 release is written down as it is cut. Anything that changes a config file, a
 default, or on-disk state is called out as **Breaking** or **Upgrade note**.
 
-## Unreleased
+## v0.18.0 (2026-08-21)
 
 - **New apps default to 128 MB RAM, 256 MB disk and 0.5 CPU cores.** The old
   512/2048 defaults were generous for what a fresh app usually is; owners
@@ -16,9 +16,27 @@ default, or on-disk state is called out as **Breaking** or **Upgrade note**.
   limits as per-app overrides (CPU stays uncapped for them), and every user
   who already owns apps keeps their old derived budget as an explicit pool.
   Only new apps and new users see the small defaults.
-- The dashboard header shows the pool that is left ("1.2 GB RAM free"), the
-  resources dialog picks values from preset dropdowns (custom values survive
-  as their own option), and the edit pencil sits aligned with its heading.
+- **A consistent resource language across the UI.** Every RAM/disk reading is
+  the same icon + used/total pair (GB from 1 GB up), coloured yellow at 75%
+  and red at 90% of the limit; the dashboard header shows the pool at a
+  glance; the resources dialog picks from preset dropdowns and grays out
+  choices the pool no longer allows; the users list shows Max RAM/Max Disk
+  with editing in a dialog behind the row menu; number fields lose their spin
+  arrows. The app page's Actions menu gains Rename, Transfer ownership and
+  Change resources.
+- **Agents learn their budget**: the per-app `/info` gains a `limits` object
+  (effective RAM/disk/CPU) and notes describing what each cap does -- and that
+  an app token cannot change them. The user manual gains a "Resource limits
+  and pools" section.
+- The wordmark is one mark everywhere now -- the error page drops its `>_`
+  badge for the same blinking-cursor wordmark, and the blink survives
+  reduced-motion (it is identity, not motion).
+- **Fixed: the web terminal could freeze silently after an app reboot** (a
+  dead pty behind a live socket). A keepalive now surfaces it and reconnects,
+  and a reload button is always in the title bar.
+- **Fixed: a reboot fired during provisioning raced the container create**
+  ("name already in use") -- found by the new limits e2e; the reboot now holds
+  the app's lifecycle lock.
 
 - **Per-app resource limits, bounded by per-user pools.** Owners (and
   admins) edit one app's RAM and disk via `PATCH /api/apps/{name}/limits` or
@@ -79,6 +97,11 @@ default, or on-disk state is called out as **Breaking** or **Upgrade note**.
 - Removed `scripts/mkdeb.sh` and the `make deb` targets: goreleaser builds the
   packages, and the script predated the binary split (it built the pre-split
   single package and referenced files that no longer exist).
+- **Upgrade note:** this release runs four additive schema migrations (per-app
+  limit columns, a deliberately burned no-op slot, per-user pool columns, and
+  the pinning pass that freezes existing apps and owners at their pre-release
+  budgets). Nothing already deployed changes size, and no config changes are
+  required. Existing containers are recreated on upgrade as usual.
 
 ## v0.17.0 (2026-08-20)
 
