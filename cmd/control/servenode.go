@@ -201,20 +201,34 @@ func pollNodeStates(manager *control.Manager, registry *control.NodeRegistry, no
 			registry.Unregister(nodeID, remote)
 			return
 		}
-		names := make([]string, 0)
-		for _, a := range nodeApps(manager, nodeID) {
-			names = append(names, a.Name)
-		}
-		if len(names) == 0 {
-			continue
-		}
-		if states := remote.States(names); states != nil {
-			// Scope to the apps we asked about: a node may only report state for
-			// the apps it hosts, so a lying node's extra keys never reach the
-			// cache (and thus other nodes' apps).
-			manager.IngestStates(scopeStates(states, names))
+		pollNodeOnce(manager, nodeID, remote)
+	}
+}
+
+// pollNodeOnce is one tick of pollNodeStates: measure the node's apps and
+// stamp its liveness on any answer.
+func pollNodeOnce(manager *control.Manager, nodeID string, remote control.NodeAgent) {
+	names := make([]string, 0)
+	for _, a := range nodeApps(manager, nodeID) {
+		names = append(names, a.Name)
+	}
+	// A node hosting nothing must still be asked SOMETHING: this poll doubles
+	// as the liveness heartbeat, and an empty node that is never polled reads
+	// as LAST SEEN hours ago -- a freshly added node as dead before its first
+	// app arrives. States([]) cannot be the probe (omitempty turns the empty
+	// answer into nil, which means "could not measure"), so take the pulse.
+	if len(names) == 0 {
+		if remote.Heartbeat() != nil {
 			_ = manager.Store().SetNodeSeen(nodeID, time.Now())
 		}
+		return
+	}
+	if states := remote.States(names); states != nil {
+		// Scope to the apps we asked about: a node may only report state for
+		// the apps it hosts, so a lying node's extra keys never reach the
+		// cache (and thus other nodes' apps).
+		manager.IngestStates(scopeStates(states, names))
+		_ = manager.Store().SetNodeSeen(nodeID, time.Now())
 	}
 }
 
