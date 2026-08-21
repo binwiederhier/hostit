@@ -155,7 +155,7 @@ p {
   margin-left: 0.12em;
   vertical-align: text-bottom;
   /* Raised a touch off the text-bottom line, where it sat visibly low. */
-  transform: translateY(-0.08em);
+  transform: translateY(-0.12em);
   background: var(--accent);
   animation: blink 2.4s step-end infinite;
 }
