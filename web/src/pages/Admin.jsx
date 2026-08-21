@@ -188,6 +188,7 @@ const AppRow = ({ app }) => (
         running={app.running}
         appRunning={app.app_running}
         appState={app.app_state}
+        archived={app.archived}
       />
       <Link className="mono app-link" to={`/app/${app.name}`}>
         {app.name}

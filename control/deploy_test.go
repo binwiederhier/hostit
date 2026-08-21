@@ -249,7 +249,10 @@ func TestDownRestartStatus(t *testing.T) {
 	assert.Contains(t, out, "some status output")
 	joined := runner.ran()
 	assert.Contains(t, joined, "systemctl disable --now "+m.testMachine().UnitName("blog"))
-	assert.Contains(t, joined, "systemctl restart "+m.testMachine().UnitName("blog"))
+	// The reboot converged: the fake's recorded container config differs from
+	// the desired one, so Restart recreates rather than plainly bouncing --
+	// that recreate IS the reboot (see Machine.Restart).
+	assert.Contains(t, joined, "podman create --name "+m.testMachine().ContainerName("blog"))
 }
 
 func TestLogsWorkspaceModeReadsFile(t *testing.T) {

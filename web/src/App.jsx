@@ -82,9 +82,12 @@ const AppsMenu = () => {
         <div className="nav-apps-pop" role="menu">
           {apps === null && !failed && <div className="nav-apps-note">Loading...</div>}
           {failed && <div className="nav-apps-note">Couldn't load apps</div>}
-          {apps && apps.length === 0 && <div className="nav-apps-note">No apps yet</div>}
+          {apps && apps.filter((a) => !a.archived).length === 0 && <div className="nav-apps-note">No apps yet</div>}
           {apps &&
-            apps.map((a) => (
+            /* Archived apps are put away, not worked on: the switcher is for
+               jumping between live work, so they stay off it (the dashboard's
+               "Archived" toggle is where they live). */
+            apps.filter((a) => !a.archived).map((a) => (
               <Link
                 key={a.name}
                 to={`/app/${a.name}`}
@@ -96,7 +99,7 @@ const AppsMenu = () => {
                 <span>{a.name}</span>
               </Link>
             ))}
-          {apps && apps.length > 0 && <div className="nav-apps-div" />}
+          {apps && apps.filter((a) => !a.archived).length > 0 && <div className="nav-apps-div" />}
           <Link to="/?new=1" role="menuitem" className="nav-apps-all nav-apps-new" onClick={() => setOpen(false)}>
             + New app
           </Link>
