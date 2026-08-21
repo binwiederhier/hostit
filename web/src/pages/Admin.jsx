@@ -26,31 +26,28 @@ const formatTokens = (n) =>
 // One user row with locally edited limit fields; Save appears once dirty.
 const UserRow = ({ user, defaults, onPatch, onDelete }) => {
   const [appLimit, setAppLimit] = useState(numOrEmpty(user.app_limit));
-  const [memoryMb, setMemoryMb] = useState(numOrEmpty(user.memory_mb));
-  const [diskMb, setDiskMb] = useState(numOrEmpty(user.disk_mb));
   const [memoryPoolMb, setMemoryPoolMb] = useState(numOrEmpty(user.memory_pool_mb));
   const [diskPoolMb, setDiskPoolMb] = useState(numOrEmpty(user.disk_pool_mb));
   const [busy, setBusy] = useState(false);
+  const [confirmAdmin, setConfirmAdmin] = useState(false);
 
   useEffect(() => {
     setAppLimit(numOrEmpty(user.app_limit));
-    setMemoryMb(numOrEmpty(user.memory_mb));
-    setDiskMb(numOrEmpty(user.disk_mb));
     setMemoryPoolMb(numOrEmpty(user.memory_pool_mb));
     setDiskPoolMb(numOrEmpty(user.disk_pool_mb));
   }, [user]);
 
   const dirty =
     appLimit !== numOrEmpty(user.app_limit) ||
-    memoryMb !== numOrEmpty(user.memory_mb) ||
-    diskMb !== numOrEmpty(user.disk_mb) ||
     memoryPoolMb !== numOrEmpty(user.memory_pool_mb) ||
     diskPoolMb !== numOrEmpty(user.disk_pool_mb);
 
-  // The derived pool an empty field falls back to: app_limit x per-app default.
+  // The derived pool an empty field falls back to: app_limit x per-app default
+  // (the per-user per-app overrides are API-only now; the normal knob is the
+  // pool itself, with new-app sizes coming from the global defaults).
   const derivedPool = (perApp, perAppDefault) => {
     const apps = Number(appLimit || user.app_limit || defaults.default_app_limit || 0);
-    const each = Number(perApp || perAppDefault || 0);
+    const each = Number(perApp ?? perAppDefault ?? 0);
     return apps * each;
   };
 
@@ -66,8 +63,6 @@ const UserRow = ({ user, defaults, onPatch, onDelete }) => {
   const saveLimits = () =>
     run({
       app_limit: numOrNull(appLimit),
-      memory_mb: numOrNull(memoryMb),
-      disk_mb: numOrNull(diskMb),
       memory_pool_mb: numOrNull(memoryPoolMb),
       disk_pool_mb: numOrNull(diskPoolMb),
     });
@@ -108,51 +103,40 @@ const UserRow = ({ user, defaults, onPatch, onDelete }) => {
         )}
       </td>
       <td>
+        <input
+          className="limit-cell"
+          type="number"
+          min="0"
+          value={appLimit}
+          onChange={(e) => setAppLimit(e.target.value)}
+          placeholder={String(defaults.default_app_limit ?? "")}
+          aria-label={`App limit for ${user.email}`}
+          title="How many apps this user may create (empty = global default)"
+        />
+      </td>
+      <td>
+        <input
+          className="limit-cell"
+          type="number"
+          min="0"
+          value={memoryPoolMb}
+          onChange={(e) => setMemoryPoolMb(e.target.value)}
+          placeholder={String(derivedPool(user.memory_mb, defaults.default_memory_mb))}
+          aria-label={`Memory pool (MB) for ${user.email}`}
+          title="The RAM budget all their apps' limits share (empty = apps x default)"
+        />
+      </td>
+      <td>
         <div className="limits-inputs">
           <input
-            type="number"
-            min="0"
-            value={appLimit}
-            onChange={(e) => setAppLimit(e.target.value)}
-            placeholder={String(defaults.default_app_limit ?? "")}
-            aria-label={`App limit for ${user.email}`}
-            title="App limit (empty = global default)"
-          />
-          <input
-            type="number"
-            min="0"
-            value={memoryMb}
-            onChange={(e) => setMemoryMb(e.target.value)}
-            placeholder={String(defaults.default_memory_mb ?? "")}
-            aria-label={`Memory limit (MB) for ${user.email}`}
-            title="Memory in MB (empty = global default)"
-          />
-          <input
-            type="number"
-            min="0"
-            value={diskMb}
-            onChange={(e) => setDiskMb(e.target.value)}
-            placeholder={String(defaults.default_disk_mb ?? "")}
-            aria-label={`Disk limit (MB) for ${user.email}`}
-            title="Disk in MB (empty = global default)"
-          />
-          <input
-            type="number"
-            min="0"
-            value={memoryPoolMb}
-            onChange={(e) => setMemoryPoolMb(e.target.value)}
-            placeholder={String(derivedPool(memoryMb, defaults.default_memory_mb))}
-            aria-label={`Memory pool (MB) for ${user.email}`}
-            title="Memory POOL in MB, the budget all their apps' limits share (empty = apps x per-app default)"
-          />
-          <input
+            className="limit-cell"
             type="number"
             min="0"
             value={diskPoolMb}
             onChange={(e) => setDiskPoolMb(e.target.value)}
-            placeholder={String(derivedPool(diskMb, defaults.default_disk_mb))}
+            placeholder={String(derivedPool(user.disk_mb, defaults.default_disk_mb))}
             aria-label={`Disk pool (MB) for ${user.email}`}
-            title="Disk POOL in MB, the budget all their apps' limits share (empty = apps x per-app default)"
+            title="The disk budget all their apps' limits share (empty = apps x default)"
           />
           {dirty && (
             <button
@@ -188,29 +172,62 @@ const UserRow = ({ user, defaults, onPatch, onDelete }) => {
               Deny
             </button>
           )}
-          <button
-            type="button"
-            className="btn btn-small"
-            onClick={() =>
-              run({ role: user.role === "admin" ? "user" : "admin" })
-            }
-            disabled={busy}
-          >
-            {user.role === "admin" ? "Make user" : "Make admin"}
-          </button>
-          <button
-            type="button"
-            className="btn btn-small btn-danger"
-            onClick={() => onDelete(user)}
-            disabled={busy}
-          >
-            Delete
-          </button>
+          <details className="kebab">
+            <summary className="btn btn-small" aria-label={`More actions for ${user.email}`} title="More actions">
+              &#8942;
+            </summary>
+            <div className="kebab-menu" onClick={(e) => e.currentTarget.closest("details").removeAttribute("open")}>
+              {user.role === "admin" ? (
+                <button type="button" onClick={() => run({ role: "user" })} disabled={busy}>
+                  Make user
+                </button>
+              ) : (
+                <button type="button" onClick={() => setConfirmAdmin(true)} disabled={busy}>
+                  Make admin
+                </button>
+              )}
+              <button type="button" className="kebab-danger" onClick={() => onDelete(user)} disabled={busy}>
+                Delete user
+              </button>
+            </div>
+          </details>
         </div>
       </td>
+      {confirmAdmin && (
+        <MakeAdminDialog
+          user={user}
+          onCancel={() => setConfirmAdmin(false)}
+          onConfirm={() => {
+            setConfirmAdmin(false);
+            run({ role: "admin" });
+          }}
+        />
+      )}
     </tr>
   );
 };
+
+// MakeAdminDialog spells out what the promotion means before it happens: an
+// admin manages every user, app, pool and global setting on the instance.
+const MakeAdminDialog = ({ user, onCancel, onConfirm }) => (
+  <div className="modal-backdrop" role="dialog" aria-modal="true" onMouseDown={onCancel}>
+    <div className="card modal modal-sheet" onMouseDown={(e) => e.stopPropagation()}>
+      <h2>Make {user.email} an admin?</h2>
+      <p className="hint">
+        Admins manage <b>everything</b> on this instance: all users and their apps, resource pools,
+        approvals, and the global settings. They can also make and unmake other admins.
+      </p>
+      <div className="btn-row">
+        <button type="button" className="btn" onClick={onCancel}>
+          Cancel
+        </button>
+        <button type="button" className="btn btn-primary" onClick={onConfirm}>
+          Make admin
+        </button>
+      </div>
+    </div>
+  </div>
+);
 
 // Same shape as the dashboard row, plus the owner: for an admin /api/apps
 // returns every user's apps, in server order (already sorted by name).
@@ -599,7 +616,10 @@ const Defaults = ({ settings, onSaved, setError }) => {
   return (
     <div className="card">
       <h2>Global defaults</h2>
-      <p className="hint">Applied to users without a per-user override.</p>
+      <p className="hint">
+        What a new app starts with, and the app count a user gets unless their row says otherwise.
+        Per-user knobs live in the Users list: the app limit and the RAM/disk pools their apps share.
+      </p>
       <form className="defaults-form" onSubmit={save}>
         <label>
           App limit
@@ -612,7 +632,7 @@ const Defaults = ({ settings, onSaved, setError }) => {
           />
         </label>
         <label>
-          Memory (MB)
+          RAM per new app (MB)
           <input
             type="number"
             min="0"
@@ -622,7 +642,7 @@ const Defaults = ({ settings, onSaved, setError }) => {
           />
         </label>
         <label>
-          Disk (MB)
+          Disk per new app (MB)
           <input
             type="number"
             min="0"
@@ -863,7 +883,9 @@ const AdminInner = () => {
                   <th>Status</th>
                   <th>Apps</th>
                   <th>Agent access</th>
-                  <th>Limits (apps / mem MB / disk MB)</th>
+                  <th>App limit</th>
+                  <th>RAM pool (MB)</th>
+                  <th>Disk pool (MB)</th>
                   <th aria-label="Actions" />
                 </tr>
               </thead>

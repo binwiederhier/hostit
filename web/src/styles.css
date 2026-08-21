@@ -5454,3 +5454,50 @@ body.ws-resizing iframe {
   resize: vertical;
   white-space: pre;
 }
+
+/* Admin users: per-limit cells and the row's overflow menu. */
+.limit-cell {
+  width: 84px;
+}
+.kebab {
+  position: relative;
+  display: inline-block;
+}
+.kebab summary {
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+}
+.kebab summary::-webkit-details-marker {
+  display: none;
+}
+.kebab-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  min-width: 140px;
+  padding: 4px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+}
+.kebab-menu button {
+  border: 0;
+  background: none;
+  text-align: left;
+  padding: 7px 10px;
+  border-radius: 7px;
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+}
+.kebab-menu button:hover {
+  background: var(--surface-2);
+}
+.kebab-menu .kebab-danger {
+  color: var(--danger, #c33);
+}
