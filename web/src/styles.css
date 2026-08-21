@@ -5487,3 +5487,15 @@ body.ws-resizing iframe {
 .kebab-menu .kebab-danger {
   color: var(--danger, #c33);
 }
+
+/* Number fields: the value is what matters; the spin arrows only jitter the
+   layout and invite one-by-one clicking on values that are hundreds apart. */
+input[type="number"] {
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}

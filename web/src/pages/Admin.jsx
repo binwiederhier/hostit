@@ -4,9 +4,9 @@ import { api } from "../api";
 import {
   ErrorBanner,
   formatDate,
-  formatUsage,
   Loading,
   StatusDot,
+  UsagePair,
 } from "../components";
 
 // Empty input means "use the global default"; the API expects null for that.
@@ -294,8 +294,8 @@ const AppRow = ({ app }) => (
       </Link>
     </td>
     <td className="cell-muted">{app.owner_email || "--"}</td>
-    <td>{formatUsage(app.memory_mb, app.memory_limit_mb)}</td>
-    <td>{formatUsage(app.disk_mb, app.disk_limit_mb)}</td>
+    <td><UsagePair kind="ram" used={app.memory_mb} total={app.memory_limit_mb} /></td>
+    <td><UsagePair kind="disk" used={app.disk_mb} total={app.disk_limit_mb} /></td>
     <td className="cell-muted">{formatDate(app.created_at)}</td>
     <td className="cell-actions">
       <div className="btn-row btn-row-end">
@@ -639,8 +639,13 @@ const Defaults = ({ settings, onSaved, setError }) => {
     numOrEmpty(settings.default_memory_mb),
   );
   const [diskMb, setDiskMb] = useState(numOrEmpty(settings.default_disk_mb));
+  const [memoryPoolMb, setMemoryPoolMb] = useState(numOrEmpty(settings.default_memory_pool_mb || ""));
+  const [diskPoolMb, setDiskPoolMb] = useState(numOrEmpty(settings.default_disk_pool_mb || ""));
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
+  // The pool every user gets unless their row says otherwise; empty derives
+  // app limit x per-app value, shown so the fallback is never a mystery.
+  const derivedPool = (perApp) => Number(appLimit || 0) * Number(perApp || 0);
 
   const save = async (e) => {
     e.preventDefault();
@@ -652,6 +657,8 @@ const Defaults = ({ settings, onSaved, setError }) => {
         default_app_limit: Number(appLimit),
         default_memory_mb: Number(memoryMb),
         default_disk_mb: Number(diskMb),
+        default_memory_pool_mb: Number(memoryPoolMb || 0),
+        default_disk_pool_mb: Number(diskPoolMb || 0),
       });
       setSaved(true);
       onSaved();
@@ -698,6 +705,26 @@ const Defaults = ({ settings, onSaved, setError }) => {
             required
             value={diskMb}
             onChange={(e) => setDiskMb(e.target.value)}
+          />
+        </label>
+        <label>
+          RAM pool per user (MB)
+          <input
+            type="number"
+            min="0"
+            value={memoryPoolMb}
+            onChange={(e) => setMemoryPoolMb(e.target.value)}
+            placeholder={`${derivedPool(memoryMb)} (derived)`}
+          />
+        </label>
+        <label>
+          Disk pool per user (MB)
+          <input
+            type="number"
+            min="0"
+            value={diskPoolMb}
+            onChange={(e) => setDiskPoolMb(e.target.value)}
+            placeholder={`${derivedPool(diskMb)} (derived)`}
           />
         </label>
         <button type="submit" className="btn btn-primary" disabled={busy}>

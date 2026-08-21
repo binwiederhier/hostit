@@ -65,6 +65,35 @@ export const StatusDot = ({ running, appRunning, appState, pending, archived }) 
 // "12 of 512 MB", or just "12 MB" when the app has no limit for that resource.
 export const formatUsage = (used, limit) => (limit ? `${used} of ${limit} MB` : `${used} MB`);
 
+// UsagePair is the compact icon + "used/total" reading the dashboard's usage
+// strip established ("5.1/20 GB"); one shared unit per pair, GB from 1 GB up.
+export const UsagePair = ({ kind, used, total }) => {
+  const pair = (u, t) => {
+    if ((t || u) >= 1024) {
+      const gb = (v) => (v / 1024).toFixed(v % 1024 ? 1 : 0);
+      return t ? `${gb(u)}/${gb(t)} GB` : `${gb(u)} GB`;
+    }
+    return t ? `${u}/${t} MB` : `${u} MB`;
+  };
+  return (
+    <span className="usage-item" title={kind === "ram" ? "RAM used of the app's limit" : "Disk used of the app's limit"}>
+      {kind === "ram" ? (
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <rect x="2" y="4" width="12" height="8" rx="1" />
+          <path d="M4.5 12v2M8 12v2M11.5 12v2M4.5 2v2M8 2v2M11.5 2v2" />
+        </svg>
+      ) : (
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <ellipse cx="8" cy="4" rx="6" ry="2.2" />
+          <path d="M2 4v8c0 1.2 2.7 2.2 6 2.2s6-1 6-2.2V4" />
+          <path d="M2 8c0 1.2 2.7 2.2 6 2.2s6-1 6-2.2" />
+        </svg>
+      )}
+      {pair(used || 0, total || 0)}
+    </span>
+  );
+};
+
 // A timestamp as a short local date; `empty` is what a missing value reads as.
 export const formatDate = (s, empty = "unknown") => {
   if (!s) {

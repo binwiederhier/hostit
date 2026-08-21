@@ -35,9 +35,11 @@ const (
 	defaultMemoryMB = 128
 	defaultDiskMB   = 256
 
-	settingAppLimit = "default_app_limit"
-	settingMemoryMB = "default_memory_mb"
-	settingDiskMB   = "default_disk_mb"
+	settingAppLimit     = "default_app_limit"
+	settingMemoryMB     = "default_memory_mb"
+	settingDiskMB       = "default_disk_mb"
+	settingMemoryPoolMB = "default_memory_pool_mb"
+	settingDiskPoolMB   = "default_disk_pool_mb"
 )
 
 var (
@@ -244,10 +246,15 @@ func (m *Manager) Limits(u *store.User) (*Limits, error) {
 	if u.DiskMB != nil {
 		limits.DiskMB = *u.DiskMB
 	}
-	// Pools: explicit where set, else derived from the resolved per-app
-	// defaults, so raising a user's default raises their derived pool with it.
-	limits.MemoryPoolMB = limits.AppLimit * limits.MemoryMB
-	limits.DiskPoolMB = limits.AppLimit * limits.DiskMB
+	// Pools, most specific wins: the user's own, else the instance's default
+	// pool, else derived from the resolved per-app defaults (the pre-pool
+	// upgrade fallback, so an instance that never set one changes nothing).
+	if limits.MemoryPoolMB == 0 {
+		limits.MemoryPoolMB = limits.AppLimit * limits.MemoryMB
+	}
+	if limits.DiskPoolMB == 0 {
+		limits.DiskPoolMB = limits.AppLimit * limits.DiskMB
+	}
 	if u.MemoryPoolMB != nil {
 		limits.MemoryPoolMB = *u.MemoryPoolMB
 	}
@@ -267,12 +274,16 @@ func (m *Manager) Defaults() (*Limits, error) {
 		AppLimit: settingInt(settings, settingAppLimit, defaultAppLimit),
 		MemoryMB: settingInt(settings, settingMemoryMB, defaultMemoryMB),
 		DiskMB:   settingInt(settings, settingDiskMB, defaultDiskMB),
+		// 0 = no explicit default pool; Limits then derives one. Stating a pool
+		// here beats making admins do the app_limit x per-app multiplication.
+		MemoryPoolMB: settingInt(settings, settingMemoryPoolMB, 0),
+		DiskPoolMB:   settingInt(settings, settingDiskPoolMB, 0),
 	}, nil
 }
 
 // SetDefaults updates the global default limits
 func (m *Manager) SetDefaults(limits *Limits) error {
-	if limits.AppLimit < 0 || limits.MemoryMB < 0 || limits.DiskMB < 0 {
+	if limits.AppLimit < 0 || limits.MemoryMB < 0 || limits.DiskMB < 0 || limits.MemoryPoolMB < 0 || limits.DiskPoolMB < 0 {
 		return fmt.Errorf("%w: limits must not be negative", ErrInvalid)
 	}
 	if err := m.store.SetSetting(settingAppLimit, strconv.Itoa(limits.AppLimit)); err != nil {
@@ -281,7 +292,13 @@ func (m *Manager) SetDefaults(limits *Limits) error {
 	if err := m.store.SetSetting(settingMemoryMB, strconv.Itoa(limits.MemoryMB)); err != nil {
 		return err
 	}
-	return m.store.SetSetting(settingDiskMB, strconv.Itoa(limits.DiskMB))
+	if err := m.store.SetSetting(settingDiskMB, strconv.Itoa(limits.DiskMB)); err != nil {
+		return err
+	}
+	if err := m.store.SetSetting(settingMemoryPoolMB, strconv.Itoa(limits.MemoryPoolMB)); err != nil {
+		return err
+	}
+	return m.store.SetSetting(settingDiskPoolMB, strconv.Itoa(limits.DiskPoolMB))
 }
 
 // CreateToken issues a new account-wide API token; the returned string is shown

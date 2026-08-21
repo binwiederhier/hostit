@@ -269,9 +269,11 @@ func (s *Server) handleSettingsGet(w http.ResponseWriter, _ *http.Request, _ *ca
 		return
 	}
 	writeJSON(w, http.StatusOK, &apiSettingsResponse{
-		DefaultAppLimit: defaults.AppLimit,
-		DefaultMemoryMB: defaults.MemoryMB,
-		DefaultDiskMB:   defaults.DiskMB,
+		DefaultAppLimit:     defaults.AppLimit,
+		DefaultMemoryMB:     defaults.MemoryMB,
+		DefaultDiskMB:       defaults.DiskMB,
+		DefaultMemoryPoolMB: defaults.MemoryPoolMB,
+		DefaultDiskPoolMB:   defaults.DiskPoolMB,
 	})
 }
 
@@ -294,6 +296,12 @@ func (s *Server) handleSettingsUpdate(w http.ResponseWriter, r *http.Request, c 
 	}
 	if req.DefaultDiskMB != nil {
 		defaults.DiskMB = *req.DefaultDiskMB
+	}
+	if req.DefaultMemoryPoolMB != nil {
+		defaults.MemoryPoolMB = *req.DefaultMemoryPoolMB
+	}
+	if req.DefaultDiskPoolMB != nil {
+		defaults.DiskPoolMB = *req.DefaultDiskPoolMB
 	}
 	if err := s.users.SetDefaults(defaults); err != nil {
 		writeAppError(w, err)

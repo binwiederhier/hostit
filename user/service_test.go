@@ -394,3 +394,28 @@ func TestShippedDefaultsAreSmall(t *testing.T) {
 	assert.Equal(t, 128, defaults.MemoryMB)
 	assert.Equal(t, 256, defaults.DiskMB)
 }
+
+// The global defaults can state the default pool DIRECTLY: "every user gets
+// 2 GB RAM" beats "3 x 128, do the math". Derivation stays only as the
+// fallback for instances that never set one, and a per-user pool still wins
+// over both.
+func TestDefaultPoolSettingBeatsDerivation(t *testing.T) {
+	t.Parallel()
+	m := newTestManager(t)
+	u := &store.User{Email: "p@example.com", Name: "P", Role: store.RoleUser, Status: store.StatusActive}
+	require.NoError(t, m.store.AddUser(u))
+
+	require.NoError(t, m.SetDefaults(&Limits{AppLimit: 3, MemoryMB: 128, DiskMB: 256, MemoryPoolMB: 2048, DiskPoolMB: 10240}))
+	limits, err := m.Limits(u)
+	require.NoError(t, err)
+	assert.Equal(t, 2048, limits.MemoryPoolMB, "the explicit default pool wins over the derivation")
+	assert.Equal(t, 10240, limits.DiskPoolMB)
+
+	pool := 512
+	u.MemoryPoolMB = &pool
+	require.NoError(t, m.store.UpdateUser(u))
+	limits, err = m.Limits(u)
+	require.NoError(t, err)
+	assert.Equal(t, 512, limits.MemoryPoolMB, "a per-user pool wins over the default")
+	assert.Equal(t, 10240, limits.DiskPoolMB)
+}

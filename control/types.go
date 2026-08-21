@@ -278,13 +278,18 @@ type apiSettingsResponse struct {
 	DefaultAppLimit int `json:"default_app_limit"`
 	DefaultMemoryMB int `json:"default_memory_mb"`
 	DefaultDiskMB   int `json:"default_disk_mb"`
+	// The default POOLS a user gets; 0 = derive app_limit x per-app default.
+	DefaultMemoryPoolMB int `json:"default_memory_pool_mb"`
+	DefaultDiskPoolMB   int `json:"default_disk_pool_mb"`
 }
 
 // apiUpdateSettingsRequest is the body of PATCH /api/settings
 type apiUpdateSettingsRequest struct {
-	DefaultAppLimit *int `json:"default_app_limit"`
-	DefaultMemoryMB *int `json:"default_memory_mb"`
-	DefaultDiskMB   *int `json:"default_disk_mb"`
+	DefaultAppLimit     *int `json:"default_app_limit"`
+	DefaultMemoryMB     *int `json:"default_memory_mb"`
+	DefaultDiskMB       *int `json:"default_disk_mb"`
+	DefaultMemoryPoolMB *int `json:"default_memory_pool_mb"`
+	DefaultDiskPoolMB   *int `json:"default_disk_pool_mb"`
 }
 
 // apiAgentEndpoint documents one endpoint in the agent-facing API index
