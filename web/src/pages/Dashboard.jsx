@@ -334,8 +334,8 @@ const AppRow = ({ app }) => {
       </td>
       <td className="applist-desc">{app.description || <span className="appcard-nodesc">--</span>}</td>
       <td className="applist-num">{running ? `${app.cpu_percent || 0}%` : "--"}</td>
-      <td className="applist-num">{running ? <UsagePair kind="ram" used={app.memory_mb} total={app.memory_limit_mb} /> : "--"}</td>
-      <td className="applist-num"><UsagePair kind="disk" used={app.disk_mb} total={app.disk_limit_mb} /></td>
+      <td className="applist-pair">{running ? <UsagePair kind="ram" used={app.memory_mb} total={app.memory_limit_mb} /> : "--"}</td>
+      <td className="applist-pair"><UsagePair kind="disk" used={app.disk_mb} total={app.disk_limit_mb} /></td>
       {/* Uptime, not "last deploy": a deploy restarts the app so the two track
           each other closely, but the API has no deploy timestamp and a column
           claiming one would be wrong after a plain reboot. */}
@@ -357,8 +357,8 @@ const AppList = ({ apps }) => {
             <th>Status</th>
             <th>Description</th>
             <th className="applist-num">CPU</th>
-            <th className="applist-num">RAM</th>
-            <th className="applist-num">Disk</th>
+            <th className="applist-pair">RAM</th>
+            <th className="applist-pair">Disk</th>
             <th className="applist-num">Uptime</th>
           </tr>
         </thead>

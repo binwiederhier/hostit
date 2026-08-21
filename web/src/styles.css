@@ -5518,3 +5518,11 @@ input[type="number"]::-webkit-inner-spin-button {
 .ov-bar > i.crit {
   background: var(--danger);
 }
+
+/* RAM/disk pairs in the apps list read left-to-right (icon first), unlike the
+   bare right-aligned numerics beside them. */
+.applist-pair {
+  text-align: left;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
