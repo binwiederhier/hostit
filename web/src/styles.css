@@ -154,8 +154,10 @@ p {
   height: 1em;
   margin-left: 0.12em;
   vertical-align: text-bottom;
+  /* Raised a touch off the text-bottom line, where it sat visibly low. */
+  transform: translateY(-0.08em);
   background: var(--accent);
-  animation: blink 2.4s steps(2, start) infinite;
+  animation: blink 2.4s step-end infinite;
 }
 
 /* On the big gate/empty-state mark the blink is distracting on an otherwise
@@ -164,9 +166,17 @@ p {
   animation: none;
 }
 
+/* Two explicit opacity states, not an implicit-from visibility animation:
+   Firefox resolves that combination to "always visible" and the cursor never
+   blinked there. step-end holds each half steady. */
 @keyframes blink {
-  to {
-    visibility: hidden;
+  0%,
+  49.9% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0;
   }
 }
 
