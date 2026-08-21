@@ -2,14 +2,12 @@ VERSION ?= 0.1.0
 GO      ?= go
 NPM     ?= npm
 
-.PHONY: help build web web-deps web-build deb deb-arm64 release release-snapshot check test e2e vet fmt fmt-check clean deps install install-deb purge-package
+.PHONY: help build web web-deps web-build release release-snapshot check test e2e vet fmt fmt-check clean deps install install-deb purge-package
 
 help:
 	@echo "Build:"
 	@echo "  make web                - Build the React web app into control/site (needed before build)"
 	@echo "  make build              - Build a local dev binary to dist/hostit"
-	@echo "  make deb                - Build dist/hostit_$(VERSION)_linux_amd64.deb (dpkg-deb, no git needed)"
-	@echo "  make deb-arm64          - Build dist/hostit_$(VERSION)_linux_arm64.deb"
 	@echo
 	@echo "Test/check:"
 	@echo "  make check              - Run tests, formatting checks and vetting"
@@ -47,12 +45,6 @@ web-build:
 	mkdir -p control/site
 	cp -r web/build/. control/site/
 	touch control/site/.gitkeep
-
-deb:
-	scripts/mkdeb.sh $(VERSION) amd64
-
-deb-arm64:
-	scripts/mkdeb.sh $(VERSION) arm64
 
 release: clean deps web check changelog-check
 	goreleaser release --clean
@@ -115,7 +107,7 @@ install: build
 	sudo install -m 755 dist/hostit /usr/bin/hostit
 
 install-deb: purge-package
-	sudo dpkg -i dist/hostit_*_linux_amd64.deb
+	sudo dpkg -i dist/hostit-*_linux_amd64.deb
 
 purge-package:
-	sudo apt-get purge hostit || true
+	sudo apt-get purge hostit hostit-control hostit-node hostit-proxy || true

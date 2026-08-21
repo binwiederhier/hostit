@@ -128,8 +128,7 @@ apps.example.com.    A  <host-ip>
 *.apps.example.com.  A  <host-ip>
 ```
 
-Releases are built with goreleaser (`.goreleaser.yml`); `scripts/mkdeb.sh` is a
-git-free fallback.
+Releases are built with goreleaser (`.goreleaser.yml`).
 
 ### Deploying and updating
 
