@@ -9,6 +9,15 @@ default, or on-disk state is called out as **Breaking** or **Upgrade note**.
 
 ## Unreleased
 
+- **Fixed: image uploads now reach the assistant on the subscription
+  backend.** The sandboxed `claude -p` turn received only prompt text, so an
+  attached image was invisible and the assistant said it could not do
+  anything with it. With images the sandbox now feeds stdin as one
+  stream-json user message carrying real image blocks (`--input-format
+  stream-json`), so the model sees the image on either backend; attachment
+  paths are also named in the prompt, so non-image uploads are discoverable
+  through the MCP tools. Text-only turns are byte-for-byte unchanged.
+
 - **`hostit control apps` is now `hostit control app`**, singular like `node`
   and `proxy`. The plural keeps working as an alias; `hostit apps` still prints
   its deprecation note and forwards.

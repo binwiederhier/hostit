@@ -21,9 +21,11 @@ type fakeClaudeRunner struct {
 	calls        int
 	prompt       string
 	systemPrompt string
+	images       []Attachment
 }
 
-func (f *fakeClaudeRunner) RunTurn(_ context.Context, _ string, prompt, systemPrompt string, publish func(Event)) (Usage, error) {
+func (f *fakeClaudeRunner) RunTurn(_ context.Context, _ string, prompt, systemPrompt string, images []Attachment, publish func(Event)) (Usage, error) {
+	f.images = images
 	f.calls++
 	f.prompt, f.systemPrompt = prompt, systemPrompt
 	for _, ev := range f.events {
@@ -230,4 +232,39 @@ func TestClaudeBackendReplaysHistoryForContinuity(t *testing.T) {
 	runTurn(t, m, "blog", "second message")
 	assert.Contains(t, runner.prompt, "first message", "prior turn is replayed for continuity")
 	assert.Contains(t, runner.prompt, "second message")
+}
+
+func TestBuildClaudePromptNamesAttachments(t *testing.T) {
+	t.Parallel()
+	prompt := buildClaudePrompt(nil, "look at this", []Attachment{
+		{Path: "uploads/shot.png", MediaType: "image/png", Data: "aGVsbG8="},
+		{Path: "uploads/notes.txt", MediaType: "text/plain"},
+	})
+	assert.Contains(t, prompt, "look at this")
+	assert.Contains(t, prompt, "uploads/shot.png", "the agent must learn the files exist and where")
+	assert.Contains(t, prompt, "uploads/notes.txt")
+}
+
+// An uploaded image must reach the sandbox: the prompt is text and cannot
+// carry it, so the runner gets it as blocks -- while a non-image attachment
+// rides the prompt as its path only, readable over the MCP tools.
+func TestClaudeTurnPassesImagesToTheRunner(t *testing.T) {
+	t.Parallel()
+	runner := &fakeClaudeRunner{events: []Event{{Type: "text", Text: "I see it."}}}
+	m := NewManager(&fakeCompleter{}, newFakeOps(), NewMemoryStore(), Credentials{ClaudeCodeOAuthToken: "t"})
+	m.SetClaudeRunner(runner)
+
+	ch, cancel, err := m.Subscribe("blog")
+	require.NoError(t, err)
+	defer cancel()
+	require.NoError(t, m.Send("blog", "", "what is in this screenshot?", "",
+		Attachment{Path: "uploads/shot.png", MediaType: "image/png", Data: "aGVsbG8="},
+		Attachment{Path: "uploads/notes.txt", MediaType: "text/plain"}))
+	drainUntilDone(t, ch)
+
+	require.Len(t, runner.images, 1, "images go to the runner; other files ride the prompt as paths")
+	assert.Equal(t, "image/png", runner.images[0].MediaType)
+	assert.Equal(t, "aGVsbG8=", runner.images[0].Data)
+	assert.Contains(t, runner.prompt, "uploads/shot.png")
+	assert.Contains(t, runner.prompt, "uploads/notes.txt")
 }

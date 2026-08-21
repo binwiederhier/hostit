@@ -1,10 +1,15 @@
 package assistant
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"heckel.io/hostit/controlconf"
 	"heckel.io/hostit/workspace"
@@ -58,7 +63,7 @@ func contains(args []string, want string) bool {
 }
 
 func TestSandboxClaudeArgsAreMCPOnly(t *testing.T) {
-	args := testSandbox().claudeArgs("")
+	args := testSandbox().claudeArgs("", false)
 
 	// Non-interactive, streaming.
 	if !hasFlagValue(args, "--output-format", "stream-json") {
@@ -104,7 +109,7 @@ func TestSandboxClaudeArgsAreMCPOnly(t *testing.T) {
 	if contains(args, "--append-system-prompt") {
 		t.Error("empty system prompt must not add --append-system-prompt")
 	}
-	withPrompt := testSandbox().claudeArgs("You are working on a hostit app.")
+	withPrompt := testSandbox().claudeArgs("You are working on a hostit app.", false)
 	if v, ok := flagValue(withPrompt, "--append-system-prompt"); !ok || v != "You are working on a hostit app." {
 		t.Errorf("expected the system prompt appended, got %v", withPrompt)
 	}
@@ -250,4 +255,50 @@ func TestNewSandboxMountsTheAgentBinary(t *testing.T) {
 	if s.hostitBin != workspace.HostBinFile {
 		t.Fatalf("sandbox mounts %q as the MCP bridge, want the agent binary %q", s.hostitBin, workspace.HostBinFile)
 	}
+}
+
+// Images cannot ride -p's plain-text stdin: with any image the sandbox
+// switches to stream-json input and feeds ONE user message whose blocks carry
+// the images and then the prompt text.
+func TestClaudeStdinCarriesImages(t *testing.T) {
+	t.Parallel()
+	stdin, streamJSON := claudeStdin("describe this", nil)
+	assert.False(t, streamJSON, "no images: plain -p stdin, unchanged behavior")
+	assert.Equal(t, "describe this", stdin)
+
+	stdin, streamJSON = claudeStdin("describe this", []Attachment{{Path: "uploads/a.png", MediaType: "image/png", Data: "aGVsbG8="}})
+	require.True(t, streamJSON)
+	require.True(t, strings.HasSuffix(stdin, "\n"), "stream-json input is line-delimited")
+	var line struct {
+		Type    string `json:"type"`
+		Message struct {
+			Role    string `json:"role"`
+			Content []struct {
+				Type   string       `json:"type"`
+				Text   string       `json:"text"`
+				Source *ImageSource `json:"source"`
+			} `json:"content"`
+		} `json:"message"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(stdin), &line))
+	assert.Equal(t, "user", line.Type)
+	assert.Equal(t, "user", line.Message.Role)
+	require.Len(t, line.Message.Content, 2)
+	assert.Equal(t, "image", line.Message.Content[0].Type)
+	require.NotNil(t, line.Message.Content[0].Source)
+	assert.Equal(t, "base64", line.Message.Content[0].Source.Type)
+	assert.Equal(t, "image/png", line.Message.Content[0].Source.MediaType)
+	assert.Equal(t, "aGVsbG8=", line.Message.Content[0].Source.Data)
+	assert.Equal(t, "text", line.Message.Content[1].Type)
+	assert.Equal(t, "describe this", line.Message.Content[1].Text)
+}
+
+func TestClaudeArgsInputFormat(t *testing.T) {
+	t.Parallel()
+	assert.NotContains(t, testSandbox().claudeArgs("", false), "--input-format")
+	args := testSandbox().claudeArgs("", true)
+	i := slices.Index(args, "--input-format")
+	require.GreaterOrEqual(t, i, 0, "stream-json input must be switched on for an image turn")
+	require.Less(t, i+1, len(args))
+	assert.Equal(t, "stream-json", args[i+1])
 }

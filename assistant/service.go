@@ -270,7 +270,7 @@ func (m *Manager) runLoop(s *session, app, userID, userText, mode string, attach
 		}
 	}
 	if option.Backend == BackendClaude {
-		if err := m.runClaudeTurn(ctx, s, app, history, userText, option); err == nil {
+		if err := m.runClaudeTurn(ctx, s, app, history, userText, attachments, option); err == nil {
 			return // handled the turn (published done) or was cancelled
 		} else {
 			fallback, hasFallback := m.apiFallback()

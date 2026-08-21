@@ -19,12 +19,12 @@ var _ assistant.ClaudeRunner = (*claudeBackend)(nil)
 // RunTurn runs one turn and returns its token usage. A tool that errors is a
 // normal event (the model adapts); only a failed run (claude crashed, the
 // sandbox could not start) returns an error.
-func (c *claudeBackend) RunTurn(ctx context.Context, appName, prompt, systemPrompt string, publish func(assistant.Event)) (assistant.Usage, error) {
+func (c *claudeBackend) RunTurn(ctx context.Context, appName, prompt, systemPrompt string, images []assistant.Attachment, publish func(assistant.Event)) (assistant.Usage, error) {
 	var usage assistant.Usage
 	var runErr error
 	lastTool := "" // tool_result events do not name their tool; pair by order
 
-	err := c.sandbox.RunTurn(ctx, appName, prompt, systemPrompt, func(ev assistant.StreamEvent) {
+	err := c.sandbox.RunTurn(ctx, appName, prompt, systemPrompt, images, func(ev assistant.StreamEvent) {
 		switch ev.Type {
 		case "text":
 			publish(assistant.Event{Type: "text", Text: ev.Text})

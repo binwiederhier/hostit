@@ -18,12 +18,12 @@ func buildUserContent(userText string, attachments []Attachment) (content []Cont
 	var paths []string
 	for _, a := range attachments {
 		paths = append(paths, a.Path)
-		if a.Data != "" && strings.HasPrefix(a.MediaType, "image/") {
-			content = append(content, ContentBlock{
-				Type:   blockImage,
-				Source: &ImageSource{Type: "base64", MediaType: a.MediaType, Data: a.Data},
-			})
-		}
+	}
+	for _, a := range imageAttachments(attachments) {
+		content = append(content, ContentBlock{
+			Type:   blockImage,
+			Source: &ImageSource{Type: "base64", MediaType: a.MediaType, Data: a.Data},
+		})
 	}
 	if userText != "" {
 		content = append(content, ContentBlock{Type: blockText, Text: userText})
@@ -35,4 +35,16 @@ func buildUserContent(userText string, attachments []Attachment) (content []Cont
 		content = append(content, ContentBlock{Type: blockText, Text: userText}) // keep a valid (empty) message
 	}
 	return content, userText
+}
+
+// imageAttachments filters the uploads a model can SEE: images that arrived
+// with their bytes. Everything else is reference-by-path only.
+func imageAttachments(attachments []Attachment) []Attachment {
+	var images []Attachment
+	for _, a := range attachments {
+		if a.Data != "" && strings.HasPrefix(a.MediaType, "image/") {
+			images = append(images, a)
+		}
+	}
+	return images
 }

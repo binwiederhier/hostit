@@ -141,11 +141,12 @@ type StreamEvent struct {
 	ErrorMsg string
 }
 
-// RunTurn launches the sandbox for one turn: it feeds prompt on stdin, appends
-// systemPrompt to Claude Code's own system prompt (so the agent knows it is
-// working on a hostit app), and calls onEvent for each streamed event. It blocks
-// until claude exits (or ctx is cancelled, which kills the container).
-func (s *Sandbox) RunTurn(ctx context.Context, appName, prompt, systemPrompt string, onEvent func(StreamEvent)) error {
+// RunTurn launches the sandbox for one turn: it feeds prompt (and any uploaded
+// images) on stdin, appends systemPrompt to Claude Code's own system prompt (so
+// the agent knows it is working on a hostit app), and calls onEvent for each
+// streamed event. It blocks until claude exits (or ctx is cancelled, which
+// kills the container).
+func (s *Sandbox) RunTurn(ctx context.Context, appName, prompt, systemPrompt string, images []Attachment, onEvent func(StreamEvent)) error {
 	uid, gid, appID, err := s.identity(appName)
 	if err != nil {
 		return err
@@ -161,11 +162,12 @@ func (s *Sandbox) RunTurn(ctx context.Context, appName, prompt, systemPrompt str
 	// would keep a long task running and burning the subscription. Remove it
 	// explicitly, out of band from the (now cancelled) turn context.
 	defer func() { _ = exec.Command(podman, "rm", "--force", name).Run() }()
+	stdin, streamJSON := claudeStdin(prompt, images)
 	args := append(s.baseArgs(name, uid, gid), "-i", image)
-	args = append(args, s.claudeArgs(systemPrompt)...)
+	args = append(args, s.claudeArgs(systemPrompt, streamJSON)...)
 
 	cmd := exec.CommandContext(ctx, podman, args...)
-	cmd.Stdin = strings.NewReader(prompt)
+	cmd.Stdin = strings.NewReader(stdin)
 	var stderr strings.Builder
 	cmd.Stderr = &stderr
 	stdout, err := cmd.StdoutPipe()
@@ -222,7 +224,7 @@ func (s *Sandbox) Shell(appName string) error {
 		return err
 	}
 	name := containerName(appID)
-	args := append(s.baseArgs(name, uid, gid), "-it", image, "/bin/bash")
+	args := append(s.baseArgs(name, uid, gid), "-it", image, "/bin/bash") //nolint // interactive shell, no claude args
 	fmt.Fprintf(os.Stderr, "==> shell in sandbox %s (app=%s uid=%d). Try: claude --version; hostit mcp --socket %s\n", name, appName, uid, s.conf.ControlSocketFile)
 	cmd := exec.Command(podman, args...)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
@@ -268,18 +270,52 @@ func (s *Sandbox) baseArgs(name string, uid, gid int) []string {
 // leave the agent with no tools. The prompt is fed on stdin (see RunTurn), not as
 // an argument, because --mcp-config is variadic and would swallow a trailing
 // positional prompt.
-func (s *Sandbox) claudeArgs(systemPrompt string) []string {
+// claudeStdin renders what the sandbox feeds claude on stdin. Without images
+// it is the plain prompt, exactly as before. With images it is ONE stream-json
+// user message -- image blocks first, then the prompt text -- because -p's
+// plain text mode has no way to carry image bytes; the switch is per turn so
+// the ordinary path stays the simple one.
+func claudeStdin(prompt string, images []Attachment) (stdin string, streamJSON bool) {
+	if len(images) == 0 {
+		return prompt, false
+	}
+	content := make([]ContentBlock, 0, len(images)+1)
+	for _, a := range images {
+		content = append(content, ContentBlock{
+			Type:   blockImage,
+			Source: &ImageSource{Type: "base64", MediaType: a.MediaType, Data: a.Data},
+		})
+	}
+	content = append(content, ContentBlock{Type: blockText, Text: prompt})
+	line, err := json.Marshal(map[string]any{
+		"type":    "user",
+		"message": map[string]any{"role": "user", "content": content},
+	})
+	if err != nil {
+		return prompt, false // cannot happen for these types; fail open to text
+	}
+	return string(line) + "\n", true
+}
+
+func (s *Sandbox) claudeArgs(systemPrompt string, streamJSON bool) []string {
 	mcpConfig := fmt.Sprintf(`{"mcpServers":{"hostit":{"command":%q,"args":["mcp","--socket",%q]}}}`, workspace.ContainerBinFile, s.conf.ControlSocketFile)
 	args := []string{
 		"claude", "-p",
 		"--output-format", "stream-json",
 		"--verbose",
+	}
+	// An image turn feeds stdin as stream-json (see claudeStdin); text turns
+	// keep the plain prompt, so the flag rides only when needed.
+	if streamJSON {
+		args = append(args, "--input-format", "stream-json")
+	}
+	args = append(args,
 		"--strict-mcp-config",
 		"--mcp-config", mcpConfig,
 		"--permission-mode", "dontAsk",
 		"--allowedTools", mcpToolGlob,
 		"--disallowedTools", disallowedBuiltins,
-	}
+	)
 	if strings.TrimSpace(systemPrompt) != "" {
 		args = append(args, "--append-system-prompt", systemPrompt)
 	}

@@ -6,16 +6,18 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"log/slog"
+	"strings"
 	"time"
 )
 
 // ClaudeRunner runs one assistant turn on the Claude Max backend: it launches the
 // sandboxed `claude -p`, publishes each streamed Event as it happens, and returns
 // the turn's token usage. systemPrompt is appended to Claude Code's own system
-// prompt so the agent knows it is working on a hostit app. The server implements
+// prompt so the agent knows it is working on a hostit app. images are the turn's
+// uploaded images, which the prompt text cannot carry. The server implements
 // this over app.AssistantSandbox; the assistant package stays free of podman.
 type ClaudeRunner interface {
-	RunTurn(ctx context.Context, app, prompt, systemPrompt string, publish func(Event)) (Usage, error)
+	RunTurn(ctx context.Context, app, prompt, systemPrompt string, images []Attachment, publish func(Event)) (Usage, error)
 }
 
 // SetClaudeRunner switches this Manager to the Claude Max backend. It keeps all
@@ -29,17 +31,19 @@ func (m *Manager) SetClaudeRunner(r ClaudeRunner) {
 // agent loop in the sandbox; this streams its events to every subscriber and
 // persists what it did. history already carries (and the caller already saved and
 // showed) the user's message; prior turns are replayed into the prompt for
-// continuity, since the sandbox container is ephemeral. Attachments are ignored.
+// continuity, since the sandbox container is ephemeral. Attachment paths ride in
+// the prompt (so the agent can read them over its MCP tools) and images go to the
+// runner as blocks, since text cannot carry them.
 //
 // It returns nil when it handled the turn (success or a clean cancel, having
 // published "done"), and a non-nil error when the SUBSCRIPTION was unavailable --
 // the signal for the caller to fall back to the API backend. On that error path it
 // deliberately saves nothing, so the fallback turn starts from a clean transcript.
-func (m *Manager) runClaudeTurn(ctx context.Context, s *session, app string, history []Message, userText string, option Option) error {
+func (m *Manager) runClaudeTurn(ctx context.Context, s *session, app string, history []Message, userText string, attachments []Attachment, option Option) error {
 	prior := history[:len(history)-1] // everything before the user message just added
 	s.publish(Event{Type: evtModel, Text: option.ID})
 	acc := &claudeAccumulator{}
-	usage, err := m.claude.RunTurn(ctx, app, buildClaudePrompt(prior, userText), systemPrompt(app, m.ops.Archived(app)), func(ev Event) {
+	usage, err := m.claude.RunTurn(ctx, app, buildClaudePrompt(prior, userText, attachments), systemPrompt(app, m.ops.Archived(app)), imageAttachments(attachments), func(ev Event) {
 		s.publish(ev)
 		acc.add(ev)
 	})
@@ -83,16 +87,25 @@ func tagModel(msgs []Message, model string) {
 }
 
 // buildClaudePrompt gives the stateless sandbox its context: the recent
-// transcript rendered as text, then the new user message. The first message has
-// no prior, so it is sent as-is.
-func buildClaudePrompt(prior []Message, userText string) string {
-	items := toItems(recentHistory(prior, maxContextTurns))
-	if len(items) == 0 {
-		return userText
+// transcript rendered as text, then the new user message, then where this
+// turn's uploads were saved -- the agent can read them over its MCP tools
+// (image BYTES travel separately; text cannot carry them). The first message
+// has no prior, so it is sent as-is.
+func buildClaudePrompt(prior []Message, userText string, attachments []Attachment) string {
+	prompt := userText
+	if items := toItems(recentHistory(prior, maxContextTurns)); len(items) > 0 {
+		prompt = "Here is the conversation so far, for context:\n\n" +
+			RenderTranscript(items) +
+			"\n\n---\n\nThe user now says:\n\n" + userText
 	}
-	return "Here is the conversation so far, for context:\n\n" +
-		RenderTranscript(items) +
-		"\n\n---\n\nThe user now says:\n\n" + userText
+	if len(attachments) > 0 {
+		paths := make([]string, 0, len(attachments))
+		for _, a := range attachments {
+			paths = append(paths, a.Path)
+		}
+		prompt += "\n\n" + attachmentNotePrefix + strings.Join(paths, ", ")
+	}
+	return prompt
 }
 
 // claudeAccumulator rebuilds the stored transcript from the ordered event stream:

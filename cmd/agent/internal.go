@@ -65,7 +65,7 @@ func execInternalAssistant(c *cli.Context) error {
 		return sandbox.Shell(appName)
 	}
 	fmt.Fprintf(os.Stderr, "==> assistant turn for app=%s\n", appName)
-	return sandbox.RunTurn(context.Background(), appName, prompt, "", printAssistantEvent(c.Bool("raw")))
+	return sandbox.RunTurn(context.Background(), appName, prompt, "", nil, printAssistantEvent(c.Bool("raw")))
 }
 
 // printAssistantEvent renders one sandbox event as a compact human summary (or
