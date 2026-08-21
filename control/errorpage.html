@@ -24,10 +24,14 @@
   p { margin: 12px auto 0; color: var(--muted); font-size: 14.5px; max-width: 36ch; }
   .foot { margin-top: 26px; padding-top: 20px; border-top: 1px solid var(--line); }
   .brand { display: inline-flex; align-items: center; gap: 9px; color: var(--fg); text-decoration: none; }
-  .mark { display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 7px;
-          background: var(--mark); color: var(--markfg);
-          font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 14px; font-weight: 700; }
-  .wm { font-weight: 650; font-size: 16px; letter-spacing: -0.01em; }
+  /* The same wordmark the web app wears: monospace, bold, with the blinking
+     block cursor -- one identity everywhere, the error page included. */
+  .wm { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-weight: 700; font-size: 17px; letter-spacing: -0.02em; }
+  .cursor { display: inline-block; width: 0.5em; height: 1em; margin-left: 0.12em;
+            vertical-align: text-bottom; transform: translateY(-0.08em);
+            background: var(--accent); animation: blink 1.1s step-end infinite; }
+  @keyframes blink { 0%, 49.9% { opacity: 1; } 50%, 100% { opacity: 0; } }
   .what { margin: 10px auto 0; max-width: 34ch; font-size: 13px; }
   .what a { color: var(--accent); text-decoration: none; font-weight: 600; }
 </style>
@@ -36,7 +40,7 @@
   <h1>{{.Headline}}</h1>
   <p>{{.Message}}</p>
   <div class="foot">
-    <a class="brand" href="{{.Home}}"><span class="mark">&gt;_</span><span class="wm">hostit</span></a>
+    <a class="brand" href="{{.Home}}"><span class="wm">hostit<span class="cursor" aria-hidden="true"></span></span></a>
     <p class="what">hostit hosts small web apps, each with a subdomain, HTTPS and SSH. <a href="{{.Home}}">Start one</a>.</p>
   </div>
 </div>

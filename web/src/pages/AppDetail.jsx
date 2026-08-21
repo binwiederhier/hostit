@@ -316,7 +316,27 @@ const MenuItem = ({ icon, label, onClick, disabled, danger, title }) => (
 // delete -- dividers between the groups. Only one app verb is ever the sensible
 // next move, and when the container is off there is no app to act on, so that
 // group is dropped.
-const ActionsMenu = ({ running, appRunning, busy, onAction, onDelete, canDelete = true, onSsh, onByoa, onFork, archived, onArchive, onUnarchive }) => {
+const MenuPencilIcon = () => (
+  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M11.3 2.2l2.5 2.5L6 12.5l-3.2.7.7-3.2z" />
+  </svg>
+);
+
+const MenuTransferIcon = () => (
+  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M2.5 5.5h9M9 3l2.5 2.5L9 8" />
+    <path d="M13.5 10.5h-9M7 8l-2.5 2.5L7 13" />
+  </svg>
+);
+
+const MenuGaugeIcon = () => (
+  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <rect x="2" y="4" width="12" height="8" rx="1" />
+    <path d="M4.5 12v2M8 12v2M11.5 12v2M4.5 2v2M8 2v2M11.5 2v2" />
+  </svg>
+);
+
+const ActionsMenu = ({ running, appRunning, busy, onAction, onDelete, canDelete = true, onSsh, onByoa, onFork, archived, onArchive, onUnarchive, onRename, onTransfer, onResources }) => {
   const { open, setOpen, ref } = useDropdown();
 
   const run = (action) => {
@@ -376,6 +396,28 @@ const ActionsMenu = ({ running, appRunning, busy, onAction, onDelete, canDelete 
             ) : (
               <MenuItem icon={<PowerIcon />} label="Power on" onClick={() => run("poweron")} />
             ))}
+          <div className="menu-sep" />
+          <MenuItem
+            icon={<MenuPencilIcon />}
+            label="Rename app"
+            onClick={pick(onRename)}
+            disabled={!canDelete}
+            title={canDelete ? undefined : "Only the owner can rename the app"}
+          />
+          <MenuItem
+            icon={<MenuTransferIcon />}
+            label="Transfer ownership"
+            onClick={pick(onTransfer)}
+            disabled={!canDelete}
+            title={canDelete ? undefined : "Only the owner can transfer the app"}
+          />
+          <MenuItem
+            icon={<MenuGaugeIcon />}
+            label="Change resources"
+            onClick={pick(onResources)}
+            disabled={!canDelete}
+            title={canDelete ? undefined : "Only the owner can change resources"}
+          />
           <div className="menu-sep" />
           <MenuItem
             icon={<ArchiveIcon />}
@@ -1487,7 +1529,7 @@ const AppSettings = ({ app, isAdmin, account, showToast, onCopyToken, onRegenera
         {domains === null ? (
           <p className="hint">Loading...</p>
         ) : domains.length === 0 ? (
-          <p className="hint">No custom domains yet.</p>
+          <p className="hint domains-empty">No custom domains yet.</p>
         ) : (
           <div className="domain-list">
             {domains.map((d) => (
@@ -1749,6 +1791,9 @@ const AppDetail = ({ account, refreshAccount }) => {
   const [showPrompt, setShowPrompt] = useState(false);
   const [showNewSnapshot, setShowNewSnapshot] = useState(false);
   const [showFork, setShowFork] = useState(false);
+  const [showRenameApp, setShowRenameApp] = useState(false);
+  const [showTransferApp, setShowTransferApp] = useState(false);
+  const [showResourcesApp, setShowResourcesApp] = useState(false);
   const [forkSnapshotId, setForkSnapshotId] = useState(null); // null = fork from current state
   const [snapReload, setSnapReload] = useState(0); // bump to refresh the Snapshots pane
   const [hasKeys, setHasKeys] = useState(null); // null until we know, so nothing flickers
@@ -2227,7 +2272,42 @@ const AppDetail = ({ account, refreshAccount }) => {
                   setForkSnapshotId(null);
                   setShowFork(true);
                 }}
+                onRename={() => setShowRenameApp(true)}
+                onTransfer={() => setShowTransferApp(true)}
+                onResources={() => setShowResourcesApp(true)}
               />
+              {showRenameApp && (
+                <RenameDialog
+                  name={app.name}
+                  onClose={() => setShowRenameApp(false)}
+                  onRenamed={(updated) => {
+                    setShowRenameApp(false);
+                    showToast("App renamed");
+                    navigate(`/app/${encodeURIComponent(updated.name)}`, { replace: true });
+                  }}
+                />
+              )}
+              {showTransferApp && (
+                <TransferDialog
+                  name={app.name}
+                  onClose={() => setShowTransferApp(false)}
+                  onTransferred={() => {
+                    setShowTransferApp(false);
+                    showToast("Ownership transferred");
+                    load();
+                  }}
+                />
+              )}
+              {showResourcesApp && (
+                <ResourcesDialog
+                  app={app}
+                  isAdmin={account.role === "admin"}
+                  account={account}
+                  showToast={showToast}
+                  onClose={() => setShowResourcesApp(false)}
+                  onSaved={load}
+                />
+              )}
               <a className="btn btn-primary ws-open" href={app.custom_domain ? `https://${app.custom_domain}` : app.url} target="_blank" rel="noreferrer" title="Open app">
                 <span className="ws-open-label">Open app</span>
                 <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
