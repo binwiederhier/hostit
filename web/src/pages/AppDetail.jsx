@@ -882,27 +882,59 @@ const SnapshotIntervalSelect = ({ value, defaultLabel, onChange }) => {
 // ResourcesDialog edits the app's resource allocation: RAM and disk within
 // the owner's pool (the server enforces the pool; the dialog shows the
 // budget), CPU admin-set. Empty fields inherit the account defaults.
-// Who can see the app, in one place: the setting itself, and -- once it is
-// private -- the list of people let in. They belong together because "private"
-// and "who else" are one decision made in one sitting; splitting them across
-// two sections is how an app ends up private with nobody able to open it.
-const VisibilityDialog = ({ app, isPrivate, viewers, collabs, busy, onSetPrivate, onAddViewer, onRemoveViewer, onClose }) => {
+// Who can see the app, in one place: the setting itself and the people let in.
+// They belong together because "private" and "who else" are one decision made
+// in one sitting -- split across two sections is how an app ends up private
+// with nobody able to open it.
+//
+// Nothing here touches the server until Save. The viewer list is edited as a
+// draft, so adding two people and changing your mind costs nothing, and the
+// whole dialog commits or does not. The viewer section stays mounted and
+// merely disables itself when the app is public, so the dialog never changes
+// height as you switch between the two.
+const VisibilityDialog = ({ app, isPrivate, viewers, collabs, onSave, onClose }) => {
   useEscape(onClose);
-  const [email, setEmail] = useState("");
   const [draft, setDraft] = useState(isPrivate);
-  const [addError, setAddError] = useState("");
-  const submit = async (e) => {
+  const [added, setAdded] = useState([]);
+  const [dropped, setDropped] = useState([]);
+  const [email, setEmail] = useState("");
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  // The list is edited as a diff against whatever has loaded, rather than as a
+  // snapshot taken when the dialog opened: the viewer list arrives a moment
+  // after the page, and a snapshot taken in that window would be empty and
+  // would make Save revoke everybody.
+  const people = [...(viewers || []).filter((v) => !dropped.includes(v.id)), ...added];
+  const changes = visibilityChanges(viewers, people, isPrivate, draft);
+
+  const add = (e) => {
     e.preventDefault();
     const address = email.trim().toLowerCase();
     if (!address) return;
-    setAddError("");
-    const err = await onAddViewer(address);
-    if (err) {
-      setAddError(err); // e.g. "they have not signed in to hostit yet"
+    if (people.some((p) => p.email === address)) {
+      setError(`${address} is already on the list.`);
       return;
     }
+    setError("");
+    // No id yet: this person exists only in the draft until Save resolves them
+    // against a real account, which is also where "they never signed up" surfaces.
+    setAdded([...added, { email: address }]);
     setEmail("");
   };
+
+  const save = async () => {
+    setSaving(true);
+    setError("");
+    const failure = await onSave(changes);
+    setSaving(false);
+    if (failure) {
+      setError(failure);
+      return;
+    }
+    onClose();
+  };
+
   return (
     <div className="modal-backdrop" role="dialog" aria-modal="true" onMouseDown={onClose}>
       <div className="card modal modal-sheet" onMouseDown={(e) => e.stopPropagation()}>
@@ -910,64 +942,59 @@ const VisibilityDialog = ({ app, isPrivate, viewers, collabs, busy, onSetPrivate
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
         </button>
         <h2>Who can see {app.name}?</h2>
-        <VisibilityChoice value={draft} onChange={setDraft} disabled={busy} />
-        {draft ? (
-          <>
-            <p className="hint">
-              Visitors have to sign in, and it holds on every hostname the app answers to, custom domains
-              included. No screenshots are taken of a private app, so its card shows a placeholder.
-            </p>
-            <label className="newapp-label">People with access</label>
-            <p className="hint">
-              They can open the app and nothing else -- no files, no terminal, no deploys. Your{" "}
-              {collabs && collabs.length > 0 ? <b>{collabs.length} collaborator{collabs.length === 1 ? "" : "s"}</b> : "collaborators"}{" "}
-              can already see it without being listed here.
-            </p>
-            <form className="domain-add" onSubmit={submit}>
-              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="someone@example.com" aria-label="Give access to" disabled={busy} />
-              <button type="submit" className="btn btn-primary btn-small" disabled={busy || !email.trim()}>Give access</button>
-            </form>
-            <ErrorBanner message={addError} onDismiss={() => setAddError("")} />
+        <p className="hint vis-intro">
+          A public app is open to anyone with the link. A private one asks visitors to sign in and lets
+          through only you, your collaborators, and the people you list below.
+        </p>
+        <VisibilityChoice value={draft} onChange={setDraft} disabled={saving} />
+
+        <fieldset className="vis-people" disabled={!draft || saving}>
+          <label className="newapp-label">People with access</label>
+          <p className="hint">
+            They can open the app and nothing else -- no files, no terminal, no deploys. Your{" "}
+            {collabs && collabs.length > 0 ? `${collabs.length} collaborator${collabs.length === 1 ? "" : "s"}` : "collaborators"}{" "}
+            can already see it without being listed here.
+          </p>
+          <form className="domain-add" onSubmit={add}>
+            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="someone@example.com" aria-label="Give access to" />
+            <button type="submit" className="btn btn-primary btn-small" disabled={!email.trim()}>Add</button>
+          </form>
+          <div className="vis-people-list">
             {viewers === null ? (
-              <p className="hint">Loading...</p>
-            ) : viewers.length === 0 ? (
+              <p className="empty">Loading...</p>
+            ) : people.length === 0 ? (
               <p className="empty">Nobody else yet. Only you, your collaborators and admins can open it.</p>
             ) : (
               <div className="domain-list">
-                {viewers.map((u) => (
-                  <div className="domain-row" key={u.id}>
+                {people.map((u) => (
+                  <div className="domain-row" key={u.email}>
                     <div className="domain-head">
                       <span className="domain-name">{u.email}</span>
                       {u.name && u.name !== u.email && <span className="collab-name">{u.name}</span>}
                       <span className="domain-actions">
-                        <button type="button" className="btn btn-small" onClick={() => onRemoveViewer(u.id)} disabled={busy}>Remove</button>
+                        <button
+                          type="button"
+                          className="btn btn-small"
+                          onClick={() => (u.id ? setDropped([...dropped, u.id]) : setAdded(added.filter((a) => a.email !== u.email)))}
+                        >
+                          Remove
+                        </button>
                       </span>
                     </div>
                   </div>
                 ))}
               </div>
             )}
-          </>
-        ) : (
-          <p className="hint">
-            Anyone with the link can open this app -- no sign-in, no account. Make it private to choose
-            who gets in.
-          </p>
-        )}
+          </div>
+        </fieldset>
+
+        <ErrorBanner message={error} onDismiss={() => setError("")} />
         <div className="btn-row">
-          <button type="button" className="btn" onClick={onClose} disabled={busy}>
+          <button type="button" className="btn" onClick={onClose} disabled={saving}>
             Cancel
           </button>
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={async () => {
-              await onSetPrivate(draft);
-              onClose();
-            }}
-            disabled={busy || draft === isPrivate}
-          >
-            {busy ? "Saving..." : "Save"}
+          <button type="button" className="btn btn-primary" onClick={save} disabled={saving || !changes.changed}>
+            {saving ? "Saving..." : "Save"}
           </button>
         </div>
       </div>
@@ -1243,7 +1270,6 @@ const AppSettings = ({ app, isAdmin, account, showToast, onCopyToken, onRegenera
   const defaultInterval = prettyDuration(snap.default_interval) || "3h";
   const [snapCfg, setSnapCfg] = useState({ interval: snap.interval || "", pre: snap.pre || "", post: snap.post || "" });
   const [savingSnap, setSavingSnap] = useState(false);
-  const [savingVis, setSavingVis] = useState(false);
   const [showRename, setShowRename] = useState(false);
   const [domains, setDomains] = useState(null);
   const [input, setInput] = useState("");
@@ -1300,19 +1326,31 @@ const AppSettings = ({ app, isAdmin, account, showToast, onCopyToken, onRegenera
     }
   };
 
-  const saveVisibility = async (isPrivate) => {
-    if (savingVis || isPrivate === !!app.private) return;
-    setSavingVis(true);
-    setError("");
+  // Commits everything the visibility dialog collected, in one go. Returns a
+  // message on failure so the dialog can show it in place and stay open with
+  // the draft intact -- the most likely failure is naming somebody who has
+  // never signed in, and losing the rest of the edit over that would be rude.
+  const saveVisibility = async ({ isPrivate, add, remove }) => {
+    const path = `/api/apps/${encodeURIComponent(name)}`;
     try {
-      await api.put(`/api/apps/${encodeURIComponent(name)}/visibility`, { private: isPrivate });
-      showToast(isPrivate ? "App is now private" : "App is now public");
-      if (onSaved) onSaved();
+      if (isPrivate !== !!app.private) {
+        await api.put(`${path}/visibility`, { private: isPrivate });
+      }
+      for (const email of add) {
+        await api.post(`${path}/viewers`, { email });
+      }
+      for (const id of remove) {
+        await api.del(`${path}/viewers/${encodeURIComponent(id)}`);
+      }
     } catch (err) {
-      setError(err.message);
-    } finally {
-      setSavingVis(false);
+      await load(); // whatever did land is now on screen
+      if (onSaved) onSaved();
+      return err.message;
     }
+    showToast("Visibility saved");
+    await load();
+    if (onSaved) onSaved();
+    return "";
   };
 
   const onRenamed = (updated) => {
@@ -1412,37 +1450,6 @@ const AppSettings = ({ app, isAdmin, account, showToast, onCopyToken, onRegenera
     try {
       await api.del(`/api/apps/${encodeURIComponent(name)}/collaborators/${encodeURIComponent(id)}`);
       showToast("Collaborator removed");
-      await load();
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setBusy(false);
-    }
-  };
-  // Returns the failure so the dialog can show it in place; a toast behind a
-  // modal is a message the person who needs it will not see.
-  const addViewer = async (email) => {
-    if (busy || !email) return "";
-    setBusy(true);
-    setError("");
-    try {
-      await api.post(`/api/apps/${encodeURIComponent(name)}/viewers`, { email });
-      showToast("Access granted");
-      await load();
-      return "";
-    } catch (err) {
-      return err.message;
-    } finally {
-      setBusy(false);
-    }
-  };
-  const removeViewer = async (id) => {
-    if (busy) return;
-    setBusy(true);
-    setError("");
-    try {
-      await api.del(`/api/apps/${encodeURIComponent(name)}/viewers/${encodeURIComponent(id)}`);
-      showToast("Access removed");
       await load();
     } catch (err) {
       setError(err.message);
@@ -1743,10 +1750,7 @@ const AppSettings = ({ app, isAdmin, account, showToast, onCopyToken, onRegenera
           isPrivate={!!app.private}
           viewers={viewers}
           collabs={collabs}
-          busy={busy || savingVis}
-          onSetPrivate={saveVisibility}
-          onAddViewer={addViewer}
-          onRemoveViewer={removeViewer}
+          onSave={saveVisibility}
           onClose={() => setShowVisibility(false)}
         />
       )}
@@ -2403,7 +2407,7 @@ const AppDetail = ({ account, refreshAccount }) => {
                 <span className={"status-label" + (refreshing ? " status-label-pending" : "") + (crashed ? " status-label-crashed" : "")}>{statusText}</span>
               )
             )}
-            {app.private && <VisibilityBadge state={visibilityOf(true, app.viewer_count)} />}
+            <VisibilityBadge state={visibilityOf(!!app.private, app.viewer_count)} />
           </div>
 
           <div className="ws-topright">

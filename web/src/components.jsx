@@ -246,3 +246,13 @@ export const VisibilityBadge = ({ state }) => (
     {VISIBILITY[state].label}
   </span>
 );
+
+// The same three states as VisibilityBadge, reduced to the icon. Beside an
+// app's name in a list the word is noise -- the row is already dense -- but the
+// state still has to be visible without opening anything, and "public" carries
+// a mark too so the absence of one never has to be interpreted.
+export const VisibilityMark = ({ state }) => (
+  <span className={"vis-mark vis-mark-" + state} title={VISIBILITY[state].label + ": " + VISIBILITY[state].hint}>
+    <VisibilityIcon state={state} />
+  </span>
+);

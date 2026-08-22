@@ -143,6 +143,15 @@ func (p *Proxy) Heartbeat() *proxyapi.Heartbeat {
 // (Host preserved, forwarded-for set); everything else -- the dashboard, the
 // API, unknown names -- falls through to control.
 func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// The same base headers control puts on app traffic. Without these, every
+	// app served through a proxy -- which is every app in a normal deployment --
+	// silently loses HSTS and nosniff that a single-host deployment gets.
+	h := w.Header()
+	h.Set("X-Content-Type-Options", proxyapi.ContentTypeOptions)
+	h.Set("Referrer-Policy", proxyapi.ReferrerPolicy)
+	if r.TLS != nil {
+		h.Set("Strict-Transport-Security", proxyapi.HSTSValue)
+	}
 	host := hostOnly(r.Host)
 	table := p.table.Load().(*proxyapi.Table)
 	for _, route := range table.Routes {
@@ -155,6 +164,10 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			if route.Private && !p.mayServePrivately(r, route, table) {
 				break
 			}
+			// Unconditionally, not only on the private branch: making an app
+			// public expires nobody's cookie, so a formerly private app would
+			// otherwise start receiving its visitors' credentials.
+			stripGrantCookie(r)
 			target := route.Target
 			rp := &httputil.ReverseProxy{
 				Rewrite: func(pr *httputil.ProxyRequest) {

@@ -992,15 +992,15 @@ a:focus-visible {
 
 .hint {
   color: var(--muted);
-  font-size: 13px;
+  font-size: 15px;
   margin: 8px 0 0;
 }
 
-/* An empty state is a muted aside in the same register as .hint, and often sits
-   directly below one -- at body size it read as the largest text in the card. */
+/* An empty state is a muted aside in the same register as .hint, and reads at
+   the same size: both are explanatory prose, not captions. */
 .empty {
   color: var(--muted);
-  font-size: 13px;
+  font-size: 15px;
   margin: 6px 0;
 }
 
@@ -5680,4 +5680,54 @@ input[type="number"]::-webkit-inner-spin-button {
 .vis-badge-private,
 .vis-badge-restricted {
   color: var(--text);
+}
+
+/* The icon-only visibility mark, beside an app's name in the card and list
+   views. Muted by default so it reads as metadata; private and restricted get
+   the text colour because they are the states worth noticing. */
+.appcard-nmrow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.vis-mark {
+  display: inline-flex;
+  align-items: center;
+  color: var(--muted);
+  flex: none;
+}
+
+.vis-mark svg {
+  width: 13px;
+  height: 13px;
+}
+
+.vis-mark-private,
+.vis-mark-restricted {
+  color: var(--text);
+}
+
+/* The visibility dialog. The people section stays mounted and disables itself
+   for a public app, so the dialog does not resize as you switch between the
+   two -- and the list keeps a floor so adding the first person does not shift
+   the buttons out from under the cursor. */
+.vis-intro {
+  margin-bottom: 14px;
+}
+
+.vis-people {
+  border: 0;
+  padding: 0;
+  margin: 18px 0 0;
+  min-inline-size: 0;
+}
+
+.vis-people:disabled {
+  opacity: 0.45;
+}
+
+.vis-people-list {
+  min-height: 86px;
 }

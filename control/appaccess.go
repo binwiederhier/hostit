@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -29,7 +30,10 @@ import (
 // else, and it is stripped from the request before it is forwarded upstream,
 // so the app never sees it at all. It asserts identity only -- every request
 // re-checks the grant against the live owner/collaborator state, so revoking
-// somebody takes effect on their next request rather than when a cache expires.
+// somebody takes effect within one routing-table push rather than when a cache
+// expires. (The proxy enforces from that pushed set -- see proxy/grant.go -- so
+// during a control outage it keeps honouring the last set it was given, which
+// is the deliberate trade for private apps staying up at all.)
 
 const (
 	// appGrantCookieName holds the per-app grant on the app's own hostname.
@@ -49,9 +53,12 @@ const (
 	// loopCookieName catches a browser that will not keep the grant cookie. It
 	// is set on the WEB host, where cookies demonstrably work (the session is
 	// there), so it is a reliable place to notice that the last mint did not
-	// take -- and it keeps the marker out of the app's URL.
+	// take -- and it keeps the marker out of the app's URL. It counts rather
+	// than latching, because opening the same private app in a few tabs at once
+	// legitimately mints more than once.
 	loopCookieName = "hostit_minting"
 	loopWindow     = 15 * time.Second
+	loopLimit      = 3
 	appParam       = "app"
 	returnParam    = "to"
 	// nextParam tells the login where to send the visitor afterwards.
@@ -109,7 +116,7 @@ func (s *Server) allowPrivateRequest(w http.ResponseWriter, r *http.Request, a *
 	if r.Header.Get("Authorization") != "" {
 		c, err := s.authenticate(r)
 		if err != nil || !s.mayViewApp(c, a) {
-			s.writeNothingHerePage(w)
+			s.writePrivateAppPage(w, r, a)
 			return false
 		}
 		return true
@@ -127,7 +134,7 @@ func (s *Server) allowPrivateRequest(w http.ResponseWriter, r *http.Request, a *
 		http.Redirect(w, r, s.appAccessURL(a.Name, r), http.StatusFound)
 		return false
 	}
-	s.writeNothingHerePage(w)
+	s.writePrivateAppPage(w, r, a)
 	return false
 }
 
@@ -154,9 +161,17 @@ func (s *Server) callerFromGrant(r *http.Request, a *store.App) (*caller, bool) 
 // on to what they originally asked for -- with nothing left in the URL to show
 // for it.
 func (s *Server) handleAppGranted(w http.ResponseWriter, r *http.Request, a *store.App) {
+	// This hop is a redirect from our own web host, which is same-site with
+	// every app hostname. Anything else is somebody pushing a grant of their
+	// choosing into this browser -- harmless on its own, but it is identity
+	// fixation and there is no reason to accept it.
+	if site := r.Header.Get("Sec-Fetch-Site"); site != "" && site != "same-site" && site != "same-origin" && site != "none" {
+		s.writePrivateAppPage(w, r, a)
+		return
+	}
 	app, _, err := s.grants.Verifier().Verify(r.URL.Query().Get(grantParam))
 	if err != nil || app != a.Name {
-		s.writeNothingHerePage(w)
+		s.writePrivateAppPage(w, r, a)
 		return
 	}
 	http.SetCookie(w, s.cookie(s.cookieName(appGrantCookieName), r.URL.Query().Get(grantParam), int(appGrantTTL.Seconds())))
@@ -180,7 +195,9 @@ func (s *Server) handleAppLogout(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleAppAccess(w http.ResponseWriter, r *http.Request) {
 	name, target := r.URL.Query().Get(appParam), r.URL.Query().Get(returnParam)
 	a, err := s.apps.App(name)
-	if err != nil {
+	// A public app has nothing to mint, and answering for one would turn this
+	// endpoint into a way to ask whether any given app name exists.
+	if err != nil || !a.Private {
 		s.writeNothingHerePage(w)
 		return
 	}
@@ -201,7 +218,7 @@ func (s *Server) handleAppAccess(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !s.mayViewApp(c, a) {
-		s.writeNothingHerePage(w)
+		s.writePrivateAppPage(w, r, a)
 		return
 	}
 	// The return URL decides where the grant is DELIVERED, so it has to be one
@@ -212,11 +229,12 @@ func (s *Server) handleAppAccess(w http.ResponseWriter, r *http.Request) {
 		s.writeNothingHerePage(w)
 		return
 	}
-	// If we minted a grant for this app moments ago and the visitor is back
-	// asking for another, their browser is not keeping it. Stop, rather than
-	// bounce them between the two hostnames until the browser gives up.
-	if cookie, err := r.Cookie(s.cookieName(loopCookieName)); err == nil && cookie.Value == a.Name {
-		s.writeNothingHerePage(w)
+	// Minting the same app over and over in seconds means the browser is not
+	// keeping the grant. Stop, rather than bounce them between the two
+	// hostnames until the browser gives up.
+	minted := mintCount(r.Cookie(s.cookieName(loopCookieName)))[a.Name]
+	if minted >= loopLimit {
+		s.writePrivateAppPage(w, r, a)
 		return
 	}
 	grant, err := s.grants.Sign(a.Name, c.userID())
@@ -224,7 +242,7 @@ func (s *Server) handleAppAccess(w http.ResponseWriter, r *http.Request) {
 		s.writeNothingHerePage(w)
 		return
 	}
-	http.SetCookie(w, s.cookie(s.cookieName(loopCookieName), a.Name, int(loopWindow.Seconds())))
+	http.SetCookie(w, s.cookie(s.cookieName(loopCookieName), fmt.Sprintf("%s:%d", a.Name, minted+1), int(loopWindow.Seconds())))
 	query := url.Values{grantParam: {grant}, returnParam: {back.RequestURI()}}
 	http.Redirect(w, r, (&url.URL{Scheme: back.Scheme, Host: back.Host, Path: appGrantedPath, RawQuery: query.Encode()}).String(), http.StatusFound)
 }
@@ -236,6 +254,9 @@ func (s *Server) appReturnURL(a *store.App, target string) (*url.URL, error) {
 	u, err := url.Parse(target)
 	if err != nil || !u.IsAbs() || u.Host == "" {
 		return nil, errors.New("not an absolute return URL")
+	}
+	if u.Scheme != s.scheme() {
+		return nil, fmt.Errorf("%q is not %s", target, s.scheme())
 	}
 	host := hostOnly(u.Host)
 	if host == a.Name+"."+s.config.BaseDomain {
@@ -301,12 +322,39 @@ func isNavigation(r *http.Request) bool {
 	return strings.Contains(r.Header.Get("Accept"), "text/html")
 }
 
-// localPath keeps a return target on this host: a path, never a URL pointing
-// somewhere else, and never a protocol-relative "//host" that a browser reads
-// as an absolute URL.
+// localPath keeps a return target on this host: a path, and nothing a browser
+// could read as pointing somewhere else.
+//
+// Parsing rather than prefix-matching, because the ways out are not obvious. A
+// browser treats "\" as "/" in the relative-slash state, so "/\evil.example.org"
+// navigates off-site; it also strips tabs and newlines before parsing, so
+// "/<TAB>/evil.example.org" becomes "//evil.example.org". Both reach a
+// Location header verbatim if only the leading characters are checked.
 func localPath(target string) string {
-	if !strings.HasPrefix(target, "/") || strings.HasPrefix(target, "//") {
+	if strings.ContainsAny(target, "\\\t\r\n") {
 		return "/"
 	}
-	return target
+	u, err := url.Parse(target)
+	if err != nil || u.IsAbs() || u.Host != "" || !strings.HasPrefix(u.Path, "/") {
+		return "/"
+	}
+	return u.RequestURI()
+}
+
+// mintCount reads the "<app>:<n>" marker the mint endpoint leaves behind. A
+// malformed or absent cookie counts as zero: this is a loop brake, not a
+// security control, and failing it open costs a redirect rather than access.
+func mintCount(cookie *http.Cookie, err error) map[string]int {
+	if err != nil || cookie == nil {
+		return nil
+	}
+	app, count, ok := strings.Cut(cookie.Value, ":")
+	if !ok {
+		return nil
+	}
+	n, convErr := strconv.Atoi(count)
+	if convErr != nil {
+		return nil
+	}
+	return map[string]int{app: n}
 }

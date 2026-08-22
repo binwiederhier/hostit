@@ -76,8 +76,23 @@ func (f *privateAppFixture) grantFor(t *testing.T, u *store.User, returnTo strin
 	return cookies[0]
 }
 
+// cookieNamed picks one Set-Cookie out of a response, or nil.
+func cookieNamed(rr *httptest.ResponseRecorder, name string) *http.Cookie {
+	for _, c := range rr.Result().Cookies() {
+		if c.Name == name {
+			return c
+		}
+	}
+	return nil
+}
+
 // mint calls the web host's grant endpoint as the given user (nil = signed out).
 func (f *privateAppFixture) mint(t *testing.T, u *store.User, returnTo string) *httptest.ResponseRecorder {
+	return f.mintWith(t, u, returnTo, nil)
+}
+
+// mintWith is mint, carrying whatever the previous mint left behind.
+func (f *privateAppFixture) mintWith(t *testing.T, u *store.User, returnTo string, extra *http.Cookie) *httptest.ResponseRecorder {
 	t.Helper()
 	query := url.Values{appParam: {f.app.Name}, returnParam: {returnTo}}
 	req := httptest.NewRequest("GET", "https://apps.example.com"+appAccessPath+"?"+query.Encode(), nil)
@@ -85,6 +100,9 @@ func (f *privateAppFixture) mint(t *testing.T, u *store.User, returnTo string) *
 		value, err := f.server.sessions.encode(u.ID)
 		require.NoError(t, err)
 		req.AddCookie(&http.Cookie{Name: f.server.cookieName(sessionCookieName), Value: value})
+	}
+	if extra != nil {
+		req.AddCookie(extra)
 	}
 	rr := httptest.NewRecorder()
 	f.server.proxyHandler().ServeHTTP(rr, req)
@@ -132,7 +150,7 @@ func TestPrivateAppRefusesNonNavigationsOutright(t *testing.T) {
 	rr := httptest.NewRecorder()
 	f.server.proxyHandler().ServeHTTP(rr, req)
 
-	assert.Equal(t, http.StatusNotFound, rr.Code)
+	assert.Equal(t, http.StatusForbidden, rr.Code)
 	assert.Empty(t, f.seen)
 }
 
@@ -219,12 +237,14 @@ func TestAGrantIsUselessOnAnotherApp(t *testing.T) {
 func TestMintRefusesAStrangerAndTheSignedOut(t *testing.T) {
 	t.Parallel()
 	f := newPrivateAppFixture(t)
+	f.server.config.GoogleClientID = "client-id"
+	f.server.config.GoogleClientSecret = "secret"
 	stranger := newActiveTestUser(t, f.server, "stranger@example.com")
 
-	assert.Equal(t, http.StatusNotFound, f.mint(t, stranger, "https://"+f.appHost+"/").Code,
-		"a signed-in stranger learns nothing an unknown hostname would not also tell them")
-	assert.Equal(t, http.StatusNotFound, f.mint(t, nil, "https://"+f.appHost+"/").Code,
-		"and neither does a signed-out visitor")
+	assert.Equal(t, http.StatusForbidden, f.mint(t, stranger, "https://"+f.appHost+"/").Code,
+		"a signed-in stranger is told the app is private, and to ask its owner")
+	assert.Equal(t, http.StatusFound, f.mint(t, nil, "https://"+f.appHost+"/").Code,
+		"and a signed-out visitor is sent to sign in first")
 }
 
 // The return URL decides where the grant is DELIVERED. If it were not checked
@@ -270,32 +290,38 @@ func TestPrivacyCoversCustomDomains(t *testing.T) {
 
 // A browser that will not keep the grant must be stopped, not ping-ponged
 // between the two hostnames until it gives up. The guard sits on the web host,
-// where cookies are known to work, so nothing has to be smuggled through the
-// app's URL to detect it.
+// where cookies are known to work because the session is there, so nothing has
+// to be smuggled through the app's URL to detect it.
 func TestAFailedGrantDoesNotLoop(t *testing.T) {
 	t.Parallel()
 	f := newPrivateAppFixture(t)
 
-	first := f.mint(t, f.owner, "https://"+f.appHost+"/")
-	require.Equal(t, http.StatusFound, first.Code)
+	// Keep asking for a grant for the same app without ever keeping one.
 	var marker *http.Cookie
-	for _, c := range first.Result().Cookies() {
-		if c.Name == f.server.cookieName(loopCookieName) {
+	var last *httptest.ResponseRecorder
+	for i := 0; i < loopLimit+1; i++ {
+		last = f.mintWith(t, f.owner, "https://"+f.appHost+"/", marker)
+		if c := cookieNamed(last, f.server.cookieName(loopCookieName)); c != nil {
 			marker = c
 		}
 	}
-	require.NotNil(t, marker, "minting leaves a marker on the web host")
+	assert.Equal(t, http.StatusForbidden, last.Code, "the loop stops rather than running until the browser does")
+}
 
-	// The visitor is back for another grant, still without the first one.
-	query := url.Values{appParam: {f.app.Name}, returnParam: {"https://" + f.appHost + "/"}}
-	req := httptest.NewRequest("GET", "https://apps.example.com"+appAccessPath+"?"+query.Encode(), nil)
-	value, err := f.server.sessions.encode(f.owner.ID)
-	require.NoError(t, err)
-	req.AddCookie(&http.Cookie{Name: f.server.cookieName(sessionCookieName), Value: value})
-	req.AddCookie(marker)
-	rr := httptest.NewRecorder()
-	f.server.proxyHandler().ServeHTTP(rr, req)
-	assert.Equal(t, http.StatusNotFound, rr.Code, "the second ask in a row is the loop, and it stops here")
+// ...but a few tabs opening the same private app at once are all legitimate,
+// and the old guard failed every one after the first.
+func TestConcurrentTabsAllGetAGrant(t *testing.T) {
+	t.Parallel()
+	f := newPrivateAppFixture(t)
+
+	var marker *http.Cookie
+	for i := 0; i < loopLimit; i++ {
+		rr := f.mintWith(t, f.owner, "https://"+f.appHost+"/", marker)
+		require.Equal(t, http.StatusFound, rr.Code, "tab %d should still be minted a grant", i+1)
+		if c := cookieNamed(rr, f.server.cookieName(loopCookieName)); c != nil {
+			marker = c
+		}
+	}
 }
 
 // Nothing is left in the URL once the grant is delivered: the visitor should
@@ -396,7 +422,7 @@ func TestPrivateAppAcceptsABearerToken(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer "+strings.Repeat("x", 40))
 	rr = httptest.NewRecorder()
 	f.server.proxyHandler().ServeHTTP(rr, req)
-	assert.Equal(t, http.StatusNotFound, rr.Code, "an unknown token gets the same page as a stranger")
+	assert.Equal(t, http.StatusForbidden, rr.Code, "an unknown token is refused like any stranger")
 }
 
 // A signed-OUT visitor is sent to sign in and then back to the app, rather than
@@ -484,5 +510,154 @@ func TestASignedInStrangerIsNotSentToSignIn(t *testing.T) {
 	f.server.config.GoogleClientSecret = "secret"
 	stranger := newActiveTestUser(t, f.server, "stranger@example.com")
 
-	assert.Equal(t, http.StatusNotFound, f.mint(t, stranger, "https://"+f.appHost+"/").Code)
+	assert.Equal(t, http.StatusForbidden, f.mint(t, stranger, "https://"+f.appHost+"/").Code,
+		"told it is private, not bounced to a login that would not help")
+}
+
+// Being refused used to look exactly like the app not existing, which was
+// chosen to stop app-name enumeration. In practice the person refused is
+// almost always someone who was sent the link and needs to be told what to do
+// about it, so they are now told.
+func TestARefusedVisitorIsToldItIsPrivate(t *testing.T) {
+	t.Parallel()
+	f := newPrivateAppFixture(t)
+	stranger := newActiveTestUser(t, f.server, "stranger@example.com")
+
+	rr := f.mint(t, stranger, "https://"+f.appHost+"/")
+	assert.Equal(t, http.StatusForbidden, rr.Code)
+	body := rr.Body.String()
+	assert.Contains(t, body, "private app")
+	assert.Contains(t, body, "dash", "it names the app they are asking for")
+	assert.Contains(t, body, "stranger@example.com", "and which account they are signed in as")
+}
+
+// A grant that names somebody who has since lost access lands on the same page.
+func TestAGrantThatNoLongerBuysAccessExplainsItself(t *testing.T) {
+	t.Parallel()
+	f := newPrivateAppFixture(t)
+	guest := newActiveTestUser(t, f.server, "guest@example.com")
+	require.NoError(t, f.server.apps.Store().AddAppViewer(f.app.ID, guest.ID))
+	cookie := f.grantFor(t, guest, "https://"+f.appHost+"/")
+	require.NoError(t, f.server.apps.Store().RemoveAppViewer(f.app.ID, guest.ID))
+
+	// Not a navigation, so it is answered rather than bounced.
+	req := httptest.NewRequest("GET", "https://"+f.appHost+"/data.json", nil)
+	req.Header.Set("Sec-Fetch-Mode", "cors")
+	req.AddCookie(cookie)
+	rr := httptest.NewRecorder()
+	f.server.proxyHandler().ServeHTTP(rr, req)
+
+	assert.Equal(t, http.StatusForbidden, rr.Code)
+	assert.Contains(t, rr.Body.String(), "private app")
+}
+
+// The enumeration guard still holds where it actually mattered: a hostname
+// nobody has deployed says nothing about anything.
+func TestAnUnknownHostnameStillSaysNothing(t *testing.T) {
+	t.Parallel()
+	f := newPrivateAppFixture(t)
+
+	req := httptest.NewRequest("GET", "https://nosuchapp.apps.example.com/", nil)
+	req.Header.Set("Sec-Fetch-Mode", "navigate")
+	rr := httptest.NewRecorder()
+	f.server.proxyHandler().ServeHTTP(rr, req)
+
+	assert.Equal(t, http.StatusNotFound, rr.Code)
+	assert.Contains(t, rr.Body.String(), "Nothing", "the silent page, apostrophe HTML-escaped")
+	assert.Contains(t, rr.Body.String(), "deployed here")
+	assert.NotContains(t, rr.Body.String(), "private app")
+}
+
+// A return target is a path on THIS host. The check has to survive the ways a
+// browser reads an authority that Go's string handling does not: a backslash
+// is a slash in the relative-slash state, and tabs are stripped before parsing,
+// so both turn "/..." into "//evil.example.org".
+func TestLocalPathRefusesEveryWayOutOfTheHost(t *testing.T) {
+	t.Parallel()
+	for _, target := range []string{
+		"//evil.example.org/",
+		`/\evil.example.org/`,
+		"/\t/evil.example.org/",
+		"/\r\n/evil.example.org/",
+		`\\evil.example.org/`,
+		"https://evil.example.org/",
+		"",
+	} {
+		assert.Equal(t, "/", localPath(target), "%q must not survive as a redirect target", target)
+	}
+	assert.Equal(t, "/reports?year=2026", localPath("/reports?year=2026"), "an ordinary path is left alone")
+	assert.Equal(t, "/a/b/c", localPath("/a/b/c"))
+}
+
+// The login's "come back here afterwards" is attacker-supplied: /auth/google is
+// a plain GET anyone can hand a victim a link to, and the redirect happens on
+// the platform's own origin after a genuine Google sign-in, which is exactly
+// what makes it worth phishing with.
+func TestLoginRefusesToLeaveTheHost(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	s.config.GoogleClientID = "client-id"
+	s.config.GoogleClientSecret = "secret"
+	s.exchangeGoogleCode = func(code, host string) (*googleIdentity, error) {
+		return &googleIdentity{Email: "owner@example.com", Name: "Owner", EmailVerified: true}, nil
+	}
+
+	for _, target := range []string{`/\evil.example.org`, "//evil.example.org", "https://evil.example.org"} {
+		req := httptest.NewRequest("GET", "/auth/google?"+nextParam+"="+url.QueryEscape(target), nil)
+		rr := httptest.NewRecorder()
+		s.API().ServeHTTP(rr, req)
+		var next *http.Cookie
+		for _, c := range rr.Result().Cookies() {
+			if c.Name == s.cookieName(nextCookieName) {
+				next = c
+			}
+		}
+		require.NotNil(t, next)
+
+		req = httptest.NewRequest("GET", "/auth/callback?code=c&state=st", nil)
+		req.AddCookie(&http.Cookie{Name: s.cookieName(stateCookieName), Value: "st"})
+		req.AddCookie(next)
+		rr = httptest.NewRecorder()
+		s.API().ServeHTTP(rr, req)
+		assert.Equal(t, "/", rr.Header().Get("Location"), "signing in must not land on %q", target)
+	}
+}
+
+// The refusal page is served on the APP's own origin, so the app's own
+// JavaScript can read it. It must not name the visitor there: the grant is
+// stripped precisely so an app never learns who is looking at it, and admins
+// are on nobody's list, so this would hand tenant owners their identities.
+func TestTheRefusalPageNamesNobodyOnTheAppsOwnOrigin(t *testing.T) {
+	t.Parallel()
+	f := newPrivateAppFixture(t)
+	guest := newActiveTestUser(t, f.server, "guest@example.com")
+	require.NoError(t, f.server.apps.Store().AddAppViewer(f.app.ID, guest.ID))
+	cookie := f.grantFor(t, guest, "https://"+f.appHost+"/")
+
+	// What the app's page can do: a same-origin fetch with a bogus bearer token,
+	// which fails authentication and reaches the refusal page while the browser
+	// still attaches the visitor's grant cookie.
+	req := httptest.NewRequest("GET", "https://"+f.appHost+"/probe", nil)
+	req.Header.Set("Authorization", "Bearer nonsense")
+	req.AddCookie(cookie)
+	rr := httptest.NewRecorder()
+	f.server.proxyHandler().ServeHTTP(rr, req)
+
+	assert.Equal(t, http.StatusForbidden, rr.Code)
+	assert.NotContains(t, rr.Body.String(), "guest@example.com", "the app must not learn who its visitor is")
+
+	// On the WEB host the same person is named, because that is where it helps
+	// and the app cannot read it.
+	assert.Contains(t, f.mint(t, guest, "https://"+f.appHost+"/").Body.String(), "", "sanity")
+	stranger := newActiveTestUser(t, f.server, "stranger@example.com")
+	assert.Contains(t, f.mint(t, stranger, "https://"+f.appHost+"/").Body.String(), "stranger@example.com")
+}
+
+// A grant is delivered in a URL, so it must never be sent to a cleartext one.
+func TestMintRefusesACleartextReturnURL(t *testing.T) {
+	t.Parallel()
+	f := newPrivateAppFixture(t)
+
+	assert.Equal(t, http.StatusNotFound, f.mint(t, f.owner, "http://"+f.appHost+"/").Code,
+		"the app's own hostname, but over http")
 }

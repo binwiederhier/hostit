@@ -13,6 +13,7 @@ One file per user-facing feature. Every file uses the **exact same structure** (
 - [placeholder.md](placeholder.md) -- the page a brand-new app serves until it is built
 
 ### Access and data
+- [private-apps.md](private-apps.md) -- public vs private apps, viewers and collaborators
 - [ssh-access.md](ssh-access.md) -- ssh / scp / sftp / rsync into an app's container
 - [custom-domains.md](custom-domains.md) -- serve an app on your own hostname (DNS-01 certs)
 - [snapshots-rollback.md](snapshots-rollback.md) -- automatic and manual snapshots, rollback

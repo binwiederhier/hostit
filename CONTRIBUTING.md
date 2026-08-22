@@ -6,10 +6,14 @@ fit and where the code lives (start with
 [overview.md](docs/architecture/overview.md)), and is the best first read
 before a non-trivial change.
 
+Running an instance to develop against is its own thing -- hostit needs root,
+btrfs, podman and systemd -- and is covered in
+[docs/development.md](docs/development.md).
+
 ## Building and testing
 
 ```sh
-make web              # build the React app into server/site (embedded at compile time)
+make web              # build the React app into control/site (embedded at compile time)
 make build            # build the hostit binary
 make test vet fmt     # Go tests, go vet, gofmt check
 cd web && npm test    # frontend unit tests (vitest)
@@ -25,7 +29,7 @@ HOSTIT_BASE_URL=https://apps.example.com HOSTIT_ADMIN_TOKEN=... npm run test:e2e
 
 `make check` (run by the release target) is `test`, `fmt-check` and `vet` together.
 Please run `make web` before committing anything under `web/`: the built assets in
-`server/site` are embedded into the binary at compile time.
+`control/site` are embedded into the binary at compile time.
 
 ## Development workflow
 

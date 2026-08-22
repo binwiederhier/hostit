@@ -31,7 +31,13 @@ const (
 	selectAllCollaboratorsQuery = `
 		SELECT c.app_id, c.user_id FROM app_collaborator c JOIN user u ON u.id = c.user_id WHERE u.status = ?
 	`
-	selectActiveAdminsQuery  = `SELECT id FROM user WHERE role = ? AND status = ?`
+	selectActiveAdminsQuery = `SELECT id FROM user WHERE role = ? AND status = ?`
+	// The owners whose accounts are active. An owner is not a row in either
+	// grant table, so they are collected separately -- but by the same rule: a
+	// suspended owner may not open their own app either.
+	selectActiveOwnersQuery = `
+		SELECT a.id, a.owner_id FROM app a JOIN user u ON u.id = a.owner_id WHERE u.status = ?
+	`
 	deleteViewersByAppQuery  = `DELETE FROM app_viewer WHERE app_id = ?`
 	deleteViewersByUserQuery = `DELETE FROM app_viewer WHERE user_id = ?`
 )
@@ -98,16 +104,16 @@ func (s *Store) ViewerCounts() (map[string]int, error) {
 	return counts, rows.Err()
 }
 
-// AccessSets returns, per app id, the ACTIVE users who may open that app --
-// its collaborators and its viewers together, since both grants include
-// looking at it. The owner and admins are not in here: the caller knows the
-// owner from the app row, and admins are global rather than per-app.
+// AccessSets returns, per app id, the ACTIVE users who may open that app: its
+// owner, its collaborators and its viewers together, since all three include
+// looking at it. Admins are not in here -- they are global rather than per-app.
+// Suspended accounts are excluded throughout, the owner's included.
 //
 // One query per grant table for the whole registry, not one per app: this
 // feeds the routing table, which is re-derived every half second.
 func (s *Store) AccessSets() (map[string][]string, error) {
 	sets := make(map[string][]string)
-	for _, query := range []string{selectAllCollaboratorsQuery, selectAllViewersQuery} {
+	for _, query := range []string{selectAllCollaboratorsQuery, selectAllViewersQuery, selectActiveOwnersQuery} {
 		rows, err := s.db.Query(query, StatusActive)
 		if err != nil {
 			return nil, err

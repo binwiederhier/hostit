@@ -80,7 +80,7 @@ test("archived apps hide behind the toggle", async ({ page }, workerInfo) => {
     await expect(toggle).toBeVisible();
     await toggle.click();
     await expect(page.locator(".appcard, .applist-row", { hasText: name }).first()).toBeVisible();
-    await expect(page.getByText("archived", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText(/^archived$/i).first()).toBeVisible();
 
     // Hide them again so the stored preference does not leak into other tests.
     await toggle.click();

@@ -467,10 +467,10 @@ const VisibilityPage = () => (
       app still works from a browser you have never used it on.
     </p>
     <p>
-      Someone signed in <em>without</em> access gets the same &quot;nothing
-      deployed here&quot; page an unused hostname gets, rather than a
-      &quot;forbidden&quot; that would confirm the app exists. So one hostit
-      user cannot go looking for another&apos;s private apps.
+      Someone signed in <em>without</em> access is told plainly that the app is
+      private and to ask its owner for access, along with which account they
+      are currently signed in as -- being signed in as the wrong one is the
+      usual reason. A hostname nobody has deployed still says nothing at all.
     </p>
     <h3>Scripts, webhooks and agents</h3>
     <p>

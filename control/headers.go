@@ -4,12 +4,10 @@ import (
 	"net/http"
 
 	"heckel.io/hostit/controlconf"
+	"heckel.io/hostit/proxyapi"
 )
 
 const (
-	// hstsValue is two years with subdomains, the value the preload list wants.
-	// One base-domain HSTS covers every app subdomain too.
-	hstsValue = "max-age=63072000; includeSubDomains"
 	// webCSPBase locks the web app to its own origin. Inline styles are allowed
 	// because React sets style attributes; scripts and everything else must come
 	// from us, and frame-ancestors 'none' stops the dashboard being framed and its
@@ -30,10 +28,10 @@ func (s *Server) webCSP() string {
 func (s *Server) withBaseSecurityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
-		h.Set("X-Content-Type-Options", "nosniff")
-		h.Set("Referrer-Policy", "strict-origin-when-cross-origin")
+		h.Set("X-Content-Type-Options", proxyapi.ContentTypeOptions)
+		h.Set("Referrer-Policy", proxyapi.ReferrerPolicy)
 		if s.config.TLS != controlconf.TLSOff {
-			h.Set("Strict-Transport-Security", hstsValue)
+			h.Set("Strict-Transport-Security", proxyapi.HSTSValue)
 		}
 		next.ServeHTTP(w, r)
 	})

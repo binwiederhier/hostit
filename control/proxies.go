@@ -217,9 +217,8 @@ func (s *Server) Routes() (*proxyapi.Table, error) {
 		targets[a.Name] = target
 		private[a.Name] = a.Private
 		if a.Private {
-			// The owner is not a row in either grant table, so add them here.
 			// Sorted, because this is hashed to decide whether to push.
-			allowed[a.Name] = append(append([]string{}, access[a.ID]...), a.OwnerID)
+			allowed[a.Name] = append([]string{}, access[a.ID]...)
 			sort.Strings(allowed[a.Name])
 		}
 		routes = append(routes, proxyapi.Route{Host: a.Name + "." + s.config.BaseDomain, Target: target, App: a.Name, Private: a.Private, Access: allowed[a.Name]})
@@ -239,10 +238,12 @@ func (s *Server) Routes() (*proxyapi.Table, error) {
 
 	// Hash the content; a changed hash bumps the seq.
 	sort.Strings(admins)
+	grantKey := s.grants.PublicKey()
 	b, err := json.Marshal(struct {
-		Routes []proxyapi.Route
-		Admins []string
-	}{routes, admins})
+		Routes   []proxyapi.Route
+		Admins   []string
+		GrantKey string
+	}{routes, admins, grantKey})
 	if err != nil {
 		return nil, err
 	}
@@ -261,7 +262,7 @@ func (s *Server) Routes() (*proxyapi.Table, error) {
 			slog.Warn("Cannot persist the routing table version", "error", err)
 		}
 	}
-	return &proxyapi.Table{Seq: s.routesSeq, Routes: routes, Admins: admins, GrantPublicKey: s.grants.PublicKey()}, nil
+	return &proxyapi.Table{Seq: s.routesSeq, Routes: routes, Admins: admins, GrantPublicKey: grantKey}, nil
 }
 
 // nodeAddress resolves an app's hosting node to the address its ports are

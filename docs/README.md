@@ -13,6 +13,7 @@ docs/
   features/       # feature catalog: one file per user-facing feature, fixed structure
   subsystems/     # deep dives into non-obvious internals (assistant, identity, security, ...)
   slides/         # sli.dev presentations (tech overview + intro)
+  development.md  # standing up an instance to develop against
   README.md       # this file
 ```
 

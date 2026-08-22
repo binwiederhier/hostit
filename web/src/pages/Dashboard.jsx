@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { api, isNetworkError } from "../api";
 import { useReconnect } from "../hooks";
-import { ErrorBanner, Loading, VisibilityBadge, VisibilityChoice, Wordmark, pairMB, UsagePair, usageLevel, visibilityOf } from "../components";
+import { ErrorBanner, Loading, VisibilityChoice, VisibilityMark, Wordmark, pairMB, UsagePair, usageLevel, visibilityOf } from "../components";
 import { previewSrc, previewShotSrc, previewScale, DESKTOP_WIDTH, DESKTOP_HEIGHT } from "../preview";
 
 // Same rule the server enforces (app.AppNamePattern)
@@ -180,7 +180,7 @@ const AppCard = ({ app, onToast }) => {
   // A crash loop that gave up shows red "crashed", not the green "running" its
   // still-up container would otherwise imply.
   const crashed = running && app.app_state === "failed";
-  const status = app.archived ? "archived" : crashed ? "crashed" : running ? "running" : "powered off";
+  const status = app.archived ? "Archived" : crashed ? "Crashed" : running ? "Running" : "Powered off";
   // Prefer a verified custom domain over the default subdomain for the link.
   const publicUrl = app.custom_domain ? `https://${app.custom_domain}` : app.url;
   const publicHost = app.custom_domain || app.url.replace(/^https?:\/\//, "");
@@ -203,7 +203,10 @@ const AppCard = ({ app, onToast }) => {
         <span className="appcard-avatar" style={avatarStyle(app.id)}>{app.name.slice(0, 2)}</span>
         <div className="appcard-id">
           {/* Stretched link: covers the whole card so the entire card opens the app. */}
-          <Link className="appcard-nm appcard-link" to={`/app/${app.name}`}>{app.name}</Link>
+          <span className="appcard-nmrow">
+            <Link className="appcard-nm appcard-link" to={`/app/${app.name}`}>{app.name}</Link>
+            <VisibilityMark state={visibilityOf(!!app.private, app.viewer_count)} />
+          </span>
           <a className="appcard-url" href={publicUrl} target="_blank" rel="noreferrer">{publicHost}</a>
         </div>
       </div>
@@ -212,7 +215,6 @@ const AppCard = ({ app, onToast }) => {
           <span className="appcard-dot" />
           {status}
         </span>
-        {app.private && <VisibilityBadge state={visibilityOf(true, app.viewer_count)} />}
         {canRefresh && (
           <button type="button" className="appcard-refresh" onClick={refreshShot} title="Queue a new screenshot" aria-label="Queue a new screenshot">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -307,7 +309,7 @@ const AppRow = ({ app }) => {
   const navigate = useNavigate();
   const running = app.running;
   const crashed = running && app.app_state === "failed";
-  const status = app.archived ? "archived" : crashed ? "crashed" : running ? "running" : "powered off";
+  const status = app.archived ? "Archived" : crashed ? "Crashed" : running ? "Running" : "Powered off";
   const publicUrl = app.custom_domain ? `https://${app.custom_domain}` : app.url;
   const publicHost = app.custom_domain || app.url.replace(/^https?:\/\//, "");
   // The whole row opens the app, the way the whole card does. Clicks that land
@@ -325,7 +327,10 @@ const AppRow = ({ app }) => {
       <td className="applist-name">
         <span className="appcard-avatar applist-avatar" style={avatarStyle(app.id)}>{app.name.slice(0, 2)}</span>
         <span className="applist-id">
-          <Link className="applist-nm" to={`/app/${app.name}`}>{app.name}</Link>
+          <span className="appcard-nmrow">
+            <Link className="applist-nm" to={`/app/${app.name}`}>{app.name}</Link>
+            <VisibilityMark state={visibilityOf(!!app.private, app.viewer_count)} />
+          </span>
           <a className="applist-url" href={publicUrl} target="_blank" rel="noreferrer">{publicHost}</a>
         </span>
       </td>
@@ -334,7 +339,6 @@ const AppRow = ({ app }) => {
           <span className="appcard-dot" />
           {status}
         </span>
-        {app.private && <VisibilityBadge state={visibilityOf(true, app.viewer_count)} />}
       </td>
       <td className="applist-desc">{app.description || <span className="appcard-nodesc">--</span>}</td>
       <td className="applist-num">{running ? `${app.cpu_percent || 0}%` : "--"}</td>

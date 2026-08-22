@@ -14,7 +14,7 @@ test("a new app appears running, opens, and is removed", async ({ page, request 
     // It shows up on the dashboard and reaches a running state.
     await page.goto("/");
     await expect(page.getByText(name, { exact: true })).toBeVisible();
-    await expect(page.getByText("running").first()).toBeVisible();
+    await expect(page.getByText(/^running$/i).first()).toBeVisible();
 
     // Its detail page renders, with an "Open app" link pointing at this app's URL.
     await page.goto(`/app/${name}`);

@@ -24,6 +24,34 @@ var (
 	ErrNoCert = errors.New("no certificate for that name")
 )
 
+const (
+	// GrantCookie is the per-app grant a visitor to a private app carries on
+	// that app's own hostname; GrantCookieHost is the name control uses where
+	// the browser will accept the __Host- prefix. Both ends need these, so they
+	// live in the contract rather than being spelled out twice.
+	GrantCookie     = "hostit_app"
+	GrantCookieHost = "__Host-" + GrantCookie
+)
+
+// The paths hostit answers for ON a private app's own hostname, ahead of the
+// app itself. The proxy has to know them too: it serves private apps directly,
+// and must hand these back to control rather than to the app.
+const (
+	AuthPath    = "/hostit/auth"
+	GrantedPath = "/hostit/granted"
+	LogoutPath  = "/hostit/logout"
+)
+
+// The base security headers every public response carries, tenant apps
+// included. Defined here because BOTH gates serve app traffic -- control in a
+// single-host deployment, the proxy everywhere else -- and a response should
+// not depend on which one answered it.
+const (
+	HSTSValue          = "max-age=63072000; includeSubDomains"
+	ContentTypeOptions = "nosniff"
+	ReferrerPolicy     = "strict-origin-when-cross-origin"
+)
+
 // Route maps one hostname to its forwarding target. Control's own hostnames
 // (the dashboard, the API) are not listed: unknown hosts fall through to
 // control anyway, so listing them would only duplicate the fallback.

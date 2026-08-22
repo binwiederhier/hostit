@@ -3,36 +3,30 @@ package proxy
 import (
 	"log/slog"
 	"net/http"
+	"slices"
 	"strings"
 
 	"heckel.io/hostit/appgrant"
 	"heckel.io/hostit/proxyapi"
 )
 
-// Private apps are served from here, not from control, and that is deliberate:
-// the proxy exists so apps keep answering when the control plane does not, and
-// a private app that dies with control would have given that up for the apps
-// that need it most.
-//
-// Two things arrive with the routing table and make it possible. The grant
-// PUBLIC key, which checks the cookie a visitor carries -- Ed25519, so holding
-// it can never become the power to issue one. And the access set control
-// resolved for each private app, so the proxy answers "is this id allowed?"
-// with a lookup rather than a question it would need control to answer.
-//
-// Only the ALLOW path lives here. A refusal, a sign-in bounce, a logout and a
-// bearer token all still fall through to control, which owns the error page,
-// the session cookie and the token table. So this adds one decision, not a
-// second copy of the policy.
+// Private apps are served from here rather than from control, so they keep
+// answering when control does not. Two things arriving with the routing table
+// make that possible: the grant PUBLIC key, which checks a visitor's cookie
+// without being able to issue one, and the access set control resolved for
+// each private app. Only the ALLOW path lives here -- everything else falls
+// through to control, which owns the error page and the credentials.
 
-const (
-	// grantCookieName must match control's appGrantCookieName. The __Host-
-	// prefix is added by control when it sets the cookie; a request carries
-	// either name, and both are checked here rather than requiring the proxy to
-	// know whether TLS is on.
-	grantCookieName     = "hostit_app"
-	grantCookieNameHost = "__Host-" + grantCookieName
-)
+// The bare name is only honoured without TLS, where control cannot use the
+// __Host- prefix either. Under TLS the prefix is the whole guarantee: apps are
+// subdomains of the web hostname, so any tenant can set a bare cookie with a
+// Domain that reaches every other app, and only the prefixed name is one a
+// browser refuses to scope that way.
+var grantCookieNames = []string{proxyapi.GrantCookieHost, proxyapi.GrantCookie}
+
+// hostitPaths are answered by control even on a private app whose visitor is
+// allowed in: signing out of an app cannot be the app's own business.
+var hostitPaths = []string{proxyapi.AuthPath, proxyapi.GrantedPath, proxyapi.LogoutPath}
 
 // mayServePrivately reports whether this request proves, on its own, that its
 // sender may open the app -- and if so, strips the proof before the request is
@@ -41,6 +35,12 @@ func (p *Proxy) mayServePrivately(r *http.Request, route proxyapi.Route, table *
 	// A bearer token is checked against hashes that are not in the table, so
 	// judging it here would mean guessing. Control still owns that call.
 	if r.Header.Get("Authorization") != "" {
+		return false
+	}
+	// hostit's own endpoints on this hostname are control's, grant or no grant.
+	// Forwarding /hostit/logout to the app would 404 there and leave the cookie
+	// in place, breaking sign-out exactly when it is used.
+	if slices.Contains(hostitPaths, r.URL.Path) {
 		return false
 	}
 	value := grantCookie(r)
@@ -58,7 +58,10 @@ func (p *Proxy) mayServePrivately(r *http.Request, route proxyapi.Route, table *
 	}
 	// The grant names an app; this route may be a custom domain for it, so the
 	// name is compared against the route's app rather than its hostname.
-	if app != route.App || !allowed(userID, route.Access, table.Admins) {
+	// An empty id is not an identity: an ownerless app and a token-authenticated
+	// grant both carry one, and matching them against each other would be an
+	// accident rather than a decision.
+	if userID == "" || app != route.App || !allowed(userID, route.Access, table.Admins) {
 		return false
 	}
 	stripGrantCookie(r)
@@ -66,18 +69,15 @@ func (p *Proxy) mayServePrivately(r *http.Request, route proxyapi.Route, table *
 }
 
 func allowed(userID string, access, admins []string) bool {
-	for _, ids := range [][]string{access, admins} {
-		for _, id := range ids {
-			if id == userID {
-				return true
-			}
-		}
-	}
-	return false
+	return slices.Contains(access, userID) || slices.Contains(admins, userID)
 }
 
 func grantCookie(r *http.Request) string {
-	for _, name := range []string{grantCookieNameHost, grantCookieName} {
+	names := grantCookieNames
+	if r.TLS != nil {
+		names = names[:1] // the proxy terminates TLS, so it knows
+	}
+	for _, name := range names {
 		if c, err := r.Cookie(name); err == nil && c.Value != "" {
 			return c.Value
 		}
@@ -91,7 +91,7 @@ func stripGrantCookie(r *http.Request) {
 	cookies := r.Cookies()
 	kept := make([]string, 0, len(cookies))
 	for _, c := range cookies {
-		if c.Name != grantCookieName && c.Name != grantCookieNameHost {
+		if !slices.Contains(grantCookieNames, c.Name) {
 			kept = append(kept, c.String())
 		}
 	}

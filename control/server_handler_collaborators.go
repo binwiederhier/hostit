@@ -55,6 +55,12 @@ func (s *Server) handleCollaboratorsAdd(w http.ResponseWriter, r *http.Request, 
 		writeAppError(w, err)
 		return
 	}
+	// Collaborating includes looking, so a viewer row underneath it would say
+	// nothing and would show up twice in the set the proxy enforces on.
+	if err := s.apps.Store().RemoveAppViewer(a.ID, u.ID); err != nil {
+		writeAppError(w, err)
+		return
+	}
 	// Their profile keys join the app's managed authorized_keys immediately.
 	if err := s.resyncAppKeys(a); err != nil {
 		writeAppError(w, err)

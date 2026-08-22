@@ -1,6 +1,7 @@
 package store
 
 import (
+	"database/sql"
 	"path/filepath"
 	"testing"
 
@@ -84,4 +85,41 @@ func TestBurnedSlotKeepsHistoriesAligned(t *testing.T) {
 	assert.Contains(t, migrations[26], "stats", "then the member machine-stats blob")
 	assert.Contains(t, migrations[27], "private", "then per-app visibility")
 	assert.Contains(t, migrations[28], "app_viewer", "then the view-only grant")
+}
+
+// Migration 28 defaults every existing app to public, and 29 adds the viewer
+// table empty. Both matter more than they look: an app that predates the column
+// was reachable by URL, and a migration that changed what any of them mean
+// would take apps offline for their own owners.
+func TestVisibilityMigrationsLeaveExistingAppsAlone(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	file := filepath.Join(dir, "hostit.db")
+
+	// A database at the version just before per-app visibility, with apps in it.
+	db, err := sql.Open("sqlite", file)
+	require.NoError(t, err)
+	for i := 0; i < 27; i++ {
+		_, err := db.Exec(migrations[i])
+		require.NoError(t, err, "migration %d", i+1)
+	}
+	_, err = db.Exec(createSchemaVersionTableQuery)
+	require.NoError(t, err)
+	_, err = db.Exec(insertSchemaVersionQuery, 27)
+	require.NoError(t, err)
+	_, err = db.Exec(`INSERT INTO app (id, name, port, host, owner_id, created_at, image_tag, uid) VALUES ('a1', 'blog', 10000, '', 'u1', 0, '', 0)`)
+	require.NoError(t, err)
+	require.NoError(t, db.Close())
+
+	s, err := NewStore(file)
+	require.NoError(t, err)
+	defer s.Close()
+
+	a, err := s.App("blog")
+	require.NoError(t, err)
+	assert.False(t, a.Private, "an app that predates the column stays public")
+
+	viewers, err := s.AppViewers("a1")
+	require.NoError(t, err)
+	assert.Empty(t, viewers, "and starts with nobody granted access")
 }

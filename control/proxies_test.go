@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"heckel.io/hostit/appgrant"
 	"heckel.io/hostit/cluster"
 	"heckel.io/hostit/controlconf"
 	"heckel.io/hostit/node"
@@ -366,4 +367,81 @@ func TestAccessChangesBumpTheRoutingTable(t *testing.T) {
 	removed, err := s.Routes()
 	require.NoError(t, err)
 	assert.Greater(t, removed.Seq, added.Seq, "and so does taking it away")
+}
+
+// A suspended owner may not open their own app -- mayViewApp refuses them --
+// so they must not be in the set the proxy enforces on either, or control and
+// the proxy disagree for as long as a grant survives.
+func TestASuspendedOwnerLeavesTheAccessSet(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	owner := newActiveTestUser(t, s, "owner@example.com")
+	require.NoError(t, s.apps.Store().AddApp(&store.App{ID: "a1", Name: "dash", Port: 10000, Host: store.HostLocal, OwnerID: owner.ID, Private: true}))
+
+	before, err := s.Routes()
+	require.NoError(t, err)
+	require.Contains(t, before.Routes[0].Access, owner.ID)
+
+	owner.Status = store.StatusDenied
+	require.NoError(t, s.users.Update(owner))
+
+	after, err := s.Routes()
+	require.NoError(t, err)
+	assert.NotContains(t, after.Routes[0].Access, owner.ID)
+	assert.Greater(t, after.Seq, before.Seq, "suspending somebody moves the table, like any other access change")
+}
+
+// An app created with the admin token has no owner. An empty id in the set
+// would sit there waiting to match a grant that also carries one.
+func TestAnOwnerlessAppContributesNoEmptyId(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	require.NoError(t, s.apps.Store().AddApp(&store.App{ID: "a1", Name: "dash", Port: 10000, Host: store.HostLocal, Private: true}))
+
+	table, err := s.Routes()
+	require.NoError(t, err)
+	assert.NotContains(t, table.Routes[0].Access, "", "no empty id rides along")
+}
+
+// A custom domain is the URL an owner actually shared, so it has to carry the
+// same access set as the app's own hostname rather than an empty one.
+func TestACustomDomainCarriesTheSameAccessSet(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	owner := newActiveTestUser(t, s, "owner@example.com")
+	guest := newActiveTestUser(t, s, "guest@example.com")
+	require.NoError(t, s.apps.Store().AddApp(&store.App{ID: "a1", Name: "dash", Port: 10000, Host: store.HostLocal, OwnerID: owner.ID, Private: true}))
+	require.NoError(t, s.apps.Store().AddAppViewer("a1", guest.ID))
+	require.NoError(t, s.apps.Store().AddDomain(&store.Domain{AppName: "dash", Domain: "dash.example.org", Status: store.DomainActive}))
+
+	table, err := s.Routes()
+	require.NoError(t, err)
+	byHost := make(map[string]proxyapi.Route, len(table.Routes))
+	for _, r := range table.Routes {
+		byHost[r.Host] = r
+	}
+	assert.ElementsMatch(t, byHost["dash.apps.example.com"].Access, byHost["dash.example.org"].Access)
+	assert.Equal(t, "dash", byHost["dash.example.org"].App, "and names the app, since the hostname does not")
+}
+
+// The one thing neither side's own tests can catch: that the key control
+// PUBLISHES is the key it SIGNS with. They are built from the same session key,
+// but nothing else asserts the two ends meet.
+func TestThePublishedKeyVerifiesControlsOwnGrants(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	require.NoError(t, s.apps.Store().AddApp(&store.App{ID: "a1", Name: "dash", Port: 10000, Host: store.HostLocal, Private: true}))
+
+	table, err := s.Routes()
+	require.NoError(t, err)
+	require.NotEmpty(t, table.GrantPublicKey)
+
+	verifier, err := appgrant.NewVerifier(table.GrantPublicKey)
+	require.NoError(t, err)
+	grant, err := s.grants.Sign("dash", "u1")
+	require.NoError(t, err)
+	app, userID, err := verifier.Verify(grant)
+	require.NoError(t, err)
+	assert.Equal(t, "dash", app)
+	assert.Equal(t, "u1", userID)
 }
