@@ -60,6 +60,7 @@ const NewAppDialog = ({ name, setName, onSubmit, creating, atLimit, onCancel, is
             <p className="newapp-sub">It gets its own container, subdomain and HTTPS certificate.</p>
           </div>
         </div>
+        <VisibilityChoice value={isPrivate} onChange={setPrivate} disabled={creating} />
         <label className="newapp-label">App name</label>
         <div className="newapp-input">
           <span className="newapp-dollar mono">$</span>
@@ -78,8 +79,6 @@ const NewAppDialog = ({ name, setName, onSubmit, creating, atLimit, onCancel, is
           </div>
         </div>
         <p className="hint">{nameHint}</p>
-        <label className="newapp-label">Visibility</label>
-        <VisibilityChoice value={isPrivate} onChange={setPrivate} disabled={creating} />
         <div className="btn-row">
           <button type="button" className="btn" onClick={onCancel} disabled={creating}>
             Cancel

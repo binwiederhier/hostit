@@ -5731,3 +5731,9 @@ input[type="number"]::-webkit-inner-spin-button {
 .vis-people-list {
   min-height: 86px;
 }
+
+/* In the create dialog the choice leads, with no label above it, so it takes
+   the spacing the label used to provide. */
+.newapp .visibility-choice {
+  margin-top: 16px;
+}
