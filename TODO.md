@@ -21,19 +21,19 @@ dashboard holding a connected Google account -- one URL guess away from being
 someone else's mail reader. **This is the only item on this list that is an
 active exposure rather than a missing feature**, which is why it leads.
 
-Enforce at the proxy: an app marked private serves only a request carrying the
-owner's (or a named collaborator's) hostit session, everything else gets 403.
-The proxy already holds the routing table control pushes it, so the flag rides
-along the same path (`proxyapi.Route` gains a field; the proxy checks the
-session cookie against control before forwarding, or control hands it a
-verification means). This is also the companion to the connections work
+**Designed 2026-08-21, ready to build: `plans/260821-private-apps.md`.** The
+four open questions are decided there -- access is owner + collaborators (no
+separate viewer grant, with the tradeoff written down), the proxy asks control
+over the cluster link and caches the verdict (~60s) rather than holding the
+session key, API tokens work alongside browser sessions so webhooks still
+reach a private app, and new apps default to public with the choice visible in
+the create dialog. That file also carries the build order and the four things
+still to settle while building (what a stranger sees, custom domains, where
+the flag rides, and what previews do for a private app).
+
+This is also the companion to the connections work
 (`plans/260819-connections.md`) -- connections are not finished without it --
 but it is worth doing on its own merits first.
-
-Open: how the proxy validates a session without holding the signing key (ask
-control over the cluster link and cache, or have control mint the proxy a
-verification key); what an unauthenticated visitor sees (403 page vs the
-existing "nothing here" page, which leaks less).
 
 ### 2. A redirect (alias) domain type
 
