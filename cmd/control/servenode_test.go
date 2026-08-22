@@ -10,6 +10,7 @@ import (
 
 	"heckel.io/hostit/control"
 	"heckel.io/hostit/controlconf"
+	"heckel.io/hostit/hoststats"
 	"heckel.io/hostit/nodeapi"
 	"heckel.io/hostit/store"
 )
@@ -38,6 +39,7 @@ type fakeNodeAgent struct {
 	control.NodeAgent
 	statesCalls    int
 	heartbeatCalls int
+	stats          hoststats.Stats
 }
 
 func (f *fakeNodeAgent) States(names []string) map[string]nodeapi.State {
@@ -47,7 +49,7 @@ func (f *fakeNodeAgent) States(names []string) map[string]nodeapi.State {
 
 func (f *fakeNodeAgent) Heartbeat() *nodeapi.Heartbeat {
 	f.heartbeatCalls++
-	return &nodeapi.Heartbeat{}
+	return &nodeapi.Heartbeat{Address: "10.0.0.4", Stats: f.stats}
 }
 
 // A node hosting nothing must still register a pulse: this poll doubles as
@@ -63,9 +65,59 @@ func TestPollStampsLivenessOfAnEmptyNode(t *testing.T) {
 	require.NoError(t, s.EnsureNode("stage-2", "10.0.0.4"))
 
 	agent := &fakeNodeAgent{}
-	pollNodeOnce(manager, "stage-2", agent)
+	pollNodeOnce(manager, "stage-2", agent, true)
 
 	n, err := s.Node("stage-2")
 	require.NoError(t, err)
 	assert.WithinDuration(t, time.Now(), n.LastSeen, time.Minute, "an empty node's pulse still stamps last_seen")
+}
+
+// A node's machine stats have to be REFRESHED, not captured once. They used to
+// be written only by the connect handshake, so a node that stayed connected
+// showed whatever its load happened to be at the moment it dialled in --
+// forever. Found on prod straight after a deploy: load1 frozen at 15.92 while
+// the machine was actually sitting at 1.52, with last_seen ticking along
+// happily beside it.
+func TestPollRefreshesMachineStats(t *testing.T) {
+	t.Parallel()
+	s, err := store.NewStore(filepath.Join(t.TempDir(), "hostit.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = s.Close() })
+	manager := control.NewManager(controlconf.NewConfig(), s)
+	require.NoError(t, s.EnsureNode("node-1", "10.0.0.4"))
+
+	agent := &fakeNodeAgent{stats: hoststats.Stats{Load1: 15.92, MemoryUsedMB: 641}}
+	pollNodeOnce(manager, "node-1", agent, true)
+	n, err := s.Node("node-1")
+	require.NoError(t, err)
+	assert.Contains(t, n.Stats, "15.92", "the first poll records what the node reported")
+
+	// The machine calms down; the next stats poll must say so.
+	agent.stats = hoststats.Stats{Load1: 1.52, MemoryUsedMB: 640}
+	pollNodeOnce(manager, "node-1", agent, true)
+	n, err = s.Node("node-1")
+	require.NoError(t, err)
+	assert.Contains(t, n.Stats, "1.52", "and a later one replaces it")
+	assert.NotContains(t, n.Stats, "15.92")
+}
+
+// Stats ride a slower cadence than the state poll: the poll runs every couple
+// of seconds to keep app state warm, and telemetry for a dashboard does not
+// need asking that often.
+func TestTheStatePollDoesNotHeartbeatEveryTick(t *testing.T) {
+	t.Parallel()
+	s, err := store.NewStore(filepath.Join(t.TempDir(), "hostit.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = s.Close() })
+	manager := control.NewManager(controlconf.NewConfig(), s)
+	require.NoError(t, s.EnsureNode("node-1", "10.0.0.4"))
+	require.NoError(t, s.AddApp(&store.App{ID: "a1", Name: "blog", Port: 10000, Host: "node-1"}))
+
+	agent := &fakeNodeAgent{}
+	pollNodeOnce(manager, "node-1", agent, false)
+	assert.Zero(t, agent.heartbeatCalls, "an ordinary tick does not ask for stats")
+	assert.Equal(t, 1, agent.statesCalls, "it still measures the node's apps")
+
+	pollNodeOnce(manager, "node-1", agent, true)
+	assert.Equal(t, 1, agent.heartbeatCalls, "the stats tick does")
 }

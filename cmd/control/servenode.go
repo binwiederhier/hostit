@@ -22,6 +22,12 @@ const (
 	// nodeStatePoll is how often control pulls a node's batch states into its
 	// cache in split mode -- the wire version of the node's own settle cadence.
 	nodeStatePoll = 2 * time.Second
+	// nodeStatsInterval is how often that poll also asks the node about its
+	// MACHINE (memory, disk, load). Slower than the state poll on purpose: app
+	// state feeds placement and the dashboard's liveness, machine stats feed a
+	// display. It matches the proxy's heartbeat pass, so both members' readings
+	// age the same way.
+	nodeStatsInterval = 30 * time.Second
 )
 
 // nodeRole is how control admits a node: the registry row is the membership
@@ -183,6 +189,7 @@ func nodeApps(manager *control.Manager, nodeID string) []*store.App {
 // node is asked only about its own apps; the cache merges per name. The poll
 // also doubles as the liveness heartbeat.
 func pollNodeStates(manager *control.Manager, registry *control.NodeRegistry, nodeID string, remote control.NodeAgent, done, superseded <-chan struct{}) {
+	var lastStats time.Time // zero: the first tick refreshes
 	for {
 		select {
 		case <-done:
@@ -201,16 +208,33 @@ func pollNodeStates(manager *control.Manager, registry *control.NodeRegistry, no
 			registry.Unregister(nodeID, remote)
 			return
 		}
-		pollNodeOnce(manager, nodeID, remote)
+		// Machine stats used to be written only by the connect handshake, so a
+		// node that stayed connected reported whatever its load was when it
+		// dialled in, forever. Refresh them on their own slower cadence.
+		refreshStats := time.Since(lastStats) >= nodeStatsInterval
+		if refreshStats {
+			lastStats = time.Now()
+		}
+		pollNodeOnce(manager, nodeID, remote, refreshStats)
 	}
 }
 
 // pollNodeOnce is one tick of pollNodeStates: measure the node's apps and
-// stamp its liveness on any answer.
-func pollNodeOnce(manager *control.Manager, nodeID string, remote control.NodeAgent) {
+// stamp its liveness on any answer. With refreshStats it also re-reads what the
+// node says about its own machine.
+func pollNodeOnce(manager *control.Manager, nodeID string, remote control.NodeAgent, refreshStats bool) {
 	names := make([]string, 0)
 	for _, a := range nodeApps(manager, nodeID) {
 		names = append(names, a.Name)
+	}
+	// RecordNodeStatus stamps liveness too, so this covers the empty-node case
+	// below as well.
+	if refreshStats {
+		if hb := remote.Heartbeat(); hb != nil {
+			if err := manager.RecordNodeStatus(nodeID, hb); err != nil {
+				slog.Warn("Cannot record a node's machine stats", "node", nodeID, "error", err)
+			}
+		}
 	}
 	// A node hosting nothing must still be asked SOMETHING: this poll doubles
 	// as the liveness heartbeat, and an empty node that is never polled reads
