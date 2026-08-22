@@ -2,7 +2,7 @@
 // by backend with the subscription first, a rule between the groups, and the
 // vendor mark on every row. The catalog logic has Go tests; the grouping,
 // divider and mark rendering exist only in the browser.
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures";
 
 function appName(workerInfo) {
   return `e2e-ui-${Date.now() % 100000}${workerInfo.workerIndex}`;

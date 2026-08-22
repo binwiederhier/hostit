@@ -1,12 +1,6 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures";
 
 test("the authenticated dashboard renders without console errors", async ({ page }) => {
-  const errors = [];
-  page.on("console", (m) => {
-    if (m.type() === "error") errors.push(m.text());
-  });
-  page.on("pageerror", (e) => errors.push(String(e)));
-
   await page.goto("/");
 
   await expect(page.getByRole("heading", { name: "Apps" })).toBeVisible();
@@ -15,7 +9,6 @@ test("the authenticated dashboard renders without console errors", async ({ page
     await expect(page.getByRole("link", { name: link, exact: true })).toBeVisible();
   }
 
-  expect(errors, `unexpected console/page errors: ${errors.join(" | ")}`).toEqual([]);
 });
 
 test("the New app dialog opens from the dashboard", async ({ page }) => {

@@ -2,7 +2,7 @@
 // Unarchive, the confirm dialog says what will happen, and the status reads
 // Archived with the grey (not red) dot. The API side has Go tests; this is
 // the menu/modal/status wiring only a browser runs.
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures";
 
 function appName(workerInfo) {
   return `e2e-ui-${Date.now() % 100000}${workerInfo.workerIndex}`;

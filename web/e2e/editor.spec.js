@@ -3,7 +3,7 @@
 // URL. The API halves (file write, deploy) have Go e2e coverage; the tree
 // navigation, dirty-buffer handling and the Save & deploy button exist only in
 // the browser.
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures";
 
 function appName(workerInfo) {
   return `e2e-ui-${Date.now() % 100000}${workerInfo.workerIndex}`;

@@ -3,7 +3,7 @@
 // not the public "files" slug) showed the assistant with no signal -- a page
 // answering a different question than the URL asked, and a spec once spent its
 // whole budget waiting on it.
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures";
 
 function appName(workerInfo) {
   return `e2e-ui-${Date.now() % 100000}${workerInfo.workerIndex}`;

@@ -3,7 +3,7 @@
 // node); these tests prove the half only a browser executes -- AppTerminal.jsx,
 // the xterm rendering, and the reconnect close-code handling that decides
 // whether a dead terminal retries or explains itself.
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures";
 
 // Auth comes from the suite's setup project (auth.setup.js): every test starts
 // with a real breakglass session in its storage state, like the other specs.

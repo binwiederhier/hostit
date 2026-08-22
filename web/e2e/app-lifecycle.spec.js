@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures";
 
 // End-to-end through the browser: a created app shows up running on the dashboard,
 // its detail page renders, and after deletion it disappears. Setup/teardown go

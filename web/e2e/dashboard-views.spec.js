@@ -2,7 +2,7 @@
 // clickable rows. All of it is frontend wiring -- localStorage persistence,
 // conditional rendering, event-target discrimination -- that only a browser
 // executes; the unit tests cover none of it and the Go e2e cannot see it.
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures";
 
 function appName(workerInfo) {
   return `e2e-ui-${Date.now() % 100000}${workerInfo.workerIndex}`;
