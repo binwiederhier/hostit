@@ -20,7 +20,11 @@ const (
 	// attribute. It also requires Secure, so plain-HTTP setups drop the prefix.
 	sessionCookieName = "hostit_session"
 	stateCookieName   = "hostit_state"
-	hostCookiePrefix  = "__Host-"
+	// nextCookieName carries where to land after a login, across the round trip
+	// to Google. It is a cookie rather than a query parameter because Google
+	// only hands back the state, and it holds a PATH on this host, never a URL.
+	nextCookieName   = "hostit_next"
+	hostCookiePrefix = "__Host-"
 	// sessionTTL is how long a web login lasts
 	sessionTTL = 30 * 24 * time.Hour
 )

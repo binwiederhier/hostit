@@ -30,6 +30,11 @@ var (
 type Route struct {
 	Host   string `json:"host"`
 	Target string `json:"target"` // host:port the app listens on
+	// Private means the app is not served straight from here: the request goes
+	// to control, which is where sessions and grants are understood. The proxy
+	// holds no session key by design, so it cannot tell one visitor from
+	// another and must not try.
+	Private bool `json:"private,omitempty"`
 }
 
 // Table is the whole routing table at one point in time. Seq strictly

@@ -99,6 +99,14 @@ var (
 				},
 			},
 			{
+				Name:  "visibility",
+				Usage: "Publish the app to the world, or restrict it to its owner and collaborators",
+				Subcommands: []*cli.Command{
+					{Name: "public", Usage: "Anyone with the URL can open the app", ArgsUsage: "<name>", Action: execSetVisibility(false)},
+					{Name: "private", Usage: "Only the owner, its collaborators and admins can open the app", ArgsUsage: "<name>", Action: execSetVisibility(true)},
+				},
+			},
+			{
 				Name:  "snapshot",
 				Usage: "Manage the app's snapshots (needs a btrfs host)",
 				Subcommands: []*cli.Command{
@@ -179,6 +187,30 @@ func execAppsAdd(c *cli.Context) error {
 }
 
 // execRemoteAction runs one lifecycle verb against a remote app
+// execSetVisibility flips one app between public and private. Two verbs rather
+// than a --private flag, so the command reads as the state it leaves behind.
+func execSetVisibility(private bool) cli.ActionFunc {
+	return func(c *cli.Context) error {
+		cl, err := appsClient(c)
+		if err != nil {
+			return err
+		}
+		word := "public"
+		if private {
+			word = "private"
+		}
+		if c.NArg() != 1 {
+			return fmt.Errorf("usage: hostit control app visibility %s <name>", word)
+		}
+		name := c.Args().First()
+		if err := cl.SetVisibility(name, private); err != nil {
+			return err
+		}
+		fmt.Fprintf(c.App.Writer, "App %s is now %s\n", name, word)
+		return nil
+	}
+}
+
 func execRemoteAction(verb string) cli.ActionFunc {
 	return func(c *cli.Context) error {
 		cl, err := appsClient(c)

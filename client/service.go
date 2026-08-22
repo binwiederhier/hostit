@@ -107,6 +107,12 @@ func (c *Client) SetKeys(name string, sshKeys []string) error {
 	return c.request("PUT", "/api/apps/"+name+"/keys", &setKeysRequest{SSHKeys: sshKeys}, nil)
 }
 
+// SetVisibility publishes an app to the world, or restricts it to its owner,
+// its collaborators and admins. Owner-only, like renaming and deleting.
+func (c *Client) SetVisibility(name string, private bool) error {
+	return c.request("PUT", "/api/apps/"+name+"/visibility", &setVisibilityRequest{Private: private}, nil)
+}
+
 // Deploy applies the app's hostit.yml and (re)starts it, and returns what the
 // server said it did
 func (c *Client) Deploy(name string) (string, error) {

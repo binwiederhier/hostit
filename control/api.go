@@ -45,6 +45,9 @@ func (s *Server) newAPIHandler() http.Handler {
 	mux.HandleFunc("GET /auth/callback", s.handleGoogleCallback)
 	mux.HandleFunc("POST /auth/breakglass", s.handleBreakglass)
 	mux.HandleFunc("POST /auth/logout", s.handleLogout)
+	// Mints the grant that lets a visitor reach a PRIVATE app. It lives here, on
+	// the web hostname, because that is the only place the session cookie applies.
+	mux.HandleFunc("GET "+appAccessPath, s.handleAppAccess)
 
 	// Account: readable while pending, so the web app can explain the wait
 	route(mux, "GET", "/account", s.authenticated(s.handleAccount))
@@ -63,6 +66,7 @@ func (s *Server) newAPIHandler() http.Handler {
 	route(mux, "PUT", "/apps/{name}/keys", s.requireActive(s.handleAppsSetKeys))
 	route(mux, "POST", "/apps/{name}/token", s.requireActive(s.handleAppsRotateToken))
 	route(mux, "PUT", "/apps/{name}/description", s.requireActive(s.handleAppsSetDescription))
+	route(mux, "PUT", "/apps/{name}/visibility", s.requireActive(s.handleAppsSetVisibility))
 	route(mux, "PUT", "/apps/{name}/snapshot-config", s.requireActive(s.handleAppsSetSnapshotConfig))
 	route(mux, "POST", "/apps/{name}/rename", s.requireActive(s.handleAppsRename))
 	route(mux, "POST", "/apps/{name}/fork", s.requireActive(s.handleAppsFork))

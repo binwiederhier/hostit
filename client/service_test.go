@@ -168,3 +168,24 @@ func TestLifecycleFromTheClient(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 0, res.ExitCode)
 }
+
+func TestSetVisibility(t *testing.T) {
+	t.Parallel()
+	c := newTestClient(t, testToken)
+	_, err := c.CreateApp("blog", nil)
+	require.NoError(t, err)
+
+	a, err := c.App("blog")
+	require.NoError(t, err)
+	assert.False(t, a.Private, "apps are created public")
+
+	require.NoError(t, c.SetVisibility("blog", true))
+	a, err = c.App("blog")
+	require.NoError(t, err)
+	assert.True(t, a.Private)
+
+	require.NoError(t, c.SetVisibility("blog", false))
+	a, err = c.App("blog")
+	require.NoError(t, err)
+	assert.False(t, a.Private)
+}

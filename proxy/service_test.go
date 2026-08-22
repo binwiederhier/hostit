@@ -150,3 +150,38 @@ func TestProxyStripsInboundForwardedFor(t *testing.T) {
 		assert.Equal(t, "203.0.113.9", gotXFF, "host %s: the chain starts at the proxy, not the client", host)
 	}
 }
+
+// A private app's traffic is handed to control rather than to the app. The
+// proxy holds no session key and cannot tell one visitor from another, so the
+// gate lives where identity does; this is the branch that gets it there. It
+// deliberately reuses the same fallthrough an unknown hostname takes, so no
+// authentication code lives in the data plane at all.
+func TestPrivateRoutesAreHandedToControl(t *testing.T) {
+	t.Parallel()
+	appSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, "the app itself")
+	}))
+	defer appSrv.Close()
+	controlSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintf(w, "control saw host=%s", r.Host)
+	}))
+	defer controlSrv.Close()
+
+	p := New(&Config{ControlURL: controlSrv.URL, CacheDir: t.TempDir()})
+	require.NoError(t, p.ApplyRoutes(table(1,
+		proxyapi.Route{Host: "blog.example.com", Target: appSrv.Listener.Addr().String()},
+		proxyapi.Route{Host: "dash.example.com", Target: appSrv.Listener.Addr().String(), Private: true},
+	)))
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "http://ignored/", nil)
+	req.Host = "dash.example.com"
+	p.ServeHTTP(rr, req)
+	assert.Equal(t, "control saw host=dash.example.com", rr.Body.String(), "a private app is gated by control")
+
+	rr = httptest.NewRecorder()
+	req = httptest.NewRequest("GET", "http://ignored/", nil)
+	req.Host = "blog.example.com"
+	p.ServeHTTP(rr, req)
+	assert.Equal(t, "the app itself", rr.Body.String(), "a public app still goes straight to its target")
+}

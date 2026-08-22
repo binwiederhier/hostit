@@ -76,10 +76,11 @@ func TestMigrationRecordsVersion(t *testing.T) {
 // PoC-touched database (at 23) and a clean one (at 22) still reach them.
 func TestBurnedSlotKeepsHistoriesAligned(t *testing.T) {
 	t.Parallel()
-	require.Len(t, migrations, 27)
+	require.Len(t, migrations, 28)
 	assert.Contains(t, migrations[22], "SELECT 1", "index 22 is the burned no-op slot")
 	assert.Contains(t, migrations[23], "memory_limit_mb", "the limits columns follow the burned slot")
 	assert.Contains(t, migrations[24], "memory_pool_mb", "then the per-user pools")
 	assert.Contains(t, migrations[25], "512", "then the old-default pinning for pre-existing apps")
 	assert.Contains(t, migrations[26], "stats", "then the member machine-stats blob")
+	assert.Contains(t, migrations[27], "private", "then per-app visibility")
 }

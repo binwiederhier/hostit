@@ -12,6 +12,15 @@ import (
 type apiCreateAppRequest struct {
 	Name    string   `json:"name"`
 	SSHKeys []string `json:"ssh_keys"`
+	// Private creates the app already private. It is set at creation rather
+	// than flipped afterwards so there is no window, however brief, in which
+	// the routing table publishes an app that was meant to be private.
+	Private bool `json:"private"`
+}
+
+// apiSetVisibilityRequest is the body of PUT /api/apps/{name}/visibility
+type apiSetVisibilityRequest struct {
+	Private bool `json:"private"`
 }
 
 // apiCollaboratorResponse is one collaborator row: enough for a settings list.
@@ -110,6 +119,9 @@ type apiAppResponse struct {
 	// Archived is the app shelved: powered off, refusing to run, and taking no
 	// new snapshots until it is brought back
 	Archived bool `json:"archived"`
+	// Private restricts the app's URL to its owner, its collaborators and
+	// admins, rather than anyone who knows it.
+	Private bool `json:"private"`
 	// CustomDomain is the first verified (active) custom domain, empty if none; the
 	// web app prefers it over the default subdomain for links and previews.
 	CustomDomain string `json:"custom_domain,omitempty"`

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link } from "react-router-dom";
 import { api } from "../api";
+import { docsHref } from "../docs";
 import { CopyButton, ErrorBanner, formatDate, Loading } from "../components";
 
 // Shortens an authorized_keys line to "ssh-ed25519 ...<tail> comment".
@@ -22,14 +22,18 @@ const useEscape = (onClose) => {
 };
 
 // DocsLink points at the section of the public manual that explains a feature,
-// so the page can stay short and still be self-explanatory.
-const DocsLink = ({ to, children }) => (
-  <Link className="docs-link" to={to}>
+// so the page can stay short and still be self-explanatory. It is a plain
+// anchor, not a router Link: the docs render outside the router, so a
+// client-side navigation would land on the catch-all and bounce to the
+// dashboard. It opens in a new tab for the same reason the nav's docs link
+// does -- the manual is a thing you read beside the app, not instead of it.
+const DocsLink = ({ guide, section, children }) => (
+  <a className="docs-link" href={docsHref(guide, section)} target="_blank" rel="noreferrer">
     {children}
     <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d="M6 3.5h6.5V10M12.5 3.5 4 12" />
     </svg>
-  </Link>
+  </a>
 );
 
 const AddKeyDialog = ({ onClose, onAdded }) => {
@@ -142,7 +146,7 @@ const SshKeys = () => {
       </div>
       <p className="hint">
         These keys grant SSH, scp and rsync access to all of your apps, and the terminal in the web
-        app uses the same login. <DocsLink to="/docs#ssh">How SSH access works</DocsLink>
+        app uses the same login. <DocsLink guide="user" section="ssh">How SSH access works</DocsLink>
       </p>
       <ErrorBanner message={error} onDismiss={() => setError("")} />
       {keys === null && !error && <Loading label="Loading keys..." />}
@@ -163,7 +167,7 @@ const SshKeys = () => {
             <tbody>
               {keys.map((k) => (
                 <tr key={k.id}>
-                  <td className="item-label">{k.label || <span className="cell-muted">(no label)</span>}</td>
+                  <td>{k.label || <span className="cell-muted">(no label)</span>}</td>
                   <td className="mono cell-muted">{keyPreview(k.key)}</td>
                   <td className="cell-muted">{formatDate(k.created_at, "unknown")}</td>
                   <td className="cell-actions">
@@ -282,7 +286,7 @@ const Tokens = () => {
       <p className="hint">
         Tokens authenticate the <span className="mono">hostit</span> CLI and direct API calls -- including
         your own AI agent. They can manage all your apps; each app also has its own scoped token on
-        its page. <DocsLink to="/docs#api">The API, and how agents use it</DocsLink>
+        its page. <DocsLink guide="user" section="api">The API, and how agents use it</DocsLink>
       </p>
       <ErrorBanner message={error} onDismiss={() => setError("")} />
       {newToken && (
@@ -321,7 +325,7 @@ const Tokens = () => {
               {tokens.map((t) => (
                 <tr key={t.id}>
                   <td className="mono">{t.prefix}...</td>
-                  <td className="item-label">{t.label || <span className="cell-muted">(no label)</span>}</td>
+                  <td>{t.label || <span className="cell-muted">(no label)</span>}</td>
                   <td className="cell-muted">{formatDate(t.created_at, "never")}</td>
                   <td className="cell-muted">{formatDate(t.last_used, "never")}</td>
                   <td className="cell-actions">

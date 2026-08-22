@@ -4,7 +4,7 @@ import { api, ApiError, isNetworkError } from "../api";
 import { viewFromSlug, VIEW_TO_SLUG } from "../views";
 import { limitInputs, limitsPatchBody } from "../limits";
 import { useReconnect } from "../hooks";
-import { CopyButton, ErrorBanner, Loading, Snippet, StatusDot, pairMB, usageLevel, UsagePair, cores } from "../components";
+import { CopyButton, ErrorBanner, Loading, PrivatePill, Snippet, StatusDot, VisibilityChoice, pairMB, usageLevel, UsagePair, cores } from "../components";
 import { useSetAppHeader } from "../appHeader";
 
 // xterm is heavy and only needed when a terminal is actually opened, so it is
@@ -1150,6 +1150,7 @@ const AppSettings = ({ app, isAdmin, account, showToast, onCopyToken, onRegenera
   const defaultInterval = prettyDuration(snap.default_interval) || "3h";
   const [snapCfg, setSnapCfg] = useState({ interval: snap.interval || "", pre: snap.pre || "", post: snap.post || "" });
   const [savingSnap, setSavingSnap] = useState(false);
+  const [savingVis, setSavingVis] = useState(false);
   const [showRename, setShowRename] = useState(false);
   const [domains, setDomains] = useState(null);
   const [input, setInput] = useState("");
@@ -1201,6 +1202,21 @@ const AppSettings = ({ app, isAdmin, account, showToast, onCopyToken, onRegenera
       setError(err.message);
     } finally {
       setSavingSnap(false);
+    }
+  };
+
+  const saveVisibility = async (isPrivate) => {
+    if (savingVis || isPrivate === !!app.private) return;
+    setSavingVis(true);
+    setError("");
+    try {
+      await api.put(`/api/apps/${encodeURIComponent(name)}/visibility`, { private: isPrivate });
+      showToast(isPrivate ? "App is now private" : "App is now public");
+      if (onSaved) onSaved();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSavingVis(false);
     }
   };
 
@@ -1483,6 +1499,21 @@ const AppSettings = ({ app, isAdmin, account, showToast, onCopyToken, onRegenera
             {savingSnap ? "Saving..." : "Save snapshot settings"}
           </button>
         </div>
+      </section>
+
+      {/* Visibility sits directly above the collaborator list on purpose: once
+          an app is private, "who can see it" IS that list, and the two
+          questions are answered in one place rather than two screens apart. */}
+      <section className="ov-section">
+        <h3>Visibility</h3>
+        <p className="hint">
+          {app.private
+            ? "Visitors have to sign in, and only you, the people below and admins get through. It applies to every hostname the app answers to, custom domains included."
+            : "Anyone with the link can open this app. No sign-in, no account."}
+        </p>
+        <VisibilityChoice value={!!app.private} onChange={saveVisibility} disabled={!isOwner || savingVis} />
+        {!isOwner && <p className="hint">Only the app's owner can change this.</p>}
+        {app.private && <p className="hint">Previews are not taken of a private app, so its card shows a placeholder.</p>}
       </section>
 
       <section className="ov-section">
@@ -2223,6 +2254,7 @@ const AppDetail = ({ account, refreshAccount }) => {
                 <span className={"status-label" + (refreshing ? " status-label-pending" : "") + (crashed ? " status-label-crashed" : "")}>{statusText}</span>
               )
             )}
+            {app.private && <PrivatePill />}
           </div>
 
           <div className="ws-topright">

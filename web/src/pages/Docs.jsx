@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Snippet, Wordmark } from "../components";
+import { DOCS_GUIDES } from "../docs";
 import dashboardShot from "../assets/docs/dashboard.png";
 import workspaceShot from "../assets/docs/workspace.png";
 import editorShot from "../assets/docs/editor.png";
@@ -437,6 +438,53 @@ const DomainsPage = () => (
       follow it; only the{" "}
       <span className="mono">&lt;name&gt;.{baseDomain}</span> subdomain and the
       SSH login change. Links to the old subdomain stop working.
+    </p>
+  </>
+);
+
+const VisibilityPage = () => (
+  <>
+    <h2>Private apps</h2>
+    <p>
+      Every app is <strong>public</strong> by default: anyone who knows the URL
+      can open it, with no sign-in and no account. That is the right default for
+      a blog or a demo, and it is what every app did before this setting
+      existed.
+    </p>
+    <p>
+      A <strong>private</strong> app is reachable only by you, the people you add
+      as collaborators, and administrators. Pick it when you create the app, or
+      flip it any time under Settings -&gt; Visibility. It applies to every
+      hostname the app answers to, custom domains included, and takes effect
+      within about a second.
+    </p>
+    <h3>What a visitor sees</h3>
+    <p>
+      Someone already signed in with access goes straight through; the first
+      visit bounces through hostit to pick up a per-app credential, which is
+      invisible apart from the address bar settling. Someone signed out is sent
+      to sign in and then returned to the app they were opening, so your own
+      app still works from a browser you have never used it on.
+    </p>
+    <p>
+      Someone signed in <em>without</em> access gets the same &quot;nothing
+      deployed here&quot; page an unused hostname gets, rather than a
+      &quot;forbidden&quot; that would confirm the app exists. So one hostit
+      user cannot go looking for another&apos;s private apps.
+    </p>
+    <h3>Scripts, webhooks and agents</h3>
+    <p>
+      Send an API token and no redirect happens:{" "}
+      <span className="mono">curl -H &quot;Authorization: Bearer &lt;token&gt;&quot;
+      https://&lt;name&gt;.{baseDomain}/</span>. Your account token works for any
+      app you can reach, and the app&apos;s own scoped token works for that app.
+    </p>
+    <h3>Two things to know</h3>
+    <p>
+      Collaborators on a private app can also deploy to it, edit its files and
+      SSH in -- sharing is a full grant, not a view-only one. And no screenshots
+      are taken of a private app, so its dashboard card shows a placeholder
+      rather than a picture.
     </p>
   </>
 );
@@ -1176,40 +1224,31 @@ btrfs qgroup show -re /var/lib/hostit/apps         # disk budgets: 1/<uid> rows,
 // Two guides, each served as one long page at its own route (/docs/user, /docs/admin).
 // Within a guide the section links are in-page anchors; the other guide's links point
 // at its route. /docs (bare) is the user guide.
-const guides = [
-  {
-    key: "user",
-    title: "User guide",
-    path: "/docs/user",
-    items: [
-      { id: "intro", title: "Introduction", render: IntroPage },
-      { id: "apps", title: "Apps and hostit.yml", render: AppsPage },
-      { id: "assistant", title: "The AI assistant", render: AssistantPage },
-      { id: "files", title: "Files and the editor", render: FilesPage },
-      { id: "ssh", title: "SSH and the terminal", render: SSHPage },
-      { id: "snapshots", title: "Snapshots and fork", render: SnapshotsPage },
-      { id: "domains", title: "Domains and renaming", render: DomainsPage },
-      { id: "limits", title: "Resource limits and pools", render: LimitsPage },
-      { id: "api", title: "API reference", render: ApiPage },
-    ],
-  },
-  {
-    key: "admin",
-    title: "Administration guide",
-    path: "/docs/admin",
-    items: [
-      { id: "install", title: "Installation", render: InstallPage },
-      { id: "config", title: "Configuration", render: ConfigPage },
-      { id: "deployment", title: "Deployment shapes", render: DeploymentPage },
-      { id: "admin", title: "Users and administration", render: AdminPage },
-      {
-        id: "troubleshooting",
-        title: "Troubleshooting",
-        render: TroubleshootingPage,
-      },
-    ],
-  },
-];
+//
+// The section list itself lives in ../docs, so that other pages can link to a
+// section without hand-writing a URL. This file supplies the bodies.
+const renderers = {
+  intro: IntroPage,
+  apps: AppsPage,
+  assistant: AssistantPage,
+  files: FilesPage,
+  ssh: SSHPage,
+  snapshots: SnapshotsPage,
+  domains: DomainsPage,
+  limits: LimitsPage,
+  visibility: VisibilityPage,
+  api: ApiPage,
+  install: InstallPage,
+  config: ConfigPage,
+  deployment: DeploymentPage,
+  admin: AdminPage,
+  troubleshooting: TroubleshootingPage,
+};
+
+const guides = DOCS_GUIDES.map((guide) => ({
+  ...guide,
+  items: guide.items.map((item) => ({ ...item, render: renderers[item.id] })),
+}));
 
 const Docs = () => {
   const currentKey = window.location.pathname.startsWith("/docs/admin")

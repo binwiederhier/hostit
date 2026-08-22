@@ -322,6 +322,13 @@ var (
 		ALTER TABLE node ADD COLUMN stats TEXT NOT NULL DEFAULT '';
 		ALTER TABLE proxy ADD COLUMN stats TEXT NOT NULL DEFAULT '';
 	`,
+		// Whether an app is reachable by anyone with the URL, or only by its
+		// owner, its collaborators and admins. Defaulting to 0 is the whole
+		// point: every app that predates this column was public, and the
+		// migration must not silently change what any of them mean.
+		`
+		ALTER TABLE app ADD COLUMN private INTEGER NOT NULL DEFAULT 0;
+	`,
 	}
 )
 

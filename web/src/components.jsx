@@ -171,3 +171,44 @@ export const Snippet = ({ text }) => (
     </div>
   </div>
 );
+
+// The visibility choice, shown wherever an app's audience is decided. Both
+// options are always on screen rather than one checkbox: "private" should be a
+// thing you picked, not a box you failed to notice.
+export const VisibilityChoice = ({ value, onChange, disabled }) => (
+  <div className="visibility-choice" role="radiogroup" aria-label="Visibility">
+    {[
+      { key: false, title: "Public", detail: "Anyone with the link can open it", icon: <path d="M8 1.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13ZM1.5 8h13M8 1.5c1.7 1.8 2.6 4 2.6 6.5S9.7 12.7 8 14.5c-1.7-1.8-2.6-4-2.6-6.5S6.3 3.3 8 1.5Z" /> },
+      { key: true, title: "Private", detail: "Only you and people you add", icon: <><rect x="3" y="7" width="10" height="7" rx="1.5" /><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" /></> },
+    ].map((option) => (
+      <button
+        key={String(option.key)}
+        type="button"
+        role="radio"
+        aria-checked={value === option.key}
+        className={value === option.key ? "vis-option vis-option-on" : "vis-option"}
+        onClick={() => onChange(option.key)}
+        disabled={disabled}
+      >
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          {option.icon}
+        </svg>
+        <span className="vis-title">{option.title}</span>
+        <span className="vis-detail">{option.detail}</span>
+      </button>
+    ))}
+  </div>
+);
+
+// A private app says so wherever it is listed. Without it the only way to tell
+// is to open Settings, and "is this thing actually private?" is a question
+// people ask about the app they just locked down.
+export const PrivatePill = () => (
+  <span className="private-pill" title="Only you, your collaborators and admins can open this app">
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="3" y="7" width="10" height="7" rx="1.5" />
+      <path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" />
+    </svg>
+    private
+  </span>
+);

@@ -19,6 +19,8 @@ type App struct {
 	Port      int       `json:"port"`
 	CreatedAt time.Time `json:"created_at"`
 	SSH       SSHInfo   `json:"ssh"`
+	// Private restricts the app's URL to its owner, collaborators and admins.
+	Private bool `json:"private"`
 }
 
 // messageResponse and outputResponse mirror the server's lifecycle and log replies
@@ -53,6 +55,7 @@ type errorResponse struct {
 type createAppRequest struct {
 	Name    string   `json:"name"`
 	SSHKeys []string `json:"ssh_keys,omitempty"`
+	Private bool     `json:"private,omitempty"`
 }
 
 // forkAppRequest mirrors the server's POST /api/apps/{name}/fork body
@@ -85,4 +88,9 @@ type DomainInfo struct {
 // setKeysRequest mirrors the server's PUT /api/apps/{name}/keys body
 type setKeysRequest struct {
 	SSHKeys []string `json:"ssh_keys"`
+}
+
+// setVisibilityRequest mirrors the server's PUT /api/apps/{name}/visibility body
+type setVisibilityRequest struct {
+	Private bool `json:"private"`
 }

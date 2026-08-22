@@ -39,6 +39,11 @@ func (s *Server) newProxyHandler() http.Handler {
 			s.writeNothingHerePage(w)
 			return
 		}
+		// One gate for both hostname forms, since the custom-domain path lands
+		// here too: a private app is private on every name it answers to.
+		if a.Private && !s.allowPrivateRequest(w, r, a) {
+			return // It has already answered: a redirect, the grant hop, or the 404
+		}
 		s.proxyTo(w, r, a)
 	})
 }
@@ -65,6 +70,9 @@ func (s *Server) proxyTo(w http.ResponseWriter, r *http.Request, a *store.App) {
 			pr.SetURL(target)
 			pr.SetXForwarded()
 			pr.Out.Host = pr.In.Host
+			// The grant cookie is on the app's own hostname, so the browser
+			// attaches it to every request; the app must still never see it.
+			stripGrantCookie(pr.Out, s.cookieName(appGrantCookieName))
 		},
 		FlushInterval: -1,
 		ModifyResponse: func(resp *http.Response) error {

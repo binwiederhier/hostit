@@ -196,6 +196,7 @@ func (s *Server) Routes() (*proxyapi.Table, error) {
 	}
 	routes := make([]proxyapi.Route, 0, len(apps)+len(domains))
 	targets := make(map[string]string, len(apps))
+	private := make(map[string]bool, len(apps))
 	for _, a := range apps {
 		addr := s.nodeAddress(a.Host)
 		if addr == "" {
@@ -203,7 +204,8 @@ func (s *Server) Routes() (*proxyapi.Table, error) {
 		}
 		target := fmt.Sprintf("%s:%d", addr, a.Port)
 		targets[a.Name] = target
-		routes = append(routes, proxyapi.Route{Host: a.Name + "." + s.config.BaseDomain, Target: target})
+		private[a.Name] = a.Private
+		routes = append(routes, proxyapi.Route{Host: a.Name + "." + s.config.BaseDomain, Target: target, Private: a.Private})
 	}
 	for appName, appDomains := range domains {
 		target, ok := targets[appName]
@@ -211,7 +213,9 @@ func (s *Server) Routes() (*proxyapi.Table, error) {
 			continue
 		}
 		for _, domain := range appDomains {
-			routes = append(routes, proxyapi.Route{Host: domain, Target: target})
+			// A private app is private on every name it answers to; a custom
+			// domain left public would be the URL its owner actually shared.
+			routes = append(routes, proxyapi.Route{Host: domain, Target: target, Private: private[appName]})
 		}
 	}
 	sort.Slice(routes, func(i, j int) bool { return routes[i].Host < routes[j].Host })

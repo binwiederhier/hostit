@@ -95,6 +95,10 @@ type App struct {
 	// is not powered_off, which an owner flips freely -- an archived app has to
 	// be brought back before it can run at all.
 	Archived bool `json:"archived"`
+	// Private restricts who may reach the app over HTTP: its owner, its
+	// collaborators and admins, rather than anyone with the URL. Public is the
+	// default, which is what every app predating this flag already was.
+	Private bool `json:"private"`
 	// Per-app resource limit OVERRIDES, admin-set. 0 means no override:
 	// memory/disk fall back to the owner's defaults, CPU stays uncapped.
 	// (DiskMB above is USAGE, written by the node's usage callback.)

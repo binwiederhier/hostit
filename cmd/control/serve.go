@@ -142,7 +142,7 @@ func execServe(c *cli.Context) error {
 			states := manager.CachedStates(names)
 			out := make([]preview.App, 0, len(apps))
 			for _, a := range apps {
-				out = append(out, preview.App{ID: a.ID, Name: a.Name, URL: manager.URL(a), Running: states[a.Name].Running})
+				out = append(out, preview.App{ID: a.ID, Name: a.Name, URL: manager.URL(a), Running: states[a.Name].Running, Private: a.Private})
 			}
 			return out, nil
 		})

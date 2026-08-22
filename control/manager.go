@@ -43,6 +43,7 @@ type CreateOptions struct {
 	MemoryMB    int      // Container memory limit; 0 means unlimited
 	DiskMB      int      // Disk quota; 0 means unlimited. On btrfs a hard qgroup cap
 	Host        string   // Target node; empty means placement picks one (a fork pins its source's)
+	Private     bool     // Reachable only by its owner, collaborators and admins
 }
 
 const (
@@ -332,7 +333,7 @@ func (m *Manager) create(name string, opts *CreateOptions, seed *seedRef) (*stor
 	if host == "" {
 		host = m.placeNode()
 	}
-	app := &store.App{ID: store.NewAppID(), Name: name, Port: port, Host: host, OwnerID: opts.OwnerID, ImageTag: workspace.ImageTag(), UID: workspace.UIDFor(port)}
+	app := &store.App{ID: store.NewAppID(), Name: name, Port: port, Host: host, OwnerID: opts.OwnerID, ImageTag: workspace.ImageTag(), UID: workspace.UIDFor(port), Private: opts.Private}
 
 	// Register the app FIRST and push the mirror before any machine state
 	// exists: the node's orphan reconcile treats unknown ids as leftovers, so

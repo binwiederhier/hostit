@@ -116,6 +116,9 @@ type App struct {
 	Name    string
 	URL     string
 	Running bool // Only running apps are shot; stopped ones keep their last shot
+	// Private apps are never shot: the shot container browses the public URL
+	// with no credentials, so it would photograph the refusal page.
+	Private bool
 }
 
 // bucket is one app's token bucket: bucketCapacity tokens, refilled linearly
@@ -322,6 +325,12 @@ func (m *Manager) Sweep() {
 // enqueue hands an app to the worker without blocking; a full queue drops the
 // request (the next sweep catches up).
 func (m *Manager) enqueue(a App) {
+	// The one place every shot passes through -- the sweep, a debounced change
+	// and a manual refresh all land here -- so a private app is dropped once
+	// rather than in three places that could drift apart.
+	if a.Private {
+		return
+	}
 	select {
 	case m.queue <- a:
 	default:

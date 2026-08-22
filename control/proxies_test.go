@@ -265,3 +265,45 @@ func TestUnsetDiskLimitResolvesToTheEnforcedCap(t *testing.T) {
 	assert.Equal(t, node.DefaultDiskCapMB, desiredState.Apps[0].DiskMB,
 		"and the node is told that number rather than a zero it has to reinterpret")
 }
+
+// The flag has to ride the table for BOTH hostname forms, or a private app
+// stays wide open on its custom domain -- the one URL its owner is most likely
+// to have shared.
+func TestRoutesMarkPrivateAppsOnEveryHostname(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	require.NoError(t, s.apps.Store().AddApp(&store.App{ID: "a1", Name: "blog", Port: 10000, Host: store.HostLocal}))
+	require.NoError(t, s.apps.Store().AddApp(&store.App{ID: "a2", Name: "dash", Port: 10001, Host: store.HostLocal, Private: true}))
+	require.NoError(t, s.apps.Store().AddDomain(&store.Domain{AppName: "dash", Domain: "dash.example.org", Status: store.DomainActive}))
+	require.NoError(t, s.apps.Store().AddDomain(&store.Domain{AppName: "blog", Domain: "blog.example.org", Status: store.DomainActive}))
+
+	table, err := s.Routes()
+	require.NoError(t, err)
+	private := make(map[string]bool, len(table.Routes))
+	for _, r := range table.Routes {
+		private[r.Host] = r.Private
+	}
+	assert.Equal(t, map[string]bool{
+		"blog.apps.example.com": false,
+		"blog.example.org":      false,
+		"dash.apps.example.com": true,
+		"dash.example.org":      true,
+	}, private)
+}
+
+// Flipping the switch has to change the table, or the proxy keeps serving the
+// app publicly from a cached copy until something else happens to bump the
+// sequence -- which is the bug this feature exists to prevent.
+func TestMakingAnAppPrivateBumpsTheRoutingTable(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	require.NoError(t, s.apps.Store().AddApp(&store.App{ID: "a1", Name: "dash", Port: 10000, Host: store.HostLocal}))
+
+	before, err := s.Routes()
+	require.NoError(t, err)
+	require.NoError(t, s.apps.Store().SetAppPrivate("dash", true))
+	after, err := s.Routes()
+	require.NoError(t, err)
+
+	assert.Greater(t, after.Seq, before.Seq, "the table version moved, so proxies will take the new one")
+}

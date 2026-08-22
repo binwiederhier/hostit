@@ -14,28 +14,7 @@ before either is built.
 
 ## Now (next few sessions)
 
-### 1. Private apps: only the owner can reach them
-
-hostit apps are public URLs. That is fine for a blog and wrong for a personal
-dashboard holding a connected Google account -- one URL guess away from being
-someone else's mail reader. **This is the only item on this list that is an
-active exposure rather than a missing feature**, which is why it leads.
-
-**Designed 2026-08-21, ready to build: `plans/260821-private-apps.md`.** The
-four open questions are decided there -- access is owner + collaborators (no
-separate viewer grant, with the tradeoff written down), the proxy asks control
-over the cluster link and caches the verdict (~60s) rather than holding the
-session key, API tokens work alongside browser sessions so webhooks still
-reach a private app, and new apps default to public with the choice visible in
-the create dialog. That file also carries the build order and the four things
-still to settle while building (what a stranger sees, custom domains, where
-the flag rides, and what previews do for a private app).
-
-This is also the companion to the connections work
-(`plans/260819-connections.md`) -- connections are not finished without it --
-but it is worth doing on its own merits first.
-
-### 2. A redirect (alias) domain type
+### 1. A redirect (alias) domain type
 
 Cheapest real win on the list: the design is already settled, it retires
 per-app hacks, and it has a live pain point (moving professornoodle.com onto
@@ -56,7 +35,7 @@ domain), and a check in the proxy that 301s before routing, right next to the
 http->https redirect it already owns. Cert issuance is unchanged (the same
 `_acme-challenge` delegation).
 
-### 3. Finish the shell-path move (a release-sized cleanup, now safe)
+### 2. Finish the shell-path move (a release-sized cleanup, now safe)
 
 VERIFIED SAFE 2026-08-21: **zero** passwd entries still name the old path on
 prod, stage-1 or stage-2, and two releases (v0.17.0, v0.18.0) have shipped
@@ -69,7 +48,7 @@ target to `/usr/lib/hostit/bin`, or app entry breaks. Also drop the sweep
 itself (`unixuser.SweepShellPaths`, called from node startup) once the paths
 are gone. (ARCH-5 in `plans/260820-hostit-review-findings.md`.)
 
-### 4. Secrets that are not in the app's web root
+### 3. Secrets that are not in the app's web root
 
 `env:` values live in `hostit.yml`, which sits in the app's home and is served
 if someone points a web server at the wrong directory. A real secret store (or
@@ -85,7 +64,7 @@ that twice would be a mistake.
 
 ## Next (decide, then build)
 
-### 5. Decide the credential-brokering shape
+### 4. Decide the credential-brokering shape
 
 The decision is cheap and unblocks two other items (#6 capabilities and #10 the
 outside-in MCP server, which must not invent a second auth story). Building
@@ -114,7 +93,7 @@ Questions hostit owns regardless of shape: what encrypts a stored credential at
 rest, how control decides which nodes need a push and when a node purges one,
 and whose credential a collaborator-shared app uses.
 
-### 6. App capabilities: credentials an app uses but never holds
+### 5. App capabilities: credentials an app uses but never holds
 
 Blocked on #5. People want to build apps that use AI. Putting an API key in the
 app's environment makes the tenant pay, makes the key a thing that leaks into a
@@ -145,7 +124,7 @@ difference between a small feature and a real one), and are owner-provided
 credentials (GitHub, needing profile-level OAuth) in scope or is v1
 operator-provided AI only.
 
-### 7. Dev/stage -> promote to prod (the "we work in prod" problem)
+### 6. Dev/stage -> promote to prod (the "we work in prod" problem)
 
 The biggest missing *feature*, and the one with the largest design surface --
 which is why it sits below the decision above rather than competing with it.
@@ -165,7 +144,7 @@ assistant all need deciding up front.
 
 ## Soon (small, self-contained)
 
-### 8. MCP bridge: return images as image content
+### 7. MCP bridge: return images as image content
 
 `read_file` returns text, so an image read through it is byte salad -- which is
 why attached images ride the sandbox's stdin as blocks (the 2026-08-21 fix)
@@ -177,14 +156,14 @@ current message. Composes with the stdin path, does not replace it: an attached
 image should be unconditionally visible, not contingent on a tool call.
 Touches appcli's mcp server and the sandbox's tool-result parsing.
 
-### 9. Log following
+### 8. Log following
 
 `GET /api/apps/{app}/logs?lines=N` is a snapshot. An agent watching a slow
 start has to poll. SSE or a websocket tail would fix it; note the node relay
 (control does not hold the logs) is the interesting part, and the terminal's
 existing duplex stream over the cluster link is the precedent.
 
-### 10. An MCP server people can actually point an agent at
+### 9. An MCP server people can actually point an agent at
 
 Check against #5 first -- this is an agent calling IN where the capability work
 is an app calling OUT, and they must not invent two auth stories. The broker
@@ -205,7 +184,7 @@ tool argument); stdio for a local binary vs streamable HTTP so there is nothing
 to install; and whether the tool set is literally `assistant/tools.go:ToolDefs`
 reused, which would keep the two surfaces from drifting.
 
-### 11. Long jobs
+### 10. Long jobs
 
 `POST /api/apps/{app}/run` is bounded at five minutes, so a first `npm install`
 on a small box can outlast it. Anything longer has to become a `prepare:` step,
@@ -214,7 +193,7 @@ the honest fix.
 
 ## Later (real, but not now)
 
-### 12. Move the screenshot and assistant containers to the nodes
+### 11. Move the screenshot and assistant containers to the nodes
 
 Both of control's remaining podman users are machine-shaped work sitting in
 the wrong process: the **screenshot previews** run a chrome container (plus an
@@ -250,7 +229,7 @@ Shape, once decided:
 Real hardening, but it buys defense-in-depth rather than closing an open hole,
 which is why it sits here rather than in the Now tier.
 
-### 13. Review follow-ups (2026-08-20)
+### 12. Review follow-ups (2026-08-20)
 
 From `plans/260820-hostit-review-findings.md`, all LOW/accepted:
 
@@ -272,7 +251,7 @@ creates can overshoot a pool by one app's allocation. Accepted -- it
 self-corrects on the next edit and cannot run away -- but an owner-scoped lock
 is the fix if it ever matters.
 
-### 14. Could a static app skip the container entirely?
+### 13. Could a static app skip the container entirely?
 
 Today every app gets a container, a unix user, a subvolume and a systemd unit,
 even one that is just files on disk. `mode: static` is already served by hostit
@@ -287,7 +266,7 @@ until something asks for one.
 Speculative: measure the actual cost of an idle static app's container before
 designing anything.
 
-### 15. hostit-node hangs on stop -- REPRODUCE BEFORE CHASING
+### 14. hostit-node hangs on stop -- REPRODUCE BEFORE CHASING
 
 Seen once (2026-08-16); has not recurred through many deploys since, and the
 shutdown path changed (the signal handler closes the live connection). If it
@@ -401,6 +380,21 @@ Kept briefly so they are not re-proposed; delete after a few weeks.
 ## Done (recent)
 
 Kept briefly for context; prune when stale. Everything older is in CHANGELOG.md.
+
+- **Private apps (2026-08-21).** An app can be reachable only by its owner, its
+  collaborators and admins, chosen at creation or flipped in Settings, and it
+  holds on every hostname the app answers to (custom domains included). The
+  design in `plans/260821-private-apps.md` had to change during the build: it
+  assumed the proxy could ask control about the visitor's SESSION, but the
+  session cookie is `__Host-` prefixed and a browser never sends it to an app
+  subdomain, so there was nothing to ask about. Instead the visitor bounces once
+  through the web app, where the session does apply, and comes back with a
+  signed per-app grant; the grant asserts identity only, so every request
+  re-checks live access and revocation is immediate. The grant is stripped
+  before the request reaches the app. `proxyapi.Route` gained `Private` and the
+  proxy hands those requests to control (the same fallthrough an unknown
+  hostname takes), so no session handling entered the data plane. Previews are
+  skipped for private apps rather than given a bypass.
 
 - **Per-app resources and per-user pools (2026-08-21, v0.18.0).** Owners edit
   their apps' RAM and disk within a per-user pool (admins set pools, the pool

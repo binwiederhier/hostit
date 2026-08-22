@@ -19,6 +19,12 @@ func (s *Server) handleGoogleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	state := randomToken()
 	http.SetCookie(w, s.cookie(s.cookieName(stateCookieName), state, int(oauthTimeout.Seconds()*40)))
+	// Where to land afterwards, when the visitor was on their way somewhere --
+	// a private app sends them here to sign in first. localPath keeps it on this
+	// host: /auth/google is a plain GET, so the target is attacker-supplied.
+	if next := r.URL.Query().Get(nextParam); next != "" {
+		http.SetCookie(w, s.cookie(s.cookieName(nextCookieName), localPath(next), int(oauthTimeout.Seconds()*40)))
+	}
 	params := url.Values{
 		"client_id":     {s.config.GoogleClientID},
 		"redirect_uri":  {s.config.RedirectURL(hostOnly(r.Host))},
@@ -68,7 +74,8 @@ func (s *Server) handleGoogleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 	http.SetCookie(w, s.cookie(s.cookieName(sessionCookieName), value, int(sessionTTL.Seconds())))
 	http.SetCookie(w, s.cookie(s.cookieName(stateCookieName), "", -1))
-	http.Redirect(w, r, "/", http.StatusFound)
+	http.SetCookie(w, s.cookie(s.cookieName(nextCookieName), "", -1))
+	http.Redirect(w, r, s.afterLogin(r), http.StatusFound)
 }
 
 // handleBreakglass mints a normal session cookie for a user, authorized by the
@@ -115,4 +122,14 @@ func (s *Server) handleBreakglass(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleLogout(w http.ResponseWriter, _ *http.Request) {
 	http.SetCookie(w, s.cookie(s.cookieName(sessionCookieName), "", -1))
 	writeJSON(w, http.StatusOK, &apiMessageResponse{Message: "logged out"})
+}
+
+// afterLogin is where a finished login lands: back where the visitor was
+// headed if they were sent here from somewhere, otherwise the dashboard.
+func (s *Server) afterLogin(r *http.Request) string {
+	cookie, err := r.Cookie(s.cookieName(nextCookieName))
+	if err != nil || cookie.Value == "" {
+		return "/"
+	}
+	return localPath(cookie.Value)
 }

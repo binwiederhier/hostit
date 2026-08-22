@@ -56,9 +56,12 @@ type Server struct {
 	// identity resolver can be verified.
 	claudeSandbox *assistant.Sandbox
 	sessions      *sessionManager
-	api           http.Handler
-	socket        http.Handler
-	proxy         http.Handler
+	// grants signs the per-app credential a private app's visitor carries on the
+	// app's own hostname, where the session cookie does not reach (appaccess.go).
+	grants *grantManager
+	api    http.Handler
+	socket http.Handler
+	proxy  http.Handler
 
 	// usernameForUID maps a peer-credential UID to a username; overridden in tests
 	usernameForUID func(uid int) (string, error)
@@ -113,6 +116,7 @@ func New(conf *controlconf.Config, apps *Manager, users *user.Manager) *Server {
 		node:           apps.NodeAgent(),
 		users:          users,
 		sessions:       newSessionManager(conf.SessionKey),
+		grants:         newGrantManager(conf.SessionKey),
 		usernameForUID: usernameForUID,
 		proxies:        NewProxyRegistry(),
 	}
@@ -489,6 +493,7 @@ func (s *Server) appResponse(a *store.App, customDomain string) *apiAppResponse 
 		Description:    s.apps.Description(a.Name),
 		Snapshot:       s.snapshotConfigFor(a.Name),
 		Archived:       a.Archived,
+		Private:        a.Private,
 		CreatedAt:      a.CreatedAt,
 		LimitOverrides: apiLimitOverrides{MemoryMB: a.MemoryLimitMB, DiskMB: a.DiskLimitMB, CPUMilli: a.CPUMilli},
 		SSH: apiSSHInfo{

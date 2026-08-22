@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { api, isNetworkError } from "../api";
 import { useReconnect } from "../hooks";
-import { ErrorBanner, Loading, Wordmark, pairMB, UsagePair, usageLevel } from "../components";
+import { ErrorBanner, Loading, PrivatePill, VisibilityChoice, Wordmark, pairMB, UsagePair, usageLevel } from "../components";
 import { previewSrc, previewShotSrc, previewScale, DESKTOP_WIDTH, DESKTOP_HEIGHT } from "../preview";
 
 // Same rule the server enforces (app.AppNamePattern)
@@ -43,7 +43,7 @@ const CreateForm = ({ name, setName, onSubmit, creating, atLimit, big = false, i
 // New app behind a modal, reached from the "New app" button. A dialog asks for
 // the one thing needed -- the name -- instead of a field unfolding in place,
 // which read as an odd half-state next to the app list.
-const NewAppDialog = ({ name, setName, onSubmit, creating, atLimit, onCancel }) => {
+const NewAppDialog = ({ name, setName, onSubmit, creating, atLimit, onCancel, isPrivate, setPrivate }) => {
   const valid = nameRe.test(name);
   const host = window.location.host;
   const sub = (name || "").replace(/[^a-z0-9-]/g, "") || "app";
@@ -78,6 +78,8 @@ const NewAppDialog = ({ name, setName, onSubmit, creating, atLimit, onCancel }) 
           </div>
         </div>
         <p className="hint">{nameHint}</p>
+        <label className="newapp-label">Visibility</label>
+        <VisibilityChoice value={isPrivate} onChange={setPrivate} disabled={creating} />
         <div className="btn-row">
           <button type="button" className="btn" onClick={onCancel} disabled={creating}>
             Cancel
@@ -210,6 +212,7 @@ const AppCard = ({ app, onToast }) => {
           <span className="appcard-dot" />
           {status}
         </span>
+        {app.private && <PrivatePill />}
         {canRefresh && (
           <button type="button" className="appcard-refresh" onClick={refreshShot} title="Queue a new screenshot" aria-label="Queue a new screenshot">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -331,6 +334,7 @@ const AppRow = ({ app }) => {
           <span className="appcard-dot" />
           {status}
         </span>
+        {app.private && <PrivatePill />}
       </td>
       <td className="applist-desc">{app.description || <span className="appcard-nodesc">--</span>}</td>
       <td className="applist-num">{running ? `${app.cpu_percent || 0}%` : "--"}</td>
@@ -413,6 +417,7 @@ const Dashboard = ({ account, refreshAccount }) => {
   const [name, setName] = useState("");
   const [creating, setCreating] = useState(false);
   const [adding, setAdding] = useState(false);
+  const [isPrivate, setPrivate] = useState(false);
   const [toast, setToast] = useState("");
   const [view, setView] = useState(readView);
   const [showArchived, setShowArchived] = useState(readShowArchived);
@@ -490,8 +495,9 @@ const Dashboard = ({ account, refreshAccount }) => {
     setCreating(true);
     setError("");
     try {
-      const res = await api.post("/api/apps", { name });
+      const res = await api.post("/api/apps", { name, private: isPrivate });
       setName("");
+      setPrivate(false);
       setAdding(false);
       refreshAccount();
       navigate(`/app/${res.name}`);
@@ -505,6 +511,7 @@ const Dashboard = ({ account, refreshAccount }) => {
   const cancelAdding = () => {
     setAdding(false);
     setName("");
+    setPrivate(false);
   };
 
   const formProps = { name, setName, onSubmit: create, creating, atLimit, inputRef };
@@ -591,7 +598,7 @@ const Dashboard = ({ account, refreshAccount }) => {
         </>
       )}
       {adding && (
-        <NewAppDialog name={name} setName={setName} onSubmit={create} creating={creating} atLimit={atLimit} onCancel={cancelAdding} />
+        <NewAppDialog name={name} setName={setName} onSubmit={create} creating={creating} atLimit={atLimit} onCancel={cancelAdding} isPrivate={isPrivate} setPrivate={setPrivate} />
       )}
       {toast && (
         <div className="snackbar" role="status" aria-live="polite">

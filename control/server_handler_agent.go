@@ -380,6 +380,7 @@ func (s *Server) agentGuide(appName, description string) *apiAgentInfoResponse {
 			{Method: "POST", Path: "" + appsPath(name) + "/start|stop|restart", What: "The run: command: start, stop, or restart it (fast; container stays up)"},
 			{Method: "POST", Path: "" + appsPath(name) + "/poweron|poweroff|reboot", What: "The container: power it on, off, or reboot it"},
 			{Method: "POST", Path: "" + appsPath(name) + "/archive|unarchive", What: "Shelve the app (powered off, refuses to run, takes no new snapshots) or bring it back"},
+			{Method: "PUT", Path: "" + appsPath(name) + "/visibility", What: `Who may open the app's URL: {"private": true} restricts it to the owner, its collaborators and admins; {"private": false} publishes it. Owner only`},
 		},
 		Notes: []string{
 			"Apps also accept SSH: the owner's SSH keys work, and you can scp/rsync into the app's home directory.",

@@ -996,8 +996,11 @@ a:focus-visible {
   margin: 8px 0 0;
 }
 
+/* An empty state is a muted aside in the same register as .hint, and often sits
+   directly below one -- at body size it read as the largest text in the card. */
 .empty {
   color: var(--muted);
+  font-size: 13px;
   margin: 6px 0;
 }
 
@@ -1480,6 +1483,74 @@ th:last-child {
   background: var(--warn-bg);
   color: var(--text);
   border: 1px solid var(--warn-border);
+}
+
+/* The public/private choice, in the create dialog and in Settings. Both options
+   stay on screen and the chosen one is filled in, so the setting reads as a
+   deliberate pick rather than a checkbox somebody left alone. */
+.visibility-choice {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.vis-option {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-areas: "icon title" "icon detail";
+  gap: 0 10px;
+  align-items: center;
+  text-align: left;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.vis-option:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+.vis-option:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.vis-option svg {
+  grid-area: icon;
+  width: 20px;
+  height: 20px;
+  color: var(--muted);
+}
+
+.vis-option-on {
+  border-color: var(--accent);
+  background: var(--surface-2);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.vis-option-on svg {
+  color: var(--accent);
+}
+
+.vis-title {
+  grid-area: title;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.vis-detail {
+  grid-area: detail;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+@media (max-width: 520px) {
+  .visibility-choice {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 /* Item lists (SSH keys) */
@@ -5586,4 +5657,21 @@ input[type="number"]::-webkit-inner-spin-button {
 }
 .settings-field-stacked textarea {
   width: 100%;
+}
+
+/* The "private" marker next to an app's status, on cards and rows alike. */
+.private-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--muted);
+  background: var(--surface-2);
+  border-radius: 999px;
+  padding: 1px 9px 1px 7px;
+}
+
+.private-pill svg {
+  width: 12px;
+  height: 12px;
 }

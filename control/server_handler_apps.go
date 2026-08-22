@@ -48,6 +48,7 @@ func (s *Server) handleAppsCreate(w http.ResponseWriter, r *http.Request, c *cal
 		ProfileKeys: profileKeys,
 		MemoryMB:    memoryMB,
 		DiskMB:      diskMB,
+		Private:     req.Private,
 	}
 	a, err := s.apps.CreateApp(req.Name, opts)
 	if err != nil {

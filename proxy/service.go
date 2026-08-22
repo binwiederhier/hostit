@@ -146,6 +146,12 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	host := hostOnly(r.Host)
 	for _, route := range p.table.Load().(*proxyapi.Table).Routes {
 		if route.Host == host {
+			// A private app is gated where identity is understood. This is the
+			// same fallthrough an unknown hostname takes, so the data plane
+			// stays free of session handling entirely.
+			if route.Private {
+				break
+			}
 			target := route.Target
 			rp := &httputil.ReverseProxy{
 				Rewrite: func(pr *httputil.ProxyRequest) {

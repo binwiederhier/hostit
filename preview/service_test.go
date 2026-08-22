@@ -397,3 +397,19 @@ func TestShotSkipsAnAppThatIsNotServing(t *testing.T) {
 	time.Sleep(200 * time.Millisecond)
 	assert.Zero(t, runner.shots(), "no chrome is started for an app that cannot be reached")
 }
+
+// A private app must not be photographed. The shot container browses the app
+// over its public URL with no credentials, so it would capture the refusal
+// page and publish that as the app's card -- and any bypass built to avoid
+// that would be a screenshot path that ignores the gate, which is precisely
+// what private apps exist to prevent.
+func TestPrivateAppsAreNeverShot(t *testing.T) {
+	t.Parallel()
+	m := newTestManager(t, &fakeRunner{}, nil)
+
+	m.enqueue(App{ID: "a1", Name: "dash", URL: "https://dash.example.com", Running: true, Private: true})
+	assert.Empty(t, m.queue, "a private app is dropped before it reaches the worker")
+
+	m.enqueue(App{ID: "a2", Name: "blog", URL: "https://blog.example.com", Running: true})
+	assert.Len(t, m.queue, 1, "a public app still gets shot")
+}
