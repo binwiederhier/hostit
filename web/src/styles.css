@@ -3093,15 +3093,8 @@ a.ws-open {
   }
 }
 
-/* Live resources: a compact inline row of stats beside the buttons. Each has a
-   level-coloured dot + thin bar (green/amber/red by load); the value is the
-   percent, with the exact used/total in the hover tooltip. */
-.ws-resources {
-  display: flex;
-  align-items: flex-start;
-  gap: 16px;
-  flex-wrap: wrap;
-}
+/* (.ws-resources itself is defined once, further down, with the icon-pair row
+   the header actually renders.) */
 .res {
   display: flex;
   flex-direction: column;
@@ -3305,8 +3298,13 @@ body.ws-resizing iframe {
   /* Small screens are for building, not previewing: hide the live resources and
      the preview and give the whole workspace to the chat. The preview iframe
      stays in the DOM (just hidden), so a deploy/refresh still resolves cleanly
-     without a visible pane. */
-  .ws-resources {
+     without a visible pane.
+
+     Scoped to .ws-topright deliberately: .ws-resources is styled again later in
+     this file, and a bare class here loses to it on source order alone. That is
+     not hypothetical -- it is how the stats came back at phone widths and sat
+     on top of the Settings tab. */
+  .ws-topright .ws-resources {
     display: none;
   }
   .ws-right {
