@@ -93,3 +93,67 @@ func TestAStrangerCannotChangeVisibility(t *testing.T) {
 	rr := request(t, s.API(), "PUT", "/api/apps/dash/visibility", `{"private":true}`, token)
 	assert.Equal(t, http.StatusNotFound, rr.Code)
 }
+
+// The viewer surface is deliberately thinner than the collaborator one: it
+// grants sight of the app and no way into it.
+func TestViewersAreManagedByTheOwner(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	owner := newActiveTestUser(t, s, "owner@example.com")
+	guest := newActiveTestUser(t, s, "guest@example.com")
+	require.NoError(t, s.apps.Store().AddApp(&store.App{ID: "a1", Name: "dash", Port: 10000, Host: store.HostLocal, OwnerID: owner.ID, Private: true}))
+	ownerToken, _, err := s.users.CreateToken(owner.ID, "laptop")
+	require.NoError(t, err)
+
+	rr := request(t, s.API(), "POST", "/api/apps/dash/viewers", `{"email":"guest@example.com"}`, ownerToken)
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+	assert.True(t, s.apps.Store().IsAppViewer("a1", guest.ID))
+
+	rr = request(t, s.API(), "GET", "/api/apps/dash/viewers", "", ownerToken)
+	require.Equal(t, http.StatusOK, rr.Code)
+	assert.Contains(t, rr.Body.String(), "guest@example.com")
+
+	rr = request(t, s.API(), "DELETE", "/api/apps/dash/viewers/"+guest.ID, "", ownerToken)
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+	assert.False(t, s.apps.Store().IsAppViewer("a1", guest.ID))
+}
+
+// A collaborator can already open the app, so a viewer row on top would be a
+// grant that changes nothing while looking like it does something.
+func TestACollaboratorCannotAlsoBeAddedAsAViewer(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	owner := newActiveTestUser(t, s, "owner@example.com")
+	friend := newActiveTestUser(t, s, "friend@example.com")
+	require.NoError(t, s.apps.Store().AddApp(&store.App{ID: "a1", Name: "dash", Port: 10000, Host: store.HostLocal, OwnerID: owner.ID, Private: true}))
+	require.NoError(t, s.apps.Store().AddAppCollaborator("a1", friend.ID))
+	ownerToken, _, err := s.users.CreateToken(owner.ID, "laptop")
+	require.NoError(t, err)
+
+	rr := request(t, s.API(), "POST", "/api/apps/dash/viewers", `{"email":"friend@example.com"}`, ownerToken)
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+	assert.Contains(t, rr.Body.String(), "already a collaborator")
+}
+
+// Being able to see an app is not being able to work on it: a viewer gets no
+// API access at all, so the app's files and terminal stay out of reach.
+func TestAViewerGetsNoAPIAccess(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	owner := newActiveTestUser(t, s, "owner@example.com")
+	guest := newActiveTestUser(t, s, "guest@example.com")
+	require.NoError(t, s.apps.Store().AddApp(&store.App{ID: "a1", Name: "dash", Port: 10000, Host: store.HostLocal, OwnerID: owner.ID, Private: true}))
+	require.NoError(t, s.apps.Store().AddAppViewer("a1", guest.ID))
+	guestToken, _, err := s.users.CreateToken(guest.ID, "laptop")
+	require.NoError(t, err)
+
+	assert.Equal(t, http.StatusNotFound, request(t, s.API(), "GET", "/api/apps/dash", "", guestToken).Code)
+	assert.Equal(t, http.StatusNotFound, request(t, s.API(), "GET", "/api/apps/dash/viewers", "", guestToken).Code)
+	assert.Equal(t, http.StatusNotFound, request(t, s.API(), "PUT", "/api/apps/dash/visibility", `{"private":false}`, guestToken).Code)
+
+	// And the app does not turn up in their dashboard: a view grant is a URL
+	// they can open, not a workspace they own.
+	rr := request(t, s.API(), "GET", "/api/apps", "", guestToken)
+	require.Equal(t, http.StatusOK, rr.Code)
+	assert.NotContains(t, rr.Body.String(), `"dash"`)
+}

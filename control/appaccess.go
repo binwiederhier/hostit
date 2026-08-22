@@ -44,14 +44,20 @@ const (
 	// appAccessPath mints a grant. It lives on the WEB hostname, which is the
 	// whole point: that is where the session cookie applies.
 	appAccessPath = "/auth/app"
-	// appGrantPath receives a minted grant on the APP's hostname and turns it
-	// into a cookie.
-	appGrantPath = "/__hostit/grant"
-	// grantedParam marks the one hop back from appGrantPath, so a browser that
-	// refuses the cookie gets a 404 instead of an endless bounce.
-	grantedParam = "hostit_granted"
-	appParam     = "app"
-	returnParam  = "to"
+	// The three endpoints hostit answers for on a PRIVATE app's own hostname.
+	// They are intercepted before the request reaches the app, so they are the
+	// one place its URL space is not entirely the app's own.
+	appAuthPath    = "/hostit/auth"    // start the sign-in bounce by hand
+	appGrantedPath = "/hostit/granted" // take delivery of a grant, then move on
+	appLogoutPath  = "/hostit/logout"  // drop the grant for this one app
+	// loopCookieName catches a browser that will not keep the grant cookie. It
+	// is set on the WEB host, where cookies demonstrably work (the session is
+	// there), so it is a reliable place to notice that the last mint did not
+	// take -- and it keeps the marker out of the app's URL.
+	loopCookieName = "hostit_minting"
+	loopWindow     = 15 * time.Second
+	appParam       = "app"
+	returnParam    = "to"
 	// nextParam tells the login where to send the visitor afterwards.
 	nextParam  = "next"
 	grantParam = "g"
@@ -130,7 +136,13 @@ func (s *Server) mayViewApp(c *caller, a *store.App) bool {
 	if c.user == nil || !c.isActive() {
 		return false
 	}
-	return c.isAdmin() || a.OwnerID == c.user.ID || s.apps.Store().IsAppCollaborator(a.ID, c.user.ID)
+	if c.isAdmin() || a.OwnerID == c.user.ID {
+		return true
+	}
+	// Either grant is enough to look at the app. A collaborator can deploy to
+	// it and SSH in, so viewing is the least of what they may already do; the
+	// separate viewer grant is for people who should ONLY look.
+	return s.apps.Store().IsAppCollaborator(a.ID, c.user.ID) || s.apps.Store().IsAppViewer(a.ID, c.user.ID)
 }
 
 // allowPrivateRequest decides whether a request for a private app may proceed.
@@ -140,9 +152,15 @@ func (s *Server) mayViewApp(c *caller, a *store.App) bool {
 // announced itself with a 403 would be the one case where guessing a hostname
 // tells you something (see errorpage.go).
 func (s *Server) allowPrivateRequest(w http.ResponseWriter, r *http.Request, a *store.App) bool {
-	// The hop back from the web app, carrying a freshly minted grant.
-	if r.URL.Path == appGrantPath {
-		s.handleAppGrant(w, r, a)
+	switch r.URL.Path {
+	case appGrantedPath: // the hop back from the web app, carrying a grant
+		s.handleAppGranted(w, r, a)
+		return false
+	case appLogoutPath:
+		s.handleAppLogout(w, r)
+		return false
+	case appAuthPath: // "sign me in here", for a visitor who wants to ask
+		http.Redirect(w, r, s.appAccessURL(a.Name, r), http.StatusFound)
 		return false
 	}
 	// A token-authenticated caller needs no browser dance: webhooks, scripts and
@@ -160,10 +178,11 @@ func (s *Server) allowPrivateRequest(w http.ResponseWriter, r *http.Request, a *
 	if c, ok := s.callerFromGrant(r, a); ok && s.mayViewApp(c, a) {
 		return true
 	}
-	// A page load gets one bounce through the web app to pick up a grant.
-	// Anything else -- an XHR, a POST, or a return trip that already failed to
-	// keep the cookie -- fails closed rather than looping.
-	if isNavigation(r) && !r.URL.Query().Has(grantedParam) {
+	// A page load bounces through the web app to pick up a grant. Anything else
+	// -- an XHR, a POST -- fails closed rather than being handed an HTML page
+	// where it expected data. (A browser that will not keep the grant is caught
+	// at the mint end, so this cannot loop.)
+	if isNavigation(r) {
 		http.Redirect(w, r, s.appAccessURL(a.Name, r), http.StatusFound)
 		return false
 	}
@@ -189,17 +208,27 @@ func (s *Server) callerFromGrant(r *http.Request, a *store.App) (*caller, bool) 
 	return &caller{user: u, viaCookie: true}, true
 }
 
-// handleAppGrant runs on the APP's hostname: it verifies a grant minted by the
-// web app, stores it as a cookie scoped to this host, and sends the visitor on
-// to what they originally asked for.
-func (s *Server) handleAppGrant(w http.ResponseWriter, r *http.Request, a *store.App) {
+// handleAppGranted runs on the APP's hostname: it verifies a grant minted by
+// the web app, stores it as a cookie scoped to this host, and sends the visitor
+// on to what they originally asked for -- with nothing left in the URL to show
+// for it.
+func (s *Server) handleAppGranted(w http.ResponseWriter, r *http.Request, a *store.App) {
 	app, _, err := s.grants.decode(r.URL.Query().Get(grantParam))
 	if err != nil || app != a.Name {
 		s.writeNothingHerePage(w)
 		return
 	}
 	http.SetCookie(w, s.cookie(s.cookieName(appGrantCookieName), r.URL.Query().Get(grantParam), int(appGrantTTL.Seconds())))
-	http.Redirect(w, r, withParam(localPath(r.URL.Query().Get(returnParam)), grantedParam, "1"), http.StatusFound)
+	http.Redirect(w, r, localPath(r.URL.Query().Get(returnParam)), http.StatusFound)
+}
+
+// handleAppLogout drops the grant for this one app. It lands on the web app
+// rather than back here, because the hostit session is untouched: returning to
+// the app would silently mint a new grant and make the logout look broken.
+// Signing out of hostit itself is the web app's logout.
+func (s *Server) handleAppLogout(w http.ResponseWriter, r *http.Request) {
+	http.SetCookie(w, s.cookie(s.cookieName(appGrantCookieName), "", -1))
+	http.Redirect(w, r, (&url.URL{Scheme: s.scheme(), Host: s.config.APIHostname()}).String()+"/", http.StatusFound)
 }
 
 // handleAppAccess runs on the WEB hostname, where the session cookie applies:
@@ -242,13 +271,21 @@ func (s *Server) handleAppAccess(w http.ResponseWriter, r *http.Request) {
 		s.writeNothingHerePage(w)
 		return
 	}
+	// If we minted a grant for this app moments ago and the visitor is back
+	// asking for another, their browser is not keeping it. Stop, rather than
+	// bounce them between the two hostnames until the browser gives up.
+	if cookie, err := r.Cookie(s.cookieName(loopCookieName)); err == nil && cookie.Value == a.Name {
+		s.writeNothingHerePage(w)
+		return
+	}
 	grant, err := s.grants.encode(a.Name, c.userID())
 	if err != nil {
 		s.writeNothingHerePage(w)
 		return
 	}
+	http.SetCookie(w, s.cookie(s.cookieName(loopCookieName), a.Name, int(loopWindow.Seconds())))
 	query := url.Values{grantParam: {grant}, returnParam: {back.RequestURI()}}
-	http.Redirect(w, r, (&url.URL{Scheme: back.Scheme, Host: back.Host, Path: appGrantPath, RawQuery: query.Encode()}).String(), http.StatusFound)
+	http.Redirect(w, r, (&url.URL{Scheme: back.Scheme, Host: back.Host, Path: appGrantedPath, RawQuery: query.Encode()}).String(), http.StatusFound)
 }
 
 // appReturnURL validates that a return URL really is one of the app's own
@@ -331,16 +368,4 @@ func localPath(target string) string {
 		return "/"
 	}
 	return target
-}
-
-// withParam appends a query parameter to a path that may already have some.
-func withParam(target, key, value string) string {
-	u, err := url.Parse(target)
-	if err != nil {
-		return target
-	}
-	query := u.Query()
-	query.Set(key, value)
-	u.RawQuery = query.Encode()
-	return u.String()
 }

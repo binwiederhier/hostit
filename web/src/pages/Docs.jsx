@@ -479,12 +479,33 @@ const VisibilityPage = () => (
       https://&lt;name&gt;.{baseDomain}/</span>. Your account token works for any
       app you can reach, and the app&apos;s own scoped token works for that app.
     </p>
-    <h3>Two things to know</h3>
+    <h3>Letting other people in</h3>
     <p>
-      Collaborators on a private app can also deploy to it, edit its files and
-      SSH in -- sharing is a full grant, not a view-only one. And no screenshots
-      are taken of a private app, so its dashboard card shows a placeholder
-      rather than a picture.
+      Two different grants, and the difference is the point. A{" "}
+      <strong>collaborator</strong> can deploy, edit files, use the terminal and
+      SSH in -- and can therefore open the app too. Someone with{" "}
+      <strong>access</strong> can only open the app&apos;s URL: no files, no
+      terminal, no deploys, and it does not appear on their dashboard. Add
+      those under Settings -&gt; Visibility, by the email of an existing
+      account.
+    </p>
+    <p>
+      An app with people on that list reads as <strong>Restricted</strong>{" "}
+      rather than Private. It is the same setting -- just a way to tell &quot;only
+      me&quot; from &quot;me and two others&quot; at a glance.
+    </p>
+    <h3>Signing out of one app</h3>
+    <p>
+      Opening <span className="mono">/hostit/logout</span> on the app&apos;s own
+      hostname drops the credential for that app and returns you here. Your
+      hostit session is untouched, so opening the app again lets you straight
+      back in; to leave properly, sign out of hostit itself.{" "}
+      <span className="mono">/hostit/auth</span> is the other direction -- it
+      asks for access without waiting to be refused first.
+    </p>
+    <p>
+      One thing to know: no screenshots are taken of a private app, so its
+      dashboard card shows a placeholder rather than a picture.
     </p>
   </>
 );

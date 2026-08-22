@@ -200,15 +200,49 @@ export const VisibilityChoice = ({ value, onChange, disabled }) => (
   </div>
 );
 
-// A private app says so wherever it is listed. Without it the only way to tell
-// is to open Settings, and "is this thing actually private?" is a question
-// people ask about the app they just locked down.
-export const PrivatePill = () => (
-  <span className="private-pill" title="Only you, your collaborators and admins can open this app">
-    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <rect x="3" y="7" width="10" height="7" rx="1.5" />
-      <path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" />
-    </svg>
-    private
+// The three visibility states, in one vocabulary shared by the badge, the
+// chooser and the settings row. "Restricted" is not a fourth setting: it is
+// what private looks like once somebody else has been let in, so the reader
+// can tell "only me" from "me and two others" at a glance.
+export const visibilityOf = (isPrivate, viewerCount = 0) => {
+  if (!isPrivate) return "public";
+  return viewerCount > 0 ? "restricted" : "private";
+};
+
+const VISIBILITY = {
+  public: { label: "Public", hint: "Anyone with the link can open this app" },
+  private: { label: "Private", hint: "Only you, your collaborators and admins can open this app" },
+  restricted: { label: "Restricted", hint: "Your collaborators, the people you have given access, and admins" },
+};
+
+const GlobeIcon = () => <path d="M8 1.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13ZM1.5 8h13M8 1.5c1.7 1.8 2.6 4 2.6 6.5S9.7 12.7 8 14.5c-1.7-1.8-2.6-4-2.6-6.5S6.3 3.3 8 1.5Z" />;
+const LockIcon = () => (
+  <>
+    <rect x="3" y="7" width="10" height="7" rx="1.5" />
+    <path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" />
+  </>
+);
+const PeopleIcon = () => (
+  <>
+    <circle cx="6" cy="5.5" r="2.2" />
+    <path d="M2 13.5c0-2.2 1.8-3.5 4-3.5s4 1.3 4 3.5" />
+    <path d="M11 4.2a2.2 2.2 0 0 1 0 4.3M12.2 13.5c0-1.6-.6-2.7-1.7-3.3" />
+  </>
+);
+
+export const VisibilityIcon = ({ state }) => (
+  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    {state === "public" ? <GlobeIcon /> : state === "restricted" ? <PeopleIcon /> : <LockIcon />}
+  </svg>
+);
+
+// An app's visibility, wherever it is listed. It says "public" too: leaving
+// the common case unlabelled makes the label mean "something unusual here"
+// rather than "this is the setting", which is the wrong thing to learn about
+// a control you are about to change.
+export const VisibilityBadge = ({ state }) => (
+  <span className={"vis-badge vis-badge-" + state} title={VISIBILITY[state].hint}>
+    <VisibilityIcon state={state} />
+    {VISIBILITY[state].label}
   </span>
 );

@@ -4,7 +4,7 @@ import { api, ApiError, isNetworkError } from "../api";
 import { viewFromSlug, VIEW_TO_SLUG } from "../views";
 import { limitInputs, limitsPatchBody } from "../limits";
 import { useReconnect } from "../hooks";
-import { CopyButton, ErrorBanner, Loading, PrivatePill, Snippet, StatusDot, VisibilityChoice, pairMB, usageLevel, UsagePair, cores } from "../components";
+import { CopyButton, ErrorBanner, Loading, Snippet, StatusDot, VisibilityBadge, VisibilityChoice, pairMB, usageLevel, UsagePair, cores, visibilityOf } from "../components";
 import { useSetAppHeader } from "../appHeader";
 
 // xterm is heavy and only needed when a terminal is actually opened, so it is
@@ -882,6 +882,78 @@ const SnapshotIntervalSelect = ({ value, defaultLabel, onChange }) => {
 // ResourcesDialog edits the app's resource allocation: RAM and disk within
 // the owner's pool (the server enforces the pool; the dialog shows the
 // budget), CPU admin-set. Empty fields inherit the account defaults.
+// Who can see the app, in one place: the setting itself, and -- once it is
+// private -- the list of people let in. They belong together because "private"
+// and "who else" are one decision made in one sitting; splitting them across
+// two sections is how an app ends up private with nobody able to open it.
+const VisibilityDialog = ({ app, isPrivate, viewers, collabs, busy, onSetPrivate, onAddViewer, onRemoveViewer, onClose }) => {
+  useEscape(onClose);
+  const [email, setEmail] = useState("");
+  const submit = async (e) => {
+    e.preventDefault();
+    const address = email.trim().toLowerCase();
+    if (!address) return;
+    await onAddViewer(address);
+    setEmail("");
+  };
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true" onMouseDown={onClose}>
+      <div className="card modal modal-sheet" onMouseDown={(e) => e.stopPropagation()}>
+        <button type="button" className="modal-x" onClick={onClose} title="Close" aria-label="Close">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
+        </button>
+        <h2>Who can see {app.name}?</h2>
+        <VisibilityChoice value={isPrivate} onChange={onSetPrivate} disabled={busy} />
+        {isPrivate ? (
+          <>
+            <p className="hint">
+              Visitors have to sign in, and it holds on every hostname the app answers to, custom domains
+              included. No screenshots are taken of a private app, so its card shows a placeholder.
+            </p>
+            <label className="newapp-label">People with access</label>
+            <p className="hint">
+              They can open the app and nothing else -- no files, no terminal, no deploys. Your{" "}
+              {collabs && collabs.length > 0 ? <b>{collabs.length} collaborator{collabs.length === 1 ? "" : "s"}</b> : "collaborators"}{" "}
+              can already see it without being listed here.
+            </p>
+            <form className="domain-add" onSubmit={submit}>
+              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="someone@example.com" aria-label="Give access to" disabled={busy} />
+              <button type="submit" className="btn btn-primary btn-small" disabled={busy || !email.trim()}>Give access</button>
+            </form>
+            {viewers === null ? (
+              <p className="hint">Loading...</p>
+            ) : viewers.length === 0 ? (
+              <p className="empty">Nobody else yet. Only you, your collaborators and admins can open it.</p>
+            ) : (
+              <div className="domain-list">
+                {viewers.map((u) => (
+                  <div className="domain-row" key={u.id}>
+                    <div className="domain-head">
+                      <span className="domain-name">{u.email}</span>
+                      {u.name && u.name !== u.email && <span className="collab-name">{u.name}</span>}
+                      <span className="domain-actions">
+                        <button type="button" className="btn btn-small" onClick={() => onRemoveViewer(u.id)} disabled={busy}>Remove</button>
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        ) : (
+          <p className="hint">
+            Anyone with the link can open this app -- no sign-in, no account. Make it private to choose
+            who gets in.
+          </p>
+        )}
+        <div className="btn-row">
+          <button type="button" className="btn" onClick={onClose}>Done</button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const ResourcesDialog = ({ app, isAdmin, account, showToast, onClose, onSaved }) => {
   useEscape(onClose);
   const [cfg, setCfg] = useState(() => limitInputs(app.limit_overrides));
@@ -1158,6 +1230,8 @@ const AppSettings = ({ app, isAdmin, account, showToast, onCopyToken, onRegenera
   const [busy, setBusy] = useState(false);
   const [confirmId, setConfirmId] = useState(null);
   const [collabs, setCollabs] = useState(null);
+  const [viewers, setViewers] = useState(null);
+  const [showVisibility, setShowVisibility] = useState(false);
   const [collabInput, setCollabInput] = useState("");
   const [showTransfer, setShowTransfer] = useState(false);
   const [showResources, setShowResources] = useState(false);
@@ -1242,10 +1316,19 @@ const AppSettings = ({ app, isAdmin, account, showToast, onCopyToken, onRegenera
     } catch {
       setCollabs([]); // the list is a nicety; the section still renders
     }
+    try {
+      const guests = await api.get(`/api/apps/${encodeURIComponent(name)}/viewers`);
+      setViewers(Array.isArray(guests) ? guests : []);
+    } catch {
+      setViewers([]);
+    }
   }, [name]);
   useEffect(() => {
     load();
   }, [load]);
+  // Prefer the list this page just loaded, so the badge updates the moment
+  // somebody is added, rather than on the next poll of the app itself.
+  const visibility = visibilityOf(!!app.private, viewers === null ? app.viewer_count : viewers.length);
   const anyPending = domains && domains.some((d) => d.status !== "active");
   useEffect(() => {
     if (!anyPending) return undefined;
@@ -1308,6 +1391,34 @@ const AppSettings = ({ app, isAdmin, account, showToast, onCopyToken, onRegenera
     try {
       await api.del(`/api/apps/${encodeURIComponent(name)}/collaborators/${encodeURIComponent(id)}`);
       showToast("Collaborator removed");
+      await load();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const addViewer = async (email) => {
+    if (busy || !email) return;
+    setBusy(true);
+    setError("");
+    try {
+      await api.post(`/api/apps/${encodeURIComponent(name)}/viewers`, { email });
+      showToast("Access granted");
+      await load();
+    } catch (err) {
+      showToast(err.message); // e.g. "no active user ..." -- a toast, not a banner
+    } finally {
+      setBusy(false);
+    }
+  };
+  const removeViewer = async (id) => {
+    if (busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      await api.del(`/api/apps/${encodeURIComponent(name)}/viewers/${encodeURIComponent(id)}`);
+      showToast("Access removed");
       await load();
     } catch (err) {
       setError(err.message);
@@ -1391,6 +1502,22 @@ const AppSettings = ({ app, isAdmin, account, showToast, onCopyToken, onRegenera
               <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                 <path d="M13 8a5 5 0 1 1-1.5-3.5" />
                 <path d="M13 3v2.2h-2.2" />
+              </svg>
+            </button>
+          </div>
+          <div className="ov-line">
+            <span className="ov-k">Visibility</span>
+            <span className="ov-v"><VisibilityBadge state={visibility} /></span>
+            <button
+              type="button"
+              className="copy-mini"
+              onClick={() => isOwner && setShowVisibility(true)}
+              disabled={!isOwner}
+              title={isOwner ? "Change who can see this app" : "Only the owner can change visibility"}
+              aria-label="Change visibility"
+            >
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M11.3 2.2l2.5 2.5L6 12.5l-3.2.7.7-3.2z" />
               </svg>
             </button>
           </div>
@@ -1501,21 +1628,6 @@ const AppSettings = ({ app, isAdmin, account, showToast, onCopyToken, onRegenera
         </div>
       </section>
 
-      {/* Visibility sits directly above the collaborator list on purpose: once
-          an app is private, "who can see it" IS that list, and the two
-          questions are answered in one place rather than two screens apart. */}
-      <section className="ov-section">
-        <h3>Visibility</h3>
-        <p className="hint">
-          {app.private
-            ? "Visitors have to sign in, and only you, the people below and admins get through. It applies to every hostname the app answers to, custom domains included."
-            : "Anyone with the link can open this app. No sign-in, no account."}
-        </p>
-        <VisibilityChoice value={!!app.private} onChange={saveVisibility} disabled={!isOwner || savingVis} />
-        {!isOwner && <p className="hint">Only the app's owner can change this.</p>}
-        {app.private && <p className="hint">Previews are not taken of a private app, so its card shows a placeholder.</p>}
-      </section>
-
       <section className="ov-section">
         <h3>Collaborators</h3>
         <p className="hint">
@@ -1601,6 +1713,19 @@ const AppSettings = ({ app, isAdmin, account, showToast, onCopyToken, onRegenera
       </section>
 
       {showRename && <RenameDialog name={name} onClose={() => setShowRename(false)} onRenamed={onRenamed} />}
+      {showVisibility && (
+        <VisibilityDialog
+          app={app}
+          isPrivate={!!app.private}
+          viewers={viewers}
+          collabs={collabs}
+          busy={busy || savingVis}
+          onSetPrivate={saveVisibility}
+          onAddViewer={addViewer}
+          onRemoveViewer={removeViewer}
+          onClose={() => setShowVisibility(false)}
+        />
+      )}
       {showResources && (
         <ResourcesDialog
           app={app}
@@ -2254,7 +2379,7 @@ const AppDetail = ({ account, refreshAccount }) => {
                 <span className={"status-label" + (refreshing ? " status-label-pending" : "") + (crashed ? " status-label-crashed" : "")}>{statusText}</span>
               )
             )}
-            {app.private && <PrivatePill />}
+            {app.private && <VisibilityBadge state={visibilityOf(true, app.viewer_count)} />}
           </div>
 
           <div className="ws-topright">

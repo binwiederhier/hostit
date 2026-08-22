@@ -64,7 +64,7 @@ func (f *privateAppFixture) grantFor(t *testing.T, u *store.User, returnTo strin
 
 	back, err := url.Parse(mint.Header().Get("Location"))
 	require.NoError(t, err)
-	require.Equal(t, appGrantPath, back.Path)
+	require.Equal(t, appGrantedPath, back.Path)
 
 	req := httptest.NewRequest("GET", "https://"+back.Host+back.Path+"?"+back.RawQuery, nil)
 	req.Header.Set("Sec-Fetch-Mode", "navigate")
@@ -268,14 +268,114 @@ func TestPrivacyCoversCustomDomains(t *testing.T) {
 	assert.Equal(t, http.StatusOK, rr.Code, "and served on it with a grant minted for that hostname")
 }
 
-// A browser that refuses the cookie must land on the 404, not ping-pong
-// between the app and the web app forever.
+// A browser that will not keep the grant must be stopped, not ping-ponged
+// between the two hostnames until it gives up. The guard sits on the web host,
+// where cookies are known to work, so nothing has to be smuggled through the
+// app's URL to detect it.
 func TestAFailedGrantDoesNotLoop(t *testing.T) {
 	t.Parallel()
 	f := newPrivateAppFixture(t)
 
-	rr := f.navigate(t, "/?"+grantedParam+"=1")
-	assert.Equal(t, http.StatusNotFound, rr.Code)
+	first := f.mint(t, f.owner, "https://"+f.appHost+"/")
+	require.Equal(t, http.StatusFound, first.Code)
+	var marker *http.Cookie
+	for _, c := range first.Result().Cookies() {
+		if c.Name == f.server.cookieName(loopCookieName) {
+			marker = c
+		}
+	}
+	require.NotNil(t, marker, "minting leaves a marker on the web host")
+
+	// The visitor is back for another grant, still without the first one.
+	query := url.Values{appParam: {f.app.Name}, returnParam: {"https://" + f.appHost + "/"}}
+	req := httptest.NewRequest("GET", "https://apps.example.com"+appAccessPath+"?"+query.Encode(), nil)
+	value, err := f.server.sessions.encode(f.owner.ID)
+	require.NoError(t, err)
+	req.AddCookie(&http.Cookie{Name: f.server.cookieName(sessionCookieName), Value: value})
+	req.AddCookie(marker)
+	rr := httptest.NewRecorder()
+	f.server.proxyHandler().ServeHTTP(rr, req)
+	assert.Equal(t, http.StatusNotFound, rr.Code, "the second ask in a row is the loop, and it stops here")
+}
+
+// Nothing is left in the URL once the grant is delivered: the visitor should
+// not be able to tell that anything happened.
+func TestTheGrantLeavesNothingInTheURL(t *testing.T) {
+	t.Parallel()
+	f := newPrivateAppFixture(t)
+	mint := f.mint(t, f.owner, "https://"+f.appHost+"/reports?year=2026")
+	require.Equal(t, http.StatusFound, mint.Code)
+	back, err := url.Parse(mint.Header().Get("Location"))
+	require.NoError(t, err)
+
+	req := httptest.NewRequest("GET", "https://"+back.Host+back.Path+"?"+back.RawQuery, nil)
+	req.Header.Set("Sec-Fetch-Mode", "navigate")
+	rr := httptest.NewRecorder()
+	f.server.proxyHandler().ServeHTTP(rr, req)
+
+	require.Equal(t, http.StatusFound, rr.Code)
+	assert.Equal(t, "/reports?year=2026", rr.Header().Get("Location"),
+		"straight to what they asked for, deep link intact and no marker left behind")
+}
+
+// Logging out of one app drops that app's grant and nothing else. It lands on
+// the web app, because the hostit session is untouched: coming back here would
+// mint a new grant on the spot and make the logout look broken.
+func TestLoggingOutOfOneApp(t *testing.T) {
+	t.Parallel()
+	f := newPrivateAppFixture(t)
+	cookie := f.grantFor(t, f.owner, "https://"+f.appHost+"/")
+	require.Equal(t, http.StatusOK, f.navigate(t, "/", cookie).Code)
+
+	rr := f.navigate(t, appLogoutPath, cookie)
+	require.Equal(t, http.StatusFound, rr.Code)
+	assert.Equal(t, "https://apps.example.com/", rr.Header().Get("Location"))
+
+	cleared := (&http.Response{Header: rr.Header()}).Cookies()
+	require.Len(t, cleared, 1)
+	assert.Equal(t, f.server.cookieName(appGrantCookieName), cleared[0].Name)
+	assert.Less(t, cleared[0].MaxAge, 0, "the grant cookie is expired, not replaced")
+}
+
+// A visitor can ask to be signed in without first being refused, which is what
+// a "sign in" link on the app's own page would point at.
+func TestTheAuthEndpointStartsTheBounce(t *testing.T) {
+	t.Parallel()
+	f := newPrivateAppFixture(t)
+
+	rr := f.navigate(t, appAuthPath)
+	require.Equal(t, http.StatusFound, rr.Code)
+	loc, err := url.Parse(rr.Header().Get("Location"))
+	require.NoError(t, err)
+	assert.Equal(t, appAccessPath, loc.Path)
+	assert.Equal(t, "dash", loc.Query().Get(appParam))
+}
+
+// A viewer may open the app and nothing more. That is the whole point of the
+// grant existing separately from the collaborator one.
+func TestPrivateAppServesAViewer(t *testing.T) {
+	t.Parallel()
+	f := newPrivateAppFixture(t)
+	guest := newActiveTestUser(t, f.server, "guest@example.com")
+	require.NoError(t, f.server.apps.Store().AddAppViewer(f.app.ID, guest.ID))
+
+	cookie := f.grantFor(t, guest, "https://"+f.appHost+"/")
+	assert.Equal(t, http.StatusOK, f.navigate(t, "/", cookie).Code)
+}
+
+// And revoking a view grant bites immediately, like every other grant here.
+func TestRevokingAViewGrantTakesEffectImmediately(t *testing.T) {
+	t.Parallel()
+	f := newPrivateAppFixture(t)
+	guest := newActiveTestUser(t, f.server, "guest@example.com")
+	require.NoError(t, f.server.apps.Store().AddAppViewer(f.app.ID, guest.ID))
+	cookie := f.grantFor(t, guest, "https://"+f.appHost+"/")
+	require.Equal(t, http.StatusOK, f.navigate(t, "/", cookie).Code)
+	<-f.seen
+
+	require.NoError(t, f.server.apps.Store().RemoveAppViewer(f.app.ID, guest.ID))
+	assert.Equal(t, http.StatusFound, f.navigate(t, "/", cookie).Code)
+	assert.Empty(t, f.seen)
 }
 
 // Webhooks and scripts have no browser to redirect, so a bearer token is

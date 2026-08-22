@@ -122,6 +122,9 @@ type apiAppResponse struct {
 	// Private restricts the app's URL to its owner, its collaborators and
 	// admins, rather than anyone who knows it.
 	Private bool `json:"private"`
+	// ViewerCount is how many people have been given view-only access. With
+	// Private it is what the UI calls "Restricted" -- private, plus somebody.
+	ViewerCount int `json:"viewer_count"`
 	// CustomDomain is the first verified (active) custom domain, empty if none; the
 	// web app prefers it over the default subdomain for links and previews.
 	CustomDomain string `json:"custom_domain,omitempty"`

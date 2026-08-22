@@ -389,7 +389,14 @@ func (s *Server) withState(resp []*apiAppResponse) []*apiAppResponse {
 		names = append(names, r.Name)
 	}
 	states := s.apps.CachedStates(names)
+	// One grouped query for the whole batch: a list of apps must not cost a
+	// count per app just to label one of them "Restricted".
+	viewers, err := s.apps.Store().ViewerCounts()
+	if err != nil {
+		slog.Warn("Cannot read viewer counts", "error", err)
+	}
 	for _, r := range resp {
+		r.ViewerCount = viewers[r.ID]
 		state := states[r.Name]
 		r.Running, r.AppRunning, r.MemoryMB = state.Running, state.AppRunning, state.MemoryMB
 		r.AppState = state.AppState

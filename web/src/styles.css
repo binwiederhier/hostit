@@ -5659,8 +5659,10 @@ input[type="number"]::-webkit-inner-spin-button {
   width: 100%;
 }
 
-/* The "private" marker next to an app's status, on cards and rows alike. */
-.private-pill {
+/* An app's visibility, next to its status on cards and rows and in the
+   settings row. Public is the quiet default; private and restricted carry a
+   little more weight because they are the states worth noticing. */
+.vis-badge {
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -5669,9 +5671,15 @@ input[type="number"]::-webkit-inner-spin-button {
   background: var(--surface-2);
   border-radius: 999px;
   padding: 1px 9px 1px 7px;
+  white-space: nowrap;
 }
 
-.private-pill svg {
+.vis-badge svg {
   width: 12px;
   height: 12px;
+}
+
+.vis-badge-private,
+.vis-badge-restricted {
+  color: var(--text);
 }

@@ -329,6 +329,19 @@ var (
 		`
 		ALTER TABLE app ADD COLUMN private INTEGER NOT NULL DEFAULT 0;
 	`,
+		// The weaker of the two per-app grants: a viewer may open the app's URL
+		// and nothing else. Separate from app_collaborator rather than a role
+		// column on it, so neither grant can be read as the other by a query
+		// that forgets to filter.
+		`
+		CREATE TABLE app_viewer (
+			app_id TEXT NOT NULL,
+			user_id TEXT NOT NULL,
+			created_at INTEGER NOT NULL,
+			PRIMARY KEY (app_id, user_id)
+		);
+		CREATE INDEX idx_app_viewer_user ON app_viewer (user_id);
+	`,
 	}
 )
 
