@@ -75,6 +75,10 @@ export const usageLevel = (used, total) => {
   return pct >= 90 ? "crit" : pct >= 75 ? "warn" : "";
 };
 
+// "1 core", "2 cores", "0.5 cores" -- a cap of exactly one is singular, and it
+// is the default a new app gets, so it is the one people read most.
+export const cores = (n) => `${n} ${n === 1 ? "core" : "cores"}`;
+
 export const pairMB = (u, t) => {
   if ((t || u) >= 1024) {
     const gb = (v) => (v / 1024).toFixed(v % 1024 ? 1 : 0);

@@ -6,15 +6,16 @@ import (
 )
 
 const (
-	nodeCols            = `name, address, joined_at, last_seen`
-	insertNodeQuery     = `INSERT INTO node (name, address, token_hash, token_expires_at, joined_at) VALUES (?, ?, ?, ?, 0)`
-	remintNodeQuery     = `UPDATE node SET address = ?, token_hash = ?, token_expires_at = ? WHERE name = ? AND joined_at = 0`
-	ensureNodeQuery     = `INSERT INTO node (name, address, token_hash, token_expires_at, joined_at) VALUES (?, ?, '', 0, ?) ON CONFLICT (name) DO UPDATE SET address = excluded.address`
-	selectNodeQuery     = `SELECT ` + nodeCols + ` FROM node WHERE name = ?`
-	selectNodesQuery    = `SELECT ` + nodeCols + ` FROM node ORDER BY name`
-	consumeTokenQuery   = `UPDATE node SET token_hash = '', token_expires_at = 0, joined_at = ? WHERE token_hash = ? AND token_hash != '' AND token_expires_at > ? RETURNING name`
-	updateNodeSeenQuery = `UPDATE node SET last_seen = ? WHERE name = ?`
-	deleteNodeQuery     = `DELETE FROM node WHERE name = ?`
+	nodeCols             = `name, address, joined_at, last_seen, stats`
+	insertNodeQuery      = `INSERT INTO node (name, address, token_hash, token_expires_at, joined_at) VALUES (?, ?, ?, ?, 0)`
+	remintNodeQuery      = `UPDATE node SET address = ?, token_hash = ?, token_expires_at = ? WHERE name = ? AND joined_at = 0`
+	ensureNodeQuery      = `INSERT INTO node (name, address, token_hash, token_expires_at, joined_at) VALUES (?, ?, '', 0, ?) ON CONFLICT (name) DO UPDATE SET address = excluded.address`
+	selectNodeQuery      = `SELECT ` + nodeCols + ` FROM node WHERE name = ?`
+	selectNodesQuery     = `SELECT ` + nodeCols + ` FROM node ORDER BY name`
+	consumeTokenQuery    = `UPDATE node SET token_hash = '', token_expires_at = 0, joined_at = ? WHERE token_hash = ? AND token_hash != '' AND token_expires_at > ? RETURNING name`
+	updateNodeSeenQuery  = `UPDATE node SET last_seen = ? WHERE name = ?`
+	updateNodeStatsQuery = `UPDATE node SET stats = ? WHERE name = ?`
+	deleteNodeQuery      = `DELETE FROM node WHERE name = ?`
 )
 
 var (
@@ -62,6 +63,12 @@ func (s *Store) SetNodeSeen(name string, seen time.Time) error {
 	return err
 }
 
+// SetNodeStats records what a node last reported about its own machine.
+func (s *Store) SetNodeStats(name string, stats string) error {
+	_, err := s.db.Exec(updateNodeStatsQuery, stats, name)
+	return err
+}
+
 // RemoveNode unregisters a node; its certificate stops being accepted because
 // registration is checked at connect time.
 func (s *Store) RemoveNode(name string) error {
@@ -76,7 +83,7 @@ type rowScanner interface {
 func scanNode(row rowScanner) (*Node, error) {
 	var joinedAt, lastSeen int64
 	n := &Node{}
-	if err := row.Scan(&n.Name, &n.Address, &joinedAt, &lastSeen); err != nil {
+	if err := row.Scan(&n.Name, &n.Address, &joinedAt, &lastSeen, &n.Stats); err != nil {
 		return nil, ErrNodeNotFound
 	}
 	if joinedAt > 0 {

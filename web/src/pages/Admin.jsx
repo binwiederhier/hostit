@@ -68,14 +68,12 @@ const Kebab = ({ label, children }) => {
 };
 
 // EditUserDialog is where a user's limits live now: app count and the two
-// pools, with the derived values as placeholders. The list shows, this edits.
+// pools, with the instance defaults as placeholders. The list shows, this edits.
 const EditUserDialog = ({ user, defaults, onCancel, onSave }) => {
   const [appLimit, setAppLimit] = useState(numOrEmpty(user.app_limit));
   const [memoryPoolMb, setMemoryPoolMb] = useState(numOrEmpty(user.memory_pool_mb));
   const [diskPoolMb, setDiskPoolMb] = useState(numOrEmpty(user.disk_pool_mb));
   const [busy, setBusy] = useState(false);
-  const derived = (perApp, perAppDefault) =>
-    Number(appLimit || user.app_limit || defaults.default_app_limit || 0) * Number(perApp ?? perAppDefault ?? 0);
   const save = async (e) => {
     e.preventDefault();
     setBusy(true);
@@ -94,8 +92,8 @@ const EditUserDialog = ({ user, defaults, onCancel, onSave }) => {
       <form className="card modal modal-sheet" onMouseDown={(e) => e.stopPropagation()} onSubmit={save}>
         <h2>Limits for {user.email}</h2>
         <p className="hint">
-          Empty fields fall back to the defaults (app limit) or derive from them (pools: app limit
-          x RAM/disk per new app). The pools bound what all their apps together may allocate.
+          Empty fields fall back to the instance defaults. The pools bound what all of this
+          user&apos;s apps together may allocate -- independent of how big one new app starts.
         </p>
         <label className="settings-field">
           <span>App limit</span>
@@ -103,11 +101,11 @@ const EditUserDialog = ({ user, defaults, onCancel, onSave }) => {
         </label>
         <label className="settings-field">
           <span>RAM pool (MB)</span>
-          <input type="number" min="0" className="settings-input" value={memoryPoolMb} onChange={(e) => setMemoryPoolMb(e.target.value)} placeholder={`${derived(user.memory_mb, defaults.default_memory_mb)} (derived)`} disabled={busy} />
+          <input type="number" min="0" className="settings-input" value={memoryPoolMb} onChange={(e) => setMemoryPoolMb(e.target.value)} placeholder={`${defaults.default_memory_pool_mb ?? ""} (default)`} disabled={busy} />
         </label>
         <label className="settings-field">
           <span>Disk pool (MB)</span>
-          <input type="number" min="0" className="settings-input" value={diskPoolMb} onChange={(e) => setDiskPoolMb(e.target.value)} placeholder={`${derived(user.disk_mb, defaults.default_disk_mb)} (derived)`} disabled={busy} />
+          <input type="number" min="0" className="settings-input" value={diskPoolMb} onChange={(e) => setDiskPoolMb(e.target.value)} placeholder={`${defaults.default_disk_pool_mb ?? ""} (default)`} disabled={busy} />
         </label>
         <div className="btn-row">
           <button type="button" className="btn" onClick={onCancel} disabled={busy}>
@@ -128,11 +126,9 @@ const UserRow = ({ user, defaults, onPatch, onDelete }) => {
   const [confirmAdmin, setConfirmAdmin] = useState(false);
   const [editing, setEditing] = useState(false);
 
-  // What the row DISPLAYS; editing happens in the dialog. Derived values are
-  // shown muted so an explicit pool reads differently from a fallback.
+  // What the row DISPLAYS; editing happens in the dialog. An inherited value
+  // is shown muted, so an explicit setting reads differently from a fallback.
   const effectiveAppLimit = user.app_limit ?? defaults.default_app_limit ?? 0;
-  const derivedPool = (perApp, perAppDefault) =>
-    Number(effectiveAppLimit) * Number(perApp ?? perAppDefault ?? 0);
 
   const run = async (body) => {
     setBusy(true);
@@ -184,10 +180,10 @@ const UserRow = ({ user, defaults, onPatch, onDelete }) => {
         {user.app_limit ?? <span className="cell-muted">{effectiveAppLimit}</span>}
       </td>
       <td title="The RAM budget all their apps' limits share">
-        {user.memory_pool_mb != null ? pairMB(user.memory_pool_mb, 0) : <span className="cell-muted">{pairMB(derivedPool(user.memory_mb, defaults.default_memory_mb), 0)}</span>}
+        {user.memory_pool_mb != null ? pairMB(user.memory_pool_mb, 0) : <span className="cell-muted">{pairMB(defaults.default_memory_pool_mb || 0, 0)}</span>}
       </td>
       <td title="The disk budget all their apps' limits share">
-        {user.disk_pool_mb != null ? pairMB(user.disk_pool_mb, 0) : <span className="cell-muted">{pairMB(derivedPool(user.disk_mb, defaults.default_disk_mb), 0)}</span>}
+        {user.disk_pool_mb != null ? pairMB(user.disk_pool_mb, 0) : <span className="cell-muted">{pairMB(defaults.default_disk_pool_mb || 0, 0)}</span>}
       </td>
       <td className="cell-actions">
         <div className="btn-row">
@@ -295,7 +291,7 @@ const AppRow = ({ app }) => (
     <td className="cell-muted">{app.owner_email || "--"}</td>
     <td><UsagePair kind="ram" used={app.memory_mb} total={app.memory_limit_mb} /></td>
     <td><UsagePair kind="disk" used={app.disk_mb} total={app.disk_limit_mb} /></td>
-    <td className="cell-muted">{formatDate(app.created_at)}</td>
+    <td className="mono cell-muted">{app.host || "--"}</td>
     <td className="cell-actions">
       <div className="btn-row btn-row-end">
         <Link className="btn btn-small" to={`/app/${app.name}`}>
@@ -337,7 +333,7 @@ const AllApps = ({ apps, error }) => (
               <th>Owner</th>
               <th>RAM</th>
               <th>Disk</th>
-              <th>Created</th>
+              <th>Node</th>
               <th aria-label="Actions" />
             </tr>
           </thead>
@@ -638,13 +634,10 @@ const Defaults = ({ settings, onSaved, setError }) => {
     numOrEmpty(settings.default_memory_mb),
   );
   const [diskMb, setDiskMb] = useState(numOrEmpty(settings.default_disk_mb));
-  const [memoryPoolMb, setMemoryPoolMb] = useState(numOrEmpty(settings.default_memory_pool_mb || ""));
-  const [diskPoolMb, setDiskPoolMb] = useState(numOrEmpty(settings.default_disk_pool_mb || ""));
+  const [memoryPoolMb, setMemoryPoolMb] = useState(numOrEmpty(settings.default_memory_pool_mb));
+  const [diskPoolMb, setDiskPoolMb] = useState(numOrEmpty(settings.default_disk_pool_mb));
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
-  // The pool every user gets unless their row says otherwise; empty derives
-  // app limit x per-app value, shown so the fallback is never a mystery.
-  const derivedPool = (perApp) => Number(appLimit || 0) * Number(perApp || 0);
 
   const save = async (e) => {
     e.preventDefault();
@@ -656,8 +649,8 @@ const Defaults = ({ settings, onSaved, setError }) => {
         default_app_limit: Number(appLimit),
         default_memory_mb: Number(memoryMb),
         default_disk_mb: Number(diskMb),
-        default_memory_pool_mb: Number(memoryPoolMb || 0),
-        default_disk_pool_mb: Number(diskPoolMb || 0),
+        default_memory_pool_mb: Number(memoryPoolMb),
+        default_disk_pool_mb: Number(diskPoolMb),
       });
       setSaved(true);
       onSaved();
@@ -672,63 +665,36 @@ const Defaults = ({ settings, onSaved, setError }) => {
     <div className="card">
       <h2>Global defaults</h2>
       <p className="hint">
-        What a new app starts with, and the app count a user gets unless their row says otherwise.
-        Per-user knobs live in the Users list: the app limit and the RAM/disk pools their apps share.
+        What a new user and a new app start with. The two <b>per app</b> rows size one app; the two{" "}
+        <b>pool</b> rows are the total a user&apos;s apps may allocate together -- independent numbers,
+        not one derived from the other. Any user&apos;s row in the Users list overrides these.
       </p>
-      <form className="defaults-form" onSubmit={save}>
-        <label>
-          App limit
-          <input
-            type="number"
-            min="0"
-            required
-            value={appLimit}
-            onChange={(e) => setAppLimit(e.target.value)}
-          />
+      <form className="defaults-rows" onSubmit={save}>
+        <label className="settings-field">
+          <span>Apps per user</span>
+          <input type="number" min="0" required className="settings-input" value={appLimit} onChange={(e) => setAppLimit(e.target.value)} />
         </label>
-        <label>
-          RAM per new app (MB)
-          <input
-            type="number"
-            min="0"
-            required
-            value={memoryMb}
-            onChange={(e) => setMemoryMb(e.target.value)}
-          />
+        <label className="settings-field">
+          <span>RAM per new app (MB)</span>
+          <input type="number" min="0" required className="settings-input" value={memoryMb} onChange={(e) => setMemoryMb(e.target.value)} />
         </label>
-        <label>
-          Disk per new app (MB)
-          <input
-            type="number"
-            min="0"
-            required
-            value={diskMb}
-            onChange={(e) => setDiskMb(e.target.value)}
-          />
+        <label className="settings-field">
+          <span>Disk per new app (MB)</span>
+          <input type="number" min="0" required className="settings-input" value={diskMb} onChange={(e) => setDiskMb(e.target.value)} />
         </label>
-        <label>
-          RAM pool per user (MB)
-          <input
-            type="number"
-            min="0"
-            value={memoryPoolMb}
-            onChange={(e) => setMemoryPoolMb(e.target.value)}
-            placeholder={`${derivedPool(memoryMb)} (derived)`}
-          />
+        <label className="settings-field">
+          <span>RAM pool per user (MB)</span>
+          <input type="number" min="1" required className="settings-input" value={memoryPoolMb} onChange={(e) => setMemoryPoolMb(e.target.value)} />
         </label>
-        <label>
-          Disk pool per user (MB)
-          <input
-            type="number"
-            min="0"
-            value={diskPoolMb}
-            onChange={(e) => setDiskPoolMb(e.target.value)}
-            placeholder={`${derivedPool(diskMb)} (derived)`}
-          />
+        <label className="settings-field">
+          <span>Disk pool per user (MB)</span>
+          <input type="number" min="1" required className="settings-input" value={diskPoolMb} onChange={(e) => setDiskPoolMb(e.target.value)} />
         </label>
-        <button type="submit" className="btn btn-primary" disabled={busy}>
-          {busy ? "Saving..." : saved ? "Saved!" : "Save"}
-        </button>
+        <div className="btn-row" style={{ justifyContent: "flex-start" }}>
+          <button type="submit" className="btn btn-primary" disabled={busy}>
+            {busy ? "Saving..." : saved ? "Saved!" : "Save"}
+          </button>
+        </div>
       </form>
     </div>
   );
@@ -756,57 +722,87 @@ const formatMB = (mb) =>
 // The build string carries commit and timestamp; the row wants the version.
 const shortVersion = (v) => (v ? v.split(" ")[0] : null);
 
-const MemberRow = ({ member, kind }) => (
-  <tr>
-    <td>
-      <span
-        className={`status-dot ${member.stale ? "status-down" : "status-up"}`}
-        title={member.stale ? "Has not reported recently" : "Reporting"}
-      />
-      <span className="mono">{member.name}</span>
-    </td>
-    <td className="cell-muted mono">
-      {kind === "node"
-        ? member.address || "--"
-        : shortVersion(member.version) || "--"}
-    </td>
-    <td>
-      {kind === "node"
-        ? `${member.apps} ${member.apps === 1 ? "app" : "apps"}`
-        : `${member.routes || 0} routes`}
-    </td>
-    <td className={member.stale ? "cell-warn" : "cell-muted"}>
-      {member.last_seen ? relativeAge(member.last_seen) : "never reported"}
-    </td>
-  </tr>
-);
+const MemberRow = ({ member, kind }) => {
+  const stats = member.stats || {};
+  const carrying =
+    kind === "node"
+      ? `${member.apps} ${member.apps === 1 ? "app" : "apps"}`
+      : kind === "proxy"
+        ? `${member.routes || 0} routes`
+        : "registry";
+  const detail =
+    kind === "node" ? member.address : shortVersion(member.version);
+  return (
+    <tr>
+      <td>
+        <span
+          className={`status-dot ${member.stale ? "status-down" : "status-up"}`}
+          title={member.stale ? "Has not reported recently" : "Reporting"}
+        />
+        <span className="mono">{member.name}</span>
+        {detail && <div className="cell-muted mono member-detail">{detail}</div>}
+      </td>
+      <td>
+        <span className="badge">{kind}</span>
+      </td>
+      <td className="cell-muted">{carrying}</td>
+      <td>
+        {stats.memory_total_mb ? (
+          <UsagePair kind="ram" used={stats.memory_used_mb} total={stats.memory_total_mb} />
+        ) : (
+          <span className="cell-muted">--</span>
+        )}
+      </td>
+      <td>
+        {stats.disk_total_mb ? (
+          <UsagePair kind="disk" used={stats.disk_used_mb} total={stats.disk_total_mb} />
+        ) : (
+          <span className="cell-muted">--</span>
+        )}
+      </td>
+      <td
+        className={loadLevel(stats)}
+        title={stats.cpu_count ? `1-minute load average across ${stats.cpu_count} core(s)` : ""}
+      >
+        {stats.cpu_count ? `${(stats.load1 || 0).toFixed(2)} / ${stats.cpu_count}` : <span className="cell-muted">--</span>}
+      </td>
+      <td className={member.stale ? "cell-warn" : "cell-muted"}>
+        {member.last_seen ? relativeAge(member.last_seen) : "never reported"}
+      </td>
+    </tr>
+  );
+};
 
-const MemberTable = ({ title, members, kind, emptyLabel }) => (
-  <div className="cluster-half">
-    <div className="card-header">
-      <h3>{title}</h3>
-      <span className="usage">{members.length}</span>
-    </div>
-    {members.length === 0 && <p className="empty">{emptyLabel}</p>}
-    {members.length > 0 && (
-      <div className="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Name</th>
-              <th>{kind === "node" ? "Address" : "Build"}</th>
-              <th>{kind === "node" ? "Hosting" : "Serving"}</th>
-              <th>Reported</th>
-            </tr>
-          </thead>
-          <tbody>
-            {members.map((m) => (
-              <MemberRow key={m.name} member={m} kind={kind} />
-            ))}
-          </tbody>
-        </table>
-      </div>
-    )}
+// A box is busy when load approaches its core count and overloaded past it --
+// the same warn/crit language the memory and disk pairs use.
+const loadLevel = (stats) => {
+  if (!stats.cpu_count) return "";
+  const ratio = (stats.load1 || 0) / stats.cpu_count;
+  return ratio >= 1 ? "usage-crit" : ratio >= 0.75 ? "usage-warn" : "";
+};
+
+// Every member in one table -- control included, since its own box filling up
+// is what stops the registry, and it is the one member that never dials in.
+const MemberTable = ({ members }) => (
+  <div className="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Member</th>
+          <th>Role</th>
+          <th>Carrying</th>
+          <th>RAM</th>
+          <th>Disk</th>
+          <th>Load / CPUs</th>
+          <th>Reported</th>
+        </tr>
+      </thead>
+      <tbody>
+        {members.map((m) => (
+          <MemberRow key={m.kind + m.name} member={m} kind={m.kind} />
+        ))}
+      </tbody>
+    </table>
   </div>
 );
 
@@ -831,20 +827,13 @@ const Cluster = ({ status, error }) => {
           </span>
         )}
       </div>
-      <div className="cluster-grid">
-        <MemberTable
-          title="Nodes"
-          members={status.nodes || []}
-          kind="node"
-          emptyLabel="No nodes registered."
-        />
-        <MemberTable
-          title="Proxies"
-          members={status.proxies || []}
-          kind="proxy"
-          emptyLabel="No proxies registered."
-        />
-      </div>
+      <MemberTable
+        members={[
+          ...(status.control ? [{ ...status.control, kind: "control" }] : []),
+          ...(status.nodes || []).map((n) => ({ ...n, kind: "node" })),
+          ...(status.proxies || []).map((p) => ({ ...p, kind: "proxy" })),
+        ]}
+      />
       <div className="cluster-stats">
         <div className="cluster-stat">
           <span className="k">Apps</span>

@@ -6,6 +6,11 @@ import editorShot from "../assets/docs/editor.png";
 import terminalShot from "../assets/docs/terminal.png";
 import snapshotsShot from "../assets/docs/snapshots.png";
 import adminShot from "../assets/docs/admin.png";
+import assistantShot from "../assets/docs/assistant.png";
+import resourcesShot from "../assets/docs/resources.png";
+import domainsShot from "../assets/docs/domains.png";
+import clusterShot from "../assets/docs/cluster.png";
+import profileShot from "../assets/docs/profile.png";
 
 // The user documentation, served by hostit itself so it is always the docs for THIS
 // instance: every example uses the reader's own hostname. The layout mirrors a docs
@@ -176,6 +181,11 @@ env:
 const AssistantPage = () => (
   <>
     <h2>The AI assistant</h2>
+    <Figure
+      src={assistantShot}
+      alt="The assistant tab: a chat beside a live preview of the app"
+      caption="The assistant works on the app while you watch it change: chat on the left, the running app on the right."
+    />
     <p>
       This is what hostit is for. Every app has an assistant that can build and
       change it for you, and the same app works with your own agent (like Claude
@@ -404,6 +414,11 @@ const SnapshotsPage = () => (
 const DomainsPage = () => (
   <>
     <h2>Custom domains and renaming</h2>
+    <Figure
+      src={domainsShot}
+      alt="The custom domains section of an app's settings"
+      caption="Attach your own hostname in Settings; hostit shows the DNS records to create and issues the certificate once they resolve."
+    />
     <h3>Custom domains</h3>
     <p>
       Serve an app on your own hostname on top of its subdomain. Add it from the
@@ -429,6 +444,11 @@ const DomainsPage = () => (
 const ApiPage = () => (
   <>
     <h2>API reference</h2>
+    <Figure
+      src={profileShot}
+      alt="The profile page: SSH keys and API tokens"
+      caption="API tokens live on your Profile page. A token authenticates the CLI and every call below; each app also has its own scoped token."
+    />
     <p>
       Two kinds of credential. An <strong>app token</strong> (shown on the app's
       page) can only touch that app, through{" "}
@@ -798,6 +818,11 @@ const ConfigPage = () => (
 const DeploymentPage = () => (
   <>
     <h2>Deployment shapes</h2>
+    <Figure
+      src={clusterShot}
+      alt="The cluster table on the admin page, showing each member's memory, disk and load"
+      caption="Whatever the shape, the admin page lists every member with what it is carrying and how its machine is doing -- amber past 75%, red past 90%."
+    />
     <p>
       hostit runs as three components -- control (the brain), a node (a machine
       that runs apps), and a proxy (TLS and routing). They can all share one
@@ -923,6 +948,11 @@ const LimitsPage = () => (
       start small -- 128 MB RAM, 256 MB disk, half a core -- because most apps
       are small; raise what a real one needs.
     </p>
+    <Figure
+      src={resourcesShot}
+      alt="The resources dialog on an app's settings page"
+      caption="The pencil on the Resources card opens this: pick from the presets, and the dialog tells you what is left in your pool."
+    />
     <p>
       As an owner you edit RAM and disk yourself: open the app&apos;s{" "}
       <b>Settings</b> tab and hit the pencil on the <b>Resources</b> card (or{" "}

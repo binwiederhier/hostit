@@ -4,7 +4,7 @@ import { api, ApiError, isNetworkError } from "../api";
 import { viewFromSlug, VIEW_TO_SLUG } from "../views";
 import { limitInputs, limitsPatchBody } from "../limits";
 import { useReconnect } from "../hooks";
-import { CopyButton, ErrorBanner, Loading, Snippet, StatusDot, pairMB, usageLevel, UsagePair } from "../components";
+import { CopyButton, ErrorBanner, Loading, Snippet, StatusDot, pairMB, usageLevel, UsagePair, cores } from "../components";
 import { useSetAppHeader } from "../appHeader";
 
 // xterm is heavy and only needed when a terminal is actually opened, so it is
@@ -210,7 +210,7 @@ const UsageGrid = ({ app }) => {
   const cpuLevel = cpuPct >= 90 ? "crit" : cpuPct >= 75 ? "warn" : "";
   return (
     <div className="ws-resources">
-      <span className={"usage-item usage-" + cpuLevel} title={app.cpu_milli ? `CPU use; capped at ${app.cpu_milli / 1000} cores` : "CPU use"}>
+      <span className={"usage-item usage-" + cpuLevel} title={app.cpu_milli ? `CPU use; capped at ${cores(app.cpu_milli / 1000)}` : "CPU use"}>
         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <rect x="4" y="4" width="8" height="8" rx="1" />
           <path d="M6 1.5V4M10 1.5V4M6 12v2.5M10 12v2.5M1.5 6H4M1.5 10H4M12 6h2.5M12 10h2.5" />
@@ -839,7 +839,10 @@ const SshMenuIcon = () => (
 const ResourceRow = ({ label, value, onChange, presets, unit, inherit, disabled, max = Infinity }) => {
   const values = presets.map(String);
   const options = value !== "" && !values.includes(String(value)) ? [String(value), ...values] : values;
-  const fmt = (v) => (unit === "MB" && Number(v) >= 1024 ? `${Number(v) / 1024} GB` : `${v} ${unit}`);
+  const fmt = (v) => {
+    if (unit === "cores") return cores(Number(v));
+    return Number(v) >= 1024 ? `${Number(v) / 1024} GB` : `${v} ${unit}`;
+  };
   return (
     <div className="res-row">
       <span className="res-label">{label}</span>
@@ -968,7 +971,7 @@ const ResourcesDialog = ({ app, isAdmin, account, showToast, onClose, onSaved })
             app.cpu_milli > 0 && (
               <div className="res-row">
                 <span className="res-label">CPU</span>
-                <span className="res-fixed">{app.cpu_milli / 1000} cores (admin-set)</span>
+                <span className="res-fixed">{cores(app.cpu_milli / 1000)} (admin-set)</span>
               </div>
             )
           )}
@@ -1412,7 +1415,7 @@ const AppSettings = ({ app, isAdmin, account, showToast, onCopyToken, onRegenera
               </button>
             )}
           </h3>
-          <div className="ov-metric"><div className="ov-mt"><span>CPU</span><span className="mono">{app.cpu_percent || 0}%{app.cpu_milli ? ` (cap ${app.cpu_milli / 1000} cores)` : ""}</span></div><div className="ov-bar"><i style={{ width: `${app.cpu_percent || 0}%` }} /></div></div>
+          <div className="ov-metric"><div className="ov-mt"><span>CPU</span><span className="mono">{app.cpu_percent || 0}%{app.cpu_milli ? ` (cap ${cores(app.cpu_milli / 1000)})` : ""}</span></div><div className="ov-bar"><i style={{ width: `${app.cpu_percent || 0}%` }} /></div></div>
           <div className="ov-metric"><div className="ov-mt"><span>RAM</span><span className={"mono usage-" + usageLevel(app.memory_mb, app.memory_limit_mb)}>{pairMB(app.memory_mb, app.memory_limit_mb)}</span></div><div className="ov-bar"><i className={usageLevel(app.memory_mb, app.memory_limit_mb)} style={{ width: `${pct(app.memory_mb, app.memory_limit_mb)}%` }} /></div></div>
           <div className="ov-metric"><div className="ov-mt"><span>Disk</span><span className={"mono usage-" + usageLevel(app.disk_mb, app.disk_limit_mb)}>{pairMB(app.disk_mb, app.disk_limit_mb)}</span></div><div className="ov-bar"><i className={usageLevel(app.disk_mb, app.disk_limit_mb)} style={{ width: `${pct(app.disk_mb, app.disk_limit_mb)}%` }} /></div></div>
         </div>

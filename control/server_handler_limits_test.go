@@ -90,7 +90,7 @@ func TestOwnerEditsLimitsWithinPool(t *testing.T) {
 	require.NoError(t, s.apps.Store().AddApp(&store.App{Name: "blog", Port: 10000, Host: store.HostLocal, OwnerID: u.ID}))
 	s.apps.PushMirror()
 
-	// Within the derived pool (3 x 128 = 384 MB memory): fine.
+	// Within the default pool: fine.
 	rr := request(t, s.API(), "PATCH", "/api/apps/blog/limits", `{"memory_mb":256}`, token)
 	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
 	a, err := s.apps.Store().App("blog")
@@ -121,6 +121,11 @@ func TestPoolBindsAcrossAppsAndAdmins(t *testing.T) {
 	require.NoError(t, s.apps.Store().AddApp(&store.App{Name: "blog", Port: 10000, Host: store.HostLocal, OwnerID: u.ID}))
 	require.NoError(t, s.apps.Store().AddApp(&store.App{Name: "wiki", Port: 10001, Host: store.HostLocal, OwnerID: u.ID}))
 	s.apps.PushMirror()
+	// An explicit pool, so this pins the ARITHMETIC rather than whatever the
+	// shipped default happens to be.
+	pool384 := 384
+	u.MemoryPoolMB = &pool384
+	require.NoError(t, s.apps.Store().UpdateUser(u))
 
 	// Two apps at the 128 default; the second override must fit POOL - sum(others).
 	// Pool 384: blog to 256 fits (256 + 128), then wiki to 256 would need

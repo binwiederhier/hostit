@@ -10,7 +10,11 @@
 // beyond a cache of what control last said.
 package proxyapi
 
-import "errors"
+import (
+	"errors"
+
+	"heckel.io/hostit/hoststats"
+)
 
 var (
 	// ErrNoCert means control manages no certificate for that name -- an
@@ -47,6 +51,8 @@ type CertMaterial struct {
 // build it runs and, by answering at all, that it is alive.
 type Heartbeat struct {
 	Version string `json:"version"`
+	// Stats is the machine's own resource state; see nodeapi's Heartbeat.
+	Stats hoststats.Stats `json:"stats"`
 	// Routes is how many routes the proxy is currently serving, so control can
 	// see a proxy that is connected but serving a stale or empty table.
 	Routes int `json:"routes"`

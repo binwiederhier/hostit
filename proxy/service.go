@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"heckel.io/hostit/cluster"
+	"heckel.io/hostit/hoststats"
 	"heckel.io/hostit/proxyapi"
 	"heckel.io/hostit/proxylink"
 )
@@ -131,7 +132,11 @@ func (p *Proxy) ApplyRoutes(table *proxyapi.Table) error {
 
 // Heartbeat reports what this proxy is: its build, and how much it is serving.
 func (p *Proxy) Heartbeat() *proxyapi.Heartbeat {
-	return &proxyapi.Heartbeat{Version: Version, Routes: len(p.table.Load().(*proxyapi.Table).Routes)}
+	return &proxyapi.Heartbeat{
+		Version: Version,
+		Routes:  len(p.table.Load().(*proxyapi.Table).Routes),
+		Stats:   hoststats.Measure(p.conf.CacheDir),
+	}
 }
 
 // ServeHTTP forwards a request: a known app host goes straight to its target

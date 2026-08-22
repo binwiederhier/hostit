@@ -49,7 +49,7 @@ func TestProxyStatusRecordsBuildAndRoutes(t *testing.T) {
 	require.NoError(t, s.EnsureProxy("edge-1"))
 
 	seen := time.Now().Truncate(time.Second)
-	require.NoError(t, s.SetProxyStatus("edge-1", seen, "v0.13.0", 7))
+	require.NoError(t, s.SetProxyStatus("edge-1", seen, "v0.13.0", 7, `{"memory_used_mb":512,"memory_total_mb":1024}`))
 
 	p, err := s.Proxy("edge-1")
 	require.NoError(t, err)

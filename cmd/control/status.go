@@ -11,6 +11,7 @@ import (
 	"heckel.io/hostit/clitable"
 	"heckel.io/hostit/control"
 	"heckel.io/hostit/controlconf"
+	"heckel.io/hostit/hoststats"
 )
 
 // cmdStatus prints the whole cluster: who is in it, whether they are reporting,
@@ -30,12 +31,12 @@ var (
 )
 
 func execStatus(c *cli.Context) error {
-	_, s, err := nodeStore(c)
+	conf, s, err := nodeStore(c)
 	if err != nil {
 		return err
 	}
 	defer s.Close()
-	status, err := control.ClusterStatus(s, time.Now())
+	status, err := control.ClusterStatus(s, conf.DataDir, time.Now())
 	if err != nil {
 		return err
 	}
@@ -48,17 +49,52 @@ func execStatus(c *cli.Context) error {
 	return nil
 }
 
+// statCell renders a member's memory or disk as "used/total (pct%)", or "--"
+// for a member that has never reported.
+func statCell(used, total, pct int) string {
+	if total <= 0 {
+		return "--"
+	}
+	return fmt.Sprintf("%s/%s (%d%%)", humanMB(used), humanMB(total), pct)
+}
+
+// loadCell puts the load average next to the core count it is spread over,
+// since 4.0 means something different on 1 core than on 8.
+func loadCell(s hoststats.Stats) string {
+	if s.CPUCount == 0 {
+		return "--"
+	}
+	return fmt.Sprintf("%.2f / %d", s.Load1, s.CPUCount)
+}
+
 func printStatus(c *cli.Context, status *control.Status) {
 	w := c.App.Writer
+	if status.Control != nil {
+		fmt.Fprintln(w, clitable.Title("CONTROL"))
+		fmt.Fprintln(w, clitable.Render([]string{"NAME", "VERSION", "RAM", "DISK", "LOAD / CPUS"}, [][]string{{
+			status.Control.Name,
+			dashIfEmpty(shortVersion(status.Control.Version)),
+			statCell(status.Control.Stats.MemoryUsedMB, status.Control.Stats.MemoryTotalMB, status.Control.Stats.MemoryPercent()),
+			statCell(status.Control.Stats.DiskUsedMB, status.Control.Stats.DiskTotalMB, status.Control.Stats.DiskPercent()),
+			loadCell(status.Control.Stats),
+		}}))
+		fmt.Fprintln(w)
+	}
 	fmt.Fprintln(w, clitable.Title(fmt.Sprintf("NODES (%d)", len(status.Nodes))))
 	if len(status.Nodes) == 0 {
 		fmt.Fprintf(w, "  none registered\n")
 	} else {
 		rows := make([][]string, 0, len(status.Nodes))
 		for _, n := range status.Nodes {
-			rows = append(rows, []string{n.Name, dashIfEmpty(n.Address), strconv.Itoa(n.Apps), seenLabel(n.LastSeen, n.Stale, status.Snapshot)})
+			rows = append(rows, []string{
+				n.Name, dashIfEmpty(n.Address), strconv.Itoa(n.Apps),
+				statCell(n.Stats.MemoryUsedMB, n.Stats.MemoryTotalMB, n.Stats.MemoryPercent()),
+				statCell(n.Stats.DiskUsedMB, n.Stats.DiskTotalMB, n.Stats.DiskPercent()),
+				loadCell(n.Stats),
+				seenLabel(n.LastSeen, n.Stale, status.Snapshot),
+			})
 		}
-		fmt.Fprintln(w, clitable.Render([]string{"NAME", "ADDRESS", "APPS", "SEEN"}, rows))
+		fmt.Fprintln(w, clitable.Render([]string{"NAME", "ADDRESS", "APPS", "RAM", "DISK", "LOAD / CPUS", "SEEN"}, rows))
 	}
 
 	fmt.Fprintln(w)
@@ -68,9 +104,15 @@ func printStatus(c *cli.Context, status *control.Status) {
 	} else {
 		rows := make([][]string, 0, len(status.Proxies))
 		for _, p := range status.Proxies {
-			rows = append(rows, []string{p.Name, dashIfEmpty(shortVersion(p.Version)), strconv.Itoa(p.Routes), seenLabel(p.LastSeen, p.Stale, status.Snapshot)})
+			rows = append(rows, []string{
+				p.Name, dashIfEmpty(shortVersion(p.Version)), strconv.Itoa(p.Routes),
+				statCell(p.Stats.MemoryUsedMB, p.Stats.MemoryTotalMB, p.Stats.MemoryPercent()),
+				statCell(p.Stats.DiskUsedMB, p.Stats.DiskTotalMB, p.Stats.DiskPercent()),
+				loadCell(p.Stats),
+				seenLabel(p.LastSeen, p.Stale, status.Snapshot),
+			})
 		}
-		fmt.Fprintln(w, clitable.Render([]string{"NAME", "VERSION", "ROUTES", "SEEN"}, rows))
+		fmt.Fprintln(w, clitable.Render([]string{"NAME", "VERSION", "ROUTES", "RAM", "DISK", "LOAD / CPUS", "SEEN"}, rows))
 	}
 
 	fmt.Fprintln(w)

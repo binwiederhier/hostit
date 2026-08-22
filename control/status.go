@@ -1,9 +1,12 @@
 package control
 
 import (
+	"encoding/json"
 	"sort"
 	"time"
 
+	"heckel.io/hostit/hoststats"
+	"heckel.io/hostit/node"
 	"heckel.io/hostit/store"
 )
 
@@ -27,6 +30,10 @@ const (
 
 // Status is the whole cluster at a glance.
 type Status struct {
+	// Control is the control plane's OWN machine, measured live rather than
+	// reported: it is the one member that does not dial in, and its box
+	// filling up is what stops the registry.
+	Control  *MemberStatus   `json:"control"`
 	Nodes    []*MemberStatus `json:"nodes"`
 	Proxies  []*MemberStatus `json:"proxies"`
 	Apps     *AppTotals      `json:"apps"`
@@ -47,6 +54,9 @@ type MemberStatus struct {
 	// Stale is true when the last heartbeat is old enough to be worth looking
 	// at, and when a member has never reported at all.
 	Stale bool `json:"stale"`
+	// Stats is what the member last reported about its own machine. Zero
+	// throughout when it has never reported (hoststats.Stats.Known()).
+	Stats hoststats.Stats `json:"stats"`
 }
 
 // AppTotals counts the apps and what they are using.
@@ -68,7 +78,7 @@ type PeopleTotals struct {
 // ClusterStatus reads the registry and reports the cluster. It takes a store
 // rather than a Server so the CLI can call it against the database directly,
 // with no daemon running.
-func ClusterStatus(s *store.Store, now time.Time) (*Status, error) {
+func ClusterStatus(s *store.Store, dataDir string, now time.Time) (*Status, error) {
 	apps, err := s.Apps()
 	if err != nil {
 		return nil, err
@@ -113,7 +123,15 @@ func ClusterStatus(s *store.Store, now time.Time) (*Status, error) {
 		totals.Snapshots += len(snaps)
 	}
 
-	status := &Status{Apps: totals, People: &PeopleTotals{Total: len(users)}, Snapshot: now}
+	status := &Status{
+		Apps:     totals,
+		People:   &PeopleTotals{Total: len(users)},
+		Snapshot: now,
+		// Measured here and now: control does not heartbeat itself, and both
+		// callers (the API inside control, the CLI on control's host) are
+		// looking at the same machine.
+		Control: &MemberStatus{Name: "control", Version: node.Version, LastSeen: now, Stats: hoststats.Measure(dataDir)},
+	}
 	for _, n := range nodes {
 		status.Nodes = append(status.Nodes, &MemberStatus{
 			Name:     n.Name,
@@ -121,6 +139,7 @@ func ClusterStatus(s *store.Store, now time.Time) (*Status, error) {
 			Apps:     perNode[n.Name],
 			LastSeen: n.LastSeen,
 			Stale:    stale(n.LastSeen, now),
+			Stats:    decodeStats(n.Stats),
 		})
 	}
 	for _, p := range proxies {
@@ -130,6 +149,7 @@ func ClusterStatus(s *store.Store, now time.Time) (*Status, error) {
 			Routes:   p.Routes,
 			LastSeen: p.LastSeen,
 			Stale:    stale(p.LastSeen, now),
+			Stats:    decodeStats(p.Stats),
 		})
 	}
 	for _, u := range users {
@@ -149,4 +169,18 @@ func ClusterStatus(s *store.Store, now time.Time) (*Status, error) {
 // member that has never reported is stale by definition.
 func stale(lastSeen, now time.Time) bool {
 	return lastSeen.IsZero() || now.Sub(lastSeen) > staleAfter
+}
+
+// decodeStats unmarshals a member's reported machine stats. A member that
+// never reported (or reported something this build cannot read) comes back
+// zeroed, which renders as "--" rather than as a machine with no memory.
+func decodeStats(blob string) hoststats.Stats {
+	var s hoststats.Stats
+	if blob == "" {
+		return s
+	}
+	if err := json.Unmarshal([]byte(blob), &s); err != nil {
+		return hoststats.Stats{}
+	}
+	return s
 }

@@ -81,6 +81,9 @@ type apiAppResponse struct {
 	MemoryMB    int    `json:"memory_mb"`
 	MemoryLimit int    `json:"memory_limit_mb"`
 	CPUPercent  int    `json:"cpu_percent"` // Live container CPU use in whole percent
+	// Host is the node the app runs on, so the admin fleet view can answer
+	// "where is this" without cross-referencing the cluster table.
+	Host string `json:"host"`
 	// CPUMilli is the EFFECTIVE CPU cap in millicores (0 = uncapped), like
 	// MemoryLimit/DiskLimit are the effective caps; LimitOverrides carries the
 	// admin-set per-app overrides so the UI can tell inherited from set.

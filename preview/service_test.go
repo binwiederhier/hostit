@@ -1,11 +1,11 @@
 package preview
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -22,7 +22,23 @@ type fakeRunner struct {
 	failNft  bool
 	cmds     [][]string
 	nftRules string     // Contents of every nft -f ruleset applied
-	mu       sync.Mutex // Protects cmds, nftRules
+	captured []string   // URLs the (stubbed) browser was asked to load
+	mu       sync.Mutex // Protects cmds, nftRules, captured
+}
+
+func (r *fakeRunner) recordCaptured(url string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.captured = append(r.captured, url)
+}
+
+func (r *fakeRunner) lastCaptured() string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if len(r.captured) == 0 {
+		return ""
+	}
+	return r.captured[len(r.captured)-1]
 }
 
 func (r *fakeRunner) Run(args ...string) (string, error) {
@@ -118,6 +134,13 @@ func newTestManager(t *testing.T, runner *fakeRunner, apps []App) *Manager {
 		return apps, nil
 	})
 	m.debounce = 20 * time.Millisecond
+	// No network and no browser in unit tests: the app is "serving" and chrome
+	// hands back a byte. The scheduling path is what these tests are about.
+	m.ready = func(string) error { return nil }
+	m.capture = func(_ context.Context, _, pageURL string, _ time.Duration) ([]byte, error) {
+		runner.recordCaptured(pageURL)
+		return []byte("\x89PNG\r\n\x1a\nshot"), nil
+	}
 	done := make(chan struct{})
 	t.Cleanup(func() { close(done) })
 	go m.worker(done)
@@ -146,7 +169,9 @@ func TestSweepScreenshotsRunningAppsInAContainer(t *testing.T) {
 	assert.Contains(t, cmd, "--headless")
 	assert.Contains(t, cmd, "--security-opt=no-new-privileges")
 	assert.Contains(t, cmd, image)
-	assert.Contains(t, cmd, "https://up.example.com")
+	// The URL is no longer a command-line argument: chrome starts on
+	// about:blank and is navigated over the DevTools protocol.
+	assert.Equal(t, "https://up.example.com", runner.lastCaptured())
 }
 
 func TestSweepPrunesShotsOfDeletedApps(t *testing.T) {
@@ -334,13 +359,13 @@ func TestRefreshEnqueuesEvenWhenTheCacheSaysStopped(t *testing.T) {
 	require.Eventually(t, func() bool { return runner.shots() == 1 }, 5*time.Second, 5*time.Millisecond)
 }
 
-// A blank white card means the shot was taken before the page painted. Two
-// flags prevent that and are easy to lose in a refactor, so they are pinned:
-// the virtual-time budget gives a slow app time to render (chrome pauses that
-// clock while network fetches are outstanding, so this is a rendering budget,
-// not a network timeout), and running all compositor stages before the draw
-// stops the capture happening mid-paint.
-func TestShotWaitsForThePageToRender(t *testing.T) {
+// A blank white card means the shot was taken before the page painted. The
+// engine now waits in REAL time -- chrome is started with its DevTools port
+// open and driven (navigate, load, settle, capture) rather than run in
+// one-shot --screenshot mode with a VIRTUAL time budget, which fast-forwards
+// timers and shot animated pages before their content arrived. These are the
+// pieces that are easy to lose in a refactor.
+func TestShotDrivesChromeInRealTime(t *testing.T) {
 	t.Parallel()
 	runner := &fakeRunner{}
 	m := newTestManager(t, runner, []App{{ID: "aaa", Name: "up", URL: "https://up.example.com", Running: true}})
@@ -348,12 +373,27 @@ func TestShotWaitsForThePageToRender(t *testing.T) {
 	require.Eventually(t, func() bool { return runner.shots() == 1 }, 5*time.Second, 5*time.Millisecond)
 
 	cmd := strings.Join(runner.lastShot(), " ")
-	assert.Contains(t, cmd, "--virtual-time-budget="+virtualTimeBudgetMS)
+	assert.Contains(t, cmd, "--remote-debugging-port="+debugPort, "the shot is driven, not one-shot")
+	assert.Contains(t, cmd, "--detach", "chrome has to outlive the run command that starts it")
+	assert.Contains(t, cmd, "127.0.0.1:", "the debug port is published to loopback only, never the LAN")
 	assert.Contains(t, cmd, "--run-all-compositor-stages-before-draw")
+	assert.NotContains(t, cmd, "--virtual-time-budget", "virtual time is what shot animated pages white")
+	assert.NotContains(t, cmd, "--screenshot=", "one-shot mode is what carried the virtual clock")
 
-	budget, err := strconv.Atoi(virtualTimeBudgetMS)
-	require.NoError(t, err)
-	assert.GreaterOrEqual(t, budget, 20000, "a slow app needs more than a couple of seconds to paint")
-	assert.Less(t, time.Duration(budget)*time.Millisecond, screenshotTimeout,
-		"the budget must fit inside the container timeout, or the run is killed mid-render")
+	assert.GreaterOrEqual(t, settleDelay, 5*time.Second, "a slow app needs real seconds to paint")
+	assert.Less(t, settleDelay+readyTimeout, screenshotTimeout,
+		"the settle must fit inside the shot timeout, or the run is killed mid-render")
+}
+
+// An app that is not answering keeps whatever card it had: photographing a
+// connection error would replace a good screenshot with a white one until the
+// next sweep hours later.
+func TestShotSkipsAnAppThatIsNotServing(t *testing.T) {
+	t.Parallel()
+	runner := &fakeRunner{}
+	m := newTestManager(t, runner, []App{{ID: "aaa", Name: "up", URL: "https://up.example.com", Running: true}})
+	m.ready = func(string) error { return assert.AnError }
+	m.Sweep()
+	time.Sleep(200 * time.Millisecond)
+	assert.Zero(t, runner.shots(), "no chrome is started for an app that cannot be reached")
 }

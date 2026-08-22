@@ -172,7 +172,11 @@ func (s *Server) proxyHeartbeatPass() {
 			slog.Warn("A proxy did not answer its heartbeat", "proxy", id)
 			continue
 		}
-		if err := s.apps.Store().SetProxyStatus(id, time.Now(), hb.Version, hb.Routes); err != nil {
+		stats := ""
+		if blob, err := json.Marshal(hb.Stats); err == nil {
+			stats = string(blob)
+		}
+		if err := s.apps.Store().SetProxyStatus(id, time.Now(), hb.Version, hb.Routes, stats); err != nil {
 			slog.Warn("Cannot record a proxy's status", "proxy", id, "error", err)
 		}
 	}

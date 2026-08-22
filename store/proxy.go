@@ -10,13 +10,13 @@ const (
 	// node it exists implicitly, so a single-box install needs no enrollment.
 	ProxyLocal = "local"
 
-	proxyCols            = `name, registered_at, last_seen, version, routes`
+	proxyCols            = `name, registered_at, last_seen, version, routes, stats`
 	ensureProxyQuery     = `INSERT INTO proxy (name, registered_at) VALUES (?, ?) ON CONFLICT (name) DO NOTHING`
 	selectProxyQuery     = `SELECT ` + proxyCols + ` FROM proxy WHERE name = ?`
 	selectProxiesQuery   = `SELECT ` + proxyCols + ` FROM proxy ORDER BY name`
 	updateProxySeenQuery = `UPDATE proxy SET last_seen = ? WHERE name = ?`
 	// The heartbeat writes all three together: they describe one answer.
-	updateProxyStatusQuery = `UPDATE proxy SET last_seen = ?, version = ?, routes = ? WHERE name = ?`
+	updateProxyStatusQuery = `UPDATE proxy SET last_seen = ?, version = ?, routes = ?, stats = ? WHERE name = ?`
 	deleteProxyQuery       = `DELETE FROM proxy WHERE name = ?`
 )
 
@@ -64,8 +64,8 @@ func (s *Store) SetProxySeen(name string, seen time.Time) error {
 }
 
 // SetProxyStatus records what the proxy last reported about itself.
-func (s *Store) SetProxyStatus(name string, seen time.Time, version string, routes int) error {
-	_, err := s.db.Exec(updateProxyStatusQuery, seen.Unix(), version, routes, name)
+func (s *Store) SetProxyStatus(name string, seen time.Time, version string, routes int, stats string) error {
+	_, err := s.db.Exec(updateProxyStatusQuery, seen.Unix(), version, routes, stats, name)
 	return err
 }
 
@@ -85,7 +85,7 @@ func (s *Store) DeleteProxy(name string) error {
 func scanProxy(row rowScanner) (*Proxy, error) {
 	var registeredAt, lastSeen int64
 	p := &Proxy{}
-	if err := row.Scan(&p.Name, &registeredAt, &lastSeen, &p.Version, &p.Routes); err != nil {
+	if err := row.Scan(&p.Name, &registeredAt, &lastSeen, &p.Version, &p.Routes, &p.Stats); err != nil {
 		return nil, ErrProxyNotFound
 	}
 	if registeredAt > 0 {

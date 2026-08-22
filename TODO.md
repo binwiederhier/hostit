@@ -214,20 +214,41 @@ the honest fix.
 
 ## Later (real, but not now)
 
-### 12. Make hostit-control unprivileged
+### 12. Move the screenshot and assistant containers to the nodes
 
-The audit this used to ask for is done: control drives none of podman,
-systemctl, useradd, nftables or btrfs any more (the node does), and it binds no
-privileged port (the proxy owns :443). Two things still need privilege, both
-machine-shaped work sitting in the wrong process: screenshot previews drive
-podman, and the assistant sandbox spawns `claude -p` as the app's uid. Move
-both to the node and control becomes a process holding a database, a
-certificate manager and an HTTP handler -- runnable as its own user. The
-cluster socket already trusts control's own uid rather than root, so the
-transport does not stand in the way.
+Both of control's remaining podman users are machine-shaped work sitting in
+the wrong process: the **screenshot previews** run a chrome container (plus an
+nftables egress filter, also machine work), and the **assistant sandbox**
+spawns `claude -p` as the app's own uid. Moving both is what finally takes
+podman -- and nftables, and root -- off the control host: control becomes a
+process holding a database, a certificate manager and an HTTP handler,
+runnable as its own user. The cluster socket already trusts control's own uid
+rather than root, so the transport does not stand in the way.
+
+**Do them together, or the win does not arrive.** Moving previews alone leaves
+the assistant sandbox behind, so control still needs podman and still runs
+containers over untrusted-adjacent input; the dependency is only removed when
+the last user goes. (Raised 2026-08-21 as "could screenshots run on the nodes
+so we would not need podman on control" -- yes, but only as half of this.)
+
+Shape, once decided:
+
+- A `Screenshot(spec)` verb on nodeapi returning PNG bytes: the node runs the
+  container and the egress filter, control keeps the scheduling, the rate
+  limiting, the storage and the serving. The shot code is already isolated
+  behind two injectable fields (`ready`, `capture` in preview/service.go), so
+  the seam exists.
+- The assistant sandbox is harder: it resolves an app's uid from the REGISTRY
+  (so it works for an app on any node) and mounts control's own socket for the
+  MCP bridge. On the node it would use the node's own mirror and the app
+  socket the node already serves -- which is arguably more correct, since the
+  sandbox for a stage-2 app currently runs on control's host.
+- Watch the assistant's streaming: control publishes SSE to the browser from
+  the sandbox's event stream, so the events would have to cross the cluster
+  link (the terminal's duplex stream over that link is the precedent).
 
 Real hardening, but it buys defense-in-depth rather than closing an open hole,
-and it moves two subsystems across a process boundary.
+which is why it sits here rather than in the Now tier.
 
 ### 13. Review follow-ups (2026-08-20)
 

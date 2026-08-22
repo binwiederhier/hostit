@@ -24,9 +24,11 @@
 package preview
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"net"
+	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -45,19 +47,25 @@ const (
 	// its build only serves the CDP protocol) and for running chrome as a
 	// non-root user inside the container.
 	image = "docker.io/zenika/alpine-chrome:latest"
-	// screenshotTimeout bounds one container run; a hung page must not stall the
-	// queue. It must comfortably exceed the virtual-time budget below, since a
-	// page that keeps producing work can consume that budget in real time.
-	screenshotTimeout = 150 * time.Second
-	// virtualTimeBudgetMS is how long chrome is given to render before the shot.
-	// It is a rendering budget rather than a network timeout: chrome pauses this
-	// clock while fetches are outstanding, so a slow app does not eat it waiting
-	// for its first byte. Ten seconds still produced blank white cards for apps
-	// that paint late (a framework booting, fonts, an image), and 25 was still
-	// too short for heavy sites; a full minute is generous on purpose, and
-	// costs nothing for a page that finishes early -- the shot is taken as soon
-	// as the page settles.
-	virtualTimeBudgetMS = "60000"
+	// screenshotTimeout bounds one whole shot -- chrome starting, the page
+	// loading, the settle, the capture -- so a hung page never stalls the queue.
+	screenshotTimeout = 120 * time.Second
+	// settleDelay is how long the page gets AFTER its load event before the
+	// capture, in real seconds. This is the fix for intermittent white cards:
+	// the old --virtual-time-budget was virtual, so chrome fast-forwarded
+	// timers and an animated page (a canvas, a game, a spinner) could exhaust a
+	// 60-second budget almost instantly and be shot before its images, fonts or
+	// first data arrived. Ten real seconds covers a framework's first render,
+	// fonts swapping in and an SPA's initial fetch.
+	settleDelay = 10 * time.Second
+	// readyTimeout bounds the preflight that checks the app is actually
+	// serving. An app whose container is up but whose server has not bound yet
+	// would otherwise be photographed as a connection error -- a white card
+	// that then sits there until the next sweep.
+	readyTimeout = 10 * time.Second
+	// debugPort is chrome's DevTools port inside the container; it is published
+	// to the host's loopback only, on a port picked per shot.
+	debugPort = "9222"
 	// pullTimeout bounds the one-off image pull at startup
 	pullTimeout = 10 * time.Minute
 	// debounceDelay is how long after the LAST assistant change a shot fires
@@ -130,7 +138,12 @@ type Manager struct {
 	isolate    bool                           // Strict egress isolation (default off; on in screenshot mode)
 	allowCIDRs []string                       // Extra destinations allowed in strict mode
 	lookupIP   func(string) ([]net.IP, error) // Injectable resolver for the target app
-	mu         sync.Mutex                     // Protects timers, buckets
+	// ready checks the app is serving before chrome is started for it, and
+	// capture drives the started chrome. Both are fields so the tests can run
+	// the whole scheduling path without a network or a browser.
+	ready   func(url string) error
+	capture func(ctx context.Context, debugBase, pageURL string, settle time.Duration) ([]byte, error)
+	mu      sync.Mutex // Protects timers, buckets
 }
 
 // Dir returns where shots live for a given daemon data dir.
@@ -150,6 +163,8 @@ func New(runner run.Runner, dir string, apps func() ([]App, error)) *Manager {
 		buckets:  make(map[string]*bucket),
 		now:      time.Now,
 		lookupIP: net.LookupIP,
+		ready:    appIsServing,
+		capture:  capture,
 	}
 }
 
@@ -331,19 +346,25 @@ func (m *Manager) worker(done <-chan struct{}) {
 // shoot renders one app in a sandboxed container and moves the shot into
 // place, so a failed or half-written shot never replaces the last good one.
 func (m *Manager) shoot(a App) error {
-	// A per-shot scratch dir is bind-mounted as the container's output; :U
-	// chowns it to the container's mapped root so chrome can write there.
-	workDir := filepath.Join(m.dir, workDirName, a.ID)
-	if err := os.MkdirAll(workDir, 0o700); err != nil {
+	// Preflight: is the app actually serving? A container that is up but whose
+	// server has not bound yet renders as a connection error, and storing that
+	// replaces a good card with a white one until the next sweep. Skipping
+	// keeps whatever we had.
+	if err := m.ready(a.URL); err != nil {
+		return fmt.Errorf("app is not serving yet: %w", err)
+	}
+	port, err := freeLoopbackPort()
+	if err != nil {
 		return err
 	}
-	defer os.RemoveAll(workDir)
 	container := containerName
 	userns := fmt.Sprintf("0:%d:%d", userNSBase, userNSSize)
-	args := []string{"podman", "run", "--rm", "--replace", "--name", container,
+	args := []string{"podman", "run", "--rm", "--replace", "--detach", "--name", container,
 		"--uidmap=" + userns, "--gidmap=" + userns,
 		"--cap-drop=ALL", "--security-opt=no-new-privileges",
-		"--memory=512m", "--memory-swap=512m", "--pids-limit=256", "--shm-size=128m"}
+		"--memory=512m", "--memory-swap=512m", "--pids-limit=256", "--shm-size=128m",
+		// The DevTools port, reachable from this host's loopback only.
+		"--publish", fmt.Sprintf("127.0.0.1:%d:%s", port, debugPort)}
 	if m.isolate {
 		// Resolve the target, install an egress filter that allows only that IP
 		// (plus the public internet), and pin the hostname to the resolved IP so
@@ -360,22 +381,67 @@ func (m *Manager) shoot(a App) error {
 			args = append(args, "--add-host", host+":"+ip.String())
 		}
 	}
-	args = append(args, "-v", workDir+":/out:U", image,
+	args = append(args, image,
 		"--headless", "--no-sandbox", "--disable-gpu", "--hide-scrollbars",
 		"--window-size="+windowSize, "--force-device-scale-factor="+deviceScaleFactor,
-		"--virtual-time-budget="+virtualTimeBudgetMS,
 		// Without this the capture can happen mid-paint, which is the other way
 		// a card comes out white even though the page had rendered.
 		"--run-all-compositor-stages-before-draw",
-		"--screenshot=/out/"+shotFile, a.URL)
-	_, err := m.runner.RunTimeout(screenshotTimeout, args...)
-	if err != nil {
-		// A timeout kills the podman client, not necessarily the container; make
-		// sure nothing keeps rendering (and holding the name) behind our back.
+		"--remote-debugging-address=0.0.0.0", "--remote-debugging-port="+debugPort,
+		"about:blank")
+	if _, err := m.runner.RunTimeout(screenshotTimeout, args...); err != nil {
 		_, _ = m.runner.Run("podman", "rm", "-f", "-t", "0", container)
 		return err
 	}
-	return os.Rename(filepath.Join(workDir, shotFile), m.File(a.ID))
+	// Whatever happens next, the container goes away: it holds the name, a
+	// memory cap and a published port until it does.
+	defer func() { _, _ = m.runner.Run("podman", "rm", "-f", "-t", "0", container) }()
+
+	ctx, cancel := context.WithTimeout(context.Background(), screenshotTimeout)
+	defer cancel()
+	png, err := m.capture(ctx, fmt.Sprintf("http://127.0.0.1:%d", port), a.URL, settleDelay)
+	if err != nil {
+		return err
+	}
+	// Write beside the target and rename, so a reader never sees half a PNG.
+	if err := os.MkdirAll(m.dir, 0o755); err != nil {
+		return err
+	}
+	tmp := m.File(a.ID) + ".tmp"
+	if err := os.WriteFile(tmp, png, 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, m.File(a.ID))
+}
+
+// appIsServing checks the app answers before chrome is started for it. Any
+// HTTP response counts, including a 404 or a 500: the app is up and that IS
+// what a visitor would see. Only a failure to connect skips the shot.
+func appIsServing(rawURL string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), readyTimeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, "GET", rawURL, nil)
+	if err != nil {
+		return err
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	_ = resp.Body.Close()
+	return nil
+}
+
+// freeLoopbackPort asks the kernel for an unused port. There is an inherent
+// race between closing it and podman binding it; on a box taking one shot at a
+// time it is not worth a retry loop.
+func freeLoopbackPort() (int, error) {
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return 0, err
+	}
+	defer l.Close()
+	return l.Addr().(*net.TCPAddr).Port, nil
 }
 
 // resolveTarget parses the app URL and resolves its host to IPv4 addresses (the

@@ -8,6 +8,7 @@ import (
 
 	"heckel.io/hostit/app"
 	"heckel.io/hostit/container"
+	"heckel.io/hostit/hoststats"
 	"heckel.io/hostit/nodeapi"
 	"heckel.io/hostit/workspace"
 )
@@ -307,5 +308,8 @@ func (m *Machine) Heartbeat() *nodeapi.Heartbeat {
 		Version:      Version,
 		BtrfsCapable: m.btrfs.IsBtrfs(m.config.AppsDir),
 		Address:      m.config.AppsBindAddress,
+		// The apps pool is the filesystem that matters here: it filling up is
+		// what breaks this node.
+		Stats: hoststats.Measure(m.config.AppsDir),
 	}
 }

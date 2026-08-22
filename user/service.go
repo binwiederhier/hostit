@@ -35,6 +35,11 @@ const (
 	defaultAppLimit = 3
 	defaultMemoryMB = 128
 	defaultDiskMB   = 256
+	// The pools are their OWN defaults, deliberately not app_limit x the
+	// per-app size: an admin states "every user gets a gigabyte", and raising
+	// the per-app default must not silently raise everyone's ceiling.
+	defaultMemoryPoolMB = 1024
+	defaultDiskPoolMB   = 4096
 
 	settingAppLimit     = "default_app_limit"
 	settingMemoryMB     = "default_memory_mb"
@@ -61,9 +66,7 @@ type Limits struct {
 	MemoryMB int `json:"memory_mb"`
 	DiskMB   int `json:"disk_mb"`
 	// The pools bound the SUM of the user's apps' effective limits. A user row
-	// without an explicit pool derives app_limit x the per-app default, which
-	// keeps a pre-pool user exactly as capable as they were; 0 = unbounded
-	// (an app_limit of 0 means unlimited apps, so the derived pool follows).
+	// without an explicit pool gets the instance default; 0 means unbounded.
 	MemoryPoolMB int `json:"memory_pool_mb"`
 	DiskPoolMB   int `json:"disk_pool_mb"`
 }
@@ -265,15 +268,8 @@ func (m *Manager) Limits(u *store.User) (*Limits, error) {
 	if u.DiskMB != nil {
 		limits.DiskMB = *u.DiskMB
 	}
-	// Pools, most specific wins: the user's own, else the instance's default
-	// pool, else derived from the resolved per-app defaults (the pre-pool
-	// upgrade fallback, so an instance that never set one changes nothing).
-	if limits.MemoryPoolMB == 0 {
-		limits.MemoryPoolMB = limits.AppLimit * limits.MemoryMB
-	}
-	if limits.DiskPoolMB == 0 {
-		limits.DiskPoolMB = limits.AppLimit * limits.DiskMB
-	}
+	// Pools, most specific wins: the user's own, else the instance default.
+	// No derivation from the per-app sizes -- they are independent knobs.
 	if u.MemoryPoolMB != nil {
 		limits.MemoryPoolMB = *u.MemoryPoolMB
 	}
@@ -281,6 +277,14 @@ func (m *Manager) Limits(u *store.User) (*Limits, error) {
 		limits.DiskPoolMB = *u.DiskPoolMB
 	}
 	return &limits, nil
+}
+
+// positiveOr keeps a configured value only when it is a real one.
+func positiveOr(value, fallback int) int {
+	if value > 0 {
+		return value
+	}
+	return fallback
 }
 
 // Defaults returns the global default limits
@@ -293,10 +297,12 @@ func (m *Manager) Defaults() (*Limits, error) {
 		AppLimit: settingInt(settings, settingAppLimit, defaultAppLimit),
 		MemoryMB: settingInt(settings, settingMemoryMB, defaultMemoryMB),
 		DiskMB:   settingInt(settings, settingDiskMB, defaultDiskMB),
-		// 0 = no explicit default pool; Limits then derives one. Stating a pool
-		// here beats making admins do the app_limit x per-app multiplication.
-		MemoryPoolMB: settingInt(settings, settingMemoryPoolMB, 0),
-		DiskPoolMB:   settingInt(settings, settingDiskPoolMB, 0),
+		// A stored 0 means "not configured" and falls back to the built-in: an
+		// instance-wide 0 would switch pool enforcement off for everyone, which
+		// is never what saving a form was meant to do. A single USER's pool may
+		// still be 0 to mean unlimited -- that is a deliberate, per-person act.
+		MemoryPoolMB: positiveOr(settingInt(settings, settingMemoryPoolMB, 0), defaultMemoryPoolMB),
+		DiskPoolMB:   positiveOr(settingInt(settings, settingDiskPoolMB, 0), defaultDiskPoolMB),
 	}, nil
 }
 

@@ -478,6 +478,7 @@ func (s *Server) appResponse(a *store.App, customDomain string) *apiAppResponse 
 		Name:             a.Name,
 		URL:              s.apps.URL(a),
 		Port:             a.Port,
+		Host:             hostOrLocal(a.Host),
 		DiskMB:           a.DiskMB,
 		OwnerEmail:       ownerEmail,
 		OwnerName:        ownerName,

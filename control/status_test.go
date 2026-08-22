@@ -22,7 +22,7 @@ func TestClusterStatusReportsMembersAndTotals(t *testing.T) {
 	require.NoError(t, st.SetNodeSeen("worker-1", now.Add(-5*time.Second)))
 	require.NoError(t, st.EnsureNode("worker-2", "10.0.0.3")) // never reported
 	require.NoError(t, st.EnsureProxy("edge-1"))
-	require.NoError(t, st.SetProxyStatus("edge-1", now.Add(-10*time.Second), "v0.13.0", 4))
+	require.NoError(t, st.SetProxyStatus("edge-1", now.Add(-10*time.Second), "v0.13.0", 4, `{"memory_used_mb":700,"memory_total_mb":1000,"disk_used_mb":10,"disk_total_mb":100,"load1":0.5,"cpu_count":2}`))
 
 	require.NoError(t, st.AddApp(&store.App{ID: "a1", Name: "blog", Port: 10000, Host: "worker-1"}))
 	require.NoError(t, st.AddApp(&store.App{ID: "a2", Name: "wiki", Port: 10001, Host: "worker-1"}))
@@ -34,7 +34,7 @@ func TestClusterStatusReportsMembersAndTotals(t *testing.T) {
 	require.NoError(t, st.AddApp(&store.App{ID: "a3", Name: "gone", Port: 10002, Host: "retired-node"}))
 	require.NoError(t, st.SetAppPoweredOff("wiki", true))
 
-	status, err := ClusterStatus(st, now)
+	status, err := ClusterStatus(st, t.TempDir(), now)
 	require.NoError(t, err)
 
 	require.Len(t, status.Nodes, 2)
@@ -63,11 +63,11 @@ func TestClusterStatusFlagsAMemberThatStoppedReporting(t *testing.T) {
 	st := s.apps.Store()
 	now := time.Now()
 	require.NoError(t, st.EnsureProxy("edge-1"))
-	require.NoError(t, st.SetProxyStatus("edge-1", now.Add(-90*time.Second), "v1", 3))
+	require.NoError(t, st.SetProxyStatus("edge-1", now.Add(-90*time.Second), "v1", 3, ""))
 	require.NoError(t, st.EnsureProxy("edge-2"))
-	require.NoError(t, st.SetProxyStatus("edge-2", now.Add(-10*time.Minute), "v1", 3))
+	require.NoError(t, st.SetProxyStatus("edge-2", now.Add(-10*time.Minute), "v1", 3, ""))
 
-	status, err := ClusterStatus(st, now)
+	status, err := ClusterStatus(st, t.TempDir(), now)
 	require.NoError(t, err)
 	require.Len(t, status.Proxies, 2)
 	assert.False(t, status.Proxies[0].Stale, "90s is a slow pass, not a dead proxy")
@@ -87,7 +87,7 @@ func TestTheColocatedNodeRegistersItself(t *testing.T) {
 
 	require.NoError(t, s.apps.EnsureLocalNode())
 
-	status, err := ClusterStatus(st, time.Now())
+	status, err := ClusterStatus(st, t.TempDir(), time.Now())
 	require.NoError(t, err)
 	require.Len(t, status.Nodes, 1)
 	assert.Equal(t, store.HostLocal, status.Nodes[0].Name)
@@ -105,7 +105,7 @@ func TestClusterStatusStillFlagsATrulyUnplacedApp(t *testing.T) {
 	require.NoError(t, s.apps.EnsureLocalNode())
 	require.NoError(t, st.AddApp(&store.App{ID: "a1", Name: "orphan", Port: 10000, Host: "retired-node"}))
 
-	status, err := ClusterStatus(st, time.Now())
+	status, err := ClusterStatus(st, t.TempDir(), time.Now())
 	require.NoError(t, err)
 	assert.Equal(t, 1, status.Apps.Unplaced)
 }

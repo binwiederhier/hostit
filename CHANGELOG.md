@@ -7,6 +7,33 @@ changed rather than what an operator had to do about it; from v0.15.0 on, each
 release is written down as it is cut. Anything that changes a config file, a
 default, or on-disk state is called out as **Breaking** or **Upgrade note**.
 
+## Unreleased
+
+- **Cluster health at a glance.** Every member -- control included -- now
+  reports its machine's memory, disk and load in its heartbeat, and the admin
+  page lists them in one table with the same amber-at-75%, red-at-90% colouring
+  the app usage readings use. `hostit control status` shows the same numbers.
+- **Fixed: intermittent white screenshot cards.** The shot ran chrome in
+  one-shot mode with a VIRTUAL time budget, which fast-forwards timers -- so an
+  animated page (a canvas, a game, a spinner) could burn a 60-second budget in a
+  fraction of a real second and be captured before its images, fonts or data
+  arrived. Chrome is now driven over the DevTools protocol: navigate, wait for
+  the load event, settle for ten REAL seconds, capture. A preflight also skips
+  the shot entirely when the app is not answering yet, instead of storing a
+  photograph of a connection error.
+- **Per-app sizes and per-user pools are independent settings.** A pool no
+  longer derives from `app limit x per-app default`; Global defaults is five
+  plain rows (apps per user, RAM/disk per new app, RAM/disk pool per user).
+  A stored zero for a default pool now falls back to the built-in rather than
+  silently disabling pool enforcement instance-wide.
+- The admin app list shows which node an app runs on instead of its creation
+  date, and the users list shows Max RAM/Max Disk as sizes.
+- The Profile page's SSH keys and API tokens are proper tables with add
+  dialogs, each linking to the manual section that explains the feature.
+- Five new screenshots in the manual (the assistant, custom domains, the
+  resources dialog, the cluster table, the profile page), and CPU caps read
+  "1 core" rather than "1 cores".
+
 ## v0.18.0 (2026-08-21)
 
 - **New apps default to 128 MB RAM, 256 MB disk and 0.5 CPU cores.** The old

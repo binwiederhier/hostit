@@ -352,10 +352,12 @@ func TestAllowDomainRefusesPublicMailProviders(t *testing.T) {
 	}
 }
 
-// Pools bound the SUM of a user's apps' effective limits. A user without an
-// explicit pool derives app_limit x the per-app default -- exactly as capable
-// as before pools existed, so the feature's arrival changes nobody's budget.
-func TestLimitsDerivePools(t *testing.T) {
+// Pools bound the SUM of a user's apps' effective limits, and they are their
+// OWN setting -- not app_limit x the per-app default. Decoupled on purpose:
+// "every user gets 2 GB" is a number an admin states, not one they derive by
+// multiplying two unrelated knobs, and raising the per-app default should not
+// silently raise everyone's ceiling.
+func TestPoolsAreTheirOwnSetting(t *testing.T) {
 	t.Parallel()
 	m := newTestManager(t)
 	u := &store.User{Email: "a@example.com", Name: "A", Role: store.RoleUser, Status: store.StatusActive}
@@ -363,25 +365,31 @@ func TestLimitsDerivePools(t *testing.T) {
 
 	limits, err := m.Limits(u)
 	require.NoError(t, err)
-	assert.Equal(t, 3*128, limits.MemoryPoolMB, "derived: app_limit x per-app default")
-	assert.Equal(t, 3*256, limits.DiskPoolMB)
+	assert.Equal(t, defaultMemoryPoolMB, limits.MemoryPoolMB, "the built-in default pool, not a derivation")
+	assert.Equal(t, defaultDiskPoolMB, limits.DiskPoolMB)
 
-	// An explicit pool wins over the derivation.
-	pool := 4096
+	// Raising the per-app default must NOT move the pool.
+	require.NoError(t, m.SetDefaults(&Limits{
+		AppLimit: 3, MemoryMB: 1024, DiskMB: 2048,
+		MemoryPoolMB: defaultMemoryPoolMB, DiskPoolMB: defaultDiskPoolMB,
+	}))
+	limits, err = m.Limits(u)
+	require.NoError(t, err)
+	assert.Equal(t, defaultMemoryPoolMB, limits.MemoryPoolMB, "per-app size and pool size are independent knobs")
+
+	// The instance default, then the user's own, most specific winning.
+	require.NoError(t, m.SetDefaults(&Limits{AppLimit: 3, MemoryMB: 128, DiskMB: 256, MemoryPoolMB: 2048, DiskPoolMB: 10240}))
+	limits, err = m.Limits(u)
+	require.NoError(t, err)
+	assert.Equal(t, 2048, limits.MemoryPoolMB)
+
+	pool := 512
 	u.MemoryPoolMB = &pool
 	require.NoError(t, m.store.UpdateUser(u))
 	limits, err = m.Limits(u)
 	require.NoError(t, err)
-	assert.Equal(t, 4096, limits.MemoryPoolMB)
-	assert.Equal(t, 3*256, limits.DiskPoolMB, "the other pool still derives")
-
-	// A raised per-app default raises the derived pool with it.
-	mem := 1024
-	u.MemoryPoolMB, u.MemoryMB = nil, &mem
-	require.NoError(t, m.store.UpdateUser(u))
-	limits, err = m.Limits(u)
-	require.NoError(t, err)
-	assert.Equal(t, 3*1024, limits.MemoryPoolMB)
+	assert.Equal(t, 512, limits.MemoryPoolMB, "a per-user pool wins over the default")
+	assert.Equal(t, 10240, limits.DiskPoolMB, "the other pool still comes from the default")
 }
 
 // The shipped per-app defaults are deliberately small (a static site needs
@@ -396,31 +404,6 @@ func TestShippedDefaultsAreSmall(t *testing.T) {
 	assert.Equal(t, 256, defaults.DiskMB)
 }
 
-// The global defaults can state the default pool DIRECTLY: "every user gets
-// 2 GB RAM" beats "3 x 128, do the math". Derivation stays only as the
-// fallback for instances that never set one, and a per-user pool still wins
-// over both.
-func TestDefaultPoolSettingBeatsDerivation(t *testing.T) {
-	t.Parallel()
-	m := newTestManager(t)
-	u := &store.User{Email: "p@example.com", Name: "P", Role: store.RoleUser, Status: store.StatusActive}
-	require.NoError(t, m.store.AddUser(u))
-
-	require.NoError(t, m.SetDefaults(&Limits{AppLimit: 3, MemoryMB: 128, DiskMB: 256, MemoryPoolMB: 2048, DiskPoolMB: 10240}))
-	limits, err := m.Limits(u)
-	require.NoError(t, err)
-	assert.Equal(t, 2048, limits.MemoryPoolMB, "the explicit default pool wins over the derivation")
-	assert.Equal(t, 10240, limits.DiskPoolMB)
-
-	pool := 512
-	u.MemoryPoolMB = &pool
-	require.NoError(t, m.store.UpdateUser(u))
-	limits, err = m.Limits(u)
-	require.NoError(t, err)
-	assert.Equal(t, 512, limits.MemoryPoolMB, "a per-user pool wins over the default")
-	assert.Equal(t, 10240, limits.DiskPoolMB)
-}
-
 // One resolution for what an app is actually held to, used by every caller
 // (API display, desired state, startup priming, pool math) -- the policy once
 // had its own copy and quietly un-applied overrides on restart.
@@ -431,4 +414,20 @@ func TestEffectiveAppLimits(t *testing.T) {
 	assert.Equal(t, []int{128, 256, 0}, []int{mem, disk, cpu}, "no overrides: the owner's defaults")
 	mem, disk, cpu = EffectiveAppLimits(l, &store.App{MemoryLimitMB: 512, CPUMilli: 1500})
 	assert.Equal(t, []int{512, 256, 1500}, []int{mem, disk, cpu}, "overrides win where set")
+}
+
+// A stored zero for an instance default pool means "not configured", not
+// "unlimited for everyone". Found live: saving the settings form before the
+// pool fields existed wrote 0, which silently switched pool enforcement off
+// instance-wide and showed every user a "0 MB" ceiling.
+func TestZeroDefaultPoolFallsBackToTheBuiltIn(t *testing.T) {
+	t.Parallel()
+	m := newTestManager(t)
+	require.NoError(t, m.store.SetSetting(settingMemoryPoolMB, "0"))
+	require.NoError(t, m.store.SetSetting(settingDiskPoolMB, "0"))
+
+	defaults, err := m.Defaults()
+	require.NoError(t, err)
+	assert.Equal(t, defaultMemoryPoolMB, defaults.MemoryPoolMB)
+	assert.Equal(t, defaultDiskPoolMB, defaults.DiskPoolMB)
 }

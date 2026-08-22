@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { api } from "../api";
 import { CopyButton, ErrorBanner, formatDate, Loading } from "../components";
 
@@ -11,12 +12,100 @@ const keyPreview = (key) => {
   return `${type} ...${b64.slice(-16)}${comment ? ` ${comment}` : ""}`;
 };
 
+// Escape closes a dialog, like every other modal in the app.
+const useEscape = (onClose) => {
+  useEffect(() => {
+    const onKey = (e) => e.key === "Escape" && onClose();
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+};
+
+// DocsLink points at the section of the public manual that explains a feature,
+// so the page can stay short and still be self-explanatory.
+const DocsLink = ({ to, children }) => (
+  <Link className="docs-link" to={to}>
+    {children}
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M6 3.5h6.5V10M12.5 3.5 4 12" />
+    </svg>
+  </Link>
+);
+
+const AddKeyDialog = ({ onClose, onAdded }) => {
+  useEscape(onClose);
+  const [label, setLabel] = useState("");
+  const [key, setKey] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const add = async (e) => {
+    e.preventDefault();
+    if (busy || key.trim() === "") return;
+    setBusy(true);
+    setError("");
+    try {
+      await api.post("/api/account/keys", { label: label.trim(), key: key.trim() });
+      await onAdded();
+      onClose();
+    } catch (err) {
+      setError(err.message);
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true" onMouseDown={onClose}>
+      <form className="card modal modal-sheet" onMouseDown={(e) => e.stopPropagation()} onSubmit={add}>
+        <button type="button" className="modal-x" onClick={onClose} title="Close" aria-label="Close">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
+        </button>
+        <h2>Add an SSH key</h2>
+        <p className="hint">
+          Paste a public key -- the contents of <span className="mono">~/.ssh/id_ed25519.pub</span>, not the
+          private half. It grants SSH and scp access to every app you own.
+        </p>
+        <ErrorBanner message={error} onDismiss={() => setError("")} />
+        <label className="settings-field">
+          <span>Label</span>
+          <input
+            type="text"
+            className="settings-input"
+            value={label}
+            onChange={(e) => setLabel(e.target.value)}
+            placeholder="laptop"
+            autoFocus
+            disabled={busy}
+          />
+        </label>
+        <label className="settings-field settings-field-stacked">
+          <span>Public key</span>
+          <textarea
+            className="settings-desc mono"
+            value={key}
+            onChange={(e) => setKey(e.target.value)}
+            placeholder="ssh-ed25519 AAAA... you@laptop"
+            rows={4}
+            disabled={busy}
+          />
+        </label>
+        <div className="btn-row">
+          <button type="button" className="btn" onClick={onClose} disabled={busy}>
+            Cancel
+          </button>
+          <button type="submit" className="btn btn-primary" disabled={busy || key.trim() === ""}>
+            {busy ? "Adding..." : "Add key"}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+};
+
 const SshKeys = () => {
   const [keys, setKeys] = useState(null);
   const [error, setError] = useState("");
-  const [label, setLabel] = useState("");
-  const [key, setKey] = useState("");
-  const [busy, setBusy] = useState(false);
+  const [adding, setAdding] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -29,25 +118,6 @@ const SshKeys = () => {
   useEffect(() => {
     load();
   }, [load]);
-
-  const add = async (e) => {
-    e.preventDefault();
-    if (busy || key.trim() === "") {
-      return;
-    }
-    setBusy(true);
-    setError("");
-    try {
-      await api.post("/api/account/keys", { label: label.trim(), key: key.trim() });
-      setLabel("");
-      setKey("");
-      await load();
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setBusy(false);
-    }
-  };
 
   const remove = async (k) => {
     if (!window.confirm(`Delete SSH key "${k.label || keyPreview(k.key)}"? You will no longer be able to log in with it.`)) {
@@ -64,44 +134,105 @@ const SshKeys = () => {
 
   return (
     <div className="card">
-      <h2>SSH keys</h2>
-      <p className="hint">These keys grant SSH access to all of your apps.</p>
+      <div className="card-header">
+        <h2>SSH keys</h2>
+        <button type="button" className="btn btn-small btn-primary" onClick={() => setAdding(true)}>
+          Add SSH key
+        </button>
+      </div>
+      <p className="hint">
+        These keys grant SSH, scp and rsync access to all of your apps, and the terminal in the web
+        app uses the same login. <DocsLink to="/docs#ssh">How SSH access works</DocsLink>
+      </p>
       <ErrorBanner message={error} onDismiss={() => setError("")} />
       {keys === null && !error && <Loading label="Loading keys..." />}
-      {keys !== null && keys.length === 0 && <p className="empty">No SSH keys yet. Add one below.</p>}
-      {keys !== null && keys.length > 0 && (
-        <ul className="item-list">
-          {keys.map((k) => (
-            <li key={k.id}>
-              <div className="item-main">
-                <span className="item-label">{k.label || "(no label)"}</span>
-                <span className="mono item-detail">{keyPreview(k.key)}</span>
-              </div>
-              <button type="button" className="btn btn-small btn-danger" onClick={() => remove(k)}>
-                Delete
-              </button>
-            </li>
-          ))}
-        </ul>
+      {keys !== null && keys.length === 0 && (
+        <p className="empty">No SSH keys yet. Add one to reach your apps over SSH.</p>
       )}
-      <form className="stack-form" onSubmit={add}>
-        <input
-          type="text"
-          value={label}
-          onChange={(e) => setLabel(e.target.value)}
-          placeholder="label, e.g. laptop"
-          aria-label="SSH key label"
-        />
-        <textarea
-          value={key}
-          onChange={(e) => setKey(e.target.value)}
-          placeholder="ssh-ed25519 AAAA... you@laptop"
-          rows={3}
-          aria-label="SSH public key"
-        />
-        <div>
-          <button type="submit" className="btn btn-primary" disabled={busy || key.trim() === ""}>
-            {busy ? "Adding..." : "Add key"}
+      {keys !== null && keys.length > 0 && (
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Label</th>
+                <th>Key</th>
+                <th>Added</th>
+                <th aria-label="Actions" />
+              </tr>
+            </thead>
+            <tbody>
+              {keys.map((k) => (
+                <tr key={k.id}>
+                  <td className="item-label">{k.label || <span className="cell-muted">(no label)</span>}</td>
+                  <td className="mono cell-muted">{keyPreview(k.key)}</td>
+                  <td className="cell-muted">{formatDate(k.created_at, "unknown")}</td>
+                  <td className="cell-actions">
+                    <button type="button" className="btn btn-small btn-danger" onClick={() => remove(k)}>
+                      Delete
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {adding && <AddKeyDialog onClose={() => setAdding(false)} onAdded={load} />}
+    </div>
+  );
+};
+
+const CreateTokenDialog = ({ onClose, onCreated }) => {
+  useEscape(onClose);
+  const [label, setLabel] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const create = async (e) => {
+    e.preventDefault();
+    if (busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      const created = await api.post("/api/account/tokens", { label: label.trim() });
+      await onCreated(created);
+      onClose();
+    } catch (err) {
+      setError(err.message);
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true" onMouseDown={onClose}>
+      <form className="card modal modal-sheet" onMouseDown={(e) => e.stopPropagation()} onSubmit={create}>
+        <button type="button" className="modal-x" onClick={onClose} title="Close" aria-label="Close">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
+        </button>
+        <h2>Create an API token</h2>
+        <p className="hint">
+          The token is shown once, right after it is created. It can manage every app you own, so
+          give it a label you will recognise when it is time to revoke it.
+        </p>
+        <ErrorBanner message={error} onDismiss={() => setError("")} />
+        <label className="settings-field">
+          <span>Label</span>
+          <input
+            type="text"
+            className="settings-input"
+            value={label}
+            onChange={(e) => setLabel(e.target.value)}
+            placeholder="claude on my laptop"
+            autoFocus
+            disabled={busy}
+          />
+        </label>
+        <div className="btn-row">
+          <button type="button" className="btn" onClick={onClose} disabled={busy}>
+            Cancel
+          </button>
+          <button type="submit" className="btn btn-primary" disabled={busy}>
+            {busy ? "Creating..." : "Create token"}
           </button>
         </div>
       </form>
@@ -112,8 +243,7 @@ const SshKeys = () => {
 const Tokens = () => {
   const [tokens, setTokens] = useState(null);
   const [error, setError] = useState("");
-  const [label, setLabel] = useState("");
-  const [busy, setBusy] = useState(false);
+  const [creating, setCreating] = useState(false);
   const [newToken, setNewToken] = useState(null);
 
   const load = useCallback(async () => {
@@ -127,24 +257,6 @@ const Tokens = () => {
   useEffect(() => {
     load();
   }, [load]);
-
-  const create = async (e) => {
-    e.preventDefault();
-    if (busy) {
-      return;
-    }
-    setBusy(true);
-    setError("");
-    try {
-      setNewToken(await api.post("/api/account/tokens", { label: label.trim() }));
-      setLabel("");
-      await load();
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setBusy(false);
-    }
-  };
 
   const revoke = async (t) => {
     if (!window.confirm(`Revoke token "${t.label || t.prefix}"? Anything still using it will stop working.`)) {
@@ -161,9 +273,16 @@ const Tokens = () => {
 
   return (
     <div className="card">
-      <h2>API tokens</h2>
+      <div className="card-header">
+        <h2>API tokens</h2>
+        <button type="button" className="btn btn-small btn-primary" onClick={() => setCreating(true)}>
+          Create token
+        </button>
+      </div>
       <p className="hint">
-        Tokens authenticate the <span className="mono">hostit</span> CLI and API calls, e.g. from Claude or Codex.
+        Tokens authenticate the <span className="mono">hostit</span> CLI and direct API calls -- including
+        your own AI agent. They can manage all your apps; each app also has its own scoped token on
+        its page. <DocsLink to="/docs#api">The API, and how agents use it</DocsLink>
       </p>
       <ErrorBanner message={error} onDismiss={() => setError("")} />
       {newToken && (
@@ -183,7 +302,9 @@ const Tokens = () => {
         </div>
       )}
       {tokens === null && !error && <Loading label="Loading tokens..." />}
-      {tokens !== null && tokens.length === 0 && <p className="empty">No API tokens yet. Create one below.</p>}
+      {tokens !== null && tokens.length === 0 && (
+        <p className="empty">No API tokens yet. Create one to use the CLI or the API.</p>
+      )}
       {tokens !== null && tokens.length > 0 && (
         <div className="table-wrap">
           <table>
@@ -200,7 +321,7 @@ const Tokens = () => {
               {tokens.map((t) => (
                 <tr key={t.id}>
                   <td className="mono">{t.prefix}...</td>
-                  <td>{t.label || "-"}</td>
+                  <td className="item-label">{t.label || <span className="cell-muted">(no label)</span>}</td>
                   <td className="cell-muted">{formatDate(t.created_at, "never")}</td>
                   <td className="cell-muted">{formatDate(t.last_used, "never")}</td>
                   <td className="cell-actions">
@@ -214,21 +335,15 @@ const Tokens = () => {
           </table>
         </div>
       )}
-      {tokens !== null && tokens.length > 0 && (
-        <p className="hint">These tokens can manage all your apps. Each app also has its own token, shown on the app's page.</p>
-      )}
-      <form className="inline-form" onSubmit={create}>
-        <input
-          type="text"
-          value={label}
-          onChange={(e) => setLabel(e.target.value)}
-          placeholder="label, e.g. claude"
-          aria-label="Token label"
+      {creating && (
+        <CreateTokenDialog
+          onClose={() => setCreating(false)}
+          onCreated={async (created) => {
+            setNewToken(created);
+            await load();
+          }}
         />
-        <button type="submit" className="btn btn-primary" disabled={busy}>
-          {busy ? "Creating..." : "Create token"}
-        </button>
-      </form>
+      )}
     </div>
   );
 };

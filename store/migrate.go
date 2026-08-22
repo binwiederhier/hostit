@@ -314,6 +314,14 @@ var (
 		UPDATE user SET memory_pool_mb = COALESCE(memory_pool_mb, COALESCE(app_limit, 3) * COALESCE(memory_mb, 512)) WHERE id IN (SELECT DISTINCT owner_id FROM app WHERE owner_id != '');
 		UPDATE user SET disk_pool_mb = COALESCE(disk_pool_mb, COALESCE(app_limit, 3) * COALESCE(disk_mb, 2048)) WHERE id IN (SELECT DISTINCT owner_id FROM app WHERE owner_id != '');
 	`,
+		// What each member last reported about its own machine (memory, disk,
+		// load), as a JSON blob: it is display-only telemetry whose shape may
+		// grow, and a blob beats six columns per table plus a migration each
+		// time one is added. Empty means "never reported".
+		`
+		ALTER TABLE node ADD COLUMN stats TEXT NOT NULL DEFAULT '';
+		ALTER TABLE proxy ADD COLUMN stats TEXT NOT NULL DEFAULT '';
+	`,
 	}
 )
 

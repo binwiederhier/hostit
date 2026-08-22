@@ -347,7 +347,7 @@ func newUserResponse(u *store.User, appCount int) *apiUserResponse {
 // status` prints -- one assembly (ClusterStatus), so the terminal and the
 // dashboard can never disagree about the state of the cluster.
 func (s *Server) handleClusterStatus(w http.ResponseWriter, _ *http.Request, _ *caller) {
-	status, err := ClusterStatus(s.apps.Store(), time.Now())
+	status, err := ClusterStatus(s.apps.Store(), s.config.DataDir, time.Now())
 	if err != nil {
 		writeAppError(w, err)
 		return

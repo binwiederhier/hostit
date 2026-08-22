@@ -5538,3 +5538,52 @@ input[type="number"]::-webkit-inner-spin-button {
 .domains-empty {
   margin-top: 10px;
 }
+
+/* The cluster table's secondary line (a node's address, a proxy's build). */
+.member-detail {
+  font-size: 12px;
+  margin-top: 2px;
+}
+
+/* Global defaults: one labelled row per setting, since they are five
+   independent numbers rather than a row of related ones. */
+.defaults-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 34rem;
+}
+
+/* The snapshot hooks disclosure needs air under it before the save row. */
+.snap-hooks {
+  margin-bottom: 14px;
+}
+
+/* An inline link out to the section of the manual that explains a feature. */
+.docs-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--accent);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.docs-link:hover {
+  text-decoration: underline;
+}
+.docs-link svg {
+  width: 11px;
+  height: 11px;
+}
+
+/* A settings row whose control wants the full width under its label. */
+.settings-field-stacked {
+  display: block;
+}
+.settings-field-stacked > span {
+  display: block;
+  margin-bottom: 4px;
+}
+.settings-field-stacked textarea {
+  width: 100%;
+}

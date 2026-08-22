@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/creack/pty"
+
 	"heckel.io/hostit/nodeapi"
 	"heckel.io/hostit/workspace"
 )

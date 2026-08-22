@@ -1,6 +1,7 @@
 package control
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -78,6 +79,11 @@ func (m *Manager) RecordNodeStatus(nodeID string, hb *nodeapi.Heartbeat) error {
 	if hb.Address != "" {
 		if err := m.store.EnsureNode(nodeID, hb.Address); err != nil {
 			return err
+		}
+	}
+	if blob, err := json.Marshal(hb.Stats); err == nil {
+		if err := m.store.SetNodeStats(nodeID, string(blob)); err != nil {
+			slog.Warn("Cannot record a node's machine stats", "node", nodeID, "error", err)
 		}
 	}
 	return m.store.SetNodeSeen(nodeID, time.Now())

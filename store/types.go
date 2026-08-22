@@ -18,6 +18,10 @@ const (
 // control, never the other way round, so control never needs to reach it.
 type Proxy struct {
 	Name string `json:"name"`
+	// Stats is the raw JSON the proxy last reported about its machine (see
+	// hoststats); empty until it reports. Kept as a blob here so the registry
+	// does not grow a column per metric.
+	Stats string `json:"stats,omitempty"`
 	// Version is the build the proxy reported, and Routes how many routes it was
 	// serving, both from its last heartbeat.
 	Version string `json:"version"`
@@ -31,6 +35,8 @@ type Proxy struct {
 type Node struct {
 	Name    string `json:"name"`
 	Address string `json:"address"`
+	// Stats is the raw JSON the node last reported about its machine; see Proxy.
+	Stats string `json:"stats,omitempty"`
 	// JoinedAt is a leftover of the retired join-token flow (kept for schema
 	// compatibility); liveness is LastSeen.
 	JoinedAt time.Time `json:"joined_at"`

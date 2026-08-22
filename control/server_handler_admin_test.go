@@ -175,7 +175,7 @@ func TestClusterStatusEndpointIsAdminOnly(t *testing.T) {
 	s := newTestServer(t)
 	require.NoError(t, s.apps.Store().EnsureNode("worker-1", "10.0.0.2"))
 	require.NoError(t, s.apps.Store().EnsureProxy("edge-1"))
-	require.NoError(t, s.apps.Store().SetProxyStatus("edge-1", time.Now(), "v0.13.0", 4))
+	require.NoError(t, s.apps.Store().SetProxyStatus("edge-1", time.Now(), "v0.13.0", 4, ""))
 
 	rr := request(t, s.API(), "GET", "/api/cluster", "", testToken)
 	require.Equal(t, http.StatusOK, rr.Code)
