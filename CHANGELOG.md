@@ -7,7 +7,67 @@ changed rather than what an operator had to do about it; from v0.15.0 on, each
 release is written down as it is cut. Anything that changes a config file, a
 default, or on-disk state is called out as **Breaking** or **Upgrade note**.
 
-## Unreleased
+## v0.19.0 (2026-08-22)
+
+- **Private apps.** An app can now be reachable only by its owner, its
+  collaborators, the people they give access to, and admins -- chosen when the
+  app is created or changed later under Settings -> Visibility. It holds on
+  every hostname the app answers to, custom domains included, and takes effect
+  within about a second. Public stays the default, and every existing app is
+  public, so nothing already deployed changes meaning.
+
+  Access comes in two grants now. A **collaborator** can deploy, edit files, use
+  the terminal and SSH in -- and so, obviously, can open the app. Someone given
+  **access** can only open its URL: no files, no terminal, no deploys, and the
+  app does not appear on their dashboard. An app with people on that list reads
+  as *Restricted* rather than *Private*; that is a label for "private, plus
+  somebody", not a third setting.
+
+  A visitor without a grant is sent to sign in and returned to the app
+  afterwards. One who is signed in but not on the list is told the app is
+  private and to ask its owner, along with which account they are using -- being
+  signed in as the wrong one is the usual cause. A hostname nobody has deployed
+  still says nothing at all.
+
+  Private apps are served by hostit-proxy, not routed through control, so they
+  keep working while control is down -- the same property public apps have
+  always had. Control resolves who may open each private app ahead of time and
+  pushes that with the routing table, along with the Ed25519 PUBLIC key the
+  proxy checks visitors' credentials with. The proxy can verify a grant and can
+  never issue one. Minting still needs control, so during an outage everyone
+  holding a grant keeps working and nobody new gets in.
+
+  No screenshots are taken of a private app (the shot container has no
+  credentials and would photograph the refusal page), so its card shows a
+  placeholder. Scripts and webhooks are unaffected: an API token reaches a
+  private app with no redirect.
+
+- **Upgrade note:** two migrations run at startup. `28` adds `app.private`,
+  defaulting every existing app to public; `29` adds the `app_viewer` table,
+  empty. No action needed and nothing changes for an app you do not touch, but
+  they do rewrite the `app` table, so take the usual backup first.
+
+- **Security fixes.** The login's "come back here afterwards" parameter rejected
+  a leading `//` but not `/\` or an embedded tab, both of which browsers read
+  as leaving the site -- an open redirect on the platform's own origin, after a
+  genuine sign-in. Responses served through hostit-proxy now carry the same
+  `Strict-Transport-Security`, `X-Content-Type-Options` and `Referrer-Policy`
+  headers control puts on app traffic; in any deployment with a proxy in front,
+  which is the normal one, apps were getting none of them.
+
+- **Running hostit for development is documented** at
+  [docs/development.md](docs/development.md): what the machine needs (root,
+  btrfs, podman, crun), a loopback btrfs filesystem, signing in without Google,
+  and resetting. `npm run dev` now proxies `/api` and `/auth` to a local
+  instance, so the web app can be developed with hot reload.
+
+- Every browser end-to-end spec now fails on an uncaught JavaScript error,
+  which is the only thing that catches a component that renders fine and throws
+  when you click it.
+
+- Explanatory text ("hint" and empty-state lines) reads at body size, and the
+  live resource stats in the app header are hidden on small screens again --
+  they had been covering the tab strip since the header usage row was restyled.
 
 - **Cluster health at a glance.** Every member -- control included -- now
   reports its machine's memory, disk and load in its heartbeat, and the admin
