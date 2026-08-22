@@ -7,6 +7,18 @@ changed rather than what an operator had to do about it; from v0.15.0 on, each
 release is written down as it is cut. Anything that changes a config file, a
 default, or on-disk state is called out as **Breaking** or **Upgrade note**.
 
+## v0.19.1 (2026-08-22)
+
+- **Fixed: a node's memory, disk and load readings never changed.** They were
+  recorded only by the connect handshake, so a node that stayed connected
+  reported whatever its machine looked like when it dialled in -- while
+  `last_seen` ticked along beside them, so the row looked alive. A deploy is
+  the worst moment to take that snapshot: on apps.heckel.io it froze at load
+  15.92, captured while seventeen containers were restarting, on a box that was
+  actually sitting at 1.52. The state poll now refreshes them every 30 seconds,
+  the same cadence proxies already used. Display only -- nothing routes or
+  schedules on these numbers.
+
 ## v0.19.0 (2026-08-22)
 
 - **Private apps.** An app can now be reachable only by its owner, its
