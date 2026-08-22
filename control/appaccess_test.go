@@ -2,71 +2,30 @@ package control
 
 import (
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"heckel.io/hostit/store"
 )
 
-func TestAppGrantRoundTrip(t *testing.T) {
+// Sessions and grants are different credentials with different reach, and
+// neither may stand in for the other. They are now different algorithms
+// entirely -- an HMAC session against an Ed25519 grant -- but the property is
+// worth asserting where the two are wired together rather than only where they
+// are defined.
+func TestASessionIsNotAGrant(t *testing.T) {
 	t.Parallel()
-	g := newGrantManager("session-key")
+	s := newTestServer(t)
 
-	value, err := g.encode("blog", "u1")
+	session, err := s.sessions.encode("u1")
 	require.NoError(t, err)
-	app, userID, err := g.decode(value)
-	require.NoError(t, err)
-	assert.Equal(t, "blog", app)
-	assert.Equal(t, "u1", userID)
-}
-
-// A grant is signed with a key DERIVED from the session key, never the session
-// key itself. Without the separation, a stolen session cookie would verify as a
-// grant (and the reverse), and the two have very different blast radii.
-func TestAppGrantIsNotASession(t *testing.T) {
-	t.Parallel()
-	key := "session-key"
-	sessions, grants := newSessionManager(key), newGrantManager(key)
-
-	session, err := sessions.encode("u1")
-	require.NoError(t, err)
-	_, _, err = grants.decode(session)
+	_, _, err = s.grants.Verifier().Verify(session)
 	assert.Error(t, err, "a session cookie must not verify as a grant")
 
-	grant, err := grants.encode("blog", "u1")
+	grant, err := s.grants.Sign("blog", "u1")
 	require.NoError(t, err)
-	_, err = sessions.decode(grant)
+	_, err = s.sessions.decode(grant)
 	assert.Error(t, err, "a grant must not verify as a session")
-}
-
-func TestAppGrantRejectsTampering(t *testing.T) {
-	t.Parallel()
-	g := newGrantManager("session-key")
-	value, err := g.encode("blog", "u1")
-	require.NoError(t, err)
-
-	// Re-pointing a valid grant at another app is the attack that matters: the
-	// cookie lives on a hostname whose content the app's owner controls.
-	tampered := "secret" + value[len("blog"):]
-	_, _, err = g.decode(tampered)
-	assert.Error(t, err)
-
-	_, _, err = g.decode(value + "x")
-	assert.Error(t, err)
-	_, _, err = g.decode("garbage")
-	assert.Error(t, err)
-}
-
-func TestAppGrantExpires(t *testing.T) {
-	t.Parallel()
-	g := newGrantManager("session-key")
-	g.ttl = -time.Minute
-
-	value, err := g.encode("blog", "u1")
-	require.NoError(t, err)
-	_, _, err = g.decode(value)
-	assert.ErrorIs(t, err, errInvalidGrant)
 }
 
 // The visibility decision itself: who may reach a private app.

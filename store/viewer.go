@@ -22,7 +22,16 @@ const (
 	`
 	// One row per app that has any viewers, so a list of apps costs one query
 	// rather than one per app.
-	selectViewerCountsQuery  = `SELECT app_id, COUNT(*) FROM app_viewer GROUP BY app_id`
+	selectViewerCountsQuery = `SELECT app_id, COUNT(*) FROM app_viewer GROUP BY app_id`
+	// Suspended accounts are filtered out here rather than by the caller: these
+	// feed the set the proxy enforces on, and a suspended user must not be in it.
+	selectAllViewersQuery = `
+		SELECT v.app_id, v.user_id FROM app_viewer v JOIN user u ON u.id = v.user_id WHERE u.status = ?
+	`
+	selectAllCollaboratorsQuery = `
+		SELECT c.app_id, c.user_id FROM app_collaborator c JOIN user u ON u.id = c.user_id WHERE u.status = ?
+	`
+	selectActiveAdminsQuery  = `SELECT id FROM user WHERE role = ? AND status = ?`
 	deleteViewersByAppQuery  = `DELETE FROM app_viewer WHERE app_id = ?`
 	deleteViewersByUserQuery = `DELETE FROM app_viewer WHERE user_id = ?`
 )
@@ -87,4 +96,55 @@ func (s *Store) ViewerCounts() (map[string]int, error) {
 		counts[appID] = count
 	}
 	return counts, rows.Err()
+}
+
+// AccessSets returns, per app id, the ACTIVE users who may open that app --
+// its collaborators and its viewers together, since both grants include
+// looking at it. The owner and admins are not in here: the caller knows the
+// owner from the app row, and admins are global rather than per-app.
+//
+// One query per grant table for the whole registry, not one per app: this
+// feeds the routing table, which is re-derived every half second.
+func (s *Store) AccessSets() (map[string][]string, error) {
+	sets := make(map[string][]string)
+	for _, query := range []string{selectAllCollaboratorsQuery, selectAllViewersQuery} {
+		rows, err := s.db.Query(query, StatusActive)
+		if err != nil {
+			return nil, err
+		}
+		for rows.Next() {
+			var appID, userID string
+			if err := rows.Scan(&appID, &userID); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			sets[appID] = append(sets[appID], userID)
+		}
+		err = rows.Err()
+		rows.Close()
+		if err != nil {
+			return nil, err
+		}
+	}
+	return sets, nil
+}
+
+// ActiveAdmins returns the ids of admins, who may open any app. Global rather
+// than copied into every app's set, so one admin does not appear once per app
+// in the table the proxy holds.
+func (s *Store) ActiveAdmins() ([]string, error) {
+	rows, err := s.db.Query(selectActiveAdminsQuery, RoleAdmin, StatusActive)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	ids := make([]string, 0)
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
 }

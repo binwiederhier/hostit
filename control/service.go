@@ -24,6 +24,8 @@ import (
 	"sync"
 	"time"
 
+	"heckel.io/hostit/appgrant"
+
 	"github.com/caddyserver/certmagic"
 	"golang.org/x/sync/errgroup"
 
@@ -58,7 +60,7 @@ type Server struct {
 	sessions      *sessionManager
 	// grants signs the per-app credential a private app's visitor carries on the
 	// app's own hostname, where the session cookie does not reach (appaccess.go).
-	grants *grantManager
+	grants *appgrant.Signer
 	api    http.Handler
 	socket http.Handler
 	proxy  http.Handler
@@ -116,7 +118,7 @@ func New(conf *controlconf.Config, apps *Manager, users *user.Manager) *Server {
 		node:           apps.NodeAgent(),
 		users:          users,
 		sessions:       newSessionManager(conf.SessionKey),
-		grants:         newGrantManager(conf.SessionKey),
+		grants:         appgrant.NewSigner(conf.SessionKey, appGrantTTL),
 		usernameForUID: usernameForUID,
 		proxies:        NewProxyRegistry(),
 	}

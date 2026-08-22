@@ -144,12 +144,15 @@ func (p *Proxy) Heartbeat() *proxyapi.Heartbeat {
 // API, unknown names -- falls through to control.
 func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	host := hostOnly(r.Host)
-	for _, route := range p.table.Load().(*proxyapi.Table).Routes {
+	table := p.table.Load().(*proxyapi.Table)
+	for _, route := range table.Routes {
 		if route.Host == host {
-			// A private app is gated where identity is understood. This is the
-			// same fallthrough an unknown hostname takes, so the data plane
-			// stays free of session handling entirely.
-			if route.Private {
+			// A private app is served from here only to a request that proves
+			// it may be: a grant this proxy can check but never issue, naming a
+			// user in the set control resolved. Everything else -- a refusal,
+			// a sign-in bounce, a bearer token -- falls through to control,
+			// which owns the error page and the credentials to judge them.
+			if route.Private && !p.mayServePrivately(r, route, table) {
 				break
 			}
 			target := route.Target

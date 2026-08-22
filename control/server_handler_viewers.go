@@ -43,10 +43,9 @@ func (s *Server) handleViewersAdd(w http.ResponseWriter, r *http.Request, c *cal
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	// Only existing, approved accounts: no invite flow, no pending states.
-	u, err := s.users.UserByEmail(req.Email)
-	if err != nil || u.Status != store.StatusActive {
-		writeError(w, http.StatusBadRequest, fmt.Errorf("no active user %q", req.Email))
+	u, err := s.grantableUser(req.Email)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
 		return
 	}
 	if u.ID == a.OwnerID {
@@ -84,4 +83,23 @@ func (s *Server) handleViewersRemove(w http.ResponseWriter, r *http.Request, c *
 	}
 	s.logAction(c, a.Name, "viewer-removed", "Removed someone's access")
 	writeJSON(w, http.StatusOK, &apiMessageResponse{Message: "viewer removed"})
+}
+
+// grantableUser resolves an email to an account that may receive a grant, and
+// otherwise says exactly why it cannot. There is no invite flow -- the person
+// has to have signed in at least once -- and "no active user" left the owner
+// guessing which half of that was missing.
+func (s *Server) grantableUser(email string) (*store.User, error) {
+	u, err := s.users.UserByEmail(email)
+	if err != nil {
+		return nil, fmt.Errorf("%s has not signed in to hostit yet; they need to sign in once before you can give them access", email)
+	}
+	switch u.Status {
+	case store.StatusActive:
+		return u, nil
+	case store.StatusPending:
+		return nil, fmt.Errorf("%s is signed up but still waiting for an administrator to approve their account", email)
+	default:
+		return nil, fmt.Errorf("%s's account is suspended", email)
+	}
 }

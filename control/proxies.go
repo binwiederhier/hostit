@@ -194,9 +194,20 @@ func (s *Server) Routes() (*proxyapi.Table, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Who may open each private app, resolved here so the proxy never has to
+	// ask: it holds the answer and keeps serving while control is down.
+	access, err := s.apps.Store().AccessSets()
+	if err != nil {
+		return nil, err
+	}
+	admins, err := s.apps.Store().ActiveAdmins()
+	if err != nil {
+		return nil, err
+	}
 	routes := make([]proxyapi.Route, 0, len(apps)+len(domains))
 	targets := make(map[string]string, len(apps))
 	private := make(map[string]bool, len(apps))
+	allowed := make(map[string][]string, len(apps))
 	for _, a := range apps {
 		addr := s.nodeAddress(a.Host)
 		if addr == "" {
@@ -205,7 +216,13 @@ func (s *Server) Routes() (*proxyapi.Table, error) {
 		target := fmt.Sprintf("%s:%d", addr, a.Port)
 		targets[a.Name] = target
 		private[a.Name] = a.Private
-		routes = append(routes, proxyapi.Route{Host: a.Name + "." + s.config.BaseDomain, Target: target, Private: a.Private})
+		if a.Private {
+			// The owner is not a row in either grant table, so add them here.
+			// Sorted, because this is hashed to decide whether to push.
+			allowed[a.Name] = append(append([]string{}, access[a.ID]...), a.OwnerID)
+			sort.Strings(allowed[a.Name])
+		}
+		routes = append(routes, proxyapi.Route{Host: a.Name + "." + s.config.BaseDomain, Target: target, App: a.Name, Private: a.Private, Access: allowed[a.Name]})
 	}
 	for appName, appDomains := range domains {
 		target, ok := targets[appName]
@@ -215,13 +232,17 @@ func (s *Server) Routes() (*proxyapi.Table, error) {
 		for _, domain := range appDomains {
 			// A private app is private on every name it answers to; a custom
 			// domain left public would be the URL its owner actually shared.
-			routes = append(routes, proxyapi.Route{Host: domain, Target: target, Private: private[appName]})
+			routes = append(routes, proxyapi.Route{Host: domain, Target: target, App: appName, Private: private[appName], Access: allowed[appName]})
 		}
 	}
 	sort.Slice(routes, func(i, j int) bool { return routes[i].Host < routes[j].Host })
 
 	// Hash the content; a changed hash bumps the seq.
-	b, err := json.Marshal(routes)
+	sort.Strings(admins)
+	b, err := json.Marshal(struct {
+		Routes []proxyapi.Route
+		Admins []string
+	}{routes, admins})
 	if err != nil {
 		return nil, err
 	}
@@ -240,7 +261,7 @@ func (s *Server) Routes() (*proxyapi.Table, error) {
 			slog.Warn("Cannot persist the routing table version", "error", err)
 		}
 	}
-	return &proxyapi.Table{Seq: s.routesSeq, Routes: routes}, nil
+	return &proxyapi.Table{Seq: s.routesSeq, Routes: routes, Admins: admins, GrantPublicKey: s.grants.PublicKey()}, nil
 }
 
 // nodeAddress resolves an app's hosting node to the address its ports are

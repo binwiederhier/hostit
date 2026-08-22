@@ -157,3 +157,34 @@ func TestAViewerGetsNoAPIAccess(t *testing.T) {
 	require.Equal(t, http.StatusOK, rr.Code)
 	assert.NotContains(t, rr.Body.String(), `"dash"`)
 }
+
+// Granting access to somebody who has not signed up is the most likely way to
+// use this wrong, and the old message ("no active user") said neither what was
+// wrong nor what to do. Each case gets its own sentence.
+func TestGrantingAccessExplainsWhoCannotReceiveIt(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	owner := newActiveTestUser(t, s, "owner@example.com")
+	require.NoError(t, s.apps.Store().AddApp(&store.App{ID: "a1", Name: "dash", Port: 10000, Host: store.HostLocal, OwnerID: owner.ID, Private: true}))
+	token, _, err := s.users.CreateToken(owner.ID, "laptop")
+	require.NoError(t, err)
+
+	pending, err := s.users.Login("waiting@example.com", "Waiting") // signed in, not approved
+	require.NoError(t, err)
+	require.Equal(t, store.StatusPending, pending.Status)
+	suspended := newActiveTestUser(t, s, "gone@example.com")
+	suspended.Status = store.StatusDenied
+	require.NoError(t, s.users.Update(suspended))
+
+	for _, tc := range []struct{ email, expect string }{
+		{"stranger@example.com", "has not signed in to hostit yet"},
+		{"waiting@example.com", "waiting for an administrator"},
+		{"gone@example.com", "suspended"},
+	} {
+		for _, path := range []string{"/api/apps/dash/viewers", "/api/apps/dash/collaborators"} {
+			rr := request(t, s.API(), "POST", path, `{"email":"`+tc.email+`"}`, token)
+			assert.Equal(t, http.StatusBadRequest, rr.Code, tc.email)
+			assert.Contains(t, rr.Body.String(), tc.expect, path+" for "+tc.email)
+		}
+	}
+}

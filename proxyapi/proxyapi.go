@@ -30,19 +30,35 @@ var (
 type Route struct {
 	Host   string `json:"host"`
 	Target string `json:"target"` // host:port the app listens on
-	// Private means the app is not served straight from here: the request goes
-	// to control, which is where sessions and grants are understood. The proxy
-	// holds no session key by design, so it cannot tell one visitor from
-	// another and must not try.
+	// App is the app this hostname belongs to. A grant names an app, not a
+	// hostname, so a custom domain -- which says nothing about which app it
+	// serves -- still needs this to be checkable.
+	App string `json:"app,omitempty"`
+	// Private means only certain people may open the app. The proxy enforces
+	// that itself, from Access below, so a private app keeps serving while
+	// control is down -- which is the whole reason the proxy holds a table.
 	Private bool `json:"private,omitempty"`
+	// Access is the user ids allowed to open a private app, besides admins:
+	// its owner, its collaborators and its viewers, already resolved to active
+	// accounts. Control evaluates the policy; the proxy only asks whether the
+	// id in a verified grant is in this set, so there is one place the rule
+	// lives and no way for the two to drift.
+	Access []string `json:"access,omitempty"`
 }
 
 // Table is the whole routing table at one point in time. Seq strictly
 // increases with every change, so a proxy can tell control's newer word from
 // an older one that arrived late.
 type Table struct {
-	Seq    int64   `json:"seq"`
-	Routes []Route `json:"routes"`
+	// GrantPublicKey verifies the per-app grant cookies visitors carry. It is
+	// the PUBLIC half (Ed25519): the proxy can check a grant and can never mint
+	// one, so holding the routing table does not become the power to hand out
+	// access. Safe to persist alongside the routes.
+	GrantPublicKey string `json:"grant_public_key,omitempty"`
+	// Admins may open any app; global rather than repeated in every Access set.
+	Admins []string `json:"admins,omitempty"`
+	Seq    int64    `json:"seq"`
+	Routes []Route  `json:"routes"`
 }
 
 // CertMaterial is one hostname's TLS material: the chain and its private key,

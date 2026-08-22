@@ -7,10 +7,12 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"heckel.io/hostit/appgrant"
 	"heckel.io/hostit/proxyapi"
 )
 
@@ -184,4 +186,152 @@ func TestPrivateRoutesAreHandedToControl(t *testing.T) {
 	req.Host = "blog.example.com"
 	p.ServeHTTP(rr, req)
 	assert.Equal(t, "the app itself", rr.Body.String(), "a public app still goes straight to its target")
+}
+
+// The point of the whole exercise: a private app is served BY THE PROXY, from
+// the table it already holds, so it keeps working when control is down -- the
+// same property public apps have always had. The proxy verifies the grant with
+// a public key it cannot mint with, and checks the user id against the set
+// control resolved for it.
+func TestPrivateAppsAreServedByTheProxy(t *testing.T) {
+	t.Parallel()
+	appSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, "the app itself")
+	}))
+	defer appSrv.Close()
+	// Control is DOWN for this whole test: nothing may depend on it.
+	p := New(&Config{ControlURL: "http://127.0.0.1:1", CacheDir: t.TempDir()})
+	signer := appgrant.NewSigner("session-key", time.Hour)
+	require.NoError(t, p.ApplyRoutes(&proxyapi.Table{
+		Seq:            1,
+		GrantPublicKey: signer.PublicKey(),
+		Admins:         []string{"admin1"},
+		Routes: []proxyapi.Route{{
+			Host: "dash.example.com", Target: appSrv.Listener.Addr().String(), App: "dash",
+			Private: true, Access: []string{"owner1", "guest1"},
+		}},
+	}))
+
+	serve := func(grantFor string) *httptest.ResponseRecorder {
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest("GET", "http://ignored/", nil)
+		req.Host = "dash.example.com"
+		req.Header.Set("Sec-Fetch-Mode", "navigate")
+		if grantFor != "" {
+			value, err := signer.Sign("dash", grantFor)
+			require.NoError(t, err)
+			req.AddCookie(&http.Cookie{Name: grantCookieName, Value: value})
+		}
+		p.ServeHTTP(rr, req)
+		return rr
+	}
+
+	assert.Equal(t, "the app itself", serve("owner1").Body.String(), "the owner, with control down")
+	assert.Equal(t, "the app itself", serve("guest1").Body.String(), "somebody granted access")
+	assert.Equal(t, "the app itself", serve("admin1").Body.String(), "an admin, from the global set")
+
+	// Everyone else falls through to control, which is down here -- the refusal
+	// path is control's to render, and only the ALLOW path had to move.
+	assert.NotEqual(t, "the app itself", serve("stranger").Body.String(), "somebody not in the set")
+	assert.NotEqual(t, "the app itself", serve("").Body.String(), "no grant at all")
+}
+
+// A grant for one app must not open another, and a grant signed by anyone else
+// must not open anything. The proxy holds only the public half, so it can say
+// no to both without being able to say yes on its own.
+func TestTheProxyRefusesGrantsItShouldNot(t *testing.T) {
+	t.Parallel()
+	appSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, "the app itself")
+	}))
+	defer appSrv.Close()
+	p := New(&Config{ControlURL: "http://127.0.0.1:1", CacheDir: t.TempDir()})
+	signer := appgrant.NewSigner("session-key", time.Hour)
+	impostor := appgrant.NewSigner("some other key", time.Hour)
+	require.NoError(t, p.ApplyRoutes(&proxyapi.Table{
+		Seq: 1, GrantPublicKey: signer.PublicKey(),
+		Routes: []proxyapi.Route{{Host: "dash.example.com", Target: appSrv.Listener.Addr().String(), App: "dash", Private: true, Access: []string{"owner1"}}},
+	}))
+
+	for _, tc := range []struct {
+		name  string
+		grant func() (string, error)
+	}{
+		{"a grant for another app", func() (string, error) { return signer.Sign("otherapp", "owner1") }},
+		{"a grant signed by someone else", func() (string, error) { return impostor.Sign("dash", "owner1") }},
+		{"an expired grant", func() (string, error) {
+			return appgrant.NewSigner("session-key", -time.Minute).Sign("dash", "owner1")
+		}},
+	} {
+		value, err := tc.grant()
+		require.NoError(t, err)
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest("GET", "http://ignored/", nil)
+		req.Host = "dash.example.com"
+		req.AddCookie(&http.Cookie{Name: grantCookieName, Value: value})
+		p.ServeHTTP(rr, req)
+		assert.NotEqual(t, "the app itself", rr.Body.String(), tc.name)
+	}
+}
+
+// The grant cookie is on the app's own hostname, so the browser sends it with
+// every request; the app must still never see it.
+func TestTheProxyStripsTheGrantBeforeForwarding(t *testing.T) {
+	t.Parallel()
+	seen := make(chan *http.Request, 1)
+	appSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen <- r.Clone(r.Context())
+	}))
+	defer appSrv.Close()
+	p := New(&Config{ControlURL: "http://127.0.0.1:1", CacheDir: t.TempDir()})
+	signer := appgrant.NewSigner("session-key", time.Hour)
+	require.NoError(t, p.ApplyRoutes(&proxyapi.Table{
+		Seq: 1, GrantPublicKey: signer.PublicKey(),
+		Routes: []proxyapi.Route{{Host: "dash.example.com", Target: appSrv.Listener.Addr().String(), App: "dash", Private: true, Access: []string{"owner1"}}},
+	}))
+
+	value, err := signer.Sign("dash", "owner1")
+	require.NoError(t, err)
+	req := httptest.NewRequest("GET", "http://ignored/", nil)
+	req.Host = "dash.example.com"
+	req.AddCookie(&http.Cookie{Name: grantCookieName, Value: value})
+	req.AddCookie(&http.Cookie{Name: "app_own_cookie", Value: "keep-me"})
+	p.ServeHTTP(httptest.NewRecorder(), req)
+
+	forwarded := <-seen
+	_, err = forwarded.Cookie(grantCookieName)
+	assert.Error(t, err, "the grant was stripped")
+	own, err := forwarded.Cookie("app_own_cookie")
+	require.NoError(t, err)
+	assert.Equal(t, "keep-me", own.Value, "the app's own cookies still arrive")
+}
+
+// A request carrying a bearer token is control's to judge: token hashes are not
+// in the table, so the proxy has nothing to check it against and must not guess.
+func TestBearerTokensStillGoToControl(t *testing.T) {
+	t.Parallel()
+	appSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, "the app itself")
+	}))
+	defer appSrv.Close()
+	controlSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, "control decided")
+	}))
+	defer controlSrv.Close()
+	p := New(&Config{ControlURL: controlSrv.URL, CacheDir: t.TempDir()})
+	signer := appgrant.NewSigner("session-key", time.Hour)
+	require.NoError(t, p.ApplyRoutes(&proxyapi.Table{
+		Seq: 1, GrantPublicKey: signer.PublicKey(),
+		Routes: []proxyapi.Route{{Host: "dash.example.com", Target: appSrv.Listener.Addr().String(), App: "dash", Private: true, Access: []string{"owner1"}}},
+	}))
+
+	value, err := signer.Sign("dash", "owner1")
+	require.NoError(t, err)
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "http://ignored/", nil)
+	req.Host = "dash.example.com"
+	req.Header.Set("Authorization", "Bearer sometoken")
+	req.AddCookie(&http.Cookie{Name: grantCookieName, Value: value})
+	p.ServeHTTP(rr, req)
+	assert.Equal(t, "control decided", rr.Body.String())
 }

@@ -889,11 +889,18 @@ const SnapshotIntervalSelect = ({ value, defaultLabel, onChange }) => {
 const VisibilityDialog = ({ app, isPrivate, viewers, collabs, busy, onSetPrivate, onAddViewer, onRemoveViewer, onClose }) => {
   useEscape(onClose);
   const [email, setEmail] = useState("");
+  const [draft, setDraft] = useState(isPrivate);
+  const [addError, setAddError] = useState("");
   const submit = async (e) => {
     e.preventDefault();
     const address = email.trim().toLowerCase();
     if (!address) return;
-    await onAddViewer(address);
+    setAddError("");
+    const err = await onAddViewer(address);
+    if (err) {
+      setAddError(err); // e.g. "they have not signed in to hostit yet"
+      return;
+    }
     setEmail("");
   };
   return (
@@ -903,8 +910,8 @@ const VisibilityDialog = ({ app, isPrivate, viewers, collabs, busy, onSetPrivate
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
         </button>
         <h2>Who can see {app.name}?</h2>
-        <VisibilityChoice value={isPrivate} onChange={onSetPrivate} disabled={busy} />
-        {isPrivate ? (
+        <VisibilityChoice value={draft} onChange={setDraft} disabled={busy} />
+        {draft ? (
           <>
             <p className="hint">
               Visitors have to sign in, and it holds on every hostname the app answers to, custom domains
@@ -920,6 +927,7 @@ const VisibilityDialog = ({ app, isPrivate, viewers, collabs, busy, onSetPrivate
               <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="someone@example.com" aria-label="Give access to" disabled={busy} />
               <button type="submit" className="btn btn-primary btn-small" disabled={busy || !email.trim()}>Give access</button>
             </form>
+            <ErrorBanner message={addError} onDismiss={() => setAddError("")} />
             {viewers === null ? (
               <p className="hint">Loading...</p>
             ) : viewers.length === 0 ? (
@@ -947,7 +955,20 @@ const VisibilityDialog = ({ app, isPrivate, viewers, collabs, busy, onSetPrivate
           </p>
         )}
         <div className="btn-row">
-          <button type="button" className="btn" onClick={onClose}>Done</button>
+          <button type="button" className="btn" onClick={onClose} disabled={busy}>
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={async () => {
+              await onSetPrivate(draft);
+              onClose();
+            }}
+            disabled={busy || draft === isPrivate}
+          >
+            {busy ? "Saving..." : "Save"}
+          </button>
         </div>
       </div>
     </div>
@@ -1398,16 +1419,19 @@ const AppSettings = ({ app, isAdmin, account, showToast, onCopyToken, onRegenera
       setBusy(false);
     }
   };
+  // Returns the failure so the dialog can show it in place; a toast behind a
+  // modal is a message the person who needs it will not see.
   const addViewer = async (email) => {
-    if (busy || !email) return;
+    if (busy || !email) return "";
     setBusy(true);
     setError("");
     try {
       await api.post(`/api/apps/${encodeURIComponent(name)}/viewers`, { email });
       showToast("Access granted");
       await load();
+      return "";
     } catch (err) {
-      showToast(err.message); // e.g. "no active user ..." -- a toast, not a banner
+      return err.message;
     } finally {
       setBusy(false);
     }
@@ -1524,7 +1548,7 @@ const AppSettings = ({ app, isAdmin, account, showToast, onCopyToken, onRegenera
           {app.owner_email && (
             <div className="ov-line">
               <span className="ov-k">Owner</span>
-              <span className="ov-v">{app.owner_name && app.owner_name !== app.owner_email ? `${app.owner_name} (${app.owner_email})` : app.owner_email}</span>
+              <span className="ov-v" title={app.owner_email}>{app.owner_name || app.owner_email}</span>
               <button
                 type="button"
                 className="copy-mini"

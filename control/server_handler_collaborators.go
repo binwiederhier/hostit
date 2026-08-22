@@ -42,10 +42,9 @@ func (s *Server) handleCollaboratorsAdd(w http.ResponseWriter, r *http.Request, 
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	// Only existing, approved accounts: no invite flow, no pending states.
-	u, err := s.users.UserByEmail(req.Email)
-	if err != nil || u.Status != store.StatusActive {
-		writeError(w, http.StatusBadRequest, fmt.Errorf("no active user %q", req.Email))
+	u, err := s.grantableUser(req.Email)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
 		return
 	}
 	if u.ID == a.OwnerID {

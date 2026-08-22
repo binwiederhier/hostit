@@ -307,3 +307,63 @@ func TestMakingAnAppPrivateBumpsTheRoutingTable(t *testing.T) {
 
 	assert.Greater(t, after.Seq, before.Seq, "the table version moved, so proxies will take the new one")
 }
+
+// The proxy enforces private access itself, so the table has to carry who may
+// open each private app. Control resolves the policy into a set; the proxy
+// only does membership, which is what keeps the rule in one place.
+func TestRoutesCarryTheAccessSet(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	owner := newActiveTestUser(t, s, "owner@example.com")
+	friend := newActiveTestUser(t, s, "friend@example.com")
+	guest := newActiveTestUser(t, s, "guest@example.com")
+	suspended := newActiveTestUser(t, s, "gone@example.com")
+	suspended.Status = store.StatusDenied
+	require.NoError(t, s.users.Update(suspended))
+	admin := newActiveTestUser(t, s, "admin@example.com")
+	admin.Role = store.RoleAdmin
+	require.NoError(t, s.users.Update(admin))
+
+	require.NoError(t, s.apps.Store().AddApp(&store.App{ID: "a1", Name: "dash", Port: 10000, Host: store.HostLocal, OwnerID: owner.ID, Private: true}))
+	require.NoError(t, s.apps.Store().AddApp(&store.App{ID: "a2", Name: "blog", Port: 10001, Host: store.HostLocal, OwnerID: owner.ID}))
+	require.NoError(t, s.apps.Store().AddAppCollaborator("a1", friend.ID))
+	require.NoError(t, s.apps.Store().AddAppViewer("a1", guest.ID))
+	require.NoError(t, s.apps.Store().AddAppViewer("a1", suspended.ID))
+
+	table, err := s.Routes()
+	require.NoError(t, err)
+	byHost := make(map[string]proxyapi.Route, len(table.Routes))
+	for _, r := range table.Routes {
+		byHost[r.Host] = r
+	}
+
+	private := byHost["dash.apps.example.com"]
+	assert.True(t, private.Private)
+	assert.ElementsMatch(t, []string{owner.ID, friend.ID, guest.ID}, private.Access,
+		"the owner and both grants, and never a suspended account")
+	assert.Empty(t, byHost["blog.apps.example.com"].Access, "a public app needs no set at all")
+	assert.Equal(t, []string{admin.ID}, table.Admins, "admins ride once, not once per app")
+	assert.Equal(t, s.grants.PublicKey(), table.GrantPublicKey, "and the key to check grants with")
+}
+
+// A membership change has to move the table, or the proxy keeps enforcing a
+// stale set -- which is the difference between revoking access and appearing to.
+func TestAccessChangesBumpTheRoutingTable(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	owner := newActiveTestUser(t, s, "owner@example.com")
+	guest := newActiveTestUser(t, s, "guest@example.com")
+	require.NoError(t, s.apps.Store().AddApp(&store.App{ID: "a1", Name: "dash", Port: 10000, Host: store.HostLocal, OwnerID: owner.ID, Private: true}))
+
+	before, err := s.Routes()
+	require.NoError(t, err)
+	require.NoError(t, s.apps.Store().AddAppViewer("a1", guest.ID))
+	added, err := s.Routes()
+	require.NoError(t, err)
+	assert.Greater(t, added.Seq, before.Seq, "granting access moves the table")
+
+	require.NoError(t, s.apps.Store().RemoveAppViewer("a1", guest.ID))
+	removed, err := s.Routes()
+	require.NoError(t, err)
+	assert.Greater(t, removed.Seq, added.Seq, "and so does taking it away")
+}

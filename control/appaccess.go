@@ -1,14 +1,10 @@
 package control
 
 import (
-	"crypto/hmac"
-	"crypto/sha256"
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
 	"time"
 
@@ -61,62 +57,7 @@ const (
 	// nextParam tells the login where to send the visitor afterwards.
 	nextParam  = "next"
 	grantParam = "g"
-	// grantKeyLabel derives the grant signing key from the session key, so a
-	// session cookie can never be replayed as a grant, nor a grant as a session.
-	grantKeyLabel = "hostit-app-grant"
 )
-
-var (
-	errInvalidGrant = errors.New("invalid or expired app grant")
-)
-
-// grantManager signs and verifies per-app grants. Stateless like sessions: the
-// value is "<app>|<userID>|<expiry>|<hmac>".
-type grantManager struct {
-	key []byte
-	ttl time.Duration
-}
-
-func newGrantManager(sessionKey string) *grantManager {
-	mac := hmac.New(sha256.New, []byte(sessionKey))
-	mac.Write([]byte(grantKeyLabel))
-	return &grantManager{key: mac.Sum(nil), ttl: appGrantTTL}
-}
-
-// encode returns a signed grant naming one app and one user
-func (g *grantManager) encode(app, userID string) (string, error) {
-	if strings.Contains(app, "|") || strings.Contains(userID, "|") {
-		return "", fmt.Errorf("invalid app %q or user id %q", app, userID)
-	}
-	payload := fmt.Sprintf("%s|%s|%d", app, userID, time.Now().Add(g.ttl).Unix())
-	return payload + "|" + g.sign(payload), nil
-}
-
-// decode verifies a grant and returns the app and user it names
-func (g *grantManager) decode(value string) (string, string, error) {
-	parts := strings.Split(value, "|")
-	if len(parts) != 4 {
-		return "", "", errInvalidGrant
-	}
-	payload, signature := strings.Join(parts[:3], "|"), parts[3]
-	if !hmac.Equal([]byte(signature), []byte(g.sign(payload))) {
-		return "", "", errInvalidGrant
-	}
-	expiry, err := strconv.ParseInt(parts[2], 10, 64)
-	if err != nil {
-		return "", "", errInvalidGrant
-	}
-	if time.Now().After(time.Unix(expiry, 0)) {
-		return "", "", errInvalidGrant
-	}
-	return parts[0], parts[1], nil
-}
-
-func (g *grantManager) sign(payload string) string {
-	mac := hmac.New(sha256.New, g.key)
-	mac.Write([]byte(payload))
-	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
-}
 
 // mayViewApp reports whether the caller may reach the app over HTTP. It is the
 // one visibility decision: the app proxy, the grant mint and the preview
@@ -197,7 +138,7 @@ func (s *Server) callerFromGrant(r *http.Request, a *store.App) (*caller, bool) 
 	if err != nil || cookie.Value == "" {
 		return nil, false
 	}
-	app, userID, err := s.grants.decode(cookie.Value)
+	app, userID, err := s.grants.Verifier().Verify(cookie.Value)
 	if err != nil || app != a.Name {
 		return nil, false
 	}
@@ -213,7 +154,7 @@ func (s *Server) callerFromGrant(r *http.Request, a *store.App) (*caller, bool) 
 // on to what they originally asked for -- with nothing left in the URL to show
 // for it.
 func (s *Server) handleAppGranted(w http.ResponseWriter, r *http.Request, a *store.App) {
-	app, _, err := s.grants.decode(r.URL.Query().Get(grantParam))
+	app, _, err := s.grants.Verifier().Verify(r.URL.Query().Get(grantParam))
 	if err != nil || app != a.Name {
 		s.writeNothingHerePage(w)
 		return
@@ -278,7 +219,7 @@ func (s *Server) handleAppAccess(w http.ResponseWriter, r *http.Request) {
 		s.writeNothingHerePage(w)
 		return
 	}
-	grant, err := s.grants.encode(a.Name, c.userID())
+	grant, err := s.grants.Sign(a.Name, c.userID())
 	if err != nil {
 		s.writeNothingHerePage(w)
 		return

@@ -91,3 +91,38 @@ func TestViewerGrantsAreCleanedUp(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, viewers, "deleting the user dropped their viewer grants")
 }
+
+// The sets the proxy enforces on: both grants collapse into "may open it",
+// suspended accounts are excluded, and it is two queries for the whole
+// registry rather than two per app.
+func TestAccessSets(t *testing.T) {
+	t.Parallel()
+	s := newTestStore(t)
+	a := addViewerTestApp(t, s) // app a1, plus active user u2
+	require.NoError(t, s.AddUser(&User{ID: "u3", Email: "collab@example.com", Status: StatusActive, CreatedAt: time.Now()}))
+	require.NoError(t, s.AddUser(&User{ID: "u4", Email: "gone@example.com", Status: StatusDenied, CreatedAt: time.Now()}))
+	require.NoError(t, s.AddApp(&App{ID: "a2", Name: "other", Port: 10001, Host: HostLocal, OwnerID: "u1", CreatedAt: time.Now()}))
+
+	require.NoError(t, s.AddAppViewer(a.ID, "u2"))
+	require.NoError(t, s.AddAppCollaborator(a.ID, "u3"))
+	require.NoError(t, s.AddAppViewer(a.ID, "u4")) // suspended
+	require.NoError(t, s.AddAppCollaborator("a2", "u3"))
+
+	sets, err := s.AccessSets()
+	require.NoError(t, err)
+	assert.ElementsMatch(t, []string{"u2", "u3"}, sets["a1"], "both grants, and not the suspended one")
+	assert.ElementsMatch(t, []string{"u3"}, sets["a2"])
+	assert.Empty(t, sets["nosuchapp"])
+}
+
+func TestActiveAdmins(t *testing.T) {
+	t.Parallel()
+	s := newTestStore(t)
+	require.NoError(t, s.AddUser(&User{ID: "a1", Email: "admin@example.com", Role: RoleAdmin, Status: StatusActive, CreatedAt: time.Now()}))
+	require.NoError(t, s.AddUser(&User{ID: "a2", Email: "exadmin@example.com", Role: RoleAdmin, Status: StatusDenied, CreatedAt: time.Now()}))
+	require.NoError(t, s.AddUser(&User{ID: "u1", Email: "user@example.com", Role: RoleUser, Status: StatusActive, CreatedAt: time.Now()}))
+
+	admins, err := s.ActiveAdmins()
+	require.NoError(t, err)
+	assert.Equal(t, []string{"a1"}, admins, "only admins, and only active ones")
+}
