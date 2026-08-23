@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { api, isNetworkError } from "../api";
 import { useReconnect } from "../hooks";
-import { ErrorBanner, Loading, VisibilityChoice, VisibilityMark, Wordmark, pairMB, UsagePair, usageLevel, visibilityOf } from "../components";
+import { ErrorBanner, Loading, Skeleton, VisibilityChoice, VisibilityMark, Wordmark, pairMB, UsagePair, usageLevel, visibilityOf } from "../components";
 import { previewSrc, previewShotSrc, previewScale, DESKTOP_WIDTH, DESKTOP_HEIGHT } from "../preview";
 
 // Same rule the server enforces (app.AppNamePattern)
@@ -574,9 +574,7 @@ const Dashboard = ({ account, refreshAccount }) => {
       <ErrorBanner message={error} onDismiss={() => setError("")} />
       {empty && <EmptyState {...formProps} />}
       {!empty && apps === null && !error && (
-        <div className="card">
-          <Loading label="Loading apps..." />
-        </div>
+        <Skeleton card rows={3} label="Loading apps..." />
       )}
       {!empty && apps !== null && apps.length > 0 && (
         <>

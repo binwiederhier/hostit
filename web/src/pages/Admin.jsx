@@ -6,7 +6,7 @@ import {
   formatDate,
   Loading,
   StatusDot,
-  UsagePair, pairMB } from "../components";
+  UsagePair, pairMB, Skeleton } from "../components";
 
 // Empty input means "use the global default"; the API expects null for that.
 const numOrNull = (v) => (v === "" ? null : Number(v));
@@ -320,7 +320,7 @@ const AllApps = ({ apps, error }) => (
         </span>
       )}
     </div>
-    {apps === null && !error && <Loading label="Loading apps..." />}
+    {apps === null && !error && <Skeleton rows={4} label="Loading apps..." />}
     {apps !== null && apps.length === 0 && (
       <p className="empty">No apps yet.</p>
     )}
@@ -581,7 +581,7 @@ const AllowedDomains = ({ setError }) => {
         (gmail.com, outlook.com, ...) are refused: allowing one would let anyone
         in.
       </p>
-      {domains === null && <Loading label="Loading domains..." />}
+      {domains === null && <Skeleton rows={2} label="Loading domains..." />}
       {domains !== null && domains.length === 0 && (
         <p className="empty">No domains yet: every sign-up needs approval.</p>
       )}
@@ -810,7 +810,7 @@ const Cluster = ({ status, error }) => {
   if (status === null)
     return (
       <div className="card">
-        {!error && <Loading label="Loading cluster..." />}
+        {!error && <Skeleton rows={3} label="Loading cluster..." />}
       </div>
     );
   const quiet = [...(status.nodes || []), ...(status.proxies || [])].filter(
@@ -935,7 +935,7 @@ const AdminInner = () => {
       <div className="card">
         <h2>Users</h2>
         {(users === null || settings === null) && !error && (
-          <Loading label="Loading users..." />
+          <Skeleton rows={4} label="Loading users..." />
         )}
         {users !== null && settings !== null && (
           <div className="table-wrap">

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { suggestSlug, splitByKind, menuProviders, slugify } from "./connections";
+import { suggestSlug, splitByKind, menuProviders, slugify, filterProviders } from "./connections";
 
 describe("suggestSlug", () => {
   it("suggests the provider's own name when nothing uses it", () => {
@@ -80,5 +80,36 @@ describe("slugify", () => {
     expect(slugify("ÜBER Cal")).toBe("uber-cal"); // folded, not dropped
     expect(slugify("a".repeat(60))).toHaveLength(32);
     expect(slugify("x")).toBe("x");
+  });
+});
+
+describe("filterProviders", () => {
+  const list = [
+    { name: "caldav", label: "CalDAV calendar", kind: "static" },
+    { name: "postgres", label: "PostgreSQL", kind: "static" },
+    { name: "ssh-key", label: "SSH key", kind: "static" },
+    { name: "generic", label: "API key or token", kind: "static" },
+  ];
+
+  it("returns everything when nothing is typed", () => {
+    const { named, other } = filterProviders(list, "");
+    expect(named).toHaveLength(3);
+    expect(other.name).toBe("generic");
+  });
+
+  // Matching the label alone would miss "postgres" typed by someone who knows
+  // the reference rather than the display name.
+  it("matches on label and on name", () => {
+    expect(filterProviders(list, "PostgreS").named.map((p) => p.name)).toEqual(["postgres"]);
+    expect(filterProviders(list, "ssh").named.map((p) => p.name)).toEqual(["ssh-key"]);
+    expect(filterProviders(list, "CALDAV").named.map((p) => p.name)).toEqual(["caldav"]);
+  });
+
+  // The catch-all stays reachable while filtering: it is the thing you want
+  // precisely when nothing named matched what you typed.
+  it("keeps the catch-all when nothing else matches", () => {
+    const { named, other } = filterProviders(list, "zzz");
+    expect(named).toEqual([]);
+    expect(other.name).toBe("generic");
   });
 });

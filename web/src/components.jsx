@@ -148,6 +148,29 @@ export const Loading = ({ label = "Loading..." }) => (
   </p>
 );
 
+// Placeholder rows shown while a list loads, at the height the real rows will
+// be. A one-line "Loading..." is honest but makes every page jump: the card is
+// 20px tall, then several hundred the moment data lands. Reserving the space
+// costs nothing and removes the jump entirely.
+//
+// aria-hidden with a live label beside it: a screen reader should hear "loading",
+// not a description of grey rectangles.
+export const Skeleton = ({ rows = 3, card = false, label = "Loading..." }) => (
+  <>
+    <span className="sr-only" aria-live="polite">
+      {label}
+    </span>
+    <div className={card ? "skeleton skeleton-cards" : "skeleton"} aria-hidden="true">
+      {Array.from({ length: rows }, (_, i) => (
+        <div className={card ? "skeleton-card" : "skeleton-row"} key={i}>
+          <div className="skeleton-bar skeleton-bar-wide" />
+          <div className="skeleton-bar skeleton-bar-narrow" />
+        </div>
+      ))}
+    </div>
+  </>
+);
+
 // Terminal-style snippet block with a copy button; the signature visual
 // element of the app. Lines starting with "#" render as comments.
 export const Snippet = ({ text }) => (

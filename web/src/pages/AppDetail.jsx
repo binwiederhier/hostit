@@ -1249,7 +1249,6 @@ const AppSettings = ({ app, isAdmin, account, showToast, onCopyToken, onRegenera
   const defaultInterval = prettyDuration(snap.default_interval) || "3h";
   const [snapCfg, setSnapCfg] = useState({ interval: snap.interval || "", pre: snap.pre || "", post: snap.post || "" });
   const [savingSnap, setSavingSnap] = useState(false);
-  const [conns, setConns] = useState(null);
   const [showRename, setShowRename] = useState(false);
   const [domains, setDomains] = useState(null);
   const [input, setInput] = useState("");
@@ -1339,33 +1338,6 @@ const AppSettings = ({ app, isAdmin, account, showToast, onCopyToken, onRegenera
     setShowRename(false);
     showToast("App renamed");
     navigate(`/app/${encodeURIComponent(updated.name)}`, { replace: true });
-  };
-
-  const loadConns = useCallback(async () => {
-    try {
-      setConns(await api.get(`/api/apps/${encodeURIComponent(name)}/connections`));
-    } catch {
-      // The section is a nicety; the rest of Settings still renders without it.
-      setConns({ granted: [], available: [] });
-    }
-  }, [name]);
-  useEffect(() => {
-    loadConns();
-  }, [loadConns]);
-
-  const toggleConn = async (c, granted) => {
-    setError("");
-    try {
-      const path = `/api/apps/${encodeURIComponent(name)}/connections/${encodeURIComponent(c.slug)}`;
-      if (granted) {
-        await api.del(path);
-      } else {
-        await api.put(path, {});
-      }
-      await loadConns();
-    } catch (err) {
-      setError(err.message);
-    }
   };
 
   const load = useCallback(async () => {
@@ -1666,51 +1638,6 @@ const AppSettings = ({ app, isAdmin, account, showToast, onCopyToken, onRegenera
         </div>
       </section>
 
-      <section className="ov-section">
-        <h3>Connections</h3>
-        <p className="hint">
-          Accounts you connected in your <Link to="/profile">profile</Link>. Granting one lets this
-          app act as you against that account -- it asks hostit for a short-lived token, so no
-          credential is stored in the app.
-        </p>
-        {conns === null ? (
-          <p className="hint">Loading...</p>
-        ) : (conns.granted || []).length === 0 && (conns.available || []).length === 0 ? (
-          <p className="hint">
-            Nothing attached yet. Connect an account or add a credential in your{" "}
-            <Link to="/profile">profile</Link> first.
-          </p>
-        ) : (
-          <>
-            {(conns.granted || []).map((c) => (
-              <div key={c.slug} className="conn-row">
-                <div className="conn-id">
-                  <span className="conn-name">
-                    <span className="mono">{c.slug}</span>
-                    <span className="conn-provider">{c.provider_label}</span>
-                  </span>
-                  <span className="conn-note">
-                    this app reads it at <span className="mono">/v1/connections/{c.slug}/token</span>
-                  </span>
-                </div>
-                <button type="button" className="btn btn-small" onClick={() => toggleConn(c, true)}>Revoke</button>
-              </div>
-            ))}
-            {(conns.available || []).map((c) => (
-              <div key={c.slug} className="conn-row conn-ungranted">
-                <div className="conn-id">
-                  <span className="conn-name">
-                    <span className="mono">{c.slug}</span>
-                    <span className="conn-provider">{c.provider_label}</span>
-                  </span>
-                  <span className="conn-note">{c.label || "not granted to this app"}</span>
-                </div>
-                <button type="button" className="btn btn-small btn-primary" onClick={() => toggleConn(c, false)}>Grant</button>
-              </div>
-            ))}
-          </>
-        )}
-      </section>
 
       <section className="ov-section">
         <h3>Collaborators</h3>
@@ -1835,6 +1762,93 @@ const AppSettings = ({ app, isAdmin, account, showToast, onCopyToken, onRegenera
 
 // One snapshot row's actions: three inline icons on a wide screen, collapsed into
 // a single kebab menu on a phone (CSS swaps which one shows).
+// The app's connections, on their own tab: granting a credential is a thing you
+// come here to do, not a row you scroll past at the bottom of Settings. It loads
+// its own data rather than borrowing Settings' state, so the two tabs do not
+// have to be open together for either to work.
+const AppConnections = ({ name }) => {
+  const [conns, setConns] = useState(null);
+  const [error, setError] = useState("");
+
+  const load = useCallback(async () => {
+    try {
+      setConns(await api.get(`/api/apps/${encodeURIComponent(name)}/connections`));
+    } catch (err) {
+      setError(err.message);
+      setConns({ granted: [], available: [] });
+    }
+  }, [name]);
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const onToggle = async (c, granted) => {
+    setError("");
+    try {
+      const path = `/api/apps/${encodeURIComponent(name)}/connections/${encodeURIComponent(c.slug)}`;
+      if (granted) {
+        await api.del(path);
+      } else {
+        await api.put(path, {});
+      }
+      await load();
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  return (
+  <div className="ov">
+    <ErrorBanner message={error} onDismiss={() => setError("")} />
+    <section className="ov-section">
+        <h3>Connections</h3>
+        <p className="hint">
+          Accounts you connected in your <Link to="/profile">profile</Link>. Granting one lets this
+          app act as you against that account -- it asks hostit for a short-lived token, so no
+          credential is stored in the app.
+        </p>
+        {conns === null ? (
+          <p className="hint">Loading...</p>
+        ) : (conns.granted || []).length === 0 && (conns.available || []).length === 0 ? (
+          <p className="hint">
+            Nothing attached yet. Connect an account or add a credential in your{" "}
+            <Link to="/profile">profile</Link> first.
+          </p>
+        ) : (
+          <>
+            {(conns.granted || []).map((c) => (
+              <div key={c.slug} className="conn-row">
+                <div className="conn-id">
+                  <span className="conn-name">
+                    <span className="mono">{c.slug}</span>
+                    <span className="conn-provider">{c.provider_label}</span>
+                  </span>
+                  <span className="conn-note">
+                    this app reads it at <span className="mono">/v1/connections/{c.slug}/token</span>
+                  </span>
+                </div>
+                <button type="button" className="btn btn-small" onClick={() => onToggle(c, true)}>Revoke</button>
+              </div>
+            ))}
+            {(conns.available || []).map((c) => (
+              <div key={c.slug} className="conn-row conn-ungranted">
+                <div className="conn-id">
+                  <span className="conn-name">
+                    <span className="mono">{c.slug}</span>
+                    <span className="conn-provider">{c.provider_label}</span>
+                  </span>
+                  <span className="conn-note">{c.label || "not granted to this app"}</span>
+                </div>
+                <button type="button" className="btn btn-small btn-primary" onClick={() => onToggle(c, false)}>Grant</button>
+              </div>
+            ))}
+          </>
+        )}
+      </section>
+  </div>
+  );
+};
+
 const SnapRowActions = ({ busy, onRollback, onFork, onDelete }) => {
   const { open, setOpen, ref } = useDropdown();
   const pick = (fn) => () => {
@@ -2435,7 +2449,7 @@ const AppDetail = ({ account, refreshAccount }) => {
 
   return (
     <>
-      <div className={"ws-page" + (view === "settings" || view === "snapshots" || view === "logs" ? " ws-doc" : "")}>
+      <div className={"ws-page" + (view === "settings" || view === "snapshots" || view === "logs" || view === "connections" ? " ws-doc" : "")}>
         {/* Top bar. Left: identity (the "Running" state is left unsaid -- only the
             notable states are named). Right: the live resources beside the
             controls, all vertically centred. */}
@@ -2621,6 +2635,19 @@ const AppDetail = ({ account, refreshAccount }) => {
           <button
             type="button"
             role="tab"
+            aria-selected={view === "connections"}
+            className={"ws-viewtab" + (view === "connections" ? " on" : "")}
+            onClick={() => setView("connections")}
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+              <path d="M9 12H5a3 3 0 0 1 0-6h4M15 12h4a3 3 0 0 1 0 6h-4" />
+              <path d="M8 15h8" />
+            </svg>
+            Connections
+          </button>
+          <button
+            type="button"
+            role="tab"
             aria-selected={view === "logs"}
             className={"ws-viewtab" + (view === "logs" ? " on" : "")}
             onClick={() => setView("logs")}
@@ -2698,6 +2725,9 @@ const AppDetail = ({ account, refreshAccount }) => {
             />
           </div>
         )}
+        <div className={"ws-connectionswrap" + (view === "connections" ? "" : " ws-inactive")}>
+          <AppConnections name={app.name} />
+        </div>
         <div className={"ws-logswrap" + (view === "logs" ? "" : " ws-inactive")}>
           <Suspense fallback={<div className="ws-chat-loading">Loading logs...</div>}>
             <AppLogs name={app.name} active={view === "logs"} />

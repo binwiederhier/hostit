@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
-import { menuProviders, slugify, splitByKind, suggestSlug } from "../connections";
+import { filterProviders, slugify, splitByKind, suggestSlug } from "../connections";
 import { api } from "../api";
 import { useDropdown } from "../hooks";
-import { ErrorBanner, Loading } from "../components";
+import { ErrorBanner, Skeleton } from "../components";
 
 // Connections and credentials: the accounts and secrets an owner attaches once
 // and can then grant to their apps. TWO cards, not one, because they are two
@@ -129,7 +129,7 @@ const ConnectionsCard = ({ title, hint, emptyText, cta, items, providers, loadin
       <AddMenu label={cta} providers={providers} onPick={onAdd} disabledText={noProvidersText} />
     </div>
     <p className="hint">{hint}</p>
-    {loading && <Loading label={`Loading ${title.toLowerCase()}...`} />}
+    {loading && <Skeleton rows={3} label={`Loading ${title.toLowerCase()}...`} />}
     {!loading && items.length === 0 && <p className="hint conn-empty">{emptyText}</p>}
     {!loading &&
       items.map((c) => (
@@ -148,17 +148,52 @@ const ConnectionsCard = ({ title, hint, emptyText, cta, items, providers, loadin
               {c.meta ? ` -- ${c.meta}` : ""}
             </span>
           </div>
-          <span className="conn-actions">
-            <button type="button" className="btn btn-small" onClick={() => onRename(c)}>Edit</button>
-            {c.kind === "oauth" && (
-              <button type="button" className="btn btn-small" onClick={() => onReconnect(c)}>Reconnect</button>
-            )}
-            <button type="button" className="btn btn-small btn-danger" onClick={() => onRemove(c)}>Remove</button>
-          </span>
+          <RowMenu conn={c} onRename={onRename} onReconnect={onReconnect} onRemove={onRemove} />
         </div>
       ))}
     {noProvidersText && providers.length === 0 && <p className="hint">{noProvidersText}</p>}
   </div>
+);
+
+// Three dots rather than three buttons. The row is about WHAT is attached; the
+// things you can do to it are one click away instead of competing with it.
+const RowMenu = ({ conn, onRename, onReconnect, onRemove }) => {
+  const { open, setOpen, ref } = useDropdown();
+  const pick = (fn) => () => {
+    setOpen(false);
+    fn(conn);
+  };
+  return (
+    <div className="menu conn-rowmenu" ref={ref}>
+      <button
+        type="button"
+        className="btn btn-small btn-icon"
+        onClick={() => setOpen(!open)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={`Actions for ${conn.label || conn.slug}`}
+      >
+        <DotsIcon />
+      </button>
+      {open && (
+        <div className="menu-items" role="menu">
+          <button type="button" role="menuitem" onClick={pick(onRename)}>Edit</button>
+          {conn.kind === "oauth" && (
+            <button type="button" role="menuitem" onClick={pick(onReconnect)}>Reconnect</button>
+          )}
+          <button type="button" role="menuitem" className="menu-item-danger" onClick={pick(onRemove)}>Remove</button>
+        </div>
+      )}
+    </div>
+  );
+};
+
+const DotsIcon = () => (
+  <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+    <circle cx="8" cy="3.1" r="1.35" />
+    <circle cx="8" cy="8" r="1.35" />
+    <circle cx="8" cy="12.9" r="1.35" />
+  </svg>
 );
 
 // One call to action per card, dropping a menu of what can be attached. The
@@ -166,15 +201,27 @@ const ConnectionsCard = ({ title, hint, emptyText, cta, items, providers, loadin
 // anything hostit does not know, not just another entry in the list.
 const AddMenu = ({ label, providers, onPick, disabledText }) => {
   const { open, setOpen, ref } = useDropdown();
-  const { named, other } = menuProviders(providers);
-  const empty = named.length === 0 && !other;
+  const [query, setQuery] = useState("");
+  const { named, other } = filterProviders(providers, query);
+  const empty = (providers || []).length === 0;
+
+  // Reopening should not inherit the last search.
+  const toggle = () => {
+    setQuery("");
+    setOpen(!open);
+  };
+  const choose = (p) => {
+    setOpen(false);
+    setQuery("");
+    onPick(p);
+  };
 
   return (
     <div className="menu" ref={ref}>
       <button
         type="button"
         className="btn btn-primary btn-small"
-        onClick={() => setOpen(!open)}
+        onClick={toggle}
         disabled={empty}
         aria-haspopup="menu"
         aria-expanded={open}
@@ -185,32 +232,29 @@ const AddMenu = ({ label, providers, onPick, disabledText }) => {
       </button>
       {open && (
         <div className="menu-items conn-menu" role="menu">
-          {named.map((p) => (
-            <button
-              key={p.name}
-              type="button"
-              role="menuitem"
-              className="menu-item"
-              onClick={() => {
-                setOpen(false);
-                onPick(p);
-              }}
-            >
-              {p.label}
-            </button>
-          ))}
+          <input
+            type="text"
+            className="conn-menu-search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search..."
+            aria-label="Search providers"
+            autoFocus
+          />
+          {/* Two columns: the list is long enough that one would run off the
+              bottom of the screen. */}
+          <div className="conn-menu-grid">
+            {named.map((p) => (
+              <button key={p.name} type="button" role="menuitem" className="conn-menu-item" onClick={() => choose(p)}>
+                {p.label}
+              </button>
+            ))}
+          </div>
+          {named.length === 0 && <p className="conn-menu-none">Nothing matches &ldquo;{query}&rdquo;</p>}
           {other && (
             <>
               <div className="conn-menu-divider" role="separator" />
-              <button
-                type="button"
-                role="menuitem"
-                className="menu-item conn-menu-other"
-                onClick={() => {
-                  setOpen(false);
-                  onPick(other);
-                }}
-              >
+              <button type="button" role="menuitem" className="conn-menu-item conn-menu-other" onClick={() => choose(other)}>
                 Add other credential
                 <span className="conn-menu-sub">anything with an API key</span>
               </button>

@@ -53,3 +53,19 @@ export function slugify(name) {
     .slice(0, 32)
     .replace(/-+$/g, "");
 }
+
+// filterProviders narrows the add menu as someone types. It matches the name as
+// well as the label, because a person who knows "postgres" should not have to
+// guess that it is displayed as "PostgreSQL".
+//
+// The catch-all is never filtered out: it is exactly what you want when nothing
+// named matched what you typed.
+export function filterProviders(providers, query) {
+  const { named, other } = menuProviders(providers);
+  const q = (query || "").trim().toLowerCase();
+  if (!q) return { named, other };
+  return {
+    named: named.filter((p) => p.label.toLowerCase().includes(q) || p.name.toLowerCase().includes(q)),
+    other,
+  };
+}

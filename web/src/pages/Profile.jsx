@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
 import { docsHref } from "../docs";
-import { CopyButton, ErrorBanner, formatDate, Loading } from "../components";
+import { CopyButton, ErrorBanner, formatDate, Skeleton } from "../components";
 
 // Shortens an authorized_keys line to "ssh-ed25519 ...<tail> comment".
 const keyPreview = (key) => {
@@ -149,7 +149,7 @@ const SshKeys = () => {
         app uses the same login. <DocsLink guide="user" section="ssh">How SSH access works</DocsLink>
       </p>
       <ErrorBanner message={error} onDismiss={() => setError("")} />
-      {keys === null && !error && <Loading label="Loading keys..." />}
+      {keys === null && !error && <Skeleton rows={2} label="Loading keys..." />}
       {keys !== null && keys.length === 0 && (
         <p className="empty">No SSH keys yet. Add one to reach your apps over SSH.</p>
       )}
@@ -305,7 +305,7 @@ const Tokens = () => {
           </div>
         </div>
       )}
-      {tokens === null && !error && <Loading label="Loading tokens..." />}
+      {tokens === null && !error && <Skeleton rows={2} label="Loading tokens..." />}
       {tokens !== null && tokens.length === 0 && (
         <p className="empty">No API tokens yet. Create one to use the CLI or the API.</p>
       )}

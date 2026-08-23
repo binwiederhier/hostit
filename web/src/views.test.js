@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { viewFromSlug, VIEW_TO_SLUG } from "./views";
+import { viewFromSlug, VIEW_TO_SLUG, SLUG_TO_VIEW } from "./views";
 
 describe("viewFromSlug", () => {
   it("maps every public slug to its view", () => {
@@ -24,4 +24,21 @@ describe("viewFromSlug", () => {
       expect(VIEW_TO_SLUG[view], view).toBeTruthy();
     }
   });
+});
+
+// Connections is its own tab, between snapshots and logs. Both maps have to
+// agree or a URL round trip lands somewhere else.
+it("knows the connections tab", () => {
+  expect(SLUG_TO_VIEW.connections).toBe("connections");
+  expect(VIEW_TO_SLUG.connections).toBe("connections");
+  expect(viewFromSlug("connections", "settings")).toBe("connections");
+});
+
+it("keeps every view and slug in step", () => {
+  for (const [slug, view] of Object.entries(SLUG_TO_VIEW)) {
+    expect(VIEW_TO_SLUG[view]).toBe(slug);
+  }
+  for (const [view, slug] of Object.entries(VIEW_TO_SLUG)) {
+    expect(SLUG_TO_VIEW[slug]).toBe(view);
+  }
 });
