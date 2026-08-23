@@ -43,6 +43,10 @@ func (s *Server) newAPIHandler() http.Handler {
 	// Web login (Google OAuth) and session teardown
 	mux.HandleFunc("GET /auth/google", s.handleGoogleLogin)
 	mux.HandleFunc("GET /auth/callback", s.handleGoogleCallback)
+	// The Client ID Metadata Document. An MCP server's authorization server
+	// fetches this at the client_id URL to learn who is asking, so it is public
+	// by necessity -- it is hostit's public identity, not a secret.
+	mux.HandleFunc("GET "+mcpClientMetadataPath, s.handleMCPClientMetadata)
 	mux.HandleFunc("POST /auth/breakglass", s.handleBreakglass)
 	mux.HandleFunc("POST /auth/logout", s.handleLogout)
 	// Mints the grant that lets a visitor reach a PRIVATE app. It lives here, on
@@ -57,6 +61,7 @@ func (s *Server) newAPIHandler() http.Handler {
 	route(mux, "PUT", "/connections/{slug}", s.requireActive(s.handleConnectionUpdate))
 	route(mux, "POST", "/connections/{slug}/reconnect", s.requireActive(s.handleConnectionReconnect))
 	route(mux, "DELETE", "/connections/{slug}", s.requireActive(s.handleConnectionDelete))
+	route(mux, "GET", "/connections/{slug}/mcp/tools", s.requireActive(s.handleConnectionMCPTools))
 	route(mux, "GET", "/apps/{name}/connections", s.requireActive(s.handleAppConnectionsList))
 	route(mux, "PUT", "/apps/{name}/connections/{slug}", s.requireActive(s.handleAppConnectionGrant))
 	route(mux, "DELETE", "/apps/{name}/connections/{slug}", s.requireActive(s.handleAppConnectionRevoke))

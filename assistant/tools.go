@@ -46,6 +46,13 @@ type AppOps interface {
 	// has to know a calendar is reachable BEFORE it plans, or it confidently
 	// says there is no integration -- which is true only of its own knowledge.
 	Connections(app string) []Connection
+	// MCPTools are the tools on the MCP servers this app was granted. They
+	// become tools the model calls directly (see mcptools.go).
+	MCPTools(app string) []MCPTool
+	// CallMCPTool runs one, through hostit -- the app never holds the token.
+	// The bool is a TOOL error (the call happened, the answer is bad news); the
+	// error is the call not happening at all.
+	CallMCPTool(app, connection, tool string, args map[string]any) (string, bool, error)
 }
 
 // Connection is one granted connection, as the assistant is told about it. It
@@ -55,20 +62,23 @@ type Connection struct {
 	Slug          string
 	Provider      string
 	ProviderLabel string
+	// MCP marks a connection whose tools hostit calls itself. It has no
+	// credential to hand out, so the prompt must not send the model after one.
+	MCP bool
 }
 
 // ToolDefs exposes the tool definitions for another driver of the same app
 // operations -- the sandboxed Claude Max backend advertises these same tools over
 // MCP, so the model sees an identical surface whichever backend runs it.
 func ToolDefs() []Tool {
-	return toolDefs()
+	return toolDefs(nil)
 }
 
 // toolDefs describes the tools to the model. The schemas are deliberately small:
 // a path, some content, a command. Everything else the model discovers by using
 // them (list_files, then read hostit.yml).
-func toolDefs() []Tool {
-	return []Tool{
+func toolDefs(mcpTools []MCPTool) []Tool {
+	return append([]Tool{
 		{
 			Name:        toolListFiles,
 			Description: "List the files in a directory of the app's home (relative path, defaults to the root). Use this to see the app's layout before reading or writing.",
@@ -119,7 +129,7 @@ func toolDefs() []Tool {
 			Description: "Roll the app back to a snapshot, restoring its files to that point. A snapshot of the current state is taken first, so this is reversible (you can roll forward again). Get the id from list_snapshots first.",
 			InputSchema: schema(`{"type":"object","properties":{"id":{"type":"string"}},"required":["id"]}`),
 		},
-	}
+	}, mcpToolDefs(mcpTools)...)
 }
 
 // dispatch runs one tool call against the app and returns the result text the
@@ -137,6 +147,11 @@ func (m *Manager) dispatch(app, name string, input json.RawMessage) (string, boo
 // both backends behave identically. refresh_preview is a UI-only signal handled
 // by the caller that has a UI; a headless backend simply will not advertise it.
 func DispatchTool(ops AppOps, app, name string, input json.RawMessage) (string, bool) {
+	// Checked before the switch: a granted MCP server's tools are named at
+	// runtime, so they cannot be cases in it.
+	if out, isErr, handled := dispatchMCPTool(ops, app, name, input); handled {
+		return out, isErr
+	}
 	switch name {
 	case toolListFiles:
 		var in struct {

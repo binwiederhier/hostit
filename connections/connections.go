@@ -28,9 +28,12 @@ var (
 
 const (
 	// KindOAuth: hostit stores a refresh token and exchanges it for access
-	// tokens. KindStatic: the owner pasted a credential used as-is.
+	// tokens. KindStatic: the owner pasted a credential used as-is. KindMCP:
+	// hostit holds the token and CALLS the server, so the app gets tool results
+	// rather than a credential.
 	KindOAuth  = "oauth"
 	KindStatic = "static"
+	KindMCP    = "mcp"
 )
 
 // Provider is one connectable service.
@@ -141,9 +144,10 @@ func (p Provider) Configured(clientID, clientSecret string) bool {
 	return clientID != "" && clientSecret != ""
 }
 
-// Validate checks a static provider's submitted fields.
+// Validate checks the fields an owner submitted. OAuth providers take none --
+// their credential comes from a consent round trip, not a form.
 func (p Provider) Validate(values map[string]string) error {
-	if p.Kind != KindStatic {
+	if len(p.Fields) == 0 {
 		return fmt.Errorf("%w: %s takes no pasted fields", ErrInvalidCredential, p.Name)
 	}
 	for _, f := range p.Fields {

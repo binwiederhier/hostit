@@ -7,7 +7,7 @@ to individual apps. The app asks hostit for a usable credential per request over
 its own unix socket; it never holds a refresh token, and never has a credential
 baked into an environment variable that nothing can rotate.
 
-Two words, deliberately, because they are two different things to a person:
+Three words, deliberately, because they are three different things to a person:
 
 - A **connection** is an OAuth account you connect (Google Calendar, Gmail,
   Slack, Discord, GitHub, Jira). hostit holds a refresh token -- or, for a
@@ -15,10 +15,14 @@ Two words, deliberately, because they are two different things to a person:
   access tokens.
 - A **credential** is a secret you paste (an IMAP mailbox, any API key). hostit
   stores it and hands it back unchanged.
+- An **MCP server** is a tool server added by URL. It is the one kind hostit does
+  NOT hand to the app -- hostit holds the token and makes the calls. It has its
+  own file: [mcp-servers.md](mcp-servers.md).
 
-Both are the same row and the same API. An app cannot tell which it was given,
-which is the point: `GET /api/self/connections/{slug}/token` answers the same shape
-either way.
+The first two are the same row and the same API. An app cannot tell which it was
+given, which is the point: `GET /api/self/connections/{slug}/token` answers the
+same shape either way. An MCP connection is refused there with a 400, on purpose:
+its token opens the whole server, so it is never handed over.
 
 ## Why it exists
 

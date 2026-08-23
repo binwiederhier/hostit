@@ -28,6 +28,10 @@ const (
 	// personal access token, an IMAP app password, an API key).
 	ConnectionOAuth  = "oauth"
 	ConnectionStatic = "static"
+	// ConnectionMCP is an MCP server. Its Meta holds the endpoint, what
+	// discovery found, and the tool list; its Secret is the OAuth refresh token,
+	// or empty for a server that wants no authorization.
+	ConnectionMCP = "mcp"
 
 	connectionIDPrefix = "cn_"
 )

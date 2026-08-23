@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"heckel.io/hostit/connections"
+	"heckel.io/hostit/mcp"
 	"heckel.io/hostit/store"
 )
 
@@ -43,6 +44,12 @@ type apiConnectionResponse struct {
 	Meta          string    `json:"meta,omitempty"`
 	CreatedAt     time.Time `json:"created_at"`
 	GrantedApps   int       `json:"granted_apps"`
+	// URL and Tools are set for an MCP connection only. They come out of the
+	// meta column, which for MCP holds a JSON document rather than the "k=v"
+	// context a pasted credential carries -- so it is unpacked here instead of
+	// handed to the UI raw.
+	URL   string       `json:"url,omitempty"`
+	Tools []apiMCPTool `json:"tools,omitempty"`
 }
 
 // apiProviderResponse is one thing this instance can connect, for the UI to
@@ -96,10 +103,17 @@ func (s *Server) connectionView(c *store.Connection) *apiConnectionResponse {
 		label = p.Label
 	}
 	n, _ := s.apps.Store().CountGrants(c.ID)
-	return &apiConnectionResponse{
+	out := &apiConnectionResponse{
 		Slug: c.Slug, Label: c.Label, Provider: c.Provider, ProviderLabel: label,
 		Kind: c.Kind, Meta: c.Meta, CreatedAt: c.CreatedAt, GrantedApps: n,
 	}
+	if c.Kind == store.ConnectionMCP {
+		out.Meta = "" // it is a JSON document, not something to show as-is
+		if meta, err := decodeMCPMeta(c.Meta); err == nil {
+			out.URL, out.Tools = meta.URL, mcpToolViews(meta.Tools)
+		}
+	}
+	return out
 }
 
 // handleConnectionsList returns the caller's connections and what this instance
@@ -163,6 +177,27 @@ func (s *Server) handleConnectionAdd(w http.ResponseWriter, r *http.Request, c *
 	label := strings.TrimSpace(req.Label)
 	if label == "" {
 		label = p.Label
+	}
+	if p.Kind == connections.KindMCP {
+		conn, redirect, err := s.connections.addMCP(r.Context(), c.userID(), slug, label, req.Values["url"])
+		var consent errMCPNeedsConsent
+		if errors.As(err, &consent) {
+			// The server wants authorization: send the owner to consent rather
+			// than storing a connection that cannot do anything yet.
+			redirect, err = s.startMCPConsent(w, r, c.userID(), slug, label, strings.TrimSpace(req.Values["url"]), consent.discovery)
+			if err != nil {
+				writeConnectionError(w, err)
+				return
+			}
+			writeJSON(w, http.StatusOK, &apiConnectStartedResponse{RedirectURL: redirect})
+			return
+		}
+		if err != nil {
+			writeConnectionError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusCreated, s.connectionView(conn))
+		return
 	}
 	if p.Kind == connections.KindStatic {
 		conn, err := s.connections.saveStatic(c.userID(), slug, label, p, req.Values)
@@ -236,7 +271,32 @@ func (s *Server) handleConnectionReconnect(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	p, ok := connections.Lookup(conn.Provider)
-	if !ok || p.Kind != connections.KindOAuth {
+	if !ok {
+		writeError(w, http.StatusBadRequest, errors.New("this connection is not an OAuth account"))
+		return
+	}
+	// An MCP server is re-authorized against ITS OWN authorization server, which
+	// is discovered rather than configured, so it cannot go through startConsent.
+	if p.Kind == connections.KindMCP {
+		meta, err := decodeMCPMeta(conn.Meta)
+		if err != nil {
+			writeConnectionError(w, err)
+			return
+		}
+		disco, err := mcp.Discover(r.Context(), s.connections.client, meta.URL)
+		if err != nil || !disco.CanAuthorize {
+			writeError(w, http.StatusBadGateway, fmt.Errorf("that server no longer offers a way to authorize"))
+			return
+		}
+		url, err := s.startMCPConsent(w, r, conn.UserID, conn.Slug, conn.Label, meta.URL, disco)
+		if err != nil {
+			writeConnectionError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, &apiConnectStartedResponse{RedirectURL: url})
+		return
+	}
+	if p.Kind != connections.KindOAuth {
 		writeError(w, http.StatusBadRequest, errors.New("this connection is not an OAuth account"))
 		return
 	}
@@ -388,6 +448,17 @@ func (s *Server) connectionFromState(w http.ResponseWriter, r *http.Request, sta
 		return true
 	}
 	user := who.user
+	// MCP finishes elsewhere: its authorization server was discovered, and the
+	// PKCE verifier that redeems the code is held in memory under the nonce.
+	if providerName == connections.ProviderMCP {
+		code := r.URL.Query().Get("code")
+		if code == "" {
+			http.Redirect(w, r, "/connections", http.StatusFound)
+			return true
+		}
+		s.finishMCPConsent(w, r, user.ID, parts[2], code)
+		return true
+	}
 	p, ok := connections.Lookup(providerName)
 	if !ok || !s.connections.available(p) {
 		writeError(w, http.StatusBadRequest, fmt.Errorf("%q cannot be connected here", providerName))
@@ -513,6 +584,9 @@ func (s *Server) handleSelfConnectionToken(w http.ResponseWriter, r *http.Reques
 		return
 	case errors.Is(err, errNotGranted):
 		writeError(w, http.StatusForbidden, err)
+		return
+	case errors.Is(err, errNotMCPCredential):
+		writeError(w, http.StatusBadRequest, err)
 		return
 	case err != nil:
 		writeError(w, http.StatusBadGateway, err)

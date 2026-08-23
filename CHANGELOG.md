@@ -36,6 +36,25 @@ default, or on-disk state is called out as **Breaking** or **Upgrade note**.
   `control.yml`; a provider without one is not offered. Google's two fall back to
   the login client. See the Connections setup page in the admin guide.
 
+- **MCP servers.** Paste the URL of an MCP tool server and hostit works out the
+  rest: whether it wants authorization, where to arrange it, and what tools it
+  offers. Nothing to register in advance -- unlike the OAuth providers, an MCP
+  server needs no client ID from an admin, because hostit identifies itself by a
+  public metadata document at `/.well-known/oauth-client` (the Client ID Metadata
+  Document that replaced dynamic registration in the MCP spec).
+
+  Granted to an app the same way as anything else, but hostit does **not** hand
+  over the token: an MCP token opens the whole server, so giving it to the app
+  would make the grant decorative. The app sends a tool name and arguments to
+  `/v1/mcp/<name>/call` and hostit makes the call -- so an app needs no MCP
+  client, no OAuth of its own, and nothing to refresh. The same tools appear in
+  the built-in assistant, so you can grant an app a server and just ask for what
+  you want.
+
+  **Note for operators:** `/.well-known/oauth-client` must be reachable from the
+  internet, or an authorization server cannot fetch it and every consent fails.
+  It is served unauthenticated on purpose.
+
 - **The app-facing API answers at `/api/self` as well as `/v1`.** Same surface,
   same socket; `/v1` keeps working and always will, since it is what the
   in-container CLI and every app written so far call.

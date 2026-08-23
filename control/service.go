@@ -65,9 +65,13 @@ type Server struct {
 	// connections is credential custody for the accounts and secrets an owner
 	// connects; nil only if its key could not be loaded.
 	connections *connectionManager
-	api         http.Handler
-	socket      http.Handler
-	proxy       http.Handler
+	// mcp holds MCP consents in flight. Separate from connections because a
+	// half-finished consent is not a credential: it is browser state with a
+	// deadline, and it dies with the process on purpose (control/mcp.go).
+	mcp    *mcpBroker
+	api    http.Handler
+	socket http.Handler
+	proxy  http.Handler
 
 	// usernameForUID maps a peer-credential UID to a username; overridden in tests
 	usernameForUID func(uid int) (string, error)
@@ -125,6 +129,7 @@ func New(conf *controlconf.Config, apps *Manager, users *user.Manager) *Server {
 		grants:         appgrant.NewSigner(conf.SessionKey, appGrantTTL),
 		usernameForUID: usernameForUID,
 		proxies:        NewProxyRegistry(),
+		mcp:            newMCPBroker(),
 	}
 	s.exchangeGoogleCode = s.exchangeGoogleCodeLive
 	// Connections reuse the instance's Google OAuth client and come back on the
@@ -153,7 +158,7 @@ func New(conf *controlconf.Config, apps *Manager, users *user.Manager) *Server {
 	// subscription (a sandboxed claude -p). Its tools are the app's own operations,
 	// so it is confined to one app the way an agent token is.
 	if conf.AssistantAvailable() {
-		s.assistantOps = &appOps{apps: apps, node: apps.NodeAgent(), changed: s.assistantChanged}
+		s.assistantOps = &appOps{apps: apps, node: apps.NodeAgent(), changed: s.assistantChanged, server: s}
 		s.assistant = assistant.NewManager(assistant.NewClient(conf.AnthropicAPIKey), s.assistantOps, &appTranscripts{store: apps.Store()}, credentials(conf))
 		// Wire the Claude Max (subscription) backend whenever its token is configured,
 		// so selecting "Claude.ai" actually uses the subscription. Its presence is the

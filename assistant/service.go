@@ -347,7 +347,7 @@ func (m *Manager) runAPILoop(ctx context.Context, s *session, app string, option
 			MaxTokens:    maxTokens,
 			System:       cachedSystem(systemPrompt(app, m.ops.Archived(app), m.ops.Connections(app))),
 			Messages:     apiRequestMessages(history),
-			Tools:        cachedToolDefs(),
+			Tools:        cachedToolDefs(m.ops.MCPTools(app)),
 			Thinking:     thinkingFor(model),
 			OutputConfig: outputConfigFor(model),
 		})
@@ -456,8 +456,8 @@ func cachedSystem(text string) []systemBlock {
 
 // cachedToolDefs marks the tools block as cacheable (it never changes within a
 // version), so the whole tool schema is reused instead of re-sent each turn.
-func cachedToolDefs() []Tool {
-	tools := toolDefs()
+func cachedToolDefs(mcpTools []MCPTool) []Tool {
+	tools := toolDefs(mcpTools)
 	if n := len(tools); n > 0 {
 		tools[n-1].CacheControl = ephemeral1hCache
 	}
@@ -571,15 +571,28 @@ func connectionsNote(conns []Connection) string {
 	if len(conns) == 0 {
 		return ""
 	}
+	// Split by kind, because the two are used in completely different ways: a
+	// credential is something the APP fetches at runtime, an MCP server is
+	// something the MODEL calls right here. Telling the model to fetch a token
+	// for an MCP server sends it at an endpoint that refuses on purpose.
+	var credentials, servers []Connection
+	for _, c := range conns {
+		if c.MCP {
+			servers = append(servers, c)
+		} else {
+			credentials = append(credentials, c)
+		}
+	}
 	var b strings.Builder
 	b.WriteString("\n\nThis app has been granted these connections, which it can use to act as its owner:\n")
 	for _, c := range conns {
 		fmt.Fprintf(&b, "- %s (%s)\n", c.Slug, c.ProviderLabel)
 	}
-	b.WriteString(`
+	if len(credentials) > 0 {
+		b.WriteString(`
 The app reads a usable credential from its own unix socket, by the name above:
 
-  curl --unix-socket /run/hostit/hostit.sock http://x/v1/connections/` + conns[0].Slug + `/token
+  curl --unix-socket /run/hostit/hostit.sock http://x/v1/connections/` + credentials[0].Slug + `/token
 
 That answers {"access_token": "...", "expires_at": "..."} (expires_at is absent when the
 credential does not expire). Build this call INTO the app's code so it fetches a token per
@@ -587,7 +600,20 @@ run: an OAuth token expires within the hour, so anything you save to a file is d
 time it is used. NEVER print a token, echo it, or write it into a file -- read it at the
 moment it is needed and use it. GET /v1/connections over the same socket lists what this app
 holds.
+`)
+	}
+	if len(servers) > 0 {
+		fmt.Fprintf(&b, `
+The MCP servers above have NO credential to fetch -- hostit holds the token and makes the
+calls. Their tools are already in your tool list, named %s<tool>; call them directly.
+The app itself can do the same over its socket, without any OAuth of its own:
 
+  curl --unix-socket /run/hostit/hostit.sock http://x/v1/mcp/%s/tools
+  curl --unix-socket /run/hostit/hostit.sock http://x/v1/mcp/%s/call \
+    -d '{"tool":"...","arguments":{}}'
+`, connectedToolPrefix+servers[0].Slug+connectedToolSep, servers[0].Slug, servers[0].Slug)
+	}
+	b.WriteString(`
 If the user asks for something one of these connections would provide, use it rather than
 saying no integration is configured.`)
 	return b.String()

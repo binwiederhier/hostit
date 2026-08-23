@@ -14,14 +14,15 @@ export function suggestSlug(provider, existing) {
   return base;
 }
 
-// splitByKind separates the two sections the profile shows. An OAuth account is
-// something you connect; a pasted key is something you store, and they read
-// wrong under one heading.
+// splitByKind separates the three sections the page shows. An OAuth account is
+// something you connect; a pasted key is something you store; an MCP server is
+// a set of tools -- and all three read wrong under one heading.
 export function splitByKind(all) {
   const list = all || [];
   return {
     connections: list.filter((c) => c.kind === "oauth"),
     credentials: list.filter((c) => c.kind === "static"),
+    servers: list.filter((c) => c.kind === "mcp"),
   };
 }
 
@@ -29,9 +30,12 @@ export function splitByKind(all) {
 // is the escape hatch rather than another entry, so it comes back separately:
 // the menu shows the named ones first and sets it apart at the bottom.
 export function menuProviders(providers) {
+  // MCP is excluded here as well as the catch-all: it takes a URL rather than a
+  // secret, so offering it in the credentials menu opens a dialog asking for
+  // the wrong thing. It has its own card.
   const list = (providers || []).slice().sort((a, b) => a.name.localeCompare(b.name));
   return {
-    named: list.filter((p) => p.name !== "generic"),
+    named: list.filter((p) => p.name !== "generic" && p.name !== "mcp"),
     other: list.find((p) => p.name === "generic") || null,
   };
 }

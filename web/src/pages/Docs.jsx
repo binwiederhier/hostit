@@ -519,7 +519,7 @@ const ConnectionsPage = () => (
       An app asks hostit for a usable credential when it needs one -- it never holds your
       password, and nothing is baked into a file you would have to redeploy to change.
     </p>
-    <p>Two kinds, on the <b>Connections</b> page:</p>
+    <p>Three kinds, on the <b>Connections</b> page:</p>
     <ul>
       <li>
         <b>Connections</b> are accounts you sign in to: Google Calendar, Gmail, Slack, Discord,
@@ -528,6 +528,10 @@ const ConnectionsPage = () => (
       <li>
         <b>Credentials</b> are secrets you paste: an API key, an SSH key, a database URL, a
         mailbox or calendar password. Nothing to approve and nothing that expires.
+      </li>
+      <li>
+        <b>MCP servers</b> are tool servers you point hostit at by URL. hostit signs in if the
+        server asks it to, and then calls the tools for your apps -- see below.
       </li>
     </ul>
 
@@ -563,6 +567,37 @@ const ConnectionsPage = () => (
       An app should fetch it when it needs it rather than saving it: an account token expires
       within the hour, and asking again is what makes revoking work. The built-in assistant is told
       which connections an app holds, so you can ask it to build something that uses one.
+    </p>
+
+    <h3>MCP servers</h3>
+    <p>
+      An MCP server is a service that exposes <b>tools</b> over a standard protocol -- search this
+      mailbox, list those issues, create that document. Growing numbers of products publish one.
+      Add it with just its URL:
+    </p>
+    <Snippet text={`https://mcp.example.com/mcp`} />
+    <p>
+      hostit asks the server what it needs. If it wants authorization, hostit works out where to
+      send you, you approve it there, and hostit keeps the permission -- the same round trip as
+      any other connection, except that nothing has to be registered by an admin first. If the
+      server needs no sign-in, it is attached straight away. Either way the tool list appears on
+      the row, so you can see what the server actually offers before granting it.
+    </p>
+    <p>
+      <b>The difference from a credential:</b> hostit does not hand the token to your app. An MCP
+      token opens the whole server -- every tool, your whole account there -- so giving it to an
+      app would make the grant meaningless. Instead the app sends a tool name and arguments, and
+      hostit makes the call:
+    </p>
+    <Snippet
+      text={`curl --unix-socket /run/hostit/hostit.sock http://x/api/self/mcp/issues/tools
+curl --unix-socket /run/hostit/hostit.sock http://x/api/self/mcp/issues/call \\
+  -d '{"tool":"list_issues","arguments":{"team":"core"}}'`}
+    />
+    <p>
+      That means an app needs no MCP client, no OAuth of its own, and nothing to refresh. It also
+      means the <b>assistant</b> can use the tools directly: grant an app an MCP server and its
+      tools appear in the assistant's own tool list, so you can just ask for what you want.
     </p>
 
     <h3>Reconnecting</h3>
@@ -756,7 +791,7 @@ const ApiPage = () => (
           <Endpoint
             method="GET|POST"
             path="/api/connections"
-            what={`Your connections and credentials, plus what this server can attach. POST {"provider":"...","slug":"...","label":"...","values":{...}} -- a pasted credential saves immediately, an OAuth one answers with a redirect_url to send the browser to`}
+            what={`Your connections and credentials, plus what this server can attach. POST {"provider":"...","slug":"...","label":"...","values":{...}} -- a pasted credential saves immediately, an OAuth one answers with a redirect_url to send the browser to. An MCP server is provider "mcp" with values {"url":"https://..."}, and answers either way depending on whether that server wants authorization`}
           />
           <Endpoint
             method="PUT|DELETE"
@@ -766,7 +801,12 @@ const ApiPage = () => (
           <Endpoint
             method="POST"
             path="/api/connections/{slug}/reconnect"
-            what="Re-consent an OAuth account in place, keeping its reference and every grant"
+            what="Re-consent an OAuth account or MCP server in place, keeping its reference and every grant"
+          />
+          <Endpoint
+            method="GET"
+            path="/api/connections/{slug}/mcp/tools"
+            what="Re-read what an MCP connection's server offers"
           />
           <Endpoint
             method="GET"
@@ -801,7 +841,9 @@ const ApiPage = () => (
         </thead>
         <tbody>
           <Endpoint method="GET" path="/api/self/connections" what="The connections and credentials this app was granted, each with the reference to ask for" />
-          <Endpoint method="GET" path="/api/self/connections/{slug}/token" what={`A usable credential: {"provider":"...","access_token":"...","expires_at":"..."} -- expires_at is absent when it does not expire`} />
+          <Endpoint method="GET" path="/api/self/connections/{slug}/token" what={`A usable credential: {"provider":"...","access_token":"...","expires_at":"..."} -- expires_at is absent when it does not expire. An MCP connection has no credential to hand out and answers 400; call its tools instead`} />
+          <Endpoint method="GET" path="/api/self/mcp/{slug}/tools" what="The tools a granted MCP server offers, each with its own JSON Schema" />
+          <Endpoint method="POST" path="/api/self/mcp/{slug}/call" what={`Run one tool: {"tool":"...","arguments":{...}}. Answers {"text":"...","is_error":false} -- is_error means the TOOL failed, which is still a 200: the call happened and the answer is bad news`} />
           <Endpoint method="GET" path="/api/self" what="This app: its URL, limits, domains and state" />
           <Endpoint method="POST" path="/api/self/deploy" what="Deploy the app, as the web app's button does" />
           <Endpoint method="POST" path="/api/self/start|stop|restart" what="The app process" />
@@ -1249,6 +1291,34 @@ const ConnectionsSetupPage = () => (
       <li><b>OAuth consent screen</b> &rarr; <b>Audience</b> &rarr; add every account that will connect under <b>Test users</b>, while publishing status is Testing.</li>
       <li>Users will see a &ldquo;Google hasn&rsquo;t verified this app&rdquo; screen: <b>Advanced</b> &rarr; <b>Go to&hellip;</b>. Expected until verification.</li>
     </ol>
+
+    <h3>MCP servers</h3>
+    <p>
+      <b>Nothing to do.</b> An MCP server needs no OAuth client from you, and users add one
+      themselves by URL. Where the catalog providers require you to register hostit with each
+      vendor in advance, an MCP server is discovered at the moment somebody pastes its address:
+      hostit asks the server whether it wants authorization (RFC 9728), reads the authorization
+      server&rsquo;s own metadata (RFC 8414 / OpenID Connect Discovery), and identifies itself with
+      a <b>Client ID Metadata Document</b> -- a public JSON document hostit serves at:
+    </p>
+    <Snippet text={`${origin}/.well-known/oauth-client`} />
+    <p>
+      The authorization server fetches that URL to learn who is asking, which is what replaced
+      dynamic client registration in the MCP spec. hostit is a <b>public client</b> here: it holds
+      no secret for a server it has never met, so PKCE stands in, and every token is bound to one
+      server with a resource indicator (RFC 8707) so it cannot be replayed against another.
+    </p>
+    <p>
+      A server that predates that gets <b>dynamic registration</b> instead, done once and
+      remembered. A server that offers neither cannot be connected -- the add dialog says so and
+      names the authorization server, so you know where an OAuth client would have to be
+      registered by hand. GitHub&rsquo;s MCP endpoint is currently in that category.
+    </p>
+    <p className="hint">
+      The one thing worth checking on a new instance: that URL has to be reachable from the
+      internet, or an authorization server cannot fetch it and every consent fails. It is served
+      unauthenticated on purpose -- it is hostit&rsquo;s public identity, not a secret.
+    </p>
 
     <h3>Scopes to request</h3>
     <p>

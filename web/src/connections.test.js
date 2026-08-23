@@ -33,7 +33,7 @@ describe("splitByKind", () => {
   });
 
   it("copes with nothing loaded yet", () => {
-    expect(splitByKind(null)).toEqual({ connections: [], credentials: [] });
+    expect(splitByKind(null)).toEqual({ connections: [], credentials: [], servers: [] });
   });
 });
 
@@ -111,5 +111,41 @@ describe("filterProviders", () => {
     const { named, other } = filterProviders(list, "zzz");
     expect(named).toEqual([]);
     expect(other.name).toBe("generic");
+  });
+});
+
+// MCP servers are a third thing, not a credential with a URL in it. A person
+// stores an API key and connects an account; an MCP server is neither -- it is
+// a set of tools, and it belongs under its own heading or it reads as a
+// credential you are expected to paste something into.
+describe("splitByKind with MCP servers", () => {
+  const all = [
+    { slug: "work-cal", kind: "oauth" },
+    { slug: "openai", kind: "static" },
+    { slug: "issues", kind: "mcp" },
+  ];
+
+  it("puts each kind in its own bucket", () => {
+    const { connections, credentials, servers } = splitByKind(all);
+    expect(connections.map((c) => c.slug)).toEqual(["work-cal"]);
+    expect(credentials.map((c) => c.slug)).toEqual(["openai"]);
+    expect(servers.map((c) => c.slug)).toEqual(["issues"]);
+  });
+
+  it("an MCP server never leaks into the credentials card", () => {
+    const { credentials } = splitByKind(all);
+    expect(credentials.some((c) => c.kind === "mcp")).toBe(false);
+  });
+});
+
+// The MCP entry must not appear in the credentials menu: it takes a URL, not a
+// secret, and picking it there would open a dialog asking for the wrong thing.
+describe("menuProviders excludes MCP", () => {
+  it("the named list is credentials only", () => {
+    const { named } = menuProviders([
+      { name: "postgres", label: "PostgreSQL", kind: "static" },
+      { name: "mcp", label: "MCP server", kind: "mcp" },
+    ]);
+    expect(named.map((p) => p.name)).toEqual(["postgres"]);
   });
 });

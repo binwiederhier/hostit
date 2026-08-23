@@ -62,6 +62,11 @@ func (s *Server) selfMux(wrap func(func(http.ResponseWriter, *http.Request, *sto
 	// environment variable nothing can rotate.
 	handle("GET /v1/connections", wrap(s.handleSelfConnectionsList))
 	handle("GET /v1/connections/{slug}/token", wrap(s.handleSelfConnectionToken))
+	// MCP servers are called THROUGH hostit rather than handed over as a token:
+	// an MCP credential opens the whole server, so giving it to the app would
+	// make the grant decorative. The app sends a tool name and arguments.
+	handle("GET /v1/mcp/{slug}/tools", wrap(s.handleSelfMCPTools))
+	handle("POST /v1/mcp/{slug}/call", wrap(s.handleSelfMCPCall))
 	handle("POST /v1/self/ensure", wrap(s.handleSelfEnsure)) // SSH login provisions the workspace
 	// The same lifecycle verbs the web app and admin CLI use, split into the app
 	// process (start/stop/restart) and its container (poweron/poweroff/reboot).

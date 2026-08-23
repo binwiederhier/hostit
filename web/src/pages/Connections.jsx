@@ -33,7 +33,8 @@ const Connections = () => {
   }, [load]);
 
   const providers = data?.providers || [];
-  const { connections, credentials } = splitByKind(data?.connections);
+  const { connections, credentials, servers } = splitByKind(data?.connections);
+  const mcpProvider = providers.find((p) => p.kind === "mcp") || null;
 
   const reconnect = async (c) => {
     setError("");
@@ -117,6 +118,25 @@ const Connections = () => {
         loading={data === null && !error}
         {...shared}
       />
+      <ConnectionsCard
+        title="MCP servers"
+        hint={
+          <>
+            Tool servers you point hostit at by URL. hostit signs in if the server asks it to,
+            holds the token, and makes the calls -- so a granted app calls tools by name and
+            never holds a credential that would open the whole server. The tools also show up
+            in the assistant.{" "}
+            <DocsLink guide="user" section="connections">How MCP servers work</DocsLink>
+          </>
+        }
+        emptyText="No MCP servers connected yet."
+        cta="Add MCP server"
+        items={servers}
+        singleProvider={mcpProvider}
+        loading={data === null && !error}
+        noProvidersText="MCP is not available on this server."
+        {...shared}
+      />
 
       {adding && (
         <AddConnectionDialog
@@ -166,11 +186,25 @@ const Connections = () => {
 // One of the two cards. Both are the same shape -- what is attached, and one
 // button to attach more -- so they share a component rather than being copied
 // with the nouns changed.
-const ConnectionsCard = ({ title, hint, emptyText, cta, items, providers, loading, onAdd, onRename, onReconnect, onRemove, noProvidersText }) => (
+const ConnectionsCard = ({ title, hint, emptyText, cta, items, providers, singleProvider, loading, onAdd, onRename, onReconnect, onRemove, noProvidersText }) => (
   <div className="card">
     <div className="conn-head">
       <h2>{title}</h2>
-      <AddMenu label={cta} providers={providers} onPick={onAdd} disabledText={noProvidersText} />
+      {/* One provider means no menu: a dropdown with a single entry is a button
+          wearing a costume. */}
+      {singleProvider !== undefined ? (
+        <button
+          type="button"
+          className="btn btn-primary btn-small"
+          onClick={() => onAdd(singleProvider)}
+          disabled={!singleProvider}
+          title={!singleProvider ? noProvidersText : undefined}
+        >
+          {cta}
+        </button>
+      ) : (
+        <AddMenu label={cta} providers={providers} onPick={onAdd} disabledText={noProvidersText} />
+      )}
     </div>
     <p className="hint">{hint}</p>
     {loading && <Skeleton rows={3} label={`Loading ${title.toLowerCase()}...`} />}
@@ -191,13 +225,49 @@ const ConnectionsCard = ({ title, hint, emptyText, cta, items, providers, loadin
                 : "not granted to any app yet"}
               {c.meta ? ` -- ${c.meta}` : ""}
             </span>
+            {c.kind === "mcp" && <MCPDetail conn={c} />}
           </div>
           <RowMenu conn={c} onRename={onRename} onReconnect={onReconnect} onRemove={onRemove} />
         </div>
       ))}
-    {noProvidersText && providers.length === 0 && <p className="hint">{noProvidersText}</p>}
+    {noProvidersText && singleProvider === undefined && providers.length === 0 && (
+      <p className="hint">{noProvidersText}</p>
+    )}
   </div>
 );
+
+// What an MCP server actually offers. The tool list is the whole reason to
+// connect one, so it is on the row rather than a click away -- but collapsed,
+// because a server with thirty tools would otherwise be the whole page.
+const MCPDetail = ({ conn }) => {
+  const [open, setOpen] = useState(false);
+  const tools = conn.tools || [];
+  return (
+    <span className="conn-note conn-mcp">
+      <span className="mono">{conn.url}</span>
+      {tools.length === 0 ? (
+        <> {"--"} no tools listed yet</>
+      ) : (
+        <>
+          {" -- "}
+          <button type="button" className="linkbtn" onClick={() => setOpen(!open)} aria-expanded={open}>
+            {tools.length} tool{tools.length === 1 ? "" : "s"}
+          </button>
+          {open && (
+            <ul className="conn-tools">
+              {tools.map((t) => (
+                <li key={t.name}>
+                  <span className="mono">{t.name}</span>
+                  {t.description ? ` -- ${t.description}` : ""}
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
+      )}
+    </span>
+  );
+};
 
 // Three dots rather than three buttons. The row is about WHAT is attached; the
 // things you can do to it are one click away instead of competing with it.
@@ -222,7 +292,7 @@ const RowMenu = ({ conn, onRename, onReconnect, onRemove }) => {
       {open && (
         <div className="menu-items" role="menu">
           <button type="button" role="menuitem" onClick={pick(onRename)}>Edit</button>
-          {conn.kind === "oauth" && (
+          {(conn.kind === "oauth" || conn.kind === "mcp") && (
             <button type="button" role="menuitem" onClick={pick(onReconnect)}>Reconnect</button>
           )}
           <button type="button" role="menuitem" className="menu-item-danger" onClick={pick(onRemove)}>Remove</button>
@@ -325,6 +395,7 @@ const AddConnectionDialog = ({ provider, existing, onClose, onAdded }) => {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const oauth = provider.kind === "oauth";
+  const mcp = provider.kind === "mcp";
 
   // Until the reference is edited by hand it follows the name; once touched it
   // stays put, because renaming a connection must not silently move what apps
@@ -389,8 +460,12 @@ const AddConnectionDialog = ({ provider, existing, onClose, onAdded }) => {
         </label>
         <p className="hint">
           What an app asks for:{" "}
-          <span className="mono">/v1/connections/{reference || "work-calendar"}/token</span>. Renaming
-          it later breaks any app already using the old one.
+          <span className="mono">
+            {mcp
+              ? `/v1/mcp/${reference || "issues"}/call`
+              : `/v1/connections/${reference || "work-calendar"}/token`}
+          </span>
+          . Renaming it later breaks any app already using the old one.
         </p>
         {(provider.fields || []).map((f) => (
           <label key={f.name} className="conn-field">
@@ -422,13 +497,18 @@ const AddConnectionDialog = ({ provider, existing, onClose, onAdded }) => {
           <button type="button" className="btn" onClick={onClose} disabled={busy}>Cancel</button>
           <button type="submit" className="btn btn-primary" disabled={busy || !valid}>
             {busy && <span className="newapp-spinner" aria-hidden="true" />}
-            {oauth ? `Continue to ${provider.label}` : busy ? "Saving..." : "Save"}
+            {oauth ? `Continue to ${provider.label}` : busy ? mcpBusyLabel(mcp) : mcp ? "Connect" : "Save"}
           </button>
         </div>
       </form>
     </Modal>
   );
 };
+
+// An MCP server is contacted while the dialog waits: discovery is a round trip
+// to a server that may want authorization, which takes longer than saving a
+// pasted key and should not look like a hang.
+const mcpBusyLabel = (mcp) => (mcp ? "Contacting server..." : "Saving...");
 
 // Editing a connection changes both halves independently: the name is cosmetic,
 // the reference is what apps address it by -- so the dialog says which is which.

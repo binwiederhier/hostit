@@ -13,7 +13,7 @@ func TestPromptCachingBreakpoints(t *testing.T) {
 	req := request{
 		Model:    "test",
 		System:   cachedSystem("you are a helpful assistant"),
-		Tools:    cachedToolDefs(),
+		Tools:    cachedToolDefs(nil),
 		Messages: cacheConversation([]Message{{Role: "user", Content: []ContentBlock{{Type: "text", Text: "hi"}}}}),
 	}
 

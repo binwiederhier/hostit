@@ -75,7 +75,7 @@ func TestDispatchTools(t *testing.T) {
 func TestToolDefsIncludeRefreshPreview(t *testing.T) {
 	t.Parallel()
 	var names []string
-	for _, d := range toolDefs() {
+	for _, d := range toolDefs(nil) {
 		names = append(names, d.Name)
 	}
 	assert.Contains(t, names, "refresh_preview")

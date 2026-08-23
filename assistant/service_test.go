@@ -34,6 +34,28 @@ type fakeOps struct {
 	execFn   func(command string) ExecResult
 	archived bool
 	conns    []Connection
+	// The MCP half: what this app was granted, what a call returns, and what
+	// was actually asked for.
+	mcpTools  []MCPTool
+	mcpResult string
+	mcpErr    string
+	mcpCalls  []fakeMCPCall
+}
+
+type fakeMCPCall struct {
+	connection string
+	tool       string
+	args       map[string]any
+}
+
+func (f *fakeOps) MCPTools(_ string) []MCPTool { return f.mcpTools }
+
+func (f *fakeOps) CallMCPTool(_, connection, tool string, args map[string]any) (string, bool, error) {
+	f.mcpCalls = append(f.mcpCalls, fakeMCPCall{connection: connection, tool: tool, args: args})
+	if f.mcpErr != "" {
+		return f.mcpErr, true, nil
+	}
+	return f.mcpResult, false, nil
 }
 
 func newFakeOps() *fakeOps { return &fakeOps{files: map[string]string{}} }
@@ -584,7 +606,7 @@ func TestStablePrefixUsesOneHourCache(t *testing.T) {
 	require.NotNil(t, sys[0].CacheControl)
 	assert.Equal(t, "1h", sys[0].CacheControl.TTL, "system prompt uses the 1-hour cache")
 
-	tools := cachedToolDefs()
+	tools := cachedToolDefs(nil)
 	require.NotEmpty(t, tools)
 	last := tools[len(tools)-1]
 	require.NotNil(t, last.CacheControl)

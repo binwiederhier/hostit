@@ -1806,7 +1806,8 @@ const AppConnections = ({ name }) => {
           Accounts and credentials you attached on the <Link to="/connections">Connections</Link>{" "}
           page. Granting one lets this app act as you against that account -- it asks hostit for a
           usable token when it needs one, so no credential is stored in the app, and revoking takes
-          effect immediately.{" "}
+          effect immediately. An MCP server is granted the same way, except hostit keeps the token
+          and makes the calls, so the app only ever sends a tool name.{" "}
           <DocsLink guide="user" section="connections">How connections work</DocsLink>
         </p>
         {conns === null ? (
@@ -1826,7 +1827,17 @@ const AppConnections = ({ name }) => {
                     <span className="conn-provider">{c.provider_label}</span>
                   </span>
                   <span className="conn-note">
-                    this app reads it at <span className="mono">/v1/connections/{c.slug}/token</span>
+                    {c.kind === "mcp" ? (
+                      <>
+                        this app calls its tools at{" "}
+                        <span className="mono">/v1/mcp/{c.slug}/call</span>
+                        {(c.tools || []).length > 0 && ` -- ${c.tools.length} tool${c.tools.length === 1 ? "" : "s"}`}
+                      </>
+                    ) : (
+                      <>
+                        this app reads it at <span className="mono">/v1/connections/{c.slug}/token</span>
+                      </>
+                    )}
                   </span>
                 </div>
                 <button type="button" className="btn btn-small" onClick={() => onToggle(c, true)}>Revoke</button>

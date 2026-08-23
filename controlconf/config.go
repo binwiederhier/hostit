@@ -249,6 +249,14 @@ func (c *Config) ConnectionClient(provider string) (clientID, clientSecret strin
 // Google matches it exactly, so the callback must come back to the hostname the
 // user actually visited; every hostname in WebHostnames should be registered.
 func (c *Config) RedirectURL(host string) string {
+	return c.WebURL(host) + "/auth/callback"
+}
+
+// WebURL is the origin of the web app as reached on the given host, falling
+// back to the canonical one for a host this instance does not serve the web app
+// on. Anything that has to hand out an absolute URL to a third party builds it
+// from here, so an instance on any hostname names itself correctly.
+func (c *Config) WebURL(host string) string {
 	scheme := "https"
 	if c.TLS == TLSOff {
 		scheme = "http"
@@ -256,7 +264,7 @@ func (c *Config) RedirectURL(host string) string {
 	if !c.IsWebHostname(host) {
 		host = c.APIHostname()
 	}
-	return fmt.Sprintf("%s://%s/auth/callback", scheme, host)
+	return fmt.Sprintf("%s://%s", scheme, host)
 }
 
 // LoadConfig reads a YAML config file on top of the defaults from NewConfig

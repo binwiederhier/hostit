@@ -28,6 +28,8 @@ var (
 	// app's settings, and an app told the wrong one sends its owner to the wrong
 	// page.
 	errNotGranted = errors.New("this app has not been granted that connection")
+	// errNotMCPCredential means the app asked for a credential it is not given.
+	errNotMCPCredential = errors.New("that connection has no credential to hand out")
 )
 
 const (
@@ -193,6 +195,12 @@ func (m *connectionManager) tokenFor(ctx context.Context, a *store.App, slug str
 	p, ok := connections.Lookup(conn.Provider)
 	if !ok {
 		return connections.Token{}, fmt.Errorf("unknown provider %q", conn.Provider)
+	}
+	// An MCP credential is not scoped to what the app was granted -- it opens
+	// the whole server. Handing it over would make the grant decorative, so the
+	// token stays here and the app calls tools through hostit instead.
+	if conn.Kind == store.ConnectionMCP {
+		return connections.Token{}, fmt.Errorf("%w: %q is an mcp server; call its tools at /v1/mcp/%s/call", errNotMCPCredential, conn.Slug, conn.Slug)
 	}
 	secret, err := m.open(conn)
 	if err != nil {
