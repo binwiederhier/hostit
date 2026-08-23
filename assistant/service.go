@@ -345,7 +345,7 @@ func (m *Manager) runAPILoop(ctx context.Context, s *session, app string, option
 		resp, err := m.client.complete(ctx, request{
 			Model:        model,
 			MaxTokens:    maxTokens,
-			System:       cachedSystem(systemPrompt(app, m.ops.Archived(app))),
+			System:       cachedSystem(systemPrompt(app, m.ops.Archived(app), m.ops.Connections(app))),
 			Messages:     apiRequestMessages(history),
 			Tools:        cachedToolDefs(),
 			Thinking:     thinkingFor(model),
@@ -555,8 +555,42 @@ func archivedNote(archived bool) string {
 `
 }
 
-func systemPrompt(app string, archived bool) string {
-	return archivedNote(archived) + fmt.Sprintf(`You are hostit's built-in coding assistant, working on a single app named %q.
+// connectionsNote tells the model what this app was granted and how to reach it.
+// Empty when there is nothing granted, so an app without connections carries no
+// text about them at all.
+//
+// The instruction is to have the APP read the credential at runtime rather than
+// fetching it into the conversation: transcripts are stored, so a token printed
+// once is a token stored for as long as the transcript lives. It is also simply
+// how the app has to work -- an access token expires within the hour.
+func connectionsNote(conns []Connection) string {
+	if len(conns) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("\n\nThis app has been granted these connections, which it can use to act as its owner:\n")
+	for _, c := range conns {
+		fmt.Fprintf(&b, "- %s (%s)\n", c.Slug, c.ProviderLabel)
+	}
+	b.WriteString(`
+The app reads a usable credential from its own unix socket, by the name above:
+
+  curl --unix-socket /run/hostit/hostit.sock http://x/v1/connections/` + conns[0].Slug + `/token
+
+That answers {"access_token": "...", "expires_at": "..."} (expires_at is absent when the
+credential does not expire). Build this call INTO the app's code so it fetches a token per
+run: an OAuth token expires within the hour, so anything you save to a file is dead by the
+time it is used. NEVER print a token, echo it, or write it into a file -- read it at the
+moment it is needed and use it. GET /v1/connections over the same socket lists what this app
+holds.
+
+If the user asks for something one of these connections would provide, use it rather than
+saying no integration is configured.`)
+	return b.String()
+}
+
+func systemPrompt(app string, archived bool, conns []Connection) string {
+	return archivedNote(archived) + connectionsNote(conns) + fmt.Sprintf(`You are hostit's built-in coding assistant, working on a single app named %q.
 
 hostit is a mini-app platform. Each app has a home directory you act on with your tools:
 - public/     files served on the web (a "static" app serves exactly this)

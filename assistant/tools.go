@@ -40,6 +40,20 @@ type AppOps interface {
 	// it shapes the system prompt, so the model knows before it plans rather
 	// than after a refusal.
 	Archived(app string) bool
+	// Connections are the accounts and credentials this app has been granted.
+	// Like Archived, this shapes the prompt rather than being a tool: the model
+	// has to know a calendar is reachable BEFORE it plans, or it confidently
+	// says there is no integration -- which is true only of its own knowledge.
+	Connections(app string) []Connection
+}
+
+// Connection is one granted connection, as the assistant is told about it. It
+// deliberately carries no secret: the model is told the name to ask for, and
+// the app reads the credential itself at runtime.
+type Connection struct {
+	Slug          string
+	Provider      string
+	ProviderLabel string
 }
 
 // ToolDefs exposes the tool definitions for another driver of the same app

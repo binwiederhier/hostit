@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"heckel.io/hostit/assistant"
+	"heckel.io/hostit/connections"
 	"heckel.io/hostit/store"
 )
 
@@ -194,4 +195,27 @@ func secondsToDuration(seconds int) time.Duration {
 // say so before the model plans work that will be refused.
 func (o *appOps) Archived(name string) bool {
 	return o.apps.archived(name)
+}
+
+// Connections lists what this app has been granted, so the assistant's prompt
+// can name them. It carries no secret -- the model is told the name to ask for,
+// and the app reads the credential from its own socket at runtime.
+func (o *appOps) Connections(name string) []assistant.Connection {
+	a, err := o.apps.App(name)
+	if err != nil {
+		return nil
+	}
+	granted, err := o.apps.Store().AppConnections(a.ID)
+	if err != nil {
+		return nil
+	}
+	out := make([]assistant.Connection, 0, len(granted))
+	for _, c := range granted {
+		label := c.Provider
+		if p, ok := connections.Lookup(c.Provider); ok {
+			label = p.Label
+		}
+		out = append(out, assistant.Connection{Slug: c.Slug, Provider: c.Provider, ProviderLabel: label})
+	}
+	return out
 }

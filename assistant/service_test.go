@@ -33,11 +33,14 @@ type fakeOps struct {
 	writes   []string
 	execFn   func(command string) ExecResult
 	archived bool
+	conns    []Connection
 }
 
 func newFakeOps() *fakeOps { return &fakeOps{files: map[string]string{}} }
 
 func (f *fakeOps) Archived(_ string) bool { return f.archived }
+
+func (f *fakeOps) Connections(_ string) []Connection { return f.conns }
 
 func (f *fakeOps) ListFiles(_, _ string) (string, error) { return "hostit.yml\npublic/", nil }
 func (f *fakeOps) ReadFile(_, path string) (string, error) {
@@ -642,11 +645,42 @@ func TestReplyIsTaggedWithTheOptionThatRanIt(t *testing.T) {
 // keep suggesting "power it on", which archiving is precisely what refuses.
 func TestSystemPromptSaysWhenTheAppIsArchived(t *testing.T) {
 	t.Parallel()
-	live := systemPrompt("blog", false)
+	live := systemPrompt("blog", false, nil)
 	assert.NotContains(t, strings.ToLower(live), "archived", "a normal app's prompt says nothing about archiving")
 
-	shelved := systemPrompt("blog", true)
+	shelved := systemPrompt("blog", true, nil)
 	assert.Contains(t, strings.ToLower(shelved), "archived")
 	// It must name the way out, since every running verb is refused until then.
 	assert.Contains(t, strings.ToLower(shelved), "unarchive")
+}
+
+// The assistant cannot use what it is never told about. Before this, an app
+// could hold a granted Google Calendar and the model would answer "there's no
+// calendar integration configured", which was true only of its own knowledge.
+func TestSystemPromptNamesTheAppsConnections(t *testing.T) {
+	t.Parallel()
+	quiet := systemPrompt("blog", false, nil)
+	assert.NotContains(t, quiet, "connection", "an app with none gets no noise about them")
+
+	withConns := systemPrompt("blog", false, []Connection{
+		{Slug: "work-cal", Provider: "google-calendar", ProviderLabel: "Google Calendar"},
+		{Slug: "openai", Provider: "generic", ProviderLabel: "API key or token"},
+	})
+	assert.Contains(t, withConns, "work-cal")
+	assert.Contains(t, withConns, "Google Calendar")
+	assert.Contains(t, withConns, "openai")
+	// And how to actually reach one, or naming them achieves nothing
+	assert.Contains(t, withConns, "/v1/connections/work-cal/token")
+	assert.Contains(t, withConns, "/run/hostit/hostit.sock")
+}
+
+// The credential must be read by the APP at runtime, not fetched into the
+// conversation: transcripts are stored, so a token printed once is a token
+// stored forever.
+func TestSystemPromptTellsTheModelNotToPrintTokens(t *testing.T) {
+	t.Parallel()
+	p := systemPrompt("blog", false, []Connection{{Slug: "work-cal", Provider: "google-calendar", ProviderLabel: "Google Calendar"}})
+	lower := strings.ToLower(p)
+	assert.Contains(t, lower, "never print")
+	assert.Contains(t, lower, "expire")
 }

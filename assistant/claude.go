@@ -43,7 +43,7 @@ func (m *Manager) runClaudeTurn(ctx context.Context, s *session, app string, his
 	prior := history[:len(history)-1] // everything before the user message just added
 	s.publish(Event{Type: evtModel, Text: option.ID})
 	acc := &claudeAccumulator{}
-	usage, err := m.claude.RunTurn(ctx, app, buildClaudePrompt(prior, userText, attachments), systemPrompt(app, m.ops.Archived(app)), imageAttachments(attachments), func(ev Event) {
+	usage, err := m.claude.RunTurn(ctx, app, buildClaudePrompt(prior, userText, attachments), systemPrompt(app, m.ops.Archived(app), m.ops.Connections(app)), imageAttachments(attachments), func(ev Event) {
 		s.publish(ev)
 		acc.add(ev)
 	})
