@@ -245,10 +245,16 @@ func TestConnectAnOAuthAccountEndToEnd(t *testing.T) {
 	assert.Equal(t, "access-1", tok.AccessToken)
 	assert.NotNil(t, tok.ExpiresAt)
 
-	// Asked again, it refreshes again rather than serving a stale token
-	tok, err = s.connections.tokenFor(context.Background(), a, "work-cal")
+	// Asked again inside its lifetime, the same token comes back without a
+	// second trip to the provider. Past expiry, a fresh one is minted.
+	again, err := s.connections.tokenFor(context.Background(), a, "work-cal")
 	require.NoError(t, err)
-	assert.Equal(t, "access-2", tok.AccessToken)
+	assert.Equal(t, tok.AccessToken, again.AccessToken)
+
+	s.connections.expireCachedFor(conn.ID)
+	fresh, err := s.connections.tokenFor(context.Background(), a, "work-cal")
+	require.NoError(t, err)
+	assert.Equal(t, "access-2", fresh.AccessToken)
 }
 
 // Two calendars, connected separately, kept apart end to end.
@@ -443,11 +449,14 @@ func TestARotatedRefreshTokenIsStoredSoTheNextRequestWorks(t *testing.T) {
 	a, err := s.apps.App("dash")
 	require.NoError(t, err)
 
-	// Three requests in a row. Before the fix the second one failed.
+	// Three trips to the provider. Before the fix the second one failed with
+	// invalid_grant. The cache is stepped past deliberately: with it warm, the
+	// second request never reaches the provider and would prove nothing.
 	for i := 1; i <= 3; i++ {
 		tok, err := s.connections.tokenFor(context.Background(), a, "chat")
 		require.NoError(t, err, "request %d: the stored refresh token must have been rotated forward", i)
 		assert.NotEmpty(t, tok.AccessToken)
+		s.connections.expireCachedFor(conn.ID)
 	}
 
 	// And what is stored is the newest one, not the one consent handed over.
@@ -456,4 +465,107 @@ func TestARotatedRefreshTokenIsStoredSoTheNextRequestWorks(t *testing.T) {
 	stored, err := connections.Open(s.connections.key, after.Secret)
 	require.NoError(t, err)
 	assert.Equal(t, "refresh-rotated-3", stored)
+}
+
+// connect walks a provider's consent for one slug and returns the connection.
+func connect(t *testing.T, s *Server, u *store.User, token string, provider, slug string) *store.Connection {
+	t.Helper()
+	rr := request(t, s.API(), "POST", "/api/connections", fmt.Sprintf(`{"provider":%q,"slug":%q}`, provider, slug), token)
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+	var started apiConnectStartedResponse
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &started))
+	require.Equal(t, http.StatusFound, browse(t, s, started.RedirectURL, append(rr.Result().Cookies(), signIn(t, s, u))).Code)
+	c, err := s.apps.Store().ConnectionBySlug(u.ID, slug)
+	require.NoError(t, err)
+	return c
+}
+
+// An access token is good for an hour, so minting a fresh one per request is a
+// provider round trip -- and, for a rotating provider, a database write -- that
+// buys nothing.
+func TestAnAccessTokenIsReusedUntilItIsNearlyExpired(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	f := newFakeAuthServer(t)
+	registerFakeProvider(t, s, f, "fake-cached", false)
+	u := newActiveTestUser(t, s, "owner@example.com")
+	token := accountToken(t, s, u)
+	require.NoError(t, s.apps.Store().AddApp(&store.App{ID: "a1", Name: "dash", Port: 10000, Host: store.HostLocal, OwnerID: u.ID}))
+	c := connect(t, s, u, token, "fake-cached", "cal")
+	require.NoError(t, s.apps.Store().GrantConnection("a1", c.ID))
+	a, err := s.apps.App("dash")
+	require.NoError(t, err)
+
+	first, err := s.connections.tokenFor(context.Background(), a, "cal")
+	require.NoError(t, err)
+	require.Equal(t, 1, f.refreshes)
+
+	for i := 0; i < 5; i++ {
+		again, err := s.connections.tokenFor(context.Background(), a, "cal")
+		require.NoError(t, err)
+		assert.Equal(t, first.AccessToken, again.AccessToken)
+	}
+	assert.Equal(t, 1, f.refreshes, "five more requests, still one round trip to the provider")
+
+	// Once it is close to expiring, a fresh one is minted rather than served stale
+	s.connections.expireCachedFor(c.ID)
+	fresh, err := s.connections.tokenFor(context.Background(), a, "cal")
+	require.NoError(t, err)
+	assert.Equal(t, 2, f.refreshes)
+	assert.NotEqual(t, first.AccessToken, fresh.AccessToken)
+}
+
+// A warm cache must not outlive the grant: revocation is checked against the
+// database on every request, before the cache is ever consulted.
+func TestRevokingAGrantBeatsAWarmCache(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	f := newFakeAuthServer(t)
+	registerFakeProvider(t, s, f, "fake-revoke", false)
+	u := newActiveTestUser(t, s, "owner@example.com")
+	token := accountToken(t, s, u)
+	require.NoError(t, s.apps.Store().AddApp(&store.App{ID: "a1", Name: "dash", Port: 10000, Host: store.HostLocal, OwnerID: u.ID}))
+	c := connect(t, s, u, token, "fake-revoke", "cal")
+	require.NoError(t, s.apps.Store().GrantConnection("a1", c.ID))
+	a, err := s.apps.App("dash")
+	require.NoError(t, err)
+
+	_, err = s.connections.tokenFor(context.Background(), a, "cal")
+	require.NoError(t, err)
+
+	require.NoError(t, s.apps.Store().RevokeConnection("a1", c.ID))
+	_, err = s.connections.tokenFor(context.Background(), a, "cal")
+	assert.ErrorIs(t, err, errNotGranted, "a cached token is not a way around a revoked grant")
+}
+
+// Re-consenting replaces the credential underneath, so anything cached from the
+// old one has to go -- otherwise the reconnect appears to do nothing for an hour.
+func TestReconnectingDropsTheCachedToken(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	f := newFakeAuthServer(t)
+	registerFakeProvider(t, s, f, "fake-reconn", false)
+	u := newActiveTestUser(t, s, "owner@example.com")
+	token := accountToken(t, s, u)
+	require.NoError(t, s.apps.Store().AddApp(&store.App{ID: "a1", Name: "dash", Port: 10000, Host: store.HostLocal, OwnerID: u.ID}))
+	c := connect(t, s, u, token, "fake-reconn", "cal")
+	require.NoError(t, s.apps.Store().GrantConnection("a1", c.ID))
+	a, err := s.apps.App("dash")
+	require.NoError(t, err)
+
+	before, err := s.connections.tokenFor(context.Background(), a, "cal")
+	require.NoError(t, err)
+	require.Equal(t, 1, f.refreshes)
+
+	// Re-consent through the API, exactly as the owner would
+	rr := request(t, s.API(), "POST", "/api/connections/cal/reconnect", "", token)
+	require.Equal(t, http.StatusOK, rr.Code)
+	var started apiConnectStartedResponse
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &started))
+	require.Equal(t, http.StatusFound, browse(t, s, started.RedirectURL, append(rr.Result().Cookies(), signIn(t, s, u))).Code)
+
+	after, err := s.connections.tokenFor(context.Background(), a, "cal")
+	require.NoError(t, err)
+	assert.Equal(t, 2, f.refreshes, "the new credential was actually used")
+	assert.NotEqual(t, before.AccessToken, after.AccessToken)
 }

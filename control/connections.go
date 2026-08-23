@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"heckel.io/hostit/connections"
@@ -29,6 +30,13 @@ var (
 	errNotGranted = errors.New("this app has not been granted that connection")
 )
 
+const (
+	// tokenCacheMargin is how long before an access token expires it stops
+	// being served. Wide enough that a token handed out now is still valid by
+	// the time the app has finished using it.
+	tokenCacheMargin = 2 * time.Minute
+)
+
 // connectionManager owns credential custody: sealing what is stored, opening
 // what is used, and refreshing OAuth tokens. It is the only thing that ever
 // holds a refresh token in the clear.
@@ -37,6 +45,24 @@ type connectionManager struct {
 	key    []byte
 	client *http.Client
 	conf   *controlconf.Config
+	// cached holds the last access token minted for a connection, so a page
+	// that makes five requests is not five round trips to the provider for a
+	// token that is good for an hour -- and, on a rotating provider, five
+	// database writes as well.
+	cached  map[string]cachedToken
+	cacheMu sync.Mutex // Protects cached
+}
+
+// cachedToken is one connection's live access token.
+//
+// mintedFrom is the SEALED credential it came from. Comparing that against
+// what the database currently holds is how the entry invalidates itself: a
+// reconnect replaces the credential, so the entry no longer matches and is
+// discarded without anyone having to remember to purge it.
+type cachedToken struct {
+	token      connections.Token
+	mintedFrom string
+	expires    time.Time
 }
 
 func newConnectionManager(st *store.Store, key []byte, conf *controlconf.Config) *connectionManager {
@@ -45,6 +71,7 @@ func newConnectionManager(st *store.Store, key []byte, conf *controlconf.Config)
 		key:    key,
 		client: &http.Client{Timeout: 20 * time.Second},
 		conf:   conf,
+		cached: map[string]cachedToken{},
 	}
 }
 
@@ -167,6 +194,12 @@ func (m *connectionManager) tokenFor(ctx context.Context, a *store.App, slug str
 	if conn.Kind == store.ConnectionStatic {
 		return connections.Token{Provider: p.Name, AccessToken: secret, Meta: conn.Meta}, nil
 	}
+	// Served from cache only when it came from the credential the database
+	// still holds and has real life left. The grant was already checked above,
+	// so revoking one takes effect immediately no matter how warm this is.
+	if tok, ok := m.cachedTokenFor(conn); ok {
+		return tok, nil
+	}
 	id, clientSecret := m.clientFor(p.Name)
 	tok, rotated, err := p.Refresh(ctx, m.client, id, clientSecret, secret)
 	if err != nil {
@@ -187,8 +220,55 @@ func (m *connectionManager) tokenFor(ctx context.Context, a *store.App, slug str
 			slog.Error("Cannot store a rotated refresh token; this connection will fail on its next use",
 				"slug", conn.Slug, "provider", conn.Provider, "error", err)
 		}
+		// Cache against the NEW credential, or the next request would see a
+		// mismatch and refresh again immediately.
+		conn.Secret = sealed
 	}
+	m.cache(conn, tok)
 	return tok, nil
+}
+
+// cachedTokenFor returns a live token for this connection, if there is one that
+// was minted from the credential the database still holds.
+func (m *connectionManager) cachedTokenFor(conn *store.Connection) (connections.Token, bool) {
+	m.cacheMu.Lock()
+	defer m.cacheMu.Unlock()
+	entry, ok := m.cached[conn.ID]
+	if !ok || entry.mintedFrom != conn.Secret || time.Now().After(entry.expires) {
+		return connections.Token{}, false
+	}
+	return entry.token, true
+}
+
+// cache remembers a freshly minted token until shortly before it expires. A
+// token with no expiry is not cached: it did not cost a round trip to produce.
+func (m *connectionManager) cache(conn *store.Connection, tok connections.Token) {
+	if tok.ExpiresAt == nil {
+		return
+	}
+	expires := tok.ExpiresAt.Add(-tokenCacheMargin)
+	if !expires.After(time.Now()) {
+		return // already too close to expiry to be worth handing out again
+	}
+	m.cacheMu.Lock()
+	defer m.cacheMu.Unlock()
+	// Drop anything long dead while we are here; the map is bounded by the
+	// number of connections, but there is no reason to keep corpses.
+	for id, e := range m.cached {
+		if time.Now().After(e.expires) {
+			delete(m.cached, id)
+		}
+	}
+	m.cached[conn.ID] = cachedToken{token: tok, mintedFrom: conn.Secret, expires: expires}
+}
+
+// expireCachedFor drops a connection's cached token. Reconnecting and
+// disconnecting both invalidate on their own (the credential changes, or the row
+// goes), so this exists for tests and for an explicit purge.
+func (m *connectionManager) expireCachedFor(connectionID string) {
+	m.cacheMu.Lock()
+	defer m.cacheMu.Unlock()
+	delete(m.cached, connectionID)
 }
 
 // metaFrom collects a static provider's non-secret fields, which the app reads
