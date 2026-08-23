@@ -1133,7 +1133,7 @@ const ConnectionsSetupPage = () => (
       have; the rest stay hidden.
     </p>
     <Snippet
-      text={`connections:\n  github:\n    client-id: Ov23li...\n    client-secret: ...\n  slack:\n    client-id: 1234567890.1234567890\n    client-secret: ...\n  discord:\n    client-id: ...\n    client-secret: ...`}
+      text={`connections:\n  github:\n    client-id: YOUR_GITHUB_CLIENT_ID\n    client-secret: YOUR_SECRET\n  slack:\n    client-id: YOUR_SLACK_CLIENT_ID\n    client-secret: YOUR_SECRET\n  discord:\n    client-id: YOUR_DISCORD_CLIENT_ID\n    client-secret: YOUR_SECRET`}
     />
     <p>
       Restart <span className="mono">hostit-control</span> to pick them up. Anything you
