@@ -14,28 +14,7 @@ before either is built.
 
 ## Now (next few sessions)
 
-### 1. A redirect (alias) domain type
-
-Cheapest real win on the list: the design is already settled, it retires
-per-app hacks, and it has a live pain point (moving professornoodle.com onto
-hostit in August left the bare apex with no native way to reach www).
-
-Today a custom domain only routes traffic to its app: `store.Domain`
-(store/types.go) has no redirect field, and the proxy (proxy/cli.go,
-proxy/service.go) only does the http->https hop. So apex canonicalization and
-legacy hostname redirects live in each app, which every app reinvents: yayagram
-does an apex->www 301 in its own handler, websrv does the heckel.io
-WordPress-URL redirects.
-
-Give a domain a `RedirectTo` (empty routes to the app as today; set issues a
-301): add the column plus migration, an optional `redirect_to` on
-`POST /api/apps/{app}/domains` (and a CLI `--redirect-to www.example.com`, with
-a `--redirect-to-primary` convenience targeting the app's own canonical
-domain), and a check in the proxy that 301s before routing, right next to the
-http->https redirect it already owns. Cert issuance is unchanged (the same
-`_acme-challenge` delegation).
-
-### 2. Finish the shell-path move (a release-sized cleanup, now safe)
+### 1. Finish the shell-path move (a release-sized cleanup, now safe)
 
 VERIFIED SAFE 2026-08-21: **zero** passwd entries still name the old path on
 prod, stage-1 or stage-2, and two releases (v0.17.0, v0.18.0) have shipped
@@ -48,7 +27,7 @@ target to `/usr/lib/hostit/bin`, or app entry breaks. Also drop the sweep
 itself (`unixuser.SweepShellPaths`, called from node startup) once the paths
 are gone. (ARCH-5 in `plans/260820-hostit-review-findings.md`.)
 
-### 3. Secrets that are not in the app's web root
+### 2. Secrets that are not in the app's web root
 
 `env:` values live in `hostit.yml`, which sits in the app's home and is served
 if someone points a web server at the wrong directory. A real secret store (or
@@ -64,9 +43,9 @@ that twice would be a mistake.
 
 ## Next (decide, then build)
 
-### 4. Decide the credential-brokering shape
+### 3. Decide the credential-brokering shape
 
-The decision is cheap and unblocks two other items (#6 capabilities and #10 the
+The decision is cheap and unblocks two other items (#4 capabilities and #8 the
 outside-in MCP server, which must not invent a second auth story). Building
 either shape is expensive, which is exactly why the decision comes first and on
 its own.
@@ -93,9 +72,9 @@ Questions hostit owns regardless of shape: what encrypts a stored credential at
 rest, how control decides which nodes need a push and when a node purges one,
 and whose credential a collaborator-shared app uses.
 
-### 5. App capabilities: credentials an app uses but never holds
+### 4. App capabilities: credentials an app uses but never holds
 
-Blocked on #5. People want to build apps that use AI. Putting an API key in the
+Blocked on #3. People want to build apps that use AI. Putting an API key in the
 app's environment makes the tenant pay, makes the key a thing that leaks into a
 repo or a log, and leaves hostit with no idea what was spent.
 
@@ -124,7 +103,7 @@ difference between a small feature and a real one), and are owner-provided
 credentials (GitHub, needing profile-level OAuth) in scope or is v1
 operator-provided AI only.
 
-### 6. Dev/stage -> promote to prod (the "we work in prod" problem)
+### 5. Dev/stage -> promote to prod (the "we work in prod" problem)
 
 The biggest missing *feature*, and the one with the largest design surface --
 which is why it sits below the decision above rather than competing with it.
@@ -144,7 +123,7 @@ assistant all need deciding up front.
 
 ## Soon (small, self-contained)
 
-### 7. MCP bridge: return images as image content
+### 6. MCP bridge: return images as image content
 
 `read_file` returns text, so an image read through it is byte salad -- which is
 why attached images ride the sandbox's stdin as blocks (the 2026-08-21 fix)
@@ -156,14 +135,14 @@ current message. Composes with the stdin path, does not replace it: an attached
 image should be unconditionally visible, not contingent on a tool call.
 Touches appcli's mcp server and the sandbox's tool-result parsing.
 
-### 8. Log following
+### 7. Log following
 
 `GET /api/apps/{app}/logs?lines=N` is a snapshot. An agent watching a slow
 start has to poll. SSE or a websocket tail would fix it; note the node relay
 (control does not hold the logs) is the interesting part, and the terminal's
 existing duplex stream over the cluster link is the precedent.
 
-### 9. An MCP server people can actually point an agent at
+### 8. An MCP server people can actually point an agent at
 
 Check against #5 first -- this is an agent calling IN where the capability work
 is an app calling OUT, and they must not invent two auth stories. The broker
@@ -184,7 +163,7 @@ tool argument); stdio for a local binary vs streamable HTTP so there is nothing
 to install; and whether the tool set is literally `assistant/tools.go:ToolDefs`
 reused, which would keep the two surfaces from drifting.
 
-### 10. Long jobs
+### 9. Long jobs
 
 `POST /api/apps/{app}/run` is bounded at five minutes, so a first `npm install`
 on a small box can outlast it. Anything longer has to become a `prepare:` step,
@@ -193,7 +172,7 @@ the honest fix.
 
 ## Later (real, but not now)
 
-### 11. Move the screenshot and assistant containers to the nodes
+### 10. Move the screenshot and assistant containers to the nodes
 
 Both of control's remaining podman users are machine-shaped work sitting in
 the wrong process: the **screenshot previews** run a chrome container (plus an
@@ -229,7 +208,7 @@ Shape, once decided:
 Real hardening, but it buys defense-in-depth rather than closing an open hole,
 which is why it sits here rather than in the Now tier.
 
-### 12. Review follow-ups (2026-08-20)
+### 11. Review follow-ups (2026-08-20)
 
 From `plans/260820-hostit-review-findings.md`, all LOW/accepted:
 
@@ -251,7 +230,7 @@ creates can overshoot a pool by one app's allocation. Accepted -- it
 self-corrects on the next edit and cannot run away -- but an owner-scoped lock
 is the fix if it ever matters.
 
-### 13. Could a static app skip the container entirely?
+### 12. Could a static app skip the container entirely?
 
 Today every app gets a container, a unix user, a subvolume and a systemd unit,
 even one that is just files on disk. `mode: static` is already served by hostit
@@ -266,7 +245,7 @@ until something asks for one.
 Speculative: measure the actual cost of an idle static app's container before
 designing anything.
 
-### 14. hostit-node hangs on stop -- REPRODUCE BEFORE CHASING
+### 13. hostit-node hangs on stop -- REPRODUCE BEFORE CHASING
 
 Seen once (2026-08-16); has not recurred through many deploys since, and the
 shutdown path changed (the signal handler closes the live connection). If it
@@ -279,6 +258,85 @@ Explored and deliberately not being done, kept for the reasoning rather than the
 intent. Each says what was measured, so picking one up later starts from
 evidence -- and so the same idea is not re-proposed and re-investigated in six
 months.
+
+- **Redirects (both shapes). BUILT TWICE 2026-08-22, BOTH REVERTED.** The code
+  is gone from the tree on purpose; this entry is the whole return on that day.
+  Recovery patch: `~/Code/plans/260822-redirect-rules.patch` (applies cleanly to
+  v0.19.1). Design: `~/Code/plans/260822-redirect-rules.md`.
+
+  **What was built, in order.** First the shape this list used to describe: a
+  `Domain.RedirectTo` field -- empty routes to the app, set answers a 301.
+  Column + migration, `redirect_to` / `redirect_to_primary` on
+  `POST /api/apps/{app}/domains`, a `PUT .../redirect` to repoint one without
+  losing its certificate, CLI flags, a checkbox in the domains form, and the 301
+  answered by hostit-proxy from its own table (so it survives control being
+  down). Shipped to stage, green, driven in a browser. Then, on the objection
+  below, a second version: redirect RULES as their own object -- a path regex
+  with capture groups, per app, `app_redirect` table, a `redirect` service
+  package, CLI, both data planes. Also green, also proven on stage.
+
+  **Why the field shape is wrong, which is the main thing to remember.** A
+  redirect modelled as a property of a domain looks cheap and is not:
+
+  - The app association is vestigial. `example.com -> www.example.com` has
+    nothing to do with which app serves www. A redirect from a hostname moved
+    off hostit entirely has no app at all and cannot be expressed.
+  - It costs an "except aliases" exclusion in FOUR places (`ActiveDomains`,
+    `firstActiveDomain`, `reloadDomains`, `appUrls` in the web). Every one is a
+    place a later reader must remember the exception. That is the signature of
+    one concept wearing another's clothes.
+  - It cannot grow a path dimension, ever.
+
+  **The motivation on this list was half wrong.** It claimed the feature would
+  retire "yayagram's apex->www 301 and websrv's WordPress-URL redirects". It
+  retires the first. It CANNOT retire the second: websrv's redirects are regex
+  path rewrites with capture groups, category slug maps and per-post anchor
+  tables (`~/Code/website`, `server/service.go:rewritePath`). Check the actual
+  code before quoting a motivating example -- this claim survived into docs and
+  a changelog before anyone read websrv.
+
+  **What the rule shape proved, and it is worth keeping.**
+
+  - Ownership is NOT the hard part, and the instinct that it might be is wrong.
+    Proving control of `example.com` is exactly what a `Domain` already is (the
+    `_acme-challenge` delegation is the proof, the certificate is the artifact).
+    A rule never re-proves anything; it references a hostname whose ownership is
+    already established. The two concerns were always separable.
+  - Cross-tenant safety wants three independent defenses, and the third is what
+    makes the other two cheap: (1) the pattern is matched against the request
+    PATH only, so no pattern can name a hostname -- structural, not a check that
+    can be forgotten; (2) creation-time refusal of a `host` the app does not
+    answer for; (3) control re-derives ownership every time it builds the
+    routing table and attaches a rule only to its own app's routes, so a stale
+    row (lost domain, rename, hand-edited db) cannot reach anyone else.
+  - Rules must travel WITH the route (`proxyapi.Route.Redirects`) rather than
+    being looked up by hostname. That is what makes "evaluated only after the
+    host matched" structural rather than a convention.
+  - Control must compile its own rule cache OUT OF the table it is about to
+    push, or the single-host gate and the proxy gate will drift on what a rule
+    means.
+  - Go `regexp` is RE2 (linear, no backtracking), so tenant-supplied patterns on
+    the shared data plane are affordable in a way they would not be under PCRE.
+    Auto-anchor patterns (`^(?:...)$`) or `/about` silently swallows a subtree.
+
+  **What was still unbuilt when it was reverted**, and what a real version needs:
+  a web UI, rule reordering (creation order was evaluation order), the decision
+  on whether `RedirectTo` folds into a rule (it is exactly a host-only rule, so
+  the migration is mechanical) or the two live side by side, and user-owned
+  rather than app-owned rules so a redirect for a hostname with no app can exist
+  at all.
+
+  **Operational note.** Stage ran both versions, so its database reached schema
+  version 31 while released code stops at 29. That is harmless -- `migrate`
+  loops `for i := version; i < len(migrations)`, so a database ahead of the code
+  simply skips the loop, and the orphan `app_domain.redirect_to` column and
+  `app_redirect` table are never referenced. Any future migration must be
+  appended after those two, since stage has already recorded them.
+
+  **If it comes back**, start from the rules shape and the plan doc; do not
+  re-derive the field shape. The live pain point that started this is still
+  real: professornoodle.com's bare apex has no native way to reach www, and is
+  handled in yayagram's own handler today.
 
 - **API path harmonization (/v1/self vs /api).** The app socket speaks /v1/self
   while the public API speaks /api; the relay work (2026-08-20) kept both on
