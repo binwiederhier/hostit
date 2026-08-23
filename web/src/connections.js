@@ -73,3 +73,15 @@ export function filterProviders(providers, query) {
     other,
   };
 }
+
+// filterTools narrows an MCP server's tool list as someone types. It matches the
+// description as well as the name, because people remember what a tool DOES long
+// before they remember whether it was called search_issues or issues_search.
+export function filterTools(tools, query) {
+  const list = tools || [];
+  const q = (query || "").trim().toLowerCase();
+  if (!q) return list;
+  return list.filter(
+    (t) => (t.name || "").toLowerCase().includes(q) || (t.description || "").toLowerCase().includes(q)
+  );
+}

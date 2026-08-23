@@ -6,7 +6,10 @@ An owner pastes the URL of an **MCP server** -- a service exposing tools over th
 Model Context Protocol -- and hostit works out the rest: whether it needs
 authorization, where to arrange it, and what tools it offers. It appears under
 its own card on the **Connections** page, alongside connections and credentials,
-and is granted to apps exactly like they are.
+and is granted to apps exactly like they are. The row carries the endpoint and a
+tool COUNT; the list itself is a dialog, because a server is entitled to expose
+hundreds and inlining them would bury every other connection under one of them.
+That dialog grows a search once there are eight or more.
 
 The difference is what a granted app gets. A connection or a credential is handed
 to the app as a token; an MCP server is **not**. hostit keeps the token and makes
@@ -180,6 +183,10 @@ An MCP connection is a `store.Connection` with `Kind = store.ConnectionMCP`.
 
 ### Assistant
 
+- `web/src/pages/Connections.jsx:ToolsDialog` -- the tool list, with
+  `filterTools` (in `web/src/connections.js`) matching name AND description:
+  people remember what a tool does long before they remember whether it was
+  called `search_issues` or `issues_search`.
 - `assistant/mcptools.go` -- `mcpToolDefs` builds the definitions, `mcpToolName`
   sanitises a server's tool name into what the API accepts, `dispatchMCPTool`
   routes a call. Names resolve against the GRANTED list rather than by splitting

@@ -34,10 +34,16 @@ test("an MCP server is added by URL, lists its tools, and is granted to an app",
     const row = card.locator(".conn-row", { hasText: name });
     await expect(row).toBeVisible({ timeout: 30000 });
     await expect(row).toContainText(OPEN_SERVER);
+    // The tools are behind the count, not on the row: a server may offer
+    // hundreds, and inlining them would bury every other connection.
+    await expect(row.locator(".conn-tools")).toHaveCount(0);
     const toolsButton = row.getByRole("button", { name: /\d+ tools?/ });
     await expect(toolsButton).toBeVisible();
     await toolsButton.click();
-    await expect(row.locator(".conn-tools li").first()).toBeVisible();
+    const toolsDialog = page.getByRole("dialog");
+    await expect(toolsDialog.locator(".conn-tools-list li").first()).toBeVisible();
+    await expect(toolsDialog).toContainText(`/v1/mcp/${slug}/call`);
+    await toolsDialog.getByRole("button", { name: "Done" }).click();
 
     // Granting says the app CALLS it, not that it reads a token from it.
     await page.goto(`/app/${app}/connections`);

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { filterProviders, slugify, splitByKind, suggestSlug } from "../connections";
+import { filterProviders, filterTools, slugify, splitByKind, suggestSlug } from "../connections";
 import { api } from "../api";
 import { useDropdown } from "../hooks";
 import { ConfirmDialog, DocsLink, ErrorBanner, Skeleton } from "../components";
@@ -236,36 +236,82 @@ const ConnectionsCard = ({ title, hint, emptyText, cta, items, providers, single
   </div>
 );
 
-// What an MCP server actually offers. The tool list is the whole reason to
-// connect one, so it is on the row rather than a click away -- but collapsed,
-// because a server with thirty tools would otherwise be the whole page.
+// What an MCP server actually offers. The endpoint sits on the row; the tools do
+// NOT -- a server is entitled to expose hundreds, and inlining them would bury
+// every other connection under one of them. The count is the affordance and the
+// list is a dialog, which is also the only place a search fits.
 const MCPDetail = ({ conn }) => {
   const [open, setOpen] = useState(false);
   const tools = conn.tools || [];
+  // The dialog is a SIBLING of the note, not a child of it: a modal is a div,
+  // and a div inside a span is invalid nesting -- which also let the note's
+  // break-all leak into the dialog and hyphenate its prose mid-word.
   return (
-    <span className="conn-note conn-mcp">
-      <span className="mono">{conn.url}</span>
-      {tools.length === 0 ? (
-        <> {"--"} no tools listed yet</>
-      ) : (
-        <>
-          {" -- "}
-          <button type="button" className="linkbtn" onClick={() => setOpen(!open)} aria-expanded={open}>
-            {tools.length} tool{tools.length === 1 ? "" : "s"}
-          </button>
-          {open && (
-            <ul className="conn-tools">
-              {tools.map((t) => (
-                <li key={t.name}>
-                  <span className="mono">{t.name}</span>
-                  {t.description ? ` -- ${t.description}` : ""}
-                </li>
-              ))}
-            </ul>
-          )}
-        </>
+    <>
+      <span className="conn-note conn-mcp">
+        <span className="mono conn-mcp-url">{conn.url}</span>
+        {tools.length === 0 ? (
+          <> {"--"} no tools listed yet</>
+        ) : (
+          <>
+            {" -- "}
+            <button type="button" className="linkbtn" onClick={() => setOpen(true)}>
+              {tools.length} tool{tools.length === 1 ? "" : "s"}
+            </button>
+          </>
+        )}
+      </span>
+      {open && <ToolsDialog conn={conn} tools={tools} onClose={() => setOpen(false)} />}
+    </>
+  );
+};
+
+// The tool list. Search appears only once there are enough tools to need it:
+// a box above three entries is furniture, above ninety it is the only way in.
+const toolsSearchThreshold = 8;
+
+const ToolsDialog = ({ conn, tools, onClose }) => {
+  const [query, setQuery] = useState("");
+  const shown = filterTools(tools, query);
+  return (
+    <Modal wide onClose={onClose} title={`${conn.label || conn.slug}: ${tools.length} tool${tools.length === 1 ? "" : "s"}`}>
+      <p className="hint">
+        What this server offers. A granted app calls any of them by name at{" "}
+        <span className="mono">/v1/mcp/{conn.slug}/call</span>, and they are also in the
+        assistant&rsquo;s own tool list.
+      </p>
+      {tools.length >= toolsSearchThreshold && (
+        <input
+          type="text"
+          className="conn-menu-search conn-tools-search"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search tools..."
+          aria-label="Search tools"
+          autoFocus
+        />
       )}
-    </span>
+      {query.trim() !== "" && shown.length > 0 && (
+        <p className="hint conn-tools-count">
+          {shown.length} of {tools.length}
+        </p>
+      )}
+      <ul className="conn-tools conn-tools-list">
+        {shown.map((t) => (
+          <li key={t.name}>
+            <span className="mono">{t.name}</span>
+            {t.description ? <span className="conn-tool-desc">{t.description}</span> : null}
+          </li>
+        ))}
+      </ul>
+      {shown.length === 0 && <p className="hint">Nothing matches &ldquo;{query}&rdquo;</p>}
+      <div className="btn-row">
+        {/* "Done" rather than "Close": the modal chrome already has a Close in
+            its corner, and two controls with the same name in one dialog is
+            exactly what a screen reader cannot disambiguate. */}
+        <button type="button" className="btn" onClick={onClose}>Done</button>
+      </div>
+    </Modal>
   );
 };
 
@@ -550,9 +596,9 @@ const RenameConnectionDialog = ({ conn, busy, onClose, onSave }) => {
 };
 
 // The shared modal chrome, so the two dialogs differ only in their fields.
-const Modal = ({ title, help, onClose, children }) => (
+const Modal = ({ title, help, wide, onClose, children }) => (
   <div className="modal-backdrop" role="dialog" aria-modal="true" onMouseDown={onClose}>
-    <div className="card modal modal-sheet" onMouseDown={(e) => e.stopPropagation()}>
+    <div className={"card modal modal-sheet" + (wide ? " modal-tools" : "")} onMouseDown={(e) => e.stopPropagation()}>
       <button type="button" className="modal-x" onClick={onClose} title="Close" aria-label="Close">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
           <path d="M6 6l12 12M18 6 6 18" />

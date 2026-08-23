@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { suggestSlug, splitByKind, menuProviders, slugify, filterProviders } from "./connections";
+import { suggestSlug, splitByKind, menuProviders, slugify, filterProviders, filterTools } from "./connections";
 
 describe("suggestSlug", () => {
   it("suggests the provider's own name when nothing uses it", () => {
@@ -147,5 +147,43 @@ describe("menuProviders excludes MCP", () => {
       { name: "mcp", label: "MCP server", kind: "mcp" },
     ]);
     expect(named.map((p) => p.name)).toEqual(["postgres"]);
+  });
+});
+
+// An MCP server can offer hundreds of tools, so the list lives in a modal with a
+// search rather than on the row. Matching the description as well as the name is
+// what makes the search useful: people remember what a tool DOES long before
+// they remember whether it was called search_issues or issues_search.
+describe("filterTools", () => {
+  const tools = [
+    { name: "list_issues", description: "List issues in a team" },
+    { name: "create_doc", description: "Create a document" },
+    { name: "search_docs", description: "Full-text search" },
+  ];
+
+  it("returns everything when nothing is typed", () => {
+    expect(filterTools(tools, "")).toHaveLength(3);
+    expect(filterTools(tools, "   ")).toHaveLength(3);
+  });
+
+  it("matches the name", () => {
+    expect(filterTools(tools, "issues").map((t) => t.name)).toEqual(["list_issues"]);
+  });
+
+  it("matches the description too", () => {
+    expect(filterTools(tools, "document").map((t) => t.name)).toEqual(["create_doc"]);
+  });
+
+  it("ignores case", () => {
+    expect(filterTools(tools, "SEARCH").map((t) => t.name)).toEqual(["search_docs"]);
+  });
+
+  it("copes with a tool that has no description", () => {
+    expect(filterTools([{ name: "bare" }], "bare")).toHaveLength(1);
+    expect(filterTools([{ name: "bare" }], "nope")).toHaveLength(0);
+  });
+
+  it("copes with nothing at all", () => {
+    expect(filterTools(null, "x")).toEqual([]);
   });
 });

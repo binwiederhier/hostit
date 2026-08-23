@@ -3817,10 +3817,15 @@ body.ws-resizing iframe {
   font-size: 12px;
 }
 
-/* An MCP server's endpoint and tool list, under the row's own note line. */
+/* An MCP server's endpoint and tool count, under the row's own note line. */
 .conn-mcp {
   display: block;
   margin-top: 2px;
+}
+
+/* Only the URL breaks anywhere: it has no spaces and can be long. Scoping this
+   to the URL rather than the line keeps it off any prose beside it. */
+.conn-mcp-url {
   word-break: break-all;
 }
 
@@ -3833,6 +3838,40 @@ body.ws-resizing iframe {
 .conn-tools li {
   margin: 2px 0;
   word-break: normal;
+}
+
+/* The dialog's copy of the list: capped and scrolled, because a server is
+   entitled to offer hundreds and the dialog must not grow past the window. */
+.conn-tools-list {
+  max-height: 45vh;
+  overflow-y: auto;
+  margin: 8px 0;
+  padding-left: 18px;
+  font-size: 13px;
+}
+
+.conn-tools-list li {
+  margin: 6px 0;
+}
+
+.conn-tool-desc {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.conn-tools-search {
+  margin-top: 8px;
+}
+
+.conn-tools-count {
+  margin: 6px 0 0;
+}
+
+/* The dialog is wider than the form dialogs: it is a list to scan, not fields
+   to fill, and a narrow column makes long tool names wrap for no reason. */
+.modal-tools {
+  max-width: 620px;
 }
 
 /* A button that reads as a link: used where the action is "show me more of
