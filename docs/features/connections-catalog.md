@@ -21,9 +21,33 @@ building** -- vendors move things between tiers, usually in the wrong direction.
 
 ---
 
+## Built in already
+
+Nineteen providers ship, and **eleven need no OAuth client at all**:
+
+| Static (paste and go) | OAuth (needs a client in `control.yml`) |
+|---|---|
+| `imap`, `smtp` | `google-calendar`, `gmail` |
+| `caldav`, `carddav` | `slack`, `discord` |
+| `postgres`, `mysql`, `opensearch` | `github`, `jira` |
+| `s3`, `ntfy`, `home-assistant` | `hubspot`, `linear` |
+| `generic` (anything with an API key) | |
+
+**Gmail without OAuth:** the `imap` provider reaches the same mailbox at
+`imap.gmail.com:993` using a Google **app password** (needs 2-Step Verification
+on the account). That sidesteps verification, CASA, the 100-test-user cap and
+the 7-day refresh-token expiry entirely. `smtp.gmail.com:465` likewise for
+sending. POP3 (`pop.gmail.com:995`) also works but IMAP is strictly better --
+POP3 has no folders, no server-side flags and download-and-remove semantics.
+
+Two shape decisions worth knowing: a **database is one pasted URL**, because
+that is what every managed provider hands you and splitting it into
+host/port/sslmode invites the app to reassemble it wrongly. **CalDAV splits**,
+because its URL is not a credential and the app needs it beside the password.
+
 ## Tier A -- a pasted credential, works today
 
-Nothing to register. These already work through the `generic` credential; a few
+Nothing to register. Those not listed above work through `generic`; a few
 deserve their own provider for the extra non-secret fields (a host, a base URL).
 
 **Calendar, contacts and mail without Google**

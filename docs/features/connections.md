@@ -66,6 +66,17 @@ when unlisted: it is the same Google Cloud client and scopes are requested per
 authorization, so an instance that can already sign in with Google needs no
 second registration to read a calendar.
 
+**There is a way around all of this for mail.** The `imap` provider reaches a
+Gmail mailbox at `imap.gmail.com:993` with a Google app password (2-Step
+Verification required on the account), and `smtp` sends through
+`smtp.gmail.com:465` the same way. No OAuth client, no verification, no CASA, no
+user cap and no 7-day expiry. For a personal instance that is strictly the
+better route to mail than the `gmail` OAuth provider. POP3 works too, but IMAP
+is better: POP3 has no folders, no server-side flags, and removes as it reads.
+
+The same applies to calendars: `caldav` against Fastmail, iCloud or Nextcloud
+gets the two-calendar cross-reference with none of what follows.
+
 **Gmail is the expensive one, and Calendar is not.** Google splits the two:
 
 - `calendar.readonly` is *sensitive* -- verification only (a justification per
