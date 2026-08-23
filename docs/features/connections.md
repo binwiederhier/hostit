@@ -66,10 +66,29 @@ when unlisted: it is the same Google Cloud client and scopes are requested per
 authorization, so an instance that can already sign in with Google needs no
 second registration to read a calendar.
 
-**Gmail is the expensive one.** Read-only mail is a Google *restricted* scope: an
-instance offering it to people who are not personally known to the operator needs
-a CASA Tier 2 assessment, renewed every 12 months. Personal use, Testing status
-(up to 100 test users) and single-Workspace internal use are exempt.
+**Gmail is the expensive one, and Calendar is not.** Google splits the two:
+
+- `calendar.readonly` is *sensitive* -- verification only (a justification per
+  scope and a demo video, 3-5 business days), **free**.
+- `gmail.readonly` is *restricted* -- verification **and** a CASA Tier 2
+  assessment by a Google-empanelled assessor, **renewed every 12 months**, from
+  roughly $800/year at the cheaper assessors up to several thousand. Self-scan
+  is no longer permitted for restricted APIs.
+
+Personal use, Testing status (up to 100 test users, each added by hand) and
+single-Workspace internal use are exempt from both.
+
+**The cost of staying in Testing is not money, it is time.** Google expires
+refresh tokens issued by a Testing-status app after **7 days**. That is invisible
+for login, which spends its token once and drops it, and crippling for
+connections: every connected account needs re-consenting weekly. `Reconnect`
+exists partly for this -- it swaps the credential without touching the slug or
+any grant.
+
+**Enable the API too.** Verification and consent are separate from the API being
+switched on in the Cloud project. A perfectly valid token still gets
+`403 SERVICE_DISABLED` until Calendar (`calendar-json.googleapis.com`) or Gmail
+(`gmail.googleapis.com`) is enabled for that project.
 
 ## Token models
 

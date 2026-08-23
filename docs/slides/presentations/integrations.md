@@ -385,22 +385,24 @@ layout: statement
 
 # What "just add Google Calendar" actually costs
 
-Google splits scopes into tiers. The useful ones are **restricted**.
+Google splits scopes into tiers, and the tier decides whether it costs money.
 
 <div class="grid grid-cols-2 gap-6 mt-4">
 <div>
 
-**The gate**
+**The gate, and only for SOME scopes**
 
-Full Gmail access is a restricted scope, so an app must
-clear **CASA Tier 2**. If the app "stores or transmits
-restricted-scope data on servers", it needs an assessment
-by a Google-empanelled assessor.
+- **Sensitive** (Calendar): verification only -- a written
+  justification per scope and a demo video, 3-5 business
+  days. **No CASA, no fee.**
+- **Restricted** (Gmail): verification **and** CASA Tier 2,
+  by a Google-empanelled assessor, **renewed every 12
+  months**.
 
-**Reverified every 12 months.**
-
-Reported costs: a **$540 DAST scan** at the low end, a
-**$5,000+ penetration test** at the high end.
+CASA Tier 2, per year: **$800-$1,200** from cheaper
+lab-scan assessors, **$3,000-$6,000** from the likes of
+Leviathan depending on urgency. Self-scan is no longer
+permitted for restricted Google APIs.
 
 </div>
 <div>
@@ -410,12 +412,15 @@ Reported costs: a **$540 DAST scan** at the low end, a
 - **Personal use** -- you, or "a few users, all of whom
   are known personally to you"
 - **Testing publishing status** -- up to **100 test
-  users**, with a scary consent screen
+  users**, each **added by hand**, with a scary consent
+  screen
 - **Internal** -- one Workspace org
 
-A personal hostit instance sits squarely in these. A
-**public, multi-tenant** apps.heckel.io offering Gmail
-to strangers does not.
+A personal hostit instance sits squarely in these. But
+Testing has its own price: Google **expires refresh tokens
+after 7 days**, so every connection needs re-consenting
+weekly. Invisible for login, which spends its token once;
+crippling for connections, which are the whole point.
 
 </div>
 </div>
@@ -483,8 +488,8 @@ written and kept working.
 | **GitHub** | PAT &middot; OAuth App &middot; **GitHub App** | PAT trivial. GitHub App is best (1-hour tokens, targeted permissions, survives the installer leaving) but is a different model |
 | **Discord** | OAuth 2.0 + bot token | Easy for a bot. User-scoped data is more restricted |
 | **Slack** | OAuth v2, `xoxb-` bot token | Easy for one workspace. Scopes accumulate additively across installs |
-| **Google Calendar** | OAuth, *sensitive* scope | Verification, but no CASA |
-| **Gmail** | OAuth, **restricted** scope | **CASA Tier 2, annually** -- unless personal/testing |
+| **Google Calendar** | OAuth, *sensitive* scope | Free verification (justification + video). No CASA |
+| **Gmail** | OAuth, **restricted** scope | Verification **plus CASA Tier 2, $800+/yr** -- unless personal/testing |
 | **Random MCP** | None, or OAuth 2.1 | Discovery-driven; cannot pre-register. Needs RFC 9728 + CIMD |
 
 <div class="mt-3 text-sm opacity-70">
