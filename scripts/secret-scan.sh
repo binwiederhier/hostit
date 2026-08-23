@@ -4,7 +4,9 @@
 # the secrets live in the private ansible repo and belong only there.
 #
 # Placeholders that merely document a FORMAT ("sk-ant-...", "GOCSPX-...") are
-# fine and are excluded by requiring enough trailing characters to be real.
+# fine and are excluded by requiring enough trailing characters to be real. The
+# private-key marker is anchored to a whole line for the same reason: a pasted
+# key has it alone on a line, while a placeholder sits inside a quoted string.
 set -euo pipefail
 
 # Each pattern is a credential shape with enough length to distinguish a real
@@ -16,7 +18,7 @@ PATTERNS=(
   'gh[pousr]_[A-Za-z0-9]{30,}'         # GitHub classic token
   'AKIA[0-9A-Z]{16}'                   # AWS access key id
   'xox[baprs]-[A-Za-z0-9-]{20,}'       # Slack token
-  '-----BEGIN [A-Z ]*PRIVATE KEY'      # any private key
+  '^-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----$'  # a real key: the marker on its own line
   '[0-9]{17,20}\.[A-Za-z0-9_-]{27}\.'  # Discord bot token
 )
 

@@ -174,3 +174,25 @@ func TestDisconnectingRevokesEveryGrant(t *testing.T) {
 	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &view))
 	assert.Empty(t, view.Granted)
 }
+
+// A credential the owner typed wrongly is THEIR mistake to fix, so it must come
+// back as a 400 with the reason. Before this these fell through to a 500, which
+// says "hostit broke" about a pasted public key.
+func TestBadCredentialValuesAreABadRequest(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	u := newActiveTestUser(t, s, "owner@example.com")
+	token := accountToken(t, s, u)
+
+	// A public key in the private key box: the mistake worth catching
+	rr := request(t, s.API(), "POST", "/api/connections",
+		`{"provider":"ssh-key","slug":"deploy-key","label":"Deploy","values":{"private-key":"ssh-ed25519 AAAAC3Nza me@laptop"}}`, token)
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+	assert.Contains(t, rr.Body.String(), "PUBLIC half", "and says what is wrong")
+
+	// A required field left empty
+	rr = request(t, s.API(), "POST", "/api/connections",
+		`{"provider":"imap","slug":"mail","label":"Mail","values":{"host":"imap.example.com:993"}}`, token)
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+	assert.Contains(t, rr.Body.String(), "required")
+}

@@ -423,7 +423,7 @@ func writeConnectionError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusNotFound, err)
 	case errors.Is(err, store.ErrConnectionSlugExists):
 		writeError(w, http.StatusConflict, err)
-	case errors.Is(err, ErrInvalidSlug):
+	case errors.Is(err, ErrInvalidSlug), errors.Is(err, connections.ErrInvalidCredential):
 		writeError(w, http.StatusBadRequest, err)
 	default:
 		writeAppError(w, err)

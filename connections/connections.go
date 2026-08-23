@@ -19,6 +19,13 @@ import (
 	"time"
 )
 
+var (
+	// ErrInvalidCredential means the owner's input is wrong -- a missing field,
+	// or a value that is not the shape the provider needs. Their mistake to
+	// fix, so it must reach them as a 400 with the reason, not a 500.
+	ErrInvalidCredential = errors.New("invalid credential")
+)
+
 const (
 	// KindOAuth: hostit stores a refresh token and exchanges it for access
 	// tokens. KindStatic: the owner pasted a credential used as-is.
@@ -132,7 +139,7 @@ func (p Provider) Configured(clientID, clientSecret string) bool {
 // Validate checks a static provider's submitted fields.
 func (p Provider) Validate(values map[string]string) error {
 	if p.Kind != KindStatic {
-		return fmt.Errorf("%s is not a static provider", p.Name)
+		return fmt.Errorf("%w: %s takes no pasted fields", ErrInvalidCredential, p.Name)
 	}
 	for _, f := range p.Fields {
 		value := values[f.Name]
@@ -140,12 +147,12 @@ func (p Provider) Validate(values map[string]string) error {
 			if f.Optional {
 				continue
 			}
-			return fmt.Errorf("%s is required", f.Label)
+			return fmt.Errorf("%w: %s is required", ErrInvalidCredential, f.Label)
 		}
 		if f.Pattern != "" {
 			ok, err := regexp.MatchString(f.Pattern, value)
 			if err != nil || !ok {
-				return errors.New(f.PatternHint)
+				return fmt.Errorf("%w: %s", ErrInvalidCredential, f.PatternHint)
 			}
 		}
 	}
