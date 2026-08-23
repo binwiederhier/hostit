@@ -274,3 +274,27 @@ func TestEveryProviderSuggestsItsOwnName(t *testing.T) {
 		assert.Equal(t, want, p.NameHint, name)
 	}
 }
+
+// Fastmail's JMAP reaches mail, calendars and contacts through ONE scoped API
+// token, which beats a CalDAV credential plus an IMAP credential plus an SMTP
+// credential for the same account.
+func TestFastmailIsOneCredentialForEverything(t *testing.T) {
+	t.Parallel()
+	p, ok := Lookup("fastmail")
+	require.True(t, ok)
+	assert.Equal(t, KindStatic, p.Kind, "an API token, not OAuth")
+	assert.Equal(t, "token", p.SecretField)
+	require.NoError(t, p.Validate(map[string]string{"token": "fmu1-abc"}))
+	// The session endpoint is what a JMAP client starts from, so the app should
+	// not have to know it by heart.
+	assert.Contains(t, p.Help+" "+fieldPlaceholder(p, "session"), "api.fastmail.com/jmap/session")
+}
+
+func fieldPlaceholder(p Provider, name string) string {
+	for _, f := range p.Fields {
+		if f.Name == name {
+			return f.Placeholder
+		}
+	}
+	return ""
+}

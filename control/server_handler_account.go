@@ -51,6 +51,21 @@ func (s *Server) handleKeysAdd(w http.ResponseWriter, r *http.Request, c *caller
 	writeJSON(w, http.StatusCreated, key)
 }
 
+// handleKeysRename changes a key's label. The key itself is untouched, so
+// nothing that trusts it has to be updated.
+func (s *Server) handleKeysRename(w http.ResponseWriter, r *http.Request, c *caller) {
+	var req apiRenameKeyRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if err := s.users.RenameKey(c.userID(), r.PathValue("id"), req.Label); err != nil {
+		writeAppError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, &apiMessageResponse{Message: "key renamed"})
+}
+
 func (s *Server) handleKeysDelete(w http.ResponseWriter, r *http.Request, c *caller) {
 	if err := s.users.DeleteKey(c.userID(), r.PathValue("id")); err != nil {
 		writeAppError(w, err)

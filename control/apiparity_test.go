@@ -48,6 +48,7 @@ func TestAUserTokenCanDoEverythingTheWebAppCan(t *testing.T) {
 		{"DELETE", "/api/connections/a-key", ""},
 		{"GET", "/api/account/keys", ""},
 		{"POST", "/api/account/keys", `{"label":"laptop","key":"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIB1 x@y"}`},
+		{"PUT", "/api/account/keys/k_none", `{"label":"renamed"}`},
 		{"GET", "/api/account/tokens", ""},
 		{"POST", "/api/account/tokens", `{"label":"another"}`},
 

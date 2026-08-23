@@ -243,6 +243,11 @@ type apiInviteUserRequest struct {
 	Role  store.Role `json:"role"`
 }
 
+// apiRenameKeyRequest is the body of PUT /api/account/keys/{id}
+type apiRenameKeyRequest struct {
+	Label string `json:"label"`
+}
+
 // apiAddDomainRequest is the body of POST /api/domains
 type apiAddDomainRequest struct {
 	Domain string `json:"domain"`

@@ -62,6 +62,7 @@ func (s *Server) newAPIHandler() http.Handler {
 	route(mux, "DELETE", "/apps/{name}/connections/{slug}", s.requireActive(s.handleAppConnectionRevoke))
 	route(mux, "GET", "/account/keys", s.requireActive(s.handleKeysList))
 	route(mux, "POST", "/account/keys", s.requireActive(s.handleKeysAdd))
+	route(mux, "PUT", "/account/keys/{id}", s.requireActive(s.handleKeysRename))
 	route(mux, "DELETE", "/account/keys/{id}", s.requireActive(s.handleKeysDelete))
 	route(mux, "GET", "/account/tokens", s.requireActive(s.handleTokensList))
 	route(mux, "POST", "/account/tokens", s.requireActive(s.handleTokensAdd))

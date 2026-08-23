@@ -113,3 +113,31 @@ func TestGlobalAdminTokenHasNoProfile(t *testing.T) {
 		assert.Equal(t, http.StatusBadRequest, rr.Code, "path %s", path)
 	}
 }
+
+// A key's label is how a person tells one from another, so it must be editable
+// without deleting the key and re-adding it to everything that trusts it.
+func TestRenameAnSSHKey(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	u := newActiveTestUser(t, s, "owner@example.com")
+	token := accountToken(t, s, u)
+
+	rr := request(t, s.API(), "POST", "/api/account/keys",
+		`{"label":"laptop","key":"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIC24brF98CyUY18aeOGGQY3+wILYYnUUBQqICmMTvTGL test@host"}`, token)
+	require.Equal(t, http.StatusCreated, rr.Code, rr.Body.String())
+	keys, err := s.users.Keys(u.ID)
+	require.NoError(t, err)
+	require.Len(t, keys, 1)
+
+	rr = request(t, s.API(), "PUT", "/api/account/keys/"+keys[0].ID, `{"label":"work laptop"}`, token)
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+	keys, err = s.users.Keys(u.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "work laptop", keys[0].Label)
+	assert.Contains(t, keys[0].Key, "AAAAC3", "the key itself is untouched")
+
+	// Empty is refused, and another account cannot rename it
+	assert.Equal(t, http.StatusBadRequest, request(t, s.API(), "PUT", "/api/account/keys/"+keys[0].ID, `{"label":"  "}`, token).Code)
+	other := accountToken(t, s, newActiveTestUser(t, s, "other@example.com"))
+	assert.Equal(t, http.StatusNotFound, request(t, s.API(), "PUT", "/api/account/keys/"+keys[0].ID, `{"label":"stolen"}`, other).Code)
+}

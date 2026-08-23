@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
+import { useDropdown } from "../hooks";
 import { CopyButton, DocsLink, ErrorBanner, formatDate, Skeleton } from "../components";
 
 // Shortens an authorized_keys line to "ssh-ed25519 ...<tail> comment".
@@ -26,6 +27,95 @@ const useEscape = (onClose) => {
 // client-side navigation would land on the catch-all and bounce to the
 // dashboard. It opens in a new tab for the same reason the nav's docs link
 // does -- the manual is a thing you read beside the app, not instead of it.
+
+// Three dots rather than a delete button: renaming is a thing you want to do,
+// and it should not be the one action that is missing because it did not fit.
+const KeyMenu = ({ k, onRename, onRemove }) => {
+  const { open, setOpen, ref } = useDropdown();
+  const pick = (fn) => () => {
+    setOpen(false);
+    fn();
+  };
+  return (
+    <div className="menu conn-rowmenu" ref={ref}>
+      <button
+        type="button"
+        className="btn btn-icon conn-kebab"
+        onClick={() => setOpen(!open)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={`Actions for ${k.label || "this key"}`}
+      >
+        <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+          <circle cx="8" cy="3.1" r="1.35" />
+          <circle cx="8" cy="8" r="1.35" />
+          <circle cx="8" cy="12.9" r="1.35" />
+        </svg>
+      </button>
+      {open && (
+        <div className="menu-items" role="menu">
+          <button type="button" role="menuitem" onClick={pick(onRename)}>Rename</button>
+          <button type="button" role="menuitem" className="menu-item-danger" onClick={pick(onRemove)}>Delete</button>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// Renaming touches the label only. The key is what everything trusts, so it is
+// shown and not editable -- changing it would mean a different key entirely.
+const RenameKeyDialog = ({ k, onClose, onRenamed }) => {
+  useEscape(onClose);
+  const [label, setLabel] = useState(k.label || "");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const save = async (e) => {
+    e.preventDefault();
+    if (busy || !label.trim()) return;
+    setBusy(true);
+    setError("");
+    try {
+      await api.put(`/api/account/keys/${encodeURIComponent(k.id)}`, { label: label.trim() });
+      onRenamed();
+    } catch (err) {
+      setError(err.message);
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true" onMouseDown={onClose}>
+      <form className="card modal modal-sheet" onSubmit={save} onMouseDown={(e) => e.stopPropagation()}>
+        <button type="button" className="modal-x" onClick={onClose} title="Close" aria-label="Close">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+            <path d="M6 6l12 12M18 6 6 18" />
+          </svg>
+        </button>
+        <h2>Rename SSH key</h2>
+        <p className="hint" style={{ marginBottom: "5px" }}>
+          The label is only how you tell your keys apart. The key itself is untouched, so nothing
+          that trusts it has to change.
+        </p>
+        <ErrorBanner message={error} onDismiss={() => setError("")} />
+        <label className="conn-field">
+          <span>Label</span>
+          <input type="text" value={label} onChange={(e) => setLabel(e.target.value)} placeholder="work laptop" aria-label="Label" autoFocus disabled={busy} />
+        </label>
+        <label className="conn-field">
+          <span>Key</span>
+          <input type="text" className="mono" value={keyPreview(k.key)} readOnly disabled />
+        </label>
+        <div className="btn-row">
+          <button type="button" className="btn" onClick={onClose} disabled={busy}>Cancel</button>
+          <button type="submit" className="btn btn-primary" disabled={busy || !label.trim()}>
+            {busy ? "Saving..." : "Save"}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+};
 
 const AddKeyDialog = ({ onClose, onAdded }) => {
   useEscape(onClose);
@@ -101,6 +191,7 @@ const SshKeys = () => {
   const [keys, setKeys] = useState(null);
   const [error, setError] = useState("");
   const [adding, setAdding] = useState(false);
+  const [renaming, setRenaming] = useState(null);
 
   const load = useCallback(async () => {
     try {
@@ -162,9 +253,7 @@ const SshKeys = () => {
                   <td className="mono cell-muted">{keyPreview(k.key)}</td>
                   <td className="cell-muted">{formatDate(k.created_at, "unknown")}</td>
                   <td className="cell-actions">
-                    <button type="button" className="btn btn-small btn-danger" onClick={() => remove(k)}>
-                      Delete
-                    </button>
+                    <KeyMenu k={k} onRename={() => setRenaming(k)} onRemove={() => remove(k)} />
                   </td>
                 </tr>
               ))}
@@ -173,6 +262,16 @@ const SshKeys = () => {
         </div>
       )}
       {adding && <AddKeyDialog onClose={() => setAdding(false)} onAdded={load} />}
+      {renaming && (
+        <RenameKeyDialog
+          k={renaming}
+          onClose={() => setRenaming(null)}
+          onRenamed={async () => {
+            setRenaming(null);
+            await load();
+          }}
+        />
+      )}
     </div>
   );
 };
@@ -297,9 +396,6 @@ const Tokens = () => {
         </div>
       )}
       {tokens === null && !error && <Skeleton rows={2} label="Loading tokens..." />}
-      {tokens !== null && tokens.length === 0 && (
-        <p className="empty">No API tokens yet. Create one to use the CLI or the API.</p>
-      )}
       {tokens !== null && tokens.length > 0 && (
         <div className="table-wrap">
           <table>

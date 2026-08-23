@@ -298,6 +298,22 @@ func init() {
 		Help:     "Read sensors and call services on your Home Assistant, with a long-lived access token.",
 	})
 
+	// Fastmail's JMAP: one scoped API token reaching mail, calendars AND
+	// contacts, which is why it is its own provider rather than three separate
+	// CalDAV/IMAP/SMTP credentials for the same account.
+	Register(Provider{
+		Name:        "fastmail",
+		Label:       "Fastmail",
+		Kind:        KindStatic,
+		SecretField: "token",
+		NameHint:    "Fastmail",
+		Fields: []Field{
+			{Name: "token", Label: "API token", Placeholder: "Settings -> Privacy & Security -> API tokens", Secret: true},
+			{Name: "session", Label: "Session URL", Placeholder: "https://api.fastmail.com/jmap/session", Optional: true},
+		},
+		Help: "Mail, calendars and contacts over JMAP with one token. Create it in Settings -> Privacy & Security -> Manage API tokens, scoped to what the app needs. Start at https://api.fastmail.com/jmap/session.",
+	})
+
 	// A private key an app uses to reach another machine or a git remote.
 	Register(Provider{
 		Name:        "ssh-key",

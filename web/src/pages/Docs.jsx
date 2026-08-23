@@ -748,8 +748,68 @@ const ApiPage = () => (
             path="/api/account/tokens"
             what="Your account tokens"
           />
+          <Endpoint
+            method="PUT|DELETE"
+            path="/api/account/keys/{id}"
+            what={`Rename an SSH key ({"label":"..."}) or remove it`}
+          />
+          <Endpoint
+            method="GET|POST"
+            path="/api/connections"
+            what={`Your connections and credentials, plus what this server can attach. POST {"provider":"...","slug":"...","label":"...","values":{...}} -- a pasted credential saves immediately, an OAuth one answers with a redirect_url to send the browser to`}
+          />
+          <Endpoint
+            method="PUT|DELETE"
+            path="/api/connections/{slug}"
+            what={`Rename it or replace a pasted credential ({"slug":"...","label":"...","values":{...}}), or remove it. Removing cuts off every app at once`}
+          />
+          <Endpoint
+            method="POST"
+            path="/api/connections/{slug}/reconnect"
+            what="Re-consent an OAuth account in place, keeping its reference and every grant"
+          />
+          <Endpoint
+            method="GET"
+            path="/api/apps/{name}/connections"
+            what="What this app was granted, and what else could be granted to it"
+          />
+          <Endpoint
+            method="PUT|DELETE"
+            path="/api/apps/{name}/connections/{slug}"
+            what="Grant one of your connections to an app, or revoke it. Takes effect immediately -- no deploy, no restart"
+          />
         </tbody>
       </table>
+
+      <h3>From inside an app</h3>
+      <p>
+        The endpoints above are the account API, driven with a token from anywhere. An app also has
+        a <b>second, smaller API of its own</b>, served over a unix socket inside its container. No
+        token is involved: hostit knows which app is calling from the socket&rsquo;s peer
+        credentials, so an app can only ever reach its own things.
+      </p>
+      <table className="docs-table">
+        <thead>
+          <tr><th>Method</th><th>Path</th><th>What</th></tr>
+        </thead>
+        <tbody>
+          <Endpoint method="GET" path="/v1/connections" what="The connections and credentials this app was granted, each with the reference to ask for" />
+          <Endpoint method="GET" path="/v1/connections/{slug}/token" what={`A usable credential: {"provider":"...","access_token":"...","expires_at":"..."} -- expires_at is absent when it does not expire`} />
+          <Endpoint method="GET" path="/v1/self" what="This app: its URL, limits, domains and state" />
+          <Endpoint method="POST" path="/v1/self/deploy" what="Deploy the app, as the web app's button does" />
+          <Endpoint method="POST" path="/v1/self/start|stop|restart" what="The app process" />
+          <Endpoint method="POST" path="/v1/self/poweron|poweroff|reboot" what="The container" />
+          <Endpoint method="GET" path="/v1/self/status" what="Whether it is running" />
+          <Endpoint method="GET" path="/v1/self/logs" what="Recent output" />
+        </tbody>
+      </table>
+      <Snippet
+        text={`# Inside the container -- no token, no host, just the socket\ncurl --unix-socket /run/hostit/hostit.sock http://x/v1/connections\ncurl --unix-socket /run/hostit/hostit.sock http://x/v1/connections/work-calendar/token`}
+      />
+      <p className="hint">
+        Ask for a credential when you need it rather than saving it: an account token expires within
+        the hour, and asking again is what makes revoking a grant take effect immediately.
+      </p>
     </div>
   </>
 );
