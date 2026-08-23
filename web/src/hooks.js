@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 
 // useReconnect runs onReconnect when connectivity likely returned: the browser
 // fires "online", or the tab becomes visible again (e.g. after the laptop woke).
@@ -48,4 +48,29 @@ export const useAppViewportHeight = () => {
       window.removeEventListener("orientationchange", apply);
     };
   }, []);
+};
+
+// A dropdown that closes on an outside click or Escape. Shared, because every
+// menu in the app needs exactly this and three copies of it would drift.
+export const useDropdown = () => {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!open) {
+      return undefined;
+    }
+    const close = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) {
+        setOpen(false);
+      }
+    };
+    const onKey = (e) => e.key === "Escape" && setOpen(false);
+    document.addEventListener("mousedown", close);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", close);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+  return { open, setOpen, ref };
 };

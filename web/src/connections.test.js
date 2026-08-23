@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { suggestSlug, splitByKind } from "./connections";
+import { suggestSlug, splitByKind, menuProviders, slugify } from "./connections";
 
 describe("suggestSlug", () => {
   it("suggests the provider's own name when nothing uses it", () => {
@@ -34,5 +34,51 @@ describe("splitByKind", () => {
 
   it("copes with nothing loaded yet", () => {
     expect(splitByKind(null)).toEqual({ connections: [], credentials: [] });
+  });
+});
+
+describe("menuProviders", () => {
+  // The generic credential is the escape hatch, not just another entry: it goes
+  // last, on its own, so the named ones are what a person reads first.
+  it("puts the catch-all last and marks it", () => {
+    const { named, other } = menuProviders([
+      { name: "generic", label: "API key or token", kind: "static" },
+      { name: "caldav", label: "CalDAV calendar", kind: "static" },
+      { name: "imap", label: "IMAP mailbox", kind: "static" },
+    ]);
+    expect(named.map((p) => p.name)).toEqual(["caldav", "imap"]);
+    expect(other.name).toBe("generic");
+  });
+
+  it("has no catch-all among OAuth providers", () => {
+    const { named, other } = menuProviders([
+      { name: "github", label: "GitHub", kind: "oauth" },
+      { name: "discord", label: "Discord", kind: "oauth" },
+    ]);
+    expect(named.map((p) => p.name)).toEqual(["discord", "github"]);
+    expect(other).toBeNull();
+  });
+
+  it("copes with an empty list", () => {
+    expect(menuProviders([])).toEqual({ named: [], other: null });
+    expect(menuProviders(undefined)).toEqual({ named: [], other: null });
+  });
+});
+
+describe("slugify", () => {
+  // The name is what a person reads; the slug is what an app asks for. Deriving
+  // one from the other means nobody has to invent both.
+  it("derives a usable reference from a display name", () => {
+    expect(slugify("Work calendar")).toBe("work-calendar");
+    expect(slugify("Phil's OpenAI key")).toBe("phils-openai-key");
+    expect(slugify("  Spaced   Out  ")).toBe("spaced-out");
+    expect(slugify("ntfy (prod)")).toBe("ntfy-prod");
+  });
+
+  it("never produces something the API would reject", () => {
+    expect(slugify("---")).toBe("");
+    expect(slugify("ÜBER Cal")).toBe("uber-cal"); // folded, not dropped
+    expect(slugify("a".repeat(60))).toHaveLength(32);
+    expect(slugify("x")).toBe("x");
   });
 });

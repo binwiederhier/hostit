@@ -214,3 +214,38 @@ func TestDiscordUserAndBotAreSeparateProviders(t *testing.T) {
 	assert.Equal(t, "token", bot.SecretField)
 	require.NoError(t, bot.Validate(map[string]string{"token": "MTIz.abc.def"}))
 }
+
+// An SSH key an app uses to reach another machine or a git remote. Multiline,
+// because a key does not fit in a text input.
+func TestSSHKeyCredential(t *testing.T) {
+	t.Parallel()
+	p, ok := Lookup("ssh-key")
+	require.True(t, ok)
+	assert.Equal(t, KindStatic, p.Kind)
+	assert.Equal(t, "private-key", p.SecretField)
+
+	var key Field
+	for _, f := range p.Fields {
+		if f.Name == "private-key" {
+			key = f
+		}
+	}
+	assert.True(t, key.Secret, "it is the credential")
+	assert.True(t, key.Multiline, "a key does not fit on one line")
+
+	require.NoError(t, p.Validate(map[string]string{
+		"private-key": "-----BEGIN OPENSSH PRIVATE KEY-----\nabc\n-----END OPENSSH PRIVATE KEY-----",
+	}))
+}
+
+// Pasting a PUBLIC key into the private key box is the mistake worth catching
+// at paste time: it validates as "some text" and then fails much later, in an
+// app, with an error that says nothing about what went wrong.
+func TestSSHKeyRejectsAPublicKey(t *testing.T) {
+	t.Parallel()
+	p, _ := Lookup("ssh-key")
+	err := p.Validate(map[string]string{"private-key": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIB1 me@laptop"})
+	require.Error(t, err)
+	assert.Contains(t, strings.ToLower(err.Error()), "private key")
+	assert.Error(t, p.Validate(map[string]string{"private-key": "not a key at all"}))
+}

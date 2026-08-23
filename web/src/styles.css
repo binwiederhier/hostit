@@ -5857,3 +5857,55 @@ input[type="number"]::-webkit-inner-spin-button {
   margin-bottom: 6px;
   line-height: 1.5;
 }
+
+/* The Connections page: a call to action beside each card's heading, and a menu
+   whose last entry is the catch-all rather than another provider. */
+.conn-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.conn-head h2 {
+  margin-bottom: 0;
+}
+
+.conn-caret {
+  margin-left: 6px;
+  font-size: 10px;
+  opacity: 0.8;
+}
+
+.conn-menu {
+  min-width: 230px;
+}
+
+.conn-menu-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 6px 0;
+}
+
+/* The escape hatch, set apart on purpose: it is what you reach for when none of
+   the named providers fit, not one more of them. */
+.conn-menu-other {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  font-weight: 600;
+}
+
+.conn-menu-sub {
+  font-weight: 400;
+  font-size: 11px;
+  opacity: 0.6;
+}
+
+.conn-textarea {
+  width: 100%;
+  font-size: 12px;
+  line-height: 1.45;
+  resize: vertical;
+}

@@ -279,6 +279,25 @@ func init() {
 		Help: "Read sensors and call services on your Home Assistant, with a long-lived access token.",
 	})
 
+	// A private key an app uses to reach another machine or a git remote.
+	Register(Provider{
+		Name:        "ssh-key",
+		Label:       "SSH key",
+		Kind:        KindStatic,
+		SecretField: "private-key",
+		Fields: []Field{
+			{
+				Name: "private-key", Label: "Private key", Secret: true, Multiline: true,
+				Placeholder: "-----BEGIN OPENSSH PRIVATE KEY-----\n...\n-----END OPENSSH PRIVATE KEY-----",
+				Pattern:     `-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----`,
+				PatternHint: "that does not look like a private key -- it should start with -----BEGIN ... PRIVATE KEY-----. An ssh-ed25519 or ssh-rsa line is the PUBLIC half, which is not a credential.",
+			},
+			{Name: "user", Label: "Username", Placeholder: "git, deploy, ... (optional)", Optional: true},
+			{Name: "host", Label: "Host", Placeholder: "example.com:22 (optional)", Optional: true},
+		},
+		Help: "A private key an app uses to reach another machine or a git remote. Use one with no passphrase -- an app cannot type one.",
+	})
+
 	// The escape hatch: anything with an API key. The app gets the secret and
 	// whatever context was pasted alongside it, and decides what to do with it.
 	Register(Provider{

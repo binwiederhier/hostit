@@ -36,7 +36,24 @@ else's calendar reader.
 The research behind this choice, and the four patterns that were rejected, is in
 `docs/slides/presentations/integrations.md`.
 
-## Slugs: why a connection has a name
+## Name and slug are different things
+
+Each connection carries both, and conflating them is the mistake this shape
+exists to prevent:
+
+- **`label`** is the NAME a person reads: "Work calendar". Free text, changeable,
+  and changing it affects nothing else.
+- **`slug`** is the REFERENCE an app asks for: `work-calendar`. Lowercase, 3-32
+  characters of letters, digits and dashes, unique per owner, and part of a URL
+  an app builds by hand.
+
+The UI derives the slug from the name (`slugify` in `web/src/connections.js`) so
+nobody invents both, and stops deriving the moment the reference is edited --
+because a rename must never silently move what apps ask for. Renaming a slug
+breaks any app configured for the old one, and the dialog says so rather than
+looking cosmetic.
+
+## Slugs: why a connection has a reference
 
 One owner can hold **several of the same provider** -- a work calendar and a
 personal one -- so a grant names a connection, not a provider, and an app asks
@@ -168,6 +185,11 @@ sequenceDiagram
 - `control/connections.go` -- `connectionManager`, the only thing that ever
   holds a refresh token in the clear. `tokenFor` resolves in the app owner's
   namespace and checks the grant before opening anything.
+- `web/src/pages/Connections.jsx` -- its own page, not a section of the profile:
+  two cards (connections, credentials), one call-to-action menu each, and the
+  add/edit dialogs. The catch-all `generic` provider is set below a divider in
+  the menu rather than listed among the named ones, because it is the escape
+  hatch for a service hostit does not know.
 - `control/server_handler_connections.go` -- the owner API, the app-socket half,
   and `connectionFromState`, which handles the OAuth callback when the state says
   it belongs to a connection. Checked **before** the login guard, so an instance
@@ -188,3 +210,12 @@ sequenceDiagram
 - A collaborator can manage an app but cannot grant it somebody else's
   credential: only the owner grants their own connections.
 - 50 connections per owner, and the secret is never returned by any endpoint.
+- A field may be `Multiline` (an SSH private key needs a textarea) and may carry
+  a `Pattern` the value must match. The pattern exists for one class of mistake
+  worth catching at paste time -- an SSH **public** key in the private key box --
+  which otherwise validates as "some text" and fails much later inside an app.
+- Access tokens are cached in memory per connection until two minutes before
+  expiry, so a page making five calls is one round trip rather than five. The
+  entry records the sealed credential it came from, so a reconnect invalidates it
+  by construction. The grant is re-checked on every request BEFORE the cache is
+  consulted, so revoking one is still immediate.

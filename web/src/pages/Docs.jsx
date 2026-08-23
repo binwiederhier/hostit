@@ -510,6 +510,75 @@ const VisibilityPage = () => (
   </>
 );
 
+// Connections, for the person using them rather than the operator wiring them up.
+const ConnectionsPage = () => (
+  <>
+    <h2>Connections and credentials</h2>
+    <p>
+      Attach an account or a secret <b>once</b>, then grant it to whichever apps should use it.
+      An app asks hostit for a usable credential when it needs one -- it never holds your
+      password, and nothing is baked into a file you would have to redeploy to change.
+    </p>
+    <p>Two kinds, on the <b>Connections</b> page:</p>
+    <ul>
+      <li>
+        <b>Connections</b> are accounts you sign in to: Google Calendar, Gmail, Slack, Discord,
+        GitHub, Jira. You approve them at the provider, and hostit keeps the permission.
+      </li>
+      <li>
+        <b>Credentials</b> are secrets you paste: an API key, an SSH key, a database URL, a
+        mailbox or calendar password. Nothing to approve and nothing that expires.
+      </li>
+    </ul>
+
+    <h3>Name and reference</h3>
+    <p>
+      Each one has two labels, and they do different jobs. The <b>name</b> is for you --
+      &ldquo;Work calendar&rdquo; -- and changing it affects nothing else. The <b>reference</b> is
+      what an app asks for, a short lowercase handle like{" "}
+      <span className="mono">work-calendar</span>, and it is filled in from the name so you do not
+      have to invent both. Changing a reference breaks any app already using the old one, so the
+      dialog says so.
+    </p>
+    <p>
+      This is why you can attach the <b>same service twice</b>: a work calendar and a personal one
+      are two connections with two references, and an app asks for whichever it was granted.
+    </p>
+
+    <h3>Granting an app</h3>
+    <p>
+      Attaching something gives no app access to it. Open the app, go to <b>Settings</b>, and grant
+      it there. Revoking takes effect immediately -- no redeploy, no restart. Removing the
+      connection entirely cuts off every app at once.
+    </p>
+
+    <h3>What an app does with it</h3>
+    <p>An app reads what it was granted over its own socket, and asks for a credential per use:</p>
+    <Snippet
+      text={`curl --unix-socket /run/hostit/hostit.sock http://x/v1/connections\ncurl --unix-socket /run/hostit/hostit.sock http://x/v1/connections/work-calendar/token`}
+    />
+    <p>
+      The second returns <span className="mono">{`{"access_token": "...", "expires_at": "..."}`}</span>{" "}
+      -- with <span className="mono">expires_at</span> absent when the credential does not expire.
+      An app should fetch it when it needs it rather than saving it: an account token expires
+      within the hour, and asking again is what makes revoking work. The built-in assistant is told
+      which connections an app holds, so you can ask it to build something that uses one.
+    </p>
+
+    <h3>Reconnecting</h3>
+    <p>
+      If a provider expires or revokes its permission, the app starts failing and the fix is{" "}
+      <b>Reconnect</b> on the connection. That keeps the reference and every grant, and only
+      replaces the credential underneath -- no app needs regranting.
+    </p>
+    <p className="hint">
+      Google is the one provider likely to need this regularly: while an instance is unverified,
+      Google expires its permission after seven days. Attaching a calendar over{" "}
+      <b>CalDAV</b>, or a mailbox over <b>IMAP</b> with an app password, avoids that entirely.
+    </p>
+  </>
+);
+
 const ApiPage = () => (
   <>
     <h2>API reference</h2>
@@ -1417,6 +1486,7 @@ const renderers = {
   snapshots: SnapshotsPage,
   domains: DomainsPage,
   limits: LimitsPage,
+  connections: ConnectionsPage,
   visibility: VisibilityPage,
   api: ApiPage,
   install: InstallPage,

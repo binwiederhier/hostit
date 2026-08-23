@@ -27,6 +27,7 @@ export const DOCS_GUIDES = [
       { id: "domains", title: "Domains and renaming" },
       { id: "limits", title: "Resource limits and pools" },
       { id: "visibility", title: "Private apps" },
+      { id: "connections", title: "Connections" },
       { id: "api", title: "API reference" },
     ],
   },

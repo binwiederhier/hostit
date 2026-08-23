@@ -24,3 +24,32 @@ export function splitByKind(all) {
     credentials: list.filter((c) => c.kind === "static"),
   };
 }
+
+// menuProviders splits a provider list for the add menu. The generic credential
+// is the escape hatch rather than another entry, so it comes back separately:
+// the menu shows the named ones first and sets it apart at the bottom.
+export function menuProviders(providers) {
+  const list = (providers || []).slice().sort((a, b) => a.name.localeCompare(b.name));
+  return {
+    named: list.filter((p) => p.name !== "generic"),
+    other: list.find((p) => p.name === "generic") || null,
+  };
+}
+
+// slugify derives the reference an app uses from the name a person typed, so
+// nobody has to invent both. It produces only what the API accepts: lowercase
+// letters, digits and dashes, at most 32 characters, never leading or trailing
+// with a dash.
+export function slugify(name) {
+  return (name || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    // Apostrophes vanish rather than becoming a dash, so "Phil's key" reads as
+    // phils-key and not phil-s-key.
+    .replace(/['\u2019]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 32)
+    .replace(/-+$/g, "");
+}

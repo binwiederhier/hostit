@@ -8,6 +8,7 @@ import { AppHeaderContext } from "./appHeader";
 import Dashboard from "./pages/Dashboard";
 import AppDetail from "./pages/AppDetail";
 import Profile from "./pages/Profile";
+import Connections from "./pages/Connections";
 import Admin from "./pages/Admin";
 import Docs from "./pages/Docs";
 
@@ -172,7 +173,7 @@ const LoadFailed = ({ message, onRetry }) => (
 // squeezes them for no reason on a normal screen. The docs match this width
 // through their own .docs-container (they render their own <main>); the app
 // page is the one exception, staying full-bleed.
-const roomyPath = (pathname) => pathname === "/" || pathname === "/profile" || pathname === "/admin";
+const roomyPath = (pathname) => pathname === "/" || pathname === "/profile" || pathname === "/connections" || pathname === "/admin";
 
 // RoutedMain is <main> with the width the current route wants. It exists as its
 // own component because App renders the Router, so only a child of it can read
@@ -212,6 +213,7 @@ const Nav = ({ account, appHeader }) => {
       <div className="nav-menu">
         <nav className="nav-links">
           <AppsMenu />
+          <NavLink to="/connections">Connections</NavLink>
           <NavLink to="/profile">Profile</NavLink>
           {account.role === "admin" && <NavLink to="/admin">Admin</NavLink>}
           {/* A reference you read alongside the app, so: its own tab */}
@@ -297,6 +299,9 @@ const ProfileMenu = ({ account }) => {
           <div className="nav-profile-nav">
             <NavLink to="/" end role="menuitem" onClick={close}>
               Apps
+            </NavLink>
+            <NavLink to="/connections" role="menuitem" onClick={close}>
+              Connections
             </NavLink>
             <NavLink to="/profile" role="menuitem" onClick={close}>
               Profile
@@ -426,6 +431,7 @@ const App = () => {
             <Route path="/app/:name" element={<AppDetail account={account} refreshAccount={refreshAccount} />} />
             <Route path="/app/:name/:viewSlug" element={<AppDetail account={account} refreshAccount={refreshAccount} />} />
             <Route path="/profile" element={<Profile />} />
+            <Route path="/connections" element={<Connections />} />
             <Route path="/admin" element={<Admin account={account} />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

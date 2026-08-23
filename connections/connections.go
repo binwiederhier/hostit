@@ -12,7 +12,9 @@
 package connections
 
 import (
+	"errors"
 	"fmt"
+	"regexp"
 	"sort"
 	"time"
 )
@@ -68,6 +70,16 @@ type Field struct {
 	// generic credential needs this -- its endpoint and note are context, not
 	// part of the credential.
 	Optional bool `json:"optional,omitempty"`
+	// Multiline renders a textarea rather than an input. An SSH private key
+	// does not fit on one line.
+	Multiline bool `json:"multiline,omitempty"`
+	// Pattern, when set, is a regex the value must match. It exists for the one
+	// class of mistake worth catching at paste time -- an SSH PUBLIC key in the
+	// private key box -- which otherwise validates as "some text" and then
+	// fails much later inside an app, saying nothing useful.
+	Pattern string `json:"-"`
+	// PatternHint is what the owner is told when Pattern does not match.
+	PatternHint string `json:"-"`
 }
 
 // Token is what an app gets from the token endpoint. A static provider returns
@@ -123,11 +135,18 @@ func (p Provider) Validate(values map[string]string) error {
 		return fmt.Errorf("%s is not a static provider", p.Name)
 	}
 	for _, f := range p.Fields {
-		if f.Optional {
-			continue
-		}
-		if values[f.Name] == "" {
+		value := values[f.Name]
+		if value == "" {
+			if f.Optional {
+				continue
+			}
 			return fmt.Errorf("%s is required", f.Label)
+		}
+		if f.Pattern != "" {
+			ok, err := regexp.MatchString(f.Pattern, value)
+			if err != nil || !ok {
+				return errors.New(f.PatternHint)
+			}
 		}
 	}
 	return nil

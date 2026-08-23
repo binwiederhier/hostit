@@ -4,7 +4,7 @@ import { api, ApiError, isNetworkError } from "../api";
 import { viewFromSlug, VIEW_TO_SLUG } from "../views";
 import { limitInputs, limitsPatchBody } from "../limits";
 import { visibilityChanges } from "../visibility";
-import { useReconnect } from "../hooks";
+import { useDropdown, useReconnect } from "../hooks";
 import { CopyButton, ErrorBanner, Loading, Snippet, StatusDot, VisibilityBadge, VisibilityChoice, pairMB, usageLevel, UsagePair, cores, visibilityOf } from "../components";
 import { useSetAppHeader } from "../appHeader";
 
@@ -226,28 +226,6 @@ const UsageGrid = ({ app }) => {
 
 // A small dropdown wrapper shared by the Actions and Terminal menus: closes on an
 // outside click or Escape.
-const useDropdown = () => {
-  const [open, setOpen] = useState(false);
-  const ref = useRef(null);
-  useEffect(() => {
-    if (!open) {
-      return undefined;
-    }
-    const close = (e) => {
-      if (ref.current && !ref.current.contains(e.target)) {
-        setOpen(false);
-      }
-    };
-    const onKey = (e) => e.key === "Escape" && setOpen(false);
-    document.addEventListener("mousedown", close);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", close);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
-  return { open, setOpen, ref };
-};
 
 // A split button for the terminal: the left half (the icon) opens the web shell
 // directly; the right half (the caret) drops a menu (web shell / SSH). When a
