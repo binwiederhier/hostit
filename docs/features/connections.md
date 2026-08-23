@@ -111,10 +111,18 @@ refuses perfectly good connections:
 | Google Calendar, Gmail | refresh token | per request, ~1h access token |
 | Discord, Jira | refresh token | per request |
 | Slack (`xoxb-`), GitHub OAuth App | the access token itself | none -- handed back as-is |
+| Discord | refresh token, **rotated every use** | per request, and the new one is stored |
 | IMAP, generic | the pasted secret | none |
 
 `Provider.LongLivedToken` marks the third row. Both paths return the same
 `Token`, so the app socket behaves identically.
+
+**Rotation is the trap.** Some providers issue a NEW refresh token on every
+refresh and invalidate the old one -- Discord does. `Provider.Refresh` therefore
+returns the rotated token as a second value and `tokenFor` stores it. Dropping it
+makes the first request work and the second fail with `invalid_grant`, which
+reads exactly like the owner revoking access and is not. Google does not rotate,
+so a catalog of one provider would never have surfaced it.
 
 Consent parameters are **per provider** (`Provider.AuthParams`) rather than
 Google's copied everywhere: Google needs `access_type=offline` or it never issues

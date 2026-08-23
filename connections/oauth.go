@@ -77,9 +77,15 @@ func (p Provider) Exchange(ctx context.Context, client *http.Client, clientID, c
 // provider whose token does not expire there is nothing to exchange: the
 // stored secret is already the usable token, and it is returned unchanged so
 // the endpoint an app calls behaves the same for both kinds.
-func (p Provider) Refresh(ctx context.Context, client *http.Client, clientID, clientSecret, refreshToken string) (Token, error) {
+//
+// The second return is a ROTATED refresh token, empty unless the provider
+// issued a new one. Some do on every refresh -- Discord does -- and the old one
+// is dead the moment this returns. The caller MUST store it: dropping it makes
+// the first refresh work and the second fail with invalid_grant, which reads
+// like the owner revoked access when nothing of the sort happened.
+func (p Provider) Refresh(ctx context.Context, client *http.Client, clientID, clientSecret, refreshToken string) (Token, string, error) {
 	if p.LongLivedToken {
-		return Token{Provider: p.Name, AccessToken: refreshToken}, nil
+		return Token{Provider: p.Name, AccessToken: refreshToken}, "", nil
 	}
 	res, err := p.postToken(ctx, client, url.Values{
 		"client_id":     {clientID},
@@ -88,13 +94,19 @@ func (p Provider) Refresh(ctx context.Context, client *http.Client, clientID, cl
 		"grant_type":    {"refresh_token"},
 	})
 	if err != nil {
-		return Token{}, err
+		return Token{}, "", err
 	}
 	expiry := time.Now().Add(time.Duration(res.ExpiresIn) * time.Second)
 	if res.ExpiresIn == 0 {
 		expiry = time.Now().Add(time.Hour)
 	}
-	return Token{Provider: p.Name, AccessToken: res.AccessToken, ExpiresAt: &expiry}, nil
+	// Only report a rotation when the provider actually sent a different token,
+	// so a non-rotating provider never causes a pointless write.
+	rotated := ""
+	if res.RefreshToken != "" && res.RefreshToken != refreshToken {
+		rotated = res.RefreshToken
+	}
+	return Token{Provider: p.Name, AccessToken: res.AccessToken, ExpiresAt: &expiry}, rotated, nil
 }
 
 func (p Provider) postToken(ctx context.Context, client *http.Client, form url.Values) (tokenResponse, error) {

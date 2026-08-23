@@ -1060,9 +1060,12 @@ const ConnectionsSetupPage = () => (
     </ol>
     <p className="hint">
       Ignore the OAuth2 URL Generator -- that builds invite links, which is a different thing.
-      Note that <span className="mono">identify</span> and <span className="mono">guilds</span>{" "}
-      give the user&rsquo;s profile and server list, <b>not</b> message history; reading messages
-      needs a bot added to each server.
+      Note what this gets you: <span className="mono">identify</span> and{" "}
+      <span className="mono">guilds</span> give a profile and a list of which servers someone is
+      in, and <b>nothing inside them</b>. Channels and messages are only reachable by a{" "}
+      <b>bot</b> invited to the server -- for that, create one under the application&rsquo;s{" "}
+      <i>Bot</i> tab, invite it, and paste its token as a <b>Discord bot</b> credential. No
+      OAuth involved.
     </p>
 
     <h3>Slack</h3>

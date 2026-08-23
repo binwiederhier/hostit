@@ -3,6 +3,7 @@ package connections
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -39,7 +40,7 @@ func TestExchangeAndRefreshForARefreshingProvider(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "rt-1", secret, "the refresh token is what gets stored")
 
-	tok, err := p.Refresh(context.Background(), srv.Client(), "cid", "sec", "rt-1")
+	tok, _, err := p.Refresh(context.Background(), srv.Client(), "cid", "sec", "rt-1")
 	require.NoError(t, err)
 	assert.Equal(t, "at-1", tok.AccessToken)
 	assert.NotNil(t, tok.ExpiresAt, "and it expires")
@@ -72,7 +73,7 @@ func TestALongLivedProviderStoresTheAccessTokenItself(t *testing.T) {
 
 	// Refreshing one is a no-op that returns what is stored, so the token
 	// endpoint an app calls behaves identically for both kinds.
-	tok, err := p.Refresh(context.Background(), srv.Client(), "cid", "sec", "xoxb-abc")
+	tok, _, err := p.Refresh(context.Background(), srv.Client(), "cid", "sec", "xoxb-abc")
 	require.NoError(t, err)
 	assert.Equal(t, "xoxb-abc", tok.AccessToken)
 	assert.Nil(t, tok.ExpiresAt, "nothing to expire, so nothing is promised")
@@ -98,7 +99,7 @@ func TestAProviderRefusalSaysWhy(t *testing.T) {
 	srv := tokenServer(t, map[string]any{"error": "invalid_grant", "error_description": "Token has been expired or revoked."}, nil)
 	p := Provider{Name: "google-calendar", Label: "Google Calendar", Kind: KindOAuth, TokenURL: srv.URL}
 
-	_, err := p.Refresh(context.Background(), srv.Client(), "cid", "sec", "rt-dead")
+	_, _, err := p.Refresh(context.Background(), srv.Client(), "cid", "sec", "rt-dead")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid_grant")
 	assert.Contains(t, err.Error(), "revoked")
@@ -119,4 +120,52 @@ func TestATokenWithNoExpiryOmitsTheField(t *testing.T) {
 	b, err = json.Marshal(Token{Provider: "google-calendar", AccessToken: "at", ExpiresAt: &at})
 	require.NoError(t, err)
 	assert.Contains(t, string(b), "expires_at")
+}
+
+// Some providers ROTATE the refresh token: every refresh returns a new one and
+// invalidates the old. Discord does. Discarding the new one means the first
+// refresh works and the second fails with invalid_grant, which reads like the
+// user revoked access when nothing of the sort happened.
+func TestARotatedRefreshTokenIsReturnedSoItCanBeStored(t *testing.T) {
+	t.Parallel()
+	var seen []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		given := r.Form.Get("refresh_token")
+		seen = append(seen, given)
+		w.Header().Set("Content-Type", "application/json")
+		// Only the newest refresh token is accepted, the way a rotating
+		// provider behaves.
+		if len(seen) > 1 && given != "rt-"+fmt.Sprint(len(seen)-1) {
+			w.WriteHeader(http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]any{"error": "invalid_grant"})
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"access_token": "at", "refresh_token": "rt-" + fmt.Sprint(len(seen)), "expires_in": 3600,
+		})
+	}))
+	defer srv.Close()
+	p := Provider{Name: "discord", Label: "Discord", Kind: KindOAuth, TokenURL: srv.URL}
+
+	tok, rotated, err := p.Refresh(context.Background(), srv.Client(), "cid", "sec", "rt-0")
+	require.NoError(t, err)
+	assert.Equal(t, "at", tok.AccessToken)
+	assert.Equal(t, "rt-1", rotated, "the caller has to be told, or the next refresh fails")
+
+	// Using the rotated one works; using the original would not.
+	_, _, err = p.Refresh(context.Background(), srv.Client(), "cid", "sec", rotated)
+	assert.NoError(t, err)
+}
+
+// A provider that does NOT rotate (Google) returns nothing new, and the caller
+// must not overwrite a good refresh token with an empty string.
+func TestANonRotatingProviderReturnsNoNewRefreshToken(t *testing.T) {
+	t.Parallel()
+	srv := tokenServer(t, map[string]any{"access_token": "at", "expires_in": 3600}, nil)
+	p := Provider{Name: "google-calendar", Label: "Google Calendar", Kind: KindOAuth, TokenURL: srv.URL}
+
+	_, rotated, err := p.Refresh(context.Background(), srv.Client(), "cid", "sec", "rt-keep")
+	require.NoError(t, err)
+	assert.Empty(t, rotated, "nothing to store")
 }

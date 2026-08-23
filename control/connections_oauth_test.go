@@ -41,6 +41,10 @@ type fakeAuthServer struct {
 	longLived bool
 	// denyRefresh makes the next refresh fail the way a revoked grant does.
 	denyRefresh bool
+	// rotateRefresh behaves like Discord: every refresh issues a new refresh
+	// token and refuses any older one.
+	rotateRefresh bool
+	live          string
 }
 
 func newFakeAuthServer(t *testing.T) *fakeAuthServer {
@@ -81,6 +85,25 @@ func newFakeAuthServer(t *testing.T) *fakeAuthServer {
 			}
 			_ = json.NewEncoder(w).Encode(body)
 		case "refresh_token":
+			if f.rotateRefresh {
+				if f.live == "" {
+					f.live = f.issued["code-1"]
+				}
+				if r.Form.Get("refresh_token") != f.live {
+					w.WriteHeader(http.StatusBadRequest)
+					_ = json.NewEncoder(w).Encode(map[string]any{
+						"error": "invalid_grant", "error_description": "Refresh token is invalid.",
+					})
+					return
+				}
+				f.refreshes++
+				f.live = fmt.Sprintf("refresh-rotated-%d", f.refreshes)
+				_ = json.NewEncoder(w).Encode(map[string]any{
+					"access_token":  fmt.Sprintf("access-%d", f.refreshes),
+					"refresh_token": f.live, "expires_in": 3600,
+				})
+				return
+			}
 			if f.denyRefresh {
 				w.WriteHeader(http.StatusBadRequest)
 				_ = json.NewEncoder(w).Encode(map[string]any{
@@ -391,4 +414,46 @@ func TestTheCallbackRefusesWithoutASession(t *testing.T) {
 	rec := httptest.NewRecorder()
 	s.API().ServeHTTP(rec, cb2)
 	assert.Equal(t, http.StatusBadRequest, rec.Code, "no state cookie to compare against")
+}
+
+// The bug this exists to stop: Discord rotates its refresh token on every use,
+// so the token hostit stored is dead the moment it is spent. Dropping the new
+// one made the first request work and the second fail with invalid_grant --
+// which looks exactly like the owner revoking access, and is not.
+func TestARotatedRefreshTokenIsStoredSoTheNextRequestWorks(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	f := newFakeAuthServer(t)
+	f.rotateRefresh = true
+	registerFakeProvider(t, s, f, "fake-rotating", false)
+	u := newActiveTestUser(t, s, "owner@example.com")
+	token := accountToken(t, s, u)
+	session := signIn(t, s, u)
+	require.NoError(t, s.apps.Store().AddApp(&store.App{ID: "a1", Name: "dash", Port: 10000, Host: store.HostLocal, OwnerID: u.ID}))
+
+	rr := request(t, s.API(), "POST", "/api/connections", `{"provider":"fake-rotating","slug":"chat"}`, token)
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+	var started apiConnectStartedResponse
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &started))
+	require.Equal(t, http.StatusFound, browse(t, s, started.RedirectURL, append(rr.Result().Cookies(), session)).Code)
+
+	conn, err := s.apps.Store().ConnectionBySlug(u.ID, "chat")
+	require.NoError(t, err)
+	require.NoError(t, s.apps.Store().GrantConnection("a1", conn.ID))
+	a, err := s.apps.App("dash")
+	require.NoError(t, err)
+
+	// Three requests in a row. Before the fix the second one failed.
+	for i := 1; i <= 3; i++ {
+		tok, err := s.connections.tokenFor(context.Background(), a, "chat")
+		require.NoError(t, err, "request %d: the stored refresh token must have been rotated forward", i)
+		assert.NotEmpty(t, tok.AccessToken)
+	}
+
+	// And what is stored is the newest one, not the one consent handed over.
+	after, err := s.apps.Store().Connection(conn.ID)
+	require.NoError(t, err)
+	stored, err := connections.Open(s.connections.key, after.Secret)
+	require.NoError(t, err)
+	assert.Equal(t, "refresh-rotated-3", stored)
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -167,7 +168,27 @@ func (m *connectionManager) tokenFor(ctx context.Context, a *store.App, slug str
 		return connections.Token{Provider: p.Name, AccessToken: secret, Meta: conn.Meta}, nil
 	}
 	id, clientSecret := m.clientFor(p.Name)
-	return p.Refresh(ctx, m.client, id, clientSecret, secret)
+	tok, rotated, err := p.Refresh(ctx, m.client, id, clientSecret, secret)
+	if err != nil {
+		return connections.Token{}, err
+	}
+	// Some providers rotate the refresh token on every use (Discord does), and
+	// the one we just spent is dead. Storing the replacement is not optional:
+	// without it the NEXT request fails with invalid_grant, which reads like
+	// the owner revoked access when nothing of the sort happened.
+	if rotated != "" {
+		sealed, err := connections.Seal(m.key, rotated)
+		if err != nil {
+			return connections.Token{}, err
+		}
+		if err := m.store.UpdateConnectionSecret(conn.ID, sealed, conn.Scopes, conn.Meta); err != nil {
+			// The token in hand is still good, so answer with it -- but say so,
+			// because the connection is now one request from breaking.
+			slog.Error("Cannot store a rotated refresh token; this connection will fail on its next use",
+				"slug", conn.Slug, "provider", conn.Provider, "error", err)
+		}
+	}
+	return tok, nil
 }
 
 // metaFrom collects a static provider's non-secret fields, which the app reads

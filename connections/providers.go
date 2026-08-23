@@ -57,7 +57,8 @@ func init() {
 		Help:           "A bot in one Slack workspace: read channels and post messages.",
 	})
 
-	// -- Discord. Issues a refresh token like Google does.
+	// -- Discord. Rotates its refresh token on every use, which is exactly why
+	// Provider.Refresh reports the new one and the caller stores it.
 	Register(Provider{
 		Name:     "discord",
 		Label:    "Discord",
@@ -65,7 +66,24 @@ func init() {
 		Scopes:   []string{"identify", "guilds"},
 		AuthURL:  "https://discord.com/oauth2/authorize",
 		TokenURL: "https://discord.com/api/oauth2/token",
-		Help:     "Your Discord identity and the servers you are in.",
+		Help:     "Your Discord profile and which servers you are in. Reading a server's channels or messages needs a bot token, not this -- see Discord bot.",
+	})
+
+	// A Discord BOT token, pasted. A user's OAuth token can list the servers
+	// they are in and nothing inside them; channels and messages are only
+	// reachable by a bot that has been invited to the server. Two different
+	// credentials for two different jobs, so they are two providers rather than
+	// one that half-works.
+	Register(Provider{
+		Name:        "discord-bot",
+		Label:       "Discord bot",
+		Kind:        KindStatic,
+		SecretField: "token",
+		Fields: []Field{
+			{Name: "token", Label: "Bot token", Placeholder: "from the Bot tab of your application", Secret: true},
+			{Name: "guild", Label: "Server ID", Placeholder: "optional, if the app only uses one", Optional: true},
+		},
+		Help: "Read channels and messages. Create a bot under your Discord application's Bot tab, then invite it to the server. Send the header as \"Authorization: Bot <token>\".",
 	})
 
 	// -- GitHub. An OAuth App's token does not expire (only a GitHub App with

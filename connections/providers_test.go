@@ -197,3 +197,20 @@ func TestImapMentionsGmail(t *testing.T) {
 	p, _ := Lookup("imap")
 	assert.Contains(t, strings.ToLower(p.Help), "gmail")
 }
+
+// A Discord user token lists the servers someone is in and nothing inside them;
+// channels and messages need a bot invited to the server. Two credentials, two
+// providers, rather than one that half-works.
+func TestDiscordUserAndBotAreSeparateProviders(t *testing.T) {
+	t.Parallel()
+	user, ok := Lookup("discord")
+	require.True(t, ok)
+	assert.Equal(t, KindOAuth, user.Kind)
+	assert.Contains(t, strings.ToLower(user.Help), "bot token", "it says what it cannot do")
+
+	bot, ok := Lookup("discord-bot")
+	require.True(t, ok)
+	assert.Equal(t, KindStatic, bot.Kind, "a bot token is pasted, not consented to")
+	assert.Equal(t, "token", bot.SecretField)
+	require.NoError(t, bot.Validate(map[string]string{"token": "MTIz.abc.def"}))
+}
