@@ -1005,6 +1005,157 @@ apps-allowed-addresses:
   </>
 );
 
+// Connections setup: the per-provider registration steps. This is the page an
+// operator actually needs, because the hostit half is one YAML block and the
+// provider half is a different console every time.
+const ConnectionsSetupPage = () => (
+  <>
+    <h2>Connections setup</h2>
+    <p>
+      Users connect accounts and paste credentials in their profile, then grant them to
+      individual apps. <b>Credentials</b> -- an IMAP mailbox, a CalDAV calendar, a database
+      URL, any API key -- need nothing from you: they are always offered.
+    </p>
+    <p>
+      <b>Connections</b> are OAuth accounts, and each provider needs a client <i>you</i>{" "}
+      register with that provider. There is no shared hostit client to inherit, because
+      getting one reviewed is your own relationship with them. A provider with no client
+      configured is hidden from the UI rather than shown and broken.
+    </p>
+
+    <h3>The redirect URI</h3>
+    <p>
+      Every provider asks for a callback URL. hostit builds it from whichever hostname the
+      user is browsing, and two serve the web app:
+    </p>
+    <Snippet
+      text={`https://${baseDomain}/auth/callback\nhttps://${host}/auth/callback`}
+    />
+    <p>
+      Register <b>both</b> wherever the provider allows several. <b>GitHub allows exactly
+      one</b>, so pick the hostname people actually use -- and note that a single GitHub
+      OAuth App therefore cannot serve both a staging and a production instance. Those need
+      two separate GitHub apps.
+    </p>
+
+    <h3>Where to register each one</h3>
+    <table className="docs-table">
+      <thead>
+        <tr><th>Provider</th><th>Console</th><th>Steps</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><b>GitHub</b></td>
+          <td className="mono">github.com/settings/developers</td>
+          <td>
+            OAuth Apps &rarr; New OAuth App. Set the Authorization callback URL. Copy the
+            Client ID, then Generate a new client secret. No review.
+          </td>
+        </tr>
+        <tr>
+          <td><b>Slack</b></td>
+          <td className="mono">api.slack.com/apps</td>
+          <td>
+            Create New App &rarr; From scratch. Under <i>OAuth &amp; Permissions</i> add the
+            redirect URL and the <b>Bot Token Scopes</b> listed below, then Install to
+            Workspace. Credentials are under <i>Basic Information</i>.
+          </td>
+        </tr>
+        <tr>
+          <td><b>Discord</b></td>
+          <td className="mono">discord.com/developers/applications</td>
+          <td>
+            New Application &rarr; <i>OAuth2</i>. Add the redirect under <i>Redirects</i> and
+            Save. Copy the Client ID; use <i>Reset Secret</i> to reveal a Client Secret.
+          </td>
+        </tr>
+        <tr>
+          <td><b>Linear</b></td>
+          <td className="mono">linear.app/settings/api</td>
+          <td>
+            OAuth applications &rarr; Create. Set the callback URL. The cleanest of the set
+            and a good one to try first.
+          </td>
+        </tr>
+        <tr>
+          <td><b>Jira</b></td>
+          <td className="mono">developer.atlassian.com</td>
+          <td>
+            Console &rarr; Create &rarr; OAuth 2.0 integration. Add the <i>Jira API</i>{" "}
+            permission and its scopes, then set the callback under <i>Authorization</i>.
+          </td>
+        </tr>
+        <tr>
+          <td><b>HubSpot</b></td>
+          <td className="mono">developers.hubspot.com</td>
+          <td>
+            Create an app in a developer account. Set the redirect and scopes under{" "}
+            <i>Auth</i>. Needs a test portal to try against.
+          </td>
+        </tr>
+        <tr>
+          <td><b>Google</b><br />(Calendar, Gmail)</td>
+          <td className="mono">console.cloud.google.com</td>
+          <td>
+            Uses the same client as web login, so nothing extra is needed if login works.
+            You must <b>enable the API</b> per product (Calendar, Gmail) in the project, and
+            add each account as a <i>test user</i> while the consent screen is in Testing.
+          </td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h3>Scopes to request</h3>
+    <p>
+      Where the provider asks you to declare scopes up front, use these -- they are what
+      hostit requests, and a mismatch fails consent with an invalid-scope error.
+    </p>
+    <table className="docs-table">
+      <thead><tr><th>Provider</th><th>Scopes</th></tr></thead>
+      <tbody>
+        <tr><td>GitHub</td><td className="mono">repo, read:user</td></tr>
+        <tr><td>Slack</td><td className="mono">channels:read, channels:history, chat:write, users:read</td></tr>
+        <tr><td>Discord</td><td className="mono">identify, guilds</td></tr>
+        <tr><td>Linear</td><td className="mono">read</td></tr>
+        <tr><td>Jira</td><td className="mono">read:jira-work, read:jira-user, offline_access</td></tr>
+        <tr><td>HubSpot</td><td className="mono">oauth, crm.objects.contacts.read, crm.objects.companies.read, crm.objects.deals.read</td></tr>
+        <tr><td>Google Calendar</td><td className="mono">calendar.readonly</td></tr>
+        <tr><td>Gmail</td><td className="mono">gmail.readonly</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Configure hostit</h3>
+    <p>
+      Put the clients in <span className="mono">control.yml</span> under{" "}
+      <span className="mono">connections:</span>, keyed by provider name. List only what you
+      have; the rest stay hidden.
+    </p>
+    <Snippet
+      text={`connections:\n  github:\n    client-id: Ov23li...\n    client-secret: ...\n  slack:\n    client-id: 1234567890.1234567890\n    client-secret: ...\n  discord:\n    client-id: ...\n    client-secret: ...`}
+    />
+    <p>
+      Restart <span className="mono">hostit-control</span> to pick them up. Anything you
+      configured now appears in each user&rsquo;s Profile under <b>Connections</b>.
+    </p>
+
+    <h3>A note on Google</h3>
+    <p>
+      Google is the most expensive provider to offer and the only one that gates on review.
+      Calendar is a <i>sensitive</i> scope (free verification); Gmail is <i>restricted</i>{" "}
+      (verification plus an annual paid CASA assessment). While the consent screen is in{" "}
+      <b>Testing</b>, only accounts you add as test users can connect, and Google{" "}
+      <b>expires refresh tokens after seven days</b>, so every connection needs reconnecting
+      weekly.
+    </p>
+    <p>
+      For personal instances there is a way around it entirely: the <b>IMAP</b> credential
+      reaches Gmail at <span className="mono">imap.gmail.com:993</span> with a Google app
+      password, and <b>CalDAV</b> reaches Fastmail, iCloud or Nextcloud calendars the same
+      way. No OAuth client, no review, and nothing that expires.
+    </p>
+  </>
+);
+
 const LimitsPage = () => (
   <>
     <h2>Resource limits and pools</h2>
@@ -1262,6 +1413,7 @@ const renderers = {
   install: InstallPage,
   config: ConfigPage,
   deployment: DeploymentPage,
+  connections: ConnectionsSetupPage,
   admin: AdminPage,
   troubleshooting: TroubleshootingPage,
 };

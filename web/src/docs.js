@@ -38,6 +38,7 @@ export const DOCS_GUIDES = [
       { id: "install", title: "Installation" },
       { id: "config", title: "Configuration" },
       { id: "deployment", title: "Deployment shapes" },
+      { id: "connections", title: "Connections setup" },
       { id: "admin", title: "Users and administration" },
       { id: "troubleshooting", title: "Troubleshooting" },
     ],
