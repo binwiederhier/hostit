@@ -98,8 +98,37 @@ func init() {
 		Help: "Read issues and users in your Atlassian site.",
 	})
 
-	// -- Pasted credentials. No OAuth client, no review, no expiry: the reason
-	// the abstraction is "credential" and not "OAuth". Fastmail lands here.
+	// -- HubSpot. CRM objects, read-only.
+	Register(Provider{
+		Name:     "hubspot",
+		Label:    "HubSpot",
+		Kind:     KindOAuth,
+		Scopes:   []string{"oauth", "crm.objects.contacts.read", "crm.objects.companies.read", "crm.objects.deals.read"},
+		AuthURL:  "https://app.hubspot.com/oauth/authorize",
+		TokenURL: "https://api.hubapi.com/oauth/v1/token",
+		Help:     "Read contacts, companies and deals from one HubSpot portal.",
+	})
+
+	// -- Linear. Its tokens are effectively permanent and it issues no refresh
+	// token, so the access token is what gets stored.
+	Register(Provider{
+		Name:           "linear",
+		Label:          "Linear",
+		Kind:           KindOAuth,
+		Scopes:         []string{"read"},
+		AuthURL:        "https://linear.app/oauth/authorize",
+		TokenURL:       "https://api.linear.app/oauth/token",
+		LongLivedToken: true,
+		Help:           "Read issues, projects and teams from your Linear workspace.",
+	})
+
+	// -- Pasted credentials. No OAuth client, no review, no expiry, and no
+	// console to visit: the reason the abstraction is "credential" and not
+	// "OAuth". Most of what anyone actually wants to connect lives down here.
+
+	// Mail. The Gmail note is deliberate: an app password over IMAP sidesteps
+	// verification, CASA, the 100-test-user cap AND the 7-day refresh-token
+	// expiry that makes Google's OAuth path painful for a personal instance.
 	Register(Provider{
 		Name:        "imap",
 		Label:       "IMAP mailbox",
@@ -110,7 +139,126 @@ func init() {
 			{Name: "username", Label: "Username", Placeholder: "you@example.com"},
 			{Name: "password", Label: "Password", Placeholder: "an app password", Secret: true},
 		},
-		Help: "Any IMAP mailbox, Fastmail included. Use an app password, not your account password.",
+		Help: "Any IMAP mailbox: Fastmail, Migadu, or Gmail itself at imap.gmail.com:993 with a Google app password -- which needs no OAuth review at all.",
+	})
+	Register(Provider{
+		Name:        "smtp",
+		Label:       "SMTP (sending mail)",
+		Kind:        KindStatic,
+		SecretField: "password",
+		Fields: []Field{
+			{Name: "host", Label: "Server", Placeholder: "smtp.fastmail.com:465"},
+			{Name: "username", Label: "Username", Placeholder: "you@example.com"},
+			{Name: "password", Label: "Password", Placeholder: "an app password", Secret: true},
+			{Name: "from", Label: "From address", Placeholder: "optional", Optional: true},
+		},
+		Help: "Send mail from an app. Gmail works at smtp.gmail.com:465 with an app password.",
+	})
+
+	// Calendar and contacts without Google. The URL is not a credential, so it
+	// stays out of the secret and the app reads it beside the password.
+	Register(Provider{
+		Name:        "caldav",
+		Label:       "CalDAV calendar",
+		Kind:        KindStatic,
+		SecretField: "password",
+		Fields: []Field{
+			{Name: "url", Label: "Server URL", Placeholder: "https://caldav.fastmail.com/dav/calendars"},
+			{Name: "username", Label: "Username", Placeholder: "you@fastmail.com"},
+			{Name: "password", Label: "Password", Placeholder: "an app password", Secret: true},
+		},
+		Help: "Fastmail, iCloud, Nextcloud or any CalDAV server. Connect two to cross-reference calendars, with none of Google's review.",
+	})
+	Register(Provider{
+		Name:        "carddav",
+		Label:       "CardDAV contacts",
+		Kind:        KindStatic,
+		SecretField: "password",
+		Fields: []Field{
+			{Name: "url", Label: "Server URL", Placeholder: "https://carddav.fastmail.com/dav/addressbooks"},
+			{Name: "username", Label: "Username", Placeholder: "you@fastmail.com"},
+			{Name: "password", Label: "Password", Placeholder: "an app password", Secret: true},
+		},
+		Help: "Contacts from Fastmail, iCloud, Nextcloud or any CardDAV server.",
+	})
+
+	// Databases. One pasted URL, because that is exactly what every managed
+	// provider hands you -- splitting it into host/port/sslmode fields only
+	// invites the app to reassemble it wrongly.
+	Register(Provider{
+		Name:        "postgres",
+		Label:       "PostgreSQL",
+		Kind:        KindStatic,
+		SecretField: "url",
+		Fields: []Field{
+			{Name: "url", Label: "Connection URL", Placeholder: "postgres://user:pass@host:5432/db?sslmode=require", Secret: true},
+			{Name: "note", Label: "Note", Placeholder: "which database this is (optional)", Optional: true},
+		},
+		Help: "An external Postgres. Paste the connection URL your provider gave you.",
+	})
+	Register(Provider{
+		Name:        "mysql",
+		Label:       "MySQL / MariaDB",
+		Kind:        KindStatic,
+		SecretField: "url",
+		Fields: []Field{
+			{Name: "url", Label: "Connection URL", Placeholder: "mysql://user:pass@host:3306/db", Secret: true},
+			{Name: "note", Label: "Note", Placeholder: "which database this is (optional)", Optional: true},
+		},
+		Help: "An external MySQL or MariaDB. Paste the connection URL.",
+	})
+	Register(Provider{
+		Name:        "opensearch",
+		Label:       "OpenSearch / Elasticsearch",
+		Kind:        KindStatic,
+		SecretField: "password",
+		Fields: []Field{
+			{Name: "url", Label: "Endpoint", Placeholder: "https://search.example.com:9200"},
+			{Name: "username", Label: "Username", Placeholder: "optional for API-key auth", Optional: true},
+			{Name: "password", Label: "Password or API key", Placeholder: "", Secret: true},
+		},
+		Help: "An OpenSearch or Elasticsearch cluster, by basic auth or an API key.",
+	})
+
+	// Object storage, which almost every app eventually wants.
+	Register(Provider{
+		Name:        "s3",
+		Label:       "S3 storage",
+		Kind:        KindStatic,
+		SecretField: "secret-access-key",
+		Fields: []Field{
+			{Name: "endpoint", Label: "Endpoint", Placeholder: "https://nyc3.digitaloceanspaces.com (blank for AWS)", Optional: true},
+			{Name: "region", Label: "Region", Placeholder: "us-east-1", Optional: true},
+			{Name: "bucket", Label: "Bucket", Placeholder: "optional", Optional: true},
+			{Name: "access-key-id", Label: "Access key ID", Placeholder: "AKIA..."},
+			{Name: "secret-access-key", Label: "Secret access key", Placeholder: "", Secret: true},
+		},
+		Help: "S3 or anything speaking it: DO Spaces, Cloudflare R2, Backblaze B2, MinIO.",
+	})
+
+	// Notifications and the homelab.
+	Register(Provider{
+		Name:        "ntfy",
+		Label:       "ntfy",
+		Kind:        KindStatic,
+		SecretField: "token",
+		Fields: []Field{
+			{Name: "server", Label: "Server", Placeholder: "https://ntfy.sh (optional)", Optional: true},
+			{Name: "topic", Label: "Default topic", Placeholder: "optional", Optional: true},
+			{Name: "token", Label: "Access token", Placeholder: "tk_...", Secret: true},
+		},
+		Help: "Push notifications from an app. Works with ntfy.sh or your own server.",
+	})
+	Register(Provider{
+		Name:        "home-assistant",
+		Label:       "Home Assistant",
+		Kind:        KindStatic,
+		SecretField: "token",
+		Fields: []Field{
+			{Name: "url", Label: "Base URL", Placeholder: "http://homeassistant.local:8123"},
+			{Name: "token", Label: "Long-lived access token", Placeholder: "", Secret: true},
+		},
+		Help: "Read sensors and call services on your Home Assistant, with a long-lived access token.",
 	})
 
 	// The escape hatch: anything with an API key. The app gets the secret and

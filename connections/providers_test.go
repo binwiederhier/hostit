@@ -2,6 +2,7 @@ package connections
 
 import (
 	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -108,4 +109,91 @@ func TestConfiguredGatesOnAClient(t *testing.T) {
 
 	static, _ := Lookup("imap")
 	assert.True(t, static.Configured("", ""), "a pasted credential needs no client")
+}
+
+// Everything the platform can attach, and the shape each one is. The point of
+// the catalog is that most of it needs no OAuth client at all.
+func TestTheStaticCatalog(t *testing.T) {
+	t.Parallel()
+	for _, name := range []string{
+		"imap", "smtp", "caldav", "carddav", "generic",
+		"postgres", "mysql", "opensearch", "ntfy", "s3", "home-assistant",
+	} {
+		p, ok := Lookup(name)
+		require.True(t, ok, "%s is offered", name)
+		assert.Equal(t, KindStatic, p.Kind, "%s needs no OAuth client", name)
+		assert.NotEmpty(t, p.Fields, "%s asks for something", name)
+		assert.NotEmpty(t, p.SecretField, "%s names its secret", name)
+		assert.NotEmpty(t, p.Help, "%s says what it is for", name)
+
+		// The named secret must actually be one of the fields, and marked secret
+		// -- otherwise it is stored in the clear as meta and shown in the UI.
+		var found bool
+		for _, f := range p.Fields {
+			if f.Name == p.SecretField {
+				found, _ = true, f
+				assert.True(t, f.Secret, "%s: the secret field is marked secret", name)
+			}
+		}
+		assert.True(t, found, "%s: SecretField names a real field", name)
+		assert.True(t, p.Configured("", ""), "%s is always available", name)
+	}
+}
+
+// The OAuth half of the catalog, including the two added for CRM and issues.
+func TestTheOAuthCatalogCovers(t *testing.T) {
+	t.Parallel()
+	for _, name := range []string{"google-calendar", "gmail", "slack", "discord", "github", "jira", "hubspot", "linear"} {
+		p, ok := Lookup(name)
+		require.True(t, ok, "%s is offered", name)
+		assert.Equal(t, KindOAuth, p.Kind, name)
+		assert.NotEmpty(t, p.AuthURL, name)
+		assert.NotEmpty(t, p.TokenURL, name)
+	}
+}
+
+// A database connection is one pasted URL: it is what every managed provider
+// hands you, and splitting it into host/port/sslmode fields only invites the
+// app to reassemble it wrongly.
+func TestDatabaseConnectionsTakeAURL(t *testing.T) {
+	t.Parallel()
+	for _, name := range []string{"postgres", "mysql"} {
+		p, _ := Lookup(name)
+		assert.Equal(t, "url", p.SecretField, "%s: the whole DSN is the credential", name)
+		require.NoError(t, p.Validate(map[string]string{"url": "postgres://u:p@h:5432/db"}))
+		assert.Error(t, p.Validate(map[string]string{}), "%s needs its URL", name)
+	}
+}
+
+// Splitting matters where the non-secret half is genuinely useful on its own:
+// a CalDAV URL is not a credential, and an app needs it beside the password.
+func TestCaldavKeepsItsURLOutOfTheSecret(t *testing.T) {
+	t.Parallel()
+	p, ok := Lookup("caldav")
+	require.True(t, ok)
+	assert.Equal(t, "password", p.SecretField)
+	require.NoError(t, p.Validate(map[string]string{
+		"url": "https://caldav.fastmail.com/dav/calendars", "username": "me@fastmail.com", "password": "app-pw",
+	}))
+	assert.Error(t, p.Validate(map[string]string{"url": "https://x", "password": "p"}), "the username is required")
+}
+
+// ntfy needs only a token; the server defaults and the topic is the app's
+// business, so both are optional.
+func TestNtfyNeedsOnlyAToken(t *testing.T) {
+	t.Parallel()
+	p, ok := Lookup("ntfy")
+	require.True(t, ok)
+	assert.Equal(t, "token", p.SecretField)
+	require.NoError(t, p.Validate(map[string]string{"token": "tk_abc"}))
+	assert.Error(t, p.Validate(map[string]string{}))
+}
+
+// Gmail over IMAP with an app password sidesteps OAuth entirely -- no
+// verification, no CASA, no 100-user cap and no 7-day token expiry. The imap
+// provider should say so, because nobody would think to try it.
+func TestImapMentionsGmail(t *testing.T) {
+	t.Parallel()
+	p, _ := Lookup("imap")
+	assert.Contains(t, strings.ToLower(p.Help), "gmail")
 }
