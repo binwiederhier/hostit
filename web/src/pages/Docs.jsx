@@ -1032,10 +1032,12 @@ const ConnectionsSetupPage = () => (
       text={`https://${baseDomain}/auth/callback\nhttps://${host}/auth/callback`}
     />
     <p>
-      Register <b>both</b> wherever the provider allows several. <b>GitHub allows exactly
-      one</b>, so pick the hostname people actually use -- and note that a single GitHub
-      OAuth App therefore cannot serve both a staging and a production instance. Those need
-      two separate GitHub apps.
+      Register <b>every hostname hostit is browsed at</b>. All of these providers accept
+      several -- GitHub takes up to ten via <i>Add callback URL</i> -- so one client can
+      serve a staging and a production instance together. hostit always sends an explicit{" "}
+      <span className="mono">redirect_uri</span>, so the provider matches the right one.
+      Avoid wildcard matching where a provider offers it: it lets an authorization code be
+      sent to any subdomain.
     </p>
 
     <h3>Where to register each one</h3>
