@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
-import { docsHref } from "../docs";
-import { CopyButton, ErrorBanner, formatDate, Skeleton } from "../components";
+import { CopyButton, DocsLink, ErrorBanner, formatDate, Skeleton } from "../components";
 
 // Shortens an authorized_keys line to "ssh-ed25519 ...<tail> comment".
 const keyPreview = (key) => {
@@ -27,14 +26,6 @@ const useEscape = (onClose) => {
 // client-side navigation would land on the catch-all and bounce to the
 // dashboard. It opens in a new tab for the same reason the nav's docs link
 // does -- the manual is a thing you read beside the app, not instead of it.
-const DocsLink = ({ guide, section, children }) => (
-  <a className="docs-link" href={docsHref(guide, section)} target="_blank" rel="noreferrer">
-    {children}
-    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M6 3.5h6.5V10M12.5 3.5 4 12" />
-    </svg>
-  </a>
-);
 
 const AddKeyDialog = ({ onClose, onAdded }) => {
   useEscape(onClose);

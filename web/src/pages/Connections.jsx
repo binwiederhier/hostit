@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { filterProviders, slugify, splitByKind, suggestSlug } from "../connections";
 import { api } from "../api";
 import { useDropdown } from "../hooks";
-import { ErrorBanner, Skeleton } from "../components";
+import { DocsLink, ErrorBanner, Skeleton } from "../components";
 
 // Connections and credentials: the accounts and secrets an owner attaches once
 // and can then grant to their apps. TWO cards, not one, because they are two
@@ -81,7 +81,14 @@ const Connections = () => {
 
       <ConnectionsCard
         title="Connections"
-        hint="Accounts you connect once and then grant to individual apps in their settings. Apps act as you, and only reach what you grant them. Connect the same service twice -- two calendars, say -- and each keeps its own reference."
+        hint={
+          <>
+            Accounts you connect once and then grant to individual apps, on the app&rsquo;s
+            Connections tab. Apps act as you, and only reach what you grant them. Connect the same
+            service twice -- two calendars, say -- and each keeps its own reference.{" "}
+            <DocsLink guide="user" section="connections">How connections work</DocsLink>
+          </>
+        }
         emptyText="No accounts connected yet."
         cta="Add connection"
         items={connections}
@@ -92,7 +99,14 @@ const Connections = () => {
       />
       <ConnectionsCard
         title="Credentials"
-        hint="API keys, tokens, SSH keys, database URLs and mailbox passwords you paste in. Stored encrypted, and handed to an app only when you grant it. Nothing here needs an OAuth client or any review."
+        hint={
+          <>
+            API keys, tokens, SSH keys, database URLs and mailbox passwords you paste in. Stored
+            encrypted, and handed to an app only when you grant it. Nothing here needs an OAuth
+            client or any review.{" "}
+            <DocsLink guide="user" section="connections">How credentials work</DocsLink>
+          </>
+        }
         emptyText="No credentials stored yet."
         cta="Add credential"
         items={credentials}
@@ -167,7 +181,7 @@ const RowMenu = ({ conn, onRename, onReconnect, onRemove }) => {
     <div className="menu conn-rowmenu" ref={ref}>
       <button
         type="button"
-        className="btn btn-small btn-icon"
+        className="btn btn-icon conn-kebab"
         onClick={() => setOpen(!open)}
         aria-haspopup="menu"
         aria-expanded={open}
@@ -322,7 +336,7 @@ const AddConnectionDialog = ({ provider, existing, onClose, onAdded }) => {
             type="text"
             value={label}
             onChange={(e) => setLabel(e.target.value)}
-            placeholder={oauth ? "Work calendar" : "OpenAI key"}
+            placeholder={provider.name_hint || provider.label}
             aria-label="Name"
             autoFocus
             disabled={busy}

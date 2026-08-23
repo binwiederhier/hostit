@@ -65,6 +65,11 @@ type Provider struct {
 	LongLivedToken bool
 	// Help is one line shown in the UI: where to get the credential.
 	Help string
+	// NameHint is what the add dialog suggests calling this connection. It is
+	// provider knowledge rather than form knowledge: the form asking every
+	// credential to be called "OpenAI key" is how Home Assistant ended up
+	// suggesting that.
+	NameHint string
 }
 
 // Field is one input a static provider needs.

@@ -48,11 +48,14 @@ type apiConnectionResponse struct {
 // apiProviderResponse is one thing this instance can connect, for the UI to
 // offer. Providers with no client configured are not in the list at all.
 type apiProviderResponse struct {
-	Name   string              `json:"name"`
-	Label  string              `json:"label"`
-	Kind   string              `json:"kind"`
-	Help   string              `json:"help,omitempty"`
-	Fields []connections.Field `json:"fields,omitempty"`
+	Name  string `json:"name"`
+	Label string `json:"label"`
+	Kind  string `json:"kind"`
+	Help  string `json:"help,omitempty"`
+	// NameHint is what the add dialog suggests calling it, which varies by
+	// provider and is not something the form can guess.
+	NameHint string              `json:"name_hint,omitempty"`
+	Fields   []connections.Field `json:"fields,omitempty"`
 }
 
 type apiConnectionsResponse struct {
@@ -121,7 +124,7 @@ func (s *Server) offeredProviders() []apiProviderResponse {
 		return out
 	}
 	for _, p := range s.connections.offered() {
-		out = append(out, apiProviderResponse{Name: p.Name, Label: p.Label, Kind: p.Kind, Help: p.Help, Fields: p.Fields})
+		out = append(out, apiProviderResponse{Name: p.Name, Label: p.Label, Kind: p.Kind, Help: p.Help, NameHint: p.NameHint, Fields: p.Fields})
 	}
 	return out
 }

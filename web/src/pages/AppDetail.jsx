@@ -5,7 +5,7 @@ import { viewFromSlug, VIEW_TO_SLUG } from "../views";
 import { limitInputs, limitsPatchBody } from "../limits";
 import { visibilityChanges } from "../visibility";
 import { useDropdown, useReconnect } from "../hooks";
-import { CopyButton, ErrorBanner, Loading, Snippet, StatusDot, VisibilityBadge, VisibilityChoice, pairMB, usageLevel, UsagePair, cores, visibilityOf } from "../components";
+import { CopyButton, DocsLink, ErrorBanner, Loading, Snippet, StatusDot, VisibilityBadge, VisibilityChoice, pairMB, usageLevel, UsagePair, cores, visibilityOf } from "../components";
 import { useSetAppHeader } from "../appHeader";
 
 // xterm is heavy and only needed when a terminal is actually opened, so it is
@@ -1803,9 +1803,11 @@ const AppConnections = ({ name }) => {
     <section className="ov-section">
         <h3>Connections</h3>
         <p className="hint">
-          Accounts you connected in your <Link to="/profile">profile</Link>. Granting one lets this
-          app act as you against that account -- it asks hostit for a short-lived token, so no
-          credential is stored in the app.
+          Accounts and credentials you attached on the <Link to="/connections">Connections</Link>{" "}
+          page. Granting one lets this app act as you against that account -- it asks hostit for a
+          usable token when it needs one, so no credential is stored in the app, and revoking takes
+          effect immediately.{" "}
+          <DocsLink guide="user" section="connections">How connections work</DocsLink>
         </p>
         {conns === null ? (
           <p className="hint">Loading...</p>

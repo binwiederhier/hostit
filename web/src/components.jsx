@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import { docsHref } from "./docs";
 
 // Copies text to the clipboard with a "Copied!" confirmation; falls back to
 // a hidden textarea + execCommand for non-secure contexts.
@@ -140,6 +141,18 @@ export const Wordmark = ({ big = false }) => (
     hostit
     <span className="cursor" aria-hidden="true" />
   </span>
+);
+
+// A link into the manual, beside the thing it explains. It opens in a new tab
+// for the same reason the nav's docs link does -- the manual is a thing you read
+// beside the app, not instead of it.
+export const DocsLink = ({ guide, section, children }) => (
+  <a className="docs-link" href={docsHref(guide, section)} target="_blank" rel="noreferrer">
+    {children}
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M6 3.5h6.5V10M12.5 3.5 4 12" />
+    </svg>
+  </a>
 );
 
 export const Loading = ({ label = "Loading..." }) => (

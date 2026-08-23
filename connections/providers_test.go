@@ -249,3 +249,28 @@ func TestSSHKeyRejectsAPublicKey(t *testing.T) {
 	assert.Contains(t, strings.ToLower(err.Error()), "private key")
 	assert.Error(t, p.Validate(map[string]string{"private-key": "not a key at all"}))
 }
+
+// The dialog suggests a NAME for a new connection, and the suggestion is
+// provider knowledge -- every static credential once showed "OpenAI key",
+// including Home Assistant.
+func TestEveryProviderSuggestsItsOwnName(t *testing.T) {
+	t.Parallel()
+	for _, p := range All() {
+		assert.NotEmpty(t, p.NameHint, "%s suggests what to call it", p.Name)
+		if p.Name != "generic" {
+			assert.NotContains(t, strings.ToLower(p.NameHint), "openai",
+				"%s must not borrow the catch-all's example", p.Name)
+		}
+	}
+	// A few that are worth getting right rather than defaulting to the label
+	for name, want := range map[string]string{
+		"home-assistant":  "Home Assistant",
+		"ssh-key":         "Deploy key",
+		"google-calendar": "Work calendar",
+		"generic":         "OpenAI key",
+	} {
+		p, ok := Lookup(name)
+		require.True(t, ok, name)
+		assert.Equal(t, want, p.NameHint, name)
+	}
+}

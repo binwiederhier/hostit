@@ -5926,6 +5926,24 @@ input[type="number"]::-webkit-inner-spin-button {
   flex-shrink: 0;
 }
 
+/* The kebab sits alone on a row, so it has to look like a control rather than a
+   stray glyph: square, the same height as the buttons it replaced, and with a
+   hit area big enough to aim at. */
+/* The kebab sits alone on a row, so it has to read as a control rather than a
+   stray glyph: a square the same height as a normal button, with a hit area big
+   enough to aim at. btn-small left it about 25px tall around a 16px icon. */
+.conn-kebab {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.conn-kebab svg {
+  width: 17px;
+  height: 17px;
+}
+
 @media (max-width: 560px) {
   .conn-menu {
     min-width: 0;

@@ -31,6 +31,7 @@ func init() {
 		AuthURL:    "https://accounts.google.com/o/oauth2/v2/auth",
 		TokenURL:   "https://oauth2.googleapis.com/token",
 		AuthParams: google,
+		NameHint:   "Work calendar",
 		Help:       "Read-only access to one Google account's calendars. Connect it twice to cross-reference two of them.",
 	})
 	Register(Provider{
@@ -41,6 +42,7 @@ func init() {
 		AuthURL:    "https://accounts.google.com/o/oauth2/v2/auth",
 		TokenURL:   "https://oauth2.googleapis.com/token",
 		AuthParams: google,
+		NameHint:   "Work mail",
 		Help:       "Read-only access to one Gmail mailbox. A restricted scope: an instance offering this publicly needs Google's CASA review.",
 	})
 
@@ -54,6 +56,7 @@ func init() {
 		AuthURL:        "https://slack.com/oauth/v2/authorize",
 		TokenURL:       "https://slack.com/api/oauth.v2.access",
 		LongLivedToken: true,
+		NameHint:       "Team Slack",
 		Help:           "A bot in one Slack workspace: read channels and post messages.",
 	})
 
@@ -66,6 +69,7 @@ func init() {
 		Scopes:   []string{"identify", "guilds"},
 		AuthURL:  "https://discord.com/oauth2/authorize",
 		TokenURL: "https://discord.com/api/oauth2/token",
+		NameHint: "My Discord",
 		Help:     "Your Discord profile and which servers you are in. Reading a server's channels or messages needs a bot token, not this -- see Discord bot.",
 	})
 
@@ -83,7 +87,8 @@ func init() {
 			{Name: "token", Label: "Bot token", Placeholder: "from the Bot tab of your application", Secret: true},
 			{Name: "guild", Label: "Server ID", Placeholder: "optional, if the app only uses one", Optional: true},
 		},
-		Help: "Read channels and messages. Create a bot under your Discord application's Bot tab, then invite it to the server. Send the header as \"Authorization: Bot <token>\".",
+		NameHint: "Server bot",
+		Help:     "Read channels and messages. Create a bot under your Discord application's Bot tab, then invite it to the server. Send the header as \"Authorization: Bot <token>\".",
 	})
 
 	// -- GitHub. An OAuth App's token does not expire (only a GitHub App with
@@ -97,6 +102,7 @@ func init() {
 		AuthURL:        "https://github.com/login/oauth/authorize",
 		TokenURL:       "https://github.com/login/oauth/access_token",
 		LongLivedToken: true,
+		NameHint:       "GitHub",
 		Help:           "Repositories and your profile, as you.",
 	})
 
@@ -113,7 +119,8 @@ func init() {
 			"audience": "api.atlassian.com",
 			"prompt":   "consent",
 		},
-		Help: "Read issues and users in your Atlassian site.",
+		NameHint: "Team Jira",
+		Help:     "Read issues and users in your Atlassian site.",
 	})
 
 	// -- HubSpot. CRM objects, read-only.
@@ -124,6 +131,7 @@ func init() {
 		Scopes:   []string{"oauth", "crm.objects.contacts.read", "crm.objects.companies.read", "crm.objects.deals.read"},
 		AuthURL:  "https://app.hubspot.com/oauth/authorize",
 		TokenURL: "https://api.hubapi.com/oauth/v1/token",
+		NameHint: "HubSpot",
 		Help:     "Read contacts, companies and deals from one HubSpot portal.",
 	})
 
@@ -137,6 +145,7 @@ func init() {
 		AuthURL:        "https://linear.app/oauth/authorize",
 		TokenURL:       "https://api.linear.app/oauth/token",
 		LongLivedToken: true,
+		NameHint:       "Linear",
 		Help:           "Read issues, projects and teams from your Linear workspace.",
 	})
 
@@ -157,7 +166,8 @@ func init() {
 			{Name: "username", Label: "Username", Placeholder: "you@example.com"},
 			{Name: "password", Label: "Password", Placeholder: "an app password", Secret: true},
 		},
-		Help: "Any IMAP mailbox: Fastmail, Migadu, or Gmail itself at imap.gmail.com:993 with a Google app password -- which needs no OAuth review at all.",
+		NameHint: "Work mail",
+		Help:     "Any IMAP mailbox: Fastmail, Migadu, or Gmail itself at imap.gmail.com:993 with a Google app password -- which needs no OAuth review at all.",
 	})
 	Register(Provider{
 		Name:        "smtp",
@@ -170,7 +180,8 @@ func init() {
 			{Name: "password", Label: "Password", Placeholder: "an app password", Secret: true},
 			{Name: "from", Label: "From address", Placeholder: "optional", Optional: true},
 		},
-		Help: "Send mail from an app. Gmail works at smtp.gmail.com:465 with an app password.",
+		NameHint: "Outgoing mail",
+		Help:     "Send mail from an app. Gmail works at smtp.gmail.com:465 with an app password.",
 	})
 
 	// Calendar and contacts without Google. The URL is not a credential, so it
@@ -185,7 +196,8 @@ func init() {
 			{Name: "username", Label: "Username", Placeholder: "you@fastmail.com"},
 			{Name: "password", Label: "Password", Placeholder: "an app password", Secret: true},
 		},
-		Help: "Fastmail, iCloud, Nextcloud or any CalDAV server. Connect two to cross-reference calendars, with none of Google's review.",
+		NameHint: "Work calendar",
+		Help:     "Fastmail, iCloud, Nextcloud or any CalDAV server. Connect two to cross-reference calendars, with none of Google's review.",
 	})
 	Register(Provider{
 		Name:        "carddav",
@@ -197,7 +209,8 @@ func init() {
 			{Name: "username", Label: "Username", Placeholder: "you@fastmail.com"},
 			{Name: "password", Label: "Password", Placeholder: "an app password", Secret: true},
 		},
-		Help: "Contacts from Fastmail, iCloud, Nextcloud or any CardDAV server.",
+		NameHint: "Contacts",
+		Help:     "Contacts from Fastmail, iCloud, Nextcloud or any CardDAV server.",
 	})
 
 	// Databases. One pasted URL, because that is exactly what every managed
@@ -212,7 +225,8 @@ func init() {
 			{Name: "url", Label: "Connection URL", Placeholder: "postgres://user:pass@host:5432/db?sslmode=require", Secret: true},
 			{Name: "note", Label: "Note", Placeholder: "which database this is (optional)", Optional: true},
 		},
-		Help: "An external Postgres. Paste the connection URL your provider gave you.",
+		NameHint: "App database",
+		Help:     "An external Postgres. Paste the connection URL your provider gave you.",
 	})
 	Register(Provider{
 		Name:        "mysql",
@@ -223,7 +237,8 @@ func init() {
 			{Name: "url", Label: "Connection URL", Placeholder: "mysql://user:pass@host:3306/db", Secret: true},
 			{Name: "note", Label: "Note", Placeholder: "which database this is (optional)", Optional: true},
 		},
-		Help: "An external MySQL or MariaDB. Paste the connection URL.",
+		NameHint: "App database",
+		Help:     "An external MySQL or MariaDB. Paste the connection URL.",
 	})
 	Register(Provider{
 		Name:        "opensearch",
@@ -235,7 +250,8 @@ func init() {
 			{Name: "username", Label: "Username", Placeholder: "optional for API-key auth", Optional: true},
 			{Name: "password", Label: "Password or API key", Placeholder: "", Secret: true},
 		},
-		Help: "An OpenSearch or Elasticsearch cluster, by basic auth or an API key.",
+		NameHint: "Search cluster",
+		Help:     "An OpenSearch or Elasticsearch cluster, by basic auth or an API key.",
 	})
 
 	// Object storage, which almost every app eventually wants.
@@ -251,7 +267,8 @@ func init() {
 			{Name: "access-key-id", Label: "Access key ID", Placeholder: "AKIA..."},
 			{Name: "secret-access-key", Label: "Secret access key", Placeholder: "", Secret: true},
 		},
-		Help: "S3 or anything speaking it: DO Spaces, Cloudflare R2, Backblaze B2, MinIO.",
+		NameHint: "Backups bucket",
+		Help:     "S3 or anything speaking it: DO Spaces, Cloudflare R2, Backblaze B2, MinIO.",
 	})
 
 	// Notifications and the homelab.
@@ -265,7 +282,8 @@ func init() {
 			{Name: "topic", Label: "Default topic", Placeholder: "optional", Optional: true},
 			{Name: "token", Label: "Access token", Placeholder: "tk_...", Secret: true},
 		},
-		Help: "Push notifications from an app. Works with ntfy.sh or your own server.",
+		NameHint: "Alerts",
+		Help:     "Push notifications from an app. Works with ntfy.sh or your own server.",
 	})
 	Register(Provider{
 		Name:        "home-assistant",
@@ -276,7 +294,8 @@ func init() {
 			{Name: "url", Label: "Base URL", Placeholder: "http://homeassistant.local:8123"},
 			{Name: "token", Label: "Long-lived access token", Placeholder: "", Secret: true},
 		},
-		Help: "Read sensors and call services on your Home Assistant, with a long-lived access token.",
+		NameHint: "Home Assistant",
+		Help:     "Read sensors and call services on your Home Assistant, with a long-lived access token.",
 	})
 
 	// A private key an app uses to reach another machine or a git remote.
@@ -295,7 +314,8 @@ func init() {
 			{Name: "user", Label: "Username", Placeholder: "git, deploy, ... (optional)", Optional: true},
 			{Name: "host", Label: "Host", Placeholder: "example.com:22 (optional)", Optional: true},
 		},
-		Help: "A private key an app uses to reach another machine or a git remote. Use one with no passphrase -- an app cannot type one.",
+		NameHint: "Deploy key",
+		Help:     "A private key an app uses to reach another machine or a git remote. Use one with no passphrase -- an app cannot type one.",
 	})
 
 	// The escape hatch: anything with an API key. The app gets the secret and
@@ -310,6 +330,7 @@ func init() {
 			{Name: "endpoint", Label: "Endpoint", Placeholder: "https://api.example.com (optional)", Optional: true},
 			{Name: "note", Label: "Note", Placeholder: "what this is for (optional)", Optional: true},
 		},
-		Help: "Any service hostit does not know: paste its API key and the app reads it back.",
+		NameHint: "OpenAI key",
+		Help:     "Any service hostit does not know: paste its API key and the app reads it back.",
 	})
 }
