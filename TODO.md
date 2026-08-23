@@ -14,6 +14,31 @@ before either is built.
 
 ## Now (next few sessions)
 
+### 0. Connections: what is left before it ships
+
+Built on `connections-v2` and running on stage. Nineteen providers, two of them
+with live OAuth clients (GitHub, Discord) and Google's two on the login client.
+Docs both ways; e2e covers the whole flow. `plans/260819-connections.md` is the
+original design, superseded in places by what was built.
+
+Open, in the order that matters:
+
+- **OAuth clients for Slack, Linear, Jira and HubSpot.** The providers are built;
+  each needs a client registered and dropped in `secrets/<env>.yml`. Nothing else.
+- **Google verification for Calendar.** Free (sensitive scope, no CASA), and it
+  is what removes the 7-day refresh-token expiry that otherwise means
+  reconnecting every account weekly. Gmail is the expensive one and is dominated
+  by the IMAP credential for a personal instance.
+- **The `examples/caldav-agenda` app has never been run.** It needs a CalDAV
+  credential nobody has attached yet. Until then it is untested code.
+- **Prod.** Nothing here has gone near it; the branch is unmerged and unreleased.
+
+Known limits, deliberately accepted (see docs/features/connections.md):
+the key sits beside the database so this protects a copied database and not root;
+`meta` is not encrypted; granting an app a credential grants it to everyone who
+can run code in that app, collaborators included; and the assistant is told not
+to print tokens rather than prevented, with redaction as a backstop.
+
 ### 1. Finish the shell-path move (a release-sized cleanup, now safe)
 
 VERIFIED SAFE 2026-08-21: **zero** passwd entries still name the old path on
@@ -338,11 +363,14 @@ months.
   real: professornoodle.com's bare apex has no native way to reach www, and is
   handled in yayagram's own handler today.
 
-- **API path harmonization (/v1/self vs /api).** The app socket speaks /v1/self
-  while the public API speaks /api; the relay work (2026-08-20) kept both on
-  purpose. Any future rename must keep /v1/self answering, because bind-mounted
-  container binaries upgrade late. Explicitly parked ("let's leave that alone
-  for this round"); revisit only with a concrete win in hand.
+- **API path harmonization (/v1/self vs /api). DONE 2026-08-23**, and the reason
+  it was parked turned out to be wrong: hostit-app is a read-only BIND MOUNT from
+  the host (verified on a live container), so it upgrades the instant the deb
+  lands rather than late. The surface now answers at BOTH /v1 and /api/self.
+  Kept here rather than deleted for the trap it hid: the node's app socket
+  rejects everything under /api/ as "operator commands, wrong socket", and only a
+  REMOTE node shows it -- control's own socket never passes through that guard,
+  so the unit test was green while every app on stage-2 got a 501.
 
 - **Can htop inside the container show only the container's resources?**
   EXPLORED 2026-08-19 on stage (podman 4.9.3, crun 1.14.1, Ubuntu 24.04).

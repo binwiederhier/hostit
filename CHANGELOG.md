@@ -7,6 +7,39 @@ changed rather than what an operator had to do about it; from v0.15.0 on, each
 release is written down as it is cut. Anything that changes a config file, a
 default, or on-disk state is called out as **Breaking** or **Upgrade note**.
 
+## Unreleased
+
+- **Connections and credentials.** Attach an account or a secret once, then grant
+  it to individual apps. An app asks hostit for a usable credential when it needs
+  one, over its own socket -- so nothing is baked into a file, and revoking a
+  grant takes effect on the next request rather than the next deploy.
+
+  Two kinds, because they are two different things to a person. **Connections**
+  are OAuth accounts you sign in to: Google Calendar, Gmail, Slack, Discord,
+  GitHub, Jira, HubSpot, Linear. **Credentials** are secrets you paste: Fastmail
+  (one JMAP token for mail, calendar and contacts), IMAP, SMTP, CalDAV, CardDAV,
+  Postgres, MySQL, OpenSearch, S3, ntfy, Home Assistant, an SSH key, a Discord
+  bot token, or any API key at all. Eleven of the nineteen need no OAuth client,
+  no review and no console visit -- which is the point of brokering the
+  credential rather than the API.
+
+  Each one has a **name** you read and a **reference** an app asks for, derived
+  from the name. That is what lets you attach the same service twice -- a work
+  calendar and a personal one -- and have an app ask for the one it was granted.
+
+  Credentials are sealed with AES-256-GCM and bound to the row they belong to, so
+  ciphertext moved between rows does not decrypt. Access tokens are cached until
+  shortly before they expire; the grant is re-checked on every request regardless.
+  `hostit control connections rotate-key` re-seals everything under a fresh key.
+
+  **Upgrade note:** an OAuth client per provider goes in `connections:` in
+  `control.yml`; a provider without one is not offered. Google's two fall back to
+  the login client. See the Connections setup page in the admin guide.
+
+- **The app-facing API answers at `/api/self` as well as `/v1`.** Same surface,
+  same socket; `/v1` keeps working and always will, since it is what the
+  in-container CLI and every app written so far call.
+
 ## v0.19.1 (2026-08-22)
 
 - **Fixed: a node's memory, disk and load readings never changed.** They were

@@ -27,11 +27,22 @@ Nineteen providers ship, and **eleven need no OAuth client at all**:
 
 | Static (paste and go) | OAuth (needs a client in `control.yml`) |
 |---|---|
-| `imap`, `smtp` | `google-calendar`, `gmail` |
-| `caldav`, `carddav` | `slack`, `discord` |
-| `postgres`, `mysql`, `opensearch` | `github`, `jira` |
-| `s3`, `ntfy`, `home-assistant` | `hubspot`, `linear` |
+| `fastmail` (JMAP: mail + calendar + contacts) | `google-calendar`, `gmail` |
+| `imap`, `smtp` | `slack`, `discord` |
+| `caldav`, `carddav` | `github`, `jira` |
+| `postgres`, `mysql`, `opensearch` | `hubspot`, `linear` |
+| `s3`, `ntfy`, `home-assistant` | |
+| `ssh-key`, `discord-bot` | |
 | `generic` (anything with an API key) | |
+
+**Fastmail is the one to reach for if you have it:** one scoped API token over
+JMAP covers mail, calendars *and* contacts, instead of a CalDAV credential plus
+an IMAP one plus an SMTP one for the same account.
+
+**`discord` and `discord-bot` are both needed and do different things.** A user's
+OAuth token lists the servers they are in and nothing inside them; channels and
+messages need a bot invited to the server, which is a pasted token, not a consent
+flow.
 
 **Gmail without OAuth:** the `imap` provider reaches the same mailbox at
 `imap.gmail.com:993` using a Google **app password** (needs 2-Step Verification
