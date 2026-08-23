@@ -15,6 +15,8 @@ One file per user-facing feature. Every file uses the **exact same structure** (
 ### Access and data
 - [private-apps.md](private-apps.md) -- public vs private apps, viewers and collaborators
 - [ssh-access.md](ssh-access.md) -- ssh / scp / sftp / rsync into an app's container
+- [connections.md](connections.md) -- accounts and credentials an owner attaches once and grants per app
+- [connections-catalog.md](connections-catalog.md) -- what is worth connecting, ranked by how much friction each vendor imposes
 - [custom-domains.md](custom-domains.md) -- serve an app on your own hostname (DNS-01 certs)
 - [snapshots-rollback.md](snapshots-rollback.md) -- automatic and manual snapshots, rollback
 - [archiving.md](archiving.md) -- shelve an app instead of deleting it
