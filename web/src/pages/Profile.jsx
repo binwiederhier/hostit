@@ -356,19 +356,20 @@ const Tokens = () => {
 // Connections and credentials: the accounts and secrets an owner attaches once
 // and can then grant to individual apps. Split by kind on purpose -- an OAuth
 // account is something you CONNECT, a pasted key is something you STORE, and
-// calling both the same thing makes one of them read wrong.
+// Connections and credentials: the accounts and secrets an owner attaches once
+// and can then grant to their apps. TWO cards, not one, because they are two
+// different things to a person -- an OAuth account is something you CONNECT, a
+// pasted key is something you STORE, and one heading makes one of them read
+// wrong.
 //
-// The credential itself is never shown or returned. This page says WHAT is
+// The credential itself is never shown or returned. These cards say WHAT is
 // attached; each app's settings say which of them that app may use.
 const Connections = () => {
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
-  const [adding, setAdding] = useState(null); // the provider being added
-  const [slug, setSlug] = useState("");
-  const [label, setLabel] = useState("");
-  const [values, setValues] = useState({});
-  const [busy, setBusy] = useState(false);
+  const [adding, setAdding] = useState(null); // the provider whose dialog is open
   const [renaming, setRenaming] = useState(null);
+  const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -385,37 +386,6 @@ const Connections = () => {
   const providers = data?.providers || [];
   const { connections, credentials } = splitByKind(data?.connections);
 
-  const openAdd = (p) => {
-    setAdding(p);
-    setSlug(suggestSlug(p, data?.connections || []));
-    setLabel("");
-    setValues({});
-    setError("");
-  };
-
-  const submitAdd = async (e) => {
-    e.preventDefault();
-    if (busy || !adding) return;
-    setBusy(true);
-    setError("");
-    try {
-      const body = { provider: adding.name, slug: slug.trim().toLowerCase(), label: label.trim(), values };
-      const res = await api.post("/api/connections", body);
-      if (res.redirect_url) {
-        // The server answers with the provider's consent URL rather than
-        // redirecting, so the browser leaves the SPA deliberately.
-        window.location.href = res.redirect_url;
-        return;
-      }
-      setAdding(null);
-      await load();
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setBusy(false);
-    }
-  };
-
   const reconnect = async (c) => {
     setError("");
     try {
@@ -428,16 +398,19 @@ const Connections = () => {
 
   const rename = async (c, nextSlug, nextLabel) => {
     setError("");
+    setBusy(true);
     try {
       await api.put(`/api/connections/${encodeURIComponent(c.slug)}`, { slug: nextSlug, label: nextLabel });
       setRenaming(null);
       await load();
     } catch (err) {
       setError(err.message);
+    } finally {
+      setBusy(false);
     }
   };
 
-  const disconnect = async (c) => {
+  const remove = async (c) => {
     const warn = c.granted_apps > 0 ? ` ${c.granted_apps} app(s) lose access immediately.` : "";
     if (!window.confirm(`Remove ${c.slug}?${warn}`)) return;
     setError("");
@@ -449,150 +422,253 @@ const Connections = () => {
     }
   };
 
-  const row = (c) => (
-    <div key={c.slug} className="conn-row">
-      <div className="conn-id">
-        <span className="conn-name">
-          <span className="mono">{c.slug}</span>
-          <span className="conn-provider">{c.provider_label}</span>
-        </span>
-        <span className="conn-note">
-          {c.label && c.label !== c.provider_label ? c.label + " -- " : ""}
-          {c.granted_apps > 0 ? `used by ${c.granted_apps} app${c.granted_apps === 1 ? "" : "s"}` : "not granted to any app yet"}
-          {c.meta ? ` -- ${c.meta}` : ""}
-        </span>
-      </div>
-      <span className="conn-actions">
-        {renaming === c.slug ? (
-          <RenameConnection conn={c} busy={busy} onCancel={() => setRenaming(null)} onSave={rename} />
-        ) : (
-          <>
-            <button type="button" className="btn btn-small" onClick={() => setRenaming(c.slug)}>Rename</button>
-            {c.kind === "oauth" && (
-              <button type="button" className="btn btn-small" onClick={() => reconnect(c)}>Reconnect</button>
-            )}
-            <button type="button" className="btn btn-small btn-danger" onClick={() => disconnect(c)}>Remove</button>
-          </>
-        )}
-      </span>
-    </div>
-  );
-
-  const addable = (kind) => providers.filter((p) => p.kind === kind);
+  const shared = { onRename: setRenaming, onReconnect: reconnect, onRemove: remove, busy };
 
   return (
-    <div className="card">
-      <h2>Connections</h2>
-      <p className="hint">
-        Accounts you connect once and then grant to individual apps in their settings. Apps act as
-        you, and only reach what you grant them. Connect the same service twice -- two calendars,
-        say -- and give each a name your app asks for.
-      </p>
-      <ErrorBanner message={error} onDismiss={() => setError("")} />
-      {data === null && !error && <Loading label="Loading connections..." />}
-      {data !== null && (
-        <>
-          {connections.length === 0 ? (
-            <p className="hint conn-empty">No accounts connected yet.</p>
-          ) : (
-            connections.map(row)
-          )}
-          <div className="conn-add">
-            {addable("oauth").length === 0 ? (
-              <p className="hint">
-                No accounts can be connected on this server yet: an admin sets each provider's OAuth
-                client in <span className="mono">control.yml</span>.
-              </p>
-            ) : (
-              addable("oauth").map((p) => (
-                <button key={p.name} type="button" className="btn btn-small btn-primary" onClick={() => openAdd(p)}>
-                  Connect {p.label}
-                </button>
-              ))
-            )}
-          </div>
-
-          <h2 className="conn-heading">Credentials</h2>
-          <p className="hint">
-            API keys, tokens and mailbox passwords you paste in. Stored encrypted, handed to an app
-            only when you grant it.
-          </p>
-          {credentials.length === 0 ? (
-            <p className="hint conn-empty">No credentials stored yet.</p>
-          ) : (
-            credentials.map(row)
-          )}
-          <div className="conn-add">
-            {addable("static").map((p) => (
-              <button key={p.name} type="button" className="btn btn-small" onClick={() => openAdd(p)}>
-                Add {p.label}
-              </button>
-            ))}
-          </div>
-        </>
-      )}
+    <>
+      <ConnectionsCard
+        title="Connections"
+        hint="Accounts you connect once and then grant to individual apps in their settings. Apps act as you, and only reach what you grant them. Connect the same service twice -- two calendars, say -- and give each a name your app asks for."
+        emptyText="No accounts connected yet."
+        addLabel="Connect"
+        items={connections}
+        providers={providers.filter((p) => p.kind === "oauth")}
+        loading={data === null && !error}
+        error={error}
+        onDismissError={() => setError("")}
+        onAdd={setAdding}
+        noProvidersText="No accounts can be connected on this server yet: an admin sets each provider's OAuth client in control.yml."
+        {...shared}
+      />
+      <ConnectionsCard
+        title="Credentials"
+        hint="API keys, tokens, database URLs and mailbox passwords you paste in. Stored encrypted, and handed to an app only when you grant it. Nothing here needs an OAuth client or any review."
+        emptyText="No credentials stored yet."
+        addLabel="Add"
+        items={credentials}
+        providers={providers.filter((p) => p.kind === "static")}
+        loading={data === null && !error}
+        onAdd={setAdding}
+        {...shared}
+      />
 
       {adding && (
-        <form className="conn-form" onSubmit={submitAdd}>
-          <h3>
-            {adding.kind === "oauth" ? "Connect" : "Add"} {adding.label}
-          </h3>
-          {adding.help && <p className="hint">{adding.help}</p>}
-          <label className="conn-field">
-            <span>Name</span>
+        <AddConnectionDialog
+          provider={adding}
+          existing={data?.connections || []}
+          onClose={() => setAdding(null)}
+          onAdded={async () => {
+            setAdding(null);
+            await load();
+          }}
+        />
+      )}
+      {renaming && (
+        <RenameConnectionDialog
+          conn={renaming}
+          busy={busy}
+          onClose={() => setRenaming(null)}
+          onSave={rename}
+        />
+      )}
+    </>
+  );
+};
+
+// ConnectionsCard is one of the two cards. Both are the same shape -- a list of
+// what is attached and buttons to attach more -- so they share a component
+// rather than being copied with the nouns changed.
+const ConnectionsCard = ({
+  title, hint, emptyText, addLabel, items, providers, loading, error, onDismissError,
+  onAdd, onRename, onReconnect, onRemove, noProvidersText,
+}) => (
+  <div className="card">
+    <h2>{title}</h2>
+    <p className="hint">{hint}</p>
+    {onDismissError && <ErrorBanner message={error} onDismiss={onDismissError} />}
+    {loading && <Loading label={`Loading ${title.toLowerCase()}...`} />}
+    {!loading && items.length === 0 && <p className="hint conn-empty">{emptyText}</p>}
+    {!loading &&
+      items.map((c) => (
+        <div key={c.slug} className="conn-row">
+          <div className="conn-id">
+            <span className="conn-name">
+              <span className="mono">{c.slug}</span>
+              <span className="conn-provider">{c.provider_label}</span>
+            </span>
+            <span className="conn-note">
+              {c.label && c.label !== c.provider_label ? c.label + " -- " : ""}
+              {c.granted_apps > 0
+                ? `used by ${c.granted_apps} app${c.granted_apps === 1 ? "" : "s"}`
+                : "not granted to any app yet"}
+              {c.meta ? ` -- ${c.meta}` : ""}
+            </span>
+          </div>
+          <span className="conn-actions">
+            <button type="button" className="btn btn-small" onClick={() => onRename(c)}>Rename</button>
+            {c.kind === "oauth" && (
+              <button type="button" className="btn btn-small" onClick={() => onReconnect(c)}>Reconnect</button>
+            )}
+            <button type="button" className="btn btn-small btn-danger" onClick={() => onRemove(c)}>Remove</button>
+          </span>
+        </div>
+      ))}
+    <div className="conn-add">
+      {providers.length === 0 && noProvidersText ? (
+        <p className="hint">{noProvidersText}</p>
+      ) : (
+        providers.map((p) => (
+          <button
+            key={p.name}
+            type="button"
+            className={"btn btn-small" + (p.kind === "oauth" ? " btn-primary" : "")}
+            onClick={() => onAdd(p)}
+          >
+            {addLabel} {p.label}
+          </button>
+        ))
+      )}
+    </div>
+  </div>
+);
+
+// AddConnectionDialog is the one place a connection is created, for both kinds.
+// A pasted credential saves here; an OAuth account leaves for the provider's
+// consent screen, which is why the button says where it is going.
+const AddConnectionDialog = ({ provider, existing, onClose, onAdded }) => {
+  useEscape(onClose);
+  const [slug, setSlug] = useState(() => suggestSlug(provider, existing));
+  const [label, setLabel] = useState("");
+  const [values, setValues] = useState({});
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const oauth = provider.kind === "oauth";
+  const missing = (provider.fields || []).some((f) => !f.optional && !(values[f.name] || "").trim());
+  const valid = slug.trim().length >= 3 && !missing;
+
+  const submit = async (e) => {
+    e.preventDefault();
+    if (busy || !valid) return;
+    setBusy(true);
+    setError("");
+    try {
+      const res = await api.post("/api/connections", {
+        provider: provider.name,
+        slug: slug.trim().toLowerCase(),
+        label: label.trim(),
+        values,
+      });
+      if (res.redirect_url) {
+        // The server answers with the provider's consent URL rather than
+        // redirecting, so the browser leaves the SPA deliberately.
+        window.location.href = res.redirect_url;
+        return;
+      }
+      onAdded();
+    } catch (err) {
+      setError(err.message);
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true" onMouseDown={onClose}>
+      <form className="card modal modal-sheet" onSubmit={submit} onMouseDown={(e) => e.stopPropagation()}>
+        <button type="button" className="modal-x" onClick={onClose} title="Close" aria-label="Close">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
+        </button>
+        <h2>{oauth ? "Connect" : "Add"} {provider.label}</h2>
+        {provider.help && <p className="hint" style={{ marginBottom: "5px" }}>{provider.help}</p>}
+        <ErrorBanner message={error} onDismiss={() => setError("")} />
+
+        <label className="conn-field">
+          <span>Name</span>
+          <input
+            type="text"
+            value={slug}
+            onChange={(e) => setSlug(e.target.value)}
+            placeholder="work-cal"
+            aria-label="Connection name"
+            autoFocus
+            disabled={busy}
+          />
+        </label>
+        <p className="hint">
+          What an app asks for: <span className="mono">/v1/connections/{slug.trim().toLowerCase() || "work-cal"}/token</span>
+        </p>
+        <label className="conn-field">
+          <span>Description</span>
+          <input type="text" value={label} onChange={(e) => setLabel(e.target.value)} placeholder="optional" aria-label="Description" disabled={busy} />
+        </label>
+        {(provider.fields || []).map((f) => (
+          <label key={f.name} className="conn-field">
+            <span>{f.label}{f.optional ? " (optional)" : ""}</span>
             <input
-              type="text"
-              value={slug}
-              onChange={(e) => setSlug(e.target.value)}
-              placeholder="work-cal"
-              aria-label="Connection name"
+              type={f.secret ? "password" : "text"}
+              value={values[f.name] || ""}
+              onChange={(e) => setValues({ ...values, [f.name]: e.target.value })}
+              placeholder={f.placeholder}
+              aria-label={f.label}
+              disabled={busy}
             />
           </label>
-          <p className="hint">
-            What your app asks for: <span className="mono">GET /v1/connections/{slug || "work-cal"}/token</span>
-          </p>
-          <label className="conn-field">
-            <span>Description</span>
-            <input type="text" value={label} onChange={(e) => setLabel(e.target.value)} placeholder="optional" aria-label="Description" />
-          </label>
-          {(adding.fields || []).map((f) => (
-            <label key={f.name} className="conn-field">
-              <span>{f.label}</span>
-              <input
-                type={f.secret ? "password" : "text"}
-                value={values[f.name] || ""}
-                onChange={(e) => setValues({ ...values, [f.name]: e.target.value })}
-                placeholder={f.placeholder}
-                aria-label={f.label}
-              />
-            </label>
-          ))}
-          <div className="conn-form-actions">
-            <button type="submit" className="btn btn-primary btn-small" disabled={busy || !slug.trim()}>
-              {adding.kind === "oauth" ? "Continue to " + adding.label : "Save"}
-            </button>
-            <button type="button" className="btn btn-small" onClick={() => setAdding(null)}>Cancel</button>
-          </div>
-        </form>
-      )}
+        ))}
+
+        <div className="btn-row">
+          <button type="button" className="btn" onClick={onClose} disabled={busy}>Cancel</button>
+          <button type="submit" className="btn btn-primary" disabled={busy || !valid}>
+            {busy && <span className="newapp-spinner" aria-hidden="true" />}
+            {oauth ? `Continue to ${provider.label}` : busy ? "Saving..." : "Save"}
+          </button>
+        </div>
+      </form>
     </div>
   );
 };
 
-// RenameConnection is the inline editor on a row. Renaming changes the name an
-// app addresses the connection by, so it says so rather than looking cosmetic.
-const RenameConnection = ({ conn, busy, onCancel, onSave }) => {
+// RenameConnectionDialog changes the name apps address a connection by, which
+// breaks any app configured for the old one -- so it says so rather than
+// looking cosmetic.
+const RenameConnectionDialog = ({ conn, busy, onClose, onSave }) => {
+  useEscape(onClose);
   const [slug, setSlug] = useState(conn.slug);
   const [label, setLabel] = useState(conn.label || "");
+  const changed = slug.trim().toLowerCase() !== conn.slug || label.trim() !== (conn.label || "");
+
   return (
-    <span className="conn-rename">
-      <input type="text" value={slug} onChange={(e) => setSlug(e.target.value)} aria-label="Name" />
-      <input type="text" value={label} onChange={(e) => setLabel(e.target.value)} placeholder="description" aria-label="Description" />
-      <button type="button" className="btn btn-small btn-primary" disabled={busy} onClick={() => onSave(conn, slug.trim().toLowerCase(), label.trim())}>
-        Save
-      </button>
-      <button type="button" className="btn btn-small" onClick={onCancel}>Cancel</button>
-    </span>
+    <div className="modal-backdrop" role="dialog" aria-modal="true" onMouseDown={onClose}>
+      <form
+        className="card modal modal-sheet"
+        onSubmit={(e) => {
+          e.preventDefault();
+          onSave(conn, slug.trim().toLowerCase(), label.trim());
+        }}
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        <button type="button" className="modal-x" onClick={onClose} title="Close" aria-label="Close">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
+        </button>
+        <h2>Rename {conn.slug}</h2>
+        <p className="hint" style={{ marginBottom: "5px" }}>
+          The name is what an app asks for. Changing it breaks any app already configured for
+          <span className="mono"> {conn.slug}</span> until that app is updated too.
+        </p>
+        <label className="conn-field">
+          <span>Name</span>
+          <input type="text" value={slug} onChange={(e) => setSlug(e.target.value)} aria-label="Name" autoFocus disabled={busy} />
+        </label>
+        <label className="conn-field">
+          <span>Description</span>
+          <input type="text" value={label} onChange={(e) => setLabel(e.target.value)} placeholder="optional" aria-label="Description" disabled={busy} />
+        </label>
+        <div className="btn-row">
+          <button type="button" className="btn" onClick={onClose} disabled={busy}>Cancel</button>
+          <button type="submit" className="btn btn-primary" disabled={busy || !changed || slug.trim().length < 3}>
+            {busy ? "Saving..." : "Save"}
+          </button>
+        </div>
+      </form>
+    </div>
   );
 };
 
