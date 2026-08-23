@@ -151,9 +151,9 @@ func TestNodeRelaysRatherThanAnswering(t *testing.T) {
 	assert.Contains(t, rr.Body.String(), "hostit-control")
 }
 
-// The operator-command guard must not swallow the app surface's /api/self
+// The operator-command guard must not swallow the app surface's /api/container
 // alias. It rejects /api/ because operator commands moved to control's socket
-// -- but /api/self is the app talking about ITSELF, on exactly this socket, and
+// -- but /api/container is the app talking about ITSELF, on exactly this socket, and
 // only a remote node ever exercises the difference.
 func TestTheOperatorGuardLetsApiSelfThrough(t *testing.T) {
 	t.Parallel()
@@ -164,9 +164,9 @@ func TestTheOperatorGuardLetsApiSelfThrough(t *testing.T) {
 		{"/api", true},
 		{"/api/apps", true},
 		{"/api/apps/blog/deploy", true},
-		{"/api/self", false},
-		{"/api/self/connections", false},
-		{"/api/self/connections/work-cal/token", false},
+		{"/api/container", false},
+		{"/api/container/connections", false},
+		{"/api/container/connections/work-cal/token", false},
 		{"/v1/self", false},
 		{"/v1/connections", false},
 	} {

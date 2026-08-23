@@ -20,9 +20,18 @@ Three words, deliberately, because they are three different things to a person:
   own file: [mcp-servers.md](mcp-servers.md).
 
 The first two are the same row and the same API. An app cannot tell which it was
-given, which is the point: `GET /api/self/connections/{slug}/token` answers the
-same shape either way. An MCP connection is refused there with a 400, on purpose:
-its token opens the whole server, so it is never handed over.
+given, which is the point: `GET /api/container/connections/{slug}/token` answers the
+same shape either way. An MCP server answers **404** there, on purpose: its token
+opens the whole server, so it is never handed over, and the token sub-resource
+genuinely does not exist for that member. The mirror holds -- asking a credential
+for `/mcp/tools` is a 404 too. A 400 in either direction would send a caller
+looking for a malformed request it did not send.
+
+The collection is filterable: `GET /api/connections?kind=oauth|static|mcp`
+narrows the connections AND the offered providers, so a one-kind view does not
+offer you the wrong thing to attach. An unknown kind is refused rather than
+ignored, since a client asking for one kind and silently getting three would
+trust the answer and be wrong.
 
 ## Why it exists
 
@@ -64,9 +73,9 @@ personal one -- so a grant names a connection, not a provider, and an app asks
 for it by the name its owner gave it:
 
 ```
-GET /api/self/connections                    -> [{slug: "work-cal", provider: "google-calendar"}, ...]
-GET /api/self/connections/work-cal/token     -> {access_token: "...", expires_at: "..."}
-GET /api/self/connections/personal-cal/token -> a different account entirely
+GET /api/container/connections                    -> [{slug: "work-cal", provider: "google-calendar"}, ...]
+GET /api/container/connections/work-cal/token     -> {access_token: "...", expires_at: "..."}
+GET /api/container/connections/personal-cal/token -> a different account entirely
 ```
 
 Slugs are lowercase, 3-32 characters of letters, digits and dashes, and unique
@@ -171,7 +180,7 @@ sequenceDiagram
     H-->>O: 302 /profile
 
     Note over O,A: later, the owner grants the app the connection
-    A->>H: GET /api/self/connections/work-cal/token (unix socket, SO_PEERCRED)
+    A->>H: GET /api/container/connections/work-cal/token (unix socket, SO_PEERCRED)
     H->>P: refresh
     P-->>H: access token
     H-->>A: {access_token, expires_at}

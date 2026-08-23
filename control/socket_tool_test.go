@@ -64,9 +64,11 @@ func toolResp(t *testing.T, w *httptest.ResponseRecorder) apiToolResponse {
 	return resp
 }
 
-// The app-facing surface answers at BOTH prefixes. /api/self reads the way the
-// rest of the API does; /v1 is what every app written so far calls, and what
-// the in-container CLI calls, so it keeps answering forever.
+// The app-facing surface answers at BOTH prefixes. /api/container says who is
+// asking -- code inside the container, authenticated by the socket it arrived
+// on -- where /v1 says only "version one of something". /v1 is what every app
+// written so far calls, and what the in-container CLI calls, so it keeps
+// answering forever.
 func TestTheAppSurfaceAnswersAtBothPrefixes(t *testing.T) {
 	t.Parallel()
 	s := newTestServer(t)
@@ -75,7 +77,7 @@ func TestTheAppSurfaceAnswersAtBothPrefixes(t *testing.T) {
 	c := mustConnect(t, s, u.ID, "mail", "generic", map[string]string{"secret": "hunter2"})
 	require.NoError(t, s.apps.Store().GrantConnection("a1", c.ID))
 
-	for _, prefix := range []string{"/v1", "/api/self"} {
+	for _, prefix := range []string{"/v1", "/api/container"} {
 		list := socketRequest(t, s, "GET", prefix+"/connections")
 		assert.Equal(t, http.StatusOK, list.Code, prefix)
 		assert.Contains(t, list.Body.String(), `"slug":"mail"`, prefix)
@@ -86,5 +88,19 @@ func TestTheAppSurfaceAnswersAtBothPrefixes(t *testing.T) {
 
 		self := socketRequest(t, s, "GET", prefix+"/self")
 		assert.Equal(t, http.StatusOK, self.Code, prefix)
+	}
+}
+
+// The old alias is gone rather than kept. It never appeared in a release, and
+// /api/self/self -- which is what "this container's app" actually spelled --
+// was the clearest sign the word was wrong.
+func TestTheAbandonedSelfAliasIsNotServed(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	u := newActiveTestUser(t, s, "owner@example.com")
+	require.NoError(t, s.apps.Store().AddApp(&store.App{ID: "a1", Name: "dash", Port: 10000, Host: store.HostLocal, OwnerID: u.ID, UID: 1234}))
+
+	for _, path := range []string{"/api/self/self", "/api/self/connections"} {
+		assert.Equal(t, http.StatusNotFound, socketRequest(t, s, "GET", path).Code, path)
 	}
 }

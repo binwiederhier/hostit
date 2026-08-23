@@ -119,7 +119,7 @@ POST /v1/mcp/{slug}/call     <- {"tool":"...","arguments":{...}}
 ```
 
 Over the app's own unix socket, so there is no token to hold and no host to know.
-Both answer at `/api/self/...` as well; see `connections.md` on the two prefixes.
+Both answer at `/api/container/...` as well; see `connections.md` on the two prefixes.
 
 ### The assistant using one
 
@@ -200,8 +200,10 @@ An MCP connection is a `store.Connection` with `Kind = store.ConnectionMCP`.
   server at all, so an ungranted app cannot even make hostit send a request on its
   behalf. `control/mcp_test.go:TestAnUngrantedAppCannotCallAnMCPTool` asserts the
   server was never contacted.
-- **`/v1/connections/{slug}/token` refuses an MCP connection** with a 400 naming
-  the call endpoint instead. That refusal is the design, not a gap.
+- **`/v1/connections/{slug}/token` answers 404 for an MCP connection**, naming
+  the call endpoint instead. The refusal is the design, not a gap: the token
+  sub-resource does not exist for that member, which is what 404 means. Asking a
+  credential for `/mcp/tools` is the mirror image and answers the same way.
 - **`/.well-known/oauth-client` must be reachable from the internet.** An
   authorization server fetches it to learn who is asking; if it cannot, every
   consent fails. Unauthenticated on purpose -- it is hostit's public identity.

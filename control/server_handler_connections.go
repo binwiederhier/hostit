@@ -118,26 +118,55 @@ func (s *Server) connectionView(c *store.Connection) *apiConnectionResponse {
 
 // handleConnectionsList returns the caller's connections and what this instance
 // can connect.
+//
+// One collection holds all three kinds, so ?kind= narrows it: a client that
+// only cares about MCP servers should not have to fetch and sift every pasted
+// credential. The PROVIDERS are narrowed with it -- an MCP-only view offering
+// you a Postgres credential would be worse than not filtering at all.
 func (s *Server) handleConnectionsList(w http.ResponseWriter, r *http.Request, c *caller) {
+	kind := r.URL.Query().Get("kind")
+	if err := validConnectionKind(kind); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
 	list, err := s.apps.Store().Connections(c.userID())
 	if err != nil {
 		writeAppError(w, err)
 		return
 	}
-	out := &apiConnectionsResponse{Connections: make([]*apiConnectionResponse, 0, len(list)), Providers: s.offeredProviders()}
+	out := &apiConnectionsResponse{Connections: make([]*apiConnectionResponse, 0, len(list)), Providers: s.offeredProviders(kind)}
 	for _, conn := range list {
+		if kind != "" && conn.Kind != kind {
+			continue
+		}
 		out.Connections = append(out.Connections, s.connectionView(conn))
 	}
 	writeJSON(w, http.StatusOK, out)
 }
 
-// offeredProviders is what this instance can actually connect right now.
-func (s *Server) offeredProviders() []apiProviderResponse {
+// validConnectionKind checks a ?kind= filter. An unknown one is REFUSED rather
+// than ignored: a client asking for one kind and silently getting three would
+// trust the answer and be wrong.
+func validConnectionKind(kind string) error {
+	switch kind {
+	case "", store.ConnectionOAuth, store.ConnectionStatic, store.ConnectionMCP:
+		return nil
+	}
+	return fmt.Errorf("unknown kind %q; use %s, %s or %s",
+		kind, store.ConnectionOAuth, store.ConnectionStatic, store.ConnectionMCP)
+}
+
+// offeredProviders is what this instance can actually connect right now,
+// narrowed to one kind when asked.
+func (s *Server) offeredProviders(kind string) []apiProviderResponse {
 	out := make([]apiProviderResponse, 0)
 	if s.connections == nil {
 		return out
 	}
 	for _, p := range s.connections.offered() {
+		if kind != "" && p.Kind != kind {
+			continue
+		}
 		out = append(out, apiProviderResponse{Name: p.Name, Label: p.Label, Kind: p.Kind, Help: p.Help, NameHint: p.NameHint, Fields: p.Fields})
 	}
 	return out
@@ -586,7 +615,10 @@ func (s *Server) handleSelfConnectionToken(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusForbidden, err)
 		return
 	case errors.Is(err, errNotMCPCredential):
-		writeError(w, http.StatusBadRequest, err)
+		// 404 rather than 400: the request was well formed, and what it asked
+		// for genuinely does not exist for this member. A 400 would send an app
+		// looking for a mistake it did not make.
+		writeError(w, http.StatusNotFound, err)
 		return
 	case err != nil:
 		writeError(w, http.StatusBadGateway, err)

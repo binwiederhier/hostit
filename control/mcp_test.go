@@ -196,11 +196,11 @@ func TestAGrantedAppListsAndCallsMCPTools(t *testing.T) {
 	conn := mustConnectMCP(t, s, u.ID, "issues", f.URL+"/mcp")
 	require.NoError(t, s.apps.Store().GrantConnection("a1", conn.ID))
 
-	tools := socketRequest(t, s, "GET", "/api/self/mcp/issues/tools")
+	tools := socketRequest(t, s, "GET", "/api/container/mcp/issues/tools")
 	require.Equal(t, http.StatusOK, tools.Code, tools.Body.String())
 	assert.Contains(t, tools.Body.String(), "list_issues")
 
-	call := socketRequestBody(t, s, "POST", "/api/self/mcp/issues/call", `{"tool":"list_issues","arguments":{"team":"core"}}`)
+	call := socketRequestBody(t, s, "POST", "/api/container/mcp/issues/call", `{"tool":"list_issues","arguments":{"team":"core"}}`)
 	require.Equal(t, http.StatusOK, call.Code, call.Body.String())
 	assert.Contains(t, call.Body.String(), "issue: list_issues")
 	assert.Equal(t, []string{"list_issues"}, f.calls)
@@ -217,11 +217,11 @@ func TestAnUngrantedAppCannotCallAnMCPTool(t *testing.T) {
 	f := newFakeMCP(t, false)
 	mustConnectMCP(t, s, u.ID, "issues", f.URL+"/mcp") // deliberately not granted
 
-	call := socketRequestBody(t, s, "POST", "/api/self/mcp/issues/call", `{"tool":"list_issues"}`)
+	call := socketRequestBody(t, s, "POST", "/api/container/mcp/issues/call", `{"tool":"list_issues"}`)
 	assert.Equal(t, http.StatusForbidden, call.Code)
 	assert.Empty(t, f.calls, "and the server was never contacted")
 
-	missing := socketRequestBody(t, s, "POST", "/api/self/mcp/nothing/call", `{"tool":"x"}`)
+	missing := socketRequestBody(t, s, "POST", "/api/container/mcp/nothing/call", `{"tool":"x"}`)
 	assert.Equal(t, http.StatusNotFound, missing.Code)
 }
 
@@ -238,9 +238,13 @@ func TestAnAppCannotFetchAnMCPConnectionsToken(t *testing.T) {
 	conn := mustConnectMCP(t, s, u.ID, "issues", f.URL+"/mcp")
 	require.NoError(t, s.apps.Store().GrantConnection("a1", conn.ID))
 
-	rr := socketRequest(t, s, "GET", "/api/self/connections/issues/token")
-	assert.Equal(t, http.StatusBadRequest, rr.Code)
+	// 404, not 400: the request was perfectly well formed, and what it asked
+	// for genuinely does not exist for this member. A 400 would tell an app to
+	// go and look for a mistake it did not make.
+	rr := socketRequest(t, s, "GET", "/api/container/connections/issues/token")
+	assert.Equal(t, http.StatusNotFound, rr.Code)
 	assert.Contains(t, rr.Body.String(), "mcp")
+	assert.Contains(t, rr.Body.String(), "/call", "and it says where the thing it CAN do lives")
 }
 
 // The client metadata document has to be readable by a server hostit has never
@@ -309,4 +313,19 @@ func TestAServerHostitCannotIntroduceItselfToIsRefusedWithAReason(t *testing.T) 
 	assert.Equal(t, http.StatusBadRequest, rr.Code, rr.Body.String())
 	assert.Contains(t, rr.Body.String(), "registration")
 	assert.Empty(t, f.tokenForms, "and nothing was exchanged with it")
+}
+
+// The mirror of the token case, and it must answer the same way: a credential
+// has no tools sub-resource, exactly as an MCP server has no token one. Two
+// spellings of "that does not exist here" should not be two status codes.
+func TestAskingForToolsOnACredentialIsAlsoANotFound(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	u := newActiveTestUser(t, s, "owner@example.com")
+	token, _, err := s.users.CreateToken(u.ID, "laptop")
+	require.NoError(t, err)
+	mustConnect(t, s, u.ID, "a-key", "generic", map[string]string{"secret": "x"})
+
+	rr := request(t, s.API(), "GET", "/api/connections/a-key/mcp/tools", "", token)
+	assert.Equal(t, http.StatusNotFound, rr.Code, rr.Body.String())
 }

@@ -36,14 +36,19 @@ func (s *Server) newSocketHandler() http.Handler {
 // resolver, so the same handlers serve control's own socket (peercred resolves
 // the app) and the per-node relay (the authenticated node names the app). The
 // routes exist once; only "who is asking" differs.
-// selfPrefixes are the two roots the app-facing surface answers at.
+// containerPrefixes are the two roots the app-facing surface answers at.
 //
-// /api/self is the one to write down: it reads the way the rest of the API
-// does, where /v1 next to /api was always an odd seam. /v1 keeps answering and
-// always will -- it is what the in-container CLI calls and what every app
-// written so far uses, and there is no version of this worth breaking an app
-// over.
-var selfPrefixes = []string{"/v1", "/api/self"}
+// /api/container is the one to write down. It names WHO is asking -- code
+// running inside an app's container, authenticated by the socket it arrived on
+// -- where /v1 next to /api was always an odd seam and said only "version one
+// of something". An earlier attempt at /api/self was abandoned before it
+// shipped: "self" spelled the app's own endpoint /api/self/self, which was the
+// clearest possible sign the word was wrong.
+//
+// /v1 keeps answering and always will -- it is what the in-container CLI calls
+// and what every app written so far uses, and there is no version of this worth
+// breaking an app over.
+var containerPrefixes = []string{"/v1", "/api/container"}
 
 func (s *Server) selfMux(wrap func(func(http.ResponseWriter, *http.Request, *store.App)) http.HandlerFunc) *http.ServeMux {
 	mux := http.NewServeMux()
@@ -51,7 +56,7 @@ func (s *Server) selfMux(wrap func(func(http.ResponseWriter, *http.Request, *sto
 	// diff against what apps call stays readable; handle() adds the other.
 	handle := func(pattern string, h http.HandlerFunc) {
 		method, path, _ := strings.Cut(pattern, " ")
-		for _, prefix := range selfPrefixes {
+		for _, prefix := range containerPrefixes {
 			mux.HandleFunc(method+" "+prefix+strings.TrimPrefix(path, "/v1"), h)
 		}
 	}

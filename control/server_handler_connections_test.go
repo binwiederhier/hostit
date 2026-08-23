@@ -196,3 +196,58 @@ func TestBadCredentialValuesAreABadRequest(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, rr.Code)
 	assert.Contains(t, rr.Body.String(), "required")
 }
+
+// One collection with three kinds in it means a client that cares about one
+// kind should not have to fetch and sift all three. The providers are filtered
+// alongside, or an "MCP only" view still offers you a Postgres credential.
+func TestConnectionsCanBeListedByKind(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	u := newActiveTestUser(t, s, "owner@example.com")
+	token, _, err := s.users.CreateToken(u.ID, "laptop")
+	require.NoError(t, err)
+	f := newFakeMCP(t, false)
+	mustConnect(t, s, u.ID, "a-key", "generic", map[string]string{"secret": "x"})
+	_, _, err = s.connections.addMCP(t.Context(), u.ID, "issues", "Issues", f.URL+"/mcp")
+	require.NoError(t, err)
+
+	all := listConnections(t, s, token, "")
+	require.Len(t, all.Connections, 2)
+
+	static := listConnections(t, s, token, "?kind=static")
+	require.Len(t, static.Connections, 1)
+	assert.Equal(t, "a-key", static.Connections[0].Slug)
+	for _, p := range static.Providers {
+		assert.Equal(t, "static", p.Kind, "an MCP provider has no business in a credentials-only view")
+	}
+
+	mcp := listConnections(t, s, token, "?kind=mcp")
+	require.Len(t, mcp.Connections, 1)
+	assert.Equal(t, "issues", mcp.Connections[0].Slug)
+
+	oauth := listConnections(t, s, token, "?kind=oauth")
+	assert.Empty(t, oauth.Connections)
+}
+
+// A typo must not silently answer with everything: a client asking for one kind
+// and getting three would trust the answer and be wrong.
+func TestAnUnknownKindIsRefusedRatherThanIgnored(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	u := newActiveTestUser(t, s, "owner@example.com")
+	token, _, err := s.users.CreateToken(u.ID, "laptop")
+	require.NoError(t, err)
+
+	rr := request(t, s.API(), "GET", "/api/connections?kind=mpc", "", token)
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+	assert.Contains(t, rr.Body.String(), "mpc")
+}
+
+func listConnections(t *testing.T, s *Server, token, query string) apiConnectionsResponse {
+	t.Helper()
+	rr := request(t, s.API(), "GET", "/api/connections"+query, "", token)
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+	var out apiConnectionsResponse
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &out))
+	return out
+}

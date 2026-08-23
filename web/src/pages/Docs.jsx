@@ -559,7 +559,7 @@ const ConnectionsPage = () => (
     <h3>What an app does with it</h3>
     <p>An app reads what it was granted over its own socket, and asks for a credential per use:</p>
     <Snippet
-      text={`curl --unix-socket /run/hostit/hostit.sock http://x/api/self/connections\ncurl --unix-socket /run/hostit/hostit.sock http://x/api/self/connections/work-calendar/token`}
+      text={`curl --unix-socket /run/hostit/hostit.sock http://x/api/container/connections\ncurl --unix-socket /run/hostit/hostit.sock http://x/api/container/connections/work-calendar/token`}
     />
     <p>
       The second returns <span className="mono">{`{"access_token": "...", "expires_at": "..."}`}</span>{" "}
@@ -590,8 +590,8 @@ const ConnectionsPage = () => (
       hostit makes the call:
     </p>
     <Snippet
-      text={`curl --unix-socket /run/hostit/hostit.sock http://x/api/self/mcp/issues/tools
-curl --unix-socket /run/hostit/hostit.sock http://x/api/self/mcp/issues/call \\
+      text={`curl --unix-socket /run/hostit/hostit.sock http://x/api/container/mcp/issues/tools
+curl --unix-socket /run/hostit/hostit.sock http://x/api/container/mcp/issues/call \\
   -d '{"tool":"list_issues","arguments":{"team":"core"}}'`}
     />
     <p>
@@ -790,8 +790,8 @@ const ApiPage = () => (
           />
           <Endpoint
             method="GET|POST"
-            path="/api/connections"
-            what={`Your connections and credentials, plus what this server can attach. POST {"provider":"...","slug":"...","label":"...","values":{...}} -- a pasted credential saves immediately, an OAuth one answers with a redirect_url to send the browser to. An MCP server is provider "mcp" with values {"url":"https://..."}, and answers either way depending on whether that server wants authorization`}
+            path="/api/connections?kind="
+            what={`Your connections and credentials, plus what this server can attach. Add ?kind=oauth, ?kind=static or ?kind=mcp to narrow both lists to one kind; an unknown kind is refused rather than ignored. POST {"provider":"...","slug":"...","label":"...","values":{...}} -- a pasted credential saves immediately, an OAuth one answers with a redirect_url to send the browser to. An MCP server is provider "mcp" with values {"url":"https://..."}, and answers either way depending on whether that server wants authorization`}
           />
           <Endpoint
             method="PUT|DELETE"
@@ -832,7 +832,7 @@ const ApiPage = () => (
       <p className="hint">
         The same endpoints also answer under <span className="mono">/v1/...</span>, which is what
         apps written before this and the in-container <span className="mono">hostit</span> CLI use.
-        Both work and will keep working; <span className="mono">/api/self</span> is simply the one
+        Both work and will keep working; <span className="mono">/api/container</span> is simply the one
         worth writing down.
       </p>
       <table className="docs-table">
@@ -840,20 +840,20 @@ const ApiPage = () => (
           <tr><th>Method</th><th>Path</th><th>What</th></tr>
         </thead>
         <tbody>
-          <Endpoint method="GET" path="/api/self/connections" what="The connections and credentials this app was granted, each with the reference to ask for" />
-          <Endpoint method="GET" path="/api/self/connections/{slug}/token" what={`A usable credential: {"provider":"...","access_token":"...","expires_at":"..."} -- expires_at is absent when it does not expire. An MCP connection has no credential to hand out and answers 400; call its tools instead`} />
-          <Endpoint method="GET" path="/api/self/mcp/{slug}/tools" what="The tools a granted MCP server offers, each with its own JSON Schema" />
-          <Endpoint method="POST" path="/api/self/mcp/{slug}/call" what={`Run one tool: {"tool":"...","arguments":{...}}. Answers {"text":"...","is_error":false} -- is_error means the TOOL failed, which is still a 200: the call happened and the answer is bad news`} />
-          <Endpoint method="GET" path="/api/self" what="This app: its URL, limits, domains and state" />
-          <Endpoint method="POST" path="/api/self/deploy" what="Deploy the app, as the web app's button does" />
-          <Endpoint method="POST" path="/api/self/start|stop|restart" what="The app process" />
-          <Endpoint method="POST" path="/api/self/poweron|poweroff|reboot" what="The container" />
-          <Endpoint method="GET" path="/api/self/status" what="Whether it is running" />
-          <Endpoint method="GET" path="/api/self/logs" what="Recent output" />
+          <Endpoint method="GET" path="/api/container/connections" what="The connections and credentials this app was granted, each with the reference to ask for" />
+          <Endpoint method="GET" path="/api/container/connections/{slug}/token" what={`A usable credential: {"provider":"...","access_token":"...","expires_at":"..."} -- expires_at is absent when it does not expire. An MCP server has no credential to hand out, so this answers 404 for one and says where to call its tools instead`} />
+          <Endpoint method="GET" path="/api/container/mcp/{slug}/tools" what="The tools a granted MCP server offers, each with its own JSON Schema" />
+          <Endpoint method="POST" path="/api/container/mcp/{slug}/call" what={`Run one tool: {"tool":"...","arguments":{...}}. Answers {"text":"...","is_error":false} -- is_error means the TOOL failed, which is still a 200: the call happened and the answer is bad news`} />
+          <Endpoint method="GET" path="/api/container" what="This app: its URL, limits, domains and state" />
+          <Endpoint method="POST" path="/api/container/deploy" what="Deploy the app, as the web app's button does" />
+          <Endpoint method="POST" path="/api/container/start|stop|restart" what="The app process" />
+          <Endpoint method="POST" path="/api/container/poweron|poweroff|reboot" what="The container" />
+          <Endpoint method="GET" path="/api/container/status" what="Whether it is running" />
+          <Endpoint method="GET" path="/api/container/logs" what="Recent output" />
         </tbody>
       </table>
       <Snippet
-        text={`# Inside the container -- no token, no host, just the socket\ncurl --unix-socket /run/hostit/hostit.sock http://x/api/self/connections\ncurl --unix-socket /run/hostit/hostit.sock http://x/api/self/connections/work-calendar/token`}
+        text={`# Inside the container -- no token, no host, just the socket\ncurl --unix-socket /run/hostit/hostit.sock http://x/api/container/connections\ncurl --unix-socket /run/hostit/hostit.sock http://x/api/container/connections/work-calendar/token`}
       />
       <p className="hint">
         Ask for a credential when you need it rather than saving it: an account token expires within

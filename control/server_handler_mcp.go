@@ -73,7 +73,7 @@ func (s *Server) handleConnectionMCPTools(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if conn.Kind != store.ConnectionMCP {
-		writeError(w, http.StatusBadRequest, errNotMCP)
+		writeMCPError(w, errNotMCP)
 		return
 	}
 	tools, err := s.connections.mcpTools(r.Context(), conn, s.mcpClientID(r))
@@ -212,7 +212,10 @@ func writeMCPError(w http.ResponseWriter, err error) {
 	case errors.Is(err, errNotGranted):
 		writeError(w, http.StatusForbidden, err)
 	case errors.Is(err, errNotMCP):
-		writeError(w, http.StatusBadRequest, err)
+		// The mirror of the token endpoint refusing an MCP member: a credential
+		// has no tools sub-resource, and "that does not exist here" is one
+		// status code, not two.
+		writeError(w, http.StatusNotFound, err)
 	case errors.Is(err, mcp.ErrUnauthorized):
 		// The remedy is the owner reconnecting, so say so rather than leaving a
 		// 502 that looks like the server is down.

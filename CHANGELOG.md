@@ -55,9 +55,18 @@ default, or on-disk state is called out as **Breaking** or **Upgrade note**.
   internet, or an authorization server cannot fetch it and every consent fails.
   It is served unauthenticated on purpose.
 
-- **The app-facing API answers at `/api/self` as well as `/v1`.** Same surface,
-  same socket; `/v1` keeps working and always will, since it is what the
-  in-container CLI and every app written so far call.
+- **`GET /api/connections?kind=` narrows the list** to `oauth`, `static` or
+  `mcp`, filtering the offered providers with it so a one-kind view does not
+  offer you the wrong thing to attach. An unknown kind is refused rather than
+  ignored. The token and tools sub-resources now answer **404** for a member of
+  the wrong kind rather than 400 -- the request was fine, the thing it asked for
+  simply does not exist for that member.
+
+- **The app-facing API answers at `/api/container` as well as `/v1`.** Same
+  surface, same socket. The new spelling names who is asking -- code inside an
+  app's container, authenticated by the socket it arrived on -- where `/v1` next
+  to `/api` was always an odd seam. `/v1` keeps working and always will, since it
+  is what the in-container CLI and every app written so far call.
 
 ## v0.19.1 (2026-08-22)
 

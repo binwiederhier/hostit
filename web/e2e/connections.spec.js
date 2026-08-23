@@ -76,18 +76,18 @@ test("a credential is added, granted to an app, then revoked and removed", async
 
 // The app-facing surface is served on an app's unix socket and NOWHERE else.
 //
-// This matters more since the surface gained an /api/self alias: that prefix
+// This matters more since the surface gained an /api/container alias: that prefix
 // LOOKS like it belongs to the public API, and mounting it there by accident
 // would hand the whole thing -- every app's credentials included -- to anyone
 // who could reach the web app with a token. Both roots must be absent here.
 test("the app API is not reachable over the public web", async ({ request }) => {
   for (const path of [
     "/v1/connections",
-    "/api/self/connections",
+    "/api/container/connections",
     "/v1/connections/anything/token",
-    "/api/self/connections/anything/token",
+    "/api/container/connections/anything/token",
     "/v1/self",
-    "/api/self/self",
+    "/api/container/self",
   ]) {
     const res = await request.get(path);
     expect(res.status(), `${path} must not exist on the public listener`).toBe(404);

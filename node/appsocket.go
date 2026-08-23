@@ -106,21 +106,21 @@ func ServeAppSocket(path string, st *store.Store, link *nodelink.ControlLink) (i
 // isOperatorPath reports whether a request is aimed at the operator API, which
 // this socket does not serve.
 //
-// /api/self is the exception and must stay one: it is the app-facing surface's
+// /api/container is the exception and must stay one: it is the app-facing surface's
 // alias for /v1, the app talking about ITSELF on exactly this socket. Without
 // the carve-out the guard swallows it, and only a REMOTE node shows that --
 // control's own socket never passes through here, so a unit test against it
 // looks perfectly healthy.
 func isOperatorPath(path string) bool {
-	if path == selfAliasPrefix || strings.HasPrefix(path, selfAliasPrefix+"/") {
+	if path == containerAliasPrefix || strings.HasPrefix(path, containerAliasPrefix+"/") {
 		return false
 	}
 	return path == "/api" || strings.HasPrefix(path, "/api/")
 }
 
-// selfAliasPrefix mirrors control's /api/self root; kept here as a constant so
+// containerAliasPrefix mirrors control's /api/container root; kept here as a constant so
 // the carve-out above is findable from both ends.
-const selfAliasPrefix = "/api/self"
+const containerAliasPrefix = "/api/container"
 
 // appSocketHandler resolves the calling app and relays its request.
 func appSocketHandler(st *store.Store, link *nodelink.ControlLink) http.Handler {

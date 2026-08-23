@@ -379,7 +379,7 @@ months.
 - **API path harmonization (/v1/self vs /api). DONE 2026-08-23**, and the reason
   it was parked turned out to be wrong: hostit-app is a read-only BIND MOUNT from
   the host (verified on a live container), so it upgrades the instant the deb
-  lands rather than late. The surface now answers at BOTH /v1 and /api/self.
+  lands rather than late. The surface now answers at BOTH /v1 and /api/container.
   Kept here rather than deleted for the trap it hid: the node's app socket
   rejects everything under /api/ as "operator commands, wrong socket", and only a
   REMOTE node shows it -- control's own socket never passes through that guard,
