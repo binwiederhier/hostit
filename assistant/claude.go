@@ -138,7 +138,9 @@ func (a *claudeAccumulator) add(ev Event) {
 		if len(a.toolIDs) > 0 {
 			id, a.toolIDs = a.toolIDs[0], a.toolIDs[1:]
 		}
-		a.pendingResults = append(a.pendingResults, ContentBlock{Type: blockToolResult, ToolUseID: id, Content: ev.Output, IsError: ev.IsError})
+		// Redacted here too: this backend's tools run inside the sandbox rather
+		// than through dispatch, so it does not pass the check in service.go.
+		a.pendingResults = append(a.pendingResults, ContentBlock{Type: blockToolResult, ToolUseID: id, Content: RedactCredentials(ev.Output), IsError: ev.IsError})
 	}
 }
 

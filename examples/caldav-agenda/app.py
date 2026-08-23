@@ -63,12 +63,12 @@ def parse_meta(meta):
 
 def caldav_connections():
     """Every CalDAV connection this app holds, newest grant last."""
-    return [c for c in hostit_get("/v1/connections") if c.get("provider") == "caldav"]
+    return [c for c in hostit_get("/api/self/connections") if c.get("provider") == "caldav"]
 
 
 def read_credential(slug):
     """A usable credential for one connection. Asked for per request on purpose."""
-    tok = hostit_get(f"/v1/connections/{slug}/token")
+    tok = hostit_get(f"/api/self/connections/{slug}/token")
     meta = parse_meta(tok.get("meta"))
     return meta.get("url"), meta.get("username"), tok["access_token"]
 

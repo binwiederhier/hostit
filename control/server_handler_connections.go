@@ -436,6 +436,31 @@ func writeConnectionError(w http.ResponseWriter, err error) {
 	}
 }
 
+// apiRotateKeyResponse says how much was re-sealed.
+type apiRotateKeyResponse struct {
+	Message     string `json:"message"`
+	Connections int    `json:"connections"`
+}
+
+// handleConnectionsRotateKey re-seals every stored credential under a fresh key.
+// It runs in the LIVE process on purpose: a separate one would rewrite the
+// database while this one carried on holding the old key in memory.
+func (s *Server) handleConnectionsRotateKey(w http.ResponseWriter, r *http.Request, c *caller) {
+	if s.connections == nil {
+		writeError(w, http.StatusNotImplemented, errors.New("connections are not available on this server"))
+		return
+	}
+	n, err := s.connections.RotateKey()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, &apiRotateKeyResponse{
+		Message:     "credential key rotated; the previous key is kept as connections.key.previous until you delete it",
+		Connections: n,
+	})
+}
+
 // ---- The app-facing half, over the app's own unix socket ------------------
 
 // apiSelfConnectionResponse is one connection as the APP sees it. No secret, no

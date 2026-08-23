@@ -14,7 +14,21 @@ func newControlApp(version string) *cli.App {
 		// version, so an empty one would make the stale-agent check match
 		// forever and agents would stop being restarted on upgrades.
 		Version:              version,
-		Commands:             []*cli.Command{cmdServe, cmdStatus, cmdApp, cmdNode, cmdProxy},
+		Commands:             []*cli.Command{cmdServe, cmdStatus, cmdApp, cmdNode, cmdProxy, cmdConnections},
 		EnableBashCompletion: true,
 	}
+}
+
+// cmdConnections is the operator side of credential storage. Everything else
+// about a connection belongs to its owner; only re-keying is the operator's.
+var cmdConnections = &cli.Command{
+	Name:  "connections",
+	Usage: "Operator actions on stored credentials",
+	Subcommands: []*cli.Command{
+		{
+			Name:   "rotate-key",
+			Usage:  "Re-seal every stored credential under a fresh key",
+			Action: execConnectionsRotateKey,
+		},
+	},
 }

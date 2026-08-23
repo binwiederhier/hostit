@@ -104,6 +104,7 @@ func (s *Server) newAPIHandler() http.Handler {
 	route(mux, "POST", "/apps/{name}/assistant/stop", s.requireActive(s.handleAssistantStop))
 
 	// Administration
+	route(mux, "POST", "/connections/rotate-key", s.requireAdmin(s.handleConnectionsRotateKey))
 	route(mux, "GET", "/users", s.requireAdmin(s.handleUsersList))
 	route(mux, "POST", "/users", s.requireAdmin(s.handleUsersInvite))
 	route(mux, "PATCH", "/users/{id}", s.requireAdmin(s.handleUsersUpdate))

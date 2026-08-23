@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { filterProviders, slugify, splitByKind, suggestSlug } from "../connections";
 import { api } from "../api";
 import { useDropdown } from "../hooks";
-import { DocsLink, ErrorBanner, Skeleton } from "../components";
+import { ConfirmDialog, DocsLink, ErrorBanner, Skeleton } from "../components";
 
 // Connections and credentials: the accounts and secrets an owner attaches once
 // and can then grant to their apps. TWO cards, not one, because they are two
@@ -17,6 +17,7 @@ const Connections = () => {
   const [error, setError] = useState("");
   const [adding, setAdding] = useState(null);
   const [renaming, setRenaming] = useState(null);
+  const [removing, setRemoving] = useState(null);
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
@@ -59,18 +60,20 @@ const Connections = () => {
   };
 
   const remove = async (c) => {
-    const warn = c.granted_apps > 0 ? ` ${c.granted_apps} app(s) lose access immediately.` : "";
-    if (!window.confirm(`Remove ${c.label || c.slug}?${warn}`)) return;
     setError("");
+    setBusy(true);
     try {
       await api.del(`/api/connections/${encodeURIComponent(c.slug)}`);
+      setRemoving(null);
       await load();
     } catch (err) {
       setError(err.message);
+    } finally {
+      setBusy(false);
     }
   };
 
-  const shared = { onRename: setRenaming, onReconnect: reconnect, onRemove: remove, onAdd: setAdding };
+  const shared = { onRename: setRenaming, onReconnect: reconnect, onRemove: setRemoving, onAdd: setAdding };
 
   return (
     <>
@@ -128,6 +131,33 @@ const Connections = () => {
       )}
       {renaming && (
         <RenameConnectionDialog conn={renaming} busy={busy} onClose={() => setRenaming(null)} onSave={rename} />
+      )}
+      {removing && (
+        <ConfirmDialog
+          title={`Remove ${removing.label || removing.slug}?`}
+          confirmLabel="Remove"
+          busy={busy}
+          onClose={() => setRemoving(null)}
+          onConfirm={() => remove(removing)}
+          body={
+            <>
+              The stored credential is deleted and cannot be recovered.{" "}
+              {removing.granted_apps > 0 ? (
+                <>
+                  <b>
+                    {removing.granted_apps} app{removing.granted_apps === 1 ? "" : "s"}
+                  </b>{" "}
+                  {removing.granted_apps === 1 ? "loses" : "lose"} access immediately.
+                </>
+              ) : (
+                <>No app is using it.</>
+              )}
+              {removing.kind === "oauth" && (
+                <> Reconnecting later means approving it at the provider again.</>
+              )}
+            </>
+          }
+        />
       )}
     </>
   );

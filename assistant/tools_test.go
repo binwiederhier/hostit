@@ -80,3 +80,46 @@ func TestToolDefsIncludeRefreshPreview(t *testing.T) {
 	}
 	assert.Contains(t, names, "refresh_preview")
 }
+
+// An access token that reaches a tool result is stored in the transcript --
+// which lives in the database, in the clear, for as long as the conversation
+// does. The system prompt tells the model not to print one, but an instruction
+// is not a control: the obvious way to check a connection works is to curl the
+// token endpoint and look at the output.
+//
+// So the shape the endpoint answers with is redacted on the way in. It does not
+// catch a token the model deliberately mangles, and is not meant to -- it
+// catches the accident, which is the realistic case.
+func TestRedactCredentials(t *testing.T) {
+	t.Parallel()
+	cases := []struct{ name, in, want string }{
+		{
+			"the token endpoint's answer",
+			`{"provider":"google-calendar","access_token":"ya29.a0AfB_SECRET","expires_at":"2026-01-01T00:00:00Z"}`,
+			`{"provider":"google-calendar","access_token":"[redacted]","expires_at":"2026-01-01T00:00:00Z"}`,
+		},
+		{
+			"pretty-printed, as curl | jq would give it",
+			"{\n  \"access_token\": \"xoxb-1234-abcd\",\n  \"provider\": \"slack\"\n}",
+			"{\n  \"access_token\": \"[redacted]\",\n  \"provider\": \"slack\"\n}",
+		},
+		{
+			"a refresh token, if one ever surfaced",
+			`{"refresh_token":"1//04abcdef","access_token":"tok"}`,
+			`{"refresh_token":"[redacted]","access_token":"[redacted]"}`,
+		},
+		{
+			"several in one blob",
+			`a {"access_token":"one"} b {"access_token":"two"} c`,
+			`a {"access_token":"[redacted]"} b {"access_token":"[redacted]"} c`,
+		},
+		{"ordinary output is untouched", "total 4\ndrwxr-xr-x public", "total 4\ndrwxr-xr-x public"},
+		{"the word alone is not enough to trigger it", "read the access_token docs", "read the access_token docs"},
+		{"empty", "", ""},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			assert.Equal(t, c.want, RedactCredentials(c.in))
+		})
+	}
+}

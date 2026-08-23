@@ -51,10 +51,47 @@ func LoadOrCreateKey(dataDir string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := os.WriteFile(path, []byte(base64.StdEncoding.EncodeToString(key)), 0o600); err != nil {
+	// Published ATOMICALLY: written in full to a temporary file, then hard-linked
+	// into place. Two processes starting at once would otherwise both generate a
+	// key and the second write would clobber the first, making every credential
+	// sealed with the first permanently unreadable.
+	//
+	// A link rather than a rename, because rename would overwrite the winner --
+	// which is the very thing being prevented. And a link only after the content
+	// is complete, so whoever loses the race never reads a half-written file.
+	if err := publishKey(path, key); err != nil {
+		if errors.Is(err, os.ErrExist) {
+			return LoadOrCreateKey(dataDir) // somebody else won; use theirs
+		}
 		return nil, err
 	}
 	return key, nil
+}
+
+// publishKey writes the key to a temporary file beside its destination and
+// links it into place, returning os.ErrExist if the destination already exists.
+func publishKey(path string, key []byte) error {
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".connections.key-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmp.Name())
+	if err := tmp.Chmod(0o600); err != nil {
+		tmp.Close()
+		return err
+	}
+	if _, err := tmp.WriteString(base64.StdEncoding.EncodeToString(key)); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Link(tmp.Name(), path)
 }
 
 // Binding is the additional authenticated data tying a sealed credential to the
@@ -128,6 +165,29 @@ func OpenLegacyTolerant(key []byte, sealed string, aad []byte) (plaintext string
 		return "", false, err
 	}
 	return out, false, nil
+}
+
+// ReplaceKey writes a new key over the existing one. Unlike LoadOrCreateKey it
+// deliberately overwrites, because rotation means replacing -- the caller has
+// already re-sealed everything under the new key and the old one is now the
+// thing being got rid of.
+//
+// The old key is kept beside it, once, as connections.key.previous: if the
+// process dies between re-sealing and this write, that file is the only way
+// back. Delete it once a rotation is known good.
+func ReplaceKey(dataDir string, old, key []byte) error {
+	path := filepath.Join(dataDir, keyFileName)
+	if len(old) > 0 {
+		prev := path + ".previous"
+		if err := os.WriteFile(prev, []byte(base64.StdEncoding.EncodeToString(old)), 0o600); err != nil {
+			return fmt.Errorf("cannot keep the previous key: %w", err)
+		}
+	}
+	tmp := path + ".new"
+	if err := os.WriteFile(tmp, []byte(base64.StdEncoding.EncodeToString(key)), 0o600); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
 }
 
 func newGCM(key []byte) (cipher.AEAD, error) {

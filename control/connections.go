@@ -291,6 +291,59 @@ func (m *connectionManager) cache(conn *store.Connection, tok connections.Token)
 	m.cached[conn.ID] = cachedToken{token: tok, mintedFrom: conn.Secret, expires: expires}
 }
 
+// RotateKey re-seals every stored credential under a fresh key and replaces the
+// key file. It exists so that a leaked key has an answer other than asking every
+// user to re-authorise every account.
+//
+// Everything is re-sealed BEFORE the key file is replaced, and only then is the
+// manager switched over, so a failure part-way leaves the old key still on disk
+// and still correct for whatever has not been rewritten yet. The re-seal keeps
+// each credential bound to its own row, so rotation does not quietly make
+// ciphertext portable again.
+//
+// Returns how many credentials were re-sealed.
+func (m *connectionManager) RotateKey() (int, error) {
+	fresh, err := connections.NewKey()
+	if err != nil {
+		return 0, err
+	}
+	all, err := m.store.AllConnections()
+	if err != nil {
+		return 0, err
+	}
+	type resealed struct {
+		id, secret string
+	}
+	pending := make([]resealed, 0, len(all))
+	for _, c := range all {
+		plain, err := m.open(c)
+		if err != nil {
+			// Refuse the whole rotation: half-rotated is the one state with no
+			// single key that opens everything.
+			return 0, fmt.Errorf("cannot open %q before rotating; nothing was changed: %w", c.Slug, err)
+		}
+		sealed, err := connections.Seal(fresh, plain, connections.Binding(c.UserID, c.ID))
+		if err != nil {
+			return 0, err
+		}
+		pending = append(pending, resealed{id: c.ID, secret: sealed})
+	}
+	for _, p := range pending {
+		if err := m.store.UpdateConnectionSecretOnly(p.id, p.secret); err != nil {
+			return 0, fmt.Errorf("rotation failed part-way at %s; the previous key is kept as connections.key.previous: %w", p.id, err)
+		}
+	}
+	if err := connections.ReplaceKey(m.conf.DataDir, m.key, fresh); err != nil {
+		return 0, err
+	}
+	m.key = fresh
+	m.cacheMu.Lock()
+	m.cached = map[string]cachedToken{}
+	m.cacheMu.Unlock()
+	slog.Info("Credential key rotated", "connections", len(pending))
+	return len(pending), nil
+}
+
 // expireCachedFor drops a connection's cached token. Reconnecting and
 // disconnecting both invalidate on their own (the credential changes, or the row
 // goes), so this exists for tests and for an explicit purge.

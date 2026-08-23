@@ -155,6 +155,46 @@ export const DocsLink = ({ guide, section, children }) => (
   </a>
 );
 
+// A confirm step that looks like the rest of the app. window.confirm cannot be
+// styled, cannot show what is at stake in more than one line, and on some
+// browsers is suppressed entirely -- which turns "are you sure" into "done".
+//
+// Escape and a click outside both cancel: the safe answer is the easy one.
+export const ConfirmDialog = ({ title, body, confirmLabel = "Remove", danger = true, busy, onConfirm, onClose }) => {
+  useEffect(() => {
+    const onKey = (e) => e.key === "Escape" && onClose();
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true" onMouseDown={onClose}>
+      <div className="card modal modal-sheet modal-confirm" onMouseDown={(e) => e.stopPropagation()}>
+        <button type="button" className="modal-x" onClick={onClose} title="Close" aria-label="Close">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+            <path d="M6 6l12 12M18 6 6 18" />
+          </svg>
+        </button>
+        <h2>{title}</h2>
+        {body && <div className="hint confirm-body">{body}</div>}
+        <div className="btn-row">
+          <button type="button" className="btn" onClick={onClose} disabled={busy} autoFocus>
+            Cancel
+          </button>
+          <button
+            type="button"
+            className={"btn " + (danger ? "btn-danger" : "btn-primary")}
+            onClick={onConfirm}
+            disabled={busy}
+          >
+            {busy ? "Working..." : confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 export const Loading = ({ label = "Loading..." }) => (
   <p className="loading" aria-live="polite">
     {label}
@@ -189,16 +229,12 @@ export const Skeleton = ({ rows = 3, card = false, label = "Loading..." }) => (
 export const Snippet = ({ text }) => (
   <div className="term">
     <pre>
+      {/* No "$" prompt: these blocks are as often a config file or a URL as
+          they are a shell command, and a prompt in front of a YAML key is
+          simply wrong. Lines starting with "#" still read as comments. */}
       {text.split("\n").map((line, i) => (
         <span key={i} className="term-line">
-          {line.startsWith("#") ? (
-            <span className="term-comment">{line}</span>
-          ) : (
-            <>
-              <span className="term-prompt">$ </span>
-              {line}
-            </>
-          )}
+          {line.startsWith("#") ? <span className="term-comment">{line}</span> : line}
         </span>
       ))}
     </pre>

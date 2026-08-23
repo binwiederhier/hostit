@@ -17,7 +17,7 @@ Two words, deliberately, because they are two different things to a person:
   stores it and hands it back unchanged.
 
 Both are the same row and the same API. An app cannot tell which it was given,
-which is the point: `GET /v1/connections/{slug}/token` answers the same shape
+which is the point: `GET /api/self/connections/{slug}/token` answers the same shape
 either way.
 
 ## Why it exists
@@ -60,9 +60,9 @@ personal one -- so a grant names a connection, not a provider, and an app asks
 for it by the name its owner gave it:
 
 ```
-GET /v1/connections                    -> [{slug: "work-cal", provider: "google-calendar"}, ...]
-GET /v1/connections/work-cal/token     -> {access_token: "...", expires_at: "..."}
-GET /v1/connections/personal-cal/token -> a different account entirely
+GET /api/self/connections                    -> [{slug: "work-cal", provider: "google-calendar"}, ...]
+GET /api/self/connections/work-cal/token     -> {access_token: "...", expires_at: "..."}
+GET /api/self/connections/personal-cal/token -> a different account entirely
 ```
 
 Slugs are lowercase, 3-32 characters of letters, digits and dashes, and unique
@@ -167,7 +167,7 @@ sequenceDiagram
     H-->>O: 302 /profile
 
     Note over O,A: later, the owner grants the app the connection
-    A->>H: GET /v1/connections/work-cal/token (unix socket, SO_PEERCRED)
+    A->>H: GET /api/self/connections/work-cal/token (unix socket, SO_PEERCRED)
     H->>P: refresh
     P-->>H: access token
     H-->>A: {access_token, expires_at}

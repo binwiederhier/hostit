@@ -1,6 +1,8 @@
 package connections
 
 import (
+	"encoding/base64"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -106,4 +108,34 @@ func TestCredentialsSealedBeforeBindingStillOpen(t *testing.T) {
 	// Tolerance must not extend to opening a BOUND credential in the wrong row
 	_, _, err = OpenLegacyTolerant(key, fresh, Binding("u2", "cn_2"))
 	assert.Error(t, err)
+}
+
+// Two processes starting at once must not both generate a key, because the
+// second write would clobber the first -- and every credential sealed with the
+// first becomes permanently unreadable. Low odds, total loss, five lines to
+// prevent: the file is created exclusively, and a loser re-reads the winner's.
+func TestKeyCreationIsExclusive(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+
+	const racers = 8
+	keys := make(chan string, racers)
+	var wg sync.WaitGroup
+	for i := 0; i < racers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			k, err := LoadOrCreateKey(dir)
+			assert.NoError(t, err)
+			keys <- base64.StdEncoding.EncodeToString(k)
+		}()
+	}
+	wg.Wait()
+	close(keys)
+
+	seen := map[string]bool{}
+	for k := range keys {
+		seen[k] = true
+	}
+	assert.Len(t, seen, 1, "every racer must end up with the SAME key")
 }

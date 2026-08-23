@@ -555,7 +555,7 @@ const ConnectionsPage = () => (
     <h3>What an app does with it</h3>
     <p>An app reads what it was granted over its own socket, and asks for a credential per use:</p>
     <Snippet
-      text={`curl --unix-socket /run/hostit/hostit.sock http://x/v1/connections\ncurl --unix-socket /run/hostit/hostit.sock http://x/v1/connections/work-calendar/token`}
+      text={`curl --unix-socket /run/hostit/hostit.sock http://x/api/self/connections\ncurl --unix-socket /run/hostit/hostit.sock http://x/api/self/connections/work-calendar/token`}
     />
     <p>
       The second returns <span className="mono">{`{"access_token": "...", "expires_at": "..."}`}</span>{" "}
@@ -786,25 +786,32 @@ const ApiPage = () => (
         The endpoints above are the account API, driven with a token from anywhere. An app also has
         a <b>second, smaller API of its own</b>, served over a unix socket inside its container. No
         token is involved: hostit knows which app is calling from the socket&rsquo;s peer
-        credentials, so an app can only ever reach its own things.
+        credentials, so an app can only ever reach its own things. It is reachable <i>only</i> on
+        that socket -- never from the web, with or without a token.
+      </p>
+      <p className="hint">
+        The same endpoints also answer under <span className="mono">/v1/...</span>, which is what
+        apps written before this and the in-container <span className="mono">hostit</span> CLI use.
+        Both work and will keep working; <span className="mono">/api/self</span> is simply the one
+        worth writing down.
       </p>
       <table className="docs-table">
         <thead>
           <tr><th>Method</th><th>Path</th><th>What</th></tr>
         </thead>
         <tbody>
-          <Endpoint method="GET" path="/v1/connections" what="The connections and credentials this app was granted, each with the reference to ask for" />
-          <Endpoint method="GET" path="/v1/connections/{slug}/token" what={`A usable credential: {"provider":"...","access_token":"...","expires_at":"..."} -- expires_at is absent when it does not expire`} />
-          <Endpoint method="GET" path="/v1/self" what="This app: its URL, limits, domains and state" />
-          <Endpoint method="POST" path="/v1/self/deploy" what="Deploy the app, as the web app's button does" />
-          <Endpoint method="POST" path="/v1/self/start|stop|restart" what="The app process" />
-          <Endpoint method="POST" path="/v1/self/poweron|poweroff|reboot" what="The container" />
-          <Endpoint method="GET" path="/v1/self/status" what="Whether it is running" />
-          <Endpoint method="GET" path="/v1/self/logs" what="Recent output" />
+          <Endpoint method="GET" path="/api/self/connections" what="The connections and credentials this app was granted, each with the reference to ask for" />
+          <Endpoint method="GET" path="/api/self/connections/{slug}/token" what={`A usable credential: {"provider":"...","access_token":"...","expires_at":"..."} -- expires_at is absent when it does not expire`} />
+          <Endpoint method="GET" path="/api/self" what="This app: its URL, limits, domains and state" />
+          <Endpoint method="POST" path="/api/self/deploy" what="Deploy the app, as the web app's button does" />
+          <Endpoint method="POST" path="/api/self/start|stop|restart" what="The app process" />
+          <Endpoint method="POST" path="/api/self/poweron|poweroff|reboot" what="The container" />
+          <Endpoint method="GET" path="/api/self/status" what="Whether it is running" />
+          <Endpoint method="GET" path="/api/self/logs" what="Recent output" />
         </tbody>
       </table>
       <Snippet
-        text={`# Inside the container -- no token, no host, just the socket\ncurl --unix-socket /run/hostit/hostit.sock http://x/v1/connections\ncurl --unix-socket /run/hostit/hostit.sock http://x/v1/connections/work-calendar/token`}
+        text={`# Inside the container -- no token, no host, just the socket\ncurl --unix-socket /run/hostit/hostit.sock http://x/api/self/connections\ncurl --unix-socket /run/hostit/hostit.sock http://x/api/self/connections/work-calendar/token`}
       />
       <p className="hint">
         Ask for a credential when you need it rather than saving it: an account token expires within

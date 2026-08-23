@@ -3,6 +3,7 @@ package assistant
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 )
 
@@ -245,4 +246,30 @@ func orError(out string, err error) (string, bool) {
 // schema is a tiny helper to keep the tool definitions readable
 func schema(s string) json.RawMessage {
 	return json.RawMessage(s)
+}
+
+// credentialField matches the JSON the connections token endpoint answers with,
+// so its value can be taken out before a tool result is stored. Deliberately
+// narrow: it looks for the exact shape hostit itself hands back, not for
+// anything that resembles a secret, because guessing at secret-shaped strings
+// would redact half of every build log.
+var credentialField = regexp.MustCompile(`("(?:access_token|refresh_token)"\s*:\s*")[^"]*(")`)
+
+// RedactCredentials removes credential values from text on its way into the
+// transcript.
+//
+// The transcript is stored, in the clear, for as long as the conversation is --
+// so a token printed once is a token kept. The system prompt tells the model to
+// read a credential at the moment it is used and never to print one, but an
+// instruction is not a control: the obvious way to check a connection works is
+// to curl the token endpoint and look at what came back.
+//
+// This is a backstop for that accident, not a guarantee. A model that base64s a
+// token, or an app that logs one itself, still gets through -- the real defence
+// remains that an access token expires within the hour.
+func RedactCredentials(s string) string {
+	if s == "" {
+		return s
+	}
+	return credentialField.ReplaceAllString(s, "${1}[redacted]${2}")
 }

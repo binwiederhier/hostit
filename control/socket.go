@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net"
 	"net/http"
+	"strings"
 
 	"golang.org/x/sys/unix"
 
@@ -35,30 +36,47 @@ func (s *Server) newSocketHandler() http.Handler {
 // resolver, so the same handlers serve control's own socket (peercred resolves
 // the app) and the per-node relay (the authenticated node names the app). The
 // routes exist once; only "who is asking" differs.
+// selfPrefixes are the two roots the app-facing surface answers at.
+//
+// /api/self is the one to write down: it reads the way the rest of the API
+// does, where /v1 next to /api was always an odd seam. /v1 keeps answering and
+// always will -- it is what the in-container CLI calls and what every app
+// written so far uses, and there is no version of this worth breaking an app
+// over.
+var selfPrefixes = []string{"/v1", "/api/self"}
+
 func (s *Server) selfMux(wrap func(func(http.ResponseWriter, *http.Request, *store.App)) http.HandlerFunc) *http.ServeMux {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /v1/self", wrap(s.handleSelf))
+	// Registered under both roots. The paths below keep saying /v1 so the
+	// diff against what apps call stays readable; handle() adds the other.
+	handle := func(pattern string, h http.HandlerFunc) {
+		method, path, _ := strings.Cut(pattern, " ")
+		for _, prefix := range selfPrefixes {
+			mux.HandleFunc(method+" "+prefix+strings.TrimPrefix(path, "/v1"), h)
+		}
+	}
+	handle("GET /v1/self", wrap(s.handleSelf))
 	// The connections and credentials this app was granted, and a usable token
 	// for one, addressed by the slug its owner gave it. This is what lets an app
 	// read its owner's calendar without ever holding a refresh token or an
 	// environment variable nothing can rotate.
-	mux.HandleFunc("GET /v1/connections", wrap(s.handleSelfConnectionsList))
-	mux.HandleFunc("GET /v1/connections/{slug}/token", wrap(s.handleSelfConnectionToken))
-	mux.HandleFunc("POST /v1/self/ensure", wrap(s.handleSelfEnsure)) // SSH login provisions the workspace
+	handle("GET /v1/connections", wrap(s.handleSelfConnectionsList))
+	handle("GET /v1/connections/{slug}/token", wrap(s.handleSelfConnectionToken))
+	handle("POST /v1/self/ensure", wrap(s.handleSelfEnsure)) // SSH login provisions the workspace
 	// The same lifecycle verbs the web app and admin CLI use, split into the app
 	// process (start/stop/restart) and its container (poweron/poweroff/reboot).
-	mux.HandleFunc("POST /v1/self/deploy", wrap(s.handleSelfDeploy))
-	mux.HandleFunc("POST /v1/self/start", wrap(s.handleSelfStart))
-	mux.HandleFunc("POST /v1/self/stop", wrap(s.handleSelfStop))
-	mux.HandleFunc("POST /v1/self/restart", wrap(s.handleSelfRestart))
-	mux.HandleFunc("POST /v1/self/poweron", wrap(s.handleSelfPowerOn))
-	mux.HandleFunc("POST /v1/self/poweroff", wrap(s.handleSelfPowerOff))
-	mux.HandleFunc("POST /v1/self/reboot", wrap(s.handleSelfReboot))
-	mux.HandleFunc("GET /v1/self/status", wrap(s.handleSelfStatus))
-	mux.HandleFunc("GET /v1/self/logs", wrap(s.handleSelfLogs))
+	handle("POST /v1/self/deploy", wrap(s.handleSelfDeploy))
+	handle("POST /v1/self/start", wrap(s.handleSelfStart))
+	handle("POST /v1/self/stop", wrap(s.handleSelfStop))
+	handle("POST /v1/self/restart", wrap(s.handleSelfRestart))
+	handle("POST /v1/self/poweron", wrap(s.handleSelfPowerOn))
+	handle("POST /v1/self/poweroff", wrap(s.handleSelfPowerOff))
+	handle("POST /v1/self/reboot", wrap(s.handleSelfReboot))
+	handle("GET /v1/self/status", wrap(s.handleSelfStatus))
+	handle("GET /v1/self/logs", wrap(s.handleSelfLogs))
 	// One app-scoped tool call (the sandboxed Claude Max backend reaches its tools
 	// through here, over the same peercred-authenticated socket the app CLI uses).
-	mux.HandleFunc("POST /v1/self/tool/{name}", wrap(s.handleSelfTool))
+	handle("POST /v1/self/tool/{name}", wrap(s.handleSelfTool))
 	return mux
 }
 

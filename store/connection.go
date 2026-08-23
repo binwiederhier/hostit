@@ -38,12 +38,14 @@ const (
 		INSERT INTO connection (` + connectionCols + `)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
-	selectConnectionQuery       = `SELECT ` + connectionCols + ` FROM connection WHERE id = ?`
-	selectConnectionBySlugQuery = `SELECT ` + connectionCols + ` FROM connection WHERE user_id = ? AND slug = ?`
-	selectConnectionsQuery      = `SELECT ` + connectionCols + ` FROM connection WHERE user_id = ? ORDER BY provider, slug`
-	updateConnectionSecretQuery = `UPDATE connection SET secret = ?, scopes = ?, meta = ? WHERE id = ?`
-	renameConnectionQuery       = `UPDATE connection SET slug = ?, label = ? WHERE id = ?`
-	deleteConnectionQuery       = `DELETE FROM connection WHERE id = ?`
+	selectConnectionQuery           = `SELECT ` + connectionCols + ` FROM connection WHERE id = ?`
+	selectConnectionBySlugQuery     = `SELECT ` + connectionCols + ` FROM connection WHERE user_id = ? AND slug = ?`
+	selectConnectionsQuery          = `SELECT ` + connectionCols + ` FROM connection WHERE user_id = ? ORDER BY provider, slug`
+	updateConnectionSecretQuery     = `UPDATE connection SET secret = ?, scopes = ?, meta = ? WHERE id = ?`
+	renameConnectionQuery           = `UPDATE connection SET slug = ?, label = ? WHERE id = ?`
+	deleteConnectionQuery           = `DELETE FROM connection WHERE id = ?`
+	selectAllConnectionsQuery       = `SELECT ` + connectionCols + ` FROM connection ORDER BY user_id, slug`
+	updateConnectionSecretOnlyQuery = `UPDATE connection SET secret = ? WHERE id = ?`
 
 	insertGrantQuery          = `INSERT OR IGNORE INTO app_connection (app_id, connection_id, created_at) VALUES (?, ?, ?)`
 	deleteGrantQuery          = `DELETE FROM app_connection WHERE app_id = ? AND connection_id = ?`
@@ -113,6 +115,22 @@ func (s *Store) ConnectionBySlug(userID, slug string) (*Connection, error) {
 // Connections lists everything an owner has attached.
 func (s *Store) Connections(userID string) ([]*Connection, error) {
 	return s.queryConnections(selectConnectionsQuery, userID)
+}
+
+// AllConnections lists every connection on the instance, for key rotation. The
+// only caller that legitimately reads across owners.
+func (s *Store) AllConnections() ([]*Connection, error) {
+	return s.queryConnections(selectAllConnectionsQuery)
+}
+
+// UpdateConnectionSecretOnly replaces the ciphertext and nothing else, which is
+// what rotation needs: scopes and meta are not re-derived, only re-keyed.
+func (s *Store) UpdateConnectionSecretOnly(id, secret string) error {
+	res, err := s.db.Exec(updateConnectionSecretOnlyQuery, secret, id)
+	if err != nil {
+		return err
+	}
+	return checkAffected(res, ErrConnectionNotFound)
 }
 
 // AppConnections lists the connections an app has been granted.

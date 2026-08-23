@@ -309,9 +309,11 @@ func init() {
 		NameHint:    "Fastmail",
 		Fields: []Field{
 			{Name: "token", Label: "API token", Placeholder: "Settings -> Privacy & Security -> API tokens", Secret: true},
-			{Name: "session", Label: "Session URL", Placeholder: "https://api.fastmail.com/jmap/session", Optional: true},
+			// JMAP clients begin by fetching the session document, which tells
+			// them every other URL; leaving this blank means the standard one.
+			{Name: "session", Label: "JMAP session URL", Placeholder: "https://api.fastmail.com/jmap/session (leave blank for this)", Optional: true},
 		},
-		Help: "Mail, calendars and contacts over JMAP with one token. Create it in Settings -> Privacy & Security -> Manage API tokens, scoped to what the app needs. Start at https://api.fastmail.com/jmap/session.",
+		Help: "Mail, calendars and contacts, all from one token. Create it in Fastmail under Settings -> Privacy & Security -> API tokens, ticking only what the app needs.",
 	})
 
 	// A private key an app uses to reach another machine or a git remote.

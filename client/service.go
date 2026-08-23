@@ -224,6 +224,18 @@ func (c *Client) DeleteDomain(name, domain string) error {
 	return c.request("DELETE", path, nil, nil)
 }
 
+// RotateConnectionKey re-seals every stored credential under a fresh key, in
+// the running server. Admin only.
+func (c *Client) RotateConnectionKey() (int, error) {
+	var resp struct {
+		Connections int `json:"connections"`
+	}
+	if err := c.request("POST", "/api/connections/rotate-key", nil, &resp); err != nil {
+		return 0, err
+	}
+	return resp.Connections, nil
+}
+
 // Logs returns the app's recent output
 func (c *Client) Logs(name string, lines int) (string, error) {
 	var resp outputResponse

@@ -684,3 +684,42 @@ func TestSystemPromptTellsTheModelNotToPrintTokens(t *testing.T) {
 	assert.Contains(t, lower, "never print")
 	assert.Contains(t, lower, "expire")
 }
+
+// The redaction has to be WIRED IN, not merely available: a credential in a tool
+// result is stored for as long as the conversation lives.
+func TestATokenInToolOutputNeverReachesTheTranscript(t *testing.T) {
+	t.Parallel()
+	leak := `{"provider":"google-calendar","access_token":"ya29.LEAKED","expires_at":"2026-01-01T00:00:00Z"}`
+	ops := newFakeOps()
+	ops.execFn = func(string) ExecResult { return ExecResult{Output: leak} }
+	fc := &fakeCompleter{replies: []response{
+		{StopReason: "tool_use", Content: []ContentBlock{toolUse("tu_1", "run_command", `{"command":"curl --unix-socket /run/hostit/hostit.sock http://x/v1/connections/cal/token"}`)}},
+		{StopReason: "end_turn", Content: []ContentBlock{{Type: "text", Text: "The connection works."}}},
+	}}
+	store := NewMemoryStore()
+	m := NewManager(fc, ops, store, Credentials{AnthropicAPIKey: "k"})
+
+	events := runTurn(t, m, "blog", "check the calendar connection")
+
+	// Not in what the browser is shown
+	for _, e := range events {
+		assert.NotContains(t, e.Output, "ya29.LEAKED", "a credential must not be published to the UI")
+	}
+	// Nor in what is sent back to the model, nor in what is stored
+	var whole strings.Builder
+	add := func(msgs []Message) {
+		for _, msg := range msgs {
+			for _, b := range msg.Content {
+				fmt.Fprintf(&whole, "%v %s ", b.Content, b.Text)
+			}
+		}
+	}
+	for _, call := range fc.calls {
+		add(call.Messages)
+	}
+	saved, err := store.Load("blog")
+	require.NoError(t, err)
+	add(saved)
+	assert.NotContains(t, whole.String(), "ya29.LEAKED", "a credential must not be kept in the transcript")
+	assert.Contains(t, whole.String(), "[redacted]", "and the shape of it is visibly taken out")
+}

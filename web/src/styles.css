@@ -6067,3 +6067,13 @@ input[type="number"]::-webkit-inner-spin-button {
     animation: none;
   }
 }
+
+/* A confirm step is one sentence and two buttons; it should not open at the
+   width of a form. */
+.modal-confirm {
+  max-width: 30rem;
+}
+
+.confirm-body {
+  margin-bottom: 4px;
+}

@@ -199,3 +199,50 @@ func TestAStolenCiphertextDoesNotOpenInAnotherRow(t *testing.T) {
 	require.Error(t, err, "a credential sealed for another row must not open here")
 	assert.NotContains(t, err.Error(), "VICTIM-SECRET")
 }
+
+// If the credential key leaks there has to be a way out that is not "ask every
+// user to re-authorise every account". Rotation re-seals every stored
+// credential under a fresh key, in one pass, leaving slugs and grants alone.
+func TestRotateTheCredentialKey(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	u := newActiveTestUser(t, s, "owner@example.com")
+	other := newActiveTestUser(t, s, "other@example.com")
+	require.NoError(t, s.apps.Store().AddApp(&store.App{ID: "a1", Name: "dash", Port: 10000, Host: store.HostLocal, OwnerID: u.ID}))
+
+	mine := mustConnect(t, s, u.ID, "mail", "generic", map[string]string{"secret": "MINE"})
+	theirs := mustConnect(t, s, other.ID, "mail", "generic", map[string]string{"secret": "THEIRS"})
+	require.NoError(t, s.apps.Store().GrantConnection("a1", mine.ID))
+	before := mine.Secret
+
+	old := s.connections.key
+	n, err := s.connections.RotateKey()
+	require.NoError(t, err)
+	assert.Equal(t, 2, n, "every credential was re-sealed")
+	assert.NotEqual(t, old, s.connections.key, "under a new key")
+
+	// The old key no longer opens anything
+	row, err := s.apps.Store().Connection(mine.ID)
+	require.NoError(t, err)
+	assert.NotEqual(t, before, row.Secret, "the stored ciphertext changed")
+	_, err = connections.Open(old, row.Secret, connections.Binding(row.UserID, row.ID))
+	assert.Error(t, err, "the leaked key is now useless")
+
+	// And everything still works, for both owners, with grants intact
+	a, err := s.apps.App("dash")
+	require.NoError(t, err)
+	tok, err := s.connections.tokenFor(context.Background(), a, "mail")
+	require.NoError(t, err)
+	assert.Equal(t, "MINE", tok.AccessToken)
+
+	got, err := connections.Open(s.connections.key, mustRow(t, s, theirs.ID).Secret, connections.Binding(other.ID, theirs.ID))
+	require.NoError(t, err)
+	assert.Equal(t, "THEIRS", got, "the other owner's is re-sealed too, still bound to its own row")
+}
+
+func mustRow(t *testing.T, s *Server, id string) *store.Connection {
+	t.Helper()
+	c, err := s.apps.Store().Connection(id)
+	require.NoError(t, err)
+	return c
+}

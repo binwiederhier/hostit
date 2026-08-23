@@ -6,7 +6,7 @@ import {
   formatDate,
   Loading,
   StatusDot,
-  UsagePair, pairMB, Skeleton } from "../components";
+  UsagePair, pairMB, Skeleton, ConfirmDialog } from "../components";
 
 // Empty input means "use the global default"; the API expects null for that.
 const numOrNull = (v) => (v === "" ? null : Number(v));
@@ -520,6 +520,7 @@ const InviteUser = ({ onAdded, setError }) => {
 // in, so a whole company can onboard itself.
 const AllowedDomains = ({ setError }) => {
   const [domains, setDomains] = useState(null);
+  const [removing, setRemoving] = useState(null);
   const [domain, setDomain] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -554,14 +555,8 @@ const AllowedDomains = ({ setError }) => {
   };
 
   const remove = async (d) => {
-    if (
-      !window.confirm(
-        `Stop auto-approving @${d.domain}? Users already approved keep their accounts.`,
-      )
-    ) {
-      return;
-    }
     setError("");
+    setRemoving(null);
     try {
       await api.del(`/api/domains/${encodeURIComponent(d.domain)}`);
       await load();
@@ -582,6 +577,15 @@ const AllowedDomains = ({ setError }) => {
         in.
       </p>
       {domains === null && <Skeleton rows={2} label="Loading domains..." />}
+      {removing && (
+        <ConfirmDialog
+          title={`Stop auto-approving @${removing.domain}?`}
+          confirmLabel="Stop auto-approving"
+          onClose={() => setRemoving(null)}
+          onConfirm={() => remove(removing)}
+          body="New sign-ups from this domain will wait for approval again. Users already approved keep their accounts."
+        />
+      )}
       {domains !== null && domains.length === 0 && (
         <p className="empty">No domains yet: every sign-up needs approval.</p>
       )}
@@ -598,7 +602,7 @@ const AllowedDomains = ({ setError }) => {
               <button
                 type="button"
                 className="btn btn-small btn-danger"
-                onClick={() => remove(d)}
+                onClick={() => setRemoving(d)}
               >
                 Remove
               </button>

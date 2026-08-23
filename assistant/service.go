@@ -396,6 +396,10 @@ func (m *Manager) runAPILoop(ctx context.Context, s *session, app string, option
 		results := make([]ContentBlock, 0, len(toolUses))
 		for _, tu := range toolUses {
 			out, isErr := m.dispatch(app, tu.Name, tu.Input)
+			// Taken out before it is published OR stored: the transcript keeps
+			// this for as long as the conversation lives, and a token printed
+			// once is a token kept.
+			out = RedactCredentials(out)
 			s.publish(Event{Type: evtToolResult, Tool: tu.Name, Output: out, IsError: isErr})
 			results = append(results, ContentBlock{
 				Type:      blockToolResult,

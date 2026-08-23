@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
 import { useDropdown } from "../hooks";
-import { CopyButton, DocsLink, ErrorBanner, formatDate, Skeleton } from "../components";
+import { ConfirmDialog, CopyButton, DocsLink, ErrorBanner, formatDate, Skeleton } from "../components";
 
 // Shortens an authorized_keys line to "ssh-ed25519 ...<tail> comment".
 const keyPreview = (key) => {
@@ -192,6 +192,8 @@ const SshKeys = () => {
   const [error, setError] = useState("");
   const [adding, setAdding] = useState(false);
   const [renaming, setRenaming] = useState(null);
+  const [removing, setRemoving] = useState(null);
+  const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -206,10 +208,8 @@ const SshKeys = () => {
   }, [load]);
 
   const remove = async (k) => {
-    if (!window.confirm(`Delete SSH key "${k.label || keyPreview(k.key)}"? You will no longer be able to log in with it.`)) {
-      return;
-    }
     setError("");
+    setBusy(true);
     try {
       await api.del(`/api/account/keys/${k.id}`);
       await load();
@@ -253,7 +253,7 @@ const SshKeys = () => {
                   <td className="mono cell-muted">{keyPreview(k.key)}</td>
                   <td className="cell-muted">{formatDate(k.created_at, "unknown")}</td>
                   <td className="cell-actions">
-                    <KeyMenu k={k} onRename={() => setRenaming(k)} onRemove={() => remove(k)} />
+                    <KeyMenu k={k} onRename={() => setRenaming(k)} onRemove={() => setRemoving(k)} />
                   </td>
                 </tr>
               ))}
@@ -262,6 +262,19 @@ const SshKeys = () => {
         </div>
       )}
       {adding && <AddKeyDialog onClose={() => setAdding(false)} onAdded={load} />}
+      {removing && (
+        <ConfirmDialog
+          title={`Delete SSH key "${removing.label || keyPreview(removing.key)}"?`}
+          confirmLabel="Delete key"
+          busy={busy}
+          onClose={() => setRemoving(null)}
+          onConfirm={async () => {
+            await remove(removing);
+            setRemoving(null);
+          }}
+          body="You will no longer be able to log in to any of your apps with it. Adding it back later works, but the key has to be pasted again."
+        />
+      )}
       {renaming && (
         <RenameKeyDialog
           k={renaming}
@@ -339,6 +352,7 @@ const Tokens = () => {
   const [error, setError] = useState("");
   const [creating, setCreating] = useState(false);
   const [newToken, setNewToken] = useState(null);
+  const [revoking, setRevoking] = useState(null);
 
   const load = useCallback(async () => {
     try {
@@ -353,10 +367,8 @@ const Tokens = () => {
   }, [load]);
 
   const revoke = async (t) => {
-    if (!window.confirm(`Revoke token "${t.label || t.prefix}"? Anything still using it will stop working.`)) {
-      return;
-    }
     setError("");
+    setRevoking(null);
     try {
       await api.del(`/api/account/tokens/${t.id}`);
       await load();
@@ -416,7 +428,7 @@ const Tokens = () => {
                   <td className="cell-muted">{formatDate(t.created_at, "never")}</td>
                   <td className="cell-muted">{formatDate(t.last_used, "never")}</td>
                   <td className="cell-actions">
-                    <button type="button" className="btn btn-small btn-danger" onClick={() => revoke(t)}>
+                    <button type="button" className="btn btn-small btn-danger" onClick={() => setRevoking(t)}>
                       Revoke
                     </button>
                   </td>
@@ -433,6 +445,15 @@ const Tokens = () => {
             setNewToken(created);
             await load();
           }}
+        />
+      )}
+      {revoking && (
+        <ConfirmDialog
+          title={`Revoke token "${revoking.label || revoking.prefix}"?`}
+          confirmLabel="Revoke token"
+          onClose={() => setRevoking(null)}
+          onConfirm={() => revoke(revoking)}
+          body="Anything still using it stops working immediately -- a script, a CLI, an agent you pasted it into. It cannot be recovered; create a new one instead."
         />
       )}
     </div>
