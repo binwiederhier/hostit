@@ -74,10 +74,14 @@ type Field struct {
 // its credential with no expiry; an OAuth one returns a fresh access token.
 // The shape is the same so an app does not care which kind it was granted.
 type Token struct {
-	Provider    string    `json:"provider"`
-	AccessToken string    `json:"access_token"`
-	ExpiresAt   time.Time `json:"expires_at,omitempty"`
-	Meta        string    `json:"meta,omitempty"`
+	Provider    string `json:"provider"`
+	AccessToken string `json:"access_token"`
+	// ExpiresAt is nil when the credential does not expire (a pasted secret, a
+	// Slack bot token). A POINTER because encoding/json ignores omitempty on a
+	// time.Time: a zero value would serialise as 0001-01-01, and an app doing
+	// the obvious thing would treat every static credential as long dead.
+	ExpiresAt *time.Time `json:"expires_at,omitempty"`
+	Meta      string     `json:"meta,omitempty"`
 }
 
 // registry holds the providers hostit knows how to connect.

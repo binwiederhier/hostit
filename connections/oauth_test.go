@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -41,7 +42,7 @@ func TestExchangeAndRefreshForARefreshingProvider(t *testing.T) {
 	tok, err := p.Refresh(context.Background(), srv.Client(), "cid", "sec", "rt-1")
 	require.NoError(t, err)
 	assert.Equal(t, "at-1", tok.AccessToken)
-	assert.False(t, tok.ExpiresAt.IsZero(), "and it expires")
+	assert.NotNil(t, tok.ExpiresAt, "and it expires")
 }
 
 // A refreshing provider that returns no refresh token is refused at connect
@@ -74,7 +75,7 @@ func TestALongLivedProviderStoresTheAccessTokenItself(t *testing.T) {
 	tok, err := p.Refresh(context.Background(), srv.Client(), "cid", "sec", "xoxb-abc")
 	require.NoError(t, err)
 	assert.Equal(t, "xoxb-abc", tok.AccessToken)
-	assert.True(t, tok.ExpiresAt.IsZero(), "nothing to expire")
+	assert.Nil(t, tok.ExpiresAt, "nothing to expire, so nothing is promised")
 }
 
 // GitHub answers form-encoded unless asked otherwise, which would otherwise
@@ -101,4 +102,21 @@ func TestAProviderRefusalSaysWhy(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid_grant")
 	assert.Contains(t, err.Error(), "revoked")
+}
+
+// A credential that does not expire must not claim to have expired in year 1.
+// encoding/json ignores omitempty on a time.Time, so the zero value would
+// serialise as 0001-01-01 and an app doing the obvious thing would treat every
+// static credential as long dead.
+func TestATokenWithNoExpiryOmitsTheField(t *testing.T) {
+	t.Parallel()
+	b, err := json.Marshal(Token{Provider: "imap", AccessToken: "pw"})
+	require.NoError(t, err)
+	assert.NotContains(t, string(b), "expires_at")
+	assert.NotContains(t, string(b), "0001-01-01")
+
+	at := time.Now().Add(time.Hour)
+	b, err = json.Marshal(Token{Provider: "google-calendar", AccessToken: "at", ExpiresAt: &at})
+	require.NoError(t, err)
+	assert.Contains(t, string(b), "expires_at")
 }

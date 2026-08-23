@@ -94,7 +94,7 @@ func (p Provider) Refresh(ctx context.Context, client *http.Client, clientID, cl
 	if res.ExpiresIn == 0 {
 		expiry = time.Now().Add(time.Hour)
 	}
-	return Token{Provider: p.Name, AccessToken: res.AccessToken, ExpiresAt: expiry}, nil
+	return Token{Provider: p.Name, AccessToken: res.AccessToken, ExpiresAt: &expiry}, nil
 }
 
 func (p Provider) postToken(ctx context.Context, client *http.Client, form url.Values) (tokenResponse, error) {

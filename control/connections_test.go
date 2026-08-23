@@ -156,7 +156,7 @@ func TestALongLivedConnectionReturnsItsStoredToken(t *testing.T) {
 	got, err := s.connections.tokenFor(context.Background(), a, "work-slack")
 	require.NoError(t, err)
 	assert.Equal(t, "xoxb-stored", got.AccessToken)
-	assert.True(t, got.ExpiresAt.IsZero(), "nothing expires, so nothing is promised")
+	assert.Nil(t, got.ExpiresAt, "nothing expires, so nothing is promised")
 }
 
 // mustConnect stores a static connection the way the handler would.

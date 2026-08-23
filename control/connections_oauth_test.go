@@ -220,7 +220,7 @@ func TestConnectAnOAuthAccountEndToEnd(t *testing.T) {
 	tok, err := s.connections.tokenFor(context.Background(), a, "work-cal")
 	require.NoError(t, err)
 	assert.Equal(t, "access-1", tok.AccessToken)
-	assert.False(t, tok.ExpiresAt.IsZero())
+	assert.NotNil(t, tok.ExpiresAt)
 
 	// Asked again, it refreshes again rather than serving a stale token
 	tok, err = s.connections.tokenFor(context.Background(), a, "work-cal")
