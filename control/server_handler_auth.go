@@ -39,13 +39,26 @@ func (s *Server) handleGoogleLogin(w http.ResponseWriter, r *http.Request) {
 // handleGoogleCallback verifies the state, exchanges the code for the user's
 // identity, and issues a session cookie
 func (s *Server) handleGoogleCallback(w http.ResponseWriter, r *http.Request) {
-	if !s.config.WebEnabled() {
-		writeError(w, http.StatusNotImplemented, errors.New("web login is not configured on this server"))
-		return
-	}
+	// The state check comes first and applies to BOTH flows: it is the CSRF
+	// defence, and skipping it for either would be the bug it exists to stop.
 	stateCookie, err := r.Cookie(s.cookieName(stateCookieName))
 	if err != nil || stateCookie.Value == "" || stateCookie.Value != r.URL.Query().Get("state") {
 		writeError(w, http.StatusBadRequest, errors.New("invalid login state, please try again"))
+		return
+	}
+	// A connection's consent comes back here too, so that connecting an account
+	// needs no second redirect URI registered with the provider. The state says
+	// which flow this is; anything else is an ordinary login.
+	//
+	// Checked BEFORE the login guard on purpose: an instance can offer Slack or
+	// Jira connections without Google login configured at all, and refusing the
+	// callback in that case would break a flow that has nothing to do with
+	// Google.
+	if s.connectionFromState(w, r, stateCookie.Value) {
+		return
+	}
+	if !s.config.WebEnabled() {
+		writeError(w, http.StatusNotImplemented, errors.New("web login is not configured on this server"))
 		return
 	}
 	code := r.URL.Query().Get("code")

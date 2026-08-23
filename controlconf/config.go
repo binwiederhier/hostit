@@ -120,11 +120,18 @@ type Config struct {
 	AWSHostedZoneID string `yaml:"aws-hosted-zone-id"`
 
 	// Web app and user accounts
-	GoogleClientID     string   `yaml:"google-client-id"`     // Google OAuth client ID; empty disables the web login
-	GoogleClientSecret string   `yaml:"google-client-secret"` // Google OAuth client secret
-	SessionKey         string   `yaml:"session-key"`          // Secret for signing session cookies; generated if empty
-	AdminEmails        []string `yaml:"admin-emails"`         // These emails become active admins on first login
-	Breakglass         bool     `yaml:"breakglass"`           // Allow the admin token to mint a session for an admin email (no Google); for e2e/recovery
+	GoogleClientID     string `yaml:"google-client-id"`     // Google OAuth client ID; empty disables the web login
+	GoogleClientSecret string `yaml:"google-client-secret"` // Google OAuth client secret
+
+	// ConnectionClients are the OAuth clients this instance holds for each
+	// connectable provider, keyed by provider name (slack, discord, github,
+	// jira, ...). A provider with no client is simply not offered -- there is
+	// no shared hostit client to inherit, because registering one and getting
+	// it reviewed is the operator's own relationship with the provider.
+	ConnectionClients map[string]OAuthClient `yaml:"connections"`
+	SessionKey        string                 `yaml:"session-key"`  // Secret for signing session cookies; generated if empty
+	AdminEmails       []string               `yaml:"admin-emails"` // These emails become active admins on first login
+	Breakglass        bool                   `yaml:"breakglass"`   // Allow the admin token to mint a session for an admin email (no Google); for e2e/recovery
 	// ListenCluster is where members on OTHER machines dial in: mTLS, with
 	// per-member certificates from the cluster CA. Empty on a single-box
 	// install, which admits no remote members at all.
@@ -213,6 +220,29 @@ func NewConfig() *Config {
 // WebEnabled reports whether Google login (and thus the web app) is configured
 func (c *Config) WebEnabled() bool {
 	return c.GoogleClientID != "" && c.GoogleClientSecret != ""
+}
+
+// OAuthClient is one provider's registered client.
+type OAuthClient struct {
+	ClientID     string `yaml:"client-id"`
+	ClientSecret string `yaml:"client-secret"`
+}
+
+// ConnectionClient returns the OAuth client for a provider, or empties if this
+// instance holds none (in which case the provider is not offered).
+//
+// Google's connections fall back to the LOGIN client: it is the same Google
+// Cloud OAuth client, scopes are requested per authorization rather than baked
+// into the registration, so an instance that can already sign in with Google
+// should not need a second one to read a calendar. An explicit entry wins.
+func (c *Config) ConnectionClient(provider string) (clientID, clientSecret string) {
+	if client, ok := c.ConnectionClients[provider]; ok && client.ClientID != "" {
+		return client.ClientID, client.ClientSecret
+	}
+	if provider == "google-calendar" || provider == "gmail" {
+		return c.GoogleClientID, c.GoogleClientSecret
+	}
+	return "", ""
 }
 
 // RedirectURL is the OAuth callback URL for a login started on the given host.

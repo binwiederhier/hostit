@@ -1,0 +1,104 @@
+package connections
+
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+// tokenServer stands in for a provider's token endpoint, recording what was
+// sent and answering with whatever the test needs.
+func tokenServer(t *testing.T, body map[string]any, seen *http.Request) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		if seen != nil {
+			*seen = *r
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(body)
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+// A provider that issues a refresh token: hostit keeps that, and exchanges it
+// for a short-lived access token whenever an app asks.
+func TestExchangeAndRefreshForARefreshingProvider(t *testing.T) {
+	t.Parallel()
+	srv := tokenServer(t, map[string]any{"access_token": "at-1", "refresh_token": "rt-1", "expires_in": 3600}, nil)
+	p := Provider{Name: "google-calendar", Label: "Google Calendar", Kind: KindOAuth, TokenURL: srv.URL}
+
+	secret, err := p.Exchange(context.Background(), srv.Client(), "cid", "sec", "https://cb", "code")
+	require.NoError(t, err)
+	assert.Equal(t, "rt-1", secret, "the refresh token is what gets stored")
+
+	tok, err := p.Refresh(context.Background(), srv.Client(), "cid", "sec", "rt-1")
+	require.NoError(t, err)
+	assert.Equal(t, "at-1", tok.AccessToken)
+	assert.False(t, tok.ExpiresAt.IsZero(), "and it expires")
+}
+
+// A refreshing provider that returns no refresh token is refused at connect
+// time: it would work for an hour and then fail in a way that looks like a
+// hostit bug.
+func TestARefreshingProviderWithoutARefreshTokenIsRefused(t *testing.T) {
+	t.Parallel()
+	srv := tokenServer(t, map[string]any{"access_token": "at-1", "expires_in": 3600}, nil)
+	p := Provider{Name: "google-calendar", Label: "Google Calendar", Kind: KindOAuth, TokenURL: srv.URL}
+
+	_, err := p.Exchange(context.Background(), srv.Client(), "cid", "sec", "https://cb", "code")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "refresh token")
+}
+
+// Slack and GitHub hand back a token that does not expire and no refresh
+// token. That is a perfectly good connection: hostit stores the access token
+// and hands it straight back.
+func TestALongLivedProviderStoresTheAccessTokenItself(t *testing.T) {
+	t.Parallel()
+	srv := tokenServer(t, map[string]any{"access_token": "xoxb-abc", "ok": true}, nil)
+	p := Provider{Name: "slack", Label: "Slack", Kind: KindOAuth, TokenURL: srv.URL, LongLivedToken: true}
+
+	secret, err := p.Exchange(context.Background(), srv.Client(), "cid", "sec", "https://cb", "code")
+	require.NoError(t, err)
+	assert.Equal(t, "xoxb-abc", secret, "the access token is the thing worth keeping")
+
+	// Refreshing one is a no-op that returns what is stored, so the token
+	// endpoint an app calls behaves identically for both kinds.
+	tok, err := p.Refresh(context.Background(), srv.Client(), "cid", "sec", "xoxb-abc")
+	require.NoError(t, err)
+	assert.Equal(t, "xoxb-abc", tok.AccessToken)
+	assert.True(t, tok.ExpiresAt.IsZero(), "nothing to expire")
+}
+
+// GitHub answers form-encoded unless asked otherwise, which would otherwise
+// parse as "not a token response".
+func TestTheTokenRequestAsksForJSON(t *testing.T) {
+	t.Parallel()
+	var seen http.Request
+	srv := tokenServer(t, map[string]any{"access_token": "gho_x"}, &seen)
+	p := Provider{Name: "github", Label: "GitHub", Kind: KindOAuth, TokenURL: srv.URL, LongLivedToken: true}
+
+	_, err := p.Exchange(context.Background(), srv.Client(), "cid", "sec", "https://cb", "code")
+	require.NoError(t, err)
+	assert.Equal(t, "application/json", seen.Header.Get("Accept"))
+}
+
+// A provider's own error text beats a generic failure: "invalid_grant" almost
+// always means the owner revoked access at the provider.
+func TestAProviderRefusalSaysWhy(t *testing.T) {
+	t.Parallel()
+	srv := tokenServer(t, map[string]any{"error": "invalid_grant", "error_description": "Token has been expired or revoked."}, nil)
+	p := Provider{Name: "google-calendar", Label: "Google Calendar", Kind: KindOAuth, TokenURL: srv.URL}
+
+	_, err := p.Refresh(context.Background(), srv.Client(), "cid", "sec", "rt-dead")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid_grant")
+	assert.Contains(t, err.Error(), "revoked")
+}

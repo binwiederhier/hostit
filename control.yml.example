@@ -39,6 +39,38 @@ admin-token: CHANGE-ME
 # google-client-id: ...
 # google-client-secret: ...
 
+# Connections: the accounts your users can attach and grant to their apps. Each
+# provider needs an OAuth client YOU register with that provider -- there is no
+# shared hostit client, because getting one reviewed is your own relationship
+# with them. A provider with no client here is simply not offered.
+#
+# Google Calendar and Gmail fall back to google-client-id above when not listed:
+# it is the same Google Cloud client, and scopes are asked for per authorization.
+# Every provider's redirect URI is https://hostit.<base-domain>/auth/callback.
+#
+# Pasted credentials (an IMAP mailbox, an API key) need nothing here and are
+# always offered.
+#
+# Note on Gmail: read-only mail is a RESTRICTED scope. A personal instance is
+# exempt, but offering it to strangers means Google's CASA Tier 2 assessment,
+# renewed every 12 months. See docs/features/connections.md.
+# connections:
+#   slack:
+#     client-id: ...          # api.slack.com/apps -> OAuth & Permissions
+#     client-secret: ...
+#   discord:
+#     client-id: ...          # discord.com/developers/applications
+#     client-secret: ...
+#   github:
+#     client-id: ...          # github.com/settings/developers -> OAuth Apps
+#     client-secret: ...
+#   jira:
+#     client-id: ...          # developer.atlassian.com -> OAuth 2.0 (3LO)
+#     client-secret: ...
+#   gmail:                    # only to use a DIFFERENT client than the login one
+#     client-id: ...
+#     client-secret: ...
+
 # Emails that become active admins on their first Google login (skip approval).
 # admin-emails:
 #   - you@example.com

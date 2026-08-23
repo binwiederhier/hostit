@@ -30,6 +30,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"heckel.io/hostit/assistant"
+	"heckel.io/hostit/connections"
 	"heckel.io/hostit/controlconf"
 	"heckel.io/hostit/node"
 	"heckel.io/hostit/preview"
@@ -61,9 +62,12 @@ type Server struct {
 	// grants signs the per-app credential a private app's visitor carries on the
 	// app's own hostname, where the session cookie does not reach (appaccess.go).
 	grants *appgrant.Signer
-	api    http.Handler
-	socket http.Handler
-	proxy  http.Handler
+	// connections is credential custody for the accounts and secrets an owner
+	// connects; nil only if its key could not be loaded.
+	connections *connectionManager
+	api         http.Handler
+	socket      http.Handler
+	proxy       http.Handler
 
 	// usernameForUID maps a peer-credential UID to a username; overridden in tests
 	usernameForUID func(uid int) (string, error)
@@ -123,6 +127,16 @@ func New(conf *controlconf.Config, apps *Manager, users *user.Manager) *Server {
 		proxies:        NewProxyRegistry(),
 	}
 	s.exchangeGoogleCode = s.exchangeGoogleCodeLive
+	// Connections reuse the instance's Google OAuth client and come back on the
+	// same /auth/callback the login uses, told apart by the state parameter --
+	// so connecting an account needs no second redirect URI registered with the
+	// provider. Each provider's own OAuth client comes from the instance's
+	// config (connections: in control.yml); one with no client is not offered.
+	if key, err := connections.LoadOrCreateKey(conf.DataDir); err != nil {
+		slog.Warn("Connections disabled: cannot load the credential key", "error", err)
+	} else {
+		s.connections = newConnectionManager(apps.Store(), key, conf)
+	}
 	// The Manager builds the desired state control asserts on nodes; the
 	// per-app keys and limits in it need the user tables, which live here.
 	apps.SetPolicy(&serverPolicy{s})

@@ -23,8 +23,12 @@ const (
 	// nextCookieName carries where to land after a login, across the round trip
 	// to Google. It is a cookie rather than a query parameter because Google
 	// only hands back the state, and it holds a PATH on this host, never a URL.
-	nextCookieName   = "hostit_next"
-	hostCookiePrefix = "__Host-"
+	nextCookieName = "hostit_next"
+	// connectLabelCookieName carries the human label through an OAuth consent
+	// round trip. It is free text, so it stays out of the state parameter the
+	// provider echoes back.
+	connectLabelCookieName = "hostit_connect_label"
+	hostCookiePrefix       = "__Host-"
 	// sessionTTL is how long a web login lasts
 	sessionTTL = 30 * 24 * time.Hour
 )

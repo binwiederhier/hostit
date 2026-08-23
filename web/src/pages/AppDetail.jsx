@@ -1271,6 +1271,7 @@ const AppSettings = ({ app, isAdmin, account, showToast, onCopyToken, onRegenera
   const defaultInterval = prettyDuration(snap.default_interval) || "3h";
   const [snapCfg, setSnapCfg] = useState({ interval: snap.interval || "", pre: snap.pre || "", post: snap.post || "" });
   const [savingSnap, setSavingSnap] = useState(false);
+  const [conns, setConns] = useState(null);
   const [showRename, setShowRename] = useState(false);
   const [domains, setDomains] = useState(null);
   const [input, setInput] = useState("");
@@ -1360,6 +1361,33 @@ const AppSettings = ({ app, isAdmin, account, showToast, onCopyToken, onRegenera
     setShowRename(false);
     showToast("App renamed");
     navigate(`/app/${encodeURIComponent(updated.name)}`, { replace: true });
+  };
+
+  const loadConns = useCallback(async () => {
+    try {
+      setConns(await api.get(`/api/apps/${encodeURIComponent(name)}/connections`));
+    } catch {
+      // The section is a nicety; the rest of Settings still renders without it.
+      setConns({ granted: [], available: [] });
+    }
+  }, [name]);
+  useEffect(() => {
+    loadConns();
+  }, [loadConns]);
+
+  const toggleConn = async (c, granted) => {
+    setError("");
+    try {
+      const path = `/api/apps/${encodeURIComponent(name)}/connections/${encodeURIComponent(c.slug)}`;
+      if (granted) {
+        await api.del(path);
+      } else {
+        await api.put(path, {});
+      }
+      await loadConns();
+    } catch (err) {
+      setError(err.message);
+    }
   };
 
   const load = useCallback(async () => {
@@ -1658,6 +1686,52 @@ const AppSettings = ({ app, isAdmin, account, showToast, onCopyToken, onRegenera
             {savingSnap ? "Saving..." : "Save snapshot settings"}
           </button>
         </div>
+      </section>
+
+      <section className="ov-section">
+        <h3>Connections</h3>
+        <p className="hint">
+          Accounts you connected in your <Link to="/profile">profile</Link>. Granting one lets this
+          app act as you against that account -- it asks hostit for a short-lived token, so no
+          credential is stored in the app.
+        </p>
+        {conns === null ? (
+          <p className="hint">Loading...</p>
+        ) : (conns.granted || []).length === 0 && (conns.available || []).length === 0 ? (
+          <p className="hint">
+            Nothing attached yet. Connect an account or add a credential in your{" "}
+            <Link to="/profile">profile</Link> first.
+          </p>
+        ) : (
+          <>
+            {(conns.granted || []).map((c) => (
+              <div key={c.slug} className="conn-row">
+                <div className="conn-id">
+                  <span className="conn-name">
+                    <span className="mono">{c.slug}</span>
+                    <span className="conn-provider">{c.provider_label}</span>
+                  </span>
+                  <span className="conn-note">
+                    this app reads it at <span className="mono">/v1/connections/{c.slug}/token</span>
+                  </span>
+                </div>
+                <button type="button" className="btn btn-small" onClick={() => toggleConn(c, true)}>Revoke</button>
+              </div>
+            ))}
+            {(conns.available || []).map((c) => (
+              <div key={c.slug} className="conn-row conn-ungranted">
+                <div className="conn-id">
+                  <span className="conn-name">
+                    <span className="mono">{c.slug}</span>
+                    <span className="conn-provider">{c.provider_label}</span>
+                  </span>
+                  <span className="conn-note">{c.label || "not granted to this app"}</span>
+                </div>
+                <button type="button" className="btn btn-small btn-primary" onClick={() => toggleConn(c, false)}>Grant</button>
+              </div>
+            ))}
+          </>
+        )}
       </section>
 
       <section className="ov-section">

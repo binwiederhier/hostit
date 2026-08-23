@@ -41,6 +41,11 @@ func TestAUserTokenCanDoEverythingTheWebAppCan(t *testing.T) {
 	}{
 		// The account pages
 		{"GET", "/api/account", ""},
+		{"GET", "/api/connections", ""},
+		{"POST", "/api/connections", `{"provider":"generic","slug":"a-key","values":{"secret":"x"}}`},
+		{"PUT", "/api/connections/a-key", `{"label":"renamed"}`},
+		{"POST", "/api/connections/a-key/reconnect", ""},
+		{"DELETE", "/api/connections/a-key", ""},
 		{"GET", "/api/account/keys", ""},
 		{"POST", "/api/account/keys", `{"label":"laptop","key":"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIB1 x@y"}`},
 		{"GET", "/api/account/tokens", ""},
@@ -69,6 +74,9 @@ func TestAUserTokenCanDoEverythingTheWebAppCan(t *testing.T) {
 		{"DELETE", app + "/viewers/" + friend.ID, ""},
 
 		// Domains
+		{"GET", app + "/connections", ""},
+		{"PUT", app + "/connections/a-key", ""},
+		{"DELETE", app + "/connections/a-key", ""},
 		{"GET", app + "/domains", ""},
 		{"POST", app + "/domains", `{"domain":"dash.example.org"}`},
 		{"POST", app + "/domains/dash.example.org/verify", ""},

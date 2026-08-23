@@ -342,6 +342,57 @@ var (
 		);
 		CREATE INDEX idx_app_viewer_user ON app_viewer (user_id);
 	`,
+		// Slots 30 and 31 are BURNED, for the same reason slot 23 is: the
+		// redirect work (a Domain.RedirectTo column, then an app_redirect table)
+		// was built, run on stage, and reverted on 2026-08-22. Stage therefore
+		// records version 31 while the code that shipped stops at 29. Two no-ops
+		// keep every history aligned -- a clean database runs nothing real here,
+		// a stage-touched one skips exactly the entries it already counted. See
+		// TODO.md, Deferred.
+		`
+		SELECT 1;
+	`,
+		`
+		SELECT 1;
+	`,
+		// Connections and credentials: the accounts and secrets an OWNER attaches
+		// once, which their apps can be granted. secret holds ciphertext, never a
+		// usable credential; the key lives outside the database.
+		//
+		// Keyed on an id with a user-chosen slug beside it, so one owner can hold
+		// several of the same provider (two Google Calendars) and an app names the
+		// one it wants. app_connection therefore points at a connection id, not a
+		// provider.
+		//
+		// The DROPs are deliberate: the abandoned PoC (burned slot 23) left
+		// differently-shaped tables of the same name on any database that ran it.
+		// They hold nothing anyone can still use -- the key that decrypts them is
+		// long gone -- so this reclaims the names rather than migrating them.
+		`
+		DROP TABLE IF EXISTS app_connection;
+		DROP TABLE IF EXISTS connection;
+		CREATE TABLE connection (
+			id TEXT PRIMARY KEY,
+			user_id TEXT NOT NULL,
+			slug TEXT NOT NULL,
+			provider TEXT NOT NULL,
+			kind TEXT NOT NULL,
+			label TEXT NOT NULL DEFAULT '',
+			secret TEXT NOT NULL,
+			scopes TEXT NOT NULL DEFAULT '',
+			meta TEXT NOT NULL DEFAULT '',
+			created_at INTEGER NOT NULL
+		);
+		CREATE UNIQUE INDEX idx_connection_user_slug ON connection (user_id, slug);
+		CREATE INDEX idx_connection_user ON connection (user_id);
+		CREATE TABLE app_connection (
+			app_id TEXT NOT NULL,
+			connection_id TEXT NOT NULL,
+			created_at INTEGER NOT NULL,
+			PRIMARY KEY (app_id, connection_id)
+		);
+		CREATE INDEX idx_app_connection_conn ON app_connection (connection_id);
+	`,
 	}
 )
 

@@ -38,6 +38,12 @@ func (s *Server) newSocketHandler() http.Handler {
 func (s *Server) selfMux(wrap func(func(http.ResponseWriter, *http.Request, *store.App)) http.HandlerFunc) *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /v1/self", wrap(s.handleSelf))
+	// The connections and credentials this app was granted, and a usable token
+	// for one, addressed by the slug its owner gave it. This is what lets an app
+	// read its owner's calendar without ever holding a refresh token or an
+	// environment variable nothing can rotate.
+	mux.HandleFunc("GET /v1/connections", wrap(s.handleSelfConnectionsList))
+	mux.HandleFunc("GET /v1/connections/{slug}/token", wrap(s.handleSelfConnectionToken))
 	mux.HandleFunc("POST /v1/self/ensure", wrap(s.handleSelfEnsure)) // SSH login provisions the workspace
 	// The same lifecycle verbs the web app and admin CLI use, split into the app
 	// process (start/stop/restart) and its container (poweron/poweroff/reboot).

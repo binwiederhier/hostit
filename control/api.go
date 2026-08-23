@@ -51,6 +51,15 @@ func (s *Server) newAPIHandler() http.Handler {
 
 	// Account: readable while pending, so the web app can explain the wait
 	route(mux, "GET", "/account", s.authenticated(s.handleAccount))
+	// Connections: the owner's connected accounts, and the per-app grants.
+	route(mux, "GET", "/connections", s.requireActive(s.handleConnectionsList))
+	route(mux, "POST", "/connections", s.requireActive(s.handleConnectionAdd))
+	route(mux, "PUT", "/connections/{slug}", s.requireActive(s.handleConnectionUpdate))
+	route(mux, "POST", "/connections/{slug}/reconnect", s.requireActive(s.handleConnectionReconnect))
+	route(mux, "DELETE", "/connections/{slug}", s.requireActive(s.handleConnectionDelete))
+	route(mux, "GET", "/apps/{name}/connections", s.requireActive(s.handleAppConnectionsList))
+	route(mux, "PUT", "/apps/{name}/connections/{slug}", s.requireActive(s.handleAppConnectionGrant))
+	route(mux, "DELETE", "/apps/{name}/connections/{slug}", s.requireActive(s.handleAppConnectionRevoke))
 	route(mux, "GET", "/account/keys", s.requireActive(s.handleKeysList))
 	route(mux, "POST", "/account/keys", s.requireActive(s.handleKeysAdd))
 	route(mux, "DELETE", "/account/keys/{id}", s.requireActive(s.handleKeysDelete))
