@@ -231,7 +231,7 @@ func TestConnectAnOAuthAccountEndToEnd(t *testing.T) {
 	assert.Equal(t, "Work calendar", conn.Label)
 	assert.Equal(t, store.ConnectionOAuth, conn.Kind)
 	assert.NotContains(t, conn.Secret, "refresh-", "the refresh token is not stored in the clear")
-	opened, err := connections.Open(s.connections.key, conn.Secret)
+	opened, err := connections.Open(s.connections.key, conn.Secret, connections.Binding(conn.UserID, conn.ID))
 	require.NoError(t, err)
 	assert.Equal(t, "refresh-1", opened)
 
@@ -285,8 +285,8 @@ func TestConnectTwoAccountsOfTheSameProviderEndToEnd(t *testing.T) {
 	require.NoError(t, err)
 	home, err := s.apps.Store().ConnectionBySlug(u.ID, "home-cal")
 	require.NoError(t, err)
-	workSecret, _ := connections.Open(s.connections.key, work.Secret)
-	homeSecret, _ := connections.Open(s.connections.key, home.Secret)
+	workSecret, _ := connections.Open(s.connections.key, work.Secret, connections.Binding(work.UserID, work.ID))
+	homeSecret, _ := connections.Open(s.connections.key, home.Secret, connections.Binding(home.UserID, home.ID))
 	assert.NotEqual(t, workSecret, homeSecret, "each holds its own refresh token")
 }
 
@@ -322,8 +322,8 @@ func TestReconnectKeepsTheSlugAndItsGrants(t *testing.T) {
 	after, err := s.apps.Store().ConnectionBySlug(u.ID, "work-cal")
 	require.NoError(t, err)
 	assert.Equal(t, before.ID, after.ID, "same connection")
-	beforeSecret, _ := connections.Open(s.connections.key, before.Secret)
-	afterSecret, _ := connections.Open(s.connections.key, after.Secret)
+	beforeSecret, _ := connections.Open(s.connections.key, before.Secret, connections.Binding(before.UserID, before.ID))
+	afterSecret, _ := connections.Open(s.connections.key, after.Secret, connections.Binding(after.UserID, after.ID))
 	assert.NotEqual(t, beforeSecret, afterSecret, "fresh credential underneath")
 
 	granted, err := s.apps.Store().AppConnections("a1")
@@ -351,7 +351,7 @@ func TestConnectALongLivedProviderEndToEnd(t *testing.T) {
 
 	conn, err := s.apps.Store().ConnectionBySlug(u.ID, "work-chat")
 	require.NoError(t, err)
-	opened, err := connections.Open(s.connections.key, conn.Secret)
+	opened, err := connections.Open(s.connections.key, conn.Secret, connections.Binding(conn.UserID, conn.ID))
 	require.NoError(t, err)
 	assert.Equal(t, "access-0", opened, "the access token is the thing worth keeping")
 
@@ -462,7 +462,7 @@ func TestARotatedRefreshTokenIsStoredSoTheNextRequestWorks(t *testing.T) {
 	// And what is stored is the newest one, not the one consent handed over.
 	after, err := s.apps.Store().Connection(conn.ID)
 	require.NoError(t, err)
-	stored, err := connections.Open(s.connections.key, after.Secret)
+	stored, err := connections.Open(s.connections.key, after.Secret, connections.Binding(after.UserID, after.ID))
 	require.NoError(t, err)
 	assert.Equal(t, "refresh-rotated-3", stored)
 }
@@ -568,4 +568,32 @@ func TestReconnectingDropsTheCachedToken(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 2, f.refreshes, "the new credential was actually used")
 	assert.NotEqual(t, before.AccessToken, after.AccessToken)
+}
+
+// Removing a connection removes it: the access token minted from it must not
+// sit in memory for the rest of its hour. Only OAuth connections are cached --
+// a pasted credential costs no round trip -- so this is where it matters.
+func TestRemovingAConnectionPurgesItsCachedToken(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	f := newFakeAuthServer(t)
+	registerFakeProvider(t, s, f, "fake-purge", false)
+	u := newActiveTestUser(t, s, "owner@example.com")
+	token := accountToken(t, s, u)
+	require.NoError(t, s.apps.Store().AddApp(&store.App{ID: "a1", Name: "dash", Port: 10000, Host: store.HostLocal, OwnerID: u.ID}))
+	s.apps.PushMirror()
+	c := connect(t, s, u, token, "fake-purge", "cal")
+	require.NoError(t, s.apps.Store().GrantConnection("a1", c.ID))
+
+	a, err := s.apps.App("dash")
+	require.NoError(t, err)
+	_, err = s.connections.tokenFor(context.Background(), a, "cal")
+	require.NoError(t, err)
+	_, held := s.connections.cached[c.ID]
+	require.True(t, held, "it is cached to begin with")
+
+	rr := request(t, s.API(), "DELETE", "/api/connections/cal", "", token)
+	require.Equal(t, http.StatusOK, rr.Code)
+	_, held = s.connections.cached[c.ID]
+	assert.False(t, held, "nothing of a removed credential is left in memory")
 }

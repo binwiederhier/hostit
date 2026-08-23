@@ -79,6 +79,13 @@ type Connection struct {
 	CreatedAt time.Time
 }
 
+// NewConnectionID returns a fresh id. Callers that must seal a credential
+// against the row before inserting it need the id first (see
+// connections.Binding), so it cannot be left to AddConnection.
+func NewConnectionID() string {
+	return connectionIDPrefix + randomID()
+}
+
 // AddConnection stores a new connection, assigning an id if it has none.
 func (s *Store) AddConnection(c *Connection) error {
 	if c.ID == "" {

@@ -57,9 +57,23 @@ func LoadOrCreateKey(dataDir string) ([]byte, error) {
 	return key, nil
 }
 
-// Seal encrypts a credential for storage. The nonce is random per call and
-// prefixed, so the same credential stored twice does not produce equal rows.
-func Seal(key []byte, plaintext string) (string, error) {
+// Binding is the additional authenticated data tying a sealed credential to the
+// row it belongs to. GCM authenticates the BYTES; without this it says nothing
+// about WHOSE they are, so ciphertext is portable -- a bad migration, a restore
+// that mixes rows, or anything that can write the database could move one
+// person's sealed secret into another's connection and have it decrypt cleanly.
+//
+// The owner and the connection id, both of which are stable for the life of the
+// row. The slug is deliberately not in it: renaming a connection must not make
+// its credential unreadable.
+func Binding(userID, connectionID string) []byte {
+	return []byte("hostit-connection:" + userID + ":" + connectionID)
+}
+
+// Seal encrypts a credential for storage, bound to aad (see Binding). The nonce
+// is random per call and prefixed, so the same credential stored twice does not
+// produce equal rows.
+func Seal(key []byte, plaintext string, aad []byte) (string, error) {
 	gcm, err := newGCM(key)
 	if err != nil {
 		return "", err
@@ -68,14 +82,15 @@ func Seal(key []byte, plaintext string) (string, error) {
 	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
 		return "", err
 	}
-	sealed := gcm.Seal(nonce, nonce, []byte(plaintext), nil)
+	sealed := gcm.Seal(nonce, nonce, []byte(plaintext), aad)
 	return base64.StdEncoding.EncodeToString(sealed), nil
 }
 
-// Open decrypts a stored credential. A wrong key is an error rather than
-// rubbish: rubbish would be sent to a provider as a token and fail somewhere
-// far from the cause.
-func Open(key []byte, sealed string) (string, error) {
+// Open decrypts a stored credential, which must have been sealed with the same
+// aad. A wrong key -- or the wrong row -- is an error rather than rubbish:
+// rubbish would be sent to a provider as a token and fail somewhere far from
+// the cause.
+func Open(key []byte, sealed string, aad []byte) (string, error) {
 	raw, err := base64.StdEncoding.DecodeString(sealed)
 	if err != nil {
 		return "", err
@@ -88,11 +103,31 @@ func Open(key []byte, sealed string) (string, error) {
 		return "", errors.New("stored credential is too short to be valid")
 	}
 	nonce, body := raw[:gcm.NonceSize()], raw[gcm.NonceSize():]
-	out, err := gcm.Open(nil, nonce, body, nil)
+	out, err := gcm.Open(nil, nonce, body, aad)
 	if err != nil {
 		return "", fmt.Errorf("cannot decrypt the stored credential: %w", err)
 	}
 	return string(out), nil
+}
+
+// OpenLegacyTolerant opens a credential that may predate binding. It tries the
+// bound form first and falls back to the unbound one, reporting which it was so
+// the caller can re-seal it.
+//
+// The fallback exists because this shipped to a live instance holding real
+// connections: without it, hardening the storage would mean re-authorising
+// every account. It does NOT weaken the new form -- a credential sealed WITH a
+// binding still refuses to open under the wrong one, which is the property the
+// change is for.
+func OpenLegacyTolerant(key []byte, sealed string, aad []byte) (plaintext string, bound bool, err error) {
+	if out, err := Open(key, sealed, aad); err == nil {
+		return out, true, nil
+	}
+	out, err := Open(key, sealed, nil)
+	if err != nil {
+		return "", false, err
+	}
+	return out, false, nil
 }
 
 func newGCM(key []byte) (cipher.AEAD, error) {

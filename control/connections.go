@@ -108,13 +108,16 @@ func (m *connectionManager) saveOAuth(ctx context.Context, userID, slug, label s
 	if err != nil {
 		return nil, err
 	}
-	sealed, err := connections.Seal(m.key, credential)
-	if err != nil {
-		return nil, err
-	}
+	// The id is assigned here rather than by the store, because the credential
+	// is sealed BOUND to it (see connections.Binding) and cannot be sealed
+	// before it exists.
 	c := &store.Connection{
-		UserID: userID, Slug: slug, Label: label, Provider: p.Name, Kind: store.ConnectionOAuth,
-		Secret: sealed, Scopes: strings.Join(p.Scopes, " "), CreatedAt: time.Now(),
+		ID: store.NewConnectionID(), UserID: userID, Slug: slug, Label: label,
+		Provider: p.Name, Kind: store.ConnectionOAuth,
+		Scopes: strings.Join(p.Scopes, " "), CreatedAt: time.Now(),
+	}
+	if c.Secret, err = connections.Seal(m.key, credential, connections.Binding(c.UserID, c.ID)); err != nil {
+		return nil, err
 	}
 	return c, m.store.AddConnection(c)
 }
@@ -127,10 +130,11 @@ func (m *connectionManager) reconnect(ctx context.Context, c *store.Connection, 
 	if err != nil {
 		return err
 	}
-	sealed, err := connections.Seal(m.key, credential)
+	sealed, err := connections.Seal(m.key, credential, connections.Binding(c.UserID, c.ID))
 	if err != nil {
 		return err
 	}
+	m.expireCachedFor(c.ID)
 	return m.store.UpdateConnectionSecret(c.ID, sealed, strings.Join(p.Scopes, " "), c.Meta)
 }
 
@@ -141,14 +145,16 @@ func (m *connectionManager) saveStatic(userID, slug, label string, p connections
 	if err := p.Validate(values); err != nil {
 		return nil, err
 	}
-	sealed, err := connections.Seal(m.key, values[p.SecretField])
+	c := &store.Connection{
+		ID: store.NewConnectionID(), UserID: userID, Slug: slug, Label: label,
+		Provider: p.Name, Kind: store.ConnectionStatic,
+		Meta: metaFrom(p, values), CreatedAt: time.Now(),
+	}
+	sealed, err := connections.Seal(m.key, values[p.SecretField], connections.Binding(c.UserID, c.ID))
 	if err != nil {
 		return nil, err
 	}
-	c := &store.Connection{
-		UserID: userID, Slug: slug, Label: label, Provider: p.Name, Kind: store.ConnectionStatic,
-		Secret: sealed, Meta: metaFrom(p, values), CreatedAt: time.Now(),
-	}
+	c.Secret = sealed
 	return c, m.store.AddConnection(c)
 }
 
@@ -158,10 +164,11 @@ func (m *connectionManager) updateStatic(c *store.Connection, p connections.Prov
 	if err := p.Validate(values); err != nil {
 		return err
 	}
-	sealed, err := connections.Seal(m.key, values[p.SecretField])
+	sealed, err := connections.Seal(m.key, values[p.SecretField], connections.Binding(c.UserID, c.ID))
 	if err != nil {
 		return err
 	}
+	m.expireCachedFor(c.ID)
 	return m.store.UpdateConnectionSecret(c.ID, sealed, c.Scopes, metaFrom(p, values))
 }
 
@@ -187,7 +194,7 @@ func (m *connectionManager) tokenFor(ctx context.Context, a *store.App, slug str
 	if !ok {
 		return connections.Token{}, fmt.Errorf("unknown provider %q", conn.Provider)
 	}
-	secret, err := connections.Open(m.key, conn.Secret)
+	secret, err := m.open(conn)
 	if err != nil {
 		return connections.Token{}, err
 	}
@@ -210,7 +217,7 @@ func (m *connectionManager) tokenFor(ctx context.Context, a *store.App, slug str
 	// without it the NEXT request fails with invalid_grant, which reads like
 	// the owner revoked access when nothing of the sort happened.
 	if rotated != "" {
-		sealed, err := connections.Seal(m.key, rotated)
+		sealed, err := connections.Seal(m.key, rotated, connections.Binding(conn.UserID, conn.ID))
 		if err != nil {
 			return connections.Token{}, err
 		}
@@ -226,6 +233,28 @@ func (m *connectionManager) tokenFor(ctx context.Context, a *store.App, slug str
 	}
 	m.cache(conn, tok)
 	return tok, nil
+}
+
+// open decrypts a stored credential, tolerating one sealed before credentials
+// were bound to their row and quietly re-sealing it bound. Without the re-seal
+// an instance that predates the change would never converge -- a static
+// credential is never rewritten on its own.
+func (m *connectionManager) open(conn *store.Connection) (string, error) {
+	aad := connections.Binding(conn.UserID, conn.ID)
+	secret, bound, err := connections.OpenLegacyTolerant(m.key, conn.Secret, aad)
+	if err != nil {
+		return "", err
+	}
+	if !bound {
+		if sealed, sealErr := connections.Seal(m.key, secret, aad); sealErr == nil {
+			if storeErr := m.store.UpdateConnectionSecret(conn.ID, sealed, conn.Scopes, conn.Meta); storeErr == nil {
+				conn.Secret = sealed
+			} else {
+				slog.Warn("Cannot re-seal a credential against its row", "slug", conn.Slug, "error", storeErr)
+			}
+		}
+	}
+	return secret, nil
 }
 
 // cachedTokenFor returns a live token for this connection, if there is one that

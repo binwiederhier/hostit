@@ -194,10 +194,44 @@ sequenceDiagram
   and `connectionFromState`, which handles the OAuth callback when the state says
   it belongs to a connection. Checked **before** the login guard, so an instance
   with Slack configured but no Google login still completes a consent.
-- Encryption at rest: AES-256-GCM, key in `connections.key` (0600) beside the
-  database. Real, and honestly limited -- anything that can read the database can
-  usually read the file next to it. A passphrase or an OS keyring is the open
-  question.
+## Credential storage, and what it does and does not protect
+
+- **AES-256-GCM**, random 12-byte nonce per seal, prefixed to the ciphertext. The
+  same credential stored twice produces different rows.
+- **Bound to its row.** The additional authenticated data is
+  `hostit-connection:<user_id>:<connection_id>` (`connections.Binding`). GCM
+  authenticates the bytes; the binding is what says whose they are. Without it
+  ciphertext was portable -- moving one person's sealed secret into another's row
+  decrypted cleanly, which a migration that mixes rows or a restore from the
+  wrong backup could do by accident. The slug is deliberately NOT in the binding:
+  renaming a connection must not make its credential unreadable.
+- Credentials sealed before binding existed still open, via
+  `OpenLegacyTolerant`, and are re-sealed bound the first time they are used --
+  so an existing instance converges without re-authorising every account.
+- **The key** is 32 random bytes, base64 in `connections.key` (0600) beside the
+  database, root-owned like the database itself.
+- **The `meta` column is NOT encrypted.** It holds the non-secret half of a
+  pasted credential -- an IMAP host and username, a CalDAV URL, an S3 access key
+  id and bucket. That is deliberate (the UI and the app both need to read it) and
+  worth knowing before putting anything sensitive in a non-secret field.
+
+**What this protects against:** a copied database. A backup, a support dump or a
+stolen `hostit.db` is not a stolen mailbox.
+
+**What it does not:** root on the box. The key sits beside the database, so
+anything that can read one can read the other. A passphrase supplied at start, an
+OS keyring or an external KMS would change that, and none of them is implemented.
+
+**Who can read a granted credential:** the app, and therefore anyone with
+**terminal, SSH or exec access to that app** -- which includes its
+**collaborators**. Granting a connection to an app grants it to everyone who can
+run code in that app. Only the OWNER can grant, but the grant is what widens the
+audience. An **admin** and the **node hosting the app** can read it too; both
+already have root over the container, so neither is a new exposure.
+
+**Deleting** removes the row and purges the cached access token, but SQLite does
+not overwrite freed pages -- the ciphertext may remain in the database file until
+it is vacuumed. Encrypted, and beside its key.
 
 ## Other notes
 

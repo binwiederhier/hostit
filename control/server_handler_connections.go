@@ -259,6 +259,9 @@ func (s *Server) handleConnectionDelete(w http.ResponseWriter, r *http.Request, 
 		writeConnectionError(w, err)
 		return
 	}
+	// Removing it means removing it: the live access token minted from this
+	// credential must not sit in memory for the rest of its hour.
+	s.connections.expireCachedFor(conn.ID)
 	writeJSON(w, http.StatusOK, &apiMessageResponse{Message: "disconnected"})
 }
 

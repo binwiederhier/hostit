@@ -112,7 +112,7 @@ func TestStoredSecretsAreSealed(t *testing.T) {
 	row, err := s.apps.Store().Connection(c.ID)
 	require.NoError(t, err)
 	assert.NotContains(t, row.Secret, "hunter2", "the database never holds a usable credential")
-	opened, err := connections.Open(s.connections.key, row.Secret)
+	opened, err := connections.Open(s.connections.key, row.Secret, connections.Binding(row.UserID, row.ID))
 	require.NoError(t, err)
 	assert.Equal(t, "hunter2", opened)
 }
@@ -145,9 +145,10 @@ func TestALongLivedConnectionReturnsItsStoredToken(t *testing.T) {
 	u := newActiveTestUser(t, s, "owner@example.com")
 	require.NoError(t, s.apps.Store().AddApp(&store.App{ID: "a1", Name: "dash", Port: 10000, Host: store.HostLocal, OwnerID: u.ID}))
 
-	sealed, err := connections.Seal(s.connections.key, "xoxb-stored")
+	c := &store.Connection{ID: store.NewConnectionID(), UserID: u.ID, Slug: "work-slack", Provider: "slack", Kind: store.ConnectionOAuth}
+	sealed, err := connections.Seal(s.connections.key, "xoxb-stored", connections.Binding(c.UserID, c.ID))
 	require.NoError(t, err)
-	c := &store.Connection{UserID: u.ID, Slug: "work-slack", Provider: "slack", Kind: store.ConnectionOAuth, Secret: sealed}
+	c.Secret = sealed
 	require.NoError(t, s.apps.Store().AddConnection(c))
 	require.NoError(t, s.apps.Store().GrantConnection("a1", c.ID))
 
@@ -167,4 +168,34 @@ func mustConnect(t *testing.T, s *Server, userID, slug, provider string, values 
 	c, err := s.connections.saveStatic(userID, slug, slug, p, values)
 	require.NoError(t, err)
 	return c
+}
+
+// The attack this binding exists to stop, kept as a test because it WORKED
+// before: copy one person's sealed credential into a row you control, and read
+// their secret out of your own app.
+//
+// It needs database write access, which on a single box implies the key file
+// beside it -- so this is defence in depth, not the last line. It is worth
+// having because the cheap failures are the likely ones: a migration that
+// mixes rows, a restore from the wrong backup, a future query with a wrong
+// WHERE clause.
+func TestAStolenCiphertextDoesNotOpenInAnotherRow(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	victim := newActiveTestUser(t, s, "victim@example.com")
+	attacker := newActiveTestUser(t, s, "attacker@example.com")
+	require.NoError(t, s.apps.Store().AddApp(&store.App{ID: "a1", Name: "evil", Port: 10000, Host: store.HostLocal, OwnerID: attacker.ID}))
+
+	victimConn := mustConnect(t, s, victim.ID, "mail", "generic", map[string]string{"secret": "VICTIM-SECRET"})
+	attackerConn := mustConnect(t, s, attacker.ID, "mine", "generic", map[string]string{"secret": "attacker-own"})
+
+	// Straight into the database, bypassing every check
+	require.NoError(t, s.apps.Store().UpdateConnectionSecret(attackerConn.ID, victimConn.Secret, "", ""))
+	require.NoError(t, s.apps.Store().GrantConnection("a1", attackerConn.ID))
+
+	a, err := s.apps.App("evil")
+	require.NoError(t, err)
+	_, err = s.connections.tokenFor(context.Background(), a, "mine")
+	require.Error(t, err, "a credential sealed for another row must not open here")
+	assert.NotContains(t, err.Error(), "VICTIM-SECRET")
 }
