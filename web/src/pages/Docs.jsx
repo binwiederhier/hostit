@@ -1040,72 +1040,76 @@ const ConnectionsSetupPage = () => (
       sent to any subdomain.
     </p>
 
-    <h3>Where to register each one</h3>
-    <table className="docs-table">
-      <thead>
-        <tr><th>Provider</th><th>Console</th><th>Steps</th></tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td><b>GitHub</b></td>
-          <td className="mono">github.com/settings/developers</td>
-          <td>
-            OAuth Apps &rarr; New OAuth App. Set the Authorization callback URL. Copy the
-            Client ID, then Generate a new client secret. No review.
-          </td>
-        </tr>
-        <tr>
-          <td><b>Slack</b></td>
-          <td className="mono">api.slack.com/apps</td>
-          <td>
-            Create New App &rarr; From scratch. Under <i>OAuth &amp; Permissions</i> add the
-            redirect URL and the <b>Bot Token Scopes</b> listed below, then Install to
-            Workspace. Credentials are under <i>Basic Information</i>.
-          </td>
-        </tr>
-        <tr>
-          <td><b>Discord</b></td>
-          <td className="mono">discord.com/developers/applications</td>
-          <td>
-            New Application &rarr; <i>OAuth2</i>. Add the redirect under <i>Redirects</i> and
-            Save. Copy the Client ID; use <i>Reset Secret</i> to reveal a Client Secret.
-          </td>
-        </tr>
-        <tr>
-          <td><b>Linear</b></td>
-          <td className="mono">linear.app/settings/api</td>
-          <td>
-            OAuth applications &rarr; Create. Set the callback URL. The cleanest of the set
-            and a good one to try first.
-          </td>
-        </tr>
-        <tr>
-          <td><b>Jira</b></td>
-          <td className="mono">developer.atlassian.com</td>
-          <td>
-            Console &rarr; Create &rarr; OAuth 2.0 integration. Add the <i>Jira API</i>{" "}
-            permission and its scopes, then set the callback under <i>Authorization</i>.
-          </td>
-        </tr>
-        <tr>
-          <td><b>HubSpot</b></td>
-          <td className="mono">developers.hubspot.com</td>
-          <td>
-            Create an app in a developer account. Set the redirect and scopes under{" "}
-            <i>Auth</i>. Needs a test portal to try against.
-          </td>
-        </tr>
-        <tr>
-          <td><b>Google</b><br />(Calendar, Gmail)</td>
-          <td className="mono">console.cloud.google.com</td>
-          <td>
-            Uses the same client as web login, so nothing extra is needed if login works.
-            You must <b>enable the API</b> per product (Calendar, Gmail) in the project, and
-            add each account as a <i>test user</i> while the consent screen is in Testing.
-          </td>
-        </tr>
-      </tbody>
-    </table>
+    <h3>GitHub</h3>
+    <ol className="docs-steps">
+      <li>Go to <span className="mono">github.com/settings/developers</span> &rarr; <b>OAuth Apps</b> &rarr; <b>New OAuth App</b>.</li>
+      <li>Application name: anything. Homepage URL: your hostit URL.</li>
+      <li><b>Authorization callback URL</b>: the first URL above. Then <b>Add callback URL</b> for each of the others (up to ten).</li>
+      <li><b>Register application</b>. Copy the <b>Client ID</b>.</li>
+      <li><b>Generate a new client secret</b> and copy it -- GitHub shows it once.</li>
+    </ol>
+    <p className="hint">No review, no scope declaration: GitHub takes the scopes at authorize time.</p>
+
+    <h3>Discord</h3>
+    <ol className="docs-steps">
+      <li><span className="mono">discord.com/developers/applications</span> &rarr; <b>New Application</b>, name it.</li>
+      <li>Left sidebar &rarr; <b>OAuth2</b>.</li>
+      <li>Under <b>Redirects</b>, <b>Add Redirect</b> for each URL above, then <b>Save Changes</b> at the bottom. Missing the save is the usual reason consent later fails.</li>
+      <li>Copy the <b>Client ID</b>.</li>
+      <li><b>Reset Secret</b> &rarr; copy the <b>Client Secret</b>.</li>
+    </ol>
+    <p className="hint">
+      Ignore the OAuth2 URL Generator -- that builds invite links, which is a different thing.
+      Note that <span className="mono">identify</span> and <span className="mono">guilds</span>{" "}
+      give the user&rsquo;s profile and server list, <b>not</b> message history; reading messages
+      needs a bot added to each server.
+    </p>
+
+    <h3>Slack</h3>
+    <ol className="docs-steps">
+      <li><span className="mono">api.slack.com/apps</span> &rarr; <b>Create New App</b> &rarr; <b>From scratch</b>. Pick a workspace.</li>
+      <li><b>OAuth &amp; Permissions</b> &rarr; <b>Redirect URLs</b> &rarr; add each URL above &rarr; <b>Save URLs</b>.</li>
+      <li>Same page, <b>Scopes</b> &rarr; <b>Bot Token Scopes</b> &rarr; add the scopes listed below. Bot scopes, not user scopes.</li>
+      <li><b>Install to Workspace</b> and approve.</li>
+      <li><b>Basic Information</b> &rarr; <b>App Credentials</b> &rarr; copy the <b>Client ID</b> and <b>Client Secret</b>.</li>
+    </ol>
+    <p className="hint">Slack issues a bot token that does not expire, so there is nothing to refresh.</p>
+
+    <h3>Linear</h3>
+    <ol className="docs-steps">
+      <li><span className="mono">linear.app/settings/api</span> &rarr; <b>OAuth applications</b> &rarr; <b>Create new</b>.</li>
+      <li>Name it and set the <b>Callback URLs</b> to the URLs above, one per line.</li>
+      <li>Create, then copy the <b>Client ID</b> and <b>Client Secret</b>.</li>
+    </ol>
+    <p className="hint">The quickest of the set, and a good one to prove the flow with.</p>
+
+    <h3>Jira (Atlassian)</h3>
+    <ol className="docs-steps">
+      <li><span className="mono">developer.atlassian.com</span> &rarr; <b>Console</b> &rarr; <b>Create</b> &rarr; <b>OAuth 2.0 integration</b>.</li>
+      <li><b>Permissions</b> &rarr; add the <b>Jira API</b> &rarr; <b>Configure</b> &rarr; add the scopes below.</li>
+      <li><b>Authorization</b> &rarr; <b>OAuth 2.0 (3LO)</b> &rarr; <b>Configure</b> &rarr; set the callback URL.</li>
+      <li><b>Settings</b> &rarr; copy the <b>Client ID</b> and <b>Secret</b>.</li>
+    </ol>
+    <p className="hint">
+      Atlassian takes one callback URL per integration, so a separate instance needs its own.
+      The <span className="mono">offline_access</span> scope is what makes it issue a refresh token.
+    </p>
+
+    <h3>HubSpot</h3>
+    <ol className="docs-steps">
+      <li>Sign in to a <b>developer</b> account at <span className="mono">developers.hubspot.com</span> &rarr; <b>Create app</b>.</li>
+      <li><b>Auth</b> tab &rarr; set the <b>Redirect URL</b> and add the scopes below.</li>
+      <li>Copy the <b>Client ID</b> and <b>Client secret</b> from the same tab.</li>
+      <li>Create a <b>test account</b> under Testing to try it against.</li>
+    </ol>
+
+    <h3>Google (Calendar, Gmail)</h3>
+    <ol className="docs-steps">
+      <li>Nothing to register: connections reuse the same client as web login.</li>
+      <li><span className="mono">console.cloud.google.com</span> &rarr; <b>APIs &amp; Services</b> &rarr; <b>Enable APIs</b> &rarr; enable <b>Google Calendar API</b> and/or <b>Gmail API</b> in the project. A valid token still gets <span className="mono">403 SERVICE_DISABLED</span> until you do.</li>
+      <li><b>OAuth consent screen</b> &rarr; <b>Audience</b> &rarr; add every account that will connect under <b>Test users</b>, while publishing status is Testing.</li>
+      <li>Users will see a &ldquo;Google hasn&rsquo;t verified this app&rdquo; screen: <b>Advanced</b> &rarr; <b>Go to&hellip;</b>. Expected until verification.</li>
+    </ol>
 
     <h3>Scopes to request</h3>
     <p>

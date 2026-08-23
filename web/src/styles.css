@@ -5845,3 +5845,15 @@ input[type="number"]::-webkit-inner-spin-button {
 .newapp .visibility-choice {
   margin-top: 16px;
 }
+
+/* Numbered setup steps in the docs: tighter than a prose list, since each step
+   is one console action rather than a paragraph. */
+.docs-steps {
+  margin: 10px 0 14px;
+  padding-left: 1.35rem;
+}
+
+.docs-steps li {
+  margin-bottom: 6px;
+  line-height: 1.5;
+}
