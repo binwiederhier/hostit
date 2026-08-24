@@ -141,6 +141,14 @@ func New(conf *controlconf.Config, apps *Manager, users *user.Manager) *Server {
 		slog.Warn("Connections disabled: cannot load the credential key", "error", err)
 	} else {
 		s.connections = newConnectionManager(apps.Store(), key, conf)
+		// An operator's own providers, from connections: in control.yml. A
+		// malformed entry is fatal on purpose: it is the file they just edited,
+		// and a provider silently missing from a menu is the hardest possible
+		// way to find out it is wrong.
+		if err := s.connections.loadCustomProviders(conf); err != nil {
+			slog.Error("Cannot load the custom connection providers from control.yml", "error", err)
+			os.Exit(1)
+		}
 	}
 	// The Manager builds the desired state control asserts on nodes; the
 	// per-app keys and limits in it need the user tables, which live here.

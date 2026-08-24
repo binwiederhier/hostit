@@ -57,6 +57,14 @@ default, or on-disk state is called out as **Breaking** or **Upgrade note**.
   internet, or an authorization server cannot fetch it and every consent fails.
   It is served unauthenticated on purpose.
 
+- **Custom OAuth providers.** Any service hostit does not ship can be added in
+  `connections:` in `control.yml` -- a label, a client, scopes and the two OAuth
+  URLs (or an `issuer` to discover them from). It behaves exactly like a
+  built-in, because a catalog entry was always pure data: there is no
+  per-provider code, and the vendor quirks that look like special cases are all
+  fields. A malformed entry stops the server at start rather than vanishing from
+  a menu, and an operator's own entries are marked "yours" in the Add menu.
+
 - **`GET /api/connections?kind=` narrows the list** to `oauth`, `static` or
   `mcp`, filtering the offered providers with it so a one-kind view does not
   offer you the wrong thing to attach. An unknown kind is refused rather than

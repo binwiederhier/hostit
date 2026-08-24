@@ -39,6 +39,51 @@ offer you the wrong thing to attach. An unknown kind is refused rather than
 ignored, since a client asking for one kind and silently getting three would
 trust the answer and be wrong.
 
+## Custom providers
+
+A catalog entry is **pure data**. There is no per-provider code anywhere: a grep
+for provider names outside `connections/providers.go` finds exactly one hit
+(`controlconf/config.go`, Google falling back to the login client), and the
+quirks that look like special cases -- Google's `access_type=offline`,
+Atlassian's audience, Slack's non-expiring token -- are all fields.
+
+So an operator can supply the same data in `control.yml` and get the same
+behaviour, tested by the same tests:
+
+```yaml
+connections:
+  acme:
+    label: Acme                  # marks this as a provider, not just a client
+    client-id: ...
+    client-secret: ...
+    scopes: [read, write]
+    auth-url: https://acme.example.com/oauth/authorize
+    token-url: https://acme.example.com/oauth/token
+    # or, instead of the two URLs:
+    # issuer: https://acme.example.com
+```
+
+`label` is the marker because it is the one field a custom entry cannot do
+without and the one a client-only entry has no reason to set.
+
+Custom providers are held on the connectionManager (`m.custom`), NOT registered
+into the connections package's global catalog. Registering into a global at
+startup would leak between servers in one test binary and make the set of
+providers depend on what else had run. `m.lookup` prefers the overlay and falls
+back to the global, and everything that resolves a connectable provider goes
+through it -- `connections.Lookup` directly would make an operator's provider
+invisible to half the code.
+
+An `issuer` is resolved on FIRST USE via `mcp.AuthServerMetadata` (the same walk
+MCP does), not at startup: resolving needs the network, and a blip while control
+happens to be restarting should not silently drop a provider from the menu for
+the rest of the process's life. An unresolved provider reports `NeedsDiscovery()`
+and is not offered, rather than offered and broken.
+
+A malformed entry is **fatal at start**, not a warning. The operator is looking
+at the file they just edited, and a provider silently missing from a menu is the
+hardest possible way to find out it is wrong.
+
 ## Why it exists
 
 hostit brokers the **credential**, not the API. It holds what has to be held and

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -245,4 +246,87 @@ func mustRow(t *testing.T, s *Server, id string) *store.Connection {
 	c, err := s.apps.Store().Connection(id)
 	require.NoError(t, err)
 	return c
+}
+
+// An operator's own provider, written in control.yml, must be indistinguishable
+// from a built-in everywhere it matters: offered in the menu, connectable,
+// refreshable. It is registered per INSTANCE rather than into the package's
+// global catalog, so two servers in one test binary cannot see each other's.
+func TestACustomProviderFromConfigIsOfferedAndConnectable(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	f := newFakeAuthServer(t)
+	s.config.ConnectionClients = map[string]controlconf.OAuthClient{"acme": {
+		ClientID: "acme-id", ClientSecret: "acme-secret",
+		Label:    "Acme",
+		Scopes:   []string{"read"},
+		AuthURL:  f.URL + "/authorize",
+		TokenURL: f.URL + "/token",
+	}}
+	require.NoError(t, s.connections.loadCustomProviders(s.config))
+
+	p, ok := s.connections.lookup("acme")
+	require.True(t, ok, "an operator's provider is a provider")
+	assert.Equal(t, "Acme", p.Label)
+	assert.True(t, p.Custom)
+
+	var offered []string
+	for _, o := range s.connections.offered() {
+		offered = append(offered, o.Name)
+	}
+	assert.Contains(t, offered, "acme")
+
+	// And the whole credential path works, which is the actual claim.
+	u := newActiveTestUser(t, s, "owner@example.com")
+	// Walk the consent the way the fake expects: /authorize mints the code and
+	// bounces it back. The redirect is NOT followed -- it points at a hostname
+	// that does not exist, which is the whole point of it being a callback.
+	noFollow := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}}
+	res, err := noFollow.Get(p.AuthCodeURL("acme-id", "https://hostit.example/auth/callback", "state-1"))
+	require.NoError(t, err)
+	defer res.Body.Close()
+	back, err := url.Parse(res.Header.Get("Location"))
+	require.NoError(t, err)
+	code := back.Query().Get("code")
+	require.NotEmpty(t, code)
+
+	conn, err := s.connections.saveOAuth(t.Context(), u.ID, "acme", "Acme", p, code, "https://hostit.example/auth/callback")
+	require.NoError(t, err)
+	require.NoError(t, s.apps.Store().AddApp(&store.App{ID: "a1", Name: "dash", Port: 10000, Host: store.HostLocal, OwnerID: u.ID}))
+	require.NoError(t, s.apps.Store().GrantConnection("a1", conn.ID))
+
+	a, err := s.apps.App("dash")
+	require.NoError(t, err)
+	tok, err := s.connections.tokenFor(t.Context(), a, "acme")
+	require.NoError(t, err)
+	assert.NotEmpty(t, tok.AccessToken)
+}
+
+// A custom entry hostit cannot use must stop the server at load, where the
+// operator is looking at the file they just edited.
+func TestABrokenCustomProviderRefusesToLoad(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	s.config.ConnectionClients = map[string]controlconf.OAuthClient{"acme": {
+		ClientID: "acme-id", ClientSecret: "acme-secret", Label: "Acme",
+	}}
+	err := s.connections.loadCustomProviders(s.config)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "auth-url")
+}
+
+// A bare client-id/client-secret pair under a name hostit ships is the ordinary
+// case and must NOT be mistaken for a custom provider.
+func TestConfiguringABuiltinIsNotACustomProvider(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	s.config.ConnectionClients = map[string]controlconf.OAuthClient{"github": {ClientID: "id", ClientSecret: "secret"}}
+	require.NoError(t, s.connections.loadCustomProviders(s.config))
+
+	p, ok := s.connections.lookup("github")
+	require.True(t, ok)
+	assert.False(t, p.Custom, "it is hostit's github, with the operator's client")
+	assert.Equal(t, "https://github.com/login/oauth/authorize", p.AuthURL)
 }

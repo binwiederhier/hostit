@@ -27,6 +27,8 @@ Open, in the order that matters:
 
 - **OAuth clients for Slack, Linear, Jira and HubSpot.** The providers are built;
   each needs a client registered and dropped in `secrets/<env>.yml`. Nothing else.
+  (Slack's scopes must be added as BOT token scopes, not user ones: hostit stores
+  the top-level `access_token` from `oauth.v2.access`, which is the bot token.)
 - **Google verification for Calendar.** Free (sensitive scope, no CASA), and it
   is what removes the 7-day refresh-token expiry that otherwise means
   reconnecting every account weekly. Gmail is the expensive one and is dominated

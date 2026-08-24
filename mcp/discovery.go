@@ -104,10 +104,31 @@ func Discover(ctx context.Context, client *http.Client, serverURL string) (Disco
 		out.Scopes = resource.ScopesSupported
 	}
 
-	// The authorization server describes itself at one of two well-known
-	// paths. Both are tried because servers publish one or the other, and a
-	// client that knows only one reports a working server as broken.
-	as := strings.TrimSuffix(resource.AuthorizationServers[0], "/")
+	meta, err := AuthServerMetadata(ctx, client, resource.AuthorizationServers[0])
+	if err != nil {
+		return out, nil
+	}
+	out.Issuer = meta.Issuer
+	out.AuthorizationEndpoint = meta.AuthorizationEndpoint
+	out.TokenEndpoint = meta.TokenEndpoint
+	out.RegistrationEndpoint = meta.RegistrationEndpoint
+	out.SupportsCIMD = meta.SupportsCIMD
+	out.CanAuthorize = meta.AuthorizationEndpoint != "" && meta.TokenEndpoint != ""
+	return out, nil
+}
+
+// AuthServerMetadata reads an OAuth authorization server's own description of
+// itself, which is how anything here learns where to send someone to consent
+// without those URLs being written down by hand.
+//
+// BOTH well-known paths are tried. Servers publish one or the other -- GitHub
+// answers only at the OpenID one, plenty of others only at the OAuth one -- and
+// a client that knows a single path reports a perfectly good server as broken.
+//
+// Exported because custom OAuth providers use the same walk: an operator who
+// gives an issuer instead of two endpoints is asking for exactly this.
+func AuthServerMetadata(ctx context.Context, client *http.Client, issuer string) (Discovery, error) {
+	as := strings.TrimSuffix(issuer, "/")
 	var meta struct {
 		Issuer                            string `json:"issuer"`
 		AuthorizationEndpoint             string `json:"authorization_endpoint"`
@@ -115,23 +136,18 @@ func Discover(ctx context.Context, client *http.Client, serverURL string) (Disco
 		RegistrationEndpoint              string `json:"registration_endpoint"`
 		ClientIDMetadataDocumentSupported bool   `json:"client_id_metadata_document_supported"`
 	}
-	found := false
 	for _, path := range []string{"/.well-known/oauth-authorization-server", "/.well-known/openid-configuration"} {
 		if err := getJSON(ctx, client, as+path, &meta); err == nil && meta.TokenEndpoint != "" {
-			found = true
-			break
+			return Discovery{
+				Issuer:                meta.Issuer,
+				AuthorizationEndpoint: meta.AuthorizationEndpoint,
+				TokenEndpoint:         meta.TokenEndpoint,
+				RegistrationEndpoint:  meta.RegistrationEndpoint,
+				SupportsCIMD:          meta.ClientIDMetadataDocumentSupported,
+			}, nil
 		}
 	}
-	if !found {
-		return out, nil
-	}
-	out.Issuer = meta.Issuer
-	out.AuthorizationEndpoint = meta.AuthorizationEndpoint
-	out.TokenEndpoint = meta.TokenEndpoint
-	out.RegistrationEndpoint = meta.RegistrationEndpoint
-	out.SupportsCIMD = meta.ClientIDMetadataDocumentSupported
-	out.CanAuthorize = meta.AuthorizationEndpoint != "" && meta.TokenEndpoint != ""
-	return out, nil
+	return Discovery{}, fmt.Errorf("%s does not publish authorization server metadata at either well-known path", as)
 }
 
 func getJSON(ctx context.Context, client *http.Client, rawURL string, into any) error {

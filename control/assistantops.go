@@ -226,7 +226,7 @@ func (o *appOps) Connections(name string) []assistant.Connection {
 	out := make([]assistant.Connection, 0, len(granted))
 	for _, c := range granted {
 		label := c.Provider
-		if p, ok := connections.Lookup(c.Provider); ok {
+		if p, ok := o.lookupProvider(c.Provider); ok {
 			label = p.Label
 		}
 		out = append(out, assistant.Connection{
@@ -235,6 +235,15 @@ func (o *appOps) Connections(name string) []assistant.Connection {
 		})
 	}
 	return out
+}
+
+// lookupProvider resolves a provider through the server's overlay when there is
+// one, so an operator's own entry gets its real label rather than its slug.
+func (o *appOps) lookupProvider(name string) (connections.Provider, bool) {
+	if o.server == nil {
+		return connections.Lookup(name)
+	}
+	return o.server.lookupProvider(name)
 }
 
 // MCPTools are the tools on the MCP servers this app was granted, so the model

@@ -570,6 +570,59 @@ const ConnectionsPage = () => (
       which connections an app holds, so you can ask it to build something that uses one.
     </p>
 
+    <h3>A provider hostit does not ship</h3>
+    <p>
+      The catalog entries were always <b>pure data</b> -- there is no per-provider code anywhere,
+      and the vendor quirks that look like special cases (Google&rsquo;s{" "}
+      <span className="mono">access_type=offline</span>, Atlassian&rsquo;s audience, Slack&rsquo;s
+      token that never expires) are all fields. So you can write your own entry in the same{" "}
+      <span className="mono">connections:</span> block and it behaves exactly like a built-in.
+    </p>
+    <p>
+      Setting <span className="mono">label</span> is what marks an entry as describing a provider
+      rather than just holding a client for one hostit already knows:
+    </p>
+    <Snippet
+      text={`connections:
+  acme:
+    label: Acme                      # required: what a person reads
+    client-id: YOUR_CLIENT_ID
+    client-secret: YOUR_SECRET
+    scopes: [read, write]
+    auth-url: https://acme.example.com/oauth/authorize
+    token-url: https://acme.example.com/oauth/token
+    help: Your Acme workspace.       # optional, shown in the dialog
+    name-hint: Acme                  # optional, suggested connection name`}
+    />
+    <p>
+      If the service publishes OAuth metadata you can give an <span className="mono">issuer</span>{" "}
+      instead of the two URLs, and hostit will ask it where its endpoints are -- the same discovery
+      it does for an MCP server:
+    </p>
+    <Snippet
+      text={`connections:
+  acme:
+    label: Acme
+    client-id: YOUR_CLIENT_ID
+    client-secret: YOUR_SECRET
+    scopes: [read, write]
+    issuer: https://acme.example.com`}
+    />
+    <p>
+      Two more optional fields cover the awkward vendors:{" "}
+      <span className="mono">auth-params</span> adds whatever extra query parameters that provider
+      demands on the consent URL, and <span className="mono">long-lived-token: true</span> says it
+      issues a token that never expires and no refresh token, so hostit stores the access token
+      itself.
+    </p>
+    <p className="hint">
+      The name (the key) must be lowercase letters, digits and dashes, and cannot be one hostit
+      already ships -- an entry named <span className="mono">github</span> would silently change
+      what every existing GitHub connection means. A malformed entry stops the server at start
+      rather than vanishing from a menu. Your own providers are marked <b>yours</b> in the Add
+      menu.
+    </p>
+
     <h3>MCP servers</h3>
     <p>
       An MCP server is a service that exposes <b>tools</b> over a standard protocol -- search this
@@ -1292,6 +1345,59 @@ const ConnectionsSetupPage = () => (
       <li><b>OAuth consent screen</b> &rarr; <b>Audience</b> &rarr; add every account that will connect under <b>Test users</b>, while publishing status is Testing.</li>
       <li>Users will see a &ldquo;Google hasn&rsquo;t verified this app&rdquo; screen: <b>Advanced</b> &rarr; <b>Go to&hellip;</b>. Expected until verification.</li>
     </ol>
+
+    <h3>A provider hostit does not ship</h3>
+    <p>
+      The catalog entries were always <b>pure data</b> -- there is no per-provider code anywhere,
+      and the vendor quirks that look like special cases (Google&rsquo;s{" "}
+      <span className="mono">access_type=offline</span>, Atlassian&rsquo;s audience, Slack&rsquo;s
+      token that never expires) are all fields. So you can write your own entry in the same{" "}
+      <span className="mono">connections:</span> block and it behaves exactly like a built-in.
+    </p>
+    <p>
+      Setting <span className="mono">label</span> is what marks an entry as describing a provider
+      rather than just holding a client for one hostit already knows:
+    </p>
+    <Snippet
+      text={`connections:
+  acme:
+    label: Acme                      # required: what a person reads
+    client-id: YOUR_CLIENT_ID
+    client-secret: YOUR_SECRET
+    scopes: [read, write]
+    auth-url: https://acme.example.com/oauth/authorize
+    token-url: https://acme.example.com/oauth/token
+    help: Your Acme workspace.       # optional, shown in the dialog
+    name-hint: Acme                  # optional, suggested connection name`}
+    />
+    <p>
+      If the service publishes OAuth metadata you can give an <span className="mono">issuer</span>{" "}
+      instead of the two URLs, and hostit will ask it where its endpoints are -- the same discovery
+      it does for an MCP server:
+    </p>
+    <Snippet
+      text={`connections:
+  acme:
+    label: Acme
+    client-id: YOUR_CLIENT_ID
+    client-secret: YOUR_SECRET
+    scopes: [read, write]
+    issuer: https://acme.example.com`}
+    />
+    <p>
+      Two more optional fields cover the awkward vendors:{" "}
+      <span className="mono">auth-params</span> adds whatever extra query parameters that provider
+      demands on the consent URL, and <span className="mono">long-lived-token: true</span> says it
+      issues a token that never expires and no refresh token, so hostit stores the access token
+      itself.
+    </p>
+    <p className="hint">
+      The name (the key) must be lowercase letters, digits and dashes, and cannot be one hostit
+      already ships -- an entry named <span className="mono">github</span> would silently change
+      what every existing GitHub connection means. A malformed entry stops the server at start
+      rather than vanishing from a menu. Your own providers are marked <b>yours</b> in the Add
+      menu.
+    </p>
 
     <h3>MCP servers</h3>
     <p>

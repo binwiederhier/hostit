@@ -14,6 +14,7 @@ test("an MCP server is added by URL, lists its tools, and is granted to an app",
   const created = await request.post("/api/apps", { data: { name: app } });
   expect(created.status(), await created.text()).toBe(201);
 
+  let slug = "";
   try {
     await page.goto("/connections");
     const card = page.locator(".card", { hasText: "MCP servers" });
@@ -25,7 +26,7 @@ test("an MCP server is added by URL, lists its tools, and is granted to an app",
     await dialog.getByLabel("Name", { exact: true }).fill(name);
     const reference = dialog.getByLabel("Reference");
     await expect(reference).toHaveValue(/^e2e-wiki-/);
-    const slug = await reference.inputValue();
+    slug = await reference.inputValue();
     await dialog.getByLabel("Server URL").fill(OPEN_SERVER);
     await dialog.getByRole("button", { name: "Connect" }).click();
 
@@ -66,7 +67,11 @@ test("an MCP server is added by URL, lists its tools, and is granted to an app",
     await page.getByRole("dialog").getByRole("button", { name: "Remove" }).click();
     await expect(page.locator(".conn-row", { hasText: name })).toHaveCount(0);
   } finally {
+    // Both, unconditionally: a failure part-way through used to leave the
+    // connection behind, and the leftovers pile up on the shared stage instance
+    // run after run.
     await request.delete(`/api/apps/${app}`);
+    await request.delete(`/api/connections/${slug}`);
   }
 });
 

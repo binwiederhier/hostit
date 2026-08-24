@@ -3864,6 +3864,25 @@ body.ws-resizing iframe {
   margin-top: 8px;
 }
 
+/* A closing line under a card: where to go when what you want is not offered. */
+.conn-footer {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+/* Marks a provider this instance's operator added, in the Add menu. */
+.conn-menu-badge {
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: 8px;
+  background: var(--border);
+  color: var(--muted);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
 .conn-tools-count {
   margin: 6px 0 0;
 }

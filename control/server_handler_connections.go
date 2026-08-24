@@ -63,6 +63,9 @@ type apiProviderResponse struct {
 	// provider and is not something the form can guess.
 	NameHint string              `json:"name_hint,omitempty"`
 	Fields   []connections.Field `json:"fields,omitempty"`
+	// Custom marks a provider this operator wrote in control.yml, so the UI can
+	// say which entries are the instance's own rather than hostit's.
+	Custom bool `json:"custom,omitempty"`
 }
 
 type apiConnectionsResponse struct {
@@ -97,9 +100,19 @@ type apiAppConnectionsResponse struct {
 	Available []*apiConnectionResponse `json:"available"`
 }
 
+// lookupProvider resolves a provider through this instance's overlay, so an
+// operator's own entry is visible everywhere a built-in is. Falls back to the
+// global catalog when connections are disabled entirely.
+func (s *Server) lookupProvider(name string) (connections.Provider, bool) {
+	if s.connections == nil {
+		return connections.Lookup(name)
+	}
+	return s.connections.lookup(name)
+}
+
 func (s *Server) connectionView(c *store.Connection) *apiConnectionResponse {
 	label := c.Provider
-	if p, ok := connections.Lookup(c.Provider); ok {
+	if p, ok := s.lookupProvider(c.Provider); ok {
 		label = p.Label
 	}
 	n, _ := s.apps.Store().CountGrants(c.ID)
@@ -167,7 +180,8 @@ func (s *Server) offeredProviders(kind string) []apiProviderResponse {
 		if kind != "" && p.Kind != kind {
 			continue
 		}
-		out = append(out, apiProviderResponse{Name: p.Name, Label: p.Label, Kind: p.Kind, Help: p.Help, NameHint: p.NameHint, Fields: p.Fields})
+		out = append(out, apiProviderResponse{Name: p.Name, Label: p.Label, Kind: p.Kind,
+			Help: p.Help, NameHint: p.NameHint, Fields: p.Fields, Custom: p.Custom})
 	}
 	return out
 }
@@ -189,7 +203,7 @@ func (s *Server) handleConnectionAdd(w http.ResponseWriter, r *http.Request, c *
 		writeError(w, http.StatusBadRequest, fmt.Errorf("%w: use lowercase letters, digits and dashes, 3-32 characters", ErrInvalidSlug))
 		return
 	}
-	p, ok := connections.Lookup(req.Provider)
+	p, ok := s.lookupProvider(req.Provider)
 	if !ok || !s.connections.available(p) {
 		writeError(w, http.StatusBadRequest, fmt.Errorf("%q cannot be connected on this server", req.Provider))
 		return
@@ -260,7 +274,7 @@ func (s *Server) handleConnectionUpdate(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 	if len(req.Values) > 0 {
-		p, ok := connections.Lookup(conn.Provider)
+		p, ok := s.lookupProvider(conn.Provider)
 		if !ok || p.Kind != connections.KindStatic {
 			writeError(w, http.StatusBadRequest, errors.New("this connection's credential is replaced by reconnecting, not by editing"))
 			return
@@ -299,7 +313,7 @@ func (s *Server) handleConnectionReconnect(w http.ResponseWriter, r *http.Reques
 		writeConnectionError(w, err)
 		return
 	}
-	p, ok := connections.Lookup(conn.Provider)
+	p, ok := s.lookupProvider(conn.Provider)
 	if !ok {
 		writeError(w, http.StatusBadRequest, errors.New("this connection is not an OAuth account"))
 		return
@@ -488,7 +502,7 @@ func (s *Server) connectionFromState(w http.ResponseWriter, r *http.Request, sta
 		s.finishMCPConsent(w, r, user.ID, parts[2], code)
 		return true
 	}
-	p, ok := connections.Lookup(providerName)
+	p, ok := s.lookupProvider(providerName)
 	if !ok || !s.connections.available(p) {
 		writeError(w, http.StatusBadRequest, fmt.Errorf("%q cannot be connected here", providerName))
 		return true
@@ -585,7 +599,7 @@ func (s *Server) handleSelfConnectionsList(w http.ResponseWriter, r *http.Reques
 	out := make([]*apiSelfConnectionResponse, 0, len(granted))
 	for _, c := range granted {
 		label := c.Provider
-		if p, ok := connections.Lookup(c.Provider); ok {
+		if p, ok := s.lookupProvider(c.Provider); ok {
 			label = p.Label
 		}
 		out = append(out, &apiSelfConnectionResponse{

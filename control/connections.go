@@ -6,12 +6,14 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"sort"
 	"strings"
 	"sync"
 	"time"
 
 	"heckel.io/hostit/connections"
 	"heckel.io/hostit/controlconf"
+	"heckel.io/hostit/mcp"
 	"heckel.io/hostit/store"
 )
 
@@ -37,6 +39,9 @@ const (
 	// being served. Wide enough that a token handed out now is still valid by
 	// the time the app has finished using it.
 	tokenCacheMargin = 2 * time.Minute
+	// discoveryTimeout bounds asking a custom provider's issuer where its
+	// endpoints are. Short: it is on the path of rendering the Add menu.
+	discoveryTimeout = 10 * time.Second
 )
 
 // connectionManager owns credential custody: sealing what is stored, opening
@@ -53,6 +58,18 @@ type connectionManager struct {
 	// database writes as well.
 	cached  map[string]cachedToken
 	cacheMu sync.Mutex // Protects cached
+	// custom are the providers this operator wrote in control.yml; discovered
+	// holds the endpoints resolved for the ones that gave an issuer instead of
+	// writing them out.
+	custom     map[string]connections.Provider
+	discovered map[string]oauthEndpoints
+	customMu   sync.Mutex // Protects custom and discovered
+}
+
+// oauthEndpoints is one provider's resolved authorize and token URLs.
+type oauthEndpoints struct {
+	authURL  string
+	tokenURL string
 }
 
 // cachedToken is one connection's live access token.
@@ -69,11 +86,13 @@ type cachedToken struct {
 
 func newConnectionManager(st *store.Store, key []byte, conf *controlconf.Config) *connectionManager {
 	return &connectionManager{
-		store:  st,
-		key:    key,
-		client: &http.Client{Timeout: 20 * time.Second},
-		conf:   conf,
-		cached: map[string]cachedToken{},
+		store:      st,
+		key:        key,
+		client:     &http.Client{Timeout: 20 * time.Second},
+		conf:       conf,
+		cached:     map[string]cachedToken{},
+		custom:     map[string]connections.Provider{},
+		discovered: map[string]oauthEndpoints{},
 	}
 }
 
@@ -85,19 +104,25 @@ func (m *connectionManager) clientFor(provider string) (id, secret string) {
 
 // available reports whether a provider can be offered here at all.
 func (m *connectionManager) available(p connections.Provider) bool {
+	// An unresolved custom provider has no endpoints to send anyone to, so it
+	// is not offered until discovery succeeds.
+	if p.NeedsDiscovery() {
+		return false
+	}
 	return p.Configured(m.clientFor(p.Name))
 }
 
 // offered is every provider this instance can actually connect, for the UI. A
-// provider whose client is not configured is not shown rather than shown and
-// broken.
+// provider whose client is not configured -- or whose endpoints could not be
+// discovered -- is not shown rather than shown and broken.
 func (m *connectionManager) offered() []connections.Provider {
 	out := make([]connections.Provider, 0)
-	for _, p := range connections.All() {
+	for _, p := range append(connections.All(), m.customProviders()...) {
 		if m.available(p) {
 			out = append(out, p)
 		}
 	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out
 }
 
@@ -192,7 +217,7 @@ func (m *connectionManager) tokenFor(ctx context.Context, a *store.App, slug str
 	if !grantedTo(granted, conn.ID) {
 		return connections.Token{}, errNotGranted
 	}
-	p, ok := connections.Lookup(conn.Provider)
+	p, ok := m.lookup(conn.Provider)
 	if !ok {
 		return connections.Token{}, fmt.Errorf("unknown provider %q", conn.Provider)
 	}
@@ -381,4 +406,113 @@ func grantedTo(granted []*store.Connection, id string) bool {
 		}
 	}
 	return false
+}
+
+// ---- Operator-written providers -------------------------------------------
+
+// loadCustomProviders turns the entries in control.yml that describe a whole
+// provider (rather than just a client for one hostit ships) into providers this
+// instance offers.
+//
+// They live HERE, on the manager, and not in the connections package's global
+// catalog. Registering into a global at startup would leak between servers in
+// one test binary and make the set of providers depend on what else had run.
+//
+// A broken entry is an error, not a warning: the operator is looking at the file
+// they just edited, and a provider silently missing from a menu is the hardest
+// possible way to find out it is malformed.
+func (m *connectionManager) loadCustomProviders(conf *controlconf.Config) error {
+	custom := make(map[string]connections.Provider)
+	for name, client := range conf.ConnectionClients {
+		if !client.DescribesProvider() {
+			continue // just a client for a provider hostit already ships
+		}
+		p, err := connections.CustomProvider(name, connections.CustomSpec{
+			Label:          client.Label,
+			Scopes:         client.Scopes,
+			Issuer:         client.Issuer,
+			AuthURL:        client.AuthURL,
+			TokenURL:       client.TokenURL,
+			AuthParams:     client.AuthParams,
+			LongLivedToken: client.LongLivedToken,
+			Help:           client.Help,
+			NameHint:       client.NameHint,
+		})
+		if err != nil {
+			return fmt.Errorf("connections: %w", err)
+		}
+		custom[name] = p
+	}
+	m.customMu.Lock()
+	defer m.customMu.Unlock()
+	m.custom = custom
+	return nil
+}
+
+// lookup resolves a provider by name, preferring this instance's own entries.
+// Everything that used connections.Lookup for a CONNECTABLE provider goes
+// through here, or an operator's provider would be invisible to half the code.
+func (m *connectionManager) lookup(name string) (connections.Provider, bool) {
+	m.customMu.Lock()
+	p, ok := m.custom[name]
+	m.customMu.Unlock()
+	if ok {
+		return m.resolved(p), true
+	}
+	return connections.Lookup(name)
+}
+
+// resolved fills in the endpoints of a provider whose operator gave an issuer
+// instead, asking the service's own metadata where they are -- the same walk
+// hostit does for an MCP server.
+//
+// Done on FIRST USE rather than at startup: resolving needs the network, and a
+// blip while control happens to be restarting should not silently drop a
+// provider from the menu for the rest of the process's life. Cached once it
+// succeeds, so it costs one request per provider per restart.
+func (m *connectionManager) resolved(p connections.Provider) connections.Provider {
+	if !p.NeedsDiscovery() {
+		return p
+	}
+	m.customMu.Lock()
+	if endpoints, ok := m.discovered[p.Name]; ok {
+		m.customMu.Unlock()
+		return p.WithEndpoints(endpoints.authURL, endpoints.tokenURL)
+	}
+	m.customMu.Unlock()
+
+	ctx, cancel := context.WithTimeout(context.Background(), discoveryTimeout)
+	defer cancel()
+	meta, err := mcp.AuthServerMetadata(ctx, m.client, p.Issuer)
+	if err != nil || meta.AuthorizationEndpoint == "" || meta.TokenEndpoint == "" {
+		// Returned unresolved: Configured() then reports it as unavailable, so
+		// it is not offered rather than offered and broken.
+		slog.Warn("Cannot discover a custom provider's OAuth endpoints; it will not be offered",
+			"provider", p.Name, "issuer", p.Issuer, "error", err)
+		return p
+	}
+	m.customMu.Lock()
+	m.discovered[p.Name] = oauthEndpoints{authURL: meta.AuthorizationEndpoint, tokenURL: meta.TokenEndpoint}
+	m.customMu.Unlock()
+	slog.Info("Discovered a custom provider's OAuth endpoints",
+		"provider", p.Name, "authorize", meta.AuthorizationEndpoint, "token", meta.TokenEndpoint)
+	return p.WithEndpoints(meta.AuthorizationEndpoint, meta.TokenEndpoint)
+}
+
+// customProviders is this instance's own entries, resolved, for the menu.
+func (m *connectionManager) customProviders() []connections.Provider {
+	m.customMu.Lock()
+	names := make([]string, 0, len(m.custom))
+	for name := range m.custom {
+		names = append(names, name)
+	}
+	m.customMu.Unlock()
+	sort.Strings(names)
+	out := make([]connections.Provider, 0, len(names))
+	for _, name := range names {
+		if p, ok := m.lookup(name); ok {
+			out = append(out, p)
+		}
+	}
+	return out
 }

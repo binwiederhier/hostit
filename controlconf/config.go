@@ -226,6 +226,34 @@ func (c *Config) WebEnabled() bool {
 type OAuthClient struct {
 	ClientID     string `yaml:"client-id"`
 	ClientSecret string `yaml:"client-secret"`
+
+	// The rest describe a provider hostit does NOT ship, written by the
+	// operator. A catalog entry was always pure data, so supplying that data
+	// here gets the same behaviour with no code -- see connections/custom.go.
+	//
+	// Setting Label is what marks an entry as describing a provider rather than
+	// just holding a client for one hostit already knows.
+	Label  string   `yaml:"label"`
+	Scopes []string `yaml:"scopes"`
+	// Issuer stands in for AuthURL and TokenURL: hostit reads the service's own
+	// authorization-server metadata to find them.
+	Issuer         string            `yaml:"issuer"`
+	AuthURL        string            `yaml:"auth-url"`
+	TokenURL       string            `yaml:"token-url"`
+	AuthParams     map[string]string `yaml:"auth-params"`
+	LongLivedToken bool              `yaml:"long-lived-token"`
+	Help           string            `yaml:"help"`
+	NameHint       string            `yaml:"name-hint"`
+}
+
+// DescribesProvider reports whether this entry defines a provider of its own,
+// rather than supplying a client for one hostit ships.
+//
+// The label is the marker because it is the one field a custom entry cannot do
+// without -- it is what a person reads in the Add menu -- and the one a
+// client-only entry has no reason to set.
+func (c OAuthClient) DescribesProvider() bool {
+	return strings.TrimSpace(c.Label) != ""
 }
 
 // ConnectionClient returns the OAuth client for a provider, or empties if this

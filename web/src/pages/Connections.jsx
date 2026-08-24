@@ -103,6 +103,13 @@ const Connections = () => {
         providers={providers.filter((p) => p.kind === "oauth")}
         loading={data === null && !error}
         noProvidersText="No accounts can be connected on this server yet: an admin sets each provider's OAuth client in control.yml."
+        footer={
+          <>
+            Missing an OAuth connection?{" "}
+            <DocsLink guide="admin" section="connections">Add it yourself</DocsLink> or ask your
+            administrator.
+          </>
+        }
         {...shared}
       />
       <ConnectionsCard
@@ -190,7 +197,7 @@ const Connections = () => {
 // One of the two cards. Both are the same shape -- what is attached, and one
 // button to attach more -- so they share a component rather than being copied
 // with the nouns changed.
-const ConnectionsCard = ({ title, hint, emptyText, cta, items, providers, singleProvider, loading, onAdd, onRename, onReconnect, onRemove, noProvidersText }) => (
+const ConnectionsCard = ({ title, hint, emptyText, cta, items, providers, singleProvider, loading, onAdd, onRename, onReconnect, onRemove, noProvidersText, footer }) => (
   <div className="card">
     <div className="conn-head">
       <h2>{title}</h2>
@@ -237,6 +244,7 @@ const ConnectionsCard = ({ title, hint, emptyText, cta, items, providers, single
     {noProvidersText && singleProvider === undefined && providers.length === 0 && (
       <p className="hint">{noProvidersText}</p>
     )}
+    {footer && !loading && <p className="hint conn-footer">{footer}</p>}
   </div>
 );
 
@@ -411,6 +419,7 @@ const AddMenu = ({ label, providers, onPick, disabledText }) => {
             {named.map((p) => (
               <button key={p.name} type="button" role="menuitem" className="conn-menu-item" onClick={() => choose(p)}>
                 {p.label}
+                {p.custom && <span className="conn-menu-badge">yours</span>}
               </button>
             ))}
           </div>
