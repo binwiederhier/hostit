@@ -65,7 +65,7 @@ test:
 
 # End-to-end tests against a RUNNING server; they create and delete e2e-* apps,
 # so point them at a test instance. RUN= selects tests (go test -run syntax):
-#   HOSTIT_HOST=https://hostit.apps.example.com HOSTIT_TOKEN=... make e2e
+#   HOSTIT_HOST=https://apps.example.com HOSTIT_TOKEN=... make e2e
 #   HOSTIT_HOST=... HOSTIT_TOKEN=... make e2e RUN='TestFork|TestChurn'
 RUN ?= .
 # E2E_PARALLEL caps how many e2e tests run concurrently: most tests are
