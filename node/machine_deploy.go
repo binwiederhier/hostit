@@ -344,7 +344,13 @@ func (m *Machine) UseRawAppsView(dir string) {
 // run is torn down first -- made rprivate before the unmount, so the unmounts
 // cannot propagate back onto the running containers' mounts.
 func (m *Machine) MountRawAppsView(dir string) error {
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	// 0700: this is the node's own root-only view of EVERY app's files, and it
+	// lives in the run directory that is bind-mounted read-only into every
+	// container. At 0755 a tenant traversed it and read every other tenant's
+	// source, hostit.yml (env secrets included) and authorized_keys -- a real
+	// cross-tenant breach. Root (the node) still reads it; the container's
+	// mapped, unprivileged uid no longer can.
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
 	// Best effort: nothing to tear down on a fresh boot.
@@ -352,6 +358,11 @@ func (m *Machine) MountRawAppsView(dir string) error {
 	_, _ = m.runner.Run("umount", "-R", dir)
 	if _, err := m.runner.Run("mount", "--bind", m.config.AppsDir, dir); err != nil {
 		return fmt.Errorf("cannot bind the raw apps view at %s: %w", dir, err)
+	}
+	// The bind takes the source directory's mode, so re-assert 0700 on top of
+	// the mount -- the MkdirAll above only sets it on the empty mountpoint.
+	if err := os.Chmod(dir, 0o700); err != nil {
+		return fmt.Errorf("cannot restrict the raw apps view: %w", err)
 	}
 	if _, err := m.runner.Run("mount", "--make-private", dir); err != nil {
 		return fmt.Errorf("cannot make the raw apps view private: %w", err)
