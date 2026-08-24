@@ -18,7 +18,7 @@ hostit_domain: "apps.example.com"
 hostit_admin_token: "CHANGE-ME"
 
 # Which release to install (https://github.com/binwiederhier/hostit/releases).
-hostit_version: "0.21.0"
+hostit_version: "0.22.0"
 
 # btrfs app homes -> snapshots, rollback, fork, hard disk quotas. REQUIRED: hostit
 # refuses to start unless apps-dir is btrfs, and this role sets it up.
