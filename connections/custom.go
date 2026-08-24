@@ -48,7 +48,7 @@ func CustomProvider(name string, spec CustomSpec) (Provider, error) {
 	// A custom entry that shadowed a built-in would silently change what every
 	// existing connection of that name means, which is not a thing an operator
 	// should be able to do by accident.
-	if _, taken := registry[name]; taken {
+	if _, taken := Lookup(name); taken {
 		return Provider{}, fmt.Errorf("%q is a built-in provider; pick another name", name)
 	}
 	if strings.TrimSpace(spec.Label) == "" {

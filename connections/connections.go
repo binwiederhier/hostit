@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"regexp"
 	"sort"
+	"sync"
 	"time"
 )
 
@@ -120,25 +121,38 @@ type Token struct {
 	Meta      string     `json:"meta,omitempty"`
 }
 
-// registry holds the providers hostit knows how to connect.
-var registry = map[string]Provider{}
+// registry holds the providers hostit knows how to connect. Register is called
+// from init() in production, so writes finish before serving; the mutex makes it
+// safe anyway (tests register at runtime, concurrent with request-path reads).
+var (
+	registry   = map[string]Provider{}
+	registryMu sync.RWMutex // Protects registry
+)
 
 // Register adds a provider. Called from init() in each provider's file, so the
 // set of providers is the set of files that define one.
-func Register(p Provider) { registry[p.Name] = p }
+func Register(p Provider) {
+	registryMu.Lock()
+	defer registryMu.Unlock()
+	registry[p.Name] = p
+}
 
 // Lookup returns a provider by name.
 func Lookup(name string) (Provider, bool) {
+	registryMu.RLock()
+	defer registryMu.RUnlock()
 	p, ok := registry[name]
 	return p, ok
 }
 
 // All returns every known provider, ordered so the UI is stable.
 func All() []Provider {
+	registryMu.RLock()
 	out := make([]Provider, 0, len(registry))
 	for _, p := range registry {
 		out = append(out, p)
 	}
+	registryMu.RUnlock()
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out
 }
