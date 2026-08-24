@@ -5,6 +5,7 @@ import { useReconnect } from "../hooks";
 import { ErrorBanner, Loading, Skeleton, VisibilityChoice, VisibilityMark, Wordmark, pairMB, UsagePair, usageLevel, visibilityOf } from "../components";
 import { previewSrc, previewShotSrc, previewScale, DESKTOP_WIDTH, DESKTOP_HEIGHT } from "../preview";
 import { filterAppName, isValidAppName } from "../appname";
+import { slugsToGrant } from "../newappgrant";
 
 
 // The name form, shared by the empty state and the "New app" button. Both need
@@ -40,7 +41,34 @@ const CreateForm = ({ name, setName, onSubmit, creating, atLimit, big = false, i
 // New app behind a modal, reached from the "New app" button. A dialog asks for
 // the one thing needed -- the name -- instead of a field unfolding in place,
 // which read as an odd half-state next to the app list.
-const NewAppDialog = ({ name, setName, onSubmit, creating, atLimit, onCancel, isPrivate, setPrivate, connections, grantAll, setGrantAll }) => {
+const NewAppDialog = ({ name, setName, onSubmit, creating, atLimit, onCancel, isPrivate, setPrivate, connections, grantMode, setGrantMode, grantSelected, setGrantSelected }) => {
+  const toggleGrant = (slug) =>
+    setGrantSelected(grantSelected.includes(slug) ? grantSelected.filter((s) => s !== slug) : [...grantSelected, slug]);
+  const connName = (c) => c.label || c.name || c.slug;
+  // The connection picker is a popup anchored under the "Selected" card. Close it
+  // on a click anywhere outside -- in CAPTURE, since the modal form stops
+  // mousedown from bubbling, so a bubble-phase listener would never see it.
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerPos, setPickerPos] = useState(null); // {top,left,width} for the floating popup
+  const selRef = useRef(null);
+  // Position:fixed so the popup floats FREE of the modal's overflow clip, at the
+  // card's coordinates. Recomputed on open (the modal does not scroll under it).
+  const openPicker = () => {
+    setGrantMode("selected");
+    if (selRef.current) {
+      const r = selRef.current.getBoundingClientRect();
+      setPickerPos({ top: r.bottom + 6, left: r.left, width: r.width });
+    }
+    setPickerOpen((o) => !o);
+  };
+  useEffect(() => {
+    if (!pickerOpen) return undefined;
+    const onDown = (e) => {
+      if (selRef.current && !selRef.current.contains(e.target)) setPickerOpen(false);
+    };
+    document.addEventListener("mousedown", onDown, true);
+    return () => document.removeEventListener("mousedown", onDown, true);
+  }, [pickerOpen]);
   const valid = isValidAppName(name);
   const host = window.location.host;
   const sub = (name || "").replace(/[^a-z0-9-]/g, "") || "app";
@@ -57,7 +85,6 @@ const NewAppDialog = ({ name, setName, onSubmit, creating, atLimit, onCancel, is
             <p className="newapp-sub">It gets its own container, subdomain and HTTPS certificate.</p>
           </div>
         </div>
-        <VisibilityChoice value={isPrivate} onChange={setPrivate} disabled={creating} />
         <label className="newapp-label">App name</label>
         <div className="newapp-input">
           <span className="newapp-dollar mono">$</span>
@@ -78,34 +105,79 @@ const NewAppDialog = ({ name, setName, onSubmit, creating, atLimit, onCancel, is
             <span className="val">ssh <b>{sub}</b>@{host}</span>
           </div>
         </div>
+        <div className="newapp-grant">
+          <span className="newapp-grant-lab">App visibility</span>
+          <VisibilityChoice value={isPrivate} onChange={setPrivate} disabled={creating} />
+        </div>
         {/* Only when there is something to grant. An empty chooser explaining a
             feature nobody has used yet is noise on the one dialog that has to
             stay quick. */}
         {connections.length > 0 && (
           <div className="newapp-grant">
             <span className="newapp-grant-lab">Grant access to</span>
-            <div className="visibility-choice newapp-grant-choice" role="radiogroup" aria-label="Grant connections">
+            <div className="visibility-choice newapp-grant-choice newapp-grant-three" role="radiogroup" aria-label="Grant connections">
               <button
                 type="button"
                 role="radio"
-                aria-checked={grantAll}
-                className={grantAll ? "vis-option vis-option-on" : "vis-option"}
-                onClick={() => setGrantAll(true)}
+                aria-checked={grantMode === "all"}
+                className={grantMode === "all" ? "vis-option vis-option-on" : "vis-option"}
+                onClick={() => { setGrantMode("all"); setPickerOpen(false); }}
                 disabled={creating}
+                title={connections.map(connName).join(", ")}
               >
                 <span className="vis-title">All connections</span>
                 <span className="vis-detail">{connections.length} attached</span>
               </button>
+              <div className="newapp-grant-selwrap" ref={selRef}>
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={grantMode === "selected"}
+                  aria-haspopup="true"
+                  aria-expanded={pickerOpen}
+                  className={grantMode === "selected" ? "vis-option vis-option-on" : "vis-option"}
+                  onClick={openPicker}
+                  disabled={creating}
+                >
+                  <span className="vis-title">Selected connections</span>
+                  <span className="vis-detail">{grantSelected.length > 0 ? `${grantSelected.length} chosen` : "pick which"}</span>
+                </button>
+                {/* A popup of the connections, each a checkmark toggle -- so any
+                    number can be picked without the dialog growing. Fixed-position
+                    (from pickerPos) so it floats past the modal's clipped edge. */}
+                {pickerOpen && pickerPos && (
+                  <div className="newapp-grant-popup" role="menu" aria-label="Choose connections"
+                    style={{ top: pickerPos.top, left: pickerPos.left, minWidth: pickerPos.width }}>
+                    {connections.map((c) => {
+                      const on = grantSelected.includes(c.slug);
+                      return (
+                        <button
+                          type="button"
+                          key={c.slug}
+                          role="menuitemcheckbox"
+                          aria-checked={on}
+                          className={on ? "newapp-grant-popitem on" : "newapp-grant-popitem"}
+                          onClick={() => toggleGrant(c.slug)}
+                          disabled={creating}
+                        >
+                          <span className="newapp-grant-check" aria-hidden="true">{on ? "✓" : ""}</span>
+                          <span className="newapp-grant-name">{connName(c)}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
               <button
                 type="button"
                 role="radio"
-                aria-checked={!grantAll}
-                className={!grantAll ? "vis-option vis-option-on" : "vis-option"}
-                onClick={() => setGrantAll(false)}
+                aria-checked={grantMode === "none"}
+                className={grantMode === "none" ? "vis-option vis-option-on" : "vis-option"}
+                onClick={() => { setGrantMode("none"); setPickerOpen(false); }}
                 disabled={creating}
               >
                 <span className="vis-title">No connections</span>
-                <span className="vis-detail">grant them later</span>
+                <span className="vis-detail">Grant them later</span>
               </button>
             </div>
           </div>
@@ -456,7 +528,8 @@ const Dashboard = ({ account, refreshAccount }) => {
   // The connections this person already has, so the New app dialog can offer
   // to grant them. Loaded once; an empty list simply hides the chooser.
   const [connections, setConnections] = useState([]);
-  const [grantAll, setGrantAll] = useState(false);
+  const [grantMode, setGrantMode] = useState("none"); // none | all | selected
+  const [grantSelected, setGrantSelected] = useState([]); // slugs, for "selected"
   const [toast, setToast] = useState("");
   const [view, setView] = useState(readView);
   const [showArchived, setShowArchived] = useState(readShowArchived);
@@ -547,16 +620,18 @@ const Dashboard = ({ account, refreshAccount }) => {
       // Granted AFTER the app exists, one call each, and failures are not fatal:
       // the app was created and losing a grant is something the app's own
       // Connections tab can fix, where losing the app would not be.
-      if (grantAll) {
+      const grants = slugsToGrant(grantMode, grantSelected, connections);
+      if (grants.length > 0) {
         await Promise.all(
-          connections.map((c) =>
-            api.put(`/api/apps/${encodeURIComponent(name)}/connections/${encodeURIComponent(c.slug)}`, {}).catch(() => {})
+          grants.map((slug) =>
+            api.put(`/api/apps/${encodeURIComponent(name)}/connections/${encodeURIComponent(slug)}`, {}).catch(() => {})
           )
         );
       }
       setName("");
       setPrivate(true);
-      setGrantAll(false);
+      setGrantMode("none");
+      setGrantSelected([]);
       setAdding(false);
       refreshAccount();
       navigate(`/app/${res.name}`);
@@ -655,7 +730,7 @@ const Dashboard = ({ account, refreshAccount }) => {
         </>
       )}
       {adding && (
-        <NewAppDialog name={name} setName={setName} onSubmit={create} creating={creating} atLimit={atLimit} onCancel={cancelAdding} isPrivate={isPrivate} setPrivate={setPrivate} connections={connections} grantAll={grantAll} setGrantAll={setGrantAll} />
+        <NewAppDialog name={name} setName={setName} onSubmit={create} creating={creating} atLimit={atLimit} onCancel={cancelAdding} isPrivate={isPrivate} setPrivate={setPrivate} connections={connections} grantMode={grantMode} setGrantMode={setGrantMode} grantSelected={grantSelected} setGrantSelected={setGrantSelected} />
       )}
       {toast && (
         <div className="snackbar" role="status" aria-live="polite">

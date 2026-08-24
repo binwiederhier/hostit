@@ -7,7 +7,7 @@ test("the new app dialog: private first, filtered name, and a connections choice
   const credential = "e2enew" + Date.now().toString(36).slice(-5);
   // A connection has to exist for the grant chooser to appear at all.
   const made = await request.post("/api/connections", {
-    data: { provider: "generic", slug: credential, label: "E2E new-app", values: { secret: "x" } },
+    data: { provider: "generic", slug: credential, label: credential, values: { secret: "x" } },
   });
   expect(made.status(), await made.text()).toBe(201);
   let app = "";
@@ -43,20 +43,33 @@ test("the new app dialog: private first, filtered name, and a connections choice
     await expect(input).toHaveValue(app);
 
     // Where the name rule used to be: the connections this person already has.
+    // Three choices now -- all, a selected subset, or none (the default).
     const grant = dialog.locator('[aria-label="Grant connections"] [role="radio"]');
     await expect(grant.first()).toContainText("All connections");
-    await expect(grant.nth(1)).toContainText("No connections");
-    await expect(grant.nth(1)).toHaveAttribute("aria-checked", "true", "no connections is preselected");
+    await expect(grant.nth(1)).toContainText("Selected connections");
+    await expect(grant.nth(2)).toContainText("No connections");
+    await expect(grant.nth(2)).toHaveAttribute("aria-checked", "true", "no connections is preselected");
 
-    // Choosing all of them grants them on create.
-    await grant.first().click();
+    // Hovering "All connections" names them in a tooltip.
+    await expect(grant.first()).toHaveAttribute("title", new RegExp(credential));
+
+    // "Selected connections" opens a popup of connections, each a checkmark
+    // toggle; ticking THIS one (the popup may hold others, which is why a subset
+    // is useful) grants it -- and only it -- on create.
+    await grant.nth(1).click();
+    const popup = dialog.locator('[aria-label="Choose connections"]');
+    await expect(popup).toBeVisible();
+    const item = popup.locator(".newapp-grant-popitem", { hasText: credential });
+    await item.click();
+    await expect(item).toHaveAttribute("aria-checked", "true");
     await dialog.getByRole("button", { name: "Create app" }).click();
     await expect(page).toHaveURL(new RegExp(`/app/${app}`), { timeout: 60000 });
 
     const granted = await request.get(`/api/apps/${app}/connections`);
     expect(granted.status()).toBe(200);
-    const body = await granted.json();
-    expect(body.granted.map((c) => c.slug)).toContain(credential);
+    const grantedSlugs = (await granted.json()).granted.map((c) => c.slug);
+    expect(grantedSlugs).toContain(credential);
+    expect(grantedSlugs, "only the ticked connection, not every one").toEqual([credential]);
   } finally {
     if (app) await request.delete(`/api/apps/${app}`);
     await request.delete(`/api/connections/${credential}`);

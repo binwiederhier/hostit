@@ -7,6 +7,14 @@ changed rather than what an operator had to do about it; from v0.15.0 on, each
 release is written down as it is cut. Anything that changes a config file, a
 default, or on-disk state is called out as **Breaking** or **Upgrade note**.
 
+## v0.24.0 (2026-08-24)
+
+- **The New app dialog can grant a chosen subset of connections.** The
+  connections chooser was all-or-nothing; now it offers All (hovering it lists
+  the connections in a tooltip), Selected (a popup where any number can be
+  ticked), or None (the default). It only appears when there are connections to
+  grant, and the private/public choice moved below the name and URL/SSH preview.
+
 ## v0.23.0 (2026-08-24)
 
 - **An app chooses which model answers -- and it works on a Claude subscription,

@@ -270,8 +270,96 @@ p {
 }
 
 .newapp-grant-choice .vis-option {
-  padding-top: 10px;
-  padding-bottom: 10px;
+  padding: 10px;
+}
+
+/* The label ("App visibility" / "Grant access to") sits right above its cards,
+   so the choice below it does not add its standalone top margin. Three classes
+   to beat the later `.newapp .visibility-choice` rule. */
+.newapp .newapp-grant .visibility-choice {
+  margin-top: 0;
+}
+
+/* The grant titles ("Selected connections" is the long one) must stay on one
+   line -- the cards are a third of the dialog each. */
+.newapp-grant-choice.newapp-grant-three .vis-title {
+  white-space: nowrap;
+  font-size: 13px;
+}
+.newapp-grant-choice.newapp-grant-three .vis-detail {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Three grant options (all / selected / none) instead of the visibility pair. */
+/* Three grant cards in one row (all / selected / none). Two classes so it beats
+   .visibility-choice's two-column rule, which is later in the file. */
+.newapp-grant-choice.newapp-grant-three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+@media (max-width: 440px) {
+  .newapp-grant-choice.newapp-grant-three {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* The "Selected" card anchors a popup; the card fills its grid cell like the
+   others, and the popup floats under it without pushing the dialog around. */
+.newapp-grant-selwrap {
+  position: relative;
+  display: flex;
+}
+.newapp-grant-selwrap .vis-option {
+  width: 100%;
+}
+.newapp-grant-popup {
+  position: fixed;
+  z-index: 60;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18);
+  padding: 4px;
+  max-height: 210px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.newapp-grant-popitem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.newapp-grant-popitem:hover:not(:disabled) {
+  background: var(--surface-2, rgba(127, 127, 127, 0.1));
+}
+.newapp-grant-popitem.on {
+  color: var(--accent);
+}
+.newapp-grant-check {
+  flex: none;
+  width: 16px;
+  text-align: center;
+  color: var(--accent);
+  font-weight: 700;
+}
+.newapp-grant-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Top nav */
@@ -5251,7 +5339,7 @@ body.ws-resizing iframe {
 
 /* ---- New-app modal: avatar + live subdomain/ssh preview ---- */
 .newapp {
-  max-width: 440px;
+  max-width: 600px;
   width: 92vw;
 }
 .newapp-head {
