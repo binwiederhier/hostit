@@ -194,6 +194,14 @@ An MCP connection is a `store.Connection` with `Kind = store.ConnectionMCP`.
 - `control/assistantops.go:MCPTools` / `CallMCPTool` -- the control-side half. A
   server that will not answer is skipped rather than failing the turn.
 
+## Where the public docs live
+
+- User guide: `/docs/user/connections/mcp` (what it is, adding one, why hostit
+  makes the calls) and `/docs/user/connections/using` (the socket endpoints).
+- Admin guide: `/docs/admin/connections/mcpsetup` -- the three ways hostit
+  identifies itself, and the one thing to check on a new instance
+  (`/.well-known/oauth-client` must be publicly reachable).
+
 ## Other notes
 
 - **The grant is the whole boundary.** It is checked before hostit contacts the

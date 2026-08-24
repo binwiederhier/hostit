@@ -94,7 +94,7 @@ const Connections = () => {
             Accounts you sign in to once and then grant to individual apps, on the app&rsquo;s
             Connections tab. Apps act as you, and only reach what you grant them. Connect the same
             service twice -- two calendars, say -- and each keeps its own reference.{" "}
-            <DocsLink guide="user" section="connections">How accounts work</DocsLink>
+            <DocsLink guide="user" section="connections" sub="accounts">How accounts work</DocsLink>
           </>
         }
         emptyText="No accounts connected yet."
@@ -106,7 +106,7 @@ const Connections = () => {
         footer={
           <>
             Missing an OAuth connection?{" "}
-            <DocsLink guide="admin" section="connections">Add it yourself</DocsLink> or ask your
+            <DocsLink guide="admin" section="connections" sub="custom">Add it yourself</DocsLink> or ask your
             administrator.
           </>
         }
@@ -119,7 +119,7 @@ const Connections = () => {
             API keys, tokens, SSH keys, database URLs and mailbox passwords you paste in. Stored
             encrypted, and handed to an app only when you grant it. Nothing here needs an OAuth
             client or any review.{" "}
-            <DocsLink guide="user" section="connections">How credentials work</DocsLink>
+            <DocsLink guide="user" section="connections" sub="credentials">How credentials work</DocsLink>
           </>
         }
         emptyText="No credentials stored yet."
@@ -137,7 +137,7 @@ const Connections = () => {
             holds the token, and makes the calls -- so a granted app calls tools by name and
             never holds a credential that would open the whole server. The tools also show up
             in the assistant.{" "}
-            <DocsLink guide="user" section="connections">How MCP servers work</DocsLink>
+            <DocsLink guide="user" section="connections" sub="mcp">How MCP servers work</DocsLink>
           </>
         }
         emptyText="No MCP servers connected yet."

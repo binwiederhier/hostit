@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Snippet, Wordmark } from "../components";
-import { DOCS_GUIDES } from "../docs";
+import { DOCS_GUIDES, docsHref, docsPages, findDocsPage } from "../docs";
 import dashboardShot from "../assets/docs/dashboard.png";
 import workspaceShot from "../assets/docs/workspace.png";
 import editorShot from "../assets/docs/editor.png";
@@ -511,159 +511,332 @@ const VisibilityPage = () => (
 );
 
 // Connections, for the person using them rather than the operator wiring them up.
+const LimitsPage = () => (
+  <>
+    <h2>Resource limits and pools</h2>
+    <p>
+      Every app runs inside three enforced caps: <b>RAM</b> (allocating past it
+      gets the process killed and restarted), <b>disk</b> (a hard budget over
+      everything in the app -- files, installed packages and snapshots together;
+      writing past it fails with <span className="mono">Disk quota exceeded</span>),
+      and <b>CPU</b> (a cores cap; the app is throttled, never killed). New apps
+      start small -- 128 MB RAM, 256 MB disk, half a core -- because most apps
+      are small; raise what a real one needs.
+    </p>
+    <Figure
+      src={resourcesShot}
+      alt="The resources dialog on an app's settings page"
+      caption="The pencil on the Resources card opens this: pick from the presets, and the dialog tells you what is left in your pool."
+    />
+    <p>
+      As an owner you edit RAM and disk yourself: open the app&apos;s{" "}
+      <b>Settings</b> tab and hit the pencil on the <b>Resources</b> card (or{" "}
+      <b>Actions &rarr; Change resources</b>). Your budget is a per-user{" "}
+      <b>pool</b>: all your apps&apos; limits together must fit it, the dialog
+      shows what is left, and choices that no longer fit are grayed out. The
+      dashboard header shows your pool at a glance, and readings turn yellow at
+      75% and red at 90% everywhere they appear. Disk changes apply immediately;
+      RAM and CPU at the next reboot or deploy -- nothing restarts just because
+      you saved a number. CPU caps and pool sizes are set by an admin.
+    </p>
+    <p>
+      Your own AI agent can read the app&apos;s budget from{" "}
+      <span className="mono">GET /api/apps/&#123;app&#125;/info</span> (the{" "}
+      <span className="mono">limits</span> object) but deliberately cannot change
+      it -- an assistant must not raise its own caps.
+    </p>
+  </>
+);
+
+// A link to another docs page, from inside the docs. Real anchors, same as
+// everywhere else -- see docs.js on why.
+const DocsPageLink = ({ guide, section, sub, children }) => (
+  <a className="docs-link" href={docsHref(guide, section, sub)}>{children}</a>
+);
+
+// Connections: the front page of the three kinds.
 const ConnectionsPage = () => (
   <>
     <h2>Connections</h2>
     <p>
       <b>Connections</b> is the word for all of it: attach an account, a secret or a tool server
-      <b>once</b>, then grant it to whichever apps should use it.
-      An app asks hostit for a usable credential when it needs one -- it never holds your
-      password, and nothing is baked into a file you would have to redeploy to change.
+      <b> once</b>, then grant it to whichever apps should use it. An app asks hostit for what it
+      needs when it needs it -- it never holds your password, and nothing is baked into a file you
+      would have to redeploy to change.
     </p>
-    <p>Three kinds, on the <b>Connections</b> page:</p>
+    <p>Three kinds, each with its own card on the <b>Connections</b> page:</p>
     <ul>
       <li>
-        <b>Accounts</b> are services you sign in to: Google Calendar, Gmail, Slack, Discord,
-        GitHub, Jira. You approve them at the provider, and hostit keeps the permission.
+        <DocsPageLink guide="user" section="connections" sub="accounts">Accounts</DocsPageLink>{" "}
+        are services you sign in to -- Google Calendar, Gmail, Slack, Discord, GitHub, Jira,
+        Linear, HubSpot. You approve them at the provider and hostit keeps the permission.
       </li>
       <li>
-        <b>Credentials</b> are secrets you paste: an API key, an SSH key, a database URL, a
-        mailbox or calendar password. Nothing to approve and nothing that expires.
+        <DocsPageLink guide="user" section="connections" sub="credentials">Credentials</DocsPageLink>{" "}
+        are secrets you paste -- an API key, an SSH key, a database URL, a mailbox password.
+        Nothing to approve and nothing that expires.
       </li>
       <li>
-        <b>MCP servers</b> are tool servers you point hostit at by URL. hostit signs in if the
-        server asks it to, and then calls the tools for your apps -- see below.
+        <DocsPageLink guide="user" section="connections" sub="mcp">MCP servers</DocsPageLink> are
+        tool servers you point hostit at by URL. hostit signs in if the server asks it to, holds
+        the token, and calls the tools for your apps.
       </li>
     </ul>
 
     <h3>Name and reference</h3>
     <p>
-      Each one has two labels, and they do different jobs. The <b>name</b> is for you --
+      Every connection has two labels, and they do different jobs. The <b>name</b> is for you --
       &ldquo;Work calendar&rdquo; -- and changing it affects nothing else. The <b>reference</b> is
-      what an app asks for, a short lowercase handle like{" "}
-      <span className="mono">work-calendar</span>, and it is filled in from the name so you do not
-      have to invent both. Changing a reference breaks any app already using the old one, so the
-      dialog says so.
+      what an app asks for, a short lowercase handle like <span className="mono">work-calendar</span>,
+      and it is filled in from the name so you do not have to invent both. Changing a reference
+      breaks any app already using the old one, so the dialog says so.
     </p>
     <p>
       This is why you can attach the <b>same service twice</b>: a work calendar and a personal one
       are two connections with two references, and an app asks for whichever it was granted.
+      References are unique across all three kinds -- an app addresses a connection by reference
+      alone, so no two can share one.
     </p>
 
     <h3>Granting an app</h3>
     <p>
-      Attaching something gives no app access to it. Open the app, go to <b>Settings</b>, and grant
-      it there. Revoking takes effect immediately -- no redeploy, no restart. Removing the
-      connection entirely cuts off every app at once.
+      Attaching something gives no app access to it. Open the app, go to its <b>Connections</b>{" "}
+      tab, and grant it there. Revoking takes effect immediately -- no redeploy, no restart.
+      Removing the connection entirely cuts off every app at once.
+    </p>
+    <p>
+      A grant is per app and per connection, whichever kind it is. Granting the work calendar does
+      not hand over the personal one.
+    </p>
+    <p>
+      Then see{" "}
+      <DocsPageLink guide="user" section="connections" sub="using">Using them in an app</DocsPageLink>{" "}
+      for what an app actually does with what it was granted.
+    </p>
+  </>
+);
+
+const AccountsPage = () => (
+  <>
+    <h2>Accounts</h2>
+    <p>
+      An <b>account</b> is a service you sign in to. hostit sends you to the provider, you approve
+      it there, and hostit keeps the permission -- then hands your apps a short-lived token
+      whenever they ask, refreshing it in the background.
     </p>
 
-    <h3>What an app does with it</h3>
-    <p>An app reads what it was granted over its own socket, and asks for a credential per use:</p>
-    <Snippet
-      text={`curl --unix-socket /run/hostit/hostit.sock http://x/api/container/connections\ncurl --unix-socket /run/hostit/hostit.sock http://x/api/container/connections/work-calendar/token`}
-    />
+    <h3>Connecting one</h3>
+    <ol className="docs-steps">
+      <li>Open <b>Connections</b> and click <b>Add account</b>.</li>
+      <li>Pick the service. Only services your administrator has set up are listed.</li>
+      <li>
+        Give it a name you will recognise (&ldquo;Work calendar&rdquo;). The reference is filled in
+        for you.
+      </li>
+      <li>
+        Click <b>Continue to&hellip;</b>. You land on the provider&rsquo;s own consent screen; approve
+        it and you come back to hostit with the account attached.
+      </li>
+    </ol>
     <p>
-      The second returns <span className="mono">{`{"access_token": "...", "expires_at": "..."}`}</span>{" "}
-      -- with <span className="mono">expires_at</span> absent when the credential does not expire.
-      An app should fetch it when it needs it rather than saving it: an account token expires
-      within the hour, and asking again is what makes revoking work. The built-in assistant is told
-      which connections an app holds, so you can ask it to build something that uses one.
-    </p>
-
-    <h3>A provider hostit does not ship</h3>
-    <p>
-      The catalog entries were always <b>pure data</b> -- there is no per-provider code anywhere,
-      and the vendor quirks that look like special cases (Google&rsquo;s{" "}
-      <span className="mono">access_type=offline</span>, Atlassian&rsquo;s audience, Slack&rsquo;s
-      token that never expires) are all fields. So you can write your own entry in the same{" "}
-      <span className="mono">connections:</span> block and it behaves exactly like a built-in.
-    </p>
-    <p>
-      Setting <span className="mono">label</span> is what marks an entry as describing a provider
-      rather than just holding a client for one hostit already knows:
-    </p>
-    <Snippet
-      text={`connections:
-  acme:
-    label: Acme                      # required: what a person reads
-    client-id: YOUR_CLIENT_ID
-    client-secret: YOUR_SECRET
-    scopes: [read, write]
-    auth-url: https://acme.example.com/oauth/authorize
-    token-url: https://acme.example.com/oauth/token
-    help: Your Acme workspace.       # optional, shown in the dialog
-    name-hint: Acme                  # optional, suggested connection name`}
-    />
-    <p>
-      If the service publishes OAuth metadata you can give an <span className="mono">issuer</span>{" "}
-      instead of the two URLs, and hostit will ask it where its endpoints are -- the same discovery
-      it does for an MCP server:
-    </p>
-    <Snippet
-      text={`connections:
-  acme:
-    label: Acme
-    client-id: YOUR_CLIENT_ID
-    client-secret: YOUR_SECRET
-    scopes: [read, write]
-    issuer: https://acme.example.com`}
-    />
-    <p>
-      Two more optional fields cover the awkward vendors:{" "}
-      <span className="mono">auth-params</span> adds whatever extra query parameters that provider
-      demands on the consent URL, and <span className="mono">long-lived-token: true</span> says it
-      issues a token that never expires and no refresh token, so hostit stores the access token
-      itself.
-    </p>
-    <p className="hint">
-      The name (the key) must be lowercase letters, digits and dashes, and cannot be one hostit
-      already ships -- an entry named <span className="mono">github</span> would silently change
-      what every existing GitHub connection means. A malformed entry stops the server at start
-      rather than vanishing from a menu. Your own providers are marked <b>yours</b> in the Add
-      menu.
-    </p>
-
-    <h3>MCP servers</h3>
-    <p>
-      An MCP server is a service that exposes <b>tools</b> over a standard protocol -- search this
-      mailbox, list those issues, create that document. Growing numbers of products publish one.
-      Add it with just its URL:
-    </p>
-    <Snippet text={`https://mcp.example.com/mcp`} />
-    <p>
-      hostit asks the server what it needs. If it wants authorization, hostit works out where to
-      send you, you approve it there, and hostit keeps the permission -- the same round trip as
-      any other connection, except that nothing has to be registered by an admin first. If the
-      server needs no sign-in, it is attached straight away. Either way the tool list appears on
-      the row, so you can see what the server actually offers before granting it.
-    </p>
-    <p>
-      <b>The difference from a credential:</b> hostit does not hand the token to your app. An MCP
-      token opens the whole server -- every tool, your whole account there -- so giving it to an
-      app would make the grant meaningless. Instead the app sends a tool name and arguments, and
-      hostit makes the call:
-    </p>
-    <Snippet
-      text={`curl --unix-socket /run/hostit/hostit.sock http://x/api/container/mcp/issues/tools
-curl --unix-socket /run/hostit/hostit.sock http://x/api/container/mcp/issues/call \\
-  -d '{"tool":"list_issues","arguments":{"team":"core"}}'`}
-    />
-    <p>
-      That means an app needs no MCP client, no OAuth of its own, and nothing to refresh. It also
-      means the <b>assistant</b> can use the tools directly: grant an app an MCP server and its
-      tools appear in the assistant's own tool list, so you can just ask for what you want.
+      If the service you want is not in the menu, it has no OAuth client on this instance yet. Any
+      service can be added -- see{" "}
+      <DocsPageLink guide="admin" section="connections" sub="custom">your own provider</DocsPageLink>{" "}
+      in the administration guide, or ask your administrator.
     </p>
 
     <h3>Reconnecting</h3>
     <p>
-      If a provider expires or revokes its permission, the app starts failing and the fix is{" "}
-      <b>Reconnect</b> on the connection. That keeps the reference and every grant, and only
-      replaces the credential underneath -- no app needs regranting.
+      If a provider expires or revokes its permission, apps start failing and the fix is{" "}
+      <b>Reconnect</b> on the connection&rsquo;s menu. That keeps the reference and every grant, and
+      only replaces the credential underneath -- no app needs regranting.
     </p>
     <p className="hint">
       Google is the one provider likely to need this regularly: while an instance is unverified,
-      Google expires its permission after seven days. Attaching a calendar over{" "}
-      <b>CalDAV</b>, or a mailbox over <b>IMAP</b> with an app password, avoids that entirely.
+      Google expires its permission after seven days. Attaching a calendar over <b>CalDAV</b>, or a
+      mailbox over <b>IMAP</b> with an app password, avoids that entirely -- both are{" "}
+      <DocsPageLink guide="user" section="connections" sub="credentials">credentials</DocsPageLink>{" "}
+      and need no review at all.
+    </p>
+
+    <h3>What each account gives an app</h3>
+    <table className="docs-table">
+      <thead>
+        <tr><th>Account</th><th>What an app can do with it</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Google Calendar</td><td>Read and write the calendars on that Google account</td></tr>
+        <tr><td>Gmail</td><td>Read that mailbox (read-only)</td></tr>
+        <tr><td>Slack</td><td>Read channels and history, post messages, look up users</td></tr>
+        <tr><td>Discord</td><td>Your profile and which servers you are in. Reading a server&rsquo;s channels needs a <b>Discord bot</b> credential instead</td></tr>
+        <tr><td>GitHub</td><td>Your repositories, at the scopes the instance registered</td></tr>
+        <tr><td>Jira</td><td>Issues and projects on your Atlassian site</td></tr>
+        <tr><td>Linear</td><td>Issues, projects and teams</td></tr>
+        <tr><td>HubSpot</td><td>Contacts and deals on the connected portal</td></tr>
+      </tbody>
+    </table>
+  </>
+);
+
+const CredentialsPage = () => (
+  <>
+    <h2>Credentials</h2>
+    <p>
+      A <b>credential</b> is a secret you paste in: an API key, a token, an SSH key, a database
+      URL, a mailbox password. hostit encrypts it and hands it back to the apps you grant it to.
+      Nothing to approve, nothing to review, and nothing that expires.
+    </p>
+    <p>
+      This is often the <b>better</b> option even when the service also does OAuth. A Gmail app
+      password over IMAP needs no Google review and never expires; the OAuth route needs both.
+    </p>
+
+    <h3>Adding one</h3>
+    <ol className="docs-steps">
+      <li>Open <b>Connections</b> and click <b>Add credential</b>.</li>
+      <li>Search the menu, or pick <b>Add other credential</b> at the bottom for anything not listed.</li>
+      <li>Name it, fill in the fields, and save. The secret is never shown again.</li>
+    </ol>
+
+    <h3>What you can store</h3>
+    <table className="docs-table">
+      <thead>
+        <tr><th>Credential</th><th>What it needs</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Fastmail</td><td>One API token for mail, calendars and contacts. Settings &rarr; Privacy &amp; Security &rarr; API tokens</td></tr>
+        <tr><td>IMAP mailbox</td><td>Server, username, password. Gmail works at <span className="mono">imap.gmail.com:993</span> with an app password</td></tr>
+        <tr><td>SMTP</td><td>Server, username, password, optional From address</td></tr>
+        <tr><td>CalDAV calendar</td><td>Server URL, username, password. Fastmail, iCloud, Nextcloud</td></tr>
+        <tr><td>CardDAV contacts</td><td>The same, for address books</td></tr>
+        <tr><td>PostgreSQL / MySQL</td><td>A connection URL</td></tr>
+        <tr><td>OpenSearch / Elasticsearch</td><td>Endpoint, and either basic auth or an API key</td></tr>
+        <tr><td>S3 storage</td><td>Access key and secret. Works with DO Spaces, R2, B2, MinIO</td></tr>
+        <tr><td>ntfy</td><td>An access token, and optionally a server and default topic</td></tr>
+        <tr><td>Home Assistant</td><td>Base URL and a long-lived access token</td></tr>
+        <tr><td>SSH key</td><td>A private key with <b>no passphrase</b> -- an app cannot type one</td></tr>
+        <tr><td>Discord bot</td><td>A bot token from your Discord application&rsquo;s Bot tab. This, not the Discord account, is what reads a server&rsquo;s channels</td></tr>
+        <tr><td>API key or token</td><td>The catch-all: any secret at all, with an optional endpoint and note</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Editing and removing</h3>
+    <p>
+      A credential&rsquo;s menu offers <b>Edit</b> -- which renames it, or replaces the secret in place
+      while keeping every grant -- and <b>Remove</b>, which deletes it and cuts off every app at
+      once. The dialog says how many apps are using it before you confirm.
+    </p>
+  </>
+);
+
+const McpPage = () => (
+  <>
+    <h2>MCP servers</h2>
+    <p>
+      An <b>MCP server</b> is a service that exposes <b>tools</b> over a standard protocol -- search
+      this mailbox, list those issues, create that document. Growing numbers of products publish
+      one. You add it with nothing but its URL.
+    </p>
+
+    <h3>Adding one</h3>
+    <ol className="docs-steps">
+      <li>Open <b>Connections</b> and click <b>Add MCP server</b>.</li>
+      <li>Name it, and paste the server&rsquo;s endpoint URL.</li>
+      <li>
+        Click <b>Connect</b>. hostit asks the server what it needs. If it wants you to sign in, you
+        are sent to approve it and come back; if it does not, it is attached straight away.
+      </li>
+    </ol>
+    <p>
+      Nothing has to be registered by an administrator first -- this is the one kind you can add
+      entirely by yourself. Once attached, the row shows the endpoint and a tool count; click the
+      count to see exactly what the server offers before you grant it to anything.
+    </p>
+    <p>Public servers you can try right now, with no account and no sign-in:</p>
+    <Snippet text={`https://mcp.deepwiki.com/mcp`} />
+
+    <h3>What makes them different</h3>
+    <p>
+      hostit does <b>not</b> hand the token to your app. An MCP token opens the whole server --
+      every tool, your whole account there -- so giving it to an app would make the grant
+      meaningless. Instead the app sends a tool name and arguments and hostit makes the call.
+    </p>
+    <p>
+      That means an app needs no MCP client, no sign-in of its own, and nothing to refresh. It also
+      means the <b>assistant</b> can use the tools directly: grant an app an MCP server and its
+      tools appear in the assistant&rsquo;s own tool list, so you can just ask for what you want.
+    </p>
+    <p className="hint">
+      Some servers cannot be connected: if the service behind one only accepts OAuth clients
+      registered by hand, hostit says so when you add it and names the server, so you know what
+      your administrator would have to register. GitHub&rsquo;s MCP endpoint is currently one of
+      these.
+    </p>
+  </>
+);
+
+const UsingPage = () => (
+  <>
+    <h2>Using them in an app</h2>
+    <p>
+      An app reads what it was granted over its own unix socket. No token, no hostname, no
+      configuration -- the socket is inside the container and hostit knows which app is calling.
+    </p>
+
+    <h3>What am I holding?</h3>
+    <Snippet text={`curl --unix-socket /run/hostit/hostit.sock http://x/api/container/connections`} />
+    <p>
+      Answers a list, each entry carrying the reference to ask for, the provider, and the kind.
+    </p>
+
+    <h3>An account or a credential</h3>
+    <Snippet
+      text={`curl --unix-socket /run/hostit/hostit.sock \\
+  http://x/api/container/connections/work-calendar/token`}
+    />
+    <p>
+      Answers <span className="mono">{`{"access_token": "...", "expires_at": "..."}`}</span>, with{" "}
+      <span className="mono">expires_at</span> absent when the credential does not expire. Fetch it
+      when you need it rather than saving it: an account token expires within the hour, and asking
+      again is what makes revoking work.
+    </p>
+    <p className="hint">
+      <b>Never</b> print a token, echo it into a log, or write it to a file. Read it at the moment
+      it is used.
+    </p>
+
+    <h3>An MCP server</h3>
+    <Snippet
+      text={`curl --unix-socket /run/hostit/hostit.sock http://x/api/container/mcp/issues/tools
+
+curl --unix-socket /run/hostit/hostit.sock \\
+  http://x/api/container/mcp/issues/call \\
+  -d '{"tool":"list_issues","arguments":{"team":"core"}}'`}
+    />
+    <p>
+      The call answers <span className="mono">{`{"text": "...", "is_error": false}`}</span>.{" "}
+      <span className="mono">is_error</span> means the <b>tool</b> failed -- the call happened and
+      the answer is bad news -- which is still an HTTP 200, because there is nothing to retry.
+    </p>
+
+    <h3>Asking for the wrong thing</h3>
+    <p>
+      An MCP server has no credential to hand out, so asking one for a token answers <b>404</b> and
+      says where to call its tools instead. Asking a credential for tools answers the same way. A
+      connection you were not granted answers <b>403</b>; one that does not exist answers{" "}
+      <b>404</b> -- two different fixes, in two different places, so they are two different codes.
+    </p>
+
+    <h3>The assistant already knows</h3>
+    <p>
+      The built-in assistant is told which connections an app holds, so you can ask it to build
+      something that uses one without explaining any of the above. Granted MCP tools go further:
+      they become tools the assistant can call directly.
+    </p>
+    <p className="hint">
+      Both roots work: <span className="mono">/api/container/&hellip;</span> and the original{" "}
+      <span className="mono">/v1/&hellip;</span>. They are the same surface on the same socket, and{" "}
+      <span className="mono">/v1</span> will keep answering forever.
     </p>
   </>
 );
@@ -872,6 +1045,63 @@ const ApiPage = () => (
             path="/api/apps/{name}/connections/{slug}"
             what="Grant one of your connections to an app, or revoke it. Takes effect immediately -- no deploy, no restart"
           />
+          <Endpoint method="PUT" path="/api/apps/{name}/description" what={`Set the app's one-line description: {"description":"..."}`} />
+          <Endpoint method="PUT" path="/api/apps/{name}/visibility" what={`Public or private: {"private":true}`} />
+          <Endpoint method="PATCH" path="/api/apps/{name}/limits" what={`Memory and disk for this app: {"memory_mb":512,"disk_mb":2048}. Bounded by your pool`} />
+          <Endpoint method="PUT" path="/api/apps/{name}/snapshot-config" what={`Automatic snapshot interval: {"interval":"3h"}. Written into hostit.yml`} />
+          <Endpoint method="PUT" path="/api/apps/{name}/keys" what={`SSH keys allowed into this app's container: {"ssh_keys":["ssh-ed25519 ..."]}`} />
+          <Endpoint method="POST" path="/api/apps/{name}/transfer" what={`Hand the app to another account: {"email":"..."}. You lose ownership`} />
+          <Endpoint method="GET|POST" path="/api/apps/{name}/collaborators" what={`Who can change this app. POST {"email":"..."}`} />
+          <Endpoint method="DELETE" path="/api/apps/{name}/collaborators/{userID}" what="Remove a collaborator" />
+          <Endpoint method="GET|POST" path="/api/apps/{name}/viewers" what={`Who can view a PRIVATE app. POST {"email":"..."}`} />
+          <Endpoint method="DELETE" path="/api/apps/{name}/viewers/{userID}" what="Remove a viewer" />
+          <Endpoint method="DELETE" path="/api/apps/{name}/domains/{domain}" what="Detach a custom domain" />
+          <Endpoint method="POST" path="/api/apps/{name}/domains/{domain}/verify" what="Re-check the DNS for a pending custom domain, rather than waiting for the next sweep" />
+          <Endpoint method="GET" path="/api/apps/{name}/events" what="This app's activity feed: deploys, restarts, grants, domain changes" />
+          <Endpoint method="POST" path="/api/apps/{name}/preview" what="Take a fresh dashboard screenshot now" />
+          <Endpoint method="GET" path="/api/apps/{name}/preview.png" what="That screenshot" />
+          <Endpoint method="POST" path="/api/apps/{name}/archive" what="Shelve the app: it stops serving and stops counting against your app limit" />
+          <Endpoint method="POST" path="/api/apps/{name}/unarchive" what="Bring it back" />
+          <Endpoint method="DELETE" path="/api/account/tokens/{id}" what="Revoke one of your API tokens" />
+          <Endpoint method="DELETE" path="/api/account/keys/{id}" what="Remove one of your SSH keys" />
+          <Endpoint method="GET" path="/api/health" what="Liveness, unauthenticated" />
+        </tbody>
+      </table>
+
+      <h3>The assistant</h3>
+      <table className="docs-table">
+        <thead>
+          <tr><th>Method</th><th>Path</th><th>What it does</th></tr>
+        </thead>
+        <tbody>
+          <Endpoint method="GET" path="/api/apps/{name}/assistant" what="The conversation so far, plus token usage and cost" />
+          <Endpoint method="POST" path="/api/apps/{name}/assistant" what={`Send a message: {"text":"...","model":"..."}. The reply arrives on the stream below`} />
+          <Endpoint method="DELETE" path="/api/apps/{name}/assistant/transcript" what="Clear the conversation" />
+          <Endpoint method="GET" path="/api/apps/{name}/assistant/stream" what="Server-sent events: tokens, tool calls and results as they happen" />
+          <Endpoint method="POST" path="/api/apps/{name}/assistant/stop" what="Interrupt the turn in progress" />
+          <Endpoint method="POST" path="/api/apps/{name}/assistant/upload" what="Attach an image to the next message (multipart)" />
+        </tbody>
+      </table>
+      <p className="hint">
+        <span className="mono">/api/apps/{"{name}"}/terminal</span> exists too, but it is a
+        websocket carrying a PTY rather than a REST endpoint. Use{" "}
+        <span className="mono">ssh</span> for anything scripted.
+      </p>
+
+      <h3>Administrators only</h3>
+      <p>Every path here answers 403 for a normal account, whatever its token.</p>
+      <table className="docs-table">
+        <thead>
+          <tr><th>Method</th><th>Path</th><th>What it does</th></tr>
+        </thead>
+        <tbody>
+          <Endpoint method="GET|POST" path="/api/users" what={`Every account. POST {"email":"..."} invites one`} />
+          <Endpoint method="PATCH|DELETE" path="/api/users/{id}" what={`Approve, suspend, change role or set per-user pools: {"status":"active","role":"admin","memory_pool_mb":2048}`} />
+          <Endpoint method="GET|POST" path="/api/domains" what={`Domains this instance will serve apps on. POST {"domain":"example.com"}`} />
+          <Endpoint method="DELETE" path="/api/domains/{domain}" what="Stop serving a domain" />
+          <Endpoint method="GET" path="/api/cluster" what="The nodes, their health, and what each is running" />
+          <Endpoint method="GET|PATCH" path="/api/settings" what="Instance defaults: per-app memory and disk, app limits, the assistant's budget" />
+          <Endpoint method="POST" path="/api/connections/rotate-key" what="Re-seal every stored credential under a fresh key. Runs in the live process; the previous key is kept as connections.key.previous until you delete it" />
         </tbody>
       </table>
 
@@ -904,6 +1134,7 @@ const ApiPage = () => (
           <Endpoint method="POST" path="/api/container/poweron|poweroff|reboot" what="The container" />
           <Endpoint method="GET" path="/api/container/status" what="Whether it is running" />
           <Endpoint method="GET" path="/api/container/logs" what="Recent output" />
+          <Endpoint method="POST" path="/api/container/ensure" what="Provision the workspace if it does not exist yet. What an SSH login calls" />
         </tbody>
       </table>
       <Snippet
@@ -912,6 +1143,12 @@ const ApiPage = () => (
       <p className="hint">
         Ask for a credential when you need it rather than saving it: an account token expires within
         the hour, and asking again is what makes revoking a grant take effect immediately.
+      </p>
+      <p className="hint">
+        One more path exists on this socket and is deliberately not part of the API:{" "}
+        <span className="mono">POST /api/container/tool/{"{name}"}</span> runs a single assistant
+        tool against the calling app. It is how the sandboxed assistant backend reaches its tools,
+        and its shape follows that backend rather than any compatibility promise.
       </p>
     </div>
   </>
@@ -1240,278 +1477,542 @@ apps-allowed-addresses:
 // Connections setup: the per-provider registration steps. This is the page an
 // operator actually needs, because the hostit half is one YAML block and the
 // provider half is a different console every time.
+// Every provider page is COMPLETE on its own: the redirect URIs, the steps, the
+// scopes, the config block and the gotchas. Nothing says "see above" -- an
+// operator setting up Slack should never have to read the GitHub page.
+const RedirectURIs = () => (
+  <>
+    <h3>Redirect URIs</h3>
+    <p>
+      hostit builds the callback from whichever hostname the user is browsing, and two serve the
+      web app on this instance:
+    </p>
+    <Snippet text={`https://${baseDomain}/auth/callback\nhttps://${host}/auth/callback`} />
+    <p>
+      Register <b>every hostname hostit is browsed at</b>. hostit always sends an explicit{" "}
+      <span className="mono">redirect_uri</span>, so the provider matches the right one. Avoid
+      wildcard matching where a provider offers it: it lets an authorization code be sent to any
+      subdomain.
+    </p>
+  </>
+);
+
+// The config block each provider page ends with, so none of them has to point
+// at another page to say where the credentials go.
+const ProviderConfig = ({ name, note }) => (
+  <>
+    <h3>Where the credentials go</h3>
+    <p>
+      In <span className="mono">control.yml</span>, under <span className="mono">connections:</span>,
+      keyed by provider name. Restart hostit-control to pick it up; the provider then appears in the
+      <b> Add account</b> menu.
+    </p>
+    <Snippet text={`connections:\n  ${name}:\n    client-id: YOUR_CLIENT_ID\n    client-secret: YOUR_CLIENT_SECRET`} />
+    {note}
+    <p className="hint">
+      A provider with no client configured is hidden from the UI rather than shown and broken. If
+      it does not appear after a restart, the key name is the first thing to check -- it must be
+      exactly <span className="mono">{name}</span>.
+    </p>
+  </>
+);
+
 const ConnectionsSetupPage = () => (
   <>
     <h2>Connections setup</h2>
     <p>
-      Users connect accounts and paste credentials in their profile, then grant them to
-      individual apps. <b>Credentials</b> -- an IMAP mailbox, a CalDAV calendar, a database
-      URL, any API key -- need nothing from you: they are always offered.
+      Users attach accounts, credentials and MCP servers on their own <b>Connections</b> page, then
+      grant them to individual apps. How much of that needs you depends on the kind:
     </p>
+    <table className="docs-table">
+      <thead>
+        <tr><th>Kind</th><th>What you have to do</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><b>Credentials</b></td>
+          <td>
+            <b>Nothing.</b> An IMAP mailbox, a CalDAV calendar, a database URL, an SSH key, any
+            API key -- always offered, no client, no review.
+          </td>
+        </tr>
+        <tr>
+          <td><b>MCP servers</b></td>
+          <td>
+            <b>Nothing.</b> Users add them by URL and hostit works out the rest. See{" "}
+            <DocsPageLink guide="admin" section="connections" sub="mcpsetup">MCP servers</DocsPageLink>{" "}
+            for the one thing worth checking on a new instance.
+          </td>
+        </tr>
+        <tr>
+          <td><b>Accounts</b></td>
+          <td>
+            Register an OAuth client with each provider and put it in{" "}
+            <span className="mono">control.yml</span>. One page each, below.
+          </td>
+        </tr>
+      </tbody>
+    </table>
     <p>
-      <b>Connections</b> are OAuth accounts, and each provider needs a client <i>you</i>{" "}
-      register with that provider. There is no shared hostit client to inherit, because
-      getting one reviewed is your own relationship with them. A provider with no client
-      configured is hidden from the UI rather than shown and broken.
+      There is no shared hostit client to inherit for an account provider: registering one, and
+      getting it reviewed where that is required, is your own relationship with that vendor.
     </p>
 
-    <h3>The redirect URI</h3>
-    <p>
-      Every provider asks for a callback URL. hostit builds it from whichever hostname the
-      user is browsing, and two serve the web app:
+    <h3>The providers</h3>
+    <table className="docs-table">
+      <thead>
+        <tr><th>Provider</th><th>Effort</th><th>Notes</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><DocsPageLink guide="admin" section="connections" sub="linear">Linear</DocsPageLink></td>
+          <td>Minutes</td><td>The quickest of the set, and a good one to prove the flow with</td>
+        </tr>
+        <tr>
+          <td><DocsPageLink guide="admin" section="connections" sub="github">GitHub</DocsPageLink></td>
+          <td>Minutes</td><td>No review, no scope declaration</td>
+        </tr>
+        <tr>
+          <td><DocsPageLink guide="admin" section="connections" sub="slack">Slack</DocsPageLink></td>
+          <td>Minutes</td><td>Bot token, never expires</td>
+        </tr>
+        <tr>
+          <td><DocsPageLink guide="admin" section="connections" sub="discord">Discord</DocsPageLink></td>
+          <td>Minutes</td><td>Reading a server&rsquo;s channels needs a bot token as well</td>
+        </tr>
+        <tr>
+          <td><DocsPageLink guide="admin" section="connections" sub="jira">Jira</DocsPageLink></td>
+          <td>Moderate</td><td>One callback URL per integration</td>
+        </tr>
+        <tr>
+          <td><DocsPageLink guide="admin" section="connections" sub="hubspot">HubSpot</DocsPageLink></td>
+          <td>Moderate</td><td>Needs a developer account</td>
+        </tr>
+        <tr>
+          <td><DocsPageLink guide="admin" section="connections" sub="google">Google</DocsPageLink></td>
+          <td>Hard</td><td>Verification; Gmail needs a paid annual security review</td>
+        </tr>
+        <tr>
+          <td><DocsPageLink guide="admin" section="connections" sub="custom">Your own</DocsPageLink></td>
+          <td>Minutes</td><td>Anything hostit does not ship, written in <span className="mono">control.yml</span></td>
+        </tr>
+      </tbody>
+    </table>
+    <p className="hint">
+      Before registering anything, check whether a credential does the job. A Gmail app password
+      over IMAP needs no review and never expires; the Google account route needs both.
     </p>
-    <Snippet
-      text={`https://${baseDomain}/auth/callback\nhttps://${host}/auth/callback`}
-    />
-    <p>
-      Register <b>every hostname hostit is browsed at</b>. All of these providers accept
-      several -- GitHub takes up to ten via <i>Add callback URL</i> -- so one client can
-      serve a staging and a production instance together. hostit always sends an explicit{" "}
-      <span className="mono">redirect_uri</span>, so the provider matches the right one.
-      Avoid wildcard matching where a provider offers it: it lets an authorization code be
-      sent to any subdomain.
-    </p>
+  </>
+);
 
-    <h3>GitHub</h3>
+const GithubPage = () => (
+  <>
+    <h2>GitHub</h2>
+    <p>
+      Gives an app access to the user&rsquo;s repositories. No review and no scope declaration:
+      GitHub takes the scopes at authorize time.
+    </p>
+    <RedirectURIs />
+    <h3>Register the app</h3>
     <ol className="docs-steps">
-      <li>Go to <span className="mono">github.com/settings/developers</span> &rarr; <b>OAuth Apps</b> &rarr; <b>New OAuth App</b>.</li>
+      <li><span className="mono">github.com/settings/developers</span> &rarr; <b>OAuth Apps</b> &rarr; <b>New OAuth App</b>.</li>
       <li>Application name: anything. Homepage URL: your hostit URL.</li>
-      <li><b>Authorization callback URL</b>: the first URL above. Then <b>Add callback URL</b> for each of the others (up to ten).</li>
-      <li><b>Register application</b>. Copy the <b>Client ID</b>.</li>
+      <li><b>Authorization callback URL</b>: the first URL above. Then <b>Add callback URL</b> for each of the others -- GitHub takes up to ten, so one client can serve staging and production together.</li>
+      <li><b>Register application</b>, then copy the <b>Client ID</b>.</li>
       <li><b>Generate a new client secret</b> and copy it -- GitHub shows it once.</li>
     </ol>
-    <p className="hint">No review, no scope declaration: GitHub takes the scopes at authorize time.</p>
+    <ProviderConfig
+      name="github"
+      note={
+        <p className="hint">
+          GitHub issues a token that does not expire and no refresh token, so hostit stores the
+          access token itself. There is nothing to refresh and nothing to reconnect unless the user
+          revokes it.
+        </p>
+      }
+    />
+  </>
+);
 
-    <h3>Discord</h3>
-    <ol className="docs-steps">
-      <li><span className="mono">discord.com/developers/applications</span> &rarr; <b>New Application</b>, name it.</li>
-      <li>Left sidebar &rarr; <b>OAuth2</b>.</li>
-      <li>Under <b>Redirects</b>, <b>Add Redirect</b> for each URL above, then <b>Save Changes</b> at the bottom. Missing the save is the usual reason consent later fails.</li>
-      <li>Copy the <b>Client ID</b>.</li>
-      <li><b>Reset Secret</b> &rarr; copy the <b>Client Secret</b>.</li>
-    </ol>
-    <p className="hint">
-      Ignore the OAuth2 URL Generator -- that builds invite links, which is a different thing.
-      Note what this gets you: <span className="mono">identify</span> and{" "}
-      <span className="mono">guilds</span> give a profile and a list of which servers someone is
-      in, and <b>nothing inside them</b>. Channels and messages are only reachable by a{" "}
-      <b>bot</b> invited to the server -- for that, create one under the application&rsquo;s{" "}
-      <i>Bot</i> tab, invite it, and paste its token as a <b>Discord bot</b> credential. No
-      OAuth involved.
+const SlackPage = () => (
+  <>
+    <h2>Slack</h2>
+    <p>
+      Puts a bot in one Slack workspace: read channels and their history, post messages, look up
+      users.
     </p>
-
-    <h3>Slack</h3>
+    <RedirectURIs />
+    <h3>Register the app</h3>
     <ol className="docs-steps">
       <li><span className="mono">api.slack.com/apps</span> &rarr; <b>Create New App</b> &rarr; <b>From scratch</b>. Pick a workspace.</li>
       <li><b>OAuth &amp; Permissions</b> &rarr; <b>Redirect URLs</b> &rarr; add each URL above &rarr; <b>Save URLs</b>.</li>
-      <li>Same page, <b>Scopes</b> &rarr; <b>Bot Token Scopes</b> &rarr; add the scopes listed below. Bot scopes, not user scopes.</li>
+      <li>
+        Same page, <b>Scopes</b> &rarr; <b>Bot Token Scopes</b> &rarr; add the four below.{" "}
+        <b>Bot</b> token scopes, not User token scopes -- hostit stores the top-level{" "}
+        <span className="mono">access_token</span> from{" "}
+        <span className="mono">oauth.v2.access</span>, which is the bot token. User scopes produce a
+        connection that authorizes cleanly and then cannot read anything.
+      </li>
       <li><b>Install to Workspace</b> and approve.</li>
       <li><b>Basic Information</b> &rarr; <b>App Credentials</b> &rarr; copy the <b>Client ID</b> and <b>Client Secret</b>.</li>
     </ol>
-    <p className="hint">Slack issues a bot token that does not expire, so there is nothing to refresh.</p>
+    <h3>Scopes to add</h3>
+    <Snippet text={`channels:read\nchannels:history\nchat:write\nusers:read`} />
+    <p>
+      These are exactly what hostit requests. A mismatch fails consent with an invalid-scope error.
+    </p>
+    <ProviderConfig
+      name="slack"
+      note={
+        <p className="hint">
+          Slack issues a bot token that does not expire and no refresh token, so hostit stores the
+          access token itself and there is nothing to refresh.
+        </p>
+      }
+    />
+  </>
+);
 
-    <h3>Linear</h3>
+const DiscordPage = () => (
+  <>
+    <h2>Discord</h2>
+    <p>
+      Gives an app the user&rsquo;s Discord profile and the list of servers they are in. It does{" "}
+      <b>not</b> read a server&rsquo;s channels or messages -- that needs a bot token, which is a
+      credential rather than an account. Most useful setups want both.
+    </p>
+    <RedirectURIs />
+    <h3>Register the application</h3>
+    <ol className="docs-steps">
+      <li><span className="mono">discord.com/developers/applications</span> &rarr; <b>New Application</b>. Name it.</li>
+      <li><b>OAuth2</b> &rarr; <b>Redirects</b> &rarr; add each URL above &rarr; <b>Save Changes</b>.</li>
+      <li>Same page, copy the <b>Client ID</b>, then <b>Reset Secret</b> to get a <b>Client Secret</b>.</li>
+    </ol>
+    <h3>Scopes</h3>
+    <Snippet text={`identify\nguilds`} />
+    <h3>The bot half</h3>
+    <p>
+      To read channels and messages, add a bot to the same application and give users its token as
+      a <b>Discord bot</b> credential:
+    </p>
+    <ol className="docs-steps">
+      <li><b>Bot</b> tab &rarr; <b>Add Bot</b> &rarr; <b>Reset Token</b> and copy it.</li>
+      <li>Enable <b>Message Content Intent</b> if the app needs message bodies.</li>
+      <li><b>OAuth2</b> &rarr; <b>URL Generator</b> &rarr; scope <span className="mono">bot</span>, permissions <b>View Channels</b> and <b>Read Message History</b>. Open the generated URL and invite the bot to the server.</li>
+      <li>The bot token is pasted as a credential, not configured here.</li>
+    </ol>
+    <p className="hint">
+      A bot in zero servers can see nothing. If an app reports no channels, the invite step is
+      almost always what was missed.
+    </p>
+    <ProviderConfig
+      name="discord"
+      note={
+        <p className="hint">
+          Discord rotates its refresh token on every use. hostit stores the replacement each time,
+          so this is handled -- but it is why a Discord connection restored from an old database
+          backup will fail with <span className="mono">invalid_grant</span> and need reconnecting.
+        </p>
+      }
+    />
+  </>
+);
+
+const LinearPage = () => (
+  <>
+    <h2>Linear</h2>
+    <p>Issues, projects and teams. The quickest provider to set up, and a good one to prove the flow with.</p>
+    <RedirectURIs />
+    <h3>Register the application</h3>
     <ol className="docs-steps">
       <li><span className="mono">linear.app/settings/api</span> &rarr; <b>OAuth applications</b> &rarr; <b>Create new</b>.</li>
-      <li>Name it and set the <b>Callback URLs</b> to the URLs above, one per line.</li>
+      <li>Name it, and set <b>Callback URLs</b> to the URLs above, one per line.</li>
       <li>Create, then copy the <b>Client ID</b> and <b>Client Secret</b>.</li>
     </ol>
-    <p className="hint">The quickest of the set, and a good one to prove the flow with.</p>
+    <h3>Scopes</h3>
+    <Snippet text={`read\nwrite`} />
+    <ProviderConfig name="linear" />
+  </>
+);
 
-    <h3>Jira (Atlassian)</h3>
+const JiraPage = () => (
+  <>
+    <h2>Jira (Atlassian)</h2>
+    <p>Issues and projects on an Atlassian site.</p>
+    <RedirectURIs />
+    <p className="hint">
+      Atlassian takes <b>one</b> callback URL per integration, unlike the others. A staging and a
+      production instance therefore need separate integrations, each with its own client.
+    </p>
+    <h3>Register the integration</h3>
     <ol className="docs-steps">
       <li><span className="mono">developer.atlassian.com</span> &rarr; <b>Console</b> &rarr; <b>Create</b> &rarr; <b>OAuth 2.0 integration</b>.</li>
       <li><b>Permissions</b> &rarr; add the <b>Jira API</b> &rarr; <b>Configure</b> &rarr; add the scopes below.</li>
-      <li><b>Authorization</b> &rarr; <b>OAuth 2.0 (3LO)</b> &rarr; <b>Configure</b> &rarr; set the callback URL.</li>
+      <li><b>Authorization</b> &rarr; <b>OAuth 2.0 (3LO)</b> &rarr; <b>Configure</b> &rarr; set the callback URL to whichever hostname this instance is browsed at.</li>
       <li><b>Settings</b> &rarr; copy the <b>Client ID</b> and <b>Secret</b>.</li>
     </ol>
-    <p className="hint">
-      Atlassian takes one callback URL per integration, so a separate instance needs its own.
-      The <span className="mono">offline_access</span> scope is what makes it issue a refresh token.
+    <h3>Scopes</h3>
+    <Snippet text={`read:jira-work\nread:jira-user\nwrite:jira-work\noffline_access`} />
+    <p>
+      <span className="mono">offline_access</span> is the one that matters:{" "}
+      without it Atlassian issues no refresh token, and hostit refuses the connection rather than
+      accepting one that works for an hour and then dies.
     </p>
+    <ProviderConfig name="jira" />
+  </>
+);
 
-    <h3>HubSpot</h3>
+const HubspotPage = () => (
+  <>
+    <h2>HubSpot</h2>
+    <p>Contacts and deals on a HubSpot portal. Needs a <b>developer</b> account, which is free.</p>
+    <RedirectURIs />
+    <h3>Register the app</h3>
     <ol className="docs-steps">
-      <li>Sign in to a <b>developer</b> account at <span className="mono">developers.hubspot.com</span> &rarr; <b>Create app</b>.</li>
+      <li>Sign in to a developer account at <span className="mono">developers.hubspot.com</span> &rarr; <b>Create app</b>.</li>
       <li><b>Auth</b> tab &rarr; set the <b>Redirect URL</b> and add the scopes below.</li>
       <li>Copy the <b>Client ID</b> and <b>Client secret</b> from the same tab.</li>
-      <li>Create a <b>test account</b> under Testing to try it against.</li>
+      <li>Create a <b>test account</b> under Testing to try it against, so you are not experimenting on a real portal.</li>
     </ol>
+    <h3>Scopes</h3>
+    <Snippet text={`crm.objects.contacts.read\ncrm.objects.deals.read\noauth`} />
+    <ProviderConfig name="hubspot" />
+  </>
+);
 
-    <h3>Google (Calendar, Gmail)</h3>
-    <ol className="docs-steps">
-      <li>Nothing to register: connections reuse the same client as web login.</li>
-      <li><span className="mono">console.cloud.google.com</span> &rarr; <b>APIs &amp; Services</b> &rarr; <b>Enable APIs</b> &rarr; enable <b>Google Calendar API</b> and/or <b>Gmail API</b> in the project. A valid token still gets <span className="mono">403 SERVICE_DISABLED</span> until you do.</li>
-      <li><b>OAuth consent screen</b> &rarr; <b>Audience</b> &rarr; add every account that will connect under <b>Test users</b>, while publishing status is Testing.</li>
-      <li>Users will see a &ldquo;Google hasn&rsquo;t verified this app&rdquo; screen: <b>Advanced</b> &rarr; <b>Go to&hellip;</b>. Expected until verification.</li>
-    </ol>
-
-    <h3>A provider hostit does not ship</h3>
+const GooglePage = () => (
+  <>
+    <h2>Google (Calendar and Gmail)</h2>
     <p>
-      The catalog entries were always <b>pure data</b> -- there is no per-provider code anywhere,
-      and the vendor quirks that look like special cases (Google&rsquo;s{" "}
-      <span className="mono">access_type=offline</span>, Atlassian&rsquo;s audience, Slack&rsquo;s
-      token that never expires) are all fields. So you can write your own entry in the same{" "}
-      <span className="mono">connections:</span> block and it behaves exactly like a built-in.
+      The most work of any provider, and the one most worth avoiding. Read this page before
+      starting: for a personal instance a <b>credential</b> usually does the same job with none of
+      it.
     </p>
+    <p className="hint">
+      <b>Consider CalDAV and IMAP instead.</b> A Google app password over IMAP reads the same
+      mailbox with no review, no verification and no expiry. CalDAV does the same for calendars,
+      and works with Fastmail and iCloud too. Both are credentials -- always available, nothing for
+      you to register.
+    </p>
+
+    <h3>The client</h3>
+    <p>
+      There is nothing to register. Google connections reuse the same OAuth client as the web
+      login: it is the same Google Cloud client, and scopes are requested per authorization rather
+      than baked into the registration. An explicit entry in{" "}
+      <span className="mono">connections:</span> wins if you want a separate one.
+    </p>
+
+    <h3>Enable the APIs</h3>
+    <ol className="docs-steps">
+      <li>
+        <span className="mono">console.cloud.google.com</span> &rarr; <b>APIs &amp; Services</b>{" "}
+        &rarr; <b>Enable APIs</b> &rarr; enable <b>Google Calendar API</b> and/or <b>Gmail API</b>{" "}
+        in the project.
+      </li>
+      <li>
+        Without this a perfectly valid token still gets{" "}
+        <span className="mono">403 SERVICE_DISABLED</span>. It is the single most common cause of a
+        Google connection that authorizes cleanly and then does nothing.
+      </li>
+    </ol>
+
+    <h3>Test users, while unverified</h3>
+    <ol className="docs-steps">
+      <li><b>OAuth consent screen</b> &rarr; <b>Audience</b> &rarr; add every account that will connect under <b>Test users</b>.</li>
+      <li>
+        Those users see a &ldquo;Google hasn&rsquo;t verified this app&rdquo; screen:{" "}
+        <b>Advanced</b> &rarr; <b>Go to&hellip;</b>. Expected until verification.
+      </li>
+      <li>
+        An account that is not a test user gets <span className="mono">Error 403: access_denied</span>{" "}
+        and cannot proceed at all.
+      </li>
+    </ol>
+    <p className="hint">
+      While the app is unverified, Google <b>expires refresh tokens after seven days</b>. Every
+      connection needs reconnecting weekly. This is the single biggest reason to prefer CalDAV or
+      IMAP.
+    </p>
+
+    <h3>Verification, if you publish</h3>
+    <table className="docs-table">
+      <thead>
+        <tr><th>Scope tier</th><th>Example</th><th>What it costs</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Non-sensitive</td><td>email, profile</td><td>Nothing</td></tr>
+        <tr><td>Sensitive</td><td><b>Calendar</b></td><td>Verification, but <b>free</b> and no security assessment</td></tr>
+        <tr><td>Restricted</td><td><b>Gmail</b></td><td>Verification <b>and</b> a CASA Tier 2 assessment, roughly $800&ndash;$6,000 per year</td></tr>
+      </tbody>
+    </table>
+    <p>
+      So Calendar is worth verifying and removes the seven-day expiry for free. Gmail is dominated
+      by the IMAP credential for anything short of a commercial product.
+    </p>
+
+    <h3>Scopes hostit requests</h3>
+    <Snippet
+      text={`# Google Calendar\nhttps://www.googleapis.com/auth/calendar\n\n# Gmail (read-only)\nhttps://www.googleapis.com/auth/gmail.readonly`}
+    />
+  </>
+);
+
+const CustomProviderPage = () => (
+  <>
+    <h2>Your own provider</h2>
+    <p>
+      Any OAuth 2.0 service hostit does not ship can be added in{" "}
+      <span className="mono">control.yml</span>, and behaves exactly like a built-in.
+    </p>
+    <p>
+      That works because a catalog entry was always <b>pure data</b>. There is no per-provider code
+      anywhere, and the vendor quirks that look like special cases -- Google&rsquo;s{" "}
+      <span className="mono">access_type=offline</span>, Atlassian&rsquo;s audience,
+      Slack&rsquo;s token that never expires -- are all fields.
+    </p>
+
+    <h3>Register a client with the service</h3>
+    <ol className="docs-steps">
+      <li>Create an OAuth application with whatever the service calls its developer settings.</li>
+      <li>
+        Set its redirect URI(s) to the URLs below, and copy the client ID and secret it gives you.
+      </li>
+    </ol>
+    <RedirectURIs />
+
+    <h3>Write the entry</h3>
     <p>
       Setting <span className="mono">label</span> is what marks an entry as describing a provider
       rather than just holding a client for one hostit already knows:
     </p>
     <Snippet
-      text={`connections:
-  acme:
-    label: Acme                      # required: what a person reads
-    client-id: YOUR_CLIENT_ID
-    client-secret: YOUR_SECRET
-    scopes: [read, write]
-    auth-url: https://acme.example.com/oauth/authorize
-    token-url: https://acme.example.com/oauth/token
-    help: Your Acme workspace.       # optional, shown in the dialog
-    name-hint: Acme                  # optional, suggested connection name`}
+      text={`connections:\n  acme:\n    label: Acme                      # required: what a person reads\n    client-id: YOUR_CLIENT_ID\n    client-secret: YOUR_SECRET\n    scopes: [read, write]\n    auth-url: https://acme.example.com/oauth/authorize\n    token-url: https://acme.example.com/oauth/token\n    help: Your Acme workspace.       # optional, shown in the dialog\n    name-hint: Acme                  # optional, suggested connection name`}
     />
+
+    <h3>Or let hostit find the endpoints</h3>
     <p>
-      If the service publishes OAuth metadata you can give an <span className="mono">issuer</span>{" "}
-      instead of the two URLs, and hostit will ask it where its endpoints are -- the same discovery
-      it does for an MCP server:
+      If the service publishes OAuth authorization-server metadata, give an{" "}
+      <span className="mono">issuer</span> instead of the two URLs and hostit will ask it where its
+      endpoints are:
     </p>
     <Snippet
-      text={`connections:
-  acme:
-    label: Acme
-    client-id: YOUR_CLIENT_ID
-    client-secret: YOUR_SECRET
-    scopes: [read, write]
-    issuer: https://acme.example.com`}
+      text={`connections:\n  acme:\n    label: Acme\n    client-id: YOUR_CLIENT_ID\n    client-secret: YOUR_SECRET\n    scopes: [read, write]\n    issuer: https://acme.example.com`}
     />
     <p>
-      Two more optional fields cover the awkward vendors:{" "}
-      <span className="mono">auth-params</span> adds whatever extra query parameters that provider
-      demands on the consent URL, and <span className="mono">long-lived-token: true</span> says it
-      issues a token that never expires and no refresh token, so hostit stores the access token
-      itself.
-    </p>
-    <p className="hint">
-      The name (the key) must be lowercase letters, digits and dashes, and cannot be one hostit
-      already ships -- an entry named <span className="mono">github</span> would silently change
-      what every existing GitHub connection means. A malformed entry stops the server at start
-      rather than vanishing from a menu. Your own providers are marked <b>yours</b> in the Add
-      menu.
+      Verified working against the real metadata of{" "}
+      <span className="mono">https://github.com/login/oauth</span>,{" "}
+      <span className="mono">https://accounts.google.com</span> and{" "}
+      <span className="mono">https://gitlab.com</span>, none of which need their endpoints written
+      out.
     </p>
 
-    <h3>MCP servers</h3>
-    <p>
-      <b>Nothing to do.</b> An MCP server needs no OAuth client from you, and users add one
-      themselves by URL. Where the catalog providers require you to register hostit with each
-      vendor in advance, an MCP server is discovered at the moment somebody pastes its address:
-      hostit asks the server whether it wants authorization (RFC 9728), reads the authorization
-      server&rsquo;s own metadata (RFC 8414 / OpenID Connect Discovery), and identifies itself with
-      a <b>Client ID Metadata Document</b> -- a public JSON document hostit serves at:
-    </p>
-    <Snippet text={`${origin}/.well-known/oauth-client`} />
-    <p>
-      The authorization server fetches that URL to learn who is asking, which is what replaced
-      dynamic client registration in the MCP spec. hostit is a <b>public client</b> here: it holds
-      no secret for a server it has never met, so PKCE stands in, and every token is bound to one
-      server with a resource indicator (RFC 8707) so it cannot be replayed against another.
-    </p>
-    <p>
-      A server that predates that gets <b>dynamic registration</b> instead, done once and
-      remembered. A server that offers neither cannot be connected -- the add dialog says so and
-      names the authorization server, so you know where an OAuth client would have to be
-      registered by hand. GitHub&rsquo;s MCP endpoint is currently in that category.
-    </p>
-    <p className="hint">
-      The one thing worth checking on a new instance: that URL has to be reachable from the
-      internet, or an authorization server cannot fetch it and every consent fails. It is served
-      unauthenticated on purpose -- it is hostit&rsquo;s public identity, not a secret.
-    </p>
-
-    <h3>Scopes to request</h3>
-    <p>
-      Where the provider asks you to declare scopes up front, use these -- they are what
-      hostit requests, and a mismatch fails consent with an invalid-scope error.
-    </p>
+    <h3>The awkward vendors</h3>
     <table className="docs-table">
-      <thead><tr><th>Provider</th><th>Scopes</th></tr></thead>
+      <thead>
+        <tr><th>Field</th><th>What it is for</th></tr>
+      </thead>
       <tbody>
-        <tr><td>GitHub</td><td className="mono">repo, read:user</td></tr>
-        <tr><td>Slack</td><td className="mono">channels:read, channels:history, chat:write, users:read</td></tr>
-        <tr><td>Discord</td><td className="mono">identify, guilds</td></tr>
-        <tr><td>Linear</td><td className="mono">read</td></tr>
-        <tr><td>Jira</td><td className="mono">read:jira-work, read:jira-user, offline_access</td></tr>
-        <tr><td>HubSpot</td><td className="mono">oauth, crm.objects.contacts.read, crm.objects.companies.read, crm.objects.deals.read</td></tr>
-        <tr><td>Google Calendar</td><td className="mono">calendar.readonly</td></tr>
-        <tr><td>Gmail</td><td className="mono">gmail.readonly</td></tr>
+        <tr>
+          <td><span className="mono">auth-params</span></td>
+          <td>
+            Extra query parameters this provider demands on the consent URL, as a map. Google needs{" "}
+            <span className="mono">{`{access_type: offline}`}</span> or it never issues a refresh
+            token.
+          </td>
+        </tr>
+        <tr>
+          <td><span className="mono">long-lived-token: true</span></td>
+          <td>
+            The provider issues a token that never expires and no refresh token, so hostit stores
+            the access token itself. Slack and GitHub are like this. Without it, hostit refuses a
+            connection that came back with no refresh token.
+          </td>
+        </tr>
       </tbody>
     </table>
 
-    <h3>Configure hostit</h3>
-    <p>
-      Put the clients in <span className="mono">control.yml</span> under{" "}
-      <span className="mono">connections:</span>, keyed by provider name. List only what you
-      have; the rest stay hidden.
-    </p>
-    <Snippet
-      text={`connections:\n  github:\n    client-id: YOUR_GITHUB_CLIENT_ID\n    client-secret: YOUR_SECRET\n  slack:\n    client-id: YOUR_SLACK_CLIENT_ID\n    client-secret: YOUR_SECRET\n  discord:\n    client-id: YOUR_DISCORD_CLIENT_ID\n    client-secret: YOUR_SECRET`}
-    />
-    <p>
-      Restart <span className="mono">hostit-control</span> to pick them up. Anything you
-      configured now appears in each user&rsquo;s Profile under <b>Connections</b>.
-    </p>
-
-    <h3>A note on Google</h3>
-    <p>
-      Google is the most expensive provider to offer and the only one that gates on review.
-      Calendar is a <i>sensitive</i> scope (free verification); Gmail is <i>restricted</i>{" "}
-      (verification plus an annual paid CASA assessment). While the consent screen is in{" "}
-      <b>Testing</b>, only accounts you add as test users can connect, and Google{" "}
-      <b>expires refresh tokens after seven days</b>, so every connection needs reconnecting
-      weekly.
-    </p>
-    <p>
-      For personal instances there is a way around it entirely: the <b>IMAP</b> credential
-      reaches Gmail at <span className="mono">imap.gmail.com:993</span> with a Google app
-      password, and <b>CalDAV</b> reaches Fastmail, iCloud or Nextcloud calendars the same
-      way. No OAuth client, no review, and nothing that expires.
+    <h3>Rules</h3>
+    <ul>
+      <li>The key must be lowercase letters, digits and dashes.</li>
+      <li>
+        It cannot be a name hostit already ships -- an entry named{" "}
+        <span className="mono">github</span> would silently change what every existing GitHub
+        connection means, so it is refused.
+      </li>
+      <li>
+        A malformed entry <b>stops the server at start</b> rather than vanishing from a menu. The
+        log names the field.
+      </li>
+      <li>Your own providers are marked <b>yours</b> in the Add menu.</li>
+    </ul>
+    <p className="hint">
+      With an <span className="mono">issuer</span>, the endpoints are resolved the first time the
+      provider is used rather than at startup, so a network blip during a restart does not silently
+      drop it. If discovery fails the provider is not offered, and the log says why.
     </p>
   </>
 );
 
-const LimitsPage = () => (
+const McpSetupPage = () => (
   <>
-    <h2>Resource limits and pools</h2>
+    <h2>MCP servers</h2>
     <p>
-      Every app runs inside three enforced caps: <b>RAM</b> (allocating past it
-      gets the process killed and restarted), <b>disk</b> (a hard budget over
-      everything in the app -- files, installed packages and snapshots together;
-      writing past it fails with <span className="mono">Disk quota exceeded</span>),
-      and <b>CPU</b> (a cores cap; the app is throttled, never killed). New apps
-      start small -- 128 MB RAM, 256 MB disk, half a core -- because most apps
-      are small; raise what a real one needs.
+      <b>Nothing to configure.</b> An MCP server needs no OAuth client from you, and users add them
+      themselves by URL. Where account providers require you to register hostit with each vendor in
+      advance, an MCP server is discovered at the moment somebody pastes its address.
     </p>
-    <Figure
-      src={resourcesShot}
-      alt="The resources dialog on an app's settings page"
-      caption="The pencil on the Resources card opens this: pick from the presets, and the dialog tells you what is left in your pool."
-    />
+
+    <h3>How hostit introduces itself</h3>
+    <p>hostit asks the server what it needs, and then identifies itself in one of three ways:</p>
+    <ol className="docs-steps">
+      <li>
+        <b>A Client ID Metadata Document.</b> hostit&rsquo;s client_id is a URL the authorization
+        server fetches to learn who is asking. This replaced dynamic registration in the MCP spec,
+        and is the usual case.
+      </li>
+      <li>
+        <b>Dynamic registration</b> (RFC 7591), for a server predating that. Done once and
+        remembered.
+      </li>
+      <li>
+        <b>Neither</b> -- the server only knows clients registered by hand. hostit refuses at add
+        time and names the authorization server, so the user knows what would have to be
+        registered. GitHub&rsquo;s MCP endpoint is currently one of these.
+      </li>
+    </ol>
+
+    <h3>The one thing to check</h3>
+    <p>The metadata document is served here, publicly and unauthenticated:</p>
+    <Snippet text={`${origin}/.well-known/oauth-client`} />
     <p>
-      As an owner you edit RAM and disk yourself: open the app&apos;s{" "}
-      <b>Settings</b> tab and hit the pencil on the <b>Resources</b> card (or{" "}
-      <b>Actions &rarr; Change resources</b>). Your budget is a per-user{" "}
-      <b>pool</b>: all your apps&apos; limits together must fit it, the dialog
-      shows what is left, and choices that no longer fit are grayed out. The
-      dashboard header shows your pool at a glance, and readings turn yellow at
-      75% and red at 90% everywhere they appear. Disk changes apply immediately;
-      RAM and CPU at the next reboot or deploy -- nothing restarts just because
-      you saved a number. CPU caps and pool sizes are set by an admin.
+      It must be reachable from the internet, or an authorization server cannot fetch it and{" "}
+      <b>every MCP consent fails</b> -- at the provider, where nobody can see why. If you put hostit
+      behind an authenticating proxy, this path has to stay open. It is hostit&rsquo;s public
+      identity, not a secret.
     </p>
-    <p>
-      Your own AI agent can read the app&apos;s budget from{" "}
-      <span className="mono">GET /api/apps/&#123;app&#125;/info</span> (the{" "}
-      <span className="mono">limits</span> object) but deliberately cannot change
-      it -- an assistant must not raise its own caps.
-    </p>
+    <p>Check it from outside:</p>
+    <Snippet text={`curl -sS ${origin}/.well-known/oauth-client`} />
+
+    <h3>Security notes</h3>
+    <ul>
+      <li>
+        hostit is a <b>public client</b> here: it holds no secret for a server it has never met, so
+        PKCE stands in.
+      </li>
+      <li>
+        Every token is bound to one server with a resource indicator (RFC 8707), so it cannot be
+        replayed against another.
+      </li>
+      <li>
+        hostit never hands an MCP token to an app. An MCP token opens the whole server, so the app
+        sends a tool name and hostit makes the call.
+      </li>
+      <li>
+        A server that issues a client <b>secret</b> during registration is refused: hostit has
+        nowhere safe to keep a per-server secret.
+      </li>
+    </ul>
   </>
 );
 
@@ -1721,126 +2222,149 @@ btrfs qgroup show -re /var/lib/hostit/apps         # disk budgets: 1/<uid> rows,
 //
 // The section list itself lives in ../docs, so that other pages can link to a
 // section without hand-writing a URL. This file supplies the bodies.
+// Renderers, keyed by GUIDE and then by page id.
+//
+// This used to be one flat map, which silently broke: both guides have a page
+// called "connections", so the second entry won and the user guide rendered the
+// admin's setup instructions. A duplicate key in an object literal is not an
+// error in JavaScript, so nothing complained -- nesting by guide makes the
+// collision impossible rather than merely unlikely.
 const renderers = {
-  intro: IntroPage,
-  apps: AppsPage,
-  assistant: AssistantPage,
-  files: FilesPage,
-  ssh: SSHPage,
-  snapshots: SnapshotsPage,
-  domains: DomainsPage,
-  limits: LimitsPage,
-  connections: ConnectionsPage,
-  visibility: VisibilityPage,
-  api: ApiPage,
-  install: InstallPage,
-  config: ConfigPage,
-  deployment: DeploymentPage,
-  connections: ConnectionsSetupPage,
-  admin: AdminPage,
-  troubleshooting: TroubleshootingPage,
+  user: {
+    intro: IntroPage,
+    apps: AppsPage,
+    assistant: AssistantPage,
+    files: FilesPage,
+    ssh: SSHPage,
+    snapshots: SnapshotsPage,
+    domains: DomainsPage,
+    limits: LimitsPage,
+    visibility: VisibilityPage,
+    connections: ConnectionsPage,
+    accounts: AccountsPage,
+    credentials: CredentialsPage,
+    mcp: McpPage,
+    using: UsingPage,
+    api: ApiPage,
+  },
+  admin: {
+    install: InstallPage,
+    config: ConfigPage,
+    deployment: DeploymentPage,
+    connections: ConnectionsSetupPage,
+    google: GooglePage,
+    github: GithubPage,
+    slack: SlackPage,
+    discord: DiscordPage,
+    linear: LinearPage,
+    jira: JiraPage,
+    hubspot: HubspotPage,
+    custom: CustomProviderPage,
+    mcpsetup: McpSetupPage,
+    admin: AdminPage,
+    troubleshooting: TroubleshootingPage,
+  },
 };
 
-const guides = DOCS_GUIDES.map((guide) => ({
-  ...guide,
-  items: guide.items.map((item) => ({ ...item, render: renderers[item.id] })),
-}));
-
+// One page per route. The guides used to render as a single enormous scroll
+// with the sidebar acting as a scrollspy; that stopped being tenable once a
+// section wanted real depth, which is what "a complete page per provider"
+// needs.
 const Docs = () => {
-  const currentKey = window.location.pathname.startsWith("/docs/admin")
-    ? "admin"
-    : "user";
-  const current = useMemo(
-    () => guides.find((g) => g.key === currentKey),
-    [currentKey],
-  );
-  const [activeId, setActiveId] = useState(
-    () => window.location.hash.slice(1) || current.items[0].id,
-  );
+  const [path, setPath] = useState(() => window.location.pathname);
 
-  // Clicking a sidebar anchor updates the hash; reflect it in the active link at once.
+  // The docs live outside the SPA router, so back/forward is ours to handle.
   useEffect(() => {
-    const onHash = () => {
-      const id = window.location.hash.slice(1);
-      if (id) setActiveId(id);
-    };
-    window.addEventListener("hashchange", onHash);
-    return () => window.removeEventListener("hashchange", onHash);
+    const onPop = () => setPath(window.location.pathname);
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
   }, []);
 
-  // Scrollspy: the sidebar tracks which section is in view as you scroll.
-  useEffect(() => {
-    const sections = current.items
-      .map((it) => document.getElementById(it.id))
-      .filter(Boolean);
-    if (!sections.length) return undefined;
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const inView = entries
-          .filter((e) => e.isIntersecting)
-          .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
-        if (inView[0]) setActiveId(inView[0].target.id);
-      },
-      { rootMargin: "0px 0px -70% 0px", threshold: 0 },
-    );
-    sections.forEach((s) => observer.observe(s));
-    return () => observer.disconnect();
-  }, [current]);
+  const { guide, page, parent } = useMemo(
+    () => findDocsPage(path, window.location.hash),
+    [path],
+  );
+  const Body = renderers[guide.key]?.[page.id];
 
-  // Client-rendered SPA: the browser cannot scroll to the initial #hash because the
-  // section did not exist at parse time, so do it once after mount.
   useEffect(() => {
-    const id = window.location.hash.slice(1);
-    const el = id && document.getElementById(id);
-    if (el) el.scrollIntoView();
-    else window.scrollTo(0, 0);
-  }, []);
+    window.scrollTo(0, 0);
+  }, [path]);
+
+  // Intercept clicks on docs links so moving between pages does not reload the
+  // whole app. Anything else -- a new tab, an external link -- behaves normally.
+  const navigate = (e, href) => {
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+    e.preventDefault();
+    window.history.pushState({}, "", href);
+    setPath(href);
+  };
 
   return (
     <div className="docs-shell">
       <nav className="docs-nav" aria-label="Documentation">
-        <a className="docs-nav-brand" href="/docs/user">
+        <a className="docs-nav-brand" href="/docs/user" onClick={(e) => navigate(e, "/docs/user")}>
           <Wordmark />
         </a>
-        {guides.map((g) => {
-          const isCurrent = g.key === currentKey;
-          return (
-            <div className="docs-nav-group" key={g.key}>
-              <div className="docs-nav-title">{g.title}</div>
-              <ul>
-                {g.items.map((it) => {
-                  const active = isCurrent && it.id === activeId;
+        {DOCS_GUIDES.map((g) => (
+          <div className="docs-nav-group" key={g.key}>
+            <div className="docs-nav-title">{g.title}</div>
+            <ul>
+              {docsPages(g.key)
+                // A sub-page is listed only while its parent is the one being
+                // read. Every provider of every guide at once would be a wall
+                // of links rather than a table of contents.
+                .filter(
+                  (p) =>
+                    p.depth === 0 ||
+                    (g.key === guide.key && (p.parentID === page.id || p.parentID === parent?.id)),
+                )
+                .map((p) => {
+                  const active = g.key === guide.key && p.id === page.id;
                   return (
-                    <li key={it.id}>
+                    <li key={p.id} className={p.depth ? "docs-nav-sub" : undefined}>
                       <a
-                        href={isCurrent ? `#${it.id}` : `${g.path}#${it.id}`}
+                        href={p.href}
                         className={active ? "active" : ""}
-                        aria-current={active ? "location" : undefined}
+                        aria-current={active ? "page" : undefined}
+                        onClick={(e) => navigate(e, p.href)}
                       >
-                        {it.title}
+                        {p.title}
                       </a>
                     </li>
                   );
                 })}
-              </ul>
-            </div>
-          );
-        })}
+            </ul>
+          </div>
+        ))}
         <a className="docs-nav-back" href="/">
           &larr; Back to the dashboard
         </a>
       </nav>
 
       <article className="docs docs-main">
-        {current.items.map((it) => {
-          const Body = it.render;
-          return (
-            <section id={it.id} key={it.id} className="docs-section">
-              <Body />
-            </section>
-          );
-        })}
+        <section className="docs-section">{Body ? <Body /> : <p>Nothing here.</p>}</section>
+        <DocsPager guide={guide} page={page} onNavigate={navigate} />
       </article>
+    </div>
+  );
+};
+
+// Previous/next across the flattened guide, so a reader can work through it
+// without going back to the sidebar between every page.
+const DocsPager = ({ guide, page, onNavigate }) => {
+  const all = docsPages(guide.key);
+  const i = all.findIndex((p) => p.id === page.id);
+  const prev = i > 0 ? all[i - 1] : null;
+  const next = i >= 0 && i < all.length - 1 ? all[i + 1] : null;
+  if (!prev && !next) return null;
+  return (
+    <div className="docs-pager">
+      {prev ? (
+        <a href={prev.href} onClick={(e) => onNavigate(e, prev.href)}>&larr; {prev.title}</a>
+      ) : (
+        <span />
+      )}
+      {next && <a href={next.href} onClick={(e) => onNavigate(e, next.href)}>{next.title} &rarr;</a>}
     </div>
   );
 };

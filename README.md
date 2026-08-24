@@ -20,6 +20,9 @@
   command, supervised by the hostit agent) -- deployed with a single `hostit deploy`
 - a workspace with **python3, go, Node.js (with npm), PHP and sqlite3**
   preinstalled (and root, so `apt-get install` anything else you need)
+- **connections** it can be granted -- an OAuth account, a pasted credential or an
+  MCP tool server -- which it reads from its own socket instead of holding a
+  secret ([Connections](#connections-accounts-credentials-and-mcp-servers))
 
 Apps can be shared: the owner adds **collaborators** (existing users, by email)
 in the app's Settings, who get full working access -- deploy, files, terminal,
@@ -531,6 +534,57 @@ actions (start/stop/restart, power on/off, reboot, fork, delete).
 
 The sparkle button on the page hands you the same paste-into-your-own-agent
 prompt, so the browser assistant and an external Claude Code are interchangeable.
+
+## Connections: accounts, credentials and MCP servers
+
+Apps often need to act as *you* somewhere else -- read your calendar, post to a
+Slack channel, query a database. hostit holds the secret so the app does not:
+attach it **once** on the **Connections** page, grant it to whichever apps should
+use it, and revoke it whenever. Nothing is baked into a file you would have to
+redeploy to change, and a revoked grant stops working on the next request rather
+than the next deploy.
+
+Three kinds, because they are three different things:
+
+- **Accounts** are services you sign in to: Google Calendar, Gmail, Slack,
+  Discord, GitHub, Jira, Linear, HubSpot. You approve them at the provider,
+  hostit keeps the refresh token, and apps get a short-lived access token on
+  request. Each provider needs an OAuth client the **operator** registers; one
+  with no client is hidden rather than shown broken.
+- **Credentials** are secrets you paste: Fastmail, IMAP, SMTP, CalDAV, CardDAV,
+  Postgres, MySQL, OpenSearch, S3, ntfy, Home Assistant, an SSH key, a Discord
+  bot token, or any API key at all. **No OAuth client, no review, nothing to
+  register** -- and often the better option even where the vendor also does
+  OAuth: a Gmail app password over IMAP needs no Google verification and never
+  expires.
+- **MCP servers** are tool servers added by URL. hostit works out whether the
+  server wants authorization, walks the sign-in if so, and then **calls the tools
+  itself** -- an MCP token opens the whole server, so handing it to an app would
+  make the grant decorative. Users add these entirely by themselves; there is
+  nothing for an operator to register.
+
+An app reads what it holds over its own unix socket -- no token, no hostname:
+
+```bash
+curl --unix-socket /run/hostit/hostit.sock http://x/api/container/connections
+curl --unix-socket /run/hostit/hostit.sock \
+  http://x/api/container/connections/work-calendar/token
+curl --unix-socket /run/hostit/hostit.sock \
+  http://x/api/container/mcp/issues/call -d '{"tool":"list_issues","arguments":{}}'
+```
+
+The built-in assistant is told which connections an app holds, so you can ask it
+to build something that uses one without explaining any of this; granted MCP
+tools become tools it can call directly.
+
+Secrets are sealed with AES-256-GCM under a key beside the database, bound to the
+row they belong to so ciphertext moved between rows will not decrypt.
+`hostit control connections rotate-key` re-seals everything under a fresh key.
+
+Any OAuth 2.0 service hostit does not ship can be added by the operator in
+`control.yml` -- a label, a client, scopes, and either the two OAuth URLs or an
+`issuer` to discover them from. See the administration guide at
+`/docs/admin/connections`.
 
 ## Snapshots, rollback and quotas
 

@@ -3883,6 +3883,31 @@ body.ws-resizing iframe {
   letter-spacing: 0.04em;
 }
 
+/* Docs: a sub-page under its parent in the sidebar, and the prev/next pager. */
+.docs-nav-sub > a {
+  padding-left: 22px;
+  font-size: 12px;
+}
+
+.docs-pager {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 40px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+  font-size: 14px;
+}
+
+.docs-pager a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.docs-pager a:hover {
+  text-decoration: underline;
+}
+
 .conn-tools-count {
   margin: 6px 0 0;
 }

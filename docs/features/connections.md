@@ -297,6 +297,22 @@ already have root over the container, so neither is a new exposure.
 not overwrite freed pages -- the ciphertext may remain in the database file until
 it is vacuumed. Encrypted, and beside its key.
 
+## Where the public docs live
+
+Split one page per topic since the docs restructure (`web/src/docs.js` is the
+table of contents; every entry is a PAGE, not an anchor):
+
+- User guide: `/docs/user/connections` and its four sub-pages -- `accounts`,
+  `credentials`, `mcp`, `using`.
+- Admin guide: `/docs/admin/connections` and one **complete** page per provider --
+  `google`, `github`, `slack`, `discord`, `linear`, `jira`, `hubspot`, `custom`,
+  `mcpsetup`.
+
+Each provider page carries its own redirect URIs, steps, scopes, config block and
+gotchas. Nothing says "see above": an operator setting up Slack must never have
+to read the GitHub page. `RedirectURIs` and `ProviderConfig` in `Docs.jsx` are
+the shared components that make that repetition cheap.
+
 ## Other notes
 
 - Renaming a connection changes the name apps address it by, and breaks any app
