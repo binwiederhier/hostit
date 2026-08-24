@@ -104,6 +104,10 @@ with nobody.
 Left open by the decision: per-tool grants. A grant is whole-server today, with
 the tools listed in the UI so the owner sees what they are agreeing to.
 
+Also settled since: providers are no longer operator-only. A user can bring
+their own OAuth client (see docs/features/connections.md, "Three tiers of
+provider"), which was the last thing making the catalog feel closed.
+
 ### 4. App capabilities: credentials an app uses but never holds
 
 Blocked on #3. People want to build apps that use AI. Putting an API key in the

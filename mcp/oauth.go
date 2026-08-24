@@ -140,6 +140,35 @@ func postToken(ctx context.Context, client *http.Client, d Discovery, form url.V
 	return out, nil
 }
 
+// registrationError explains a refusal in terms of what the person can do about
+// it, which is usually nothing.
+//
+// The common case is not a mistake at all: a service that allowlists the
+// redirect URIs it will register. Fastmail's MCP server does this -- claude.ai
+// and localhost are accepted, every self-hosted instance is refused -- and the
+// raw answer ("invalid_redirect_uri redirect_uri not a valid scheme or host")
+// reads exactly like something the owner typed wrong.
+func registrationError(d Discovery, redirectURL, code, desc string) error {
+	who := d.Issuer
+	if who == "" {
+		who = d.RegistrationEndpoint
+	}
+	// Providers repeat their own code at the start of the description; printing
+	// both makes hostit look like it is stuttering.
+	detail := strings.TrimSpace(strings.TrimPrefix(desc, code))
+	if detail == "" {
+		detail = code
+	} else {
+		detail = code + ": " + detail
+	}
+	if code == "invalid_redirect_uri" {
+		return fmt.Errorf("%s will not register %s as a client (%s). Some services only accept "+
+			"redirect URLs they have approved in advance, so a self-hosted instance cannot connect "+
+			"to them at all -- there is nothing to fix here", who, redirectURL, detail)
+	}
+	return fmt.Errorf("%s refused to register hostit as a client (%s)", who, detail)
+}
+
 // ClientMetadata is the document an authorization server fetches at the
 // client_id URL to learn who is asking. It must be served publicly and must
 // list the redirect hostit really uses, or every consent is refused.
@@ -216,7 +245,7 @@ func Register(ctx context.Context, client *http.Client, d Discovery, redirectURL
 		return "", fmt.Errorf("%w: the registration endpoint did not answer with a client", ErrProtocol)
 	}
 	if res.Error != "" {
-		return "", fmt.Errorf("registration refused: %s %s", res.Error, res.ErrorDesc)
+		return "", registrationError(d, redirectURL, res.Error, res.ErrorDesc)
 	}
 	if res.ClientID == "" {
 		return "", fmt.Errorf("%w: the registration endpoint returned no client id", ErrProtocol)

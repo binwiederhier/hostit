@@ -58,10 +58,12 @@ type Provider struct {
 	// Issuer is set only on a custom provider whose operator gave one instead
 	// of the two endpoints; they are then discovered from its metadata.
 	Issuer string
-	// Custom marks a provider an operator wrote in control.yml rather than one
-	// hostit ships. It changes nothing about behaviour -- it is for the UI, so
-	// a person can tell which entries are their own.
-	Custom bool
+	// Custom marks a provider an operator wrote rather than one hostit ships.
+	// Personal narrows that further: one a USER defined, visible only to them.
+	// Neither changes behaviour -- they are for the UI, so a person can tell
+	// whose entries are whose.
+	Custom   bool
+	Personal bool
 	// AuthParams are the extra consent-URL parameters THIS provider needs --
 	// Google's access_type=offline, Atlassian's audience. They are per provider
 	// rather than global because copying Google's everywhere is how you end up

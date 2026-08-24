@@ -39,6 +39,40 @@ offer you the wrong thing to attach. An unknown kind is refused rather than
 ignored, since a client asking for one kind and silently getting three would
 trust the answer and be wrong.
 
+## Three tiers of provider
+
+A provider is a DEFINITION -- "here is how to connect to Acme" -- as opposed to a
+connection, which is one person's attached account. Three tiers hold them:
+
+| Tier | Where | Who sees it | Editable via API |
+|---|---|---|---|
+| hostit's catalog | `connections/providers.go` | everyone | no |
+| the operator's | `control.yml`, or `provider` rows with `owner_id = ''` | everyone | only the rows |
+| a user's own | `provider` rows owned by them | only them | yes |
+
+A user having their own OAuth client is an ordinary thing, not a workaround: you
+register an app with the vendor, point it at hostit's callback, and paste the
+pair in. Nothing about OAuth requires the client to belong to the instance. The
+only piece that IS instance-level is the callback URL, which is why the API and
+the dialog both hand it over rather than making people work it out.
+
+Resolution walks the tiers in order (`connectionManager.providerFor`), and
+CREATION refuses a name any higher tier already uses. So an operator can rely on
+what a name means, and a user can never quietly redefine `github` for their own
+apps. Two USERS may each define `acme` -- those are two namespaces, and refusing
+that would let one person's choice of name deny it to everybody else.
+
+`UNIQUE (owner_id, name)` is the index. The catalog clash check applies to OAUTH
+definitions only: an MCP preset's name is a menu label and never becomes a
+connection's provider, so it shares no namespace with the OAuth providers.
+
+Anything resolving a provider on somebody's behalf must go through the
+user-aware path. `connections.Lookup` or `clientFor` directly leaves a personal
+provider invisible -- which is exactly the bug that shipped to stage for ten
+minutes: `available()` checked only control.yml for a client, so a personal
+provider was offered in the menu and then refused on click. `availableFor` is
+the fixed version, and the e2e caught what the unit test did not.
+
 ## Custom providers
 
 A catalog entry is **pure data**. There is no per-provider code anywhere: a grep

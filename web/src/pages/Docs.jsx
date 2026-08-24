@@ -775,6 +775,82 @@ const McpPage = () => (
   </>
 );
 
+const OwnServicesPage = () => (
+  <>
+    <h2>Your own services</h2>
+    <p>
+      If the service you want is not in the <b>Add account</b> menu, you can add it yourself. You do
+      not need an administrator, and you do not need hostit to have heard of the service: you
+      register an OAuth app with them, and paste the client into hostit.
+    </p>
+    <p>
+      Nothing about OAuth requires the client to belong to the server. The only piece that is
+      hostit&rsquo;s is the callback URL, which is why the dialog shows it to you first.
+    </p>
+
+    <h3>Adding one</h3>
+    <ol className="docs-steps">
+      <li>
+        Open <b>Connections</b> and use <b>Add your own</b> under the Accounts card. Copy the
+        callback URL it shows.
+      </li>
+      <li>
+        Go to the service&rsquo;s developer settings and create an OAuth application, pasting that
+        callback URL as its redirect URI.
+      </li>
+      <li>
+        Copy the <b>client ID</b> and <b>client secret</b> it gives you back into the hostit dialog,
+        along with the scopes you want.
+      </li>
+      <li>
+        Give it the <b>authorize</b> and <b>token</b> URLs from the service&rsquo;s documentation --
+        or, if they publish OAuth metadata, just the <b>issuer</b> and hostit will find both.
+      </li>
+    </ol>
+    <p>
+      It then appears in your Add account menu like any other service, marked as yours. Connect it,
+      grant it to an app, and it behaves exactly like one hostit ships.
+    </p>
+
+    <h3>What is yours and what is not</h3>
+    <ul>
+      <li>
+        <b>Only you see it.</b> Another user on this instance sees neither the definition nor any
+        account you connect through it, and the name is free for them to use for something else.
+      </li>
+      <li>
+        <b>You cannot redefine a name hostit or your administrator already uses.</b>{" "}
+        <span className="mono">github</span> has to keep meaning GitHub, for everybody.
+      </li>
+      <li>
+        <b>The client secret is encrypted</b> the same way every other credential here is, and is
+        never shown again once saved.
+      </li>
+      <li>
+        <b>Removing the definition</b> leaves accounts connected through it working until their
+        token expires, after which they cannot be refreshed. Your OAuth app at the service itself is
+        untouched.
+      </li>
+    </ul>
+
+    <h3>Your own MCP servers</h3>
+    <p>
+      The same dialog adds a <b>named</b> MCP server, so one you use often is a pick in the menu
+      rather than a URL you retype. That is only a shortcut -- pasting any URL into{" "}
+      <b>Add MCP server</b> works exactly as before, and needs nothing set up at all.
+    </p>
+
+    <h3>When a service will not have you</h3>
+    <p>
+      Some services only accept OAuth clients they have approved in advance, and refuse to register
+      a self-hosted instance at all. If that happens hostit says so and names the service. There is
+      nothing to fix -- it is their policy, not your mistake. Check whether they offer an API token
+      instead, which you can store as a <DocsPageLink guide="user" section="connections" sub="credentials">credential</DocsPageLink>{" "}
+      with no OAuth at all.
+    </p>
+  </>
+);
+
 const UsingPage = () => (
   <>
     <h2>Using them in an app</h2>
@@ -1932,6 +2008,47 @@ const CustomProviderPage = () => (
       </tbody>
     </table>
 
+    <h3>Or add it from the Admin page</h3>
+    <p>
+      <b>Admin</b> &rarr; <b>Connection providers</b> does the same thing without a restart or a
+      deploy. The two are equivalent: an entry here and an entry in{" "}
+      <span className="mono">control.yml</span> both become a provider everyone on this instance can
+      connect, and the page lists both so you can see everything on offer. Only the database ones
+      are editable there -- a <span className="mono">control.yml</span> entry lives outside the
+      database and is marked as such.
+    </p>
+    <p>
+      Use <span className="mono">control.yml</span> when the definition should be part of your
+      deployment (in Ansible, in git, reproducible on a rebuild). Use the Admin page when you are
+      trying something out.
+    </p>
+
+    <h3>Named MCP servers</h3>
+    <p>
+      The same two places also hold named MCP servers, so a user picks a name rather than
+      remembering a URL. Purely a shortcut -- anyone can still paste any URL:
+    </p>
+    <Snippet
+      text={`mcp-servers:\n  deepwiki:\n    label: DeepWiki\n    url: https://mcp.deepwiki.com/mcp\n    help: Ask questions about a GitHub repository`}
+    />
+    <p>
+      These need no client and no secret. The name only has to be unique among MCP servers -- it
+      never becomes a connection's provider, so it may safely be the same as an OAuth provider's.
+    </p>
+
+    <h3>Users can add their own</h3>
+    <p>
+      A user does not need you for this. Anyone can register an OAuth app with a service themselves
+      and paste the client into hostit, and it is visible only to them -- see{" "}
+      <DocsPageLink guide="user" section="connections" sub="own">Your own services</DocsPageLink> in
+      the user guide. Define one here when it should be available to <i>everybody</i>, or when you
+      want one shared client rather than one per person.
+    </p>
+    <p className="hint">
+      A user cannot redefine a name hostit ships or you have defined, so adding a provider here
+      takes that name for the whole instance.
+    </p>
+
     <h3>Rules</h3>
     <ul>
       <li>The key must be lowercase letters, digits and dashes.</li>
@@ -2262,6 +2379,7 @@ const renderers = {
     accounts: AccountsPage,
     credentials: CredentialsPage,
     mcp: McpPage,
+    own: OwnServicesPage,
     using: UsingPage,
     api: ApiPage,
   },

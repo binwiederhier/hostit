@@ -62,6 +62,13 @@ func (s *Server) newAPIHandler() http.Handler {
 	route(mux, "POST", "/connections/{slug}/reconnect", s.requireActive(s.handleConnectionReconnect))
 	route(mux, "DELETE", "/connections/{slug}", s.requireActive(s.handleConnectionDelete))
 	route(mux, "GET", "/connections/{slug}/mcp/tools", s.requireActive(s.handleConnectionMCPTools))
+	// Provider definitions, in three tiers (control/providers.go). Personal
+	// ones are any active user's; an instance one needs an admin, which the
+	// handler checks from the request's scope rather than the route.
+	route(mux, "GET", "/providers", s.requireActive(s.handleProvidersList))
+	route(mux, "POST", "/providers", s.requireActive(s.handleProviderAdd))
+	route(mux, "PUT", "/providers/{name}", s.requireActive(s.handleProviderUpdate))
+	route(mux, "DELETE", "/providers/{name}", s.requireActive(s.handleProviderDelete))
 	route(mux, "GET", "/apps/{name}/connections", s.requireActive(s.handleAppConnectionsList))
 	route(mux, "PUT", "/apps/{name}/connections/{slug}", s.requireActive(s.handleAppConnectionGrant))
 	route(mux, "DELETE", "/apps/{name}/connections/{slug}", s.requireActive(s.handleAppConnectionRevoke))

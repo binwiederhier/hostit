@@ -63,14 +63,29 @@ type apiProviderResponse struct {
 	// provider and is not something the form can guess.
 	NameHint string              `json:"name_hint,omitempty"`
 	Fields   []connections.Field `json:"fields,omitempty"`
-	// Custom marks a provider this operator wrote in control.yml, so the UI can
-	// say which entries are the instance's own rather than hostit's.
-	Custom bool `json:"custom,omitempty"`
+	// Custom marks a provider the operator wrote; Personal one the USER wrote.
+	// The UI badges them so a person can tell whose entries are whose.
+	Custom   bool `json:"custom,omitempty"`
+	Personal bool `json:"personal,omitempty"`
 }
 
 type apiConnectionsResponse struct {
 	Connections []*apiConnectionResponse `json:"connections"`
 	Providers   []apiProviderResponse    `json:"providers"`
+	// MCPServers are named servers the operator (or the user) has defined, so
+	// adding one is a pick rather than remembering a URL. Pasting any URL still
+	// works -- these are a shortcut, not a restriction.
+	MCPServers []apiMCPServerResponse `json:"mcp_servers,omitempty"`
+}
+
+// apiMCPServerResponse is one named MCP server on offer.
+type apiMCPServerResponse struct {
+	Name  string `json:"name"`
+	Label string `json:"label"`
+	URL   string `json:"url"`
+	Help  string `json:"help,omitempty"`
+	// Personal is true when the user defined it themselves.
+	Personal bool `json:"personal,omitempty"`
 }
 
 // apiAddConnectionRequest is the body of POST /api/connections. For a static
@@ -110,6 +125,17 @@ func (s *Server) lookupProvider(name string) (connections.Provider, bool) {
 	return s.connections.lookup(name)
 }
 
+// lookupProviderFor resolves a name as one USER sees it, across all three
+// tiers. Anything that connects, reconnects or refreshes on somebody's behalf
+// must go through this rather than lookupProvider, or their own providers are
+// invisible to it.
+func (s *Server) lookupProviderFor(userID, name string) (connections.Provider, bool) {
+	if s.connections == nil {
+		return connections.Lookup(name)
+	}
+	return s.connections.providerFor(userID, name)
+}
+
 func (s *Server) connectionView(c *store.Connection) *apiConnectionResponse {
 	label := c.Provider
 	if p, ok := s.lookupProvider(c.Provider); ok {
@@ -147,7 +173,11 @@ func (s *Server) handleConnectionsList(w http.ResponseWriter, r *http.Request, c
 		writeAppError(w, err)
 		return
 	}
-	out := &apiConnectionsResponse{Connections: make([]*apiConnectionResponse, 0, len(list)), Providers: s.offeredProviders(kind)}
+	out := &apiConnectionsResponse{
+		Connections: make([]*apiConnectionResponse, 0, len(list)),
+		Providers:   s.offeredProviders(kind, c.userID()),
+		MCPServers:  s.offeredMCPServers(kind, c.userID()),
+	}
 	for _, conn := range list {
 		if kind != "" && conn.Kind != kind {
 			continue
@@ -171,17 +201,33 @@ func validConnectionKind(kind string) error {
 
 // offeredProviders is what this instance can actually connect right now,
 // narrowed to one kind when asked.
-func (s *Server) offeredProviders(kind string) []apiProviderResponse {
+func (s *Server) offeredProviders(kind, userID string) []apiProviderResponse {
 	out := make([]apiProviderResponse, 0)
 	if s.connections == nil {
 		return out
 	}
-	for _, p := range s.connections.offered() {
+	for _, p := range s.connections.offeredFor(userID) {
 		if kind != "" && p.Kind != kind {
 			continue
 		}
 		out = append(out, apiProviderResponse{Name: p.Name, Label: p.Label, Kind: p.Kind,
-			Help: p.Help, NameHint: p.NameHint, Fields: p.Fields, Custom: p.Custom})
+			Help: p.Help, NameHint: p.NameHint, Fields: p.Fields,
+			Custom: p.Custom, Personal: p.Personal})
+	}
+	return out
+}
+
+// offeredMCPServers is the named MCP servers this user can pick from.
+func (s *Server) offeredMCPServers(kind, userID string) []apiMCPServerResponse {
+	out := make([]apiMCPServerResponse, 0)
+	if s.connections == nil || (kind != "" && kind != store.ConnectionMCP) {
+		return out
+	}
+	for _, row := range s.connections.offeredMCPServers(userID) {
+		out = append(out, apiMCPServerResponse{
+			Name: row.Name, Label: row.Label, URL: row.URL, Help: row.Help,
+			Personal: row.OwnerID != "",
+		})
 	}
 	return out
 }
@@ -203,8 +249,8 @@ func (s *Server) handleConnectionAdd(w http.ResponseWriter, r *http.Request, c *
 		writeError(w, http.StatusBadRequest, fmt.Errorf("%w: use lowercase letters, digits and dashes, 3-32 characters", ErrInvalidSlug))
 		return
 	}
-	p, ok := s.lookupProvider(req.Provider)
-	if !ok || !s.connections.available(p) {
+	p, ok := s.lookupProviderFor(c.userID(), req.Provider)
+	if !ok || !s.connections.availableFor(c.userID(), p) {
 		writeError(w, http.StatusBadRequest, fmt.Errorf("%q cannot be connected on this server", req.Provider))
 		return
 	}
@@ -253,7 +299,7 @@ func (s *Server) handleConnectionAdd(w http.ResponseWriter, r *http.Request, c *
 	}
 	// OAuth: the slug is carried through the consent round trip in the state,
 	// so the callback knows what to call the connection it is about to create.
-	url, err := s.startConsent(w, r, p, slug, label)
+	url, err := s.startConsent(w, r, c.userID(), p, slug, label)
 	if err != nil {
 		writeConnectionError(w, err)
 		return
@@ -274,7 +320,7 @@ func (s *Server) handleConnectionUpdate(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 	if len(req.Values) > 0 {
-		p, ok := s.lookupProvider(conn.Provider)
+		p, ok := s.lookupProviderFor(conn.UserID, conn.Provider)
 		if !ok || p.Kind != connections.KindStatic {
 			writeError(w, http.StatusBadRequest, errors.New("this connection's credential is replaced by reconnecting, not by editing"))
 			return
@@ -313,7 +359,7 @@ func (s *Server) handleConnectionReconnect(w http.ResponseWriter, r *http.Reques
 		writeConnectionError(w, err)
 		return
 	}
-	p, ok := s.lookupProvider(conn.Provider)
+	p, ok := s.lookupProviderFor(conn.UserID, conn.Provider)
 	if !ok {
 		writeError(w, http.StatusBadRequest, errors.New("this connection is not an OAuth account"))
 		return
@@ -343,7 +389,7 @@ func (s *Server) handleConnectionReconnect(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusBadRequest, errors.New("this connection is not an OAuth account"))
 		return
 	}
-	url, err := s.startConsent(w, r, p, conn.Slug, conn.Label)
+	url, err := s.startConsent(w, r, conn.UserID, p, conn.Slug, conn.Label)
 	if err != nil {
 		writeConnectionError(w, err)
 		return
@@ -457,7 +503,7 @@ func (s *Server) ownedConnection(c *caller, slug string) (*store.Connection, err
 
 // startConsent builds the provider's consent URL and remembers, in the state
 // cookie, which connection is being made.
-func (s *Server) startConsent(w http.ResponseWriter, r *http.Request, p connections.Provider, slug, label string) (string, error) {
+func (s *Server) startConsent(w http.ResponseWriter, r *http.Request, userID string, p connections.Provider, slug, label string) (string, error) {
 	nonce := make([]byte, 16)
 	if _, err := rand.Read(nonce); err != nil {
 		return "", err
@@ -467,7 +513,10 @@ func (s *Server) startConsent(w http.ResponseWriter, r *http.Request, p connecti
 	// The label is remembered separately: it is free text and has no business
 	// in an OAuth state parameter the provider echoes back.
 	http.SetCookie(w, s.cookie(s.cookieName(connectLabelCookieName), label, int((30*time.Minute).Seconds())))
-	clientID, _ := s.connections.clientFor(p.Name)
+	// The user's OWN client if this is their own provider; the instance's
+	// otherwise. Sending the wrong one fails at the provider with a message
+	// nobody can trace back to here.
+	clientID, _ := s.connections.clientForUser(userID, p.Name)
 	return p.AuthCodeURL(clientID, s.config.RedirectURL(hostOnly(r.Host)), state), nil
 }
 
@@ -502,8 +551,8 @@ func (s *Server) connectionFromState(w http.ResponseWriter, r *http.Request, sta
 		s.finishMCPConsent(w, r, user.ID, parts[2], code)
 		return true
 	}
-	p, ok := s.lookupProvider(providerName)
-	if !ok || !s.connections.available(p) {
+	p, ok := s.lookupProviderFor(user.ID, providerName)
+	if !ok || !s.connections.availableFor(user.ID, p) {
 		writeError(w, http.StatusBadRequest, fmt.Errorf("%q cannot be connected here", providerName))
 		return true
 	}
@@ -543,7 +592,8 @@ func writeConnectionError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusNotFound, err)
 	case errors.Is(err, store.ErrConnectionSlugExists):
 		writeError(w, http.StatusConflict, err)
-	case errors.Is(err, ErrInvalidSlug), errors.Is(err, connections.ErrInvalidCredential):
+	case errors.Is(err, ErrInvalidSlug), errors.Is(err, connections.ErrInvalidCredential),
+		errors.Is(err, errMCPUnusable):
 		writeError(w, http.StatusBadRequest, err)
 	default:
 		writeAppError(w, err)

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -198,4 +199,34 @@ func TestACIMDServerNeedsNoRegistration(t *testing.T) {
 	id, err := ClientIDFor(context.Background(), http.DefaultClient, d, "https://hostit.example/cb", "https://hostit.example/client.json")
 	require.NoError(t, err)
 	assert.Equal(t, "https://hostit.example/client.json", id)
+}
+
+// A server that refuses to register hostit is not the user mistyping something,
+// and the error must not read as if it were. Fastmail's MCP server does exactly
+// this: it allowlists the redirect URIs it will register, so claude.ai and
+// localhost are accepted and every self-hosted instance is refused.
+func TestARegistrationRefusedForTheRedirectSaysWhoRefusedAndWhy(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		// Exactly Fastmail's shape: the code repeated inside the description.
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"error":             "invalid_redirect_uri",
+			"error_description": "invalid_redirect_uri redirect_uri not a valid scheme or host",
+		})
+	}))
+	t.Cleanup(srv.Close)
+
+	d := Discovery{TokenEndpoint: "https://as.example.com/token", RegistrationEndpoint: srv.URL, Issuer: "https://api.example.com"}
+	_, err := Register(context.Background(), http.DefaultClient, d,
+		"https://hostit.example/auth/callback", "https://hostit.example/client.json")
+	require.Error(t, err)
+	msg := err.Error()
+
+	assert.Contains(t, msg, "api.example.com", "name who refused")
+	assert.Contains(t, msg, "https://hostit.example/auth/callback", "and which redirect it refused")
+	assert.Contains(t, msg, "approved in advance",
+		"and say what it MEANS -- an allowlist, not a typo the owner can fix")
+	assert.Equal(t, 1, strings.Count(msg, "invalid_redirect_uri"),
+		"the provider repeats its own code inside the description; saying it twice reads like a bug")
 }

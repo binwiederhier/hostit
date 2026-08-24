@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { filterProviders, filterTools, slugify, splitByKind, suggestSlug } from "../connections";
 import { api } from "../api";
 import { useDropdown } from "../hooks";
-import { ConfirmDialog, DocsLink, ErrorBanner, Skeleton } from "../components";
+import { ConfirmDialog, DocsLink, ErrorBanner, Skeleton, Snippet } from "../components";
 
 // Connections: the accounts, secrets and tool servers an owner attaches once and
 // can then grant to their apps. THREE cards, not one, because they are three
@@ -18,6 +18,8 @@ import { ConfirmDialog, DocsLink, ErrorBanner, Skeleton } from "../components";
 // attached; each app's settings say which of them that app may use.
 const Connections = () => {
   const [data, setData] = useState(null);
+  const [defs, setDefs] = useState(null);
+  const [editingProvider, setEditingProvider] = useState(null);
   const [error, setError] = useState("");
   const [adding, setAdding] = useState(null);
   const [renaming, setRenaming] = useState(null);
@@ -26,10 +28,16 @@ const Connections = () => {
 
   const load = useCallback(async () => {
     try {
-      setData(await api.get("/api/connections"));
+      const [conns, providers] = await Promise.all([
+        api.get("/api/connections"),
+        api.get("/api/providers"),
+      ]);
+      setData(conns);
+      setDefs(providers);
     } catch (err) {
       setError(err.message);
       setData({ connections: [], providers: [] });
+      setDefs({ providers: [], redirect_uri: "" });
     }
   }, []);
   useEffect(() => {
@@ -105,9 +113,12 @@ const Connections = () => {
         noProvidersText="No accounts can be connected on this server yet: an admin sets each provider's OAuth client in control.yml."
         footer={
           <>
-            Missing an OAuth connection?{" "}
-            <DocsLink guide="admin" section="connections" sub="custom">Add it yourself</DocsLink> or ask your
-            administrator.
+            Missing a service?{" "}
+            <button type="button" className="linkbtn" onClick={() => setEditingProvider({})}>
+              Add your own
+            </button>{" "}
+            by registering an app with them and pasting the client here, or ask your administrator.{" "}
+            <DocsLink guide="user" section="connections" sub="own">How that works</DocsLink>
           </>
         }
         {...shared}
@@ -144,6 +155,7 @@ const Connections = () => {
         cta="Add MCP server"
         items={servers}
         singleProvider={mcpProvider}
+        presets={data?.mcp_servers || []}
         loading={data === null && !error}
         noProvidersText="MCP is not available on this server."
         {...shared}
@@ -156,6 +168,19 @@ const Connections = () => {
           onClose={() => setAdding(null)}
           onAdded={async () => {
             setAdding(null);
+            await load();
+          }}
+        />
+      )}
+      {defs && <MyProvidersCard defs={defs} onEdit={setEditingProvider} onChanged={load} onError={setError} />}
+
+      {editingProvider && (
+        <ProviderDialog
+          existing={editingProvider.name ? editingProvider : null}
+          redirectURI={defs?.redirect_uri || ""}
+          onClose={() => setEditingProvider(null)}
+          onSaved={async () => {
+            setEditingProvider(null);
             await load();
           }}
         />
@@ -194,16 +219,251 @@ const Connections = () => {
   );
 };
 
+// The user's OWN provider definitions -- services hostit does not ship and the
+// operator has not set up, which they registered an OAuth app with themselves.
+//
+// Shown only once they have one. An empty card explaining a concept nobody has
+// used yet is noise on a page that already has three; the way in is the line
+// under the Accounts card.
+const MyProvidersCard = ({ defs, onEdit, onChanged, onError }) => {
+  const [removing, setRemoving] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const mine = (defs.providers || []).filter((p) => p.scope === "personal" && p.editable);
+  if (mine.length === 0) return null;
+
+  const remove = async (p) => {
+    setBusy(true);
+    onError("");
+    try {
+      await api.del(`/api/providers/${encodeURIComponent(p.name)}`);
+      setRemoving(null);
+      await onChanged();
+    } catch (err) {
+      onError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="card">
+      <div className="conn-head">
+        <h2>Your own services</h2>
+        <button type="button" className="btn btn-primary btn-small" onClick={() => onEdit({})}>
+          Add service
+        </button>
+      </div>
+      <p className="hint">
+        Services you registered an OAuth app with yourself. Only you can see or use these; they
+        appear in your <b>Add account</b> menu alongside the ones hostit ships.{" "}
+        <DocsLink guide="user" section="connections" sub="own">How this works</DocsLink>
+      </p>
+      {mine.map((p) => (
+        <div key={p.name} className="conn-row">
+          <div className="conn-id">
+            <span className="conn-name">
+              {p.label}
+              <span className="conn-provider">{p.kind === "mcp" ? "MCP server" : "OAuth"}</span>
+            </span>
+            <span className="conn-note">
+              connect as <span className="mono">{p.name}</span>
+              {p.kind === "mcp" ? (
+                <> {"--"} <span className="mono">{p.url}</span></>
+              ) : (
+                <> {"--"} client <span className="mono">{p.client_id}</span></>
+              )}
+            </span>
+          </div>
+          <div className="menu conn-rowmenu">
+            <button type="button" className="btn btn-small" onClick={() => onEdit(p)}>Edit</button>
+            <button type="button" className="btn btn-small" onClick={() => setRemoving(p)}>Remove</button>
+          </div>
+        </div>
+      ))}
+      {removing && (
+        <ConfirmDialog
+          title={`Remove ${removing.label}?`}
+          confirmLabel="Remove"
+          busy={busy}
+          onClose={() => setRemoving(null)}
+          onConfirm={() => remove(removing)}
+          body={
+            <>
+              The definition goes; accounts already connected through it keep working until their
+              token expires and then cannot be refreshed. Your OAuth app at the service itself is
+              untouched.
+            </>
+          }
+        />
+      )}
+    </div>
+  );
+};
+
+// Defining a service. The redirect URI is shown first and copyable, because it
+// is the one value the person cannot work out and the one that fails the whole
+// flow at the vendor if it is wrong.
+const ProviderDialog = ({ existing, redirectURI, onClose, onSaved }) => {
+  const [kind, setKind] = useState(existing?.kind || "oauth");
+  const [label, setLabel] = useState(existing?.label || "");
+  const [name, setName] = useState(existing?.name || "");
+  const [nameEdited, setNameEdited] = useState(Boolean(existing));
+  const [form, setForm] = useState({
+    client_id: existing?.client_id || "",
+    client_secret: "",
+    auth_url: existing?.auth_url || "",
+    token_url: existing?.token_url || "",
+    issuer: existing?.issuer || "",
+    scopes: (existing?.scopes || []).join(" "),
+    url: existing?.url || "",
+  });
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
+
+  const reference = nameEdited ? name : slugify(label);
+  const endpointsOK = kind === "mcp" ? form.url.trim() : form.issuer.trim() || (form.auth_url.trim() && form.token_url.trim());
+  const valid =
+    label.trim() && reference.length >= 3 && endpointsOK &&
+    (kind === "mcp" || form.client_id.trim()) &&
+    (kind === "mcp" || existing || form.client_secret.trim());
+
+  const submit = async (e) => {
+    e.preventDefault();
+    if (busy || !valid) return;
+    setBusy(true);
+    setError("");
+    const body = {
+      name: reference, label: label.trim(), kind,
+      ...(kind === "mcp"
+        ? { url: form.url.trim() }
+        : {
+            client_id: form.client_id.trim(),
+            client_secret: form.client_secret.trim(),
+            auth_url: form.auth_url.trim(),
+            token_url: form.token_url.trim(),
+            issuer: form.issuer.trim(),
+            scopes: form.scopes.split(/\s+/).filter(Boolean),
+          }),
+    };
+    try {
+      if (existing) {
+        await api.put(`/api/providers/${encodeURIComponent(existing.name)}`, body);
+      } else {
+        await api.post("/api/providers", body);
+      }
+      onSaved();
+    } catch (err) {
+      setError(err.message);
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal onClose={onClose} title={existing ? `Edit ${existing.label}` : "Add your own service"}>
+      <form onSubmit={submit}>
+        <ErrorBanner message={error} onDismiss={() => setError("")} />
+        {!existing && (
+          <div className="conn-field">
+            <span>What kind?</span>
+            <div className="btn-row" style={{ justifyContent: "flex-start" }}>
+              <button type="button" className={"btn btn-small" + (kind === "oauth" ? " btn-primary" : "")} onClick={() => setKind("oauth")}>
+                A service I sign in to
+              </button>
+              <button type="button" className={"btn btn-small" + (kind === "mcp" ? " btn-primary" : "")} onClick={() => setKind("mcp")}>
+                An MCP server
+              </button>
+            </div>
+          </div>
+        )}
+        {kind === "oauth" && (
+          <>
+            <p className="hint">
+              Register an OAuth app with the service first, and give it this callback URL:
+            </p>
+            <Snippet text={redirectURI} />
+          </>
+        )}
+        <label className="conn-field">
+          <span>Name</span>
+          <input type="text" value={label} onChange={(e) => setLabel(e.target.value)}
+            placeholder="Acme" aria-label="Service name" autoFocus disabled={busy} />
+        </label>
+        <label className="conn-field">
+          <span>Reference</span>
+          <input type="text" className="mono" value={reference}
+            onChange={(e) => { setNameEdited(true); setName(e.target.value); }}
+            aria-label="Reference" disabled={busy || Boolean(existing)} />
+        </label>
+        {kind === "mcp" ? (
+          <label className="conn-field">
+            <span>Server URL</span>
+            <input type="text" className="mono" value={form.url} onChange={set("url")}
+              placeholder="https://mcp.example.com/mcp" aria-label="Server URL" disabled={busy} />
+          </label>
+        ) : (
+          <>
+            <label className="conn-field">
+              <span>Client ID</span>
+              <input type="text" className="mono" value={form.client_id} onChange={set("client_id")}
+                aria-label="Client ID" disabled={busy} />
+            </label>
+            <label className="conn-field">
+              <span>Client secret{existing ? " (leave blank to keep)" : ""}</span>
+              <input type="password" value={form.client_secret} onChange={set("client_secret")}
+                aria-label="Client secret" disabled={busy} />
+            </label>
+            <label className="conn-field">
+              <span>Scopes</span>
+              <input type="text" className="mono" value={form.scopes} onChange={set("scopes")}
+                placeholder="read write" aria-label="Scopes" disabled={busy} />
+            </label>
+            <label className="conn-field">
+              <span>Issuer (optional)</span>
+              <input type="text" className="mono" value={form.issuer} onChange={set("issuer")}
+                placeholder="https://acme.example.com" aria-label="Issuer" disabled={busy} />
+            </label>
+            <p className="hint">
+              Give an issuer and hostit finds the two URLs below itself. Otherwise fill them in.
+            </p>
+            <label className="conn-field">
+              <span>Authorize URL</span>
+              <input type="text" className="mono" value={form.auth_url} onChange={set("auth_url")}
+                placeholder="https://acme.example.com/oauth/authorize" aria-label="Authorize URL" disabled={busy} />
+            </label>
+            <label className="conn-field">
+              <span>Token URL</span>
+              <input type="text" className="mono" value={form.token_url} onChange={set("token_url")}
+                placeholder="https://acme.example.com/oauth/token" aria-label="Token URL" disabled={busy} />
+            </label>
+          </>
+        )}
+        <div className="btn-row">
+          <button type="button" className="btn" onClick={onClose} disabled={busy}>Cancel</button>
+          <button type="submit" className="btn btn-primary" disabled={busy || !valid}>
+            {busy ? "Saving..." : "Save"}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+};
+
 // One of the two cards. Both are the same shape -- what is attached, and one
 // button to attach more -- so they share a component rather than being copied
 // with the nouns changed.
-const ConnectionsCard = ({ title, hint, emptyText, cta, items, providers, singleProvider, loading, onAdd, onRename, onReconnect, onRemove, noProvidersText, footer }) => (
+const ConnectionsCard = ({ title, hint, emptyText, cta, items, providers, singleProvider, presets, loading, onAdd, onRename, onReconnect, onRemove, noProvidersText, footer }) => (
   <div className="card">
     <div className="conn-head">
       <h2>{title}</h2>
       {/* One provider means no menu: a dropdown with a single entry is a button
           wearing a costume. */}
-      {singleProvider !== undefined ? (
+      {singleProvider !== undefined && (presets || []).length > 0 ? (
+        // Named servers turn "remember a URL" into "pick a name". Pasting a URL
+        // is still right there, because the named list is a shortcut and never
+        // a restriction.
+        <PresetMenu label={cta} presets={presets} provider={singleProvider} onPick={onAdd} />
+      ) : singleProvider !== undefined ? (
         <button
           type="button"
           className="btn btn-primary btn-small"
@@ -360,6 +620,39 @@ const RowMenu = ({ conn, onRename, onReconnect, onRemove }) => {
   );
 };
 
+// The MCP call to action once there are named servers to pick from.
+const PresetMenu = ({ label, presets, provider, onPick }) => {
+  const { open, setOpen, ref } = useDropdown();
+  const choose = (preset) => {
+    setOpen(false);
+    onPick({ ...provider, preset });
+  };
+  return (
+    <div className="menu" ref={ref}>
+      <button type="button" className="btn btn-primary btn-small" onClick={() => setOpen(!open)}
+        aria-haspopup="menu" aria-expanded={open} disabled={!provider}>
+        {label}
+        <span className="conn-caret" aria-hidden="true">&#9662;</span>
+      </button>
+      {open && (
+        <div className="menu-items" role="menu">
+          {presets.map((p) => (
+            <button key={p.name} type="button" role="menuitem" onClick={() => choose(p)}>
+              {p.label}
+              {p.personal && <span className="conn-menu-badge">yours</span>}
+            </button>
+          ))}
+          <div className="conn-menu-divider" role="separator" />
+          <button type="button" role="menuitem" className="conn-menu-other" onClick={() => choose(null)}>
+            Any other server
+            <span className="conn-menu-sub">paste a URL</span>
+          </button>
+        </div>
+      )}
+    </div>
+  );
+};
+
 const DotsIcon = () => (
   <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
     <circle cx="8" cy="3.1" r="1.35" />
@@ -447,10 +740,11 @@ const AddMenu = ({ label, providers, onPick, disabledText }) => {
 // changeable; the REFERENCE is what an app asks for, and is derived from the
 // name so nobody has to invent both.
 const AddConnectionDialog = ({ provider, existing, onClose, onAdded }) => {
-  const [label, setLabel] = useState("");
+  const preset = provider.preset || null;
+  const [label, setLabel] = useState(preset?.label || "");
   const [slug, setSlug] = useState("");
   const [slugEdited, setSlugEdited] = useState(false);
-  const [values, setValues] = useState({});
+  const [values, setValues] = useState(preset ? { url: preset.url } : {});
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const oauth = provider.kind === "oauth";

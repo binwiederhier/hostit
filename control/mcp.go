@@ -45,6 +45,11 @@ var (
 	// errNotMCP means the connection is not an MCP server, or is one when the
 	// caller wanted a credential.
 	errNotMCP = errors.New("that connection is not an MCP server")
+	// errMCPUnusable means the SERVER will not work with this instance -- it
+	// refused to register hostit, or offers no way to authorize. Distinct from
+	// an invalid credential because the owner typed nothing wrong and there is
+	// nothing for them to correct.
+	errMCPUnusable = errors.New("that MCP server cannot be connected from this instance")
 )
 
 // mcpMeta is what hostit remembers about an MCP server between requests: where

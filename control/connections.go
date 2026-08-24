@@ -134,7 +134,7 @@ func (m *connectionManager) offered() []connections.Provider {
 // -- for a provider whose token does not expire -- the access token itself;
 // either way it is sealed before it reaches the database.
 func (m *connectionManager) saveOAuth(ctx context.Context, userID, slug, label string, p connections.Provider, code, redirectURL string) (*store.Connection, error) {
-	id, secret := m.clientFor(p.Name)
+	id, secret := m.clientForUser(userID, p.Name)
 	credential, err := p.Exchange(ctx, m.client, id, secret, redirectURL, code)
 	if err != nil {
 		return nil, err
@@ -156,7 +156,7 @@ func (m *connectionManager) saveOAuth(ctx context.Context, userID, slug, label s
 // reconnect replaces the credential on an existing connection, which is what a
 // re-consent is: same slug, same grants, fresh secret. Apps keep working.
 func (m *connectionManager) reconnect(ctx context.Context, c *store.Connection, p connections.Provider, code, redirectURL string) error {
-	id, secret := m.clientFor(p.Name)
+	id, secret := m.clientForUser(c.UserID, p.Name)
 	credential, err := p.Exchange(ctx, m.client, id, secret, redirectURL, code)
 	if err != nil {
 		return err
@@ -221,7 +221,9 @@ func (m *connectionManager) tokenFor(ctx context.Context, a *store.App, slug str
 	if !grantedTo(granted, conn.ID) {
 		return connections.Token{}, errNotGranted
 	}
-	p, ok := m.lookup(conn.Provider)
+	// Resolved for the connection's OWNER: a personal provider exists only in
+	// their namespace, and an app acts as whoever owns it.
+	p, ok := m.providerFor(conn.UserID, conn.Provider)
 	if !ok {
 		return connections.Token{}, fmt.Errorf("unknown provider %q", conn.Provider)
 	}
@@ -244,7 +246,7 @@ func (m *connectionManager) tokenFor(ctx context.Context, a *store.App, slug str
 	if tok, ok := m.cachedTokenFor(conn); ok {
 		return tok, nil
 	}
-	id, clientSecret := m.clientFor(p.Name)
+	id, clientSecret := m.clientForUser(conn.UserID, p.Name)
 	tok, rotated, err := p.Refresh(ctx, m.client, id, clientSecret, secret)
 	if err != nil {
 		return connections.Token{}, err

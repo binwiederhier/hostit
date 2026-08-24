@@ -93,7 +93,10 @@ func (s *Server) startMCPConsent(w http.ResponseWriter, r *http.Request, userID,
 	clientID, err := mcp.ClientIDFor(r.Context(), s.connections.client, disco,
 		s.config.RedirectURL(hostOnly(r.Host)), s.mcpClientID(r))
 	if err != nil {
-		return "", fmt.Errorf("%w: %s", connections.ErrInvalidCredential, err)
+		// NOT an invalid credential: the owner typed nothing wrong. The server
+		// will not have hostit as a client, and saying "invalid credential"
+		// sends them looking for a mistake that is not theirs.
+		return "", fmt.Errorf("%w: %s", errMCPUnusable, err)
 	}
 	pkce, err := mcp.NewPKCE()
 	if err != nil {

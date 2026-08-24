@@ -581,10 +581,27 @@ Secrets are sealed with AES-256-GCM under a key beside the database, bound to th
 row they belong to so ciphertext moved between rows will not decrypt.
 `hostit control connections rotate-key` re-seals everything under a fresh key.
 
-Any OAuth 2.0 service hostit does not ship can be added by the operator in
-`control.yml` -- a label, a client, scopes, and either the two OAuth URLs or an
-`issuer` to discover them from. See the administration guide at
-`/docs/admin/connections`.
+Any OAuth 2.0 service hostit does not ship can be added, at three tiers:
+
+- **hostit's catalog** ships in the binary.
+- **The operator's** go in `control.yml` or the Admin page: a label, a client,
+  scopes, and either the two OAuth URLs or an `issuer` to discover them from.
+  Everyone on the instance can then connect them. Named **MCP servers** live in
+  the same two places, so users pick a name rather than remembering a URL.
+- **A user's own** are added by that user with no admin involved: register an
+  OAuth app with the service, paste the client in, and it is visible only to
+  them. Nothing about OAuth requires the client to belong to the server -- only
+  the callback URL is hostit's, which is why the dialog hands it to you.
+
+A user can never redefine a name hostit or the operator already uses, so `github`
+keeps meaning GitHub for everybody.
+
+Because users supply URLs hostit then fetches, outbound requests are restricted
+to publicly routable addresses -- checked at connection time, so DNS rebinding
+does not get past it. `outbound-allow-private: true` lifts that for a self-hoster
+whose MCP servers really are on their LAN.
+
+See the administration guide at `/docs/admin/connections`.
 
 ## Snapshots, rollback and quotas
 

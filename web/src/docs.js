@@ -40,6 +40,7 @@ export const DOCS_GUIDES = [
           { id: "accounts", title: "Accounts" },
           { id: "credentials", title: "Credentials" },
           { id: "mcp", title: "MCP servers" },
+          { id: "own", title: "Your own services" },
           { id: "using", title: "Using them in an app" },
         ],
       },

@@ -393,6 +393,38 @@ var (
 		);
 		CREATE INDEX idx_app_connection_conn ON app_connection (connection_id);
 	`,
+
+		// Provider definitions: the operator's (owner_id = '') and each user's
+		// own. hostit's own catalog stays in Go -- it ships with the binary and
+		// has nothing to store.
+		//
+		// UNIQUE on (owner_id, name) rather than on name alone: two people may
+		// each call theirs "acme", because those are two definitions in two
+		// namespaces. Refusing that would let one user's choice of name deny it
+		// to everybody else on the instance.
+		`
+		CREATE TABLE provider (
+			id TEXT PRIMARY KEY,
+			owner_id TEXT NOT NULL DEFAULT '',
+			name TEXT NOT NULL,
+			label TEXT NOT NULL DEFAULT '',
+			kind TEXT NOT NULL,
+			scopes TEXT NOT NULL DEFAULT '',
+			issuer TEXT NOT NULL DEFAULT '',
+			auth_url TEXT NOT NULL DEFAULT '',
+			token_url TEXT NOT NULL DEFAULT '',
+			client_id TEXT NOT NULL DEFAULT '',
+			client_secret TEXT NOT NULL DEFAULT '',
+			auth_params TEXT NOT NULL DEFAULT '',
+			long_lived INTEGER NOT NULL DEFAULT 0,
+			help TEXT NOT NULL DEFAULT '',
+			name_hint TEXT NOT NULL DEFAULT '',
+			url TEXT NOT NULL DEFAULT '',
+			created_at INTEGER NOT NULL
+		);
+		CREATE UNIQUE INDEX idx_provider_owner_name ON provider (owner_id, name);
+		CREATE INDEX idx_provider_owner ON provider (owner_id);
+	`,
 	}
 )
 

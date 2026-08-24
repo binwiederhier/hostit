@@ -6,7 +6,7 @@ import {
   formatDate,
   Loading,
   StatusDot,
-  UsagePair, pairMB, Skeleton, ConfirmDialog } from "../components";
+  UsagePair, pairMB, Skeleton, ConfirmDialog, DocsLink, Snippet } from "../components";
 
 // Empty input means "use the global default"; the API expects null for that.
 const numOrNull = (v) => (v === "" ? null : Number(v));
@@ -518,6 +518,248 @@ const InviteUser = ({ onAdded, setError }) => {
 
 // Anyone whose Google address ends in one of these domains is approved on sign
 // in, so a whole company can onboard itself.
+// Providers this instance offers everybody: OAuth services hostit does not ship,
+// and named MCP servers so users pick a name instead of remembering a URL.
+//
+// The same definitions can come from control.yml. Those are listed too, marked
+// as not editable -- an operator reading this page should see everything on
+// offer, not just the half that happens to live in the database.
+const InstanceProviders = ({ setError }) => {
+  const [defs, setDefs] = useState(null);
+  const [editing, setEditing] = useState(null);
+  const [removing, setRemoving] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      setDefs(await api.get("/api/providers"));
+    } catch (err) {
+      setError(err.message);
+    }
+  }, [setError]);
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const instance = (defs?.providers || []).filter((p) => p.scope === "instance");
+  const remove = async (p) => {
+    setBusy(true);
+    setError("");
+    try {
+      await api.del(`/api/providers/${encodeURIComponent(p.name)}`);
+      setRemoving(null);
+      await load();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className="card">
+      <div className="conn-head">
+        <h2>Connection providers</h2>
+        <button type="button" className="btn btn-primary btn-small" onClick={() => setEditing({})}>
+          Add provider
+        </button>
+      </div>
+      <p className="hint">
+        What everyone on this instance can connect. Add an OAuth service hostit does not ship, or a
+        named MCP server so users pick a name rather than a URL. Users can also add their own, which
+        only they see.{" "}
+        <DocsLink guide="admin" section="connections" sub="custom">How this works</DocsLink>
+      </p>
+      {defs === null && <p className="hint">Loading...</p>}
+      {defs !== null && instance.length === 0 && <p className="hint">Nothing defined yet.</p>}
+      {instance.map((p) => (
+        <div key={`${p.kind}:${p.name}`} className="conn-row">
+          <div className="conn-id">
+            <span className="conn-name">
+              {p.label}
+              <span className="conn-provider">{p.kind === "mcp" ? "MCP server" : "OAuth"}</span>
+            </span>
+            <span className="conn-note">
+              <span className="mono">{p.name}</span>
+              {p.kind === "mcp" ? <> {"--"} <span className="mono">{p.url}</span></> : null}
+              {!p.editable && " -- from hostit or control.yml"}
+            </span>
+          </div>
+          {p.editable && (
+            <div className="menu conn-rowmenu">
+              <button type="button" className="btn btn-small" onClick={() => setEditing(p)}>Edit</button>
+              <button type="button" className="btn btn-small" onClick={() => setRemoving(p)}>Remove</button>
+            </div>
+          )}
+        </div>
+      ))}
+      {editing && (
+        <AdminProviderDialog
+          existing={editing.name ? editing : null}
+          redirectURI={defs?.redirect_uri || ""}
+          onClose={() => setEditing(null)}
+          onSaved={async () => {
+            setEditing(null);
+            await load();
+          }}
+        />
+      )}
+      {removing && (
+        <ConfirmDialog
+          title={`Remove ${removing.label}?`}
+          confirmLabel="Remove"
+          busy={busy}
+          onClose={() => setRemoving(null)}
+          onConfirm={() => remove(removing)}
+          body={
+            <>
+              Nobody will be able to connect it any more. Accounts already connected through it keep
+              working until their token expires and then cannot be refreshed.
+            </>
+          }
+        />
+      )}
+    </section>
+  );
+};
+
+// The instance half of the provider dialog. Same fields as a user's own, with
+// scope pinned to the whole instance.
+const AdminProviderDialog = ({ existing, redirectURI, onClose, onSaved }) => {
+  const [kind, setKind] = useState(existing?.kind || "oauth");
+  const [label, setLabel] = useState(existing?.label || "");
+  const [name, setName] = useState(existing?.name || "");
+  const [form, setForm] = useState({
+    client_id: existing?.client_id || "",
+    client_secret: "",
+    auth_url: existing?.auth_url || "",
+    token_url: existing?.token_url || "",
+    issuer: existing?.issuer || "",
+    scopes: (existing?.scopes || []).join(" "),
+    url: existing?.url || "",
+  });
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
+
+  const endpointsOK =
+    kind === "mcp" ? form.url.trim() : form.issuer.trim() || (form.auth_url.trim() && form.token_url.trim());
+  const valid =
+    label.trim() && name.trim().length >= 3 && endpointsOK &&
+    (kind === "mcp" || (form.client_id.trim() && (existing || form.client_secret.trim())));
+
+  const submit = async (e) => {
+    e.preventDefault();
+    if (busy || !valid) return;
+    setBusy(true);
+    setError("");
+    const body = {
+      name: name.trim().toLowerCase(), label: label.trim(), kind, scope: "instance",
+      ...(kind === "mcp"
+        ? { url: form.url.trim() }
+        : {
+            client_id: form.client_id.trim(),
+            client_secret: form.client_secret.trim(),
+            auth_url: form.auth_url.trim(),
+            token_url: form.token_url.trim(),
+            issuer: form.issuer.trim(),
+            scopes: form.scopes.split(/\s+/).filter(Boolean),
+          }),
+    };
+    try {
+      if (existing) {
+        await api.put(`/api/providers/${encodeURIComponent(existing.name)}`, body);
+      } else {
+        await api.post("/api/providers", body);
+      }
+      onSaved();
+    } catch (err) {
+      setError(err.message);
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true" onMouseDown={onClose}>
+      <div className="card modal modal-sheet" onMouseDown={(e) => e.stopPropagation()}>
+        <h2>{existing ? `Edit ${existing.label}` : "Add a provider"}</h2>
+        <form onSubmit={submit}>
+          {error && <p className="err">{error}</p>}
+          {!existing && (
+            <div className="conn-field">
+              <span>What kind?</span>
+              <div className="btn-row" style={{ justifyContent: "flex-start" }}>
+                <button type="button" className={"btn btn-small" + (kind === "oauth" ? " btn-primary" : "")} onClick={() => setKind("oauth")}>
+                  OAuth service
+                </button>
+                <button type="button" className={"btn btn-small" + (kind === "mcp" ? " btn-primary" : "")} onClick={() => setKind("mcp")}>
+                  MCP server
+                </button>
+              </div>
+            </div>
+          )}
+          {kind === "oauth" && (
+            <>
+              <p className="hint">Register an OAuth app with the service, using this callback URL:</p>
+              <Snippet text={redirectURI} />
+            </>
+          )}
+          <label className="conn-field">
+            <span>Name</span>
+            <input type="text" value={label} onChange={(e) => setLabel(e.target.value)}
+              placeholder="Acme" aria-label="Provider name" autoFocus disabled={busy} />
+          </label>
+          <label className="conn-field">
+            <span>Reference</span>
+            <input type="text" className="mono" value={name} onChange={(e) => setName(e.target.value)}
+              placeholder="acme" aria-label="Provider reference" disabled={busy || Boolean(existing)} />
+          </label>
+          {kind === "mcp" ? (
+            <label className="conn-field">
+              <span>Server URL</span>
+              <input type="text" className="mono" value={form.url} onChange={set("url")}
+                placeholder="https://mcp.example.com/mcp" aria-label="Server URL" disabled={busy} />
+            </label>
+          ) : (
+            <>
+              <label className="conn-field">
+                <span>Client ID</span>
+                <input type="text" className="mono" value={form.client_id} onChange={set("client_id")} aria-label="Client ID" disabled={busy} />
+              </label>
+              <label className="conn-field">
+                <span>Client secret{existing ? " (leave blank to keep)" : ""}</span>
+                <input type="password" value={form.client_secret} onChange={set("client_secret")} aria-label="Client secret" disabled={busy} />
+              </label>
+              <label className="conn-field">
+                <span>Scopes</span>
+                <input type="text" className="mono" value={form.scopes} onChange={set("scopes")} placeholder="read write" aria-label="Scopes" disabled={busy} />
+              </label>
+              <label className="conn-field">
+                <span>Issuer (optional)</span>
+                <input type="text" className="mono" value={form.issuer} onChange={set("issuer")} placeholder="https://acme.example.com" aria-label="Issuer" disabled={busy} />
+              </label>
+              <label className="conn-field">
+                <span>Authorize URL</span>
+                <input type="text" className="mono" value={form.auth_url} onChange={set("auth_url")} aria-label="Authorize URL" disabled={busy} />
+              </label>
+              <label className="conn-field">
+                <span>Token URL</span>
+                <input type="text" className="mono" value={form.token_url} onChange={set("token_url")} aria-label="Token URL" disabled={busy} />
+              </label>
+            </>
+          )}
+          <div className="btn-row">
+            <button type="button" className="btn" onClick={onClose} disabled={busy}>Cancel</button>
+            <button type="submit" className="btn btn-primary" disabled={busy || !valid}>
+              {busy ? "Saving..." : "Save"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+};
+
 const AllowedDomains = ({ setError }) => {
   const [domains, setDomains] = useState(null);
   const [removing, setRemoving] = useState(null);
@@ -978,6 +1220,7 @@ const AdminInner = () => {
         </p>
       </div>
       <AllowedDomains setError={setError} />
+      <InstanceProviders setError={setError} />
       <AllApps apps={apps} error={error} />
       {settings !== null && (
         <Defaults settings={settings} onSaved={load} setError={setError} />

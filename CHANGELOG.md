@@ -66,13 +66,27 @@ default, or on-disk state is called out as **Breaking** or **Upgrade note**.
   `outbound-allow-private: true` in `control.yml` if your MCP servers really are
   on your own LAN.
 
-- **Custom OAuth providers.** Any service hostit does not ship can be added in
-  `connections:` in `control.yml` -- a label, a client, scopes and the two OAuth
-  URLs (or an `issuer` to discover them from). It behaves exactly like a
-  built-in, because a catalog entry was always pure data: there is no
-  per-provider code, and the vendor quirks that look like special cases are all
-  fields. A malformed entry stops the server at start rather than vanishing from
-  a menu, and an operator's own entries are marked "yours" in the Add menu.
+- **Providers, at three tiers.** Any OAuth 2.0 service hostit does not ship can
+  now be added -- by the **operator** in `connections:` in `control.yml` or on the
+  Admin page (everyone can then connect it), or by a **user** for themselves with
+  no admin involved. A user registering their own OAuth app with a vendor and
+  pasting the client in is an ordinary thing: nothing about OAuth requires the
+  client to belong to the instance, and only the callback URL is hostit's, which
+  is why the dialog shows it first.
+
+  A definition is a label, a client, scopes, and either the two OAuth URLs or an
+  `issuer` to discover them from. It behaves exactly like a built-in, because a
+  catalog entry was always pure data. A user's own is visible only to them, and
+  two users may each define `acme`; nobody can redefine a name hostit or the
+  operator already uses, so `github` keeps meaning GitHub. Client secrets are
+  encrypted like every other credential and never returned by the API.
+
+  **Named MCP servers** live in the same places -- `mcp-servers:` in
+  `control.yml`, the Admin page, or a user's own -- so adding one is a pick
+  rather than a remembered URL. Pasting any URL still works.
+
+  A malformed `control.yml` entry stops the server at start rather than
+  vanishing from a menu.
 
 - **`GET /api/connections?kind=` narrows the list** to `oauth`, `static` or
   `mcp`, filtering the offered providers with it so a one-kind view does not

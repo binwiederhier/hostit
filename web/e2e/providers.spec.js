@@ -1,0 +1,117 @@
+import { test, expect } from "./fixtures";
+
+// The three tiers, driven the way a person does it. The claim being tested is
+// that a USER can bring their own OAuth client with no admin involved -- which
+// is the whole point of the tier existing.
+test("a user defines their own service and it appears in their Add account menu", async ({ page, request }) => {
+  const ref = "e2eown" + Date.now().toString(36).slice(-5);
+  const label = "E2E Own " + Date.now().toString(36).slice(-4);
+
+  try {
+    await page.goto("/connections");
+    const accounts = page.locator(".card", { hasText: "Accounts" }).first();
+
+    // The way in is the line under the Accounts card, not a buried admin page.
+    await accounts.getByRole("button", { name: "Add your own" }).click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog.getByRole("heading", { name: "Add your own service" })).toBeVisible();
+
+    // The callback URL is shown BEFORE anything is asked for: it is the one
+    // value the person cannot work out, and the one that fails the whole flow
+    // at the vendor if it is wrong.
+    await expect(dialog).toContainText("/auth/callback");
+
+    await dialog.getByLabel("Service name").fill(label);
+    await dialog.getByLabel("Reference").fill(ref);
+    await dialog.getByLabel("Client ID").fill("my-own-client-id");
+    await dialog.getByLabel("Client secret").fill("my-own-client-secret");
+    await dialog.getByLabel("Scopes").fill("read");
+    await dialog.getByLabel("Authorize URL").fill("https://acme.example.com/oauth/authorize");
+    await dialog.getByLabel("Token URL").fill("https://acme.example.com/oauth/token");
+    await dialog.getByRole("button", { name: "Save" }).click();
+
+    // It lists as theirs...
+    const own = page.locator(".card", { hasText: "Your own services" });
+    await expect(own.locator(".conn-row", { hasText: label })).toBeVisible();
+    // ...and the secret is nowhere on the page.
+    await expect(page.locator("body")).not.toContainText("my-own-client-secret");
+
+    // And it is offered in the Add account menu, badged as theirs.
+    await accounts.getByRole("button", { name: "Add account" }).click();
+    const entry = page.getByRole("menuitem", { name: new RegExp(label) });
+    await expect(entry).toBeVisible();
+    await expect(entry).toContainText("yours");
+    await page.keyboard.press("Escape");
+  } finally {
+    await request.delete(`/api/providers/${ref}`);
+  }
+});
+
+// The API is the contract; this is the part a UI test cannot see.
+test("a personal provider carries the callback URL and never returns its secret", async ({ request }) => {
+  const ref = "e2eapi" + Date.now().toString(36).slice(-5);
+  try {
+    const created = await request.post("/api/providers", {
+      data: {
+        name: ref, label: "E2E API", client_id: "cid", client_secret: "very-secret",
+        auth_url: "https://acme.example.com/a", token_url: "https://acme.example.com/t",
+        scopes: ["read"],
+      },
+    });
+    expect(created.status(), await created.text()).toBe(201);
+    const body = await created.json();
+    expect(body.scope).toBe("personal");
+    expect(body.editable).toBe(true);
+    expect(body.has_secret).toBe(true);
+    expect(body.redirect_uri).toContain("/auth/callback");
+    expect(await created.text()).not.toContain("very-secret");
+
+    const list = await request.get("/api/providers");
+    expect(await list.text()).not.toContain("very-secret");
+  } finally {
+    await request.delete(`/api/providers/${ref}`);
+  }
+});
+
+// A user must not be able to redefine what a name already means.
+test("a personal provider cannot shadow one hostit ships", async ({ request }) => {
+  const res = await request.post("/api/providers", {
+    data: {
+      name: "github", label: "Not GitHub", client_id: "c", client_secret: "s",
+      auth_url: "https://x/a", token_url: "https://x/t",
+    },
+  });
+  expect(res.status()).toBe(400);
+  expect(await res.text()).toContain("hostit's own");
+});
+
+// The admin half: a provider defined for the whole instance, from the Admin page.
+test("an admin defines a named MCP server for everyone", async ({ page, request }) => {
+  const ref = "e2ewiki" + Date.now().toString(36).slice(-5);
+  const label = "E2E Wiki " + Date.now().toString(36).slice(-4);
+  try {
+    await page.goto("/admin");
+    const card = page.locator(".card", { hasText: "Connection providers" });
+    await expect(card.getByRole("heading", { name: "Connection providers" })).toBeVisible();
+    await card.getByRole("button", { name: "Add provider" }).click();
+
+    const dialog = page.getByRole("dialog");
+    await dialog.getByRole("button", { name: "MCP server" }).click();
+    await dialog.getByLabel("Provider name").fill(label);
+    await dialog.getByLabel("Provider reference").fill(ref);
+    await dialog.getByLabel("Server URL").fill("https://mcp.deepwiki.com/mcp");
+    await dialog.getByRole("button", { name: "Save" }).click();
+    await expect(card.locator(".conn-row", { hasText: label })).toBeVisible();
+
+    // It now shows up as a PICK on the Connections page, so nobody has to
+    // remember the URL.
+    await page.goto("/connections");
+    const mcp = page.locator(".card", { hasText: "MCP servers" });
+    await mcp.getByRole("button", { name: "Add MCP server" }).click();
+    await expect(page.getByRole("menuitem", { name: new RegExp(label) })).toBeVisible();
+    // And pasting a URL is still right there.
+    await expect(page.getByRole("menuitem", { name: /Any other server/ })).toBeVisible();
+  } finally {
+    await request.delete(`/api/providers/${ref}`);
+  }
+});

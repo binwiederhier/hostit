@@ -135,10 +135,14 @@ type Config struct {
 	// a custom provider's issuer), so this is what stands between an ordinary
 	// account and the cloud metadata service. Turn it on only for a self-hosted
 	// instance whose MCP servers really are on its own LAN.
-	OutboundAllowPrivate bool     `yaml:"outbound-allow-private"`
-	SessionKey           string   `yaml:"session-key"`  // Secret for signing session cookies; generated if empty
-	AdminEmails          []string `yaml:"admin-emails"` // These emails become active admins on first login
-	Breakglass           bool     `yaml:"breakglass"`   // Allow the admin token to mint a session for an admin email (no Google); for e2e/recovery
+	OutboundAllowPrivate bool `yaml:"outbound-allow-private"`
+	// MCPServers are named MCP servers offered to everyone, so a user picks a
+	// name rather than remembering a URL. Purely a shortcut: anyone can still
+	// paste any URL. Keyed by a short name.
+	MCPServers  map[string]MCPServer `yaml:"mcp-servers"`
+	SessionKey  string               `yaml:"session-key"`  // Secret for signing session cookies; generated if empty
+	AdminEmails []string             `yaml:"admin-emails"` // These emails become active admins on first login
+	Breakglass  bool                 `yaml:"breakglass"`   // Allow the admin token to mint a session for an admin email (no Google); for e2e/recovery
 	// ListenCluster is where members on OTHER machines dial in: mTLS, with
 	// per-member certificates from the cluster CA. Empty on a single-box
 	// install, which admits no remote members at all.
@@ -251,6 +255,13 @@ type OAuthClient struct {
 	LongLivedToken bool              `yaml:"long-lived-token"`
 	Help           string            `yaml:"help"`
 	NameHint       string            `yaml:"name-hint"`
+}
+
+// MCPServer is one named MCP server the operator offers.
+type MCPServer struct {
+	Label string `yaml:"label"`
+	URL   string `yaml:"url"`
+	Help  string `yaml:"help"`
 }
 
 // DescribesProvider reports whether this entry defines a provider of its own,

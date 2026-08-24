@@ -77,7 +77,7 @@ func TestMigrationRecordsVersion(t *testing.T) {
 // PoC-touched database (at 23) and a clean one (at 22) still reach them.
 func TestBurnedSlotKeepsHistoriesAligned(t *testing.T) {
 	t.Parallel()
-	require.Len(t, migrations, 32)
+	require.Len(t, migrations, 33)
 	assert.Contains(t, migrations[22], "SELECT 1", "index 22 is the burned no-op slot")
 	assert.Contains(t, migrations[23], "memory_limit_mb", "the limits columns follow the burned slot")
 	assert.Contains(t, migrations[24], "memory_pool_mb", "then the per-user pools")
@@ -90,6 +90,7 @@ func TestBurnedSlotKeepsHistoriesAligned(t *testing.T) {
 	assert.Contains(t, migrations[29], "SELECT 1", "slot 30 is burned (redirect_to)")
 	assert.Contains(t, migrations[30], "SELECT 1", "slot 31 is burned (app_redirect)")
 	assert.Contains(t, migrations[31], "CREATE TABLE connection", "connections lands after the burned slots")
+	assert.Contains(t, migrations[32], "CREATE TABLE provider", "then provider definitions")
 }
 
 // A database that ran the abandoned PoC still holds its differently-shaped
