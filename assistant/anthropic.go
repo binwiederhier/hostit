@@ -37,9 +37,17 @@ var _ completer = (*Client)(nil)
 
 // NewClient returns a client for the given API key
 func NewClient(apiKey string) *Client {
+	return NewClientAt(apiKey, anthropicURL)
+}
+
+// NewClientAt is NewClient pointed somewhere else: a stand-in Messages API in a
+// test, or a gateway an operator puts in front of the real one. Exported so the
+// wiring above this package can be driven end to end without a stub interface
+// widening the package's API for the sake of one test.
+func NewClientAt(apiKey, url string) *Client {
 	return &Client{
 		apiKey: apiKey,
-		url:    anthropicURL,
+		url:    url,
 		http:   &http.Client{Timeout: requestTimeout},
 	}
 }

@@ -7,6 +7,27 @@ changed rather than what an operator had to do about it; from v0.15.0 on, each
 release is written down as it is cut. Anything that changes a config file, a
 default, or on-disk state is called out as **Breaking** or **Upgrade note**.
 
+## Unreleased
+
+- **Apps can ask a model a question.** `POST /api/container/assistant` over the
+  app's own socket, with `{"prompt": "..."}` or a `messages` conversation. The
+  app holds **no API key**: hostit makes the call, meters it against that app,
+  and rate-limits it against the owner -- the same budget an interactive turn
+  spends.
+
+  This is the opposite direction from the assistant you chat with. That one
+  BUILDS an app; this lets the app itself think. An app can summarise its own
+  logs and decide whether they are worth waking somebody for, or answer visitors
+  in a particular voice, without an account anywhere or a secret in its
+  environment that nothing can rotate.
+
+  Inference only, deliberately: none of the assistant's tools are offered, since
+  an app that could run them against itself is a self-modifying loop with nobody
+  in the room. Two worked examples ship with it, `examples/pirate-chat` and
+  `examples/log-watch`. The assistant knows the endpoint exists, so asking it for
+  "an app that reads my logs and pings me if anything looks serious" builds on
+  this rather than telling you to obtain an API key.
+
 ## v0.20.0 (2026-08-24)
 
 - **Connections.** Attach an account, a secret or a tool server once, then grant

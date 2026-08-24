@@ -26,6 +26,7 @@ One file per user-facing feature. Every file uses the **exact same structure** (
 
 ### The workspace and AI
 - [builtin-assistant.md](builtin-assistant.md) -- the in-browser AI chat that builds apps
+- [apps-that-think.md](apps-that-think.md) -- an app asking a model a question at runtime, with no API key of its own
 - [bring-your-own-agent.md](bring-your-own-agent.md) -- drive an app with your own agent via a scoped token
 - [browser-workspace.md](browser-workspace.md) -- the file editor and live preview
 - [terminal.md](terminal.md) -- the in-browser terminal

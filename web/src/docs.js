@@ -27,6 +27,7 @@ export const DOCS_GUIDES = [
       { id: "intro", title: "Introduction" },
       { id: "apps", title: "Apps and hostit.yml" },
       { id: "assistant", title: "The AI assistant" },
+      { id: "aiapps", title: "Apps that think" },
       { id: "files", title: "Files and the editor" },
       { id: "ssh", title: "SSH and the terminal" },
       { id: "snapshots", title: "Snapshots and fork" },

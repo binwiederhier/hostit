@@ -72,6 +72,10 @@ func (s *Server) selfMux(wrap func(func(http.ResponseWriter, *http.Request, *sto
 	// make the grant decorative. The app sends a tool name and arguments.
 	handle("GET /v1/mcp/{slug}/tools", wrap(s.handleSelfMCPTools))
 	handle("POST /v1/mcp/{slug}/call", wrap(s.handleSelfMCPCall))
+	// The app asking the MODEL something, over the same socket. Inference only:
+	// the assistant's tools act ON an app, and an app that could run them
+	// against itself is a self-modifying loop with nobody in the room.
+	handle("POST /v1/assistant", wrap(s.handleSelfAssistantAsk))
 	handle("POST /v1/self/ensure", wrap(s.handleSelfEnsure)) // SSH login provisions the workspace
 	// The same lifecycle verbs the web app and admin CLI use, split into the app
 	// process (start/stop/restart) and its container (poweron/poweroff/reboot).

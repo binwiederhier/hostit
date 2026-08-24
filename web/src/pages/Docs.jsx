@@ -242,6 +242,108 @@ const AssistantPage = () => (
   </>
 );
 
+// An app calling the model itself, rather than being built by it.
+const AiAppsPage = () => (
+  <>
+    <h2>Apps that think</h2>
+    <p>
+      The assistant on the left <b>builds</b> your app. This is the other direction: your app asking
+      a model a question <b>while it runs</b>, over the same socket it reads its connections from,
+      with no API key of its own.
+    </p>
+    <p>
+      That last part is the point. A key pasted into an app is a key nobody can rotate, nobody can
+      meter and every process in that container can read. Going through hostit means the key stays
+      on the server, every call is counted against your app, and revoking is something you can
+      actually do.
+    </p>
+
+    <h3>Asking a question</h3>
+    <Snippet
+      text={`curl --unix-socket /run/hostit/hostit.sock http://x/api/container/assistant \\
+  -d '{"prompt":"Summarise this in one line: ...","max_tokens":100}'`}
+    />
+    <p>
+      Answers <span className="mono">{`{"text":"...","model":"...","usage":{...}}`}</span>. The
+      usage is there so an app that wants to stay inside a budget can see what it is spending.
+    </p>
+
+    <h3>Holding a conversation</h3>
+    <p>
+      The model remembers nothing between calls, so a chat sends its whole history each time.
+      Use <span className="mono">messages</span> instead of <span className="mono">prompt</span>:
+    </p>
+    <Snippet
+      text={`{
+  "system": "You are a helpful assistant who answers as a pirate.",
+  "messages": [
+    {"role": "user", "content": "What is a container?"},
+    {"role": "assistant", "content": "Arrr, a container be..."},
+    {"role": "user", "content": "And a subdomain?"}
+  ]
+}`}
+    />
+
+    <h3>What you can ask for</h3>
+    <p>Two things this makes easy, both of which used to need an account somewhere:</p>
+    <ul>
+      <li>
+        <b>An app that judges its own output.</b> Read your logs, ask the model whether anything in
+        them is serious, and push a notification only when it says yes -- so you are woken for the
+        thing that matters and not for every stack trace.
+      </li>
+      <li>
+        <b>An app that talks.</b> A chat page in whatever voice you like, with the conversation kept
+        in the browser and each turn posted here.
+      </li>
+    </ul>
+    <p>
+      Ask the assistant for either in plain English -- it knows this endpoint exists and will build
+      on it rather than telling you to obtain an API key.
+    </p>
+
+    <h3>The limits, and why</h3>
+    <table className="docs-table">
+      <thead>
+        <tr><th>Limit</th><th>Why</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>No tools, no file access</td>
+          <td>
+            The assistant's tools act <i>on</i> an app. An app that could run them against itself
+            is a self-modifying loop with nobody in the room.
+          </td>
+        </tr>
+        <tr>
+          <td><span className="mono">max_tokens</span> capped, and clamped rather than refused</td>
+          <td>The budget being spent is the operator's, not the app's.</td>
+        </tr>
+        <tr>
+          <td>Rate limited per account</td>
+          <td>
+            The same limit an interactive turn spends. An app looping on this is the cheapest way
+            to spend a month of budget by accident, so it gets a{" "}
+            <span className="mono">429</span> with the reason rather than a bill.
+          </td>
+        </tr>
+        <tr>
+          <td>A cheaper model by default</td>
+          <td>
+            Pass <span className="mono">"model": "sonnet-5"</span> or{" "}
+            <span className="mono">"opus-5"</span> when a job needs it. An app summarising log
+            lines every minute should not silently be doing it on the most expensive one.
+          </td>
+        </tr>
+      </tbody>
+    </table>
+    <p className="hint">
+      Available when this server has the assistant configured. Your usage shows up in the same
+      per-app total the chat does, so an administrator sees one number per app either way.
+    </p>
+  </>
+);
+
 const FilesPage = () => (
   <>
     <h2>Files and the editor</h2>
@@ -1221,6 +1323,7 @@ const ApiPage = () => (
           <Endpoint method="GET" path="/api/container/status" what="Whether it is running" />
           <Endpoint method="GET" path="/api/container/logs" what="Recent output" />
           <Endpoint method="POST" path="/api/container/ensure" what="Provision the workspace if it does not exist yet. What an SSH login calls" />
+          <Endpoint method="POST" path="/api/container/assistant" what={`Ask a model a question: {"prompt":"..."} or {"messages":[...]}, plus optional system, model and max_tokens. Answers {"text","model","usage"}. Inference only -- no tools -- metered to this app and rate limited`} />
         </tbody>
       </table>
       <Snippet
@@ -2383,6 +2486,7 @@ const renderers = {
     intro: IntroPage,
     apps: AppsPage,
     assistant: AssistantPage,
+    aiapps: AiAppsPage,
     files: FilesPage,
     ssh: SSHPage,
     snapshots: SnapshotsPage,

@@ -629,5 +629,20 @@ hostit is a mini-app platform. Each app has a home directory you act on with you
 
 The app is live at its subdomain. A static app serves public/ immediately, so editing files there is enough. But whenever you change hostit.yml (for example switching mode, or setting a run: command) or a run: app's code, you MUST call deploy to make it live -- writing files alone does not apply a configuration change. The container has common runtimes (python3, go, sqlite3).
 
+The app can ask a MODEL a question itself, over the same socket, with no API key
+of its own -- this is how you build an app that thinks:
+
+  curl --unix-socket /run/hostit/hostit.sock http://x/v1/assistant \
+    -d '{"prompt":"...","system":"...","max_tokens":500}'
+
+That answers {"text":"...","model":"...","usage":{...}}. Send "messages":
+[{"role":"user","content":"..."},{"role":"assistant","content":"..."}] instead of
+"prompt" to carry a conversation, since the model keeps nothing between calls.
+It is INFERENCE only -- no tools, no file access -- and it is metered to this app
+and rate-limited, so make one call per thing you actually need rather than one
+per loop iteration. When a user asks for something that needs a model at runtime
+(summarise these logs, answer in a persona, classify this text), build it on this
+rather than telling them to obtain an API key.
+
 Work like a careful engineer: read before you write (list_files, read_file), make the smallest change that works, run_command to build or verify, deploy when the config changed, and read_logs to debug a running app. Explain briefly what you are doing. When the user's request is done, stop and say so. Do not ask permission for each step; just do the work and report what you changed.`, app)
 }

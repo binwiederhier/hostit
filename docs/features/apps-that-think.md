@@ -1,0 +1,93 @@
+# Apps that think
+
+## Description
+
+An app asking a model a question **while it runs**, over the same unix socket it
+reads its connections from, with no API key of its own.
+
+This is the opposite direction from the built-in assistant. That one BUILDS an
+app: it reads and writes files, runs commands, deploys. This lets the app itself
+think -- summarise its own logs and decide whether they are worth waking somebody
+for, answer a visitor in a particular voice, classify some text.
+
+```
+POST /api/container/assistant
+  {"prompt": "...", "system": "...", "max_tokens": 500}
+  {"messages": [{"role":"user","content":"..."}], "model": "sonnet-5"}
+->{"text": "...", "model": "...", "usage": {...}}
+```
+
+## Why it exists
+
+Because the alternative is a key in an app's environment, and that key is one
+nobody can rotate, nobody can meter, and every process in that container can
+read. It is the same argument the connections feature makes, applied to hostit's
+own credential rather than a vendor's.
+
+Going through hostit means the key stays on the server, every call is counted
+against the app that made it, and the operator sees one usage number per app
+whether it was spent by the chat or by the app itself.
+
+**Inference only, deliberately.** None of the assistant's tools are offered here.
+The tools act ON an app -- write a file, run a command, deploy -- and an app that
+could run them against itself is a self-modifying loop with nobody in the room.
+An app that wants to change itself already has its own filesystem.
+
+## User flows
+
+Ask the assistant for it in plain English. The system prompt tells the model this
+endpoint exists, so "build an app that reads my logs and pings me if anything
+looks serious" produces something built on this rather than a suggestion to go
+and get an API key.
+
+```mermaid
+sequenceDiagram
+    participant App as App (in its container)
+    participant H as hostit control
+    participant M as Anthropic API
+    App->>H: POST /api/container/assistant (unix socket, SO_PEERCRED)
+    H->>H: resolve app from peer uid; reserve against OWNER's rate limit
+    H->>M: Messages API (operator's key, NO tools)
+    M-->>H: text + usage
+    H->>H: record usage against this app
+    H-->>App: {"text": ..., "usage": ...}
+```
+
+## Technical details
+
+- `assistant/ask.go` -- `Manager.Ask` and `Manager.AskFor`. `AskFor` reserves
+  against the owner's rate limit (`reserveRun`), the same one an interactive turn
+  spends, because it is the same budget either way.
+- `askModel` is an ALLOWLIST, not a passthrough: the string reaches a paid API,
+  and "whatever the app typed" is not something to forward on that basis. The
+  default is the cheapest model, since an app summarising log lines every minute
+  should not silently be doing it on the most expensive one.
+- `askMessages` bounds one request: `maxAskMessages` (60) and `maxAskChars`
+  (200k). A chat app grows its history forever unless something says otherwise,
+  and the first thing an unbounded history does is cost money.
+- `max_tokens` is CLAMPED rather than refused. The app asked for something that
+  sounds reasonable and should get an answer, just a bounded one.
+- `control/server_handler_container_assistant.go` -- the endpoint. `prompt` and
+  `messages` are alternatives and sending both is a 400: accepting both would
+  silently drop one, and the app would be debugging a prompt that never went
+  anywhere.
+- Rate limiting answers **429 with the reason**, so an app written to back off
+  can tell "too fast" apart from "broken".
+
+`assistant.NewClientAt` exists so this path can be driven end to end against a
+stand-in Messages API. Testing through the real client rather than a stubbed
+interface is what proves the JSON hostit sends and the usage it parses, instead
+of only proving the handler calls something.
+
+## Other notes
+
+- **Availability** follows the assistant: configured API key, or nothing.
+- **No transcript is kept.** The model is stateless and hostit stores nothing per
+  app here, so a chat sends its whole history each turn. That is why the message
+  and character caps exist.
+- **Usage lands on the app**, so it appears in the admin cost view beside what
+  the chat spent. There is no separate budget for it yet -- worth adding if an
+  app ever manages to spend meaningfully through the rate limit.
+- **Known gap:** no streaming. A long answer arrives all at once, which is fine
+  for a log summary and less good for a chat UI. Server-sent events would be the
+  natural addition, and the interactive assistant already has that machinery.

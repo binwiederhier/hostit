@@ -1,0 +1,3 @@
+description: A chat page that answers as a pirate, using hostit's own model
+mode: app
+run: python3 app.py
