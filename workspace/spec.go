@@ -62,6 +62,13 @@ const (
 	HostBinFile      = "/usr/lib/hostit/bin/hostit-app"
 	ContainerBinFile = "/usr/bin/hostit"
 
+	// ContainerRunDir is where the host's app-socket subdir is mounted INSIDE a
+	// container, so the in-container CLI finds the socket at the unchanged path
+	// /run/hostit/hostit.sock (= controlconf.DefaultSocketFile). The host mounts
+	// only its socket subdir here, never the whole run dir -- that is what keeps
+	// apps-raw and the operator sockets out of every container.
+	ContainerRunDir = "/run/hostit"
+
 	// PortMin/PortMax bound the per-app loopback port range. Deliberately NOT
 	// configurable: an app's uid block is derived from its port (UIDFor), so
 	// moving the range on an existing install would re-map every app's uid
@@ -246,11 +253,18 @@ func WithConfigLabel(args []string, hash string) []string {
 // socket on every start, so a mount of the file pins an inode that is already
 // gone, and the app's CLI answers "connection refused" until its container is
 // recreated. Mounting the directory lets it resolve the live socket by path.
+//
+// The mount is SCOPED and asymmetric: the host serves the socket from a
+// dedicated subdir (socketDir, e.g. /run/hostit/app) holding nothing else, and
+// that subdir is mounted at ContainerRunDir. So the container sees exactly one
+// thing under /run/hostit -- its own socket -- while apps-raw and the operator
+// sockets, which live in the run dir ABOVE socketDir on the host, are outside
+// the mount and invisible to every tenant.
 func appendCommonMounts(args []string, socketFile, hostitBin string) []string {
 	socketDir := filepath.Dir(socketFile)
 	return append(args,
 		"--volume", hostitBin+":"+ContainerBinFile+":ro",
-		"--volume", socketDir+":"+socketDir+":ro")
+		"--volume", socketDir+":"+ContainerRunDir+":ro")
 }
 
 func sortedKeys(m map[string]string) []string {

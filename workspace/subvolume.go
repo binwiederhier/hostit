@@ -20,9 +20,11 @@ const (
 	// hiddenDirMode keeps .bases root-only; apps reach their subvolume through
 	// the container runtime, never by path.
 	hiddenDirMode = 0o700
-	// filesDirMode is home/app inside a fresh app subvolume. Root-owned like the
-	// whole idmapped tree, but world-traversable: sshd, running as the app user,
-	// must reach .ssh/authorized_keys through it on the HOST side.
+	// filesDirMode is home/app inside a fresh app subvolume. 0755 is safe: an app
+	// only ever sees its OWN subvolume as its container rootfs, and the daemon's
+	// raw apps view (which would expose every home) is no longer mounted into any
+	// container -- the socket mount is scoped to a sibling subdir. Cross-tenant
+	// isolation is by construction (invisible), not by home permission bits.
 	filesDirMode = 0o755
 	// mtabLink is the /etc/mtab symlink every rootfs must carry: podman skips
 	// creating it when present, and creating it through an idmapped rootfs is

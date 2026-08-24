@@ -7,6 +7,21 @@ changed rather than what an operator had to do about it; from v0.15.0 on, each
 release is written down as it is cut. Anything that changes a config file, a
 default, or on-disk state is called out as **Breaking** or **Upgrade note**.
 
+## v0.21.0 (2026-08-24)
+
+- **Security: cross-tenant file exposure closed.** Every app container mounted
+  the node's whole `/run/hostit`, which also carried `apps-raw` -- an
+  idmap-free view of every app's files -- and the operator sockets. Any tenant
+  could read every other tenant's source, `hostit.yml` env values and
+  `authorized_keys`. The node now serves the app socket from its own
+  subdirectory and mounts only that into a container, so nothing else under
+  `/run/hostit` is visible from inside. Isolation is by construction now, not by
+  file permission.
+- **Upgrade note.** The node's `socket-file` default moved to
+  `/run/hostit/app/hostit.sock` (the ansible role sets it). Paths inside a
+  container are unchanged (`/run/hostit/hostit.sock`), and containers pick up the
+  scoped mount when they restart on upgrade.
+
 ## v0.20.0 (2026-08-24)
 
 - **Connections.** Attach an account, a secret or a tool server once, then grant

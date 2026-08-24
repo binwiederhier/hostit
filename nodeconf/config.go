@@ -62,7 +62,10 @@ type Config struct {
 
 	// DataDir holds the registry mirror control pushes (and the colocated
 	// credentials); AppsDir is the btrfs pool the app subvolumes live in;
-	// SocketFile is where the in-container CLI reaches this node.
+	// SocketFile is the HOST path the node serves the app socket on. It lives in
+	// its own subdir (default /run/hostit/app) so ONLY that subdir is mounted
+	// into a container -- the container reaches it at /run/hostit/hostit.sock,
+	// while apps-raw and the operator sockets, a level up, stay out of reach.
 	DataDir    string `yaml:"data-dir"`
 	AppsDir    string `yaml:"apps-dir"`
 	SocketFile string `yaml:"socket-file"`
@@ -79,7 +82,7 @@ func NewConfig() *Config {
 		NodeID:         localNodeID,
 		DataDir:        "/var/lib/hostit",
 		AppsDir:        "/var/lib/hostit/apps",
-		SocketFile:     "/run/hostit/hostit.sock",
+		SocketFile:     "/run/hostit/app/hostit.sock",
 		NodeSocketFile: DefaultNodeSocketFile,
 	}
 }

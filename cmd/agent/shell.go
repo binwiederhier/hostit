@@ -37,7 +37,10 @@ var (
 )
 
 func execShell(c *cli.Context) error {
-	ctl := appctl.NewController(controlconf.DefaultSocketFile)
+	// The login shell runs on the HOST as the app user, so it dials the socket at
+	// its host path -- the container-side /run/hostit/hostit.sock does not exist
+	// out here.
+	ctl := appctl.NewController(controlconf.HostAppSocketFile)
 
 	// Identify the app and make sure its container is up
 	self, err := ctl.Self()

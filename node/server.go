@@ -103,7 +103,11 @@ func Serve(configPath, version string) error {
 	// not applied here: control re-asserts every app's memory and disk limit
 	// in its rejoin handshake right after the first dial-in.
 	machine.EnableDiskBudgets()
-	if err := machine.MountRawAppsView(filepath.Join(filepath.Dir(conf.SocketFile), "apps-raw")); err != nil {
+	// The raw apps view is the daemon's own idmap-free window onto every app's
+	// files; it lives at the run root, a SIBLING of the app-socket subdir, so it
+	// is never inside the directory mounted into a container. RawAppsViewDir
+	// enforces that placement.
+	if err := machine.MountRawAppsView(RawAppsViewDir(conf.SocketFile)); err != nil {
 		return err
 	}
 	done := make(chan struct{})

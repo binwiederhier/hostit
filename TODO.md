@@ -74,6 +74,41 @@ holds the credential", a secret is "the tenant holds it and hostit stores it
 carefully"; both need per-app custody and encryption at rest, and inventing
 that twice would be a mistake.
 
+### 2b. Multi-node app SSH lands on the wrong node (pre-existing)
+
+Surfaced 2026-08-24 while closing the apps-raw exposure, but NOT caused by it:
+an app on a node-only host advertises `ssh <app>@<base-domain>`, and the base
+domain is the CONTROL node. The app's Unix user and its `authorized_keys` exist
+only on the node that RUNS the container, so the control node's sshd has no such
+user and answers `Permission denied (publickey)` before any shell runs. Example:
+conntest2 runs on stage-2, so `ssh conntest2@stageapps.heckel.io` (stage-1)
+always failed. Single-node deploys (prod today) are unaffected -- the base
+domain IS the node.
+
+What already works: SSH straight to the app's own node succeeds -- verified on
+stage-2 (`ssh conntest2@138.197.20.72`, and the login shell as the app user).
+Isolation, keys, and the login shell are all correct on the node; only the
+ADVERTISED host is wrong.
+
+The fix: build `ssh.host`/`ssh.command` from the app's node (`app.Host`) instead
+of the single global `s.config.SSHHostname()`. Two sites hardcode it today:
+`control/service.go` (~537) and `control/server_handler_agent.go` (~113). A
+per-node PUBLIC SSH endpoint is needed because the node table's `Address` is the
+INTERNAL VPC IP (stage-2 = `10.111.32.4`), not reachable from a laptop. Options,
+undecided (an infra call -- raw IP now vs a DNS name):
+- control.yml `node-ssh-hosts: {name -> host}` map, API looks up the app's node,
+  falls back to `SSHHostname()` for the local node. No schema migration, no
+  node-side change. Simplest.
+- Same map but a per-node DNS name (needs an A record per node, e.g.
+  `stage-2.apps.heckel.io -> 138.197.20.72`). Nicer UX, survives IP changes.
+- Node reports its own `ssh-host` from node.yml; control stores it in the node
+  table (append-only migration). Most self-configuring, most surface.
+
+Related invariant to keep: app homes are root-owned (daemon-created) and sshd
+reads `authorized_keys` AS the app user, so the home MUST stay world-traversable
+(`filesDirMode = 0755`). A 0700 home breaks SSH even on the correct node -- this
+is what the reverted home-lockdown approach got wrong.
+
 ## Next (decide, then build)
 
 ### 3. DECIDED: the credential-brokering shape (both, deliberately)
@@ -485,6 +520,26 @@ Kept briefly so they are not re-proposed; delete after a few weeks.
 ## Done (recent)
 
 Kept briefly for context; prune when stale. Everything older is in CHANGELOG.md.
+
+- **Cross-tenant apps-raw exposure closed (2026-08-24).** Every container mounted
+  the node's whole `/run/hostit`, which also held `apps-raw` -- the daemon's
+  idmap-free view of EVERY app's files -- plus the operator sockets. Any tenant
+  could read every other tenant's source, `hostit.yml` env secrets and
+  `authorized_keys`. Fixed by construction, not by permission: the node now
+  serves the app socket from its own subdir (`/run/hostit/app/hostit.sock`) and
+  mounts ONLY that subdir at the container's `/run/hostit`, so the socket lands
+  at the unchanged in-container path while apps-raw and the operator sockets, a
+  level up, are outside the mount entirely. apps-raw moved to the run root
+  (`RawAppsViewDir`, a sibling of the socket subdir); the login shell dials the
+  host path; home lockdown (the first, wrong attempt -- 0700 homes broke SSH,
+  see 2b) was reverted to 0755. A cross-package invariant test
+  (`node/isolation_invariants_test.go`) pins the three constants that must
+  agree. Verified on both stage nodes: container sees only `hostit.sock`,
+  cross-tenant path gone, SSH/terminal intact. NOT yet on prod (needs a version
+  tag; the snapshot version is static, so dpkg skipped the binary on stage and
+  it had to be force-installed). The one deploy gotcha: a leftover
+  `/run/hostit/app/apps-raw` bind from an earlier experiment had to be unmounted
+  so it did not sit inside the new mount source; prod never had it.
 
 - **Private apps (2026-08-21).** An app can be reachable only by its owner, its
   collaborators and admins, chosen at creation or flipped in Settings, and it

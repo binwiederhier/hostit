@@ -25,7 +25,10 @@ func TestContainerCreateArgsWorkspaceMode(t *testing.T) {
 	conf := &app.Config{Mode: app.ModeApp, Run: "python3 -m http.server $PORT"}
 	require.NoError(t, conf.Validate())
 	a := &store.App{ID: "appid123", Name: "blog", Port: 10000}
-	args := CreateArgs(conf, a, "/srv/hostit/apps/appid123", "/run/hostit/hostit.sock", "/usr/bin/hostit", testVersion, 0, 0, testIDs, "")
+	// The node serves the app socket from a dedicated subdir on the host so only
+	// that subdir -- not the whole run dir (which also holds apps-raw and the
+	// operator sockets) -- gets mounted into the container.
+	args := CreateArgs(conf, a, "/srv/hostit/apps/appid123", "/run/hostit/app/hostit.sock", "/usr/bin/hostit", testVersion, 0, 0, testIDs, "")
 	cmd := strings.Join(args, " ")
 	// The container is named by the app's stable id, not its name, so a rename never
 	// has to recreate it. The in-container home is a fixed path for the same reason.
@@ -45,7 +48,12 @@ func TestContainerCreateArgsWorkspaceMode(t *testing.T) {
 	// as its rootfs, so the only volumes left are the hostit binary and socket dir.
 	assert.NotContains(t, cmd, ":/home/app")
 	assert.Contains(t, cmd, "--volume /usr/bin/hostit:/usr/bin/hostit:ro")
-	assert.Contains(t, cmd, "--volume /run/hostit:/run/hostit")
+	// The socket mount is SCOPED and asymmetric: the host's app-socket subdir is
+	// mounted at the container's run dir, so inside the container the socket is at
+	// /run/hostit/hostit.sock as before, but apps-raw and the operator sockets
+	// (siblings of the subdir on the host) are not inside the mount at all.
+	assert.Contains(t, cmd, "--volume /run/hostit/app:/run/hostit:ro")
+	assert.NotContains(t, cmd, "--volume /run/hostit:/run/hostit:ro")
 	// The container runs the app's persistent subvolume, not an image: no image
 	// tag anywhere in the argv.
 	assert.NotContains(t, cmd, ImageTag())

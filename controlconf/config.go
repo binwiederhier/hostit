@@ -67,11 +67,17 @@ const (
 	// have it keep working (see ResolveConfigFile), so upgrading the package
 	// does not strand a running daemon.
 	LegacyServerConfigFile = "/etc/hostit/server.yml"
-	// DefaultSocketFile is the APP socket: the in-container CLI dials it, and
-	// since the relay work it is served by hostit-node on every host. Control
-	// keeps the path in its config only to hand it to things that name it (the
-	// assistant sandbox mounts its directory).
+	// DefaultSocketFile is the APP socket as seen INSIDE a container: the
+	// in-container CLI dials this path. The host serves the socket from a subdir
+	// (HostAppSocketFile) that gets mounted at the container's run dir, so this
+	// unchanged /run/hostit/hostit.sock is where it lands inside.
 	DefaultSocketFile = "/run/hostit/hostit.sock"
+	// HostAppSocketFile is the same app socket on the HOST: the node serves it
+	// here and the host-side login shell dials it here. It sits in its own subdir
+	// so only that subdir is mounted into containers, keeping apps-raw and the
+	// operator sockets (a level up in the run dir) invisible to tenants. Must
+	// match nodeconf's default socket-file.
+	HostAppSocketFile = "/run/hostit/app/hostit.sock"
 	// DefaultControlSocketFile is control's OWN unix socket: the operator CLI
 	// (peer uid 0 = admin, no token) and the assistant sandbox, which needs
 	// control's full registry to resolve a remote-node app's uid. Distinct from
@@ -218,7 +224,7 @@ func NewConfig() *Config {
 	return &Config{
 		ClusterSocket:       cluster.DefaultSocketFile,
 		ListenHTTP:          ":80",
-		SocketFile:          DefaultSocketFile,
+		SocketFile:          HostAppSocketFile, // control names the HOST-served socket
 		ControlSocketFile:   DefaultControlSocketFile,
 		DataDir:             "/var/lib/hostit",
 		AppsDir:             "/var/lib/hostit/apps",
