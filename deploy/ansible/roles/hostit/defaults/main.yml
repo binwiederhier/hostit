@@ -2,7 +2,7 @@
 
 # Which hostit release to install, from the public GitHub releases:
 #   https://github.com/binwiederhier/hostit/releases
-hostit_version: "0.12.0"
+hostit_version: "0.21.0"
 
 # hostit ships one package per component. All three go on a single-box install:
 # the node package is what carries the `hostit` CLI, the per-app systemd unit,
@@ -14,7 +14,7 @@ hostit_arch: amd64
 #   (cd hostit && make release-snapshot)
 # Empty means download hostit_version from GitHub.
 hostit_deb_dir: ""
-hostit_deb_version: "v0.12.0-next"
+hostit_deb_version: ""
 
 # Where hostit-control listens for the proxy in front of it. Loopback: the
 # proxy shares this host, and nothing else should reach the plain-HTTP port.
