@@ -1994,6 +1994,24 @@ const McpSetupPage = () => (
     <p>Check it from outside:</p>
     <Snippet text={`curl -sS ${origin}/.well-known/oauth-client`} />
 
+    <h3>Outbound requests are restricted</h3>
+    <p>
+      Users supply the URL, and hostit fetches it from inside your network. So hostit refuses to
+      connect to anything that is not publicly routable: loopback, the private ranges, and the
+      link-local range where every cloud provider puts its unauthenticated metadata service. The
+      check runs when the connection is made, on the address actually being dialled, so a hostname
+      that resolves public once and private a moment later does not get past it.
+    </p>
+    <p>
+      If your MCP servers really are on your own LAN -- a Home Assistant at{" "}
+      <span className="mono">192.168.1.50</span>, say -- turn it off deliberately:
+    </p>
+    <Snippet text={`outbound-allow-private: true`} />
+    <p className="hint">
+      Off by default, and worth leaving off on any instance with users you do not personally trust:
+      it is the same setting that stands between an ordinary account and your metadata service.
+    </p>
+
     <h3>Security notes</h3>
     <ul>
       <li>

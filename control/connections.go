@@ -14,6 +14,7 @@ import (
 	"heckel.io/hostit/connections"
 	"heckel.io/hostit/controlconf"
 	"heckel.io/hostit/mcp"
+	"heckel.io/hostit/outbound"
 	"heckel.io/hostit/store"
 )
 
@@ -86,9 +87,12 @@ type cachedToken struct {
 
 func newConnectionManager(st *store.Store, key []byte, conf *controlconf.Config) *connectionManager {
 	return &connectionManager{
-		store:      st,
-		key:        key,
-		client:     &http.Client{Timeout: 20 * time.Second},
+		store: st,
+		key:   key,
+		// GUARDED: this client fetches URLs users supply -- an MCP server's
+		// endpoint, a custom provider's issuer -- so it must refuse to connect
+		// anywhere that is not publicly routable. See the outbound package.
+		client:     outbound.NewClient(20*time.Second, conf.OutboundAllowPrivate),
 		conf:       conf,
 		cached:     map[string]cachedToken{},
 		custom:     map[string]connections.Provider{},

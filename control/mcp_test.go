@@ -8,10 +8,12 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"heckel.io/hostit/outbound"
 	"heckel.io/hostit/store"
 )
 
@@ -328,4 +330,35 @@ func TestAskingForToolsOnACredentialIsAlsoANotFound(t *testing.T) {
 
 	rr := request(t, s.API(), "GET", "/api/connections/a-key/mcp/tools", "", token)
 	assert.Equal(t, http.StatusNotFound, rr.Code, rr.Body.String())
+}
+
+// A user-supplied MCP URL is a request hostit makes from inside its own
+// network. Pointed at loopback it would reach control's own API and every
+// service bound there; pointed at 169.254.169.254 it would read the cloud
+// metadata service, which on most providers is unauthenticated and full of
+// credentials.
+func TestAnMCPServerOnAnInternalAddressIsRefused(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	s.connections.client = outbound.NewClient(5*time.Second, false) // the guard, as shipped
+	u := newActiveTestUser(t, s, "owner@example.com")
+	token, _, err := s.users.CreateToken(u.ID, "laptop")
+	require.NoError(t, err)
+
+	// A real listener on loopback, so a failure here means it was REACHED
+	// rather than merely unreachable.
+	reached := false
+	internal := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reached = true
+		writeTestJSON(w, map[string]any{"secret": "internal"})
+	}))
+	t.Cleanup(internal.Close)
+
+	for _, target := range []string{internal.URL + "/mcp", "http://169.254.169.254/latest/meta-data/"} {
+		rr := request(t, s.API(), "POST", "/api/connections",
+			`{"provider":"mcp","slug":"probe","values":{"url":"`+target+`"}}`, token)
+		assert.NotEqual(t, http.StatusCreated, rr.Code, target)
+		assert.Contains(t, rr.Body.String(), "not reachable", target)
+	}
+	assert.False(t, reached, "hostit connected to a loopback service on a user's say-so")
 }

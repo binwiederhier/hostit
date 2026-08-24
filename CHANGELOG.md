@@ -57,6 +57,15 @@ default, or on-disk state is called out as **Breaking** or **Upgrade note**.
   internet, or an authorization server cannot fetch it and every consent fails.
   It is served unauthenticated on purpose.
 
+- **Outbound fetches of user-supplied URLs are restricted.** Adding an MCP server
+  means hostit fetches a URL a user chose, from inside its own network. hostit now
+  refuses to connect to anything that is not publicly routable -- loopback, the
+  private ranges, and the link-local range where cloud providers put their
+  unauthenticated metadata service -- checked at connection time on the resolved
+  address, so DNS rebinding does not get past it. Set
+  `outbound-allow-private: true` in `control.yml` if your MCP servers really are
+  on your own LAN.
+
 - **Custom OAuth providers.** Any service hostit does not ship can be added in
   `connections:` in `control.yml` -- a label, a client, scopes and the two OAuth
   URLs (or an `issuer` to discover them from). It behaves exactly like a

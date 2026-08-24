@@ -204,6 +204,23 @@ An MCP connection is a `store.Connection` with `Kind = store.ConnectionMCP`.
 
 ## Other notes
 
+- **Outbound requests are guarded (SSRF).** The URL is the user's, and hostit
+  fetches it from inside its own network. Without a guard that is a server-side
+  request forgery primitive: pointed at `http://169.254.169.254/` it reads the
+  cloud metadata service, unauthenticated on most providers, from an address that
+  service trusts. It also reflected up to 512 bytes of a non-2xx response body
+  back to the caller in the error text.
+
+  The `outbound` package is the answer: an http.Client whose dialer refuses any
+  address that is not publicly routable. The check is at DIAL time, on the
+  resolved address, because a hostname check is defeated by DNS rebinding.
+  `outbound-allow-private: true` turns it off for a self-hoster whose MCP servers
+  really are on their LAN; it is off by default and tests that are not about the
+  guard set it on (they talk to httptest servers on loopback).
+
+  This shipped to stage before it was caught. It never reached prod --
+  `connections-v2` is unmerged.
+
 - **The grant is the whole boundary.** It is checked before hostit contacts the
   server at all, so an ungranted app cannot even make hostit send a request on its
   behalf. `control/mcp_test.go:TestAnUngrantedAppCannotCallAnMCPTool` asserts the

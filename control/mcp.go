@@ -13,6 +13,7 @@ import (
 
 	"heckel.io/hostit/connections"
 	"heckel.io/hostit/mcp"
+	"heckel.io/hostit/outbound"
 	"heckel.io/hostit/store"
 )
 
@@ -151,8 +152,8 @@ func (b *mcpBroker) take(nonce string) (mcpPending, bool) {
 // server wanted no authorization) or a URL to send the owner to; never both.
 func (m *connectionManager) addMCP(ctx context.Context, userID, slug, label, serverURL string) (*store.Connection, string, error) {
 	serverURL = strings.TrimSpace(serverURL)
-	if !strings.HasPrefix(serverURL, "http://") && !strings.HasPrefix(serverURL, "https://") {
-		return nil, "", fmt.Errorf("%w: an MCP server URL must start with https://", connections.ErrInvalidCredential)
+	if err := outbound.CheckURL(serverURL); err != nil {
+		return nil, "", fmt.Errorf("%w: %v", connections.ErrInvalidCredential, err)
 	}
 	disco, err := mcp.Discover(ctx, m.client, serverURL)
 	if err != nil {

@@ -129,9 +129,16 @@ type Config struct {
 	// no shared hostit client to inherit, because registering one and getting
 	// it reviewed is the operator's own relationship with the provider.
 	ConnectionClients map[string]OAuthClient `yaml:"connections"`
-	SessionKey        string                 `yaml:"session-key"`  // Secret for signing session cookies; generated if empty
-	AdminEmails       []string               `yaml:"admin-emails"` // These emails become active admins on first login
-	Breakglass        bool                   `yaml:"breakglass"`   // Allow the admin token to mint a session for an admin email (no Google); for e2e/recovery
+	// OutboundAllowPrivate lets hostit fetch URLs that resolve to private,
+	// loopback or link-local addresses. OFF by default, and it should stay off
+	// unless you mean it: users supply the URLs hostit fetches (an MCP server,
+	// a custom provider's issuer), so this is what stands between an ordinary
+	// account and the cloud metadata service. Turn it on only for a self-hosted
+	// instance whose MCP servers really are on its own LAN.
+	OutboundAllowPrivate bool     `yaml:"outbound-allow-private"`
+	SessionKey           string   `yaml:"session-key"`  // Secret for signing session cookies; generated if empty
+	AdminEmails          []string `yaml:"admin-emails"` // These emails become active admins on first login
+	Breakglass           bool     `yaml:"breakglass"`   // Allow the admin token to mint a session for an admin email (no Google); for e2e/recovery
 	// ListenCluster is where members on OTHER machines dial in: mTLS, with
 	// per-member certificates from the cluster CA. Empty on a single-box
 	// install, which admits no remote members at all.
