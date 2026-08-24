@@ -106,6 +106,12 @@ func Serve(configPath, version string) error {
 	if err := machine.MountRawAppsView(filepath.Join(filepath.Dir(conf.SocketFile), "apps-raw")); err != nil {
 		return err
 	}
+	// Lock any pre-existing app home that is still world-readable. New homes are
+	// created 0700; this secures the ones already on disk in one pass, so the
+	// cross-tenant read is closed for the whole box on deploy, not app by app.
+	if n := TightenAppHomes(conf.AppsDir); n > 0 {
+		slog.Info("Tightened existing app homes to 0700", "count", n)
+	}
 	done := make(chan struct{})
 	defer close(done)
 	// Migrate app users still on the old login-shell path. Best effort and

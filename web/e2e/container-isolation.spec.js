@@ -5,42 +5,60 @@ import { test, expect } from "./fixtures";
 // every app's files -- so any tenant could read every other tenant's source,
 // hostit.yml (env secrets included) and authorized_keys. A real cross-tenant
 // breach, reported from a container.
-test("a container cannot read another app's files through apps-raw", async ({ request }) => {
-  test.setTimeout(180000);
-  const app = "e2eiso" + Date.now().toString(36).slice(-5);
-  const created = await request.post("/api/apps", { data: { name: app } });
-  expect(created.status(), await created.text()).toBe(201);
+test("a container cannot read another app's files by any path", async ({ request }) => {
+  test.setTimeout(240000);
+  const victim = "e2evic" + Date.now().toString(36).slice(-5);
+  const attacker = "e2eatt" + Date.now().toString(36).slice(-5);
+  const canary = "CANARY-" + Math.random().toString(36).slice(2);
 
-  const run = async (command) => {
+  const vres = await request.post("/api/apps", { data: { name: victim } });
+  expect(vres.status(), await vres.text()).toBe(201);
+  const victimId = (await vres.json()).id;
+  expect(victimId, "the app id is what a neighbour would traverse to").toBeTruthy();
+  const ares = await request.post("/api/apps", { data: { name: attacker } });
+  expect(ares.status(), await ares.text()).toBe(201);
+
+  const runIn = async (app, command) => {
     const res = await request.post(`/api/apps/${app}/run`, { data: { command, timeout_seconds: 60 } });
     expect(res.status(), await res.text()).toBeLessThan(300);
     return (await res.json()).output || "";
   };
 
   try {
-    await expect
-      .poll(async () => {
-        const info = await request.get(`/api/apps/${app}`);
-        return info.ok() ? (await info.json()).running : false;
-      }, { timeout: 90000, intervals: [1000, 2000, 3000] })
-      .toBe(true);
+    for (const app of [victim, attacker]) {
+      await expect
+        .poll(async () => {
+          const info = await request.get(`/api/apps/${app}`);
+          return info.ok() ? (await info.json()).running : false;
+        }, { timeout: 90000, intervals: [1000, 2000, 3000] })
+        .toBe(true);
+    }
 
-    // The app socket is reachable, which the isolation must not cost.
-    const listing = await run("ls /run/hostit/ | tr '\\n' ' '");
-    expect(listing).toContain("hostit.sock");
+    // Plant a secret and confirm the victim's home is private BY DEFAULT -- that
+    // is the fix: a fresh app's home is 0700, so a neighbour cannot read it
+    // without the victim having done anything.
+    await runIn(victim, `printf %s '${canary}' > /home/app/secret.txt`);
+    const mode = (await runIn(victim, "stat -c %a /home/app")).trim();
+    expect(mode, "a fresh app home must be private by default").toBe("700");
 
-    // apps-raw is the node's root-only view of EVERY app's files. A tenant must
-    // not be able to traverse it or read another app's hostit.yml (which holds
-    // env secrets) through it.
-    const traverse = await run("ls /run/hostit/apps-raw/ 2>&1 | head -c 80 || true");
-    expect(traverse, "apps-raw must not be traversable").toContain("Permission denied");
-    const breach = await run("cat /run/hostit/apps-raw/*/home/app/hostit.yml 2>&1 | head -c 80 || true");
-    expect(breach, "another app's config must not be readable").not.toContain("mode:");
+    // The attacker knows the victim's id (ids are not secret) and walks the
+    // world-traversable apps dir straight to the victim's home by explicit path.
+    // The home being 0700 owned by the VICTIM's uid stops it: no glob, so this
+    // is the direct-traversal case, not a listing-permission one.
+    const direct = await runIn(attacker, `cat /run/hostit/apps-raw/${victimId}/home/app/secret.txt 2>&1; echo " [rc=$?]"`);
+    expect(direct, "the attacker must NOT read the victim's secret by direct path").not.toContain(canary);
+    expect(direct).toContain("[rc=");
+    // And cannot even list the victim's home.
+    const list = await runIn(attacker, `ls /run/hostit/apps-raw/${victimId}/home/app/ 2>&1 | head -c 120`);
+    // Either the home is unreadable (same node) or the app is not on this node
+    // at all (multi-node) -- both mean the attacker cannot see it.
+    expect(list, list).toMatch(/Permission denied|No such file/);
 
-    // The socket itself still works, so the isolation did not cost the feature.
-    const self = await run("curl -sS --max-time 8 --unix-socket /run/hostit/hostit.sock http://x/api/container/self");
-    expect(self).toContain(`"name":"${app}"`);
+    // The attacker's own socket still works: isolation did not cost the feature.
+    const self = await runIn(attacker, "curl -sS --max-time 8 --unix-socket /run/hostit/hostit.sock http://x/api/container/self");
+    expect(self).toContain(`"name":"${attacker}"`);
   } finally {
-    await request.delete(`/api/apps/${app}`);
+    await request.delete(`/api/apps/${victim}`);
+    await request.delete(`/api/apps/${attacker}`);
   }
 });

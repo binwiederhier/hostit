@@ -31,20 +31,9 @@ const (
 	dataDirMode = 0o711
 	// reconcileInterval paces the desired-state sweep across all nodes.
 	reconcileInterval = 5 * time.Minute
-	// appsDirMode is the directory holding the app subvolumes. 0700: root-only.
-	//
-	// It was 0755 on the theory that app users traverse it on the host to reach
-	// their own files -- but they do not. A login (interactive OR scp/sftp/rsync)
-	// is forced into the app's container, where it operates on the container's
-	// /home/app; the host path is never walked by a tenant. Verified: ssh, scp,
-	// sftp and rsync all work with this at 0700.
-	//
-	// It MUST be 0700, because this same directory is bind-mounted (as apps-raw)
-	// into every container so they can reach the app socket beside it. At 0755 a
-	// tenant traversed apps-raw/<other-app>/home/app and read another tenant's
-	// source, hostit.yml (env secrets) and keys. 0700 stops the traversal at the
-	// door.
-	appsDirMode = 0o700
+	// appsDirMode is the directory holding the app subvolumes; app users traverse
+	// it to reach their own files dir (home/app) inside their subvolume
+	appsDirMode = 0o755
 )
 
 var (

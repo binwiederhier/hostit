@@ -20,10 +20,16 @@ const (
 	// hiddenDirMode keeps .bases root-only; apps reach their subvolume through
 	// the container runtime, never by path.
 	hiddenDirMode = 0o700
-	// filesDirMode is home/app inside a fresh app subvolume. Root-owned like the
-	// whole idmapped tree, but world-traversable: sshd, running as the app user,
-	// must reach .ssh/authorized_keys through it on the HOST side.
-	filesDirMode = 0o755
+	// filesDirMode is home/app inside a fresh app subvolume, owned by the app's
+	// own uid.
+	//
+	// 0700, not 0755. The apps directory above it is world-traversable (0711) so
+	// sshd can walk to each app user's authorized_keys -- but at 0755 that same
+	// traversal let ANY app read EVERY other app's files through the raw view
+	// bind-mounted into every container (source, hostit.yml env secrets, keys).
+	// 0700 keeps sshd working (the app user owns its home and reads its own
+	// keys) while stopping a neighbour, whose uid differs, at the home's door.
+	filesDirMode = 0o700
 	// mtabLink is the /etc/mtab symlink every rootfs must carry: podman skips
 	// creating it when present, and creating it through an idmapped rootfs is
 	// exactly what EOVERFLOWs on podman 4.9.
