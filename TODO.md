@@ -80,13 +80,13 @@ Surfaced 2026-08-24 while closing the apps-raw exposure, but NOT caused by it:
 an app on a node-only host advertises `ssh <app>@<base-domain>`, and the base
 domain is the CONTROL node. The app's Unix user and its `authorized_keys` exist
 only on the node that RUNS the container, so the control node's sshd has no such
-user and answers `Permission denied (publickey)` before any shell runs. Example:
-conntest2 runs on stage-2, so `ssh conntest2@stageapps.heckel.io` (stage-1)
-always failed. Single-node deploys (prod today) are unaffected -- the base
-domain IS the node.
+user and answers `Permission denied (publickey)` before any shell runs. An app
+on a worker node advertises `ssh <app>@<base-domain>`, which lands on the control
+node where that app's user does not exist. Single-node deploys are unaffected --
+the base domain IS the node.
 
-What already works: SSH straight to the app's own node succeeds -- verified on
-stage-2 (`ssh conntest2@138.197.20.72`, and the login shell as the app user).
+What already works: SSH straight to the app's own node succeeds -- verified by
+dialing the worker node directly (and by the login shell as the app user).
 Isolation, keys, and the login shell are all correct on the node; only the
 ADVERTISED host is wrong.
 
@@ -94,13 +94,13 @@ The fix: build `ssh.host`/`ssh.command` from the app's node (`app.Host`) instead
 of the single global `s.config.SSHHostname()`. Two sites hardcode it today:
 `control/service.go` (~537) and `control/server_handler_agent.go` (~113). A
 per-node PUBLIC SSH endpoint is needed because the node table's `Address` is the
-INTERNAL VPC IP (stage-2 = `10.111.32.4`), not reachable from a laptop. Options,
-undecided (an infra call -- raw IP now vs a DNS name):
+node's INTERNAL cluster address, not reachable from outside. Options, undecided
+(an infra call -- raw IP now vs a DNS name):
 - control.yml `node-ssh-hosts: {name -> host}` map, API looks up the app's node,
   falls back to `SSHHostname()` for the local node. No schema migration, no
   node-side change. Simplest.
-- Same map but a per-node DNS name (needs an A record per node, e.g.
-  `stage-2.apps.heckel.io -> 138.197.20.72`). Nicer UX, survives IP changes.
+- Same map but a per-node DNS name (needs an A record per node pointing at the
+  node's public IP). Nicer UX, survives IP changes.
 - Node reports its own `ssh-host` from node.yml; control stores it in the node
   table (append-only migration). Most self-configuring, most surface.
 
@@ -535,11 +535,14 @@ Kept briefly for context; prune when stale. Everything older is in CHANGELOG.md.
   see 2b) was reverted to 0755. A cross-package invariant test
   (`node/isolation_invariants_test.go`) pins the three constants that must
   agree. Verified on both stage nodes: container sees only `hostit.sock`,
-  cross-tenant path gone, SSH/terminal intact. NOT yet on prod (needs a version
-  tag; the snapshot version is static, so dpkg skipped the binary on stage and
-  it had to be force-installed). The one deploy gotcha: a leftover
-  `/run/hostit/app/apps-raw` bind from an earlier experiment had to be unmounted
-  so it did not sit inside the new mount source; prod never had it.
+  cross-tenant path gone, SSH/terminal intact. Shipped as v0.21.0 and live on
+  prod (verified: real SSH into draw, container sees only hostit.sock). The
+  version had to bump (tag v0.21.0 so the snapshot template `{{.Tag}}-next`
+  produced 0.21.0~next > the running 0.20.0~next) -- dpkg skips a same-version
+  reinstall, so without the bump the binary and containers do not update. One
+  stage-only gotcha: a leftover `/run/hostit/app/apps-raw` bind from an earlier
+  experiment had to be unmounted so it did not sit inside the new mount source;
+  prod never had it.
 
 - **Private apps (2026-08-21).** An app can be reachable only by its owner, its
   collaborators and admins, chosen at creation or flipped in Settings, and it
