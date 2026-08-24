@@ -190,6 +190,31 @@ func (s *Server) requireActive(next func(http.ResponseWriter, *http.Request, *ca
 	})
 }
 
+// requirePerson wraps a handler that operates on data belonging to ONE PERSON:
+// their connections, their SSH keys, their API tokens.
+//
+// The global admin token has no user record, so caller.userID() is the empty
+// string for it. Without this guard those handlers do not fail -- they operate
+// on a namespace nobody owns. Reads look plausibly empty and WRITES land in it:
+// a connection stored with user_id "" is invisible to every person on the
+// instance and can never be resolved by an app, which resolves in its owner's
+// namespace. It found its way out only because two cleanup passes reported
+// success while deleting nothing.
+//
+// An operator credential is not a person, and the honest answer is to say so
+// rather than to invent one.
+func (s *Server) requirePerson(next func(http.ResponseWriter, *http.Request, *caller)) http.HandlerFunc {
+	return s.requireActive(func(w http.ResponseWriter, r *http.Request, c *caller) {
+		if c.userID() == "" {
+			writeError(w, http.StatusForbidden, errors.New(
+				"this belongs to a person, and the admin token is not one: sign in as a user, "+
+					"or use an account token"))
+			return
+		}
+		next(w, r, c)
+	})
+}
+
 // requireAdmin wraps a handler so only admins may proceed
 func (s *Server) requireAdmin(next func(http.ResponseWriter, *http.Request, *caller)) http.HandlerFunc {
 	return s.requireActive(func(w http.ResponseWriter, r *http.Request, c *caller) {

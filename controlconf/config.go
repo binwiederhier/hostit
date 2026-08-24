@@ -401,15 +401,17 @@ func (c *Config) APIHostname() string {
 	return c.BaseDomain
 }
 
-// WebHostnames are all hostnames that serve the web app and API. The base
-// domain is the front door; "hostit.<base>" stays valid so links, prompts and
-// OAuth redirects handed out earlier keep working.
+// WebHostnames are all hostnames that serve the web app and API.
+//
+// The base domain is the ONE front door. A "hostit.<base>" alias used to answer
+// as well, left over from before the base domain took over -- and two names for
+// one thing is two to register with every OAuth provider, two to write in
+// documentation, and one more to leak into a URL somebody bookmarks. It is gone;
+// that name is now an ordinary app subdomain.
 func (c *Config) WebHostnames() []string {
 	hosts := []string{c.APIHostname()}
-	for _, host := range []string{c.BaseDomain, "hostit." + c.BaseDomain} {
-		if host != c.APIHostname() {
-			hosts = append(hosts, host)
-		}
+	if c.BaseDomain != c.APIHostname() {
+		hosts = append(hosts, c.BaseDomain)
 	}
 	return hosts
 }

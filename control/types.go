@@ -186,6 +186,11 @@ type apiAccountResponse struct {
 	Status store.Status `json:"status"`
 	Limits *user.Limits `json:"limits,omitempty"`
 	Usage  *apiUsage    `json:"usage,omitempty"`
+	// Version is what this server is running, for the About box. It rides here
+	// rather than on /api/health, which is public: a version number tells
+	// whoever asks exactly which advisories apply, and there is no reason to
+	// hand that to somebody who has not signed in.
+	Version string `json:"version,omitempty"`
 }
 
 // apiAddKeyRequest is the body of POST /api/account/keys

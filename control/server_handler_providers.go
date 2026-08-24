@@ -162,6 +162,14 @@ func (s *Server) saveProviderFromRequest(w http.ResponseWriter, r *http.Request,
 			return
 		}
 		ownerID = ""
+	} else if ownerID == "" {
+		// The admin token has no user record, and an empty owner IS the marker
+		// for an instance provider -- so a request that said "personal" would
+		// silently define one for everybody. Refused rather than guessed.
+		writeError(w, http.StatusForbidden, errors.New(
+			`a personal provider belongs to a person, and the admin token is not one: `+
+				`sign in as a user, or send "scope":"instance" to define one for everybody`))
+		return
 	}
 
 	kind := req.Kind

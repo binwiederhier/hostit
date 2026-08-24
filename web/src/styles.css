@@ -3908,6 +3908,98 @@ body.ws-resizing iframe {
   text-decoration: underline;
 }
 
+/* Two columns of short fields, so a form of six does not become a dialog
+   taller than the window. Collapses on a narrow screen. */
+/* The About box: a wordmark, a line about what this is, and the facts anybody
+   reporting a problem is asked for. */
+.about {
+  max-width: 420px;
+  text-align: center;
+}
+
+.about-mark {
+  margin: 6px 0 10px;
+}
+
+.about-tagline {
+  margin: 0 0 18px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.about-facts {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px 14px;
+  margin: 0 0 20px;
+  text-align: left;
+  font-size: 13px;
+}
+
+.about-facts dt {
+  color: var(--muted);
+}
+
+.about-actions {
+  justify-content: center;
+}
+
+.about-facts dd {
+  margin: 0;
+  word-break: break-word;
+}
+
+.conn-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 14px;
+}
+
+@media (max-width: 620px) {
+  /* The About box: a wordmark, a line about what this is, and the facts anybody
+   reporting a problem is asked for. */
+.about {
+  max-width: 420px;
+  text-align: center;
+}
+
+.about-mark {
+  margin: 6px 0 10px;
+}
+
+.about-tagline {
+  margin: 0 0 18px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.about-facts {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px 14px;
+  margin: 0 0 20px;
+  text-align: left;
+  font-size: 13px;
+}
+
+.about-facts dt {
+  color: var(--muted);
+}
+
+.about-actions {
+  justify-content: center;
+}
+
+.about-facts dd {
+  margin: 0;
+  word-break: break-word;
+}
+
+.conn-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .conn-tools-count {
   margin: 6px 0 0;
 }

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 
+	"heckel.io/hostit/node"
 	"heckel.io/hostit/store"
 	"heckel.io/hostit/user"
 )
@@ -140,10 +141,11 @@ func (s *Server) handleTokensDelete(w http.ResponseWriter, r *http.Request, c *c
 func (s *Server) accountResponse(c *caller) (*apiAccountResponse, error) {
 	if c.globalAdmin {
 		return &apiAccountResponse{
-			Email:  "admin-token",
-			Name:   "Global admin token",
-			Role:   store.RoleAdmin,
-			Status: store.StatusActive,
+			Email:   "admin-token",
+			Name:    "Global admin token",
+			Role:    store.RoleAdmin,
+			Status:  store.StatusActive,
+			Version: node.Version,
 		}, nil
 	}
 	if c.user == nil {
@@ -166,12 +168,13 @@ func (s *Server) accountResponse(c *caller) (*apiAccountResponse, error) {
 		return nil, err
 	}
 	return &apiAccountResponse{
-		Email:  c.user.Email,
-		Name:   c.user.Name,
-		Role:   c.user.Role,
-		Status: c.user.Status,
-		Limits: limits,
-		Usage:  &apiUsage{Apps: len(apps), DiskMB: diskMB, PoolMemoryMB: poolMemory, PoolDiskMB: poolDisk},
+		Email:   c.user.Email,
+		Name:    c.user.Name,
+		Role:    c.user.Role,
+		Status:  c.user.Status,
+		Limits:  limits,
+		Usage:   &apiUsage{Apps: len(apps), DiskMB: diskMB, PoolMemoryMB: poolMemory, PoolDiskMB: poolDisk},
+		Version: node.Version,
 	}, nil
 }
 

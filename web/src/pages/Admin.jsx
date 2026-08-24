@@ -722,7 +722,7 @@ const AdminProviderDialog = ({ kind, existing, redirectURI, onClose, onSaved }) 
 
   return (
     <div className="modal-backdrop" role="dialog" aria-modal="true" onMouseDown={onClose}>
-      <div className="card modal modal-sheet" onMouseDown={(e) => e.stopPropagation()}>
+      <div className={"card modal modal-sheet" + (kind === "mcp" ? "" : " modal-tools")} onMouseDown={(e) => e.stopPropagation()}>
         <h2>
           {existing
             ? `Edit ${existing.label}`
@@ -738,6 +738,7 @@ const AdminProviderDialog = ({ kind, existing, redirectURI, onClose, onSaved }) 
               <Snippet text={redirectURI} />
             </>
           )}
+          <div className={kind === "mcp" ? undefined : "conn-grid"}>
           <label className="conn-field">
             <span>Name</span>
             <input type="text" value={label} onChange={(e) => setLabel(e.target.value)}
@@ -782,6 +783,7 @@ const AdminProviderDialog = ({ kind, existing, redirectURI, onClose, onSaved }) 
               </label>
             </>
           )}
+          </div>
           <div className="btn-row">
             <button type="button" className="btn" onClick={onClose} disabled={busy}>Cancel</button>
             <button type="submit" className="btn btn-primary" disabled={busy || !valid}>

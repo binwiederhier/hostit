@@ -19,7 +19,12 @@ import profileShot from "../assets/docs/profile.png";
 // one page shown at a time, selected by the URL hash so links are shareable.
 const origin = window.location.origin;
 const host = window.location.host;
-const baseDomain = host.replace(/^[^.]*\./, "");
+// The web app is served at the base domain and nowhere else, so the hostname in
+// the address bar IS the base domain. This used to strip the first label, which
+// was right only while a "hostit.<base>" alias existed -- on the base domain
+// itself it turned apps.example.com into example.com and told people to ssh to
+// the wrong host.
+const baseDomain = host;
 
 const Endpoint = ({ method, path, what }) => (
   <tr>
@@ -1563,17 +1568,21 @@ apps-allowed-addresses:
 // operator setting up Slack should never have to read the GitHub page.
 const RedirectURIs = () => (
   <>
-    <h3>Redirect URIs</h3>
+    <h3>Redirect URI</h3>
+    <p>hostit builds the callback from the hostname you are browsing. On this one it is:</p>
+    <Snippet text={`https://${host}/auth/callback`} />
     <p>
-      hostit builds the callback from whichever hostname the user is browsing, and two serve the
-      web app on this instance:
+      Register <b>every hostname your users browse hostit at</b> -- most providers accept several,
+      so one client can serve a staging and a production instance together. hostit always sends an
+      explicit <span className="mono">redirect_uri</span>, so the provider matches the right one.
+      Avoid wildcard matching where a provider offers it: it lets an authorization code be sent to
+      any subdomain.
     </p>
-    <Snippet text={`https://${baseDomain}/auth/callback\nhttps://${host}/auth/callback`} />
-    <p>
-      Register <b>every hostname hostit is browsed at</b>. hostit always sends an explicit{" "}
-      <span className="mono">redirect_uri</span>, so the provider matches the right one. Avoid
-      wildcard matching where a provider offers it: it lets an authorization code be sent to any
-      subdomain.
+    <p className="hint">
+      This is the URL for the hostname in your address bar right now. If you reach hostit at more
+      than one name, open the docs at each and register what it shows -- the value is not something
+      to work out by hand, and a redirect URI that does not match exactly is the most common reason
+      a consent screen refuses.
     </p>
   </>
 );

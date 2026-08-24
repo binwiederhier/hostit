@@ -340,7 +340,7 @@ const ProviderDialog = ({ existing, redirectURI, onClose, onSaved }) => {
   };
 
   return (
-    <Modal onClose={onClose} title={existing ? `Edit ${existing.label}` : "Add your own service"}>
+    <Modal wide onClose={onClose} title={existing ? `Edit ${existing.label}` : "Add your own service"}>
       <form onSubmit={submit}>
         <ErrorBanner message={error} onDismiss={() => setError("")} />
         <p className="hint">
@@ -352,52 +352,57 @@ const ProviderDialog = ({ existing, redirectURI, onClose, onSaved }) => {
           An <b>MCP server</b> is not this: you add one straight from the MCP servers card by
           pasting its URL, with nothing to register.
         </p>
-        <label className="conn-field">
-          <span>Name</span>
-          <input type="text" value={label} onChange={(e) => setLabel(e.target.value)}
-            placeholder="Acme" aria-label="Service name" autoFocus disabled={busy} />
-        </label>
-        <label className="conn-field">
-          <span>Reference</span>
-          <input type="text" className="mono" value={reference}
-            onChange={(e) => { setNameEdited(true); setName(e.target.value); }}
-            aria-label="Reference" disabled={busy || Boolean(existing)} />
-        </label>
-        <>
-            <label className="conn-field">
-              <span>Client ID</span>
-              <input type="text" className="mono" value={form.client_id} onChange={set("client_id")}
-                aria-label="Client ID" disabled={busy} />
-            </label>
-            <label className="conn-field">
-              <span>Client secret{existing ? " (leave blank to keep)" : ""}</span>
-              <input type="password" value={form.client_secret} onChange={set("client_secret")}
-                aria-label="Client secret" disabled={busy} />
-            </label>
-            <label className="conn-field">
-              <span>Scopes</span>
-              <input type="text" className="mono" value={form.scopes} onChange={set("scopes")}
-                placeholder="read write" aria-label="Scopes" disabled={busy} />
-            </label>
-            <label className="conn-field">
-              <span>Issuer (optional)</span>
-              <input type="text" className="mono" value={form.issuer} onChange={set("issuer")}
-                placeholder="https://acme.example.com" aria-label="Issuer" disabled={busy} />
-            </label>
-            <p className="hint">
-              Give an issuer and hostit finds the two URLs below itself. Otherwise fill them in.
-            </p>
-            <label className="conn-field">
-              <span>Authorize URL</span>
-              <input type="text" className="mono" value={form.auth_url} onChange={set("auth_url")}
-                placeholder="https://acme.example.com/oauth/authorize" aria-label="Authorize URL" disabled={busy} />
-            </label>
-            <label className="conn-field">
-              <span>Token URL</span>
-              <input type="text" className="mono" value={form.token_url} onChange={set("token_url")}
-                placeholder="https://acme.example.com/oauth/token" aria-label="Token URL" disabled={busy} />
-            </label>
-        </>
+        {/* Paired across two columns: these are six short fields, and one
+            column of them made a dialog taller than most windows. Each pair is
+            two halves of one idea -- what it is called, what the client is,
+            where it lives -- so they read across rather than down. */}
+        <div className="conn-grid">
+          <label className="conn-field">
+            <span>Name</span>
+            <input type="text" value={label} onChange={(e) => setLabel(e.target.value)}
+              placeholder="Acme" aria-label="Service name" autoFocus disabled={busy} />
+          </label>
+          <label className="conn-field">
+            <span>Reference</span>
+            <input type="text" className="mono" value={reference}
+              onChange={(e) => { setNameEdited(true); setName(e.target.value); }}
+              aria-label="Reference" disabled={busy || Boolean(existing)} />
+          </label>
+          <label className="conn-field">
+            <span>Client ID</span>
+            <input type="text" className="mono" value={form.client_id} onChange={set("client_id")}
+              aria-label="Client ID" disabled={busy} />
+          </label>
+          <label className="conn-field">
+            <span>Client secret{existing ? " (leave blank to keep)" : ""}</span>
+            <input type="password" value={form.client_secret} onChange={set("client_secret")}
+              aria-label="Client secret" disabled={busy} />
+          </label>
+          <label className="conn-field">
+            <span>Scopes</span>
+            <input type="text" className="mono" value={form.scopes} onChange={set("scopes")}
+              placeholder="read write" aria-label="Scopes" disabled={busy} />
+          </label>
+          <label className="conn-field">
+            <span>Issuer (optional)</span>
+            <input type="text" className="mono" value={form.issuer} onChange={set("issuer")}
+              placeholder="https://acme.example.com" aria-label="Issuer" disabled={busy} />
+          </label>
+          <label className="conn-field">
+            <span>Authorize URL</span>
+            <input type="text" className="mono" value={form.auth_url} onChange={set("auth_url")}
+              placeholder="https://acme.example.com/oauth/authorize" aria-label="Authorize URL" disabled={busy} />
+          </label>
+          <label className="conn-field">
+            <span>Token URL</span>
+            <input type="text" className="mono" value={form.token_url} onChange={set("token_url")}
+              placeholder="https://acme.example.com/oauth/token" aria-label="Token URL" disabled={busy} />
+          </label>
+        </div>
+        <p className="hint">
+          Give an <b>issuer</b> and hostit finds the authorize and token URLs itself. Otherwise fill
+          both in from the service&rsquo;s documentation.
+        </p>
         <div className="btn-row">
           <button type="button" className="btn" onClick={onClose} disabled={busy}>Cancel</button>
           <button type="submit" className="btn btn-primary" disabled={busy || !valid}>

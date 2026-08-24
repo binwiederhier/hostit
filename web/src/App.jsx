@@ -235,6 +235,7 @@ const Nav = ({ account, appHeader }) => {
 // narrow screens -- the nav links live inside it there, so there is no burger.
 const ProfileMenu = ({ account }) => {
   const [open, setOpen] = useState(false);
+  const [about, setAbout] = useState(false);
   const [theme, setThemeState] = useState(getTheme());
   const ref = useRef(null);
   const closeTimer = useRef(null);
@@ -333,14 +334,67 @@ const ProfileMenu = ({ account }) => {
             ))}
           </div>
           <div className="nav-profile-div" />
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              close();
+              setAbout(true);
+            }}
+          >
+            About hostit
+          </button>
           <button type="button" role="menuitem" className="nav-logout" onClick={logout}>
             Log out
           </button>
         </div>
       )}
+      {about && <AboutDialog version={account.version} onClose={() => setAbout(false)} />}
     </div>
   );
 };
+
+// What is this thing, which version, and where does it live. Small, but it is
+// the first thing anyone asks when reporting a problem, and "check the deb
+// version on the box" is not an answer for somebody who only has the web app.
+const AboutDialog = ({ version, onClose }) => (
+  <div className="modal-backdrop" role="dialog" aria-modal="true" onMouseDown={onClose}>
+    <div className="card modal about" onMouseDown={(e) => e.stopPropagation()}>
+      <button type="button" className="modal-x" onClick={onClose} title="Close" aria-label="Close">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+          <path d="M6 6l12 12M18 6 6 18" />
+        </svg>
+      </button>
+      <div className="about-mark">
+        <Wordmark big />
+      </div>
+      <p className="about-tagline">Self-hosted mini-apps, each with its own container.</p>
+      <dl className="about-facts">
+        <dt>Version</dt>
+        <dd className="mono">{version || "unknown"}</dd>
+        <dt>Author</dt>
+        <dd>
+          Philipp C. Heckel{" "}
+          <a href="https://heckel.io" target="_blank" rel="noreferrer">heckel.io</a>
+        </dd>
+        <dt>Source</dt>
+        <dd>
+          <a href="https://github.com/binwiederhier/hostit" target="_blank" rel="noreferrer">
+            github.com/binwiederhier/hostit
+          </a>
+        </dd>
+        <dt>Licence</dt>
+        <dd>Apache 2.0</dd>
+      </dl>
+      {/* No second "Close": the corner X already is one, and two controls with
+          the same accessible name in one dialog is what a screen reader cannot
+          tell apart. The backdrop closes it too. */}
+      <div className="btn-row about-actions">
+        <a className="btn" href="/docs/user" target="_blank" rel="noreferrer">Documentation</a>
+      </div>
+    </div>
+  </div>
+);
 
 const App = () => {
   const [account, setAccount] = useState(undefined); // undefined = loading, null = not logged in

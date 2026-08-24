@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { test, expect } from "./fixtures";
 
 // The three tiers, driven the way a person does it. The claim being tested is
@@ -123,3 +124,43 @@ test("an admin defines a named MCP server for everyone", async ({ page, request 
     await request.delete(`/api/providers/${ref}`);
   }
 });
+
+// The global admin token is an OPERATOR credential with no user record, so
+// caller.userID() is "". Every per-person endpoint then operated on a namespace
+// nobody owns: reads looked plausibly empty and WRITES landed in it, invisible
+// to every person and unusable by any app. Two cleanup passes reported success
+// while deleting nothing before this was noticed.
+test("the admin token is refused the surfaces that belong to a person", async ({ request }) => {
+  const admin = process.env.HOSTIT_ADMIN_TOKEN || readAdminToken();
+  const headers = { Authorization: `Bearer ${admin}` };
+
+  for (const [method, path] of [
+    ["get", "/api/connections"],
+    ["get", "/api/account/keys"],
+    ["get", "/api/account/tokens"],
+  ]) {
+    const res = await request[method](path, { headers });
+    expect(res.status(), `${method} ${path}`).toBe(403);
+    expect(await res.text()).toContain("belongs to a person");
+  }
+
+  // A "personal" provider from it used to be stored with owner_id "" -- the
+  // marker for an INSTANCE provider -- so it silently defined one for everyone.
+  const personal = await request.post("/api/providers", {
+    headers,
+    data: { name: "adminorphan", label: "Orphan", client_id: "c", client_secret: "s",
+      auth_url: "https://a/x", token_url: "https://a/t" },
+  });
+  expect(personal.status()).toBe(403);
+  expect(await personal.text()).toContain("scope");
+});
+
+// The specs are ES modules, so require() is not a thing here.
+function readAdminToken() {
+  const secrets = process.env.HOSTIT_SECRETS;
+  for (const line of readFileSync(secrets, "utf8").split("\n")) {
+    const m = line.match(/^\s*hostit_admin_token:\s*(.+)/);
+    if (m) return m[1].trim().replace(/^["']|["']$/g, "");
+  }
+  throw new Error("no admin token");
+}

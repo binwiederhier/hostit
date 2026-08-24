@@ -2070,6 +2070,13 @@ const AppDetail = ({ account, refreshAccount }) => {
   // and an unknown slug is null -- rendered as a not-found further down, after
   // the hooks (an early return here would change the hook order).
   const view = viewFromSlug(viewSlug, rememberedView(name));
+  // Has the terminal tab ever been opened on this page? Once it has, the
+  // terminal stays mounted so switching away does not kill the session; before
+  // it has, there is nothing to connect. See where it is rendered.
+  const [termOpened, setTermOpened] = useState(view === "terminal");
+  useEffect(() => {
+    if (view === "terminal") setTermOpened(true);
+  }, [view]);
   const setView = (v) => navigate(`/app/${encodeURIComponent(name)}/${VIEW_TO_SLUG[v] || "assistant"}`);
   useEffect(() => {
     if (view === null) {
@@ -2765,9 +2772,17 @@ const AppDetail = ({ account, refreshAccount }) => {
           </Suspense>
         </div>
         <div className={"ws-termwrap" + (view === "terminal" ? "" : " ws-inactive")}>
-          <Suspense fallback={<div className="ws-chat-loading">Loading terminal...</div>}>
-            <AppTerminal name={app.name} embedded active={view === "terminal"} onSsh={() => setShowSsh(true)} />
-          </Suspense>
+          {/* Mounted only once the tab has been OPENED, and kept mounted after,
+              so switching away does not kill the session. It used to mount with
+              the page, which opened a WebSocket for everyone who never went
+              near the terminal -- and left one dialling a name that no longer
+              existed after a rename or a delete, logging a handshake error at
+              whoever happened to be looking. */}
+          {termOpened && (
+            <Suspense fallback={<div className="ws-chat-loading">Loading terminal...</div>}>
+              <AppTerminal name={app.name} embedded active={view === "terminal"} onSsh={() => setShowSsh(true)} />
+            </Suspense>
+          )}
         </div>
         {/* The assistant view (chat + preview) exists only when an Anthropic key
             is configured; otherwise the workspace opens straight into the editor. */}

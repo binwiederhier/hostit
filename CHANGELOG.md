@@ -7,7 +7,7 @@ changed rather than what an operator had to do about it; from v0.15.0 on, each
 release is written down as it is cut. Anything that changes a config file, a
 default, or on-disk state is called out as **Breaking** or **Upgrade note**.
 
-## Unreleased
+## v0.20.0 (2026-08-24)
 
 - **Connections.** Attach an account, a secret or a tool server once, then grant
   it to individual apps. An app asks hostit for a usable credential when it needs
@@ -65,6 +65,29 @@ default, or on-disk state is called out as **Breaking** or **Upgrade note**.
   address, so DNS rebinding does not get past it. Set
   `outbound-allow-private: true` in `control.yml` if your MCP servers really are
   on your own LAN.
+
+- **Fixed: every app page opened a terminal connection nobody asked for.** The
+  workspace mounts all its tabs, and the terminal connected its WebSocket on
+  mount -- so opening an app to look at its logs opened a shell session too, and
+  renaming or deleting the app left that socket dialling a name that no longer
+  existed, logging a handshake error at whoever was looking. The terminal now
+  mounts the first time its tab is opened, and stays mounted after, so switching
+  away still does not kill the session.
+
+- **An About box**, in the profile menu: what this is, which version is running,
+  the author and a link to the source. The version is the first thing anybody is
+  asked for when reporting a problem, and "check the deb version on the box" is
+  not an answer for somebody who only has the web app.
+
+- **Breaking: the web app is served at the base domain only.** A
+  `hostit.<base-domain>` alias answered as well, left over from before the base
+  domain took over. Two names for one thing is two to register with every OAuth
+  provider, two to write in documentation, and one more to leak into a URL
+  somebody bookmarks. That name is now an ordinary app subdomain.
+
+  **Upgrade note:** if anyone reaches your instance at `hostit.<base-domain>`,
+  tell them to use the base domain. If you registered that hostname as a redirect
+  URI with an OAuth provider you can remove it -- hostit no longer sends it.
 
 - **Providers, at three tiers.** Any OAuth 2.0 service hostit does not ship can
   now be added -- by the **operator** in `connections:` in `control.yml` or on the

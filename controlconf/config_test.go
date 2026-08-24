@@ -130,15 +130,17 @@ func TestWebHostnames(t *testing.T) {
 	t.Parallel()
 	c := NewConfig()
 	c.BaseDomain = "apps.example.com"
-	// The base domain, plus the historical hostit.<base> so old links survive
-	assert.Equal(t, []string{"apps.example.com", "hostit.apps.example.com"}, c.WebHostnames())
+	// The base domain, and only the base domain. A "hostit.<base>" alias used
+	// to be here too; two names for one thing is two to register with every
+	// OAuth provider and two to write in the documentation.
+	assert.Equal(t, []string{"apps.example.com"}, c.WebHostnames())
 	assert.True(t, c.IsWebHostname("apps.example.com"))
-	assert.True(t, c.IsWebHostname("hostit.apps.example.com"))
+	assert.False(t, c.IsWebHostname("hostit.apps.example.com"), "the retired alias is an app subdomain now")
 	assert.False(t, c.IsWebHostname("blog.apps.example.com"), "an app subdomain is not the web app")
 	assert.False(t, c.IsWebHostname("example.org"))
-	// A pinned hostname is included alongside the defaults
+	// A pinned hostname is included alongside the base domain
 	c.APIHost = "admin.example.com"
-	assert.Equal(t, []string{"admin.example.com", "apps.example.com", "hostit.apps.example.com"}, c.WebHostnames())
+	assert.Equal(t, []string{"admin.example.com", "apps.example.com"}, c.WebHostnames())
 }
 
 func TestSSHHostname(t *testing.T) {

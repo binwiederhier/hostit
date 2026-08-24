@@ -56,12 +56,12 @@ func (s *Server) newAPIHandler() http.Handler {
 	// Account: readable while pending, so the web app can explain the wait
 	route(mux, "GET", "/account", s.authenticated(s.handleAccount))
 	// Connections: the owner's connected accounts, and the per-app grants.
-	route(mux, "GET", "/connections", s.requireActive(s.handleConnectionsList))
-	route(mux, "POST", "/connections", s.requireActive(s.handleConnectionAdd))
-	route(mux, "PUT", "/connections/{slug}", s.requireActive(s.handleConnectionUpdate))
-	route(mux, "POST", "/connections/{slug}/reconnect", s.requireActive(s.handleConnectionReconnect))
-	route(mux, "DELETE", "/connections/{slug}", s.requireActive(s.handleConnectionDelete))
-	route(mux, "GET", "/connections/{slug}/mcp/tools", s.requireActive(s.handleConnectionMCPTools))
+	route(mux, "GET", "/connections", s.requirePerson(s.handleConnectionsList))
+	route(mux, "POST", "/connections", s.requirePerson(s.handleConnectionAdd))
+	route(mux, "PUT", "/connections/{slug}", s.requirePerson(s.handleConnectionUpdate))
+	route(mux, "POST", "/connections/{slug}/reconnect", s.requirePerson(s.handleConnectionReconnect))
+	route(mux, "DELETE", "/connections/{slug}", s.requirePerson(s.handleConnectionDelete))
+	route(mux, "GET", "/connections/{slug}/mcp/tools", s.requirePerson(s.handleConnectionMCPTools))
 	// Provider definitions, in three tiers (control/providers.go). Personal
 	// ones are any active user's; an instance one needs an admin, which the
 	// handler checks from the request's scope rather than the route.
@@ -72,13 +72,13 @@ func (s *Server) newAPIHandler() http.Handler {
 	route(mux, "GET", "/apps/{name}/connections", s.requireActive(s.handleAppConnectionsList))
 	route(mux, "PUT", "/apps/{name}/connections/{slug}", s.requireActive(s.handleAppConnectionGrant))
 	route(mux, "DELETE", "/apps/{name}/connections/{slug}", s.requireActive(s.handleAppConnectionRevoke))
-	route(mux, "GET", "/account/keys", s.requireActive(s.handleKeysList))
-	route(mux, "POST", "/account/keys", s.requireActive(s.handleKeysAdd))
-	route(mux, "PUT", "/account/keys/{id}", s.requireActive(s.handleKeysRename))
-	route(mux, "DELETE", "/account/keys/{id}", s.requireActive(s.handleKeysDelete))
-	route(mux, "GET", "/account/tokens", s.requireActive(s.handleTokensList))
-	route(mux, "POST", "/account/tokens", s.requireActive(s.handleTokensAdd))
-	route(mux, "DELETE", "/account/tokens/{id}", s.requireActive(s.handleTokensDelete))
+	route(mux, "GET", "/account/keys", s.requirePerson(s.handleKeysList))
+	route(mux, "POST", "/account/keys", s.requirePerson(s.handleKeysAdd))
+	route(mux, "PUT", "/account/keys/{id}", s.requirePerson(s.handleKeysRename))
+	route(mux, "DELETE", "/account/keys/{id}", s.requirePerson(s.handleKeysDelete))
+	route(mux, "GET", "/account/tokens", s.requirePerson(s.handleTokensList))
+	route(mux, "POST", "/account/tokens", s.requirePerson(s.handleTokensAdd))
+	route(mux, "DELETE", "/account/tokens/{id}", s.requirePerson(s.handleTokensDelete))
 
 	// Apps: scoped to the caller; admins see and manage everything
 	route(mux, "POST", "/apps", s.requireActive(s.handleAppsCreate))

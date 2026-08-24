@@ -31,3 +31,22 @@ test("a new app appears running, opens, and is removed", async ({ page, request 
   await page.goto("/");
   await expect(page.getByText(name, { exact: true })).toHaveCount(0);
 });
+
+// A brand new app is not routed the instant the API answers 201: measured at
+// 404 immediately and 200 by about five seconds. Anything asserting on the live
+// URL has to poll, or it fails on timing that is not a fault.
+test("a new app starts serving its placeholder within seconds", async ({ request, baseURL }) => {
+  test.setTimeout(120000);
+  const app = "e2eplc" + Date.now().toString(36).slice(-5);
+  const created = await request.post("/api/apps", { data: { name: app } });
+  expect(created.status(), await created.text()).toBe(201);
+  const base = new URL(baseURL).host;
+  try {
+    await expect
+      .poll(async () => (await request.get(`https://${app}.${base}/`, { ignoreHTTPSErrors: true })).status(),
+        { timeout: 60000, intervals: [1000, 2000, 3000] })
+      .toBe(200);
+  } finally {
+    await request.delete(`/api/apps/${app}`);
+  }
+});
