@@ -50,6 +50,12 @@ connection, which is one person's attached account. Three tiers hold them:
 | the operator's | `control.yml`, or `provider` rows with `owner_id = ''` | everyone | only the rows |
 | a user's own | `provider` rows owned by them | only them | yes |
 
+A user's own tier is **OAuth only**. Named MCP servers are an operator's act:
+a preset saves other people from remembering a URL, and a user who wants a
+server simply connects it -- so a personal preset would be a second way to do
+something they have already done. Offering both in one dialog made "add your
+own" and "add MCP server" look like the same thing, which was the bug.
+
 A user having their own OAuth client is an ordinary thing, not a workaround: you
 register an app with the vendor, point it at hostit's callback, and paste the
 pair in. Nothing about OAuth requires the client to belong to the instance. The

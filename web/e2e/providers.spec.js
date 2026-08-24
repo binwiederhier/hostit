@@ -11,10 +11,15 @@ test("a user defines their own service and it appears in their Add account menu"
     await page.goto("/connections");
     const accounts = page.locator(".card", { hasText: "Accounts" }).first();
 
-    // The way in is the line under the Accounts card, not a buried admin page.
-    await accounts.getByRole("button", { name: "Add your own" }).click();
+    // The way in is the Add account menu itself, below a divider, the way the
+    // catch-all credential is -- not a separate line under the card.
+    await accounts.getByRole("button", { name: "Add account" }).click();
+    await page.getByRole("menuitem", { name: /Add your own service/ }).click();
     const dialog = page.getByRole("dialog");
     await expect(dialog.getByRole("heading", { name: "Add your own service" })).toBeVisible();
+    // OAuth only: defining a NAMED MCP server is an operator's act, and a switch
+    // here made "add your own" and "add MCP server" look like the same thing.
+    await expect(dialog.getByRole("button", { name: "An MCP server" })).toHaveCount(0);
 
     // The callback URL is shown BEFORE anything is asked for: it is the one
     // value the person cannot work out, and the one that fails the whole flow
@@ -91,12 +96,15 @@ test("an admin defines a named MCP server for everyone", async ({ page, request 
   const label = "E2E Wiki " + Date.now().toString(36).slice(-4);
   try {
     await page.goto("/admin");
-    const card = page.locator(".card", { hasText: "Connection providers" });
-    await expect(card.getByRole("heading", { name: "Connection providers" })).toBeVisible();
-    await card.getByRole("button", { name: "Add provider" }).click();
+    // Two cards, not one with a switch: an OAuth service and a named MCP server
+    // are two different things to an operator.
+    const oauthCard = page.locator(".card", { hasText: "Connection providers" });
+    await expect(oauthCard.getByRole("heading", { name: "Connection providers" })).toBeVisible();
+    const card = page.locator("section.card", { hasText: "MCP servers" }).first();
+    await card.getByRole("button", { name: "Add MCP server" }).click();
 
     const dialog = page.getByRole("dialog");
-    await dialog.getByRole("button", { name: "MCP server" }).click();
+    await expect(dialog.getByRole("heading", { name: "Add an MCP server" })).toBeVisible();
     await dialog.getByLabel("Provider name").fill(label);
     await dialog.getByLabel("Provider reference").fill(ref);
     await dialog.getByLabel("Server URL").fill("https://mcp.deepwiki.com/mcp");

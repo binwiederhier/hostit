@@ -518,12 +518,14 @@ const InviteUser = ({ onAdded, setError }) => {
 
 // Anyone whose Google address ends in one of these domains is approved on sign
 // in, so a whole company can onboard itself.
-// Providers this instance offers everybody: OAuth services hostit does not ship,
-// and named MCP servers so users pick a name instead of remembering a URL.
+// What this instance offers everybody, in TWO cards, because they are two
+// different things: an OAuth service someone signs in to, and a named MCP server
+// that saves them remembering a URL. One card with a kind switch in its dialog
+// read as though the switch were a detail of one thing.
 //
-// The same definitions can come from control.yml. Those are listed too, marked
-// as not editable -- an operator reading this page should see everything on
-// offer, not just the half that happens to live in the database.
+// Definitions from control.yml are listed too, marked as not editable -- an
+// operator reading this page should see everything on offer, not just the half
+// that happens to live in the database.
 const InstanceProviders = ({ setError }) => {
   const [defs, setDefs] = useState(null);
   const [editing, setEditing] = useState(null);
@@ -556,45 +558,78 @@ const InstanceProviders = ({ setError }) => {
     }
   };
 
+  const cards = [
+    {
+      kind: "oauth",
+      title: "Connection providers",
+      cta: "Add provider",
+      empty: "No extra providers defined. Users can only connect what hostit ships.",
+      hint: (
+        <>
+          OAuth services hostit does not ship, offered to everyone here. Register an app with the
+          service, then paste its client below. Users can also add their own, which only they see.{" "}
+          <DocsLink guide="admin" section="connections" sub="custom">How this works</DocsLink>
+        </>
+      ),
+    },
+    {
+      kind: "mcp",
+      title: "MCP servers",
+      cta: "Add MCP server",
+      empty: "No named servers. Users can still paste any MCP URL themselves.",
+      hint: (
+        <>
+          Named MCP servers, so a user picks a name rather than remembering a URL. No client and no
+          secret -- just a label and the endpoint. Purely a shortcut: pasting any URL always works.{" "}
+          <DocsLink guide="admin" section="connections" sub="mcpsetup">How this works</DocsLink>
+        </>
+      ),
+    },
+  ];
+
   return (
-    <section className="card">
-      <div className="conn-head">
-        <h2>Connection providers</h2>
-        <button type="button" className="btn btn-primary btn-small" onClick={() => setEditing({})}>
-          Add provider
-        </button>
-      </div>
-      <p className="hint">
-        What everyone on this instance can connect. Add an OAuth service hostit does not ship, or a
-        named MCP server so users pick a name rather than a URL. Users can also add their own, which
-        only they see.{" "}
-        <DocsLink guide="admin" section="connections" sub="custom">How this works</DocsLink>
-      </p>
-      {defs === null && <p className="hint">Loading...</p>}
-      {defs !== null && instance.length === 0 && <p className="hint">Nothing defined yet.</p>}
-      {instance.map((p) => (
-        <div key={`${p.kind}:${p.name}`} className="conn-row">
-          <div className="conn-id">
-            <span className="conn-name">
-              {p.label}
-              <span className="conn-provider">{p.kind === "mcp" ? "MCP server" : "OAuth"}</span>
-            </span>
-            <span className="conn-note">
-              <span className="mono">{p.name}</span>
-              {p.kind === "mcp" ? <> {"--"} <span className="mono">{p.url}</span></> : null}
-              {!p.editable && " -- from hostit or control.yml"}
-            </span>
-          </div>
-          {p.editable && (
-            <div className="menu conn-rowmenu">
-              <button type="button" className="btn btn-small" onClick={() => setEditing(p)}>Edit</button>
-              <button type="button" className="btn btn-small" onClick={() => setRemoving(p)}>Remove</button>
+    <>
+      {cards.map((card) => {
+        const rows = instance.filter((p) => (card.kind === "mcp") === (p.kind === "mcp"));
+        return (
+          <section className="card" key={card.kind}>
+            <div className="conn-head">
+              <h2>{card.title}</h2>
+              <button
+                type="button"
+                className="btn btn-primary btn-small"
+                onClick={() => setEditing({ kind: card.kind })}
+              >
+                {card.cta}
+              </button>
             </div>
-          )}
-        </div>
-      ))}
+            <p className="hint">{card.hint}</p>
+            {defs === null && <p className="hint">Loading...</p>}
+            {defs !== null && rows.length === 0 && <p className="hint">{card.empty}</p>}
+            {rows.map((p) => (
+              <div key={`${p.kind}:${p.name}`} className="conn-row">
+                <div className="conn-id">
+                  <span className="conn-name">{p.label}</span>
+                  <span className="conn-note">
+                    <span className="mono">{p.name}</span>
+                    {p.kind === "mcp" ? <> {"--"} <span className="mono">{p.url}</span></> : null}
+                    {!p.editable && " -- from hostit or control.yml"}
+                  </span>
+                </div>
+                {p.editable && (
+                  <div className="menu conn-rowmenu">
+                    <button type="button" className="btn btn-small" onClick={() => setEditing(p)}>Edit</button>
+                    <button type="button" className="btn btn-small" onClick={() => setRemoving(p)}>Remove</button>
+                  </div>
+                )}
+              </div>
+            ))}
+          </section>
+        );
+      })}
       {editing && (
         <AdminProviderDialog
+          kind={editing.kind}
           existing={editing.name ? editing : null}
           redirectURI={defs?.redirect_uri || ""}
           onClose={() => setEditing(null)}
@@ -612,21 +647,27 @@ const InstanceProviders = ({ setError }) => {
           onClose={() => setRemoving(null)}
           onConfirm={() => remove(removing)}
           body={
-            <>
-              Nobody will be able to connect it any more. Accounts already connected through it keep
-              working until their token expires and then cannot be refreshed.
-            </>
+            removing.kind === "mcp" ? (
+              <>
+                The shortcut goes; servers already connected through it keep working, since a
+                connection holds the URL itself.
+              </>
+            ) : (
+              <>
+                Nobody will be able to connect it any more. Accounts already connected through it
+                keep working until their token expires and then cannot be refreshed.
+              </>
+            )
           }
         />
       )}
-    </section>
+    </>
   );
 };
 
 // The instance half of the provider dialog. Same fields as a user's own, with
 // scope pinned to the whole instance.
-const AdminProviderDialog = ({ existing, redirectURI, onClose, onSaved }) => {
-  const [kind, setKind] = useState(existing?.kind || "oauth");
+const AdminProviderDialog = ({ kind, existing, redirectURI, onClose, onSaved }) => {
   const [label, setLabel] = useState(existing?.label || "");
   const [name, setName] = useState(existing?.name || "");
   const [form, setForm] = useState({
@@ -682,22 +723,15 @@ const AdminProviderDialog = ({ existing, redirectURI, onClose, onSaved }) => {
   return (
     <div className="modal-backdrop" role="dialog" aria-modal="true" onMouseDown={onClose}>
       <div className="card modal modal-sheet" onMouseDown={(e) => e.stopPropagation()}>
-        <h2>{existing ? `Edit ${existing.label}` : "Add a provider"}</h2>
+        <h2>
+          {existing
+            ? `Edit ${existing.label}`
+            : kind === "mcp"
+              ? "Add an MCP server"
+              : "Add a connection provider"}
+        </h2>
         <form onSubmit={submit}>
           {error && <p className="err">{error}</p>}
-          {!existing && (
-            <div className="conn-field">
-              <span>What kind?</span>
-              <div className="btn-row" style={{ justifyContent: "flex-start" }}>
-                <button type="button" className={"btn btn-small" + (kind === "oauth" ? " btn-primary" : "")} onClick={() => setKind("oauth")}>
-                  OAuth service
-                </button>
-                <button type="button" className={"btn btn-small" + (kind === "mcp" ? " btn-primary" : "")} onClick={() => setKind("mcp")}>
-                  MCP server
-                </button>
-              </div>
-            </div>
-          )}
           {kind === "oauth" && (
             <>
               <p className="hint">Register an OAuth app with the service, using this callback URL:</p>

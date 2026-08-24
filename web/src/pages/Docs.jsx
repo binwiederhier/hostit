@@ -791,8 +791,8 @@ const OwnServicesPage = () => (
     <h3>Adding one</h3>
     <ol className="docs-steps">
       <li>
-        Open <b>Connections</b> and use <b>Add your own</b> under the Accounts card. Copy the
-        callback URL it shows.
+        Open <b>Connections</b>, click <b>Add account</b>, and pick{" "}
+        <b>Add your own service</b> at the bottom of the menu. Copy the callback URL it shows.
       </li>
       <li>
         Go to the service&rsquo;s developer settings and create an OAuth application, pasting that
@@ -833,11 +833,16 @@ const OwnServicesPage = () => (
       </li>
     </ul>
 
-    <h3>Your own MCP servers</h3>
+    <h3>This is not how you add an MCP server</h3>
     <p>
-      The same dialog adds a <b>named</b> MCP server, so one you use often is a pick in the menu
-      rather than a URL you retype. That is only a shortcut -- pasting any URL into{" "}
-      <b>Add MCP server</b> works exactly as before, and needs nothing set up at all.
+      An <b>MCP server</b> needs none of this. You add one straight from the <b>MCP servers</b>{" "}
+      card by pasting its URL: nothing to register, no client, no secret. This page is only for a
+      service you <i>sign in to</i>, where somebody has to have registered an OAuth app.
+    </p>
+    <p className="hint">
+      Your administrator can give an MCP server a <b>name</b>, so it becomes a pick in the Add
+      menu rather than a URL to remember. That is a convenience for everyone on the instance, and
+      not something you set up per person -- if you want a server, just connect it.
     </p>
 
     <h3>When a service will not have you</h3>

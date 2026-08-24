@@ -111,16 +111,7 @@ const Connections = () => {
         providers={providers.filter((p) => p.kind === "oauth")}
         loading={data === null && !error}
         noProvidersText="No accounts can be connected on this server yet: an admin sets each provider's OAuth client in control.yml."
-        footer={
-          <>
-            Missing a service?{" "}
-            <button type="button" className="linkbtn" onClick={() => setEditingProvider({})}>
-              Add your own
-            </button>{" "}
-            by registering an app with them and pasting the client here, or ask your administrator.{" "}
-            <DocsLink guide="user" section="connections" sub="own">How that works</DocsLink>
-          </>
-        }
+        onAddOwn={() => setEditingProvider({})}
         {...shared}
       />
       <ConnectionsCard
@@ -228,7 +219,7 @@ const Connections = () => {
 const MyProvidersCard = ({ defs, onEdit, onChanged, onError }) => {
   const [removing, setRemoving] = useState(null);
   const [busy, setBusy] = useState(false);
-  const mine = (defs.providers || []).filter((p) => p.scope === "personal" && p.editable);
+  const mine = (defs.providers || []).filter((p) => p.scope === "personal" && p.editable && p.kind !== "mcp");
   if (mine.length === 0) return null;
 
   const remove = async (p) => {
@@ -263,15 +254,11 @@ const MyProvidersCard = ({ defs, onEdit, onChanged, onError }) => {
           <div className="conn-id">
             <span className="conn-name">
               {p.label}
-              <span className="conn-provider">{p.kind === "mcp" ? "MCP server" : "OAuth"}</span>
+              <span className="conn-provider">OAuth</span>
             </span>
             <span className="conn-note">
               connect as <span className="mono">{p.name}</span>
-              {p.kind === "mcp" ? (
-                <> {"--"} <span className="mono">{p.url}</span></>
-              ) : (
-                <> {"--"} client <span className="mono">{p.client_id}</span></>
-              )}
+              {" -- "}client <span className="mono">{p.client_id}</span>
             </span>
           </div>
           <div className="menu conn-rowmenu">
@@ -304,7 +291,6 @@ const MyProvidersCard = ({ defs, onEdit, onChanged, onError }) => {
 // is the one value the person cannot work out and the one that fails the whole
 // flow at the vendor if it is wrong.
 const ProviderDialog = ({ existing, redirectURI, onClose, onSaved }) => {
-  const [kind, setKind] = useState(existing?.kind || "oauth");
   const [label, setLabel] = useState(existing?.label || "");
   const [name, setName] = useState(existing?.name || "");
   const [nameEdited, setNameEdited] = useState(Boolean(existing));
@@ -315,18 +301,16 @@ const ProviderDialog = ({ existing, redirectURI, onClose, onSaved }) => {
     token_url: existing?.token_url || "",
     issuer: existing?.issuer || "",
     scopes: (existing?.scopes || []).join(" "),
-    url: existing?.url || "",
   });
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
 
   const reference = nameEdited ? name : slugify(label);
-  const endpointsOK = kind === "mcp" ? form.url.trim() : form.issuer.trim() || (form.auth_url.trim() && form.token_url.trim());
+  const endpointsOK = form.issuer.trim() || (form.auth_url.trim() && form.token_url.trim());
   const valid =
     label.trim() && reference.length >= 3 && endpointsOK &&
-    (kind === "mcp" || form.client_id.trim()) &&
-    (kind === "mcp" || existing || form.client_secret.trim());
+    form.client_id.trim() && (existing || form.client_secret.trim());
 
   const submit = async (e) => {
     e.preventDefault();
@@ -334,17 +318,13 @@ const ProviderDialog = ({ existing, redirectURI, onClose, onSaved }) => {
     setBusy(true);
     setError("");
     const body = {
-      name: reference, label: label.trim(), kind,
-      ...(kind === "mcp"
-        ? { url: form.url.trim() }
-        : {
-            client_id: form.client_id.trim(),
-            client_secret: form.client_secret.trim(),
-            auth_url: form.auth_url.trim(),
-            token_url: form.token_url.trim(),
-            issuer: form.issuer.trim(),
-            scopes: form.scopes.split(/\s+/).filter(Boolean),
-          }),
+      name: reference, label: label.trim(), kind: "oauth",
+      client_id: form.client_id.trim(),
+      client_secret: form.client_secret.trim(),
+      auth_url: form.auth_url.trim(),
+      token_url: form.token_url.trim(),
+      issuer: form.issuer.trim(),
+      scopes: form.scopes.split(/\s+/).filter(Boolean),
     };
     try {
       if (existing) {
@@ -363,27 +343,15 @@ const ProviderDialog = ({ existing, redirectURI, onClose, onSaved }) => {
     <Modal onClose={onClose} title={existing ? `Edit ${existing.label}` : "Add your own service"}>
       <form onSubmit={submit}>
         <ErrorBanner message={error} onDismiss={() => setError("")} />
-        {!existing && (
-          <div className="conn-field">
-            <span>What kind?</span>
-            <div className="btn-row" style={{ justifyContent: "flex-start" }}>
-              <button type="button" className={"btn btn-small" + (kind === "oauth" ? " btn-primary" : "")} onClick={() => setKind("oauth")}>
-                A service I sign in to
-              </button>
-              <button type="button" className={"btn btn-small" + (kind === "mcp" ? " btn-primary" : "")} onClick={() => setKind("mcp")}>
-                An MCP server
-              </button>
-            </div>
-          </div>
-        )}
-        {kind === "oauth" && (
-          <>
-            <p className="hint">
-              Register an OAuth app with the service first, and give it this callback URL:
-            </p>
-            <Snippet text={redirectURI} />
-          </>
-        )}
+        <p className="hint">
+          For a service you sign in to. Register an OAuth app with them first, giving it this
+          callback URL:
+        </p>
+        <Snippet text={redirectURI} />
+        <p className="hint">
+          An <b>MCP server</b> is not this: you add one straight from the MCP servers card by
+          pasting its URL, with nothing to register.
+        </p>
         <label className="conn-field">
           <span>Name</span>
           <input type="text" value={label} onChange={(e) => setLabel(e.target.value)}
@@ -395,14 +363,7 @@ const ProviderDialog = ({ existing, redirectURI, onClose, onSaved }) => {
             onChange={(e) => { setNameEdited(true); setName(e.target.value); }}
             aria-label="Reference" disabled={busy || Boolean(existing)} />
         </label>
-        {kind === "mcp" ? (
-          <label className="conn-field">
-            <span>Server URL</span>
-            <input type="text" className="mono" value={form.url} onChange={set("url")}
-              placeholder="https://mcp.example.com/mcp" aria-label="Server URL" disabled={busy} />
-          </label>
-        ) : (
-          <>
+        <>
             <label className="conn-field">
               <span>Client ID</span>
               <input type="text" className="mono" value={form.client_id} onChange={set("client_id")}
@@ -436,8 +397,7 @@ const ProviderDialog = ({ existing, redirectURI, onClose, onSaved }) => {
               <input type="text" className="mono" value={form.token_url} onChange={set("token_url")}
                 placeholder="https://acme.example.com/oauth/token" aria-label="Token URL" disabled={busy} />
             </label>
-          </>
-        )}
+        </>
         <div className="btn-row">
           <button type="button" className="btn" onClick={onClose} disabled={busy}>Cancel</button>
           <button type="submit" className="btn btn-primary" disabled={busy || !valid}>
@@ -452,7 +412,7 @@ const ProviderDialog = ({ existing, redirectURI, onClose, onSaved }) => {
 // One of the two cards. Both are the same shape -- what is attached, and one
 // button to attach more -- so they share a component rather than being copied
 // with the nouns changed.
-const ConnectionsCard = ({ title, hint, emptyText, cta, items, providers, singleProvider, presets, loading, onAdd, onRename, onReconnect, onRemove, noProvidersText, footer }) => (
+const ConnectionsCard = ({ title, hint, emptyText, cta, items, providers, singleProvider, presets, loading, onAdd, onRename, onReconnect, onRemove, noProvidersText, onAddOwn }) => (
   <div className="card">
     <div className="conn-head">
       <h2>{title}</h2>
@@ -474,7 +434,7 @@ const ConnectionsCard = ({ title, hint, emptyText, cta, items, providers, single
           {cta}
         </button>
       ) : (
-        <AddMenu label={cta} providers={providers} onPick={onAdd} disabledText={noProvidersText} />
+        <AddMenu label={cta} providers={providers} onPick={onAdd} disabledText={noProvidersText} onAddOwn={onAddOwn} />
       )}
     </div>
     <p className="hint">{hint}</p>
@@ -504,7 +464,6 @@ const ConnectionsCard = ({ title, hint, emptyText, cta, items, providers, single
     {noProvidersText && singleProvider === undefined && providers.length === 0 && (
       <p className="hint">{noProvidersText}</p>
     )}
-    {footer && !loading && <p className="hint conn-footer">{footer}</p>}
   </div>
 );
 
@@ -664,11 +623,13 @@ const DotsIcon = () => (
 // One call to action per card, dropping a menu of what can be attached. The
 // catch-all sits below a divider and is styled apart: it is the escape hatch for
 // anything hostit does not know, not just another entry in the list.
-const AddMenu = ({ label, providers, onPick, disabledText }) => {
+const AddMenu = ({ label, providers, onPick, disabledText, onAddOwn }) => {
   const { open, setOpen, ref } = useDropdown();
   const [query, setQuery] = useState("");
   const { named, other } = filterProviders(providers, query);
-  const empty = (providers || []).length === 0;
+  // With "add your own" in the menu there is always something to pick, so the
+  // button is only dead when there is genuinely nothing at all.
+  const empty = (providers || []).length === 0 && !onAddOwn;
 
   // Reopening should not inherit the last search.
   const toggle = () => {
@@ -723,6 +684,24 @@ const AddMenu = ({ label, providers, onPick, disabledText }) => {
               <button type="button" role="menuitem" className="conn-menu-item conn-menu-other" onClick={() => choose(other)}>
                 Add other credential
                 <span className="conn-menu-sub">anything with an API key</span>
+              </button>
+            </>
+          )}
+          {onAddOwn && (
+            <>
+              <div className="conn-menu-divider" role="separator" />
+              <button
+                type="button"
+                role="menuitem"
+                className="conn-menu-item conn-menu-other"
+                onClick={() => {
+                  setOpen(false);
+                  setQuery("");
+                  onAddOwn();
+                }}
+              >
+                Add your own service
+                <span className="conn-menu-sub">register an OAuth app and paste the client</span>
               </button>
             </>
           )}
