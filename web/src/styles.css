@@ -245,6 +245,35 @@ p {
   color: var(--faint);
 }
 
+/* Usage is context, not an action. On a narrow screen it competes with the
+   page title and the New app button for a row that has no space for three
+   things, so it is the one that goes. The same numbers are on every app's own
+   page, where there is room for them. */
+@media (max-width: 640px) {
+  .usage,
+  .ws-resources {
+    display: none;
+  }
+}
+
+/* The New app dialog's connections chooser, where the name rule used to be
+   explained. Two options, the same shape as the visibility pair above it. */
+.newapp-grant {
+  margin-top: 14px;
+}
+
+.newapp-grant-lab {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.newapp-grant-choice .vis-option {
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+
 /* Top nav */
 .nav {
   background: var(--surface);

@@ -13,6 +13,7 @@ test("a credential is added, granted to an app, then revoked and removed", async
   const created = await request.post("/api/apps", { data: { name: app } });
   expect(created.status(), await created.text()).toBe(201);
 
+  let slug = "";
   try {
     await page.goto("/connections");
     const credentials = page.locator(".card", { hasText: "Credentials" });
@@ -31,7 +32,7 @@ test("a credential is added, granted to an app, then revoked and removed", async
     await dialog.getByLabel("Name", { exact: true }).fill(name);
     const reference = dialog.getByLabel("Reference");
     await expect(reference).toHaveValue(/^e2e-ntfy-/);
-    const slug = await reference.inputValue();
+    slug = await reference.inputValue();
     await dialog.getByLabel("Access token").fill("tk_e2e_secret_value");
     await dialog.getByRole("button", { name: "Save" }).click();
 
@@ -70,7 +71,11 @@ test("a credential is added, granted to an app, then revoked and removed", async
     await confirm.getByRole("button", { name: "Remove" }).click();
     await expect(page.locator(".conn-row", { hasText: name })).toHaveCount(0);
   } finally {
+    // Both, unconditionally. The happy path removes the credential through the
+    // UI, so a run that failed -- or was retried -- left one behind on the
+    // shared instance, and they piled up.
     await request.delete(`/api/apps/${app}`);
+    if (slug) await request.delete(`/api/connections/${slug}`);
   }
 });
 
