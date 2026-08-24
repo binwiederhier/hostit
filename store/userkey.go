@@ -9,6 +9,7 @@ const (
 	insertUserKeyQuery  = `INSERT INTO user_key (id, user_id, label, key, created_at) VALUES (?, ?, ?, ?, ?)`
 	selectUserKeysQuery = `SELECT id, user_id, label, key, created_at FROM user_key WHERE user_id = ? ORDER BY created_at`
 	deleteUserKeyQuery  = `DELETE FROM user_key WHERE user_id = ? AND id = ?`
+	renameUserKeyQuery  = `UPDATE user_key SET label = ? WHERE user_id = ? AND id = ?`
 	deleteUserKeysQuery = `DELETE FROM user_key WHERE user_id = ?`
 
 	// app_key rows are keyed on app_id so they survive a rename; the app is still
@@ -59,6 +60,16 @@ func (s *Store) UserKeys(userID string) ([]*UserKey, error) {
 }
 
 // RemoveUserKey deletes one of the user's own profile keys
+// RenameUserKey changes a key's label. Scoped to the owner, so one account can
+// never relabel another's.
+func (s *Store) RenameUserKey(userID, id, label string) error {
+	res, err := s.db.Exec(renameUserKeyQuery, label, userID, id)
+	if err != nil {
+		return err
+	}
+	return checkAffected(res, ErrKeyNotFound)
+}
+
 func (s *Store) RemoveUserKey(userID, id string) error {
 	result, err := s.db.Exec(deleteUserKeyQuery, userID, id)
 	if err != nil {

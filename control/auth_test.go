@@ -181,26 +181,34 @@ func TestAdminOnlyEndpoints(t *testing.T) {
 	}
 }
 
-func TestWebIsServedOnTheBaseDomain(t *testing.T) {
+// The base domain is the ONE front door. hostit.<base> used to answer as well,
+// a compatibility alias from before the base domain took over -- but two names
+// for one thing is two names to register with every OAuth provider, two to put
+// in documentation, and one more that leaks into a URL somebody bookmarks.
+func TestWebIsServedOnTheBaseDomainAndNowhereElse(t *testing.T) {
 	t.Parallel()
 	s := newTestServer(t)
-	// The base domain is the front door; the old hostit.<base> keeps working so
-	// links and prompts handed out earlier do not break
-	for _, host := range []string{"apps.example.com", "hostit.apps.example.com"} {
-		rr := proxyRequest(t, s, "http://"+host+"/api/health")
-		assert.Equal(t, http.StatusOK, rr.Code, "host %s must serve the API", host)
-	}
+	rr := proxyRequest(t, s, "http://apps.example.com/api/health")
+	assert.Equal(t, http.StatusOK, rr.Code, "the base domain serves the API")
+
+	// The old alias is now an app subdomain like any other, so it 404s unless
+	// somebody really does have an app called "hostit".
+	alias := proxyRequest(t, s, "http://hostit.apps.example.com/api/health")
+	assert.Equal(t, http.StatusNotFound, alias.Code, "hostit.<base> is not a second front door")
+
 	// An app subdomain still goes to the app, not the web UI
-	rr := proxyRequest(t, s, "http://nosuchapp.apps.example.com/api/health")
-	assert.Equal(t, http.StatusNotFound, rr.Code)
+	missing := proxyRequest(t, s, "http://nosuchapp.apps.example.com/api/health")
+	assert.Equal(t, http.StatusNotFound, missing.Code)
 }
 
 func TestOAuthRedirectFollowsTheHostInUse(t *testing.T) {
 	t.Parallel()
 	s := newTestServer(t)
 	assert.Equal(t, "https://apps.example.com/auth/callback", s.config.RedirectURL("apps.example.com"))
-	assert.Equal(t, "https://hostit.apps.example.com/auth/callback", s.config.RedirectURL("hostit.apps.example.com"))
-	// Anything else falls back to the canonical hostname
+	// Anything else -- including the retired hostit.<base> alias -- falls back
+	// to the canonical hostname, so there is exactly ONE redirect URI to
+	// register with a provider.
+	assert.Equal(t, "https://apps.example.com/auth/callback", s.config.RedirectURL("hostit.apps.example.com"))
 	assert.Equal(t, "https://apps.example.com/auth/callback", s.config.RedirectURL("evil.example.org"))
 }
 

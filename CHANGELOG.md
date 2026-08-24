@@ -7,6 +7,123 @@ changed rather than what an operator had to do about it; from v0.15.0 on, each
 release is written down as it is cut. Anything that changes a config file, a
 default, or on-disk state is called out as **Breaking** or **Upgrade note**.
 
+## v0.20.0 (2026-08-24)
+
+- **Connections.** Attach an account, a secret or a tool server once, then grant
+  it to individual apps. An app asks hostit for a usable credential when it needs
+  one, over its own socket -- so nothing is baked into a file, and revoking a
+  grant takes effect on the next request rather than the next deploy.
+
+  Three kinds, because they are three different things to a person, and
+  "connections" is the umbrella rather than one of them. **Accounts** are
+  services you sign in to: Google Calendar, Gmail, Slack, Discord,
+  GitHub, Jira, HubSpot, Linear. **Credentials** are secrets you paste: Fastmail
+  (one JMAP token for mail, calendar and contacts), IMAP, SMTP, CalDAV, CardDAV,
+  Postgres, MySQL, OpenSearch, S3, ntfy, Home Assistant, an SSH key, a Discord
+  bot token, or any API key at all. **MCP servers** are tool servers added by
+  URL (below). Eleven of the nineteen need no OAuth client,
+  no review and no console visit -- which is the point of brokering the
+  credential rather than the API.
+
+  Each one has a **name** you read and a **reference** an app asks for, derived
+  from the name. That is what lets you attach the same service twice -- a work
+  calendar and a personal one -- and have an app ask for the one it was granted.
+
+  Credentials are sealed with AES-256-GCM and bound to the row they belong to, so
+  ciphertext moved between rows does not decrypt. Access tokens are cached until
+  shortly before they expire; the grant is re-checked on every request regardless.
+  `hostit control connections rotate-key` re-seals everything under a fresh key.
+
+  **Upgrade note:** an OAuth client per provider goes in `connections:` in
+  `control.yml`; a provider without one is not offered. Google's two fall back to
+  the login client. See the Connections setup page in the admin guide.
+
+- **MCP servers.** Paste the URL of an MCP tool server and hostit works out the
+  rest: whether it wants authorization, where to arrange it, and what tools it
+  offers. Nothing to register in advance -- unlike the OAuth providers, an MCP
+  server needs no client ID from an admin, because hostit identifies itself by a
+  public metadata document at `/.well-known/oauth-client` (the Client ID Metadata
+  Document that replaced dynamic registration in the MCP spec).
+
+  Granted to an app the same way as anything else, but hostit does **not** hand
+  over the token: an MCP token opens the whole server, so giving it to the app
+  would make the grant decorative. The app sends a tool name and arguments to
+  `/v1/mcp/<name>/call` and hostit makes the call -- so an app needs no MCP
+  client, no OAuth of its own, and nothing to refresh. The same tools appear in
+  the built-in assistant, so you can grant an app a server and just ask for what
+  you want.
+
+  **Note for operators:** `/.well-known/oauth-client` must be reachable from the
+  internet, or an authorization server cannot fetch it and every consent fails.
+  It is served unauthenticated on purpose.
+
+- **Outbound fetches of user-supplied URLs are restricted.** Adding an MCP server
+  means hostit fetches a URL a user chose, from inside its own network. hostit now
+  refuses to connect to anything that is not publicly routable -- loopback, the
+  private ranges, and the link-local range where cloud providers put their
+  unauthenticated metadata service -- checked at connection time on the resolved
+  address, so DNS rebinding does not get past it. Set
+  `outbound-allow-private: true` in `control.yml` if your MCP servers really are
+  on your own LAN.
+
+- **Fixed: every app page opened a terminal connection nobody asked for.** The
+  workspace mounts all its tabs, and the terminal connected its WebSocket on
+  mount -- so opening an app to look at its logs opened a shell session too, and
+  renaming or deleting the app left that socket dialling a name that no longer
+  existed, logging a handshake error at whoever was looking. The terminal now
+  mounts the first time its tab is opened, and stays mounted after, so switching
+  away still does not kill the session.
+
+- **An About box**, in the profile menu: what this is, which version is running,
+  the author and a link to the source. The version is the first thing anybody is
+  asked for when reporting a problem, and "check the deb version on the box" is
+  not an answer for somebody who only has the web app.
+
+- **Breaking: the web app is served at the base domain only.** A
+  `hostit.<base-domain>` alias answered as well, left over from before the base
+  domain took over. Two names for one thing is two to register with every OAuth
+  provider, two to write in documentation, and one more to leak into a URL
+  somebody bookmarks. That name is now an ordinary app subdomain.
+
+  **Upgrade note:** if anyone reaches your instance at `hostit.<base-domain>`,
+  tell them to use the base domain. If you registered that hostname as a redirect
+  URI with an OAuth provider you can remove it -- hostit no longer sends it.
+
+- **Providers, at three tiers.** Any OAuth 2.0 service hostit does not ship can
+  now be added -- by the **operator** in `connections:` in `control.yml` or on the
+  Admin page (everyone can then connect it), or by a **user** for themselves with
+  no admin involved. A user registering their own OAuth app with a vendor and
+  pasting the client in is an ordinary thing: nothing about OAuth requires the
+  client to belong to the instance, and only the callback URL is hostit's, which
+  is why the dialog shows it first.
+
+  A definition is a label, a client, scopes, and either the two OAuth URLs or an
+  `issuer` to discover them from. It behaves exactly like a built-in, because a
+  catalog entry was always pure data. A user's own is visible only to them, and
+  two users may each define `acme`; nobody can redefine a name hostit or the
+  operator already uses, so `github` keeps meaning GitHub. Client secrets are
+  encrypted like every other credential and never returned by the API.
+
+  **Named MCP servers** live in the same places -- `mcp-servers:` in
+  `control.yml`, the Admin page, or a user's own -- so adding one is a pick
+  rather than a remembered URL. Pasting any URL still works.
+
+  A malformed `control.yml` entry stops the server at start rather than
+  vanishing from a menu.
+
+- **`GET /api/connections?kind=` narrows the list** to `oauth`, `static` or
+  `mcp`, filtering the offered providers with it so a one-kind view does not
+  offer you the wrong thing to attach. An unknown kind is refused rather than
+  ignored. The token and tools sub-resources now answer **404** for a member of
+  the wrong kind rather than 400 -- the request was fine, the thing it asked for
+  simply does not exist for that member.
+
+- **The app-facing API answers at `/api/container` as well as `/v1`.** Same
+  surface, same socket. The new spelling names who is asking -- code inside an
+  app's container, authenticated by the socket it arrived on -- where `/v1` next
+  to `/api` was always an odd seam. `/v1` keeps working and always will, since it
+  is what the in-container CLI and every app written so far call.
+
 ## v0.19.1 (2026-08-22)
 
 - **Fixed: a node's memory, disk and load readings never changed.** They were

@@ -2,6 +2,7 @@ package control
 
 import (
 	"encoding/json"
+	"heckel.io/hostit/store"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -61,4 +62,45 @@ func toolResp(t *testing.T, w *httptest.ResponseRecorder) apiToolResponse {
 	var resp apiToolResponse
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 	return resp
+}
+
+// The app-facing surface answers at BOTH prefixes. /api/container says who is
+// asking -- code inside the container, authenticated by the socket it arrived
+// on -- where /v1 says only "version one of something". /v1 is what every app
+// written so far calls, and what the in-container CLI calls, so it keeps
+// answering forever.
+func TestTheAppSurfaceAnswersAtBothPrefixes(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	u := newActiveTestUser(t, s, "owner@example.com")
+	require.NoError(t, s.apps.Store().AddApp(&store.App{ID: "a1", Name: "dash", Port: 10000, Host: store.HostLocal, OwnerID: u.ID, UID: 1234}))
+	c := mustConnect(t, s, u.ID, "mail", "generic", map[string]string{"secret": "hunter2"})
+	require.NoError(t, s.apps.Store().GrantConnection("a1", c.ID))
+
+	for _, prefix := range []string{"/v1", "/api/container"} {
+		list := socketRequest(t, s, "GET", prefix+"/connections")
+		assert.Equal(t, http.StatusOK, list.Code, prefix)
+		assert.Contains(t, list.Body.String(), `"slug":"mail"`, prefix)
+
+		tok := socketRequest(t, s, "GET", prefix+"/connections/mail/token")
+		assert.Equal(t, http.StatusOK, tok.Code, prefix)
+		assert.Contains(t, tok.Body.String(), "hunter2", prefix)
+
+		self := socketRequest(t, s, "GET", prefix+"/self")
+		assert.Equal(t, http.StatusOK, self.Code, prefix)
+	}
+}
+
+// The old alias is gone rather than kept. It never appeared in a release, and
+// /api/self/self -- which is what "this container's app" actually spelled --
+// was the clearest sign the word was wrong.
+func TestTheAbandonedSelfAliasIsNotServed(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	u := newActiveTestUser(t, s, "owner@example.com")
+	require.NoError(t, s.apps.Store().AddApp(&store.App{ID: "a1", Name: "dash", Port: 10000, Host: store.HostLocal, OwnerID: u.ID, UID: 1234}))
+
+	for _, path := range []string{"/api/self/self", "/api/self/connections"} {
+		assert.Equal(t, http.StatusNotFound, socketRequest(t, s, "GET", path).Code, path)
+	}
 }

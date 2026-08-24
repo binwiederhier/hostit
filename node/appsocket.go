@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"golang.org/x/sys/unix"
 
@@ -102,6 +103,25 @@ func ServeAppSocket(path string, st *store.Store, link *nodelink.ControlLink) (i
 	return listener, nil
 }
 
+// isOperatorPath reports whether a request is aimed at the operator API, which
+// this socket does not serve.
+//
+// /api/container is the exception and must stay one: it is the app-facing surface's
+// alias for /v1, the app talking about ITSELF on exactly this socket. Without
+// the carve-out the guard swallows it, and only a REMOTE node shows that --
+// control's own socket never passes through here, so a unit test against it
+// looks perfectly healthy.
+func isOperatorPath(path string) bool {
+	if path == containerAliasPrefix || strings.HasPrefix(path, containerAliasPrefix+"/") {
+		return false
+	}
+	return path == "/api" || strings.HasPrefix(path, "/api/")
+}
+
+// containerAliasPrefix mirrors control's /api/container root; kept here as a constant so
+// the carve-out above is findable from both ends.
+const containerAliasPrefix = "/api/container"
+
 // appSocketHandler resolves the calling app and relays its request.
 func appSocketHandler(st *store.Store, link *nodelink.ControlLink) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -109,7 +129,7 @@ func appSocketHandler(st *store.Store, link *nodelink.ControlLink) http.Handler 
 		// socket serves them, where peer uid 0 means admin. Saying so here is
 		// for the old CLI on an upgraded host, which would otherwise get a 401
 		// that looks like a token problem.
-		if r.URL.Path == "/api" || len(r.URL.Path) > 4 && r.URL.Path[:5] == "/api/" {
+		if isOperatorPath(r.URL.Path) {
 			writeSocketError(w, http.StatusNotImplemented,
 				"operator commands moved to hostit-control (or pass --host/--token); this socket serves apps")
 			return

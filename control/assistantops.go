@@ -1,12 +1,16 @@
 package control
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
 	"heckel.io/hostit/assistant"
+	"heckel.io/hostit/connections"
 	"heckel.io/hostit/store"
 )
 
@@ -14,6 +18,13 @@ const (
 	// assistantReadCap bounds a file the assistant reads, so one huge file cannot
 	// blow up the model's context
 	assistantReadCap = 128 * 1024
+	// mcpToolsTimeout bounds listing a server's tools while building a prompt.
+	// Short: it is on the path of every turn, and a stale list is served when it
+	// expires, so a slow server costs a pause and not the turn.
+	mcpToolsTimeout = 10 * time.Second
+	// mcpCallTimeout bounds one tool call. Longer, because the model asked for
+	// it and is waiting on the answer.
+	mcpCallTimeout = 60 * time.Second
 )
 
 // appTranscripts persists the assistant's per-app conversation in the registry as
@@ -68,6 +79,10 @@ type appOps struct {
 	// exec, deploy, rollback); it feeds the debounced dashboard screenshot.
 	// Optional: nil when nothing cares about changes.
 	changed func(name string)
+	// server is the control server, for the MCP tools: calling a granted MCP
+	// server needs the credential custody that lives on it, and holding the
+	// token anywhere closer to the model is the thing this design avoids.
+	server *Server
 }
 
 // notifyChanged reports a successful mutation to the optional listener.
@@ -194,4 +209,114 @@ func secondsToDuration(seconds int) time.Duration {
 // say so before the model plans work that will be refused.
 func (o *appOps) Archived(name string) bool {
 	return o.apps.archived(name)
+}
+
+// Connections lists what this app has been granted, so the assistant's prompt
+// can name them. It carries no secret -- the model is told the name to ask for,
+// and the app reads the credential from its own socket at runtime.
+func (o *appOps) Connections(name string) []assistant.Connection {
+	a, err := o.apps.App(name)
+	if err != nil {
+		return nil
+	}
+	granted, err := o.apps.Store().AppConnections(a.ID)
+	if err != nil {
+		return nil
+	}
+	out := make([]assistant.Connection, 0, len(granted))
+	for _, c := range granted {
+		label := c.Provider
+		if p, ok := o.lookupProvider(c.Provider); ok {
+			label = p.Label
+		}
+		out = append(out, assistant.Connection{
+			Slug: c.Slug, Provider: c.Provider, ProviderLabel: label,
+			MCP: c.Kind == store.ConnectionMCP,
+		})
+	}
+	return out
+}
+
+// lookupProvider resolves a provider through the server's overlay when there is
+// one, so an operator's own entry gets its real label rather than its slug.
+func (o *appOps) lookupProvider(name string) (connections.Provider, bool) {
+	if o.server == nil {
+		return connections.Lookup(name)
+	}
+	return o.server.lookupProvider(name)
+}
+
+// MCPTools are the tools on the MCP servers this app was granted, so the model
+// gets them as real tools with the servers' own schemas rather than a paragraph
+// telling it to make HTTP requests it cannot see the shape of.
+//
+// A server that will not answer is skipped rather than failing the turn: one
+// unreachable connection must not cost the assistant every other tool it has.
+func (o *appOps) MCPTools(name string) []assistant.MCPTool {
+	conns, srv := o.mcpConnections(name)
+	if srv == nil {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), mcpToolsTimeout)
+	defer cancel()
+	out := make([]assistant.MCPTool, 0)
+	for _, conn := range conns {
+		tools, err := srv.connections.mcpTools(ctx, conn, srv.selfMCPClientID())
+		if err != nil {
+			slog.Warn("Cannot list an MCP server's tools for the assistant", "slug", conn.Slug, "error", err)
+			continue
+		}
+		for _, t := range tools {
+			out = append(out, assistant.MCPTool{
+				Connection: conn.Slug, Name: t.Name,
+				Description: t.Description, InputSchema: t.InputSchema,
+			})
+		}
+	}
+	return out
+}
+
+// CallMCPTool runs one tool on a granted server. Resolved against the grant
+// again here rather than trusting the name the model produced.
+func (o *appOps) CallMCPTool(name, connection, tool string, args map[string]any) (string, bool, error) {
+	conns, srv := o.mcpConnections(name)
+	if srv == nil {
+		return "", false, errors.New("connections are not available on this server")
+	}
+	for _, conn := range conns {
+		if conn.Slug != connection {
+			continue
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), mcpCallTimeout)
+		defer cancel()
+		res, err := srv.connections.mcpCall(ctx, conn, srv.selfMCPClientID(), tool, args)
+		if err != nil {
+			return "", false, err
+		}
+		return res.Text, res.IsError, nil
+	}
+	return "", false, fmt.Errorf("this app has not been granted an MCP server called %q", connection)
+}
+
+// mcpConnections is the app's granted MCP connections, and the server that can
+// talk to them.
+func (o *appOps) mcpConnections(name string) ([]*store.Connection, *Server) {
+	if o.server == nil || o.server.connections == nil {
+		return nil, nil
+	}
+	a, err := o.apps.App(name)
+	if err != nil {
+		return nil, nil
+	}
+	granted, err := o.apps.Store().AppConnections(a.ID)
+	if err != nil {
+		return nil, nil
+	}
+	out := make([]*store.Connection, 0)
+	for _, c := range granted {
+		if c.Kind == store.ConnectionMCP {
+			out = append(out, c)
+		}
+	}
+	return out, o.server
 }

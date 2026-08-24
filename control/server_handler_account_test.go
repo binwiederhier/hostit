@@ -1,6 +1,7 @@
 package control
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"testing"
@@ -108,8 +109,61 @@ func TestAppTokenMintedOnlyForAnOwnedApp(t *testing.T) {
 func TestGlobalAdminTokenHasNoProfile(t *testing.T) {
 	t.Parallel()
 	s := newTestServer(t)
+	// 403, not 400: the request is well formed and the refusal is about WHO is
+	// asking. It used to be an ad-hoc 400 here and nothing at all on the
+	// connections surface, where the same hole let writes land in a namespace
+	// nobody owns -- requirePerson is the one guard for all of it now.
 	for _, path := range []string{"/api/account/keys", "/api/account/tokens"} {
 		rr := request(t, s.API(), "POST", path, `{"label":"x"}`, testToken)
-		assert.Equal(t, http.StatusBadRequest, rr.Code, "path %s", path)
+		assert.Equal(t, http.StatusForbidden, rr.Code, "path %s", path)
+		assert.Contains(t, rr.Body.String(), "belongs to a person", "path %s", path)
 	}
+}
+
+// A key's label is how a person tells one from another, so it must be editable
+// without deleting the key and re-adding it to everything that trusts it.
+func TestRenameAnSSHKey(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	u := newActiveTestUser(t, s, "owner@example.com")
+	token := accountToken(t, s, u)
+
+	rr := request(t, s.API(), "POST", "/api/account/keys",
+		`{"label":"laptop","key":"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIC24brF98CyUY18aeOGGQY3+wILYYnUUBQqICmMTvTGL test@host"}`, token)
+	require.Equal(t, http.StatusCreated, rr.Code, rr.Body.String())
+	keys, err := s.users.Keys(u.ID)
+	require.NoError(t, err)
+	require.Len(t, keys, 1)
+
+	rr = request(t, s.API(), "PUT", "/api/account/keys/"+keys[0].ID, `{"label":"work laptop"}`, token)
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+	keys, err = s.users.Keys(u.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "work laptop", keys[0].Label)
+	assert.Contains(t, keys[0].Key, "AAAAC3", "the key itself is untouched")
+
+	// Empty is refused, and another account cannot rename it
+	assert.Equal(t, http.StatusBadRequest, request(t, s.API(), "PUT", "/api/account/keys/"+keys[0].ID, `{"label":"  "}`, token).Code)
+	other := accountToken(t, s, newActiveTestUser(t, s, "other@example.com"))
+	assert.Equal(t, http.StatusNotFound, request(t, s.API(), "PUT", "/api/account/keys/"+keys[0].ID, `{"label":"stolen"}`, other).Code)
+}
+
+// The About box needs to say which version is running. It rides on the account
+// response rather than on /api/health, which is public: a version number tells
+// whoever asks exactly which advisories apply, and there is no reason to hand
+// that to somebody who has not signed in.
+func TestTheAccountResponseCarriesTheServerVersion(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	u := newActiveTestUser(t, s, "owner@example.com")
+	token, _, err := s.users.CreateToken(u.ID, "laptop")
+	require.NoError(t, err)
+
+	rr := request(t, s.API(), "GET", "/api/account", "", token)
+	require.Equal(t, http.StatusOK, rr.Code)
+	var got struct {
+		Version string `json:"version"`
+	}
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &got))
+	assert.NotEmpty(t, got.Version)
 }

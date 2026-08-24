@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import { docsHref } from "./docs";
 
 // Copies text to the clipboard with a "Copied!" confirmation; falls back to
 // a hidden textarea + execCommand for non-secure contexts.
@@ -142,10 +143,85 @@ export const Wordmark = ({ big = false }) => (
   </span>
 );
 
+// A link into the manual, beside the thing it explains. It opens in a new tab
+// for the same reason the nav's docs link does -- the manual is a thing you read
+// beside the app, not instead of it.
+export const DocsLink = ({ guide, section, sub, children }) => (
+  <a className="docs-link" href={docsHref(guide, section, sub)} target="_blank" rel="noreferrer">
+    {children}
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M6 3.5h6.5V10M12.5 3.5 4 12" />
+    </svg>
+  </a>
+);
+
+// A confirm step that looks like the rest of the app. window.confirm cannot be
+// styled, cannot show what is at stake in more than one line, and on some
+// browsers is suppressed entirely -- which turns "are you sure" into "done".
+//
+// Escape and a click outside both cancel: the safe answer is the easy one.
+export const ConfirmDialog = ({ title, body, confirmLabel = "Remove", danger = true, busy, onConfirm, onClose }) => {
+  useEffect(() => {
+    const onKey = (e) => e.key === "Escape" && onClose();
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true" onMouseDown={onClose}>
+      <div className="card modal modal-sheet modal-confirm" onMouseDown={(e) => e.stopPropagation()}>
+        <button type="button" className="modal-x" onClick={onClose} title="Close" aria-label="Close">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+            <path d="M6 6l12 12M18 6 6 18" />
+          </svg>
+        </button>
+        <h2>{title}</h2>
+        {body && <div className="hint confirm-body">{body}</div>}
+        <div className="btn-row">
+          <button type="button" className="btn" onClick={onClose} disabled={busy} autoFocus>
+            Cancel
+          </button>
+          <button
+            type="button"
+            className={"btn " + (danger ? "btn-danger" : "btn-primary")}
+            onClick={onConfirm}
+            disabled={busy}
+          >
+            {busy ? "Working..." : confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 export const Loading = ({ label = "Loading..." }) => (
   <p className="loading" aria-live="polite">
     {label}
   </p>
+);
+
+// Placeholder rows shown while a list loads, at the height the real rows will
+// be. A one-line "Loading..." is honest but makes every page jump: the card is
+// 20px tall, then several hundred the moment data lands. Reserving the space
+// costs nothing and removes the jump entirely.
+//
+// aria-hidden with a live label beside it: a screen reader should hear "loading",
+// not a description of grey rectangles.
+export const Skeleton = ({ rows = 3, card = false, label = "Loading..." }) => (
+  <>
+    <span className="sr-only" aria-live="polite">
+      {label}
+    </span>
+    <div className={card ? "skeleton skeleton-cards" : "skeleton"} aria-hidden="true">
+      {Array.from({ length: rows }, (_, i) => (
+        <div className={card ? "skeleton-card" : "skeleton-row"} key={i}>
+          <div className="skeleton-bar skeleton-bar-wide" />
+          <div className="skeleton-bar skeleton-bar-narrow" />
+        </div>
+      ))}
+    </div>
+  </>
 );
 
 // Terminal-style snippet block with a copy button; the signature visual
@@ -153,16 +229,12 @@ export const Loading = ({ label = "Loading..." }) => (
 export const Snippet = ({ text }) => (
   <div className="term">
     <pre>
+      {/* No "$" prompt: these blocks are as often a config file or a URL as
+          they are a shell command, and a prompt in front of a YAML key is
+          simply wrong. Lines starting with "#" still read as comments. */}
       {text.split("\n").map((line, i) => (
         <span key={i} className="term-line">
-          {line.startsWith("#") ? (
-            <span className="term-comment">{line}</span>
-          ) : (
-            <>
-              <span className="term-prompt">$ </span>
-              {line}
-            </>
-          )}
+          {line.startsWith("#") ? <span className="term-comment">{line}</span> : line}
         </span>
       ))}
     </pre>

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 
+	"heckel.io/hostit/node"
 	"heckel.io/hostit/store"
 	"heckel.io/hostit/user"
 )
@@ -49,6 +50,21 @@ func (s *Server) handleKeysAdd(w http.ResponseWriter, r *http.Request, c *caller
 		return
 	}
 	writeJSON(w, http.StatusCreated, key)
+}
+
+// handleKeysRename changes a key's label. The key itself is untouched, so
+// nothing that trusts it has to be updated.
+func (s *Server) handleKeysRename(w http.ResponseWriter, r *http.Request, c *caller) {
+	var req apiRenameKeyRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if err := s.users.RenameKey(c.userID(), r.PathValue("id"), req.Label); err != nil {
+		writeAppError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, &apiMessageResponse{Message: "key renamed"})
 }
 
 func (s *Server) handleKeysDelete(w http.ResponseWriter, r *http.Request, c *caller) {
@@ -125,10 +141,11 @@ func (s *Server) handleTokensDelete(w http.ResponseWriter, r *http.Request, c *c
 func (s *Server) accountResponse(c *caller) (*apiAccountResponse, error) {
 	if c.globalAdmin {
 		return &apiAccountResponse{
-			Email:  "admin-token",
-			Name:   "Global admin token",
-			Role:   store.RoleAdmin,
-			Status: store.StatusActive,
+			Email:   "admin-token",
+			Name:    "Global admin token",
+			Role:    store.RoleAdmin,
+			Status:  store.StatusActive,
+			Version: node.Version,
 		}, nil
 	}
 	if c.user == nil {
@@ -151,12 +168,13 @@ func (s *Server) accountResponse(c *caller) (*apiAccountResponse, error) {
 		return nil, err
 	}
 	return &apiAccountResponse{
-		Email:  c.user.Email,
-		Name:   c.user.Name,
-		Role:   c.user.Role,
-		Status: c.user.Status,
-		Limits: limits,
-		Usage:  &apiUsage{Apps: len(apps), DiskMB: diskMB, PoolMemoryMB: poolMemory, PoolDiskMB: poolDisk},
+		Email:   c.user.Email,
+		Name:    c.user.Name,
+		Role:    c.user.Role,
+		Status:  c.user.Status,
+		Limits:  limits,
+		Usage:   &apiUsage{Apps: len(apps), DiskMB: diskMB, PoolMemoryMB: poolMemory, PoolDiskMB: poolDisk},
+		Version: node.Version,
 	}, nil
 }
 

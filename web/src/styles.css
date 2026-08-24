@@ -3713,6 +3713,319 @@ body.ws-resizing iframe {
   font-variant-numeric: tabular-nums;
 }
 
+/* One connected account: name and status on the left, the action on the right. */
+.conn-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.conn-row:last-of-type {
+  border-bottom: none;
+}
+
+.conn-id {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.conn-name {
+  font-weight: 600;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* The provider a connection belongs to, beside the name its app asks for. */
+.conn-provider {
+  font-weight: 400;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 1px 8px;
+}
+
+.conn-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+/* Something attached but not granted to THIS app: present, deliberately quiet. */
+.conn-ungranted .conn-name {
+  opacity: 0.75;
+}
+
+.conn-empty {
+  padding: 6px 0;
+}
+
+.conn-add {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-top: 12px;
+}
+
+.conn-heading {
+  margin-top: 26px;
+}
+
+.conn-field {
+  display: block;
+  margin-bottom: 10px;
+}
+
+.conn-field > span {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.conn-field input {
+  width: 100%;
+}
+
+.conn-form-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.conn-rename {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.conn-rename input {
+  width: 140px;
+}
+
+.conn-note {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* An MCP server's endpoint and tool count, under the row's own note line. */
+.conn-mcp {
+  display: block;
+  margin-top: 2px;
+}
+
+/* Only the URL breaks anywhere: it has no spaces and can be long. Scoping this
+   to the URL rather than the line keeps it off any prose beside it. */
+.conn-mcp-url {
+  word-break: break-all;
+}
+
+.conn-tools {
+  margin: 4px 0 0;
+  padding-left: 16px;
+  list-style: disc;
+}
+
+.conn-tools li {
+  margin: 2px 0;
+  word-break: normal;
+}
+
+/* The dialog's copy of the list: capped and scrolled, because a server is
+   entitled to offer hundreds and the dialog must not grow past the window. */
+.conn-tools-list {
+  max-height: 45vh;
+  overflow-y: auto;
+  margin: 8px 0;
+  padding-left: 18px;
+  font-size: 13px;
+}
+
+.conn-tools-list li {
+  margin: 6px 0;
+}
+
+.conn-tool-desc {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.conn-tools-search {
+  margin-top: 8px;
+}
+
+/* A closing line under a card: where to go when what you want is not offered. */
+.conn-footer {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+/* Marks a provider this instance's operator added, in the Add menu. */
+.conn-menu-badge {
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: 8px;
+  background: var(--border);
+  color: var(--muted);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* Docs: a sub-page under its parent in the sidebar, and the prev/next pager. */
+.docs-nav-sub > a {
+  padding-left: 22px;
+  font-size: 12px;
+}
+
+.docs-pager {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 40px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+  font-size: 14px;
+}
+
+.docs-pager a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.docs-pager a:hover {
+  text-decoration: underline;
+}
+
+/* Two columns of short fields, so a form of six does not become a dialog
+   taller than the window. Collapses on a narrow screen. */
+/* The About box: a wordmark, a line about what this is, and the facts anybody
+   reporting a problem is asked for. */
+.about {
+  max-width: 420px;
+  text-align: center;
+}
+
+.about-mark {
+  margin: 6px 0 10px;
+}
+
+.about-tagline {
+  margin: 0 0 18px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.about-facts {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px 14px;
+  margin: 0 0 20px;
+  text-align: left;
+  font-size: 13px;
+}
+
+.about-facts dt {
+  color: var(--muted);
+}
+
+.about-actions {
+  justify-content: center;
+}
+
+.about-facts dd {
+  margin: 0;
+  word-break: break-word;
+}
+
+.conn-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 14px;
+}
+
+@media (max-width: 620px) {
+  /* The About box: a wordmark, a line about what this is, and the facts anybody
+   reporting a problem is asked for. */
+.about {
+  max-width: 420px;
+  text-align: center;
+}
+
+.about-mark {
+  margin: 6px 0 10px;
+}
+
+.about-tagline {
+  margin: 0 0 18px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.about-facts {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px 14px;
+  margin: 0 0 20px;
+  text-align: left;
+  font-size: 13px;
+}
+
+.about-facts dt {
+  color: var(--muted);
+}
+
+.about-actions {
+  justify-content: center;
+}
+
+.about-facts dd {
+  margin: 0;
+  word-break: break-word;
+}
+
+.conn-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.conn-tools-count {
+  margin: 6px 0 0;
+}
+
+/* The dialog is wider than the form dialogs: it is a list to scan, not fields
+   to fill, and a narrow column makes long tool names wrap for no reason. */
+.modal-tools {
+  max-width: 620px;
+}
+
+/* A button that reads as a link: used where the action is "show me more of
+   this row", which is not important enough to look like a button. */
+.linkbtn {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: var(--accent);
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.conn-form {
+  padding-top: 10px;
+}
+
 .settings-field {
   display: block;
   margin-bottom: 10px;
@@ -5736,4 +6049,236 @@ input[type="number"]::-webkit-inner-spin-button {
    the spacing the label used to provide. */
 .newapp .visibility-choice {
   margin-top: 16px;
+}
+
+/* Numbered setup steps in the docs: tighter than a prose list, since each step
+   is one console action rather than a paragraph. */
+.docs-steps {
+  margin: 10px 0 14px;
+  padding-left: 1.35rem;
+}
+
+.docs-steps li {
+  margin-bottom: 6px;
+  line-height: 1.5;
+}
+
+/* The Connections page: a call to action beside each card's heading, and a menu
+   whose last entry is the catch-all rather than another provider. */
+.conn-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.conn-head h2 {
+  margin-bottom: 0;
+}
+
+.conn-caret {
+  margin-left: 6px;
+  font-size: 10px;
+  opacity: 0.8;
+}
+
+.conn-menu {
+  min-width: 340px;
+  padding: 8px;
+}
+
+/* The list of pasteable credentials is long enough that one column would run
+   off the bottom of the screen. */
+.conn-menu-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px;
+}
+
+.conn-menu-search {
+  width: 100%;
+  margin-bottom: 8px;
+  font-size: 13px;
+}
+
+.conn-menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: 0;
+  border-radius: 6px;
+  padding: 6px 8px;
+  font: inherit;
+  font-size: 13px;
+  color: inherit;
+  cursor: pointer;
+}
+
+.conn-menu-item:hover,
+.conn-menu-item:focus-visible {
+  background: var(--hover, rgba(127, 127, 127, 0.12));
+}
+
+.conn-menu-none {
+  padding: 6px 8px;
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.conn-rowmenu {
+  flex-shrink: 0;
+}
+
+/* The kebab sits alone on a row, so it has to look like a control rather than a
+   stray glyph: square, the same height as the buttons it replaced, and with a
+   hit area big enough to aim at. */
+/* The kebab sits alone on a row, so it has to read as a control rather than a
+   stray glyph: a square the same height as a normal button, with a hit area big
+   enough to aim at. btn-small left it about 25px tall around a 16px icon. */
+.conn-kebab {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.conn-kebab svg {
+  width: 17px;
+  height: 17px;
+}
+
+@media (max-width: 560px) {
+  .conn-menu {
+    min-width: 0;
+    width: min(88vw, 340px);
+  }
+  .conn-menu-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.conn-menu-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 6px 0;
+}
+
+/* The escape hatch, set apart on purpose: it is what you reach for when none of
+   the named providers fit, not one more of them. */
+.conn-menu-other {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  font-weight: 600;
+}
+
+.conn-menu-sub {
+  font-weight: 400;
+  font-size: 11px;
+  opacity: 0.6;
+}
+
+.conn-textarea {
+  width: 100%;
+  font-size: 12px;
+  line-height: 1.45;
+  resize: vertical;
+}
+
+/* Visible to a screen reader, not on screen. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Loading placeholders. They exist to hold the space a list is about to take,
+   so arriving data does not shove the page around. The shimmer is deliberately
+   faint -- it should read as "not yet", not as content. */
+/* The connections tab shares the document-style layout the settings and logs
+   tabs use. */
+.ws-connectionswrap {
+  min-width: 0;
+}
+
+.skeleton-row {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 13px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.skeleton-row:last-child {
+  border-bottom: none;
+}
+
+.skeleton-bar {
+  height: 11px;
+  border-radius: 5px;
+  background: linear-gradient(90deg,
+    color-mix(in srgb, currentColor 9%, transparent) 25%,
+    color-mix(in srgb, currentColor 15%, transparent) 37%,
+    color-mix(in srgb, currentColor 9%, transparent) 50%);
+  background-size: 300% 100%;
+  animation: skeleton-shimmer 1.5s ease-in-out infinite;
+}
+
+.skeleton-bar-wide {
+  width: 42%;
+  max-width: 260px;
+}
+
+.skeleton-bar-narrow {
+  width: 65%;
+  max-width: 420px;
+  height: 9px;
+  opacity: 0.7;
+}
+
+.skeleton-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 16px;
+}
+
+.skeleton-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 132px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+@keyframes skeleton-shimmer {
+  0% { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+
+/* Motion is decoration here; the reserved space is the actual fix. */
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-bar {
+    animation: none;
+  }
+}
+
+/* A confirm step is one sentence and two buttons; it should not open at the
+   width of a form. */
+.modal-confirm {
+  max-width: 30rem;
+}
+
+.confirm-body {
+  margin-bottom: 4px;
 }

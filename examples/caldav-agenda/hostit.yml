@@ -1,0 +1,4 @@
+description: The next seven days across every calendar you have granted it
+mode: app
+prepare: pip install --quiet --user caldav icalendar recurring-ical-events
+run: python3 app.py

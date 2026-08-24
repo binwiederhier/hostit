@@ -30,6 +30,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"heckel.io/hostit/assistant"
+	"heckel.io/hostit/connections"
 	"heckel.io/hostit/controlconf"
 	"heckel.io/hostit/node"
 	"heckel.io/hostit/preview"
@@ -61,6 +62,13 @@ type Server struct {
 	// grants signs the per-app credential a private app's visitor carries on the
 	// app's own hostname, where the session cookie does not reach (appaccess.go).
 	grants *appgrant.Signer
+	// connections is credential custody for the accounts and secrets an owner
+	// connects; nil only if its key could not be loaded.
+	connections *connectionManager
+	// mcp holds MCP consents in flight. Separate from connections because a
+	// half-finished consent is not a credential: it is browser state with a
+	// deadline, and it dies with the process on purpose (control/mcp.go).
+	mcp    *mcpBroker
 	api    http.Handler
 	socket http.Handler
 	proxy  http.Handler
@@ -121,8 +129,27 @@ func New(conf *controlconf.Config, apps *Manager, users *user.Manager) *Server {
 		grants:         appgrant.NewSigner(conf.SessionKey, appGrantTTL),
 		usernameForUID: usernameForUID,
 		proxies:        NewProxyRegistry(),
+		mcp:            newMCPBroker(),
 	}
 	s.exchangeGoogleCode = s.exchangeGoogleCodeLive
+	// Connections reuse the instance's Google OAuth client and come back on the
+	// same /auth/callback the login uses, told apart by the state parameter --
+	// so connecting an account needs no second redirect URI registered with the
+	// provider. Each provider's own OAuth client comes from the instance's
+	// config (connections: in control.yml); one with no client is not offered.
+	if key, err := connections.LoadOrCreateKey(conf.DataDir); err != nil {
+		slog.Warn("Connections disabled: cannot load the credential key", "error", err)
+	} else {
+		s.connections = newConnectionManager(apps.Store(), key, conf)
+		// An operator's own providers, from connections: in control.yml. A
+		// malformed entry is fatal on purpose: it is the file they just edited,
+		// and a provider silently missing from a menu is the hardest possible
+		// way to find out it is wrong.
+		if err := s.connections.loadCustomProviders(conf); err != nil {
+			slog.Error("Cannot load the custom connection providers from control.yml", "error", err)
+			os.Exit(1)
+		}
+	}
 	// The Manager builds the desired state control asserts on nodes; the
 	// per-app keys and limits in it need the user tables, which live here.
 	apps.SetPolicy(&serverPolicy{s})
@@ -139,7 +166,7 @@ func New(conf *controlconf.Config, apps *Manager, users *user.Manager) *Server {
 	// subscription (a sandboxed claude -p). Its tools are the app's own operations,
 	// so it is confined to one app the way an agent token is.
 	if conf.AssistantAvailable() {
-		s.assistantOps = &appOps{apps: apps, node: apps.NodeAgent(), changed: s.assistantChanged}
+		s.assistantOps = &appOps{apps: apps, node: apps.NodeAgent(), changed: s.assistantChanged, server: s}
 		s.assistant = assistant.NewManager(assistant.NewClient(conf.AnthropicAPIKey), s.assistantOps, &appTranscripts{store: apps.Store()}, credentials(conf))
 		// Wire the Claude Max (subscription) backend whenever its token is configured,
 		// so selecting "Claude.ai" actually uses the subscription. Its presence is the

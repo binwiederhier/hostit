@@ -14,6 +14,39 @@ before either is built.
 
 ## Now (next few sessions)
 
+### 0. Connections: what is left before it ships
+
+Built on `connections-v2` and running on stage. Nineteen providers, two of them
+with live OAuth clients (GitHub, Discord) and Google's two on the login client,
+plus **MCP servers** (added by URL, no client to register -- see
+`docs/features/mcp-servers.md`). Docs both ways; e2e covers the whole flow.
+`plans/260819-connections.md` is the original design, superseded in places by
+what was built.
+
+Open, in the order that matters:
+
+- **OAuth clients for Slack, Linear, Jira and HubSpot.** The providers are built;
+  each needs a client registered and dropped in `secrets/<env>.yml`. Nothing else.
+  (Slack's scopes must be added as BOT token scopes, not user ones: hostit stores
+  the top-level `access_token` from `oauth.v2.access`, which is the bot token.)
+- **Google verification for Calendar.** Free (sensitive scope, no CASA), and it
+  is what removes the 7-day refresh-token expiry that otherwise means
+  reconnecting every account weekly. Gmail is the expensive one and is dominated
+  by the IMAP credential for a personal instance.
+- **The `examples/caldav-agenda` app has never been run.** It needs a CalDAV
+  credential nobody has attached yet. Until then it is untested code.
+- **Prod.** Nothing here has gone near it; the branch is unmerged and unreleased.
+- **`/.well-known/oauth-client` must be publicly reachable** wherever MCP is used:
+  an authorization server fetches it to identify hostit, so a deploy that hides it
+  behind auth breaks every MCP consent. Untested against a real third-party MCP
+  server -- only against the fakes in `mcp/` and `control/mcp_test.go`.
+
+Known limits, deliberately accepted (see docs/features/connections.md):
+the key sits beside the database so this protects a copied database and not root;
+`meta` is not encrypted; granting an app a credential grants it to everyone who
+can run code in that app, collaborators included; and the assistant is told not
+to print tokens rather than prevented, with redaction as a backstop.
+
 ### 1. Finish the shell-path move (a release-sized cleanup, now safe)
 
 VERIFIED SAFE 2026-08-21: **zero** passwd entries still name the old path on
@@ -43,34 +76,37 @@ that twice would be a mistake.
 
 ## Next (decide, then build)
 
-### 3. Decide the credential-brokering shape
+### 3. DECIDED: the credential-brokering shape (both, deliberately)
 
-The decision is cheap and unblocks two other items (#4 capabilities and #8 the
-outside-in MCP server, which must not invent a second auth story). Building
-either shape is expensive, which is exactly why the decision comes first and on
-its own.
+Resolved by building it. The two plans were not actually alternatives, and the
+answer is that the RIGHT shape depends on what is on the other end:
 
-Two plans disagree, deliberately:
+- **Broker the credential** (`plans/260818-app-capabilities.md`) for a vendor with
+  its own SDK -- Google, Slack, GitHub, an IMAP mailbox. hostit holds the refresh
+  token and hands out a short-lived access token; the app uses the vendor's SDK
+  and hostit grows no per-vendor API surface. This is `connections/`.
+- **Be the client** (`plans/260818-hostit-broker-design.md`) for MCP. hostit holds
+  the token and makes the calls, because an MCP token is not scoped to the grant:
+  it opens the whole server, so handing it over makes the grant decorative. This
+  is `mcp/` + `control/mcp.go`.
 
-- `plans/260818-app-capabilities.md` -- **capability per integration**. hostit
-  holds the credential and offers a named capability (AI first, read-only
-  GitHub second to prove the abstraction). Fewer moving parts, one
-  implementation per thing.
-- `plans/260818-hostit-broker-design.md` -- **one broker**. hostit becomes a
-  generic MCP client: an owner connects an MCP server once and approves
-  specific tools, each app is granted a subset, and the app POSTs
-  `{server, tool, args}` to a loopback listener in its own container. One
-  implementation total, but it needs a registry, an OAuth client, per-owner
-  secret custody and a control->node credential push.
+What the broker plan got right and the build kept: one implementation for all MCP
+servers, per-owner custody, an OAuth client that costs nothing per server. What it
+got wrong: it wanted a registry and a control->node credential push. Neither was
+needed -- the app calls control's existing socket, and control already holds the
+credential, so there is nothing to push anywhere.
 
-The broker's own build order starts with a scoped, revocable static token from
-the upstream service, precisely so hostit's first cut needs no OAuth client at
-all -- worth taking seriously, because the OAuth half (dynamic client
-registration, PKCE, refresh rotation, encrypted custody) is most of its cost.
+What it wanted to defer (the OAuth half: registration, PKCE, refresh rotation)
+turned out to be the cheap part, because MCP replaced dynamic client registration
+with Client ID Metadata Documents. hostit serves one JSON document and registers
+with nobody.
 
-Questions hostit owns regardless of shape: what encrypts a stored credential at
-rest, how control decides which nodes need a push and when a node purges one,
-and whose credential a collaborator-shared app uses.
+Left open by the decision: per-tool grants. A grant is whole-server today, with
+the tools listed in the UI so the owner sees what they are agreeing to.
+
+Also settled since: providers are no longer operator-only. A user can bring
+their own OAuth client (see docs/features/connections.md, "Three tiers of
+provider"), which was the last thing making the catalog feel closed.
 
 ### 4. App capabilities: credentials an app uses but never holds
 
@@ -149,6 +185,14 @@ is an app calling OUT, and they must not invent two auth stories. The broker
 design carries this as its item #6 and expects it to be cheap once the broker
 exists: the same "call an approved tool as owner X" function, wrapped in a
 server adapter instead of an HTTP relay.
+
+Note the direction is now asymmetric: hostit is a good MCP **client** (`mcp/`,
+item #3) and still not a **server** anyone can point at from outside. The client
+work does not do this for you, but it does settle the auth story -- if hostit
+serves MCP over HTTP it should be the same specs it already speaks as a client
+(RFC 9728 metadata, PKCE, resource indicators) rather than a bearer token stapled
+on, and `mcp/discovery.go` is the description of what such a server has to
+publish.
 
 `hostit mcp` already exists (`appcli/mcp.go`) but it is hidden, stdio-only, and
 built for one caller: it runs INSIDE the assistant sandbox as the app's uid and
@@ -338,11 +382,14 @@ months.
   real: professornoodle.com's bare apex has no native way to reach www, and is
   handled in yayagram's own handler today.
 
-- **API path harmonization (/v1/self vs /api).** The app socket speaks /v1/self
-  while the public API speaks /api; the relay work (2026-08-20) kept both on
-  purpose. Any future rename must keep /v1/self answering, because bind-mounted
-  container binaries upgrade late. Explicitly parked ("let's leave that alone
-  for this round"); revisit only with a concrete win in hand.
+- **API path harmonization (/v1/self vs /api). DONE 2026-08-23**, and the reason
+  it was parked turned out to be wrong: hostit-app is a read-only BIND MOUNT from
+  the host (verified on a live container), so it upgrades the instant the deb
+  lands rather than late. The surface now answers at BOTH /v1 and /api/container.
+  Kept here rather than deleted for the trap it hid: the node's app socket
+  rejects everything under /api/ as "operator commands, wrong socket", and only a
+  REMOTE node shows it -- control's own socket never passes through that guard,
+  so the unit test was green while every app on stage-2 got a 501.
 
 - **Can htop inside the container show only the container's resources?**
   EXPLORED 2026-08-19 on stage (podman 4.9.3, crun 1.14.1, Ubuntu 24.04).

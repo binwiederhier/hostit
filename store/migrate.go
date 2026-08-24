@@ -342,6 +342,89 @@ var (
 		);
 		CREATE INDEX idx_app_viewer_user ON app_viewer (user_id);
 	`,
+		// Slots 30 and 31 are BURNED, for the same reason slot 23 is: the
+		// redirect work (a Domain.RedirectTo column, then an app_redirect table)
+		// was built, run on stage, and reverted on 2026-08-22. Stage therefore
+		// records version 31 while the code that shipped stops at 29. Two no-ops
+		// keep every history aligned -- a clean database runs nothing real here,
+		// a stage-touched one skips exactly the entries it already counted. See
+		// TODO.md, Deferred.
+		`
+		SELECT 1;
+	`,
+		`
+		SELECT 1;
+	`,
+		// Connections and credentials: the accounts and secrets an OWNER attaches
+		// once, which their apps can be granted. secret holds ciphertext, never a
+		// usable credential; the key lives outside the database.
+		//
+		// Keyed on an id with a user-chosen slug beside it, so one owner can hold
+		// several of the same provider (two Google Calendars) and an app names the
+		// one it wants. app_connection therefore points at a connection id, not a
+		// provider.
+		//
+		// The DROPs are deliberate: the abandoned PoC (burned slot 23) left
+		// differently-shaped tables of the same name on any database that ran it.
+		// They hold nothing anyone can still use -- the key that decrypts them is
+		// long gone -- so this reclaims the names rather than migrating them.
+		`
+		DROP TABLE IF EXISTS app_connection;
+		DROP TABLE IF EXISTS connection;
+		CREATE TABLE connection (
+			id TEXT PRIMARY KEY,
+			user_id TEXT NOT NULL,
+			slug TEXT NOT NULL,
+			provider TEXT NOT NULL,
+			kind TEXT NOT NULL,
+			label TEXT NOT NULL DEFAULT '',
+			secret TEXT NOT NULL,
+			scopes TEXT NOT NULL DEFAULT '',
+			meta TEXT NOT NULL DEFAULT '',
+			created_at INTEGER NOT NULL
+		);
+		CREATE UNIQUE INDEX idx_connection_user_slug ON connection (user_id, slug);
+		CREATE INDEX idx_connection_user ON connection (user_id);
+		CREATE TABLE app_connection (
+			app_id TEXT NOT NULL,
+			connection_id TEXT NOT NULL,
+			created_at INTEGER NOT NULL,
+			PRIMARY KEY (app_id, connection_id)
+		);
+		CREATE INDEX idx_app_connection_conn ON app_connection (connection_id);
+	`,
+
+		// Provider definitions: the operator's (owner_id = '') and each user's
+		// own. hostit's own catalog stays in Go -- it ships with the binary and
+		// has nothing to store.
+		//
+		// UNIQUE on (owner_id, name) rather than on name alone: two people may
+		// each call theirs "acme", because those are two definitions in two
+		// namespaces. Refusing that would let one user's choice of name deny it
+		// to everybody else on the instance.
+		`
+		CREATE TABLE provider (
+			id TEXT PRIMARY KEY,
+			owner_id TEXT NOT NULL DEFAULT '',
+			name TEXT NOT NULL,
+			label TEXT NOT NULL DEFAULT '',
+			kind TEXT NOT NULL,
+			scopes TEXT NOT NULL DEFAULT '',
+			issuer TEXT NOT NULL DEFAULT '',
+			auth_url TEXT NOT NULL DEFAULT '',
+			token_url TEXT NOT NULL DEFAULT '',
+			client_id TEXT NOT NULL DEFAULT '',
+			client_secret TEXT NOT NULL DEFAULT '',
+			auth_params TEXT NOT NULL DEFAULT '',
+			long_lived INTEGER NOT NULL DEFAULT 0,
+			help TEXT NOT NULL DEFAULT '',
+			name_hint TEXT NOT NULL DEFAULT '',
+			url TEXT NOT NULL DEFAULT '',
+			created_at INTEGER NOT NULL
+		);
+		CREATE UNIQUE INDEX idx_provider_owner_name ON provider (owner_id, name);
+		CREATE INDEX idx_provider_owner ON provider (owner_id);
+	`,
 	}
 )
 

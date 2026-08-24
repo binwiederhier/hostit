@@ -468,6 +468,16 @@ func (m *Manager) KeyStrings(userID string) ([]string, error) {
 }
 
 // DeleteKey removes one of the user's own profile keys
+// RenameKey changes an SSH key's label, which is only ever how a person tells
+// one from another -- the key itself is untouched.
+func (m *Manager) RenameKey(userID, id, label string) error {
+	label = strings.TrimSpace(label)
+	if label == "" {
+		return fmt.Errorf("%w: a label is required", ErrInvalid)
+	}
+	return m.store.RenameUserKey(userID, id, label)
+}
+
 func (m *Manager) DeleteKey(userID, id string) error {
 	return m.store.RemoveUserKey(userID, id)
 }

@@ -277,6 +277,9 @@ func (s *Store) RemoveApp(name string) error {
 	if _, err := s.db.Exec(deleteViewersByAppQuery, app.ID); err != nil {
 		return err
 	}
+	if _, err := s.db.Exec(deleteGrantsByAppIDQuery, app.ID); err != nil {
+		return err
+	}
 	if _, err := s.db.Exec(deleteAppAssistantQuery, app.ID); err != nil {
 		return err
 	}

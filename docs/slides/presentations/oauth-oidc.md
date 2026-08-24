@@ -603,7 +603,7 @@ MCP-ecosystem answer.
     "https://apps.heckel.io/oauth/client.json",
   "client_name": "hostit",
   "redirect_uris": [
-    "https://hostit.apps.heckel.io/auth/callback"
+    "https://apps.heckel.io/auth/callback"
   ]
 }
 ```

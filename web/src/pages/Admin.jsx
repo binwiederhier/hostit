@@ -6,7 +6,7 @@ import {
   formatDate,
   Loading,
   StatusDot,
-  UsagePair, pairMB } from "../components";
+  UsagePair, pairMB, Skeleton, ConfirmDialog, DocsLink, Snippet } from "../components";
 
 // Empty input means "use the global default"; the API expects null for that.
 const numOrNull = (v) => (v === "" ? null : Number(v));
@@ -320,7 +320,7 @@ const AllApps = ({ apps, error }) => (
         </span>
       )}
     </div>
-    {apps === null && !error && <Loading label="Loading apps..." />}
+    {apps === null && !error && <Skeleton rows={4} label="Loading apps..." />}
     {apps !== null && apps.length === 0 && (
       <p className="empty">No apps yet.</p>
     )}
@@ -518,8 +518,287 @@ const InviteUser = ({ onAdded, setError }) => {
 
 // Anyone whose Google address ends in one of these domains is approved on sign
 // in, so a whole company can onboard itself.
+// What this instance offers everybody, in TWO cards, because they are two
+// different things: an OAuth service someone signs in to, and a named MCP server
+// that saves them remembering a URL. One card with a kind switch in its dialog
+// read as though the switch were a detail of one thing.
+//
+// Definitions from control.yml are listed too, marked as not editable -- an
+// operator reading this page should see everything on offer, not just the half
+// that happens to live in the database.
+const InstanceProviders = ({ setError }) => {
+  const [defs, setDefs] = useState(null);
+  const [editing, setEditing] = useState(null);
+  const [removing, setRemoving] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      setDefs(await api.get("/api/providers"));
+    } catch (err) {
+      setError(err.message);
+    }
+  }, [setError]);
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const instance = (defs?.providers || []).filter((p) => p.scope === "instance");
+  const remove = async (p) => {
+    setBusy(true);
+    setError("");
+    try {
+      await api.del(`/api/providers/${encodeURIComponent(p.name)}`);
+      setRemoving(null);
+      await load();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const cards = [
+    {
+      kind: "oauth",
+      title: "Connection providers",
+      cta: "Add provider",
+      empty: "No extra providers defined. Users can only connect what hostit ships.",
+      hint: (
+        <>
+          OAuth services hostit does not ship, offered to everyone here. Register an app with the
+          service, then paste its client below. Users can also add their own, which only they see.{" "}
+          <DocsLink guide="admin" section="connections" sub="custom">How this works</DocsLink>
+        </>
+      ),
+    },
+    {
+      kind: "mcp",
+      title: "MCP servers",
+      cta: "Add MCP server",
+      empty: "No named servers. Users can still paste any MCP URL themselves.",
+      hint: (
+        <>
+          Named MCP servers, so a user picks a name rather than remembering a URL. No client and no
+          secret -- just a label and the endpoint. Purely a shortcut: pasting any URL always works.{" "}
+          <DocsLink guide="admin" section="connections" sub="mcpsetup">How this works</DocsLink>
+        </>
+      ),
+    },
+  ];
+
+  return (
+    <>
+      {cards.map((card) => {
+        const rows = instance.filter((p) => (card.kind === "mcp") === (p.kind === "mcp"));
+        return (
+          <section className="card" key={card.kind}>
+            <div className="conn-head">
+              <h2>{card.title}</h2>
+              <button
+                type="button"
+                className="btn btn-primary btn-small"
+                onClick={() => setEditing({ kind: card.kind })}
+              >
+                {card.cta}
+              </button>
+            </div>
+            <p className="hint">{card.hint}</p>
+            {defs === null && <p className="hint">Loading...</p>}
+            {defs !== null && rows.length === 0 && <p className="hint">{card.empty}</p>}
+            {rows.map((p) => (
+              <div key={`${p.kind}:${p.name}`} className="conn-row">
+                <div className="conn-id">
+                  <span className="conn-name">{p.label}</span>
+                  <span className="conn-note">
+                    <span className="mono">{p.name}</span>
+                    {p.kind === "mcp" ? <> {"--"} <span className="mono">{p.url}</span></> : null}
+                    {!p.editable && " -- from hostit or control.yml"}
+                  </span>
+                </div>
+                {p.editable && (
+                  <div className="menu conn-rowmenu">
+                    <button type="button" className="btn btn-small" onClick={() => setEditing(p)}>Edit</button>
+                    <button type="button" className="btn btn-small" onClick={() => setRemoving(p)}>Remove</button>
+                  </div>
+                )}
+              </div>
+            ))}
+          </section>
+        );
+      })}
+      {editing && (
+        <AdminProviderDialog
+          kind={editing.kind}
+          existing={editing.name ? editing : null}
+          redirectURI={defs?.redirect_uri || ""}
+          onClose={() => setEditing(null)}
+          onSaved={async () => {
+            setEditing(null);
+            await load();
+          }}
+        />
+      )}
+      {removing && (
+        <ConfirmDialog
+          title={`Remove ${removing.label}?`}
+          confirmLabel="Remove"
+          busy={busy}
+          onClose={() => setRemoving(null)}
+          onConfirm={() => remove(removing)}
+          body={
+            removing.kind === "mcp" ? (
+              <>
+                The shortcut goes; servers already connected through it keep working, since a
+                connection holds the URL itself.
+              </>
+            ) : (
+              <>
+                Nobody will be able to connect it any more. Accounts already connected through it
+                keep working until their token expires and then cannot be refreshed.
+              </>
+            )
+          }
+        />
+      )}
+    </>
+  );
+};
+
+// The instance half of the provider dialog. Same fields as a user's own, with
+// scope pinned to the whole instance.
+const AdminProviderDialog = ({ kind, existing, redirectURI, onClose, onSaved }) => {
+  const [label, setLabel] = useState(existing?.label || "");
+  const [name, setName] = useState(existing?.name || "");
+  const [form, setForm] = useState({
+    client_id: existing?.client_id || "",
+    client_secret: "",
+    auth_url: existing?.auth_url || "",
+    token_url: existing?.token_url || "",
+    issuer: existing?.issuer || "",
+    scopes: (existing?.scopes || []).join(" "),
+    url: existing?.url || "",
+  });
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
+
+  const endpointsOK =
+    kind === "mcp" ? form.url.trim() : form.issuer.trim() || (form.auth_url.trim() && form.token_url.trim());
+  const valid =
+    label.trim() && name.trim().length >= 3 && endpointsOK &&
+    (kind === "mcp" || (form.client_id.trim() && (existing || form.client_secret.trim())));
+
+  const submit = async (e) => {
+    e.preventDefault();
+    if (busy || !valid) return;
+    setBusy(true);
+    setError("");
+    const body = {
+      name: name.trim().toLowerCase(), label: label.trim(), kind, scope: "instance",
+      ...(kind === "mcp"
+        ? { url: form.url.trim() }
+        : {
+            client_id: form.client_id.trim(),
+            client_secret: form.client_secret.trim(),
+            auth_url: form.auth_url.trim(),
+            token_url: form.token_url.trim(),
+            issuer: form.issuer.trim(),
+            scopes: form.scopes.split(/\s+/).filter(Boolean),
+          }),
+    };
+    try {
+      if (existing) {
+        await api.put(`/api/providers/${encodeURIComponent(existing.name)}`, body);
+      } else {
+        await api.post("/api/providers", body);
+      }
+      onSaved();
+    } catch (err) {
+      setError(err.message);
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true" onMouseDown={onClose}>
+      <div className={"card modal modal-sheet" + (kind === "mcp" ? "" : " modal-tools")} onMouseDown={(e) => e.stopPropagation()}>
+        <h2>
+          {existing
+            ? `Edit ${existing.label}`
+            : kind === "mcp"
+              ? "Add an MCP server"
+              : "Add a connection provider"}
+        </h2>
+        <form onSubmit={submit}>
+          {error && <p className="err">{error}</p>}
+          {kind === "oauth" && (
+            <>
+              <p className="hint">Register an OAuth app with the service, using this callback URL:</p>
+              <Snippet text={redirectURI} />
+            </>
+          )}
+          <div className={kind === "mcp" ? undefined : "conn-grid"}>
+          <label className="conn-field">
+            <span>Name</span>
+            <input type="text" value={label} onChange={(e) => setLabel(e.target.value)}
+              placeholder="Acme" aria-label="Provider name" autoFocus disabled={busy} />
+          </label>
+          <label className="conn-field">
+            <span>Reference</span>
+            <input type="text" className="mono" value={name} onChange={(e) => setName(e.target.value)}
+              placeholder="acme" aria-label="Provider reference" disabled={busy || Boolean(existing)} />
+          </label>
+          {kind === "mcp" ? (
+            <label className="conn-field">
+              <span>Server URL</span>
+              <input type="text" className="mono" value={form.url} onChange={set("url")}
+                placeholder="https://mcp.example.com/mcp" aria-label="Server URL" disabled={busy} />
+            </label>
+          ) : (
+            <>
+              <label className="conn-field">
+                <span>Client ID</span>
+                <input type="text" className="mono" value={form.client_id} onChange={set("client_id")} aria-label="Client ID" disabled={busy} />
+              </label>
+              <label className="conn-field">
+                <span>Client secret{existing ? " (leave blank to keep)" : ""}</span>
+                <input type="password" value={form.client_secret} onChange={set("client_secret")} aria-label="Client secret" disabled={busy} />
+              </label>
+              <label className="conn-field">
+                <span>Scopes</span>
+                <input type="text" className="mono" value={form.scopes} onChange={set("scopes")} placeholder="read write" aria-label="Scopes" disabled={busy} />
+              </label>
+              <label className="conn-field">
+                <span>Issuer (optional)</span>
+                <input type="text" className="mono" value={form.issuer} onChange={set("issuer")} placeholder="https://acme.example.com" aria-label="Issuer" disabled={busy} />
+              </label>
+              <label className="conn-field">
+                <span>Authorize URL</span>
+                <input type="text" className="mono" value={form.auth_url} onChange={set("auth_url")} aria-label="Authorize URL" disabled={busy} />
+              </label>
+              <label className="conn-field">
+                <span>Token URL</span>
+                <input type="text" className="mono" value={form.token_url} onChange={set("token_url")} aria-label="Token URL" disabled={busy} />
+              </label>
+            </>
+          )}
+          </div>
+          <div className="btn-row">
+            <button type="button" className="btn" onClick={onClose} disabled={busy}>Cancel</button>
+            <button type="submit" className="btn btn-primary" disabled={busy || !valid}>
+              {busy ? "Saving..." : "Save"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+};
+
 const AllowedDomains = ({ setError }) => {
   const [domains, setDomains] = useState(null);
+  const [removing, setRemoving] = useState(null);
   const [domain, setDomain] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -554,14 +833,8 @@ const AllowedDomains = ({ setError }) => {
   };
 
   const remove = async (d) => {
-    if (
-      !window.confirm(
-        `Stop auto-approving @${d.domain}? Users already approved keep their accounts.`,
-      )
-    ) {
-      return;
-    }
     setError("");
+    setRemoving(null);
     try {
       await api.del(`/api/domains/${encodeURIComponent(d.domain)}`);
       await load();
@@ -581,7 +854,16 @@ const AllowedDomains = ({ setError }) => {
         (gmail.com, outlook.com, ...) are refused: allowing one would let anyone
         in.
       </p>
-      {domains === null && <Loading label="Loading domains..." />}
+      {domains === null && <Skeleton rows={2} label="Loading domains..." />}
+      {removing && (
+        <ConfirmDialog
+          title={`Stop auto-approving @${removing.domain}?`}
+          confirmLabel="Stop auto-approving"
+          onClose={() => setRemoving(null)}
+          onConfirm={() => remove(removing)}
+          body="New sign-ups from this domain will wait for approval again. Users already approved keep their accounts."
+        />
+      )}
       {domains !== null && domains.length === 0 && (
         <p className="empty">No domains yet: every sign-up needs approval.</p>
       )}
@@ -598,7 +880,7 @@ const AllowedDomains = ({ setError }) => {
               <button
                 type="button"
                 className="btn btn-small btn-danger"
-                onClick={() => remove(d)}
+                onClick={() => setRemoving(d)}
               >
                 Remove
               </button>
@@ -810,7 +1092,7 @@ const Cluster = ({ status, error }) => {
   if (status === null)
     return (
       <div className="card">
-        {!error && <Loading label="Loading cluster..." />}
+        {!error && <Skeleton rows={3} label="Loading cluster..." />}
       </div>
     );
   const quiet = [...(status.nodes || []), ...(status.proxies || [])].filter(
@@ -935,7 +1217,7 @@ const AdminInner = () => {
       <div className="card">
         <h2>Users</h2>
         {(users === null || settings === null) && !error && (
-          <Loading label="Loading users..." />
+          <Skeleton rows={4} label="Loading users..." />
         )}
         {users !== null && settings !== null && (
           <div className="table-wrap">
@@ -974,6 +1256,7 @@ const AdminInner = () => {
         </p>
       </div>
       <AllowedDomains setError={setError} />
+      <InstanceProviders setError={setError} />
       <AllApps apps={apps} error={error} />
       {settings !== null && (
         <Defaults settings={settings} onSaved={load} setError={setError} />

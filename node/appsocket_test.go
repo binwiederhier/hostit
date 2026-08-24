@@ -150,3 +150,26 @@ func TestNodeRelaysRatherThanAnswering(t *testing.T) {
 	assert.Equal(t, http.StatusNotImplemented, rr.Code)
 	assert.Contains(t, rr.Body.String(), "hostit-control")
 }
+
+// The operator-command guard must not swallow the app surface's /api/container
+// alias. It rejects /api/ because operator commands moved to control's socket
+// -- but /api/container is the app talking about ITSELF, on exactly this socket, and
+// only a remote node ever exercises the difference.
+func TestTheOperatorGuardLetsApiSelfThrough(t *testing.T) {
+	t.Parallel()
+	for _, c := range []struct {
+		path    string
+		blocked bool
+	}{
+		{"/api", true},
+		{"/api/apps", true},
+		{"/api/apps/blog/deploy", true},
+		{"/api/container", false},
+		{"/api/container/connections", false},
+		{"/api/container/connections/work-cal/token", false},
+		{"/v1/self", false},
+		{"/v1/connections", false},
+	} {
+		assert.Equal(t, c.blocked, isOperatorPath(c.path), "%s", c.path)
+	}
+}

@@ -41,8 +41,19 @@ func TestAUserTokenCanDoEverythingTheWebAppCan(t *testing.T) {
 	}{
 		// The account pages
 		{"GET", "/api/account", ""},
+		{"GET", "/api/connections", ""},
+		{"POST", "/api/connections", `{"provider":"generic","slug":"a-key","values":{"secret":"x"}}`},
+		{"PUT", "/api/connections/a-key", `{"label":"renamed"}`},
+		{"POST", "/api/connections/a-key/reconnect", ""},
+		{"GET", "/api/connections/a-key/mcp/tools", ""},
+		{"GET", "/api/providers", ""},
+		{"POST", "/api/providers", `{"name":"acme","label":"Acme","client_id":"c","client_secret":"s","auth_url":"https://a/x","token_url":"https://a/t"}`},
+		{"PUT", "/api/providers/acme", `{"label":"Acme 2","client_id":"c","auth_url":"https://a/x","token_url":"https://a/t"}`},
+		{"DELETE", "/api/providers/acme", ""},
+		{"DELETE", "/api/connections/a-key", ""},
 		{"GET", "/api/account/keys", ""},
 		{"POST", "/api/account/keys", `{"label":"laptop","key":"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIB1 x@y"}`},
+		{"PUT", "/api/account/keys/k_none", `{"label":"renamed"}`},
 		{"GET", "/api/account/tokens", ""},
 		{"POST", "/api/account/tokens", `{"label":"another"}`},
 
@@ -69,6 +80,9 @@ func TestAUserTokenCanDoEverythingTheWebAppCan(t *testing.T) {
 		{"DELETE", app + "/viewers/" + friend.ID, ""},
 
 		// Domains
+		{"GET", app + "/connections", ""},
+		{"PUT", app + "/connections/a-key", ""},
+		{"DELETE", app + "/connections/a-key", ""},
 		{"GET", app + "/domains", ""},
 		{"POST", app + "/domains", `{"domain":"dash.example.org"}`},
 		{"POST", app + "/domains/dash.example.org/verify", ""},

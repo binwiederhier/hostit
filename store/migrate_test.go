@@ -77,7 +77,7 @@ func TestMigrationRecordsVersion(t *testing.T) {
 // PoC-touched database (at 23) and a clean one (at 22) still reach them.
 func TestBurnedSlotKeepsHistoriesAligned(t *testing.T) {
 	t.Parallel()
-	require.Len(t, migrations, 29)
+	require.Len(t, migrations, 33)
 	assert.Contains(t, migrations[22], "SELECT 1", "index 22 is the burned no-op slot")
 	assert.Contains(t, migrations[23], "memory_limit_mb", "the limits columns follow the burned slot")
 	assert.Contains(t, migrations[24], "memory_pool_mb", "then the per-user pools")
@@ -85,6 +85,47 @@ func TestBurnedSlotKeepsHistoriesAligned(t *testing.T) {
 	assert.Contains(t, migrations[26], "stats", "then the member machine-stats blob")
 	assert.Contains(t, migrations[27], "private", "then per-app visibility")
 	assert.Contains(t, migrations[28], "app_viewer", "then the view-only grant")
+	// 30 and 31 are burned the same way 23 is: the reverted redirect work ran on
+	// stage, so a stage database already counts them. Real work must sit after.
+	assert.Contains(t, migrations[29], "SELECT 1", "slot 30 is burned (redirect_to)")
+	assert.Contains(t, migrations[30], "SELECT 1", "slot 31 is burned (app_redirect)")
+	assert.Contains(t, migrations[31], "CREATE TABLE connection", "connections lands after the burned slots")
+	assert.Contains(t, migrations[32], "CREATE TABLE provider", "then provider definitions")
+}
+
+// A database that ran the abandoned PoC still holds its differently-shaped
+// connection tables. The new migration has to reclaim those names rather than
+// trip over them, or every such instance fails to start.
+func TestConnectionsMigrationReclaimsThePoCTables(t *testing.T) {
+	t.Parallel()
+	file := filepath.Join(t.TempDir(), "hostit.db")
+	db, err := sql.Open("sqlite", file)
+	require.NoError(t, err)
+	for i := 0; i < 29; i++ {
+		_, err := db.Exec(migrations[i])
+		require.NoError(t, err, "migration %d", i+1)
+	}
+	// The PoC's shape, as a stage database would still have it
+	_, err = db.Exec(`CREATE TABLE connection (user_id TEXT NOT NULL, provider TEXT NOT NULL, PRIMARY KEY (user_id, provider));
+	                  CREATE TABLE app_connection (app_id TEXT NOT NULL, provider TEXT NOT NULL, PRIMARY KEY (app_id, provider));
+	                  INSERT INTO connection (user_id, provider) VALUES ('u1', 'google')`)
+	require.NoError(t, err)
+	_, err = db.Exec(createSchemaVersionTableQuery)
+	require.NoError(t, err)
+	_, err = db.Exec(insertSchemaVersionQuery, 31) // as stage records it
+	require.NoError(t, err)
+	require.NoError(t, db.Close())
+
+	s, err := NewStore(file)
+	require.NoError(t, err, "a stage-shaped database must still open")
+	defer s.Close()
+
+	// The new shape is in place, and the PoC's row is gone with its old table
+	var n int
+	require.NoError(t, s.db.QueryRow(`SELECT COUNT(*) FROM connection`).Scan(&n))
+	assert.Equal(t, 0, n)
+	_, err = s.db.Exec(`INSERT INTO connection (id, user_id, slug, provider, kind, secret, created_at) VALUES ('c1','u1','work-cal','google-calendar','oauth','x',0)`)
+	assert.NoError(t, err, "the new columns exist")
 }
 
 // Migration 28 defaults every existing app to public, and 29 adds the viewer

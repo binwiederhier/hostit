@@ -4,8 +4,8 @@ import { api, ApiError, isNetworkError } from "../api";
 import { viewFromSlug, VIEW_TO_SLUG } from "../views";
 import { limitInputs, limitsPatchBody } from "../limits";
 import { visibilityChanges } from "../visibility";
-import { useReconnect } from "../hooks";
-import { CopyButton, ErrorBanner, Loading, Snippet, StatusDot, VisibilityBadge, VisibilityChoice, pairMB, usageLevel, UsagePair, cores, visibilityOf } from "../components";
+import { useDropdown, useReconnect } from "../hooks";
+import { CopyButton, DocsLink, ErrorBanner, Loading, Snippet, StatusDot, VisibilityBadge, VisibilityChoice, pairMB, usageLevel, UsagePair, cores, visibilityOf } from "../components";
 import { useSetAppHeader } from "../appHeader";
 
 // xterm is heavy and only needed when a terminal is actually opened, so it is
@@ -226,28 +226,6 @@ const UsageGrid = ({ app }) => {
 
 // A small dropdown wrapper shared by the Actions and Terminal menus: closes on an
 // outside click or Escape.
-const useDropdown = () => {
-  const [open, setOpen] = useState(false);
-  const ref = useRef(null);
-  useEffect(() => {
-    if (!open) {
-      return undefined;
-    }
-    const close = (e) => {
-      if (ref.current && !ref.current.contains(e.target)) {
-        setOpen(false);
-      }
-    };
-    const onKey = (e) => e.key === "Escape" && setOpen(false);
-    document.addEventListener("mousedown", close);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", close);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
-  return { open, setOpen, ref };
-};
 
 // A split button for the terminal: the left half (the icon) opens the web shell
 // directly; the right half (the caret) drops a menu (web shell / SSH). When a
@@ -1660,6 +1638,7 @@ const AppSettings = ({ app, isAdmin, account, showToast, onCopyToken, onRegenera
         </div>
       </section>
 
+
       <section className="ov-section">
         <h3>Collaborators</h3>
         <p className="hint">
@@ -1783,6 +1762,106 @@ const AppSettings = ({ app, isAdmin, account, showToast, onCopyToken, onRegenera
 
 // One snapshot row's actions: three inline icons on a wide screen, collapsed into
 // a single kebab menu on a phone (CSS swaps which one shows).
+// The app's connections, on their own tab: granting a credential is a thing you
+// come here to do, not a row you scroll past at the bottom of Settings. It loads
+// its own data rather than borrowing Settings' state, so the two tabs do not
+// have to be open together for either to work.
+const AppConnections = ({ name }) => {
+  const [conns, setConns] = useState(null);
+  const [error, setError] = useState("");
+
+  const load = useCallback(async () => {
+    try {
+      setConns(await api.get(`/api/apps/${encodeURIComponent(name)}/connections`));
+    } catch (err) {
+      setError(err.message);
+      setConns({ granted: [], available: [] });
+    }
+  }, [name]);
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const onToggle = async (c, granted) => {
+    setError("");
+    try {
+      const path = `/api/apps/${encodeURIComponent(name)}/connections/${encodeURIComponent(c.slug)}`;
+      if (granted) {
+        await api.del(path);
+      } else {
+        await api.put(path, {});
+      }
+      await load();
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  return (
+  <div className="ov">
+    <ErrorBanner message={error} onDismiss={() => setError("")} />
+    <section className="ov-section">
+        <h3>Connections</h3>
+        <p className="hint">
+          Accounts and credentials you attached on the <Link to="/connections">Connections</Link>{" "}
+          page. Granting one lets this app act as you against that account -- it asks hostit for a
+          usable token when it needs one, so no credential is stored in the app, and revoking takes
+          effect immediately. An MCP server is granted the same way, except hostit keeps the token
+          and makes the calls, so the app only ever sends a tool name.{" "}
+          <DocsLink guide="user" section="connections">How connections work</DocsLink>
+        </p>
+        {conns === null ? (
+          <p className="hint">Loading...</p>
+        ) : (conns.granted || []).length === 0 && (conns.available || []).length === 0 ? (
+          <p className="hint">
+            Nothing attached yet. Connect an account or add a credential in your{" "}
+            <Link to="/profile">profile</Link> first.
+          </p>
+        ) : (
+          <>
+            {(conns.granted || []).map((c) => (
+              <div key={c.slug} className="conn-row">
+                <div className="conn-id">
+                  <span className="conn-name">
+                    <span className="mono">{c.slug}</span>
+                    <span className="conn-provider">{c.provider_label}</span>
+                  </span>
+                  <span className="conn-note">
+                    {c.kind === "mcp" ? (
+                      <>
+                        this app calls its tools at{" "}
+                        <span className="mono">/v1/mcp/{c.slug}/call</span>
+                        {(c.tools || []).length > 0 && ` -- ${c.tools.length} tool${c.tools.length === 1 ? "" : "s"}`}
+                      </>
+                    ) : (
+                      <>
+                        this app reads it at <span className="mono">/v1/connections/{c.slug}/token</span>
+                      </>
+                    )}
+                  </span>
+                </div>
+                <button type="button" className="btn btn-small" onClick={() => onToggle(c, true)}>Revoke</button>
+              </div>
+            ))}
+            {(conns.available || []).map((c) => (
+              <div key={c.slug} className="conn-row conn-ungranted">
+                <div className="conn-id">
+                  <span className="conn-name">
+                    <span className="mono">{c.slug}</span>
+                    <span className="conn-provider">{c.provider_label}</span>
+                  </span>
+                  <span className="conn-note">{c.label || "not granted to this app"}</span>
+                </div>
+                <button type="button" className="btn btn-small btn-primary" onClick={() => onToggle(c, false)}>Grant</button>
+              </div>
+            ))}
+          </>
+        )}
+      </section>
+  </div>
+  );
+};
+
 const SnapRowActions = ({ busy, onRollback, onFork, onDelete }) => {
   const { open, setOpen, ref } = useDropdown();
   const pick = (fn) => () => {
@@ -1991,6 +2070,13 @@ const AppDetail = ({ account, refreshAccount }) => {
   // and an unknown slug is null -- rendered as a not-found further down, after
   // the hooks (an early return here would change the hook order).
   const view = viewFromSlug(viewSlug, rememberedView(name));
+  // Has the terminal tab ever been opened on this page? Once it has, the
+  // terminal stays mounted so switching away does not kill the session; before
+  // it has, there is nothing to connect. See where it is rendered.
+  const [termOpened, setTermOpened] = useState(view === "terminal");
+  useEffect(() => {
+    if (view === "terminal") setTermOpened(true);
+  }, [view]);
   const setView = (v) => navigate(`/app/${encodeURIComponent(name)}/${VIEW_TO_SLUG[v] || "assistant"}`);
   useEffect(() => {
     if (view === null) {
@@ -2383,7 +2469,7 @@ const AppDetail = ({ account, refreshAccount }) => {
 
   return (
     <>
-      <div className={"ws-page" + (view === "settings" || view === "snapshots" || view === "logs" ? " ws-doc" : "")}>
+      <div className={"ws-page" + (view === "settings" || view === "snapshots" || view === "logs" || view === "connections" ? " ws-doc" : "")}>
         {/* Top bar. Left: identity (the "Running" state is left unsaid -- only the
             notable states are named). Right: the live resources beside the
             controls, all vertically centred. */}
@@ -2569,6 +2655,19 @@ const AppDetail = ({ account, refreshAccount }) => {
           <button
             type="button"
             role="tab"
+            aria-selected={view === "connections"}
+            className={"ws-viewtab" + (view === "connections" ? " on" : "")}
+            onClick={() => setView("connections")}
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+              <path d="M9 12H5a3 3 0 0 1 0-6h4M15 12h4a3 3 0 0 1 0 6h-4" />
+              <path d="M8 15h8" />
+            </svg>
+            Connections
+          </button>
+          <button
+            type="button"
+            role="tab"
             aria-selected={view === "logs"}
             className={"ws-viewtab" + (view === "logs" ? " on" : "")}
             onClick={() => setView("logs")}
@@ -2646,6 +2745,9 @@ const AppDetail = ({ account, refreshAccount }) => {
             />
           </div>
         )}
+        <div className={"ws-connectionswrap" + (view === "connections" ? "" : " ws-inactive")}>
+          <AppConnections name={app.name} />
+        </div>
         <div className={"ws-logswrap" + (view === "logs" ? "" : " ws-inactive")}>
           <Suspense fallback={<div className="ws-chat-loading">Loading logs...</div>}>
             <AppLogs name={app.name} active={view === "logs"} />
@@ -2670,9 +2772,17 @@ const AppDetail = ({ account, refreshAccount }) => {
           </Suspense>
         </div>
         <div className={"ws-termwrap" + (view === "terminal" ? "" : " ws-inactive")}>
-          <Suspense fallback={<div className="ws-chat-loading">Loading terminal...</div>}>
-            <AppTerminal name={app.name} embedded active={view === "terminal"} onSsh={() => setShowSsh(true)} />
-          </Suspense>
+          {/* Mounted only once the tab has been OPENED, and kept mounted after,
+              so switching away does not kill the session. It used to mount with
+              the page, which opened a WebSocket for everyone who never went
+              near the terminal -- and left one dialling a name that no longer
+              existed after a rename or a delete, logging a handshake error at
+              whoever happened to be looking. */}
+          {termOpened && (
+            <Suspense fallback={<div className="ws-chat-loading">Loading terminal...</div>}>
+              <AppTerminal name={app.name} embedded active={view === "terminal"} onSsh={() => setShowSsh(true)} />
+            </Suspense>
+          )}
         </div>
         {/* The assistant view (chat + preview) exists only when an Anthropic key
             is configured; otherwise the workspace opens straight into the editor. */}

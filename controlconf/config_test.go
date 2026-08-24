@@ -130,15 +130,17 @@ func TestWebHostnames(t *testing.T) {
 	t.Parallel()
 	c := NewConfig()
 	c.BaseDomain = "apps.example.com"
-	// The base domain, plus the historical hostit.<base> so old links survive
-	assert.Equal(t, []string{"apps.example.com", "hostit.apps.example.com"}, c.WebHostnames())
+	// The base domain, and only the base domain. A "hostit.<base>" alias used
+	// to be here too; two names for one thing is two to register with every
+	// OAuth provider and two to write in the documentation.
+	assert.Equal(t, []string{"apps.example.com"}, c.WebHostnames())
 	assert.True(t, c.IsWebHostname("apps.example.com"))
-	assert.True(t, c.IsWebHostname("hostit.apps.example.com"))
+	assert.False(t, c.IsWebHostname("hostit.apps.example.com"), "the retired alias is an app subdomain now")
 	assert.False(t, c.IsWebHostname("blog.apps.example.com"), "an app subdomain is not the web app")
 	assert.False(t, c.IsWebHostname("example.org"))
-	// A pinned hostname is included alongside the defaults
+	// A pinned hostname is included alongside the base domain
 	c.APIHost = "admin.example.com"
-	assert.Equal(t, []string{"admin.example.com", "apps.example.com", "hostit.apps.example.com"}, c.WebHostnames())
+	assert.Equal(t, []string{"admin.example.com", "apps.example.com"}, c.WebHostnames())
 }
 
 func TestSSHHostname(t *testing.T) {
@@ -218,4 +220,48 @@ func TestValidateRefusesAShortAdminToken(t *testing.T) {
 	assert.Contains(t, err.Error(), "16")
 	conf.AdminToken = "0d772c6a8db50b16565b8cd12d318720"
 	assert.NoError(t, conf.Validate())
+}
+
+// Per-provider OAuth clients: an instance offers exactly the providers it holds
+// a client for, and nothing else.
+func TestConnectionClients(t *testing.T) {
+	t.Parallel()
+	c := NewConfig()
+	c.ConnectionClients = map[string]OAuthClient{
+		"slack": {ClientID: "sid", ClientSecret: "ssec"},
+	}
+	id, secret := c.ConnectionClient("slack")
+	assert.Equal(t, "sid", id)
+	assert.Equal(t, "ssec", secret)
+
+	id, secret = c.ConnectionClient("discord")
+	assert.Empty(t, id)
+	assert.Empty(t, secret)
+}
+
+// Google's calendar and mail connections fall back to the login client: it is
+// the same Google Cloud OAuth client, scopes are requested per authorization
+// rather than baked into it, and an instance that can already sign in with
+// Google should not need a second registration to read a calendar.
+func TestGoogleConnectionsFallBackToTheLoginClient(t *testing.T) {
+	t.Parallel()
+	c := NewConfig()
+	c.GoogleClientID, c.GoogleClientSecret = "login-id", "login-secret"
+
+	for _, p := range []string{"google-calendar", "gmail"} {
+		id, secret := c.ConnectionClient(p)
+		assert.Equal(t, "login-id", id, p)
+		assert.Equal(t, "login-secret", secret, p)
+	}
+	// An explicit client still wins, so the two can be separated if wanted
+	c.ConnectionClients = map[string]OAuthClient{"gmail": {ClientID: "own", ClientSecret: "own-sec"}}
+	id, _ := c.ConnectionClient("gmail")
+	assert.Equal(t, "own", id)
+	id, _ = c.ConnectionClient("google-calendar")
+	assert.Equal(t, "login-id", id, "the other still falls back")
+
+	// And no Google login means no Google connections either
+	blank := NewConfig()
+	id, _ = blank.ConnectionClient("google-calendar")
+	assert.Empty(t, id)
 }

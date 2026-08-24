@@ -2,6 +2,7 @@ package store
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -266,4 +267,24 @@ func TestTransferApps(t *testing.T) {
 	tk, err = s.TokenByHash("h2")
 	require.NoError(t, err)
 	assert.Equal(t, from.ID, tk.UserID)
+}
+
+// An SSH key's label is how a person tells one from another, so it has to be
+// changeable without deleting the key and re-adding it everywhere.
+func TestRenameUserKey(t *testing.T) {
+	t.Parallel()
+	s := newTestStore(t)
+	k := &UserKey{UserID: "u1", Label: "laptop", Key: "ssh-ed25519 AAAA x@y", CreatedAt: time.Now()}
+	require.NoError(t, s.AddUserKey(k))
+
+	require.NoError(t, s.RenameUserKey("u1", k.ID, "work laptop"))
+	keys, err := s.UserKeys("u1")
+	require.NoError(t, err)
+	require.Len(t, keys, 1)
+	assert.Equal(t, "work laptop", keys[0].Label)
+	assert.Equal(t, "ssh-ed25519 AAAA x@y", keys[0].Key, "the key itself is untouched")
+
+	// Another account cannot rename it, and a missing key is not found
+	assert.ErrorIs(t, s.RenameUserKey("u2", k.ID, "stolen"), ErrKeyNotFound)
+	assert.ErrorIs(t, s.RenameUserKey("u1", "nosuch", "x"), ErrKeyNotFound)
 }

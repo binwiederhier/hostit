@@ -120,11 +120,29 @@ type Config struct {
 	AWSHostedZoneID string `yaml:"aws-hosted-zone-id"`
 
 	// Web app and user accounts
-	GoogleClientID     string   `yaml:"google-client-id"`     // Google OAuth client ID; empty disables the web login
-	GoogleClientSecret string   `yaml:"google-client-secret"` // Google OAuth client secret
-	SessionKey         string   `yaml:"session-key"`          // Secret for signing session cookies; generated if empty
-	AdminEmails        []string `yaml:"admin-emails"`         // These emails become active admins on first login
-	Breakglass         bool     `yaml:"breakglass"`           // Allow the admin token to mint a session for an admin email (no Google); for e2e/recovery
+	GoogleClientID     string `yaml:"google-client-id"`     // Google OAuth client ID; empty disables the web login
+	GoogleClientSecret string `yaml:"google-client-secret"` // Google OAuth client secret
+
+	// ConnectionClients are the OAuth clients this instance holds for each
+	// connectable provider, keyed by provider name (slack, discord, github,
+	// jira, ...). A provider with no client is simply not offered -- there is
+	// no shared hostit client to inherit, because registering one and getting
+	// it reviewed is the operator's own relationship with the provider.
+	ConnectionClients map[string]OAuthClient `yaml:"connections"`
+	// OutboundAllowPrivate lets hostit fetch URLs that resolve to private,
+	// loopback or link-local addresses. OFF by default, and it should stay off
+	// unless you mean it: users supply the URLs hostit fetches (an MCP server,
+	// a custom provider's issuer), so this is what stands between an ordinary
+	// account and the cloud metadata service. Turn it on only for a self-hosted
+	// instance whose MCP servers really are on its own LAN.
+	OutboundAllowPrivate bool `yaml:"outbound-allow-private"`
+	// MCPServers are named MCP servers offered to everyone, so a user picks a
+	// name rather than remembering a URL. Purely a shortcut: anyone can still
+	// paste any URL. Keyed by a short name.
+	MCPServers  map[string]MCPServer `yaml:"mcp-servers"`
+	SessionKey  string               `yaml:"session-key"`  // Secret for signing session cookies; generated if empty
+	AdminEmails []string             `yaml:"admin-emails"` // These emails become active admins on first login
+	Breakglass  bool                 `yaml:"breakglass"`   // Allow the admin token to mint a session for an admin email (no Google); for e2e/recovery
 	// ListenCluster is where members on OTHER machines dial in: mTLS, with
 	// per-member certificates from the cluster CA. Empty on a single-box
 	// install, which admits no remote members at all.
@@ -215,10 +233,76 @@ func (c *Config) WebEnabled() bool {
 	return c.GoogleClientID != "" && c.GoogleClientSecret != ""
 }
 
+// OAuthClient is one provider's registered client.
+type OAuthClient struct {
+	ClientID     string `yaml:"client-id"`
+	ClientSecret string `yaml:"client-secret"`
+
+	// The rest describe a provider hostit does NOT ship, written by the
+	// operator. A catalog entry was always pure data, so supplying that data
+	// here gets the same behaviour with no code -- see connections/custom.go.
+	//
+	// Setting Label is what marks an entry as describing a provider rather than
+	// just holding a client for one hostit already knows.
+	Label  string   `yaml:"label"`
+	Scopes []string `yaml:"scopes"`
+	// Issuer stands in for AuthURL and TokenURL: hostit reads the service's own
+	// authorization-server metadata to find them.
+	Issuer         string            `yaml:"issuer"`
+	AuthURL        string            `yaml:"auth-url"`
+	TokenURL       string            `yaml:"token-url"`
+	AuthParams     map[string]string `yaml:"auth-params"`
+	LongLivedToken bool              `yaml:"long-lived-token"`
+	Help           string            `yaml:"help"`
+	NameHint       string            `yaml:"name-hint"`
+}
+
+// MCPServer is one named MCP server the operator offers.
+type MCPServer struct {
+	Label string `yaml:"label"`
+	URL   string `yaml:"url"`
+	Help  string `yaml:"help"`
+}
+
+// DescribesProvider reports whether this entry defines a provider of its own,
+// rather than supplying a client for one hostit ships.
+//
+// The label is the marker because it is the one field a custom entry cannot do
+// without -- it is what a person reads in the Add menu -- and the one a
+// client-only entry has no reason to set.
+func (c OAuthClient) DescribesProvider() bool {
+	return strings.TrimSpace(c.Label) != ""
+}
+
+// ConnectionClient returns the OAuth client for a provider, or empties if this
+// instance holds none (in which case the provider is not offered).
+//
+// Google's connections fall back to the LOGIN client: it is the same Google
+// Cloud OAuth client, scopes are requested per authorization rather than baked
+// into the registration, so an instance that can already sign in with Google
+// should not need a second one to read a calendar. An explicit entry wins.
+func (c *Config) ConnectionClient(provider string) (clientID, clientSecret string) {
+	if client, ok := c.ConnectionClients[provider]; ok && client.ClientID != "" {
+		return client.ClientID, client.ClientSecret
+	}
+	if provider == "google-calendar" || provider == "gmail" {
+		return c.GoogleClientID, c.GoogleClientSecret
+	}
+	return "", ""
+}
+
 // RedirectURL is the OAuth callback URL for a login started on the given host.
 // Google matches it exactly, so the callback must come back to the hostname the
 // user actually visited; every hostname in WebHostnames should be registered.
 func (c *Config) RedirectURL(host string) string {
+	return c.WebURL(host) + "/auth/callback"
+}
+
+// WebURL is the origin of the web app as reached on the given host, falling
+// back to the canonical one for a host this instance does not serve the web app
+// on. Anything that has to hand out an absolute URL to a third party builds it
+// from here, so an instance on any hostname names itself correctly.
+func (c *Config) WebURL(host string) string {
 	scheme := "https"
 	if c.TLS == TLSOff {
 		scheme = "http"
@@ -226,7 +310,7 @@ func (c *Config) RedirectURL(host string) string {
 	if !c.IsWebHostname(host) {
 		host = c.APIHostname()
 	}
-	return fmt.Sprintf("%s://%s/auth/callback", scheme, host)
+	return fmt.Sprintf("%s://%s", scheme, host)
 }
 
 // LoadConfig reads a YAML config file on top of the defaults from NewConfig
@@ -317,15 +401,17 @@ func (c *Config) APIHostname() string {
 	return c.BaseDomain
 }
 
-// WebHostnames are all hostnames that serve the web app and API. The base
-// domain is the front door; "hostit.<base>" stays valid so links, prompts and
-// OAuth redirects handed out earlier keep working.
+// WebHostnames are all hostnames that serve the web app and API.
+//
+// The base domain is the ONE front door. A "hostit.<base>" alias used to answer
+// as well, left over from before the base domain took over -- and two names for
+// one thing is two to register with every OAuth provider, two to write in
+// documentation, and one more to leak into a URL somebody bookmarks. It is gone;
+// that name is now an ordinary app subdomain.
 func (c *Config) WebHostnames() []string {
 	hosts := []string{c.APIHostname()}
-	for _, host := range []string{c.BaseDomain, "hostit." + c.BaseDomain} {
-		if host != c.APIHostname() {
-			hosts = append(hosts, host)
-		}
+	if c.BaseDomain != c.APIHostname() {
+		hosts = append(hosts, c.BaseDomain)
 	}
 	return hosts
 }

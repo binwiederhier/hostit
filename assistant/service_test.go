@@ -33,11 +33,36 @@ type fakeOps struct {
 	writes   []string
 	execFn   func(command string) ExecResult
 	archived bool
+	conns    []Connection
+	// The MCP half: what this app was granted, what a call returns, and what
+	// was actually asked for.
+	mcpTools  []MCPTool
+	mcpResult string
+	mcpErr    string
+	mcpCalls  []fakeMCPCall
+}
+
+type fakeMCPCall struct {
+	connection string
+	tool       string
+	args       map[string]any
+}
+
+func (f *fakeOps) MCPTools(_ string) []MCPTool { return f.mcpTools }
+
+func (f *fakeOps) CallMCPTool(_, connection, tool string, args map[string]any) (string, bool, error) {
+	f.mcpCalls = append(f.mcpCalls, fakeMCPCall{connection: connection, tool: tool, args: args})
+	if f.mcpErr != "" {
+		return f.mcpErr, true, nil
+	}
+	return f.mcpResult, false, nil
 }
 
 func newFakeOps() *fakeOps { return &fakeOps{files: map[string]string{}} }
 
 func (f *fakeOps) Archived(_ string) bool { return f.archived }
+
+func (f *fakeOps) Connections(_ string) []Connection { return f.conns }
 
 func (f *fakeOps) ListFiles(_, _ string) (string, error) { return "hostit.yml\npublic/", nil }
 func (f *fakeOps) ReadFile(_, path string) (string, error) {
@@ -581,7 +606,7 @@ func TestStablePrefixUsesOneHourCache(t *testing.T) {
 	require.NotNil(t, sys[0].CacheControl)
 	assert.Equal(t, "1h", sys[0].CacheControl.TTL, "system prompt uses the 1-hour cache")
 
-	tools := cachedToolDefs()
+	tools := cachedToolDefs(nil)
 	require.NotEmpty(t, tools)
 	last := tools[len(tools)-1]
 	require.NotNil(t, last.CacheControl)
@@ -642,11 +667,81 @@ func TestReplyIsTaggedWithTheOptionThatRanIt(t *testing.T) {
 // keep suggesting "power it on", which archiving is precisely what refuses.
 func TestSystemPromptSaysWhenTheAppIsArchived(t *testing.T) {
 	t.Parallel()
-	live := systemPrompt("blog", false)
+	live := systemPrompt("blog", false, nil)
 	assert.NotContains(t, strings.ToLower(live), "archived", "a normal app's prompt says nothing about archiving")
 
-	shelved := systemPrompt("blog", true)
+	shelved := systemPrompt("blog", true, nil)
 	assert.Contains(t, strings.ToLower(shelved), "archived")
 	// It must name the way out, since every running verb is refused until then.
 	assert.Contains(t, strings.ToLower(shelved), "unarchive")
+}
+
+// The assistant cannot use what it is never told about. Before this, an app
+// could hold a granted Google Calendar and the model would answer "there's no
+// calendar integration configured", which was true only of its own knowledge.
+func TestSystemPromptNamesTheAppsConnections(t *testing.T) {
+	t.Parallel()
+	quiet := systemPrompt("blog", false, nil)
+	assert.NotContains(t, quiet, "connection", "an app with none gets no noise about them")
+
+	withConns := systemPrompt("blog", false, []Connection{
+		{Slug: "work-cal", Provider: "google-calendar", ProviderLabel: "Google Calendar"},
+		{Slug: "openai", Provider: "generic", ProviderLabel: "API key or token"},
+	})
+	assert.Contains(t, withConns, "work-cal")
+	assert.Contains(t, withConns, "Google Calendar")
+	assert.Contains(t, withConns, "openai")
+	// And how to actually reach one, or naming them achieves nothing
+	assert.Contains(t, withConns, "/v1/connections/work-cal/token")
+	assert.Contains(t, withConns, "/run/hostit/hostit.sock")
+}
+
+// The credential must be read by the APP at runtime, not fetched into the
+// conversation: transcripts are stored, so a token printed once is a token
+// stored forever.
+func TestSystemPromptTellsTheModelNotToPrintTokens(t *testing.T) {
+	t.Parallel()
+	p := systemPrompt("blog", false, []Connection{{Slug: "work-cal", Provider: "google-calendar", ProviderLabel: "Google Calendar"}})
+	lower := strings.ToLower(p)
+	assert.Contains(t, lower, "never print")
+	assert.Contains(t, lower, "expire")
+}
+
+// The redaction has to be WIRED IN, not merely available: a credential in a tool
+// result is stored for as long as the conversation lives.
+func TestATokenInToolOutputNeverReachesTheTranscript(t *testing.T) {
+	t.Parallel()
+	leak := `{"provider":"google-calendar","access_token":"ya29.LEAKED","expires_at":"2026-01-01T00:00:00Z"}`
+	ops := newFakeOps()
+	ops.execFn = func(string) ExecResult { return ExecResult{Output: leak} }
+	fc := &fakeCompleter{replies: []response{
+		{StopReason: "tool_use", Content: []ContentBlock{toolUse("tu_1", "run_command", `{"command":"curl --unix-socket /run/hostit/hostit.sock http://x/v1/connections/cal/token"}`)}},
+		{StopReason: "end_turn", Content: []ContentBlock{{Type: "text", Text: "The connection works."}}},
+	}}
+	store := NewMemoryStore()
+	m := NewManager(fc, ops, store, Credentials{AnthropicAPIKey: "k"})
+
+	events := runTurn(t, m, "blog", "check the calendar connection")
+
+	// Not in what the browser is shown
+	for _, e := range events {
+		assert.NotContains(t, e.Output, "ya29.LEAKED", "a credential must not be published to the UI")
+	}
+	// Nor in what is sent back to the model, nor in what is stored
+	var whole strings.Builder
+	add := func(msgs []Message) {
+		for _, msg := range msgs {
+			for _, b := range msg.Content {
+				fmt.Fprintf(&whole, "%v %s ", b.Content, b.Text)
+			}
+		}
+	}
+	for _, call := range fc.calls {
+		add(call.Messages)
+	}
+	saved, err := store.Load("blog")
+	require.NoError(t, err)
+	add(saved)
+	assert.NotContains(t, whole.String(), "ya29.LEAKED", "a credential must not be kept in the transcript")
+	assert.Contains(t, whole.String(), "[redacted]", "and the shape of it is visibly taken out")
 }
