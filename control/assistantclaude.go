@@ -60,3 +60,11 @@ func (c *claudeBackend) RunTurn(ctx context.Context, appName, prompt, systemProm
 	}
 	return usage, runErr
 }
+
+// Answer runs a one-shot, tool-less answer on the subscription -- what the
+// app-facing /api/container/assistant endpoint needs from the Claude Max
+// backend. It is a plain pass-through to the sandbox; the sandbox runs `claude
+// -p --output-format json` with no tools and returns just the answer and usage.
+func (c *claudeBackend) Answer(ctx context.Context, appName, model, system, prompt string) (string, assistant.Usage, error) {
+	return c.sandbox.Answer(ctx, appName, model, system, prompt)
+}

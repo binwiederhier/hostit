@@ -22,6 +22,19 @@ type fakeClaudeRunner struct {
 	prompt       string
 	systemPrompt string
 	images       []Attachment
+
+	// Answer half: what it returns, and what it was last asked.
+	answerText   string
+	answerCalls  int
+	answerModel  string
+	answerSystem string
+	answerPrompt string
+}
+
+func (f *fakeClaudeRunner) Answer(_ context.Context, _ string, model, system, prompt string) (string, Usage, error) {
+	f.answerCalls++
+	f.answerModel, f.answerSystem, f.answerPrompt = model, system, prompt
+	return f.answerText, f.usage, f.err
 }
 
 func (f *fakeClaudeRunner) RunTurn(_ context.Context, _ string, prompt, systemPrompt string, images []Attachment, publish func(Event)) (Usage, error) {

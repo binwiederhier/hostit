@@ -18,6 +18,13 @@ import (
 // this over app.AssistantSandbox; the assistant package stays free of podman.
 type ClaudeRunner interface {
 	RunTurn(ctx context.Context, app, prompt, systemPrompt string, images []Attachment, publish func(Event)) (Usage, error)
+	// Answer runs a ONE-SHOT, tool-less answer on the Claude Max backend and
+	// returns just the answer text and usage -- what /api/container/assistant
+	// wants from the subscription: no tools, no transcript, no streaming. model
+	// is the backend's own model string (e.g. "claude-opus-5"); system is the
+	// APP's system prompt (not the build assistant's); prompt is the rendered
+	// conversation.
+	Answer(ctx context.Context, app, model, system, prompt string) (string, Usage, error)
 }
 
 // SetClaudeRunner switches this Manager to the Claude Max backend. It keeps all

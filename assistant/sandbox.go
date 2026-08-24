@@ -7,7 +7,9 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"os/user"
@@ -210,6 +212,96 @@ func (s *Sandbox) RunTurn(ctx context.Context, appName, prompt, systemPrompt str
 		onEvent(StreamEvent{Type: evtError, ErrorMsg: msg})
 	}
 	return nil
+}
+
+// Answer runs a ONE-SHOT, tool-less answer on the subscription: `claude -p
+// --output-format json` with NO tools -- no MCP server is wired and every
+// built-in is denied -- so it cannot touch the app; it just answers. It returns
+// the answer text and usage, which is exactly what the app-facing
+// /api/container/assistant endpoint needs from the Claude Max backend. Unlike
+// RunTurn it keeps no transcript and streams nothing.
+func (s *Sandbox) Answer(ctx context.Context, appName, model, system, prompt string) (string, Usage, error) {
+	uid, gid, appID, err := s.identity(appName)
+	if err != nil {
+		return "", Usage{}, err
+	}
+	image, err := s.EnsureImage()
+	if err != nil {
+		return "", Usage{}, fmt.Errorf("cannot prepare the sandbox image: %w", err)
+	}
+	name := containerName(appID) // randHex-suffixed, so it never collides with a live turn
+	defer func() { _ = exec.Command(podman, "rm", "--force", name).Run() }()
+
+	args := append(s.baseArgs(name, uid, gid), "-i", image)
+	args = append(args, answerArgs(model, system)...)
+	cmd := exec.CommandContext(ctx, podman, args...)
+	cmd.Stdin = strings.NewReader(prompt)
+	var stderr strings.Builder
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	if err != nil {
+		// Log the sandbox's stderr operator-side, but never hand it to the tenant:
+		// it can carry host paths, container internals or CLI diagnostics that are
+		// none of the app's business.
+		slog.Warn("Claude answer sandbox failed", "app", appName, "error", err, "stderr", strings.TrimSpace(stderr.String()))
+		return "", Usage{}, errAnswerBackend
+	}
+	text, usage, err := parseAnswer(out)
+	if err != nil {
+		slog.Warn("Claude answer could not be read", "app", appName, "error", err)
+		return "", Usage{}, errAnswerBackend
+	}
+	return text, usage, nil
+}
+
+// errAnswerBackend is what a failed subscription answer returns to the tenant --
+// a generic message, so the sandbox's own diagnostics stay operator-side. It maps
+// to a 502 through writeAskError's default case.
+var errAnswerBackend = errors.New("the assistant backend could not answer right now")
+
+// parseAnswer decodes `claude -p --output-format json`, a single result object
+// the same shape as the stream's terminal "result" event, into the answer text
+// and its usage. Its errors carry detail for the caller to LOG; the caller
+// returns errAnswerBackend to the tenant rather than the detail.
+func parseAnswer(out []byte) (string, Usage, error) {
+	var res struct {
+		Result  string          `json:"result"`
+		IsError bool            `json:"is_error"`
+		Usage   json.RawMessage `json:"usage"`
+	}
+	if err := json.Unmarshal(out, &res); err != nil {
+		return "", Usage{}, fmt.Errorf("claude returned something that is not a result: %w", err)
+	}
+	if res.IsError {
+		return "", Usage{}, fmt.Errorf("claude ended with an error: %s", res.Result)
+	}
+	var usage Usage
+	if u := parseUsage(res.Usage); u != nil {
+		usage = Usage{InputTokens: int(u.InputTokens), OutputTokens: int(u.OutputTokens),
+			CacheWriteTokens: int(u.CacheWriteTokens), CacheReadTokens: int(u.CacheReadTokens)}
+	}
+	return res.Result, usage, nil
+}
+
+// answerArgs builds `claude -p --output-format json` with NO tools: no MCP server
+// is wired (so none of hostit's tools exist) and every built-in is denied, so a
+// one-shot answer cannot read, write or run anything. model is passed to
+// --model so the caller's claude-* choice is honoured; system rides as an
+// appended system prompt.
+func answerArgs(model, system string) []string {
+	args := []string{
+		"claude", "-p",
+		"--output-format", "json",
+		"--permission-mode", "dontAsk",
+		"--disallowedTools", disallowedBuiltins,
+	}
+	if strings.TrimSpace(model) != "" {
+		args = append(args, "--model", model)
+	}
+	if strings.TrimSpace(system) != "" {
+		args = append(args, "--append-system-prompt", system)
+	}
+	return args
 }
 
 // Shell drops into an interactive shell in the sandbox, for trying the claude

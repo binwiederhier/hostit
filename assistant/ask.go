@@ -9,20 +9,24 @@ import (
 
 // An app asking the model a question, from inside its own container.
 //
-// This is INFERENCE and nothing else. The interactive assistant drives an app --
-// it reads and writes files, runs commands, deploys -- and none of that is
-// offered here: an app that could call write_file on itself through this is a
-// self-modifying loop with nobody in the room. What an app gets is text.
+// It answers with text and NO tools -- on either backend. The interactive
+// assistant drives an app (it reads and writes files, runs commands, deploys);
+// none of that is offered here, because an app whose model could call write_file
+// on itself is a self-modifying loop with nobody in the room. What an app gets
+// back is text.
 //
-// The point is that the app never holds the API key. An app that held it could
-// spend the operator's money without limit and without being seen; going
-// through hostit means every request is metered onto that app and rate-limited
-// against its owner, exactly like an interactive turn.
+// The point is that the app never holds the API key or the subscription token.
+// Going through hostit means every request is metered onto that app and
+// rate-limited against its owner, exactly like an interactive turn. Which model
+// answers is the app's choice from what this instance actually has configured
+// (see Catalog): a claude-* id runs on the Claude Max subscription, an
+// anthropic-* id on the metered API, and an empty choice takes the default.
 
 const (
 	// defaultAskTokens is a modest reply for a request that says nothing about
 	// length; maxAskTokens is the ceiling, because the budget being spent is
-	// the operator's rather than the app's.
+	// the operator's rather than the app's. (Metered-API backend only; the
+	// subscription backend has its own limits.)
 	defaultAskTokens = 1024
 	maxAskTokens     = 8192
 	// maxAskMessages and maxAskChars bound one request. A chat app grows its
@@ -38,7 +42,7 @@ var (
 	ErrAskInvalid = errors.New("invalid request")
 	// ErrAskTooLarge means it is a question, but a bigger one than an app may ask.
 	ErrAskTooLarge = errors.New("request too large")
-	// ErrAskUnavailable means no metered backend is configured on this instance.
+	// ErrAskUnavailable means no backend is configured on this instance.
 	ErrAskUnavailable = errors.New("the assistant is not available on this server")
 )
 
@@ -64,6 +68,13 @@ type AskResult struct {
 	Usage Usage  `json:"usage"`
 }
 
+// AskModels is the catalog of models an app may pick, filtered to what this
+// instance actually has configured -- so a container discovers its choices
+// rather than guessing. Empty when no backend is available.
+func (m *Manager) AskModels() []Option {
+	return Catalog(m.creds)
+}
+
 // Ask answers one question for an app, unlimited. Prefer AskFor, which also
 // applies the owner's rate limit; this exists for callers that have already
 // reserved, and for tests.
@@ -83,12 +94,25 @@ func (m *Manager) AskFor(ctx context.Context, userID, app string, req AskRequest
 }
 
 func (m *Manager) ask(ctx context.Context, app string, req AskRequest) (AskResult, error) {
-	if m.client == nil {
-		return AskResult{}, ErrAskUnavailable
-	}
-	msgs, err := askMessages(req)
+	option, err := m.askOption(req.Model)
 	if err != nil {
 		return AskResult{}, err
+	}
+	if err := validateAskRequest(req); err != nil {
+		return AskResult{}, err
+	}
+	// Route on the chosen model's backend: a claude-* id runs on the
+	// subscription sandbox, an anthropic-* id on the metered API.
+	if option.Backend == BackendClaude {
+		return m.askClaude(ctx, app, req, option)
+	}
+	return m.askAnthropic(ctx, app, req, option)
+}
+
+// askAnthropic answers on the metered API backend.
+func (m *Manager) askAnthropic(ctx context.Context, app string, req AskRequest, option Option) (AskResult, error) {
+	if m.client == nil {
+		return AskResult{}, ErrAskUnavailable
 	}
 	maxTokens := req.MaxTokens
 	if maxTokens <= 0 {
@@ -99,11 +123,7 @@ func (m *Manager) ask(ctx context.Context, app string, req AskRequest) (AskResul
 		// reasonable and should get an answer, just a bounded one.
 		maxTokens = maxAskTokens
 	}
-	model, err := askModel(req.Model)
-	if err != nil {
-		return AskResult{}, err
-	}
-	out := request{Model: model, MaxTokens: maxTokens, Messages: msgs}
+	out := request{Model: option.Model, MaxTokens: maxTokens, Messages: toAPIMessages(req)}
 	if s := strings.TrimSpace(req.System); s != "" {
 		out.System = []systemBlock{{Type: blockText, Text: s}}
 	}
@@ -117,69 +137,140 @@ func (m *Manager) ask(ctx context.Context, app string, req AskRequest) (AskResul
 		CacheWriteTokens: resp.Usage.CacheCreationInputTokens,
 		CacheReadTokens:  resp.Usage.CacheReadInputTokens,
 	}
-	// Recorded even if it fails to store: the answer is already paid for, and
-	// losing the accounting is not a reason to lose the answer too.
-	if m.store != nil {
-		_ = m.store.RecordUsage(app, used)
-	}
+	m.recordAskUsage(app, used)
 	var text strings.Builder
 	for _, block := range resp.Content {
 		if block.Type == blockText {
 			text.WriteString(block.Text)
 		}
 	}
-	return AskResult{Text: text.String(), Model: model, Usage: used}, nil
+	return AskResult{Text: text.String(), Model: option.ID, Usage: used}, nil
 }
 
-// askModel resolves the model an app asked for, defaulting to the cheapest one
-// that is still good at this. An app looping over log lines every minute should
-// not silently be doing it on the most expensive model available, and an app
-// that wants a better one can say so by slug.
-//
-// An ALLOWLIST rather than a passthrough: the string reaches a paid API, and
-// "whatever the app typed" is not something to forward on that basis.
-func askModel(want string) (string, error) {
-	models := anthropicBackend{}.Models()
+// askClaude answers on the Claude Max subscription backend, as a one-shot,
+// tool-less answer (see Sandbox.Answer). The subscription takes a single
+// prompt, not a messages array, so the conversation is flattened; max_tokens
+// does not apply.
+func (m *Manager) askClaude(ctx context.Context, app string, req AskRequest, option Option) (AskResult, error) {
+	if m.claude == nil {
+		return AskResult{}, ErrAskUnavailable
+	}
+	text, used, err := m.claude.Answer(ctx, app, option.Model, req.System, toClaudePrompt(req))
+	if err != nil {
+		return AskResult{}, err
+	}
+	m.recordAskUsage(app, used)
+	return AskResult{Text: text, Model: option.ID, Usage: used}, nil
+}
+
+// recordAskUsage meters a call onto the app. Recorded even if it fails to store:
+// the answer is already paid for, and losing the accounting is not a reason to
+// lose the answer too.
+func (m *Manager) recordAskUsage(app string, used Usage) {
+	if m.store != nil {
+		_ = m.store.RecordUsage(app, used)
+	}
+}
+
+// askOption resolves the model an app asked for to a configured backend+model,
+// defaulting to the head of the catalog (the same default the chat UI uses) when
+// the app names nothing. With no backend configured it is unavailable (501); an
+// unknown or unconfigured id on a configured instance is refused with the list
+// of what this instance offers -- an ALLOWLIST, not a passthrough, since the id
+// picks a paid backend.
+func (m *Manager) askOption(want string) (Option, error) {
+	if len(Catalog(m.creds)) == 0 {
+		return Option{}, ErrAskUnavailable // nothing configured at all
+	}
 	if strings.TrimSpace(want) == "" {
-		return models[len(models)-1].Model, nil
+		option, _ := Default(m.creds) // ok: the catalog is non-empty
+		return option, nil
 	}
-	for _, m := range models {
-		if want == m.Slug || want == m.Model {
-			return m.Model, nil
-		}
+	option, ok := Lookup(m.creds, want)
+	if !ok {
+		return Option{}, fmt.Errorf("%w: no model %q; this server offers %s",
+			ErrAskInvalid, want, availableModelIDs(m.creds))
 	}
-	names := make([]string, 0, len(models))
-	for _, m := range models {
-		names = append(names, m.Slug)
-	}
-	return "", fmt.Errorf("%w: no model %q; this server offers %s",
-		ErrAskInvalid, want, strings.Join(names, ", "))
+	return option, nil
 }
 
-// askMessages validates and converts the conversation.
-func askMessages(req AskRequest) ([]Message, error) {
+// AskDefaultModel is the model id an empty choice resolves to -- the head of the
+// catalog, the same default a chat turn takes. Empty when no backend is
+// configured. The discovery endpoint reports it so an app knows what it gets.
+func (m *Manager) AskDefaultModel() string {
+	if o, ok := Default(m.creds); ok {
+		return o.ID
+	}
+	return ""
+}
+
+// availableModelIDs is the comma-separated ids an app may pick, for an error
+// message that tells it what to send instead.
+func availableModelIDs(creds Credentials) string {
+	cat := Catalog(creds)
+	if len(cat) == 0 {
+		return "(none -- the assistant is not configured)"
+	}
+	ids := make([]string, 0, len(cat))
+	for _, o := range cat {
+		ids = append(ids, o.ID)
+	}
+	return strings.Join(ids, ", ")
+}
+
+// validateAskMessages bounds one request, backend-agnostically: it must be a
+// conversation of user/assistant turns, not too many and not too large.
+func validateAskRequest(req AskRequest) error {
 	if len(req.Messages) == 0 {
-		return nil, fmt.Errorf("%w: no messages to send", ErrAskInvalid)
+		return fmt.Errorf("%w: no messages to send", ErrAskInvalid)
 	}
 	if len(req.Messages) > maxAskMessages {
-		return nil, fmt.Errorf("%w: %d messages, the most an app may send is %d",
+		return fmt.Errorf("%w: %d messages, the most an app may send is %d",
 			ErrAskTooLarge, len(req.Messages), maxAskMessages)
 	}
 	total := len(req.System)
-	out := make([]Message, 0, len(req.Messages))
 	for i, msg := range req.Messages {
-		if msg.Role != "user" && msg.Role != "assistant" {
-			return nil, fmt.Errorf(`%w: message %d has role %q; only "user" and "assistant" are messages, and system instructions go in "system"`,
+		if msg.Role != roleUser && msg.Role != roleAssistant {
+			return fmt.Errorf(`%w: message %d has role %q; only "user" and "assistant" are messages, and system instructions go in "system"`,
 				ErrAskInvalid, i, msg.Role)
 		}
 		if strings.TrimSpace(msg.Content) == "" {
-			return nil, fmt.Errorf("%w: message %d is empty", ErrAskInvalid, i)
+			return fmt.Errorf("%w: message %d is empty", ErrAskInvalid, i)
 		}
 		total += len(msg.Content)
 		if total > maxAskChars {
-			return nil, fmt.Errorf("%w: the conversation is over %d characters", ErrAskTooLarge, maxAskChars)
+			return fmt.Errorf("%w: the conversation is over %d characters", ErrAskTooLarge, maxAskChars)
 		}
+	}
+	return nil
+}
+
+// toAPIMessages converts a validated request to the API's message shape.
+func toAPIMessages(req AskRequest) []Message {
+	out := make([]Message, 0, len(req.Messages))
+	for _, msg := range req.Messages {
 		out = append(out, Message{Role: msg.Role, Content: []ContentBlock{{Type: blockText, Text: msg.Content}}})
 	}
-	return out, nil
+	return out
+}
+
+// toClaudePrompt flattens a validated conversation into one prompt for the
+// subscription backend, which takes a single prompt rather than a messages
+// array. A one-message request is just its text; a conversation is rendered with
+// speaker labels so the model can follow the turns.
+func toClaudePrompt(req AskRequest) string {
+	if len(req.Messages) == 1 {
+		return req.Messages[0].Content
+	}
+	var b strings.Builder
+	for _, msg := range req.Messages {
+		if msg.Role == roleAssistant {
+			b.WriteString("Assistant: ")
+		} else {
+			b.WriteString("User: ")
+		}
+		b.WriteString(msg.Content)
+		b.WriteString("\n\n")
+	}
+	return strings.TrimSpace(b.String())
 }

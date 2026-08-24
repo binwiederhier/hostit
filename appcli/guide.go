@@ -88,7 +88,8 @@ func guideText(self *appctl.SelfInfo) string {
 		"    the unix socket " + controlconf.DefaultSocketFile + "\n" +
 		"                       (curl --unix-socket ... http://x/...)\n" +
 		"  Useful: /api/container/self, /api/container/connections (a granted\n" +
-		"  credential, per run), /api/container/assistant (ask a model, no API key).\n" +
+		"  credential, per run), /api/container/assistant (ask a model -- GET\n" +
+		"  .../assistant/models for the ids; no API key of your own needed).\n" +
 		"\n" +
 		"COMMANDS\n" +
 		"  hostit deploy      apply hostit.yml and (re)start the app\n" +

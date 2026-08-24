@@ -7,6 +7,24 @@ changed rather than what an operator had to do about it; from v0.15.0 on, each
 release is written down as it is cut. Anything that changes a config file, a
 default, or on-disk state is called out as **Breaking** or **Upgrade note**.
 
+## v0.23.0 (2026-08-24)
+
+- **An app chooses which model answers -- and it works on a Claude subscription,
+  not just the metered API.** Until now `POST /api/container/assistant` only
+  reached the Anthropic API, so an instance configured with only a Claude Max
+  subscription could not answer an app at all. Now `GET
+  /api/container/assistant/models` lists the models this instance actually has
+  configured, and the ask routes on the id an app picks: a `claude-*` id runs on
+  the operator's Claude subscription (a one-shot, tool-less `claude -p`), an
+  `anthropic-*` id on the metered API. Omit the model for the default -- the same
+  head-of-catalog default the chat UI takes. Still no tools on either backend,
+  and still metered and rate-limited per app.
+
+  **Note:** the subscription backend runs a sandbox container per call, so it is
+  heavier than the API -- fine for a periodic log check, slower for a chat app
+  making many calls. Point such an app at an `anthropic-*` model if the instance
+  has an API key.
+
 ## v0.22.0 (2026-08-24)
 
 - **Apps can ask a model a question.** `POST /api/container/assistant`, with

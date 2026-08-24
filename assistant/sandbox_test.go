@@ -302,3 +302,53 @@ func TestClaudeArgsInputFormat(t *testing.T) {
 	require.Less(t, i+1, len(args))
 	assert.Equal(t, "stream-json", args[i+1])
 }
+
+// parseAnswer decodes the subscription's one-shot `claude -p --output-format
+// json` output. It is the whole Claude-Max answer decode, so all four shapes are
+// pinned here (the live path is exercised on a real box, not in CI).
+func TestParseAnswer(t *testing.T) {
+	t.Parallel()
+	t.Run("result and usage", func(t *testing.T) {
+		text, u, err := parseAnswer([]byte(`{"type":"result","result":"ahoy","is_error":false,` +
+			`"usage":{"input_tokens":10,"output_tokens":5,"cache_creation_input_tokens":2,"cache_read_input_tokens":3}}`))
+		require.NoError(t, err)
+		assert.Equal(t, "ahoy", text)
+		assert.Equal(t, Usage{InputTokens: 10, OutputTokens: 5, CacheWriteTokens: 2, CacheReadTokens: 3}, u)
+	})
+	t.Run("is_error carries detail and no text", func(t *testing.T) {
+		text, _, err := parseAnswer([]byte(`{"result":"quota exceeded","is_error":true}`))
+		require.Error(t, err)
+		assert.Empty(t, text)
+		assert.Contains(t, err.Error(), "quota exceeded", "the detail is there for the caller to LOG")
+	})
+	t.Run("non-JSON is an error", func(t *testing.T) {
+		_, _, err := parseAnswer([]byte("claude: command not found"))
+		require.Error(t, err)
+	})
+	t.Run("missing usage is zero, not an error", func(t *testing.T) {
+		text, u, err := parseAnswer([]byte(`{"result":"hi","is_error":false}`))
+		require.NoError(t, err)
+		assert.Equal(t, "hi", text)
+		assert.Equal(t, Usage{}, u)
+	})
+}
+
+// answerArgs must be TOOL-LESS: no MCP server is wired and every built-in is
+// denied, so a one-shot answer cannot read, write, run or reach the network's
+// tools. This is the canary for that guarantee (the token is mounted and the
+// sandbox has egress, so the only barrier is "no tools").
+func TestAnswerArgsAreToolless(t *testing.T) {
+	t.Parallel()
+	args := answerArgs("claude-opus-5", "be brief")
+	assert.True(t, hasFlagValue(args, "--output-format", "json"), "one-shot json, not a stream")
+	assert.True(t, hasFlagValue(args, "--disallowedTools", disallowedBuiltins), "the same blocklist the tool path uses")
+	assert.NotContains(t, args, "--mcp-config", "no hostit MCP server, so none of its tools exist")
+	assert.NotContains(t, args, "--allowedTools", "nothing is allow-listed either")
+	assert.True(t, hasFlagValue(args, "--model", "claude-opus-5"))
+	assert.True(t, hasFlagValue(args, "--append-system-prompt", "be brief"))
+
+	bare := answerArgs("", "")
+	assert.NotContains(t, bare, "--model", "no --model when none is chosen")
+	assert.NotContains(t, bare, "--append-system-prompt", "no system flag when none is given")
+	assert.True(t, hasFlagValue(bare, "--disallowedTools", disallowedBuiltins), "still tool-less with no model/system")
+}

@@ -1,7 +1,9 @@
 package control
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -35,7 +37,7 @@ func TestAnAppAsksTheAssistantAQuestion(t *testing.T) {
 	assert.Positive(t, got.Usage.InputTokens+got.Usage.OutputTokens, "and what it cost, so it can stay within a budget")
 
 	require.Len(t, fake.calls, 1)
-	assert.Empty(t, fake.calls[0].Tools, "inference only: no tools reach an app's own request")
+	assert.Empty(t, fake.calls[0].Tools, "no tools reach an app's own request")
 	require.Len(t, fake.calls[0].System, 1)
 	assert.Contains(t, string(fake.calls[0].System[0]), "pirate")
 }
@@ -149,4 +151,130 @@ func stubAssistant(t *testing.T, s *Server, reply string) *fakeAnthropic {
 func quote(s string) string {
 	b, _ := json.Marshal(s)
 	return string(b)
+}
+
+// An app discovers which models it may pick, filtered to what this instance has
+// configured, with the default it gets when it names none.
+func TestAnAppDiscoversTheAssistantModels(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	u := newActiveTestUser(t, s, "owner@example.com")
+	require.NoError(t, s.apps.Store().AddApp(&store.App{ID: "a1", Name: "dash", Port: 10000, Host: store.HostLocal, OwnerID: u.ID, UID: 1234}))
+	s.usernameForUID = func(uid int) (string, error) { return "dash", nil }
+	stubAssistant(t, s, "hi") // configures the metered (anthropic) backend
+
+	rr := socketRequestBody(t, s, "GET", "/api/container/assistant/models", "")
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+
+	var got apiAssistantModels
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &got))
+	require.NotEmpty(t, got.Models, "an app must be able to see its choices")
+	assert.NotEmpty(t, got.Default, "and which one it gets by default")
+
+	var sawAnthropic bool
+	for _, m := range got.Models {
+		if m.ID == "anthropic-sonnet-5" {
+			sawAnthropic = true
+			assert.Equal(t, "anthropic", m.Backend)
+		}
+		assert.Empty(t, m.Backend == "" && m.ID != "", "every model names its backend")
+	}
+	assert.True(t, sawAnthropic, "the configured metered backend's models are offered")
+}
+
+// stubClaudeRunner is a control-side fake assistant.ClaudeRunner, so the handler
+// can drive the subscription (askClaude) path without a real sandbox.
+type stubClaudeRunner struct {
+	text string
+	err  error
+}
+
+func (r *stubClaudeRunner) RunTurn(context.Context, string, string, string, []assistant.Attachment, func(assistant.Event)) (assistant.Usage, error) {
+	return assistant.Usage{}, r.err
+}
+
+func (r *stubClaudeRunner) Answer(context.Context, string, string, string, string) (string, assistant.Usage, error) {
+	return r.text, assistant.Usage{InputTokens: 3, OutputTokens: 2}, r.err
+}
+
+func claudeApp(t *testing.T, s *Server, runner assistant.ClaudeRunner) {
+	t.Helper()
+	u := newActiveTestUser(t, s, "owner@example.com")
+	require.NoError(t, s.apps.Store().AddApp(&store.App{ID: "a1", Name: "dash", Port: 10000, Host: store.HostLocal, OwnerID: u.ID, UID: 1234}))
+	s.usernameForUID = func(uid int) (string, error) { return "dash", nil }
+	m := assistant.NewManager(assistant.NewClient("k"), nil, assistant.NewMemoryStore(), assistant.Credentials{ClaudeCodeOAuthToken: "t"})
+	m.SetClaudeRunner(runner)
+	s.assistant = m
+}
+
+// The discovery endpoint's Default is the head of the catalog, and only
+// configured backends surface (here: metered API only, so no claude-* leaks).
+func TestModelsEndpointDefaultAndFiltering(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	u := newActiveTestUser(t, s, "owner@example.com")
+	require.NoError(t, s.apps.Store().AddApp(&store.App{ID: "a1", Name: "dash", Port: 10000, Host: store.HostLocal, OwnerID: u.ID, UID: 1234}))
+	s.usernameForUID = func(uid int) (string, error) { return "dash", nil }
+	stubAssistant(t, s, "hi") // anthropic only
+
+	rr := socketRequestBody(t, s, "GET", "/api/container/assistant/models", "")
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+	var got apiAssistantModels
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &got))
+	assert.Equal(t, "anthropic-opus-5", got.Default, "default is the head of the catalog")
+	for _, m := range got.Models {
+		assert.NotEqual(t, "claude", m.Backend, "an unconfigured backend must not surface")
+	}
+}
+
+// No backend configured: the endpoint is a 200 with an EMPTY list and default,
+// not an error -- so an app can cleanly detect "nothing available".
+func TestModelsEndpointEmptyWhenUnconfigured(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	u := newActiveTestUser(t, s, "owner@example.com")
+	require.NoError(t, s.apps.Store().AddApp(&store.App{ID: "a1", Name: "dash", Port: 10000, Host: store.HostLocal, OwnerID: u.ID, UID: 1234}))
+	s.usernameForUID = func(uid int) (string, error) { return "dash", nil }
+	// s.assistant left nil
+
+	rr := socketRequestBody(t, s, "GET", "/api/container/assistant/models", "")
+	require.Equal(t, http.StatusOK, rr.Code)
+	var got apiAssistantModels
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &got))
+	assert.Empty(t, got.Models)
+	assert.Empty(t, got.Default)
+	assert.NotNil(t, got.Models, "an empty list, never null")
+}
+
+// The subscription path, end to end through the handler: a claude-* model answers
+// via the runner, and a runner failure is a 502 carrying NO backend internals.
+func TestSubscriptionHandlerPathAndError(t *testing.T) {
+	t.Parallel()
+	t.Run("answers via the subscription", func(t *testing.T) {
+		s := newTestServer(t)
+		claudeApp(t, s, &stubClaudeRunner{text: "Arrr"})
+		rr := socketRequestBody(t, s, "POST", "/api/container/assistant", `{"prompt":"ahoy","model":"claude-opus-5"}`)
+		require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+		var got apiAskResponse
+		require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &got))
+		assert.Equal(t, "Arrr", got.Text)
+		assert.Equal(t, "claude-opus-5", got.Model)
+	})
+	t.Run("a backend failure is a 502 with no internals", func(t *testing.T) {
+		s := newTestServer(t)
+		claudeApp(t, s, &stubClaudeRunner{err: errors.New("stderr: /var/lib/hostit/secret leaked")})
+		rr := socketRequestBody(t, s, "POST", "/api/container/assistant", `{"prompt":"ahoy","model":"claude-opus-5"}`)
+		assert.Equal(t, http.StatusBadGateway, rr.Code)
+		assert.NotContains(t, rr.Body.String(), "/var/lib/hostit", "the sandbox's own error must not reach the tenant")
+	})
+}
+
+// assistantOwnerKey never returns empty -- an empty key is reserveRun's UNLIMITED
+// admin exemption, and a legacy app with no owner must not inherit it.
+func TestAssistantOwnerKeyNeverEmpty(t *testing.T) {
+	t.Parallel()
+	assert.Equal(t, "u1", assistantOwnerKey(&store.App{ID: "a1", OwnerID: "u1"}), "the owner when it has one")
+	key := assistantOwnerKey(&store.App{ID: "a1", OwnerID: ""})
+	assert.NotEmpty(t, key, "an ownerless app still gets a bounded key")
+	assert.Contains(t, key, "a1")
 }

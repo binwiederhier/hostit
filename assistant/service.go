@@ -655,7 +655,11 @@ of its own -- this is how you build an app that thinks:
 That answers {"text":"...","model":"...","usage":{...}}. Send "messages":
 [{"role":"user","content":"..."},{"role":"assistant","content":"..."}] instead of
 "prompt" to carry a conversation, since the model keeps nothing between calls.
-It is INFERENCE only -- no tools, no file access -- and it is metered to this app
+Add "model":"<id>" to choose a model, or omit it for the default. Read the ids
+from GET /api/container/assistant/models rather than guessing them: it lists what
+THIS server offers (claude-* run on the operator's Claude subscription, anthropic-*
+on the metered API), and a server may have one, the other, or both.
+It has NO tools and no file access, and it is metered to this app
 and rate-limited, so make one call per thing you actually need rather than one
 per loop iteration. When a user asks for something that needs a model at runtime
 (summarise these logs, answer in a persona, classify this text), build it on this

@@ -249,6 +249,18 @@ on a small box can outlast it. Anything longer has to become a `prepare:` step,
 which is fine but not obvious. A job id plus a poll/stream endpoint would be
 the honest fix.
 
+### 9b. Download an app's data (snapshot or live)
+
+Let an owner pull an app's files out as an archive: a zip or tarball of the
+live dataset, or of a chosen snapshot. The btrfs layer already has the raw
+material -- a snapshot is a read-only subvolume, and `btrfs send` streams one
+efficiently -- so the options are a plain zip/tar built from the files, or a
+btrfs stream for a same-filesystem restore elsewhere. Useful for backups the
+owner keeps themselves, moving an app off hostit, or grabbing a point-in-time
+copy before a risky change. Scope open: which formats, snapshot vs live (live
+needs a consistent read -- snapshot first, then archive that), and how it is
+served (a streamed download endpoint, size-capped).
+
 ## Later (real, but not now)
 
 ### 10. Move the screenshot and assistant containers to the nodes

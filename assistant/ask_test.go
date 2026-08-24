@@ -2,6 +2,7 @@ package assistant
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -35,7 +36,7 @@ func askManager(t *testing.T, replies ...response) (*Manager, *fakeCompleter, *r
 	return m, fc, st
 }
 
-// An app asking the model a question. This is inference and nothing else: the
+// An app asking the model a question. This answers and nothing else -- no tools: the
 // app gets text back, and never gets the API key, which is the whole point --
 // an app that held the key could spend the operator's money without limit and
 // without being seen.
@@ -156,7 +157,7 @@ func TestThePromptTellsTheModelTheAppCanAskAModel(t *testing.T) {
 	assert.Contains(t, flat, "/api/container/assistant")
 	assert.Contains(t, flat, "with no API key of its own")
 	assert.Contains(t, flat, `"messages"`)
-	assert.Contains(t, strings.ToLower(flat), "inference only")
+	assert.Contains(t, strings.ToLower(flat), "no tools and no file access")
 }
 
 // The prompt is what the model builds from, so it must teach the spelling we
@@ -182,4 +183,163 @@ func TestThePromptTeachesTheCurrentContainerAPI(t *testing.T) {
 	} {
 		assert.Contains(t, p, want)
 	}
+}
+
+// bothBackends builds a Manager with the metered API AND a fake Claude Max
+// backend configured, so a request can pick either.
+func bothBackends(t *testing.T, apiReply response) (*Manager, *fakeCompleter, *fakeClaudeRunner) {
+	t.Helper()
+	fc := &fakeCompleter{replies: []response{apiReply}}
+	m := NewManager(fc, newFakeOps(), &recordingStore{MemoryStore: NewMemoryStore()},
+		Credentials{AnthropicAPIKey: "sk-test", ClaudeCodeOAuthToken: "oauth-test"})
+	runner := &fakeClaudeRunner{answerText: "from the subscription"}
+	m.SetClaudeRunner(runner)
+	return m, fc, runner
+}
+
+// A claude-* model routes to the subscription (Answer), an anthropic-* model to
+// the metered API -- the whole point of exposing both.
+func TestAskRoutesByModelBackend(t *testing.T) {
+	t.Parallel()
+	m, fc, runner := bothBackends(t, response{Content: []ContentBlock{{Type: blockText, Text: "from the API"}}})
+
+	got, err := m.Ask(context.Background(), "blog", AskRequest{
+		Model: "claude-opus-5", Messages: []AskMessage{{Role: "user", Content: "hi"}},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "from the subscription", got.Text)
+	assert.Equal(t, "claude-opus-5", got.Model)
+	assert.Equal(t, 1, runner.answerCalls, "claude-* goes to the subscription")
+	assert.Empty(t, fc.calls, "and NOT to the metered API")
+	assert.Equal(t, "claude-opus-5", runner.answerModel, "the backend model string is passed through")
+
+	got, err = m.Ask(context.Background(), "blog", AskRequest{
+		Model: "anthropic-sonnet-5", Messages: []AskMessage{{Role: "user", Content: "hi"}},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "from the API", got.Text)
+	assert.Equal(t, "anthropic-sonnet-5", got.Model)
+	require.Len(t, fc.calls, 1, "anthropic-* goes to the metered API")
+	assert.Equal(t, "claude-sonnet-5", fc.calls[0].Model, "with the upstream model string")
+	assert.Equal(t, 1, runner.answerCalls, "and the subscription was not called again")
+}
+
+// No model named: the default is the head of the catalog, same as the chat UI.
+// The subscription registers first, so with both configured the default is claude.
+func TestAskDefaultsToTheHeadOfTheCatalog(t *testing.T) {
+	t.Parallel()
+	m, fc, runner := bothBackends(t, response{Content: []ContentBlock{{Type: blockText, Text: "api"}}})
+	got, err := m.Ask(context.Background(), "blog", AskRequest{Messages: []AskMessage{{Role: "user", Content: "hi"}}})
+	require.NoError(t, err)
+	assert.Equal(t, 1, runner.answerCalls, "default picks the subscription (head of the catalog)")
+	assert.Empty(t, fc.calls)
+	assert.Equal(t, "from the subscription", got.Text)
+}
+
+// An unconfigured or unknown model is refused with the list of what IS offered.
+func TestAskRefusesAnUnavailableModel(t *testing.T) {
+	t.Parallel()
+	m, _, _ := askManager(t) // anthropic only
+	_, err := m.Ask(context.Background(), "blog", AskRequest{
+		Model: "claude-opus-5", Messages: []AskMessage{{Role: "user", Content: "hi"}},
+	})
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrAskInvalid)
+	assert.Contains(t, err.Error(), "anthropic-", "the error names what this instance does offer")
+}
+
+// The catalog an app discovers reflects what is configured.
+func TestAskModelsReflectsConfiguredBackends(t *testing.T) {
+	t.Parallel()
+	m, _, _ := bothBackends(t, response{})
+	ids := make(map[string]bool)
+	for _, o := range m.AskModels() {
+		ids[o.ID] = true
+	}
+	assert.True(t, ids["anthropic-sonnet-5"], "the API models are offered")
+	assert.True(t, ids["claude-opus-5"], "the subscription models are offered")
+}
+
+// Claude selected but no runner wired (configured in creds, SetClaudeRunner never
+// called): unavailable, and NO silent fallback to the API -- unlike an
+// interactive turn, an app's ask must not be quietly rerouted to a paid backend
+// it did not choose.
+func TestAskClaudeWithoutARunnerIsUnavailable(t *testing.T) {
+	t.Parallel()
+	fc := &fakeCompleter{replies: []response{{Content: []ContentBlock{{Type: blockText, Text: "api"}}}}}
+	m := NewManager(fc, newFakeOps(), NewMemoryStore(), Credentials{ClaudeCodeOAuthToken: "t"})
+	_, err := m.Ask(context.Background(), "blog", AskRequest{Messages: []AskMessage{{Role: "user", Content: "hi"}}})
+	require.ErrorIs(t, err, ErrAskUnavailable)
+	assert.Empty(t, fc.calls, "no silent fallback to the metered API")
+}
+
+// A subscription error propagates; it does NOT fall back to the API either.
+func TestAskClaudeRunnerErrorPropagates(t *testing.T) {
+	t.Parallel()
+	m, fc, runner := bothBackends(t, response{Content: []ContentBlock{{Type: blockText, Text: "api"}}})
+	runner.err = errors.New("sandbox boom")
+	_, err := m.Ask(context.Background(), "blog", AskRequest{
+		Model: "claude-opus-5", Messages: []AskMessage{{Role: "user", Content: "hi"}},
+	})
+	require.Error(t, err)
+	assert.Empty(t, fc.calls, "a claude error is not retried on the API")
+}
+
+// The app's system prompt and the flattened conversation reach the subscription.
+func TestAskClaudePassesSystemAndFlattenedPrompt(t *testing.T) {
+	t.Parallel()
+	m, _, runner := bothBackends(t, response{})
+	_, err := m.Ask(context.Background(), "blog", AskRequest{
+		Model: "claude-opus-5", System: "be a pirate",
+		Messages: []AskMessage{{Role: "user", Content: "ahoy"}, {Role: "assistant", Content: "arr"}, {Role: "user", Content: "more"}},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "be a pirate", runner.answerSystem, "the APP's system prompt, not the build assistant's")
+	assert.Contains(t, runner.answerPrompt, "User: ahoy")
+	assert.Contains(t, runner.answerPrompt, "Assistant: arr")
+	assert.Contains(t, runner.answerPrompt, "User: more")
+}
+
+// A claude answer is metered onto the app, same as an API answer.
+func TestAskClaudeMetersUsageOntoTheApp(t *testing.T) {
+	t.Parallel()
+	st := &recordingStore{MemoryStore: NewMemoryStore()}
+	m := NewManager(&fakeCompleter{}, newFakeOps(), st, Credentials{ClaudeCodeOAuthToken: "t"})
+	m.SetClaudeRunner(&fakeClaudeRunner{answerText: "hi", usage: Usage{InputTokens: 7, OutputTokens: 3}})
+	_, err := m.Ask(context.Background(), "blog", AskRequest{
+		Model: "claude-fable-5", Messages: []AskMessage{{Role: "user", Content: "hi"}},
+	})
+	require.NoError(t, err)
+	require.Len(t, st.usage, 1)
+	assert.Equal(t, "blog", st.usage[0].app)
+	assert.Equal(t, 7, st.usage[0].usage.InputTokens)
+}
+
+// toClaudePrompt: a single message is its bare text; a conversation is labelled.
+func TestToClaudePrompt(t *testing.T) {
+	t.Parallel()
+	assert.Equal(t, "just this", toClaudePrompt(AskRequest{Messages: []AskMessage{{Role: "user", Content: "just this"}}}))
+	multi := toClaudePrompt(AskRequest{Messages: []AskMessage{
+		{Role: "user", Content: "hi"}, {Role: "assistant", Content: "hello"}, {Role: "user", Content: "bye"},
+	}})
+	assert.Contains(t, multi, "User: hi")
+	assert.Contains(t, multi, "Assistant: hello")
+	assert.Contains(t, multi, "User: bye")
+	assert.NotContains(t, multi, "\n\n\n", "trimmed, no trailing blank block")
+}
+
+// No backend configured at all: unavailable (501), for both an empty and a named
+// model -- not a 400 that reads like the app got the request wrong.
+func TestAskWithNoBackendConfiguredIsUnavailable(t *testing.T) {
+	t.Parallel()
+	m := NewManager(&fakeCompleter{}, newFakeOps(), NewMemoryStore(), Credentials{})
+	for _, model := range []string{"", "anthropic-sonnet-5"} {
+		_, err := m.Ask(context.Background(), "blog", AskRequest{Model: model, Messages: []AskMessage{{Role: "user", Content: "hi"}}})
+		require.ErrorIs(t, err, ErrAskUnavailable, "model=%q", model)
+	}
+}
+
+func TestAvailableModelIDsWhenNothingConfigured(t *testing.T) {
+	t.Parallel()
+	assert.Contains(t, availableModelIDs(Credentials{}), "none")
 }
