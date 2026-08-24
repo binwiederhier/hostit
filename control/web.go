@@ -46,6 +46,17 @@ func (s *Server) webHandler() http.Handler {
 		}
 		f, err := sub.Open(name)
 		if err != nil {
+			// A missing HASHED ASSET is not a route. Falling through to the SPA
+			// answers a .js request with index.html and a 200, and the browser
+			// then refuses it for "disallowed MIME type" -- which says nothing
+			// about what happened: a deploy replaced the bundle while a tab was
+			// open, and that tab is asking for chunks that no longer exist. A
+			// 404 says so, and lets the app react (see chunkReload in the web
+			// app) instead of parsing HTML as JavaScript.
+			if strings.HasPrefix(name, assetDir) {
+				http.NotFound(w, r)
+				return
+			}
 			s.serveIndex(w, r, sub) // Unknown path: let the SPA router handle it
 			return
 		}

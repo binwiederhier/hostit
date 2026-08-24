@@ -4,6 +4,7 @@ import { api, ApiError, isNetworkError } from "./api";
 import { useReconnect, useAppViewportHeight } from "./hooks";
 import { Loading, StatusDot, Wordmark } from "./components";
 import { getTheme, setTheme, THEMES } from "./theme";
+import { clearChunkReload, retryChunk } from "./chunkreload";
 import { AppHeaderContext } from "./appHeader";
 import Dashboard from "./pages/Dashboard";
 import AppDetail from "./pages/AppDetail";
@@ -14,7 +15,7 @@ import Docs from "./pages/Docs";
 
 // The popped-out, full-window terminal (also reachable directly). xterm is heavy,
 // so it stays a lazy chunk, loaded only when a terminal is actually opened.
-const AppTerminal = lazy(() => import("./pages/AppTerminal"));
+const AppTerminal = lazy(retryChunk(() => import("./pages/AppTerminal")));
 
 const logout = async () => {
   try {
@@ -407,6 +408,10 @@ const App = () => {
   // (the WebSocket carries the same cookie). Rendering it before the gate keeps the
   // app chrome from flashing on a white page while the account and xterm chunk load.
   const termPopout = window.location.pathname.match(/^\/app\/([^/]+)\/terminal\/popout\/?$/);
+
+  // The app rendered, so whatever the last chunk failure was is behind us: let
+  // the NEXT deploy have its own single retry rather than inheriting a spent one.
+  useEffect(clearChunkReload, []);
 
   const loadedOnce = useRef(false); // have we ever loaded the account?
 

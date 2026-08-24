@@ -153,8 +153,33 @@ func TestThePromptTellsTheModelTheAppCanAskAModel(t *testing.T) {
 	// Whitespace-insensitive: the prompt is hard-wrapped, so a phrase that
 	// reads as one thing can straddle a line break.
 	flat := strings.Join(strings.Fields(p), " ")
-	assert.Contains(t, flat, "/v1/assistant")
+	assert.Contains(t, flat, "/api/container/assistant")
 	assert.Contains(t, flat, "with no API key of its own")
 	assert.Contains(t, flat, `"messages"`)
 	assert.Contains(t, strings.ToLower(flat), "inference only")
+}
+
+// The prompt is what the model builds from, so it must teach the spelling we
+// want written into apps. It taught /v1 -- which works and always will, but is
+// the legacy root -- so every app the assistant produced was built against it.
+// Reported after an app came out using /v1 endpoints throughout.
+func TestThePromptTeachesTheCurrentContainerAPI(t *testing.T) {
+	t.Parallel()
+	conns := []Connection{
+		{Slug: "work-cal", Provider: "google-calendar", ProviderLabel: "Google Calendar"},
+		{Slug: "issues", Provider: "mcp", ProviderLabel: "MCP server", MCP: true},
+	}
+	p := systemPrompt("blog", false, conns)
+
+	assert.NotContains(t, p, "/v1/",
+		"the prompt is where an app's URLs come from; /v1 keeps working but is not what to teach")
+	for _, want := range []string{
+		"/api/container/connections/work-cal/token",
+		"/api/container/connections",
+		"/api/container/mcp/issues/tools",
+		"/api/container/mcp/issues/call",
+		"/api/container/assistant",
+	} {
+		assert.Contains(t, p, want)
+	}
 }

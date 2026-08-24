@@ -592,13 +592,13 @@ func connectionsNote(conns []Connection) string {
 		b.WriteString(`
 The app reads a usable credential from its own unix socket, by the name above:
 
-  curl --unix-socket /run/hostit/hostit.sock http://x/v1/connections/` + credentials[0].Slug + `/token
+  curl --unix-socket /run/hostit/hostit.sock http://x/api/container/connections/` + credentials[0].Slug + `/token
 
 That answers {"access_token": "...", "expires_at": "..."} (expires_at is absent when the
 credential does not expire). Build this call INTO the app's code so it fetches a token per
 run: an OAuth token expires within the hour, so anything you save to a file is dead by the
 time it is used. NEVER print a token, echo it, or write it into a file -- read it at the
-moment it is needed and use it. GET /v1/connections over the same socket lists what this app
+moment it is needed and use it. GET /api/container/connections over the same socket lists what this app
 holds.
 `)
 	}
@@ -608,8 +608,8 @@ The MCP servers above have NO credential to fetch -- hostit holds the token and 
 calls. Their tools are already in your tool list, named %s<tool>; call them directly.
 The app itself can do the same over its socket, without any OAuth of its own:
 
-  curl --unix-socket /run/hostit/hostit.sock http://x/v1/mcp/%s/tools
-  curl --unix-socket /run/hostit/hostit.sock http://x/v1/mcp/%s/call \
+  curl --unix-socket /run/hostit/hostit.sock http://x/api/container/mcp/%s/tools
+  curl --unix-socket /run/hostit/hostit.sock http://x/api/container/mcp/%s/call \
     -d '{"tool":"...","arguments":{}}'
 `, connectedToolPrefix+servers[0].Slug+connectedToolSep, servers[0].Slug, servers[0].Slug)
 	}
@@ -632,7 +632,7 @@ The app is live at its subdomain. A static app serves public/ immediately, so ed
 The app can ask a MODEL a question itself, over the same socket, with no API key
 of its own -- this is how you build an app that thinks:
 
-  curl --unix-socket /run/hostit/hostit.sock http://x/v1/assistant \
+  curl --unix-socket /run/hostit/hostit.sock http://x/api/container/assistant \
     -d '{"prompt":"...","system":"...","max_tokens":500}'
 
 That answers {"text":"...","model":"...","usage":{...}}. Send "messages":
