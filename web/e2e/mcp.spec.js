@@ -43,14 +43,14 @@ test("an MCP server is added by URL, lists its tools, and is granted to an app",
     await toolsButton.click();
     const toolsDialog = page.getByRole("dialog");
     await expect(toolsDialog.locator(".conn-tools-list li").first()).toBeVisible();
-    await expect(toolsDialog).toContainText(`/v1/mcp/${slug}/call`);
+    await expect(toolsDialog).toContainText(`/api/container/mcp/${slug}/call`);
     await toolsDialog.getByRole("button", { name: "Done" }).click();
 
     // Granting says the app CALLS it, not that it reads a token from it.
     await page.goto(`/app/${app}/connections`);
     const grantRow = page.locator(".conn-row", { hasText: slug });
     await grantRow.getByRole("button", { name: "Grant" }).click();
-    await expect(grantRow).toContainText(`/v1/mcp/${slug}/call`);
+    await expect(grantRow).toContainText(`/api/container/mcp/${slug}/call`);
     await expect(grantRow).not.toContainText("/token");
 
     // And the API agrees about what it offers.

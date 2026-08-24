@@ -49,6 +49,15 @@ export default function AppLogs({ name, active }) {
 
   return (
     <div className="ov logs-view">
+      <div className="ov-hero ov-hero-lite">
+        <div className="ov-id">
+          <div className="ov-nm">Logs</div>
+          <div className="ov-desc">
+            What has been done to this app -- deploys, restarts, grants, domain changes -- above a
+            live tail of what the app itself is printing.
+          </div>
+        </div>
+      </div>
       <ErrorBanner message={error} onDismiss={() => setError("")} />
 
       <section className="logs-section">

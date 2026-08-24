@@ -1116,6 +1116,16 @@ a:focus-visible {
   margin: 4px 0;
 }
 
+/* A scroll container CLIPS what overflows it, including an absolutely
+   positioned dropdown -- so the SSH keys' kebab opened inside the table's own
+   scroll area and was cut off at its edge.
+   overflow-y cannot be relaxed on its own (if either axis is not visible the
+   other computes to auto), so the clipping is lifted only while a menu is
+   actually open. A wide table still scrolls the rest of the time. */
+.table-wrap:has(.menu-items) {
+  overflow: visible;
+}
+
 table {
   width: 100%;
   border-collapse: collapse;
@@ -3940,6 +3950,15 @@ body.ws-resizing iframe {
   color: var(--muted);
 }
 
+.conn-editdiv {
+  margin: 16px 0 12px;
+  border-top: 1px solid var(--border);
+}
+
+.conn-warn {
+  color: var(--warn, #b45309);
+}
+
 .about-actions {
   justify-content: center;
 }
@@ -3984,6 +4003,15 @@ body.ws-resizing iframe {
 
 .about-facts dt {
   color: var(--muted);
+}
+
+.conn-editdiv {
+  margin: 16px 0 12px;
+  border-top: 1px solid var(--border);
+}
+
+.conn-warn {
+  color: var(--warn, #b45309);
 }
 
 .about-actions {

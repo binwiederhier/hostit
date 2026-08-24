@@ -48,7 +48,7 @@ test("a credential is added, granted to an app, then revoked and removed", async
     const grantRow = page.locator(".conn-row", { hasText: slug });
     await expect(grantRow).toBeVisible();
     await grantRow.getByRole("button", { name: "Grant" }).click();
-    await expect(grantRow).toContainText(`/v1/connections/${slug}/token`);
+    await expect(grantRow).toContainText(`/api/container/connections/${slug}/token`);
 
     // The connections page now says it is in use
     await page.goto("/connections");

@@ -3,7 +3,9 @@ package control
 import (
 	"encoding/json"
 	"fmt"
+	"heckel.io/hostit/controlconf"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -250,4 +252,67 @@ func listConnections(t *testing.T, s *Server, token, query string) apiConnection
 	var out apiConnectionsResponse
 	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &out))
 	return out
+}
+
+// A pasted credential must be replaceable IN PLACE. Rotating an API key used to
+// mean deleting the connection and adding it again, which silently dropped
+// every grant with it -- the API always allowed the edit, the dialog just never
+// asked for it.
+func TestReplacingAPastedCredentialKeepsItsGrants(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	u := newActiveTestUser(t, s, "owner@example.com")
+	token, _, err := s.users.CreateToken(u.ID, "laptop")
+	require.NoError(t, err)
+	require.NoError(t, s.apps.Store().AddApp(&store.App{ID: "a1", Name: "dash", Port: 10000, Host: store.HostLocal, OwnerID: u.ID, UID: 1234}))
+	s.usernameForUID = func(uid int) (string, error) { return "dash", nil }
+
+	conn := mustConnect(t, s, u.ID, "a-key", "generic", map[string]string{"secret": "old-secret"})
+	require.NoError(t, s.apps.Store().GrantConnection("a1", conn.ID))
+
+	rr := request(t, s.API(), "PUT", "/api/connections/a-key",
+		`{"slug":"a-key","label":"Rotated","values":{"secret":"new-secret"}}`, token)
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+
+	// The app sees the NEW secret, and never had to be re-granted.
+	tok := socketRequest(t, s, "GET", "/api/container/connections/a-key/token")
+	require.Equal(t, http.StatusOK, tok.Code, tok.Body.String())
+	assert.Contains(t, tok.Body.String(), "new-secret")
+	assert.NotContains(t, tok.Body.String(), "old-secret")
+
+	n, err := s.apps.Store().CountGrants(conn.ID)
+	require.NoError(t, err)
+	assert.Equal(t, 1, n, "the grant survived the rotation")
+}
+
+// Finishing a consent has to land where connections live. It landed on /profile,
+// which has not held them since they moved to their own page.
+func TestAFinishedConsentLandsOnTheConnectionsPage(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	f := newFakeAuthServer(t)
+	s.config.ConnectionClients = map[string]controlconf.OAuthClient{"acme": {
+		ClientID: "id", ClientSecret: "secret", Label: "Acme",
+		AuthURL: f.URL + "/authorize", TokenURL: f.URL + "/token",
+	}}
+	require.NoError(t, s.connections.loadCustomProviders(s.config))
+	u := newActiveTestUser(t, s, "owner@example.com")
+
+	p, ok := s.connections.lookup("acme")
+	require.True(t, ok)
+	code := consentCode(t, p, "id")
+
+	// The state is echoed by the provider AND kept in a cookie; the callback
+	// refuses unless they agree, which is what stops a code being planted.
+	state := "conn:acme:work:nonce"
+	req := httptest.NewRequest("GET", "/auth/callback?code="+code+"&state="+state, nil)
+	session, err := s.sessions.encode(u.ID)
+	require.NoError(t, err)
+	req.AddCookie(&http.Cookie{Name: s.cookieName(sessionCookieName), Value: session})
+	req.AddCookie(&http.Cookie{Name: s.cookieName(stateCookieName), Value: state})
+	rr := httptest.NewRecorder()
+	s.API().ServeHTTP(rr, req)
+
+	require.Equal(t, http.StatusFound, rr.Code, rr.Body.String())
+	assert.Equal(t, "/connections", rr.Header().Get("Location"))
 }

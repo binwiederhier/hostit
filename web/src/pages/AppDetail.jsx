@@ -1454,6 +1454,15 @@ const AppSettings = ({ app, isAdmin, account, showToast, onCopyToken, onRegenera
 
   return (
     <div className="ov">
+      <div className="ov-hero ov-hero-lite">
+        <div className="ov-id">
+          <div className="ov-nm">Settings</div>
+          <div className="ov-desc">
+            What {name} is called and where it answers, who may work on it, how much it may use, and
+            the token an outside agent drives it with.
+          </div>
+        </div>
+      </div>
       <ErrorBanner message={error} onDismiss={() => setError("")} />
 
       <div className="ov-cols">
@@ -1799,17 +1808,22 @@ const AppConnections = ({ name }) => {
 
   return (
   <div className="ov">
+    <div className="ov-hero ov-hero-lite">
+      <div className="ov-id">
+        <div className="ov-nm">Connections{(conns?.granted || []).length > 0 ? <span className="snap-count">{conns.granted.length}</span> : ""}</div>
+        <div className="ov-desc">
+          Accounts, credentials and MCP servers you attached on the{" "}
+          <Link to="/connections">Connections</Link> page. Granting one lets this app act as you
+          against that account -- it asks hostit for a usable token when it needs one, so no
+          credential is stored in the app, and revoking takes effect immediately. An MCP server is
+          granted the same way, except hostit keeps the token and makes the calls, so the app only
+          ever sends a tool name.{" "}
+          <DocsLink guide="user" section="connections">How connections work</DocsLink>
+        </div>
+      </div>
+    </div>
     <ErrorBanner message={error} onDismiss={() => setError("")} />
     <section className="ov-section">
-        <h3>Connections</h3>
-        <p className="hint">
-          Accounts and credentials you attached on the <Link to="/connections">Connections</Link>{" "}
-          page. Granting one lets this app act as you against that account -- it asks hostit for a
-          usable token when it needs one, so no credential is stored in the app, and revoking takes
-          effect immediately. An MCP server is granted the same way, except hostit keeps the token
-          and makes the calls, so the app only ever sends a tool name.{" "}
-          <DocsLink guide="user" section="connections">How connections work</DocsLink>
-        </p>
         {conns === null ? (
           <p className="hint">Loading...</p>
         ) : (conns.granted || []).length === 0 && (conns.available || []).length === 0 ? (
@@ -1830,12 +1844,12 @@ const AppConnections = ({ name }) => {
                     {c.kind === "mcp" ? (
                       <>
                         this app calls its tools at{" "}
-                        <span className="mono">/v1/mcp/{c.slug}/call</span>
+                        <span className="mono">/api/container/mcp/{c.slug}/call</span>
                         {(c.tools || []).length > 0 && ` -- ${c.tools.length} tool${c.tools.length === 1 ? "" : "s"}`}
                       </>
                     ) : (
                       <>
-                        this app reads it at <span className="mono">/v1/connections/{c.slug}/token</span>
+                        this app reads it at <span className="mono">/api/container/connections/{c.slug}/token</span>
                       </>
                     )}
                   </span>

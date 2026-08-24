@@ -222,7 +222,10 @@ func TestConnectAnOAuthAccountEndToEnd(t *testing.T) {
 	// Follow the consent and deliver the callback
 	cb := browse(t, s, started.RedirectURL, cookies)
 	require.Equal(t, http.StatusFound, cb.Code, cb.Body.String())
-	assert.Equal(t, "/profile", cb.Header().Get("Location"))
+	// Back to where connections live. This said /profile until they moved to
+	// their own page, so a finished consent dropped people somewhere that no
+	// longer showed the thing they had just connected.
+	assert.Equal(t, "/connections", cb.Header().Get("Location"))
 
 	// The connection now exists, sealed, under the slug that was asked for
 	conn, err := s.apps.Store().ConnectionBySlug(u.ID, "work-cal")

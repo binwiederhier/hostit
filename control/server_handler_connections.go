@@ -560,7 +560,7 @@ func (s *Server) connectionFromState(w http.ResponseWriter, r *http.Request, sta
 	if code == "" {
 		// The owner declined at the provider, which is not an error worth a
 		// stack trace -- send them back to where they started.
-		http.Redirect(w, r, "/profile", http.StatusFound)
+		http.Redirect(w, r, "/connections", http.StatusFound)
 		return true
 	}
 	label := p.Label
@@ -581,7 +581,7 @@ func (s *Server) connectionFromState(w http.ResponseWriter, r *http.Request, sta
 		writeError(w, http.StatusBadGateway, err)
 		return true
 	}
-	http.Redirect(w, r, "/profile", http.StatusFound)
+	http.Redirect(w, r, "/connections", http.StatusFound)
 	return true
 }
 

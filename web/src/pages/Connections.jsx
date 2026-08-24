@@ -58,11 +58,17 @@ const Connections = () => {
     }
   };
 
-  const rename = async (c, nextSlug, nextLabel) => {
+  const edit = async (c, nextSlug, nextLabel, values) => {
     setError("");
     setBusy(true);
     try {
-      await api.put(`/api/connections/${encodeURIComponent(c.slug)}`, { slug: nextSlug, label: nextLabel });
+      const body = { slug: nextSlug, label: nextLabel };
+      // Only sent when something was actually typed: an empty form means
+      // "leave the credential alone", not "replace it with nothing".
+      if (values && Object.values(values).some((v) => (v || "").trim() !== "")) {
+        body.values = values;
+      }
+      await api.put(`/api/connections/${encodeURIComponent(c.slug)}`, body);
       setRenaming(null);
       await load();
     } catch (err) {
@@ -177,7 +183,13 @@ const Connections = () => {
         />
       )}
       {renaming && (
-        <RenameConnectionDialog conn={renaming} busy={busy} onClose={() => setRenaming(null)} onSave={rename} />
+        <EditConnectionDialog
+          conn={renaming}
+          provider={providers.find((p) => p.name === renaming.provider)}
+          busy={busy}
+          onClose={() => setRenaming(null)}
+          onSave={edit}
+        />
       )}
       {removing && (
         <ConfirmDialog
@@ -513,7 +525,7 @@ const ToolsDialog = ({ conn, tools, onClose }) => {
     <Modal wide onClose={onClose} title={`${conn.label || conn.slug}: ${tools.length} tool${tools.length === 1 ? "" : "s"}`}>
       <p className="hint">
         What this server offers. A granted app calls any of them by name at{" "}
-        <span className="mono">/v1/mcp/{conn.slug}/call</span>, and they are also in the
+        <span className="mono">/api/container/mcp/{conn.slug}/call</span>, and they are also in the
         assistant&rsquo;s own tool list.
       </p>
       {tools.length >= toolsSearchThreshold && (
@@ -799,8 +811,8 @@ const AddConnectionDialog = ({ provider, existing, onClose, onAdded }) => {
           What an app asks for:{" "}
           <span className="mono">
             {mcp
-              ? `/v1/mcp/${reference || "issues"}/call`
-              : `/v1/connections/${reference || "work-calendar"}/token`}
+              ? `/api/container/mcp/${reference || "issues"}/call`
+              : `/api/container/connections/${reference || "work-calendar"}/token`}
           </span>
           . Renaming it later breaks any app already using the old one.
         </p>
@@ -847,19 +859,32 @@ const AddConnectionDialog = ({ provider, existing, onClose, onAdded }) => {
 // pasted key and should not look like a hang.
 const mcpBusyLabel = (mcp) => (mcp ? "Contacting server..." : "Saving...");
 
-// Editing a connection changes both halves independently: the name is cosmetic,
-// the reference is what apps address it by -- so the dialog says which is which.
-const RenameConnectionDialog = ({ conn, busy, onClose, onSave }) => {
+// Editing a connection. The name and the reference do different jobs, so the
+// dialog says which is which -- and for a PASTED credential the secret itself is
+// editable here too.
+//
+// It was not, which made a rotated API key mean deleting the credential and
+// adding it again, losing every grant in the process. The API always supported
+// it; only the dialog did not ask.
+const EditConnectionDialog = ({ conn, provider, busy, onClose, onSave }) => {
   const [label, setLabel] = useState(conn.label || "");
   const [slug, setSlug] = useState(conn.slug);
-  const changed = slug.trim().toLowerCase() !== conn.slug || label.trim() !== (conn.label || "");
+  const [values, setValues] = useState({});
+  const editableFields = conn.kind === "static" ? provider?.fields || [] : [];
+  const touched = Object.values(values).some((v) => (v || "").trim() !== "");
+  // A partly-filled credential would replace the whole thing with half of it,
+  // so every required field has to be present once any of them is.
+  const incomplete =
+    touched && editableFields.some((f) => !f.optional && !(values[f.name] || "").trim());
+  const changed =
+    slug.trim().toLowerCase() !== conn.slug || label.trim() !== (conn.label || "") || touched;
 
   return (
     <Modal onClose={onClose} title={`Edit ${conn.label || conn.slug}`}>
       <form
         onSubmit={(e) => {
           e.preventDefault();
-          onSave(conn, slug.trim().toLowerCase(), label.trim());
+          onSave(conn, slug.trim().toLowerCase(), label.trim(), touched ? values : null);
         }}
       >
         <label className="conn-field">
@@ -875,9 +900,51 @@ const RenameConnectionDialog = ({ conn, busy, onClose, onSave }) => {
           What apps ask for. Changing it breaks any app already using{" "}
           <span className="mono">{conn.slug}</span> until that app is updated too.
         </p>
+        {editableFields.length > 0 && (
+          <>
+            <div className="conn-editdiv" />
+            <p className="hint">
+              Replace the credential -- after rotating a key, say. Leave these blank to keep what is
+              stored; every grant survives either way, so this is always better than removing it and
+              adding it again.
+            </p>
+            {editableFields.map((f) => (
+              <label key={f.name} className="conn-field">
+                <span>{f.label}{f.optional ? " (optional)" : ""}</span>
+                {f.multiline ? (
+                  <textarea
+                    rows={7}
+                    className="mono conn-textarea"
+                    value={values[f.name] || ""}
+                    onChange={(e) => setValues({ ...values, [f.name]: e.target.value })}
+                    placeholder={f.secret ? "unchanged" : f.placeholder}
+                    aria-label={f.label}
+                    disabled={busy}
+                    spellCheck={false}
+                  />
+                ) : (
+                  <input
+                    type={f.secret ? "password" : "text"}
+                    value={values[f.name] || ""}
+                    onChange={(e) => setValues({ ...values, [f.name]: e.target.value })}
+                    placeholder={f.secret ? "unchanged" : f.placeholder}
+                    aria-label={f.label}
+                    disabled={busy}
+                  />
+                )}
+              </label>
+            ))}
+            {incomplete && (
+              <p className="hint conn-warn">
+                Replacing the credential replaces all of it, so fill in every field above or clear
+                them to leave it alone.
+              </p>
+            )}
+          </>
+        )}
         <div className="btn-row">
           <button type="button" className="btn" onClick={onClose} disabled={busy}>Cancel</button>
-          <button type="submit" className="btn btn-primary" disabled={busy || !changed || slug.trim().length < 3}>
+          <button type="submit" className="btn btn-primary" disabled={busy || !changed || incomplete || slug.trim().length < 3}>
             {busy ? "Saving..." : "Save"}
           </button>
         </div>
