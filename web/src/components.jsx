@@ -249,9 +249,12 @@ export const Snippet = ({ text }) => (
 // thing you picked, not a box you failed to notice.
 export const VisibilityChoice = ({ value, onChange, disabled }) => (
   <div className="visibility-choice" role="radiogroup" aria-label="Visibility">
+    {/* Private FIRST, and the default where one is chosen. The two options are
+        not equal: landing on public by accident publishes something, and
+        landing on private by accident does not. */}
     {[
-      { key: false, title: "Public", detail: "Anyone with the link can open it", icon: <path d="M8 1.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13ZM1.5 8h13M8 1.5c1.7 1.8 2.6 4 2.6 6.5S9.7 12.7 8 14.5c-1.7-1.8-2.6-4-2.6-6.5S6.3 3.3 8 1.5Z" /> },
       { key: true, title: "Private", detail: "Only you and people you add", icon: <><rect x="3" y="7" width="10" height="7" rx="1.5" /><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" /></> },
+      { key: false, title: "Public", detail: "Anyone with the link can open it", icon: <path d="M8 1.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13ZM1.5 8h13M8 1.5c1.7 1.8 2.6 4 2.6 6.5S9.7 12.7 8 14.5c-1.7-1.8-2.6-4-2.6-6.5S6.3 3.3 8 1.5Z" /> },
     ].map((option) => (
       <button
         key={String(option.key)}

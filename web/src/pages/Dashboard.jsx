@@ -4,16 +4,13 @@ import { api, isNetworkError } from "../api";
 import { useReconnect } from "../hooks";
 import { ErrorBanner, Loading, Skeleton, VisibilityChoice, VisibilityMark, Wordmark, pairMB, UsagePair, usageLevel, visibilityOf } from "../components";
 import { previewSrc, previewShotSrc, previewScale, DESKTOP_WIDTH, DESKTOP_HEIGHT } from "../preview";
+import { filterAppName, isValidAppName } from "../appname";
 
-// Same rule the server enforces (app.AppNamePattern)
-const nameRe = /^[a-z]([a-z0-9-]{0,30}[a-z0-9])?$/;
-
-const nameHint = "Names are up to 32 characters: lowercase letters, digits and dashes, starting with a letter.";
 
 // The name form, shared by the empty state and the "New app" button. Both need
 // a name before anything can happen, so the CTA is the submit button itself.
 const CreateForm = ({ name, setName, onSubmit, creating, atLimit, big = false, inputRef }) => {
-  const valid = nameRe.test(name);
+  const valid = isValidAppName(name);
   return (
     <>
       <form className={big ? "create-form create-form-big" : "create-form"} onSubmit={onSubmit}>
@@ -21,7 +18,7 @@ const CreateForm = ({ name, setName, onSubmit, creating, atLimit, big = false, i
           ref={inputRef}
           type="text"
           value={name}
-          onChange={(e) => setName(e.target.value)}
+          onChange={(e) => setName(filterAppName(e.target.value))}
           placeholder="app name, e.g. blog"
           disabled={atLimit || creating}
           aria-label="New app name"
@@ -43,8 +40,8 @@ const CreateForm = ({ name, setName, onSubmit, creating, atLimit, big = false, i
 // New app behind a modal, reached from the "New app" button. A dialog asks for
 // the one thing needed -- the name -- instead of a field unfolding in place,
 // which read as an odd half-state next to the app list.
-const NewAppDialog = ({ name, setName, onSubmit, creating, atLimit, onCancel, isPrivate, setPrivate }) => {
-  const valid = nameRe.test(name);
+const NewAppDialog = ({ name, setName, onSubmit, creating, atLimit, onCancel, isPrivate, setPrivate, connections, grantAll, setGrantAll }) => {
+  const valid = isValidAppName(name);
   const host = window.location.host;
   const sub = (name || "").replace(/[^a-z0-9-]/g, "") || "app";
   return (
@@ -64,7 +61,10 @@ const NewAppDialog = ({ name, setName, onSubmit, creating, atLimit, onCancel, is
         <label className="newapp-label">App name</label>
         <div className="newapp-input">
           <span className="newapp-dollar mono">$</span>
-          <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. blog" aria-label="New app name" autoFocus disabled={creating} spellCheck="false" autoComplete="off" />
+          {/* Filtered as it is typed rather than validated on submit: an
+              invalid name is never on screen, and the rule needs no explaining
+              underneath. */}
+          <input type="text" value={name} onChange={(e) => setName(filterAppName(e.target.value))} placeholder="e.g. blog" aria-label="New app name" autoFocus disabled={creating} spellCheck="false" autoComplete="off" />
         </div>
         <div className="newapp-willbe">
           <div className="row">
@@ -78,7 +78,38 @@ const NewAppDialog = ({ name, setName, onSubmit, creating, atLimit, onCancel, is
             <span className="val">ssh <b>{sub}</b>@{host}</span>
           </div>
         </div>
-        <p className="hint">{nameHint}</p>
+        {/* Only when there is something to grant. An empty chooser explaining a
+            feature nobody has used yet is noise on the one dialog that has to
+            stay quick. */}
+        {connections.length > 0 && (
+          <div className="newapp-grant">
+            <span className="newapp-grant-lab">Grant access to</span>
+            <div className="visibility-choice newapp-grant-choice" role="radiogroup" aria-label="Grant connections">
+              <button
+                type="button"
+                role="radio"
+                aria-checked={grantAll}
+                className={grantAll ? "vis-option vis-option-on" : "vis-option"}
+                onClick={() => setGrantAll(true)}
+                disabled={creating}
+              >
+                <span className="vis-title">All connections</span>
+                <span className="vis-detail">{connections.length} attached</span>
+              </button>
+              <button
+                type="button"
+                role="radio"
+                aria-checked={!grantAll}
+                className={!grantAll ? "vis-option vis-option-on" : "vis-option"}
+                onClick={() => setGrantAll(false)}
+                disabled={creating}
+              >
+                <span className="vis-title">No connections</span>
+                <span className="vis-detail">grant them later</span>
+              </button>
+            </div>
+          </div>
+        )}
         <div className="btn-row">
           <button type="button" className="btn" onClick={onCancel} disabled={creating}>
             Cancel
@@ -104,7 +135,6 @@ const EmptyState = (props) => (
       Name your first app and hostit will have it serving in seconds.
     </p>
     <CreateForm {...props} big />
-    <p className="hint">{nameHint}</p>
   </div>
 );
 
@@ -420,7 +450,13 @@ const Dashboard = ({ account, refreshAccount }) => {
   const [name, setName] = useState("");
   const [creating, setCreating] = useState(false);
   const [adding, setAdding] = useState(false);
-  const [isPrivate, setPrivate] = useState(false);
+  // Private by default: landing on public by accident publishes something, and
+  // landing on private by accident does not.
+  const [isPrivate, setPrivate] = useState(true);
+  // The connections this person already has, so the New app dialog can offer
+  // to grant them. Loaded once; an empty list simply hides the chooser.
+  const [connections, setConnections] = useState([]);
+  const [grantAll, setGrantAll] = useState(false);
   const [toast, setToast] = useState("");
   const [view, setView] = useState(readView);
   const [showArchived, setShowArchived] = useState(readShowArchived);
@@ -461,7 +497,7 @@ const Dashboard = ({ account, refreshAccount }) => {
   }, [searchParams, setSearchParams]);
 
   const atLimit = account.usage.apps >= account.limits.app_limit;
-  const nameValid = nameRe.test(name);
+  const nameValid = isValidAppName(name);
 
   const load = useCallback(async () => {
     if (!navigator.onLine) return; // offline: don't hammer, wait for reconnect
@@ -479,6 +515,15 @@ const Dashboard = ({ account, refreshAccount }) => {
   // The server answers from a cache so the list renders at once; its numbers may
   // be a few seconds old, so ask again shortly after and then keep it fresh
   // while the page is open.
+  // The connections list changes rarely and only matters when the New app
+  // dialog opens, so it is fetched once rather than on the app-list ticker.
+  useEffect(() => {
+    api
+      .get("/api/connections")
+      .then((d) => setConnections(d.connections || []))
+      .catch(() => setConnections([]));
+  }, []);
+
   useEffect(() => {
     load();
     const soon = setTimeout(load, 2000);
@@ -499,8 +544,19 @@ const Dashboard = ({ account, refreshAccount }) => {
     setError("");
     try {
       const res = await api.post("/api/apps", { name, private: isPrivate });
+      // Granted AFTER the app exists, one call each, and failures are not fatal:
+      // the app was created and losing a grant is something the app's own
+      // Connections tab can fix, where losing the app would not be.
+      if (grantAll) {
+        await Promise.all(
+          connections.map((c) =>
+            api.put(`/api/apps/${encodeURIComponent(name)}/connections/${encodeURIComponent(c.slug)}`, {}).catch(() => {})
+          )
+        );
+      }
       setName("");
-      setPrivate(false);
+      setPrivate(true);
+      setGrantAll(false);
       setAdding(false);
       refreshAccount();
       navigate(`/app/${res.name}`);
@@ -514,7 +570,7 @@ const Dashboard = ({ account, refreshAccount }) => {
   const cancelAdding = () => {
     setAdding(false);
     setName("");
-    setPrivate(false);
+    setPrivate(true);
   };
 
   const formProps = { name, setName, onSubmit: create, creating, atLimit, inputRef };
@@ -599,7 +655,7 @@ const Dashboard = ({ account, refreshAccount }) => {
         </>
       )}
       {adding && (
-        <NewAppDialog name={name} setName={setName} onSubmit={create} creating={creating} atLimit={atLimit} onCancel={cancelAdding} isPrivate={isPrivate} setPrivate={setPrivate} />
+        <NewAppDialog name={name} setName={setName} onSubmit={create} creating={creating} atLimit={atLimit} onCancel={cancelAdding} isPrivate={isPrivate} setPrivate={setPrivate} connections={connections} grantAll={grantAll} setGrantAll={setGrantAll} />
       )}
       {toast && (
         <div className="snackbar" role="status" aria-live="polite">

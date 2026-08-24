@@ -72,6 +72,17 @@ const (
 	// (HostAppSocketFile) that gets mounted at the container's run dir, so this
 	// unchanged /run/hostit/hostit.sock is where it lands inside.
 	DefaultSocketFile = "/run/hostit/hostit.sock"
+	// ContainerAPIAddr is the loopback address the in-container agent ALSO serves
+	// the container API on, so an app can use a plain HTTP client and URL
+	// (ContainerAPIURL) instead of dialing the unix socket. The PORT must stay
+	// clear of the app's own container port (workspace.containerPort, 80): an app
+	// listens on 0.0.0.0:$PORT, which covers every loopback address including
+	// 127.0.0.1, so sharing the port makes the app fail to bind with "address
+	// already in use". 2586 is well clear of it and unlikely to be an app's own
+	// second service. The unix socket (DefaultSocketFile) stays available; this
+	// is an addition, not a move.
+	ContainerAPIAddr = "127.0.0.1:2586"
+	ContainerAPIURL  = "http://" + ContainerAPIAddr
 	// HostAppSocketFile is the same app socket on the HOST: the node serves it
 	// here and the host-side login shell dials it here. It sits in its own subdir
 	// so only that subdir is mounted into containers, keeping apps-raw and the

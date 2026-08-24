@@ -81,6 +81,9 @@ func New(home string) *Agent {
 func (a *Agent) Run() error {
 	a.wireSignals()
 	defer a.closeLog()
+	// The container API on a loopback address, alongside the unix socket, for
+	// the whole container lifetime -- independent of app restarts.
+	go a.serveContainerAPI()
 	for {
 		// The owner stopped the app but left the container up: idle, keeping the
 		// container alive, until start (or reload) wakes us.

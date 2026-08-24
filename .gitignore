@@ -18,3 +18,4 @@ control/site/*
 !/proxy/
 /hostit
 !/hostit/
+__pycache__/

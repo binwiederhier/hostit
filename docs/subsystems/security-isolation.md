@@ -281,6 +281,20 @@ on itself is a channel where identity is a fact the app cannot forge.**
   *itself*, and **cannot name another app**. The socket directory (not the socket
   file) is bind-mounted into the container, because the daemon recreates the
   socket on every start (`workspace/spec.go:appendCommonMounts`).
+
+  The **same API is also served on a loopback TCP address** inside the container
+  (`controlconf.ContainerAPIAddr`, `127.0.0.1:2586`), so an app can use an ordinary
+  HTTP client instead of a unix-socket one. The in-container agent (PID 1)
+  reverse-proxies it to the same socket (`agent/apiproxy.go`), so the peercred
+  guarantee is unchanged: the agent connects as the container's root, which the
+  idmap maps to the app's host uid -- the same uid the app's own process presents,
+  so `SO_PEERCRED` still resolves to the right app. The **port** matters: it must
+  stay clear of the app's own container port (`workspace.containerPort`, 80),
+  because an app listens on `0.0.0.0:$PORT`, which covers every loopback address
+  including `127.0.0.1` -- share the port and the app fails to bind with "address
+  already in use". A test pins that they differ. The listener lives in the
+  container's own network namespace, so it is exactly as private as the socket.
+  The socket stays available -- the loopback is an addition, not a move.
 - **From the outside REST API:** an app-scoped bearer token that maps to exactly
   one app's endpoints; anything outside `/api/apps/<app>/` is refused. The
   sandboxed Claude Max backend reaches its tools through the *same* peercred

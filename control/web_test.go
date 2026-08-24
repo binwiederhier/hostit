@@ -57,3 +57,26 @@ func TestIndexIsNotCachedImmutably(t *testing.T) {
 	s.webHandler().ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/profile", nil))
 	assert.Equal(t, "no-cache", rr.Header().Get("Cache-Control"))
 }
+
+// A missing HASHED ASSET must 404, not fall through to the SPA.
+//
+// The fallback exists so /profile and /admin survive a reload, and it was
+// catching everything -- so a chunk from a previous build answered 200 with
+// index.html. The browser then refuses it with "disallowed MIME type", which
+// says nothing about what actually happened: the deploy replaced the bundle
+// while a tab was open, and that tab is asking for files that no longer exist.
+func TestAMissingHashedAssetIsNotTheSPA(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+
+	rr := httptest.NewRecorder()
+	s.webHandler().ServeHTTP(rr, httptest.NewRequest("GET", "/static/media/AppAssistant-Deadbeef.js", nil))
+	assert.Equal(t, http.StatusNotFound, rr.Code)
+	assert.NotContains(t, rr.Header().Get("Content-Type"), "text/html",
+		"answering a .js request with HTML is what produces the MIME error")
+
+	// A real route still reaches the SPA, which is what the fallback is for.
+	spa := httptest.NewRecorder()
+	s.webHandler().ServeHTTP(spa, httptest.NewRequest("GET", "/connections", nil))
+	assert.NotEqual(t, http.StatusNotFound, spa.Code)
+}

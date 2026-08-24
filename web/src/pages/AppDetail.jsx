@@ -4,6 +4,7 @@ import { api, ApiError, isNetworkError } from "../api";
 import { viewFromSlug, VIEW_TO_SLUG } from "../views";
 import { limitInputs, limitsPatchBody } from "../limits";
 import { visibilityChanges } from "../visibility";
+import { retryChunk } from "../chunkreload";
 import { useDropdown, useReconnect } from "../hooks";
 import { CopyButton, DocsLink, ErrorBanner, Loading, Snippet, StatusDot, VisibilityBadge, VisibilityChoice, pairMB, usageLevel, UsagePair, cores, visibilityOf } from "../components";
 import { useSetAppHeader } from "../appHeader";
@@ -11,10 +12,14 @@ import { useSetAppHeader } from "../appHeader";
 // xterm is heavy and only needed when a terminal is actually opened, so it is
 // split into its own chunk. The loaders are named so the page can prefetch every
 // tab's chunk eagerly (see prefetchTabs), while lazy() still handles rendering.
-const importTerminal = () => import("./AppTerminal");
-const importAssistant = () => import("./AppAssistant");
-const importEditor = () => import("./AppEditor");
-const importLogs = () => import("./AppLogs");
+// Wrapped in retryChunk: a deploy replaces every chunk's content hash, so a tab
+// opened before one holds names that no longer exist. Without this the first
+// tab switch after a deploy fails with "error loading dynamically imported
+// module" and the only cure is a reload the person has to think of.
+const importTerminal = retryChunk(() => import("./AppTerminal"));
+const importAssistant = retryChunk(() => import("./AppAssistant"));
+const importEditor = retryChunk(() => import("./AppEditor"));
+const importLogs = retryChunk(() => import("./AppLogs"));
 const AppTerminal = lazy(importTerminal);
 // The assistant pulls in a markdown renderer, so it stays a lazy chunk too.
 const AppAssistant = lazy(importAssistant);
@@ -2673,9 +2678,14 @@ const AppDetail = ({ account, refreshAccount }) => {
             className={"ws-viewtab" + (view === "connections" ? " on" : "")}
             onClick={() => setView("connections")}
           >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
-              <path d="M9 12H5a3 3 0 0 1 0-6h4M15 12h4a3 3 0 0 1 0 6h-4" />
-              <path d="M8 15h8" />
+            {/* A chain LINKED, not broken. The old one put its two halves on
+                one line and the bar joining them on another, so the links did
+                not meet the bar and it read as a chain that had snapped -- the
+                opposite of what this tab is for. */}
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"
+              strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M15 7h3a5 5 0 0 1 0 10h-3M9 7H6a5 5 0 0 0 0 10h3" />
+              <path d="M8 12h8" />
             </svg>
             Connections
           </button>

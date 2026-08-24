@@ -1,0 +1,3 @@
+description: Reads another app's logs, asks the model if anything is serious, and pushes only then
+mode: app
+run: python3 app.py

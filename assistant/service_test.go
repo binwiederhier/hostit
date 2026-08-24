@@ -692,7 +692,7 @@ func TestSystemPromptNamesTheAppsConnections(t *testing.T) {
 	assert.Contains(t, withConns, "Google Calendar")
 	assert.Contains(t, withConns, "openai")
 	// And how to actually reach one, or naming them achieves nothing
-	assert.Contains(t, withConns, "/v1/connections/work-cal/token")
+	assert.Contains(t, withConns, "/api/container/connections/work-cal/token")
 	assert.Contains(t, withConns, "/run/hostit/hostit.sock")
 }
 

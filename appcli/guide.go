@@ -81,6 +81,15 @@ func guideText(self *appctl.SelfInfo) string {
 		"  own. Uploading a prebuilt binary to " + app.BinDir + "/ works too, but then the app\n" +
 		"  is only a binary and the next session has nothing to change.\n" +
 		"\n" +
+		"REACHING HOSTIT FROM YOUR APP\n" +
+		"  Call hostit's own API two ways -- same API, whichever your language likes:\n" +
+		"    " + controlconf.ContainerAPIURL + "  a normal HTTP client/URL, e.g.\n" +
+		"                       GET " + controlconf.ContainerAPIURL + "/api/container/self\n" +
+		"    the unix socket " + controlconf.DefaultSocketFile + "\n" +
+		"                       (curl --unix-socket ... http://x/...)\n" +
+		"  Useful: /api/container/self, /api/container/connections (a granted\n" +
+		"  credential, per run), /api/container/assistant (ask a model, no API key).\n" +
+		"\n" +
 		"COMMANDS\n" +
 		"  hostit deploy      apply hostit.yml and (re)start the app\n" +
 		"  hostit start/stop  start or stop the app (container stays up)\n" +
