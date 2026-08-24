@@ -4,11 +4,15 @@ import { api } from "../api";
 import { useDropdown } from "../hooks";
 import { ConfirmDialog, DocsLink, ErrorBanner, Skeleton } from "../components";
 
-// Connections and credentials: the accounts and secrets an owner attaches once
-// and can then grant to their apps. TWO cards, not one, because they are two
-// different things to a person -- an OAuth account is something you CONNECT, a
-// pasted key is something you STORE, and one heading makes one of them read
-// wrong.
+// Connections: the accounts, secrets and tool servers an owner attaches once and
+// can then grant to their apps. THREE cards, not one, because they are three
+// different things to a person -- an account is something you SIGN IN to, a
+// pasted key is something you STORE, an MCP server is a set of TOOLS -- and one
+// heading makes all but one of them read wrong.
+//
+// "Connections" is the umbrella here and nothing else. The oauth card is called
+// Accounts precisely so the umbrella word is not also the name of one of the
+// things under it, which is what it used to be.
 //
 // The credential itself is never shown or returned. This page says WHAT is
 // attached; each app's settings say which of them that app may use.
@@ -33,7 +37,7 @@ const Connections = () => {
   }, [load]);
 
   const providers = data?.providers || [];
-  const { connections, credentials, servers } = splitByKind(data?.connections);
+  const { accounts, credentials, servers } = splitByKind(data?.connections);
   const mcpProvider = providers.find((p) => p.kind === "mcp") || null;
 
   const reconnect = async (c) => {
@@ -84,18 +88,18 @@ const Connections = () => {
       <ErrorBanner message={error} onDismiss={() => setError("")} />
 
       <ConnectionsCard
-        title="Connections"
+        title="Accounts"
         hint={
           <>
-            Accounts you connect once and then grant to individual apps, on the app&rsquo;s
+            Accounts you sign in to once and then grant to individual apps, on the app&rsquo;s
             Connections tab. Apps act as you, and only reach what you grant them. Connect the same
             service twice -- two calendars, say -- and each keeps its own reference.{" "}
-            <DocsLink guide="user" section="connections">How connections work</DocsLink>
+            <DocsLink guide="user" section="connections">How accounts work</DocsLink>
           </>
         }
         emptyText="No accounts connected yet."
-        cta="Add connection"
-        items={connections}
+        cta="Add account"
+        items={accounts}
         providers={providers.filter((p) => p.kind === "oauth")}
         loading={data === null && !error}
         noProvidersText="No accounts can be connected on this server yet: an admin sets each provider's OAuth client in control.yml."

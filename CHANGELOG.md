@@ -9,17 +9,19 @@ default, or on-disk state is called out as **Breaking** or **Upgrade note**.
 
 ## Unreleased
 
-- **Connections and credentials.** Attach an account or a secret once, then grant
+- **Connections.** Attach an account, a secret or a tool server once, then grant
   it to individual apps. An app asks hostit for a usable credential when it needs
   one, over its own socket -- so nothing is baked into a file, and revoking a
   grant takes effect on the next request rather than the next deploy.
 
-  Two kinds, because they are two different things to a person. **Connections**
-  are OAuth accounts you sign in to: Google Calendar, Gmail, Slack, Discord,
+  Three kinds, because they are three different things to a person, and
+  "connections" is the umbrella rather than one of them. **Accounts** are
+  services you sign in to: Google Calendar, Gmail, Slack, Discord,
   GitHub, Jira, HubSpot, Linear. **Credentials** are secrets you paste: Fastmail
   (one JMAP token for mail, calendar and contacts), IMAP, SMTP, CalDAV, CardDAV,
   Postgres, MySQL, OpenSearch, S3, ntfy, Home Assistant, an SSH key, a Discord
-  bot token, or any API key at all. Eleven of the nineteen need no OAuth client,
+  bot token, or any API key at all. **MCP servers** are tool servers added by
+  URL (below). Eleven of the nineteen need no OAuth client,
   no review and no console visit -- which is the point of brokering the
   credential rather than the API.
 

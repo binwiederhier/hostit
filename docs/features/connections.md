@@ -7,14 +7,20 @@ to individual apps. The app asks hostit for a usable credential per request over
 its own unix socket; it never holds a refresh token, and never has a credential
 baked into an environment variable that nothing can rotate.
 
-Three words, deliberately, because they are three different things to a person:
+**Connections** is the umbrella -- the page, the API collection, the grant, the
+table. Under it are three kinds, deliberately named apart, because they are three
+different things to a person:
 
-- A **connection** is an OAuth account you connect (Google Calendar, Gmail,
-  Slack, Discord, GitHub, Jira). hostit holds a refresh token -- or, for a
-  provider whose token does not expire, that token -- and mints short-lived
-  access tokens.
+- An **account** is a service you sign in to (Google Calendar, Gmail, Slack,
+  Discord, GitHub, Jira). hostit holds a refresh token -- or, for a provider
+  whose token does not expire, that token -- and mints short-lived access
+  tokens. Its `kind` is `oauth`.
+
+  It is called an ACCOUNT and not a "connection" on purpose: connections is the
+  umbrella for all three, and using the same word for one of the three made it
+  ambiguous everywhere it appeared. The API kind stays `oauth`.
 - A **credential** is a secret you paste (an IMAP mailbox, any API key). hostit
-  stores it and hands it back unchanged.
+  stores it and hands it back unchanged. Its `kind` is `static`.
 - An **MCP server** is a tool server added by URL. It is the one kind hostit does
   NOT hand to the app -- hostit holds the token and makes the calls. It has its
   own file: [mcp-servers.md](mcp-servers.md).

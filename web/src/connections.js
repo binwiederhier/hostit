@@ -14,13 +14,17 @@ export function suggestSlug(provider, existing) {
   return base;
 }
 
-// splitByKind separates the three sections the page shows. An OAuth account is
-// something you connect; a pasted key is something you store; an MCP server is
-// a set of tools -- and all three read wrong under one heading.
+// splitByKind separates the three sections the page shows. An account is
+// something you sign in to; a pasted key is something you store; an MCP server
+// is a set of tools -- and all three read wrong under one heading.
+//
+// The oauth bucket is called ACCOUNTS rather than connections on purpose:
+// "connections" is the umbrella for all three (the page, the API, the grant),
+// and using the same word for one of the three made it ambiguous everywhere.
 export function splitByKind(all) {
   const list = all || [];
   return {
-    connections: list.filter((c) => c.kind === "oauth"),
+    accounts: list.filter((c) => c.kind === "oauth"),
     credentials: list.filter((c) => c.kind === "static"),
     servers: list.filter((c) => c.kind === "mcp"),
   };

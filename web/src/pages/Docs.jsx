@@ -513,16 +513,17 @@ const VisibilityPage = () => (
 // Connections, for the person using them rather than the operator wiring them up.
 const ConnectionsPage = () => (
   <>
-    <h2>Connections and credentials</h2>
+    <h2>Connections</h2>
     <p>
-      Attach an account or a secret <b>once</b>, then grant it to whichever apps should use it.
+      <b>Connections</b> is the word for all of it: attach an account, a secret or a tool server
+      <b>once</b>, then grant it to whichever apps should use it.
       An app asks hostit for a usable credential when it needs one -- it never holds your
       password, and nothing is baked into a file you would have to redeploy to change.
     </p>
     <p>Three kinds, on the <b>Connections</b> page:</p>
     <ul>
       <li>
-        <b>Connections</b> are accounts you sign in to: Google Calendar, Gmail, Slack, Discord,
+        <b>Accounts</b> are services you sign in to: Google Calendar, Gmail, Slack, Discord,
         GitHub, Jira. You approve them at the provider, and hostit keeps the permission.
       </li>
       <li>

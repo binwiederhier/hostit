@@ -23,17 +23,17 @@ describe("splitByKind", () => {
   // Connections and credentials are two sections, and something with neither
   // kind must not silently vanish from both.
   it("splits accounts from pasted secrets", () => {
-    const { connections, credentials } = splitByKind([
+    const { accounts, credentials } = splitByKind([
       { slug: "work-cal", kind: "oauth" },
       { slug: "openai", kind: "static" },
       { slug: "work-chat", kind: "oauth" },
     ]);
-    expect(connections.map((c) => c.slug)).toEqual(["work-cal", "work-chat"]);
+    expect(accounts.map((c) => c.slug)).toEqual(["work-cal", "work-chat"]);
     expect(credentials.map((c) => c.slug)).toEqual(["openai"]);
   });
 
   it("copes with nothing loaded yet", () => {
-    expect(splitByKind(null)).toEqual({ connections: [], credentials: [], servers: [] });
+    expect(splitByKind(null)).toEqual({ accounts: [], credentials: [], servers: [] });
   });
 });
 
@@ -126,8 +126,8 @@ describe("splitByKind with MCP servers", () => {
   ];
 
   it("puts each kind in its own bucket", () => {
-    const { connections, credentials, servers } = splitByKind(all);
-    expect(connections.map((c) => c.slug)).toEqual(["work-cal"]);
+    const { accounts, credentials, servers } = splitByKind(all);
+    expect(accounts.map((c) => c.slug)).toEqual(["work-cal"]);
     expect(credentials.map((c) => c.slug)).toEqual(["openai"]);
     expect(servers.map((c) => c.slug)).toEqual(["issues"]);
   });
