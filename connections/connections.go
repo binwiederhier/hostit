@@ -25,6 +25,10 @@ var (
 	// or a value that is not the shape the provider needs. Their mistake to
 	// fix, so it must reach them as a 400 with the reason, not a 500.
 	ErrInvalidCredential = errors.New("invalid credential")
+	// ErrReauthRequired means the provider rejected the stored credential (a
+	// revoked or expired refresh token): the owner must reconnect. Control marks
+	// the connection needs-reconnect when a refresh returns this.
+	ErrReauthRequired = errors.New("the provider rejected the credential; reconnect")
 )
 
 const (

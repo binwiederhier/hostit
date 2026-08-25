@@ -184,6 +184,13 @@ const RoutedMain = ({ children }) => {
   return <main className={"container" + (roomyPath(pathname) ? " container-roomy" : "")}>{children}</main>;
 };
 
+const BellIcon = () => (
+  <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M10 3a4 4 0 0 0-4 4c0 4-1.5 5-2 6h12c-.5-1-2-2-2-6a4 4 0 0 0-4-4z" />
+    <path d="M8.5 16a1.5 1.5 0 0 0 3 0" />
+  </svg>
+);
+
 const Nav = ({ account, appHeader }) => {
   // The app detail page runs full width; the nav widens to match, so the logo and
   // links slide out to the left edge and the avatar to the right.
@@ -224,6 +231,17 @@ const Nav = ({ account, appHeader }) => {
         </nav>
       </div>
       <div className="nav-right">
+        {account.connections_need_reconnect > 0 && (
+          <Link
+            to="/connections"
+            className="nav-bell"
+            title={`${account.connections_need_reconnect} connection${account.connections_need_reconnect === 1 ? "" : "s"} need re-authorizing`}
+            aria-label={`${account.connections_need_reconnect} connections need re-authorizing`}
+          >
+            <BellIcon />
+            <span className="nav-bell-count">{account.connections_need_reconnect}</span>
+          </Link>
+        )}
         <ProfileMenu account={account} />
       </div>
       </div>

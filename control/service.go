@@ -213,6 +213,15 @@ func New(conf *controlconf.Config, apps *Manager, users *user.Manager) *Server {
 func (s *Server) Run() error {
 	g := &errgroup.Group{}
 
+	// Keep OAuth connections alive without the owner re-authorizing: refresh
+	// tokens proactively before they expire, and flag any the provider rejects.
+	if s.connections != nil {
+		g.Go(func() error {
+			s.connections.RefreshLoop(connectionRefreshInterval)
+			return nil
+		})
+	}
+
 	// Unix socket for the app-side CLI ("hostit up" etc.)
 	socketListener, err := s.listenSocket()
 	if err != nil {
@@ -266,6 +275,9 @@ func (s *Server) Run() error {
 
 // Stop gracefully shuts down all listeners
 func (s *Server) Stop() {
+	if s.connections != nil {
+		s.connections.StopRefresh()
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()
 	for _, srv := range s.servers {

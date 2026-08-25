@@ -678,3 +678,42 @@ func TestUnknownScopeKeyIsRefused(t *testing.T) {
 		`{"provider":"fake-slack-user2","slug":"myslack","scope_keys":["public","evil"]}`, token)
 	assert.Equal(t, http.StatusBadRequest, rr.Code, rr.Body.String())
 }
+
+// A connection's health follows its refreshes: a provider that rejects the
+// refresh token flips it to needs-reconnect (and persists that), and a later
+// successful refresh clears it. Drives it through connectionManager.Verify.
+func TestConnectionHealthReflectsRefresh(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	f := newFakeAuthServer(t)
+	registerFakeProvider(t, s, f, "fake-health", false) // a refreshing provider
+	u := newActiveTestUser(t, s, "owner@example.com")
+	token := accountToken(t, s, u)
+	session := signIn(t, s, u)
+
+	rr := request(t, s.API(), "POST", "/api/connections", `{"provider":"fake-health","slug":"cal"}`, token)
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+	var started apiConnectStartedResponse
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &started))
+	require.Equal(t, http.StatusFound, browse(t, s, started.RedirectURL, append(rr.Result().Cookies(), session)).Code)
+
+	conn, err := s.apps.Store().ConnectionBySlug(u.ID, "cal")
+	require.NoError(t, err)
+	assert.Equal(t, store.ConnectionStatusOK, conn.Status, "a fresh connection is healthy")
+
+	// The provider now rejects the refresh: verify reports AND persists needs-reconnect.
+	f.denyRefresh = true
+	status, err := s.connections.Verify(context.Background(), u.ID, "cal")
+	require.NoError(t, err)
+	assert.Equal(t, store.ConnectionStatusNeedsReconnect, status)
+	conn, _ = s.apps.Store().ConnectionBySlug(u.ID, "cal")
+	assert.Equal(t, store.ConnectionStatusNeedsReconnect, conn.Status)
+
+	// It recovers: verify clears the flag.
+	f.denyRefresh = false
+	status, err = s.connections.Verify(context.Background(), u.ID, "cal")
+	require.NoError(t, err)
+	assert.Equal(t, store.ConnectionStatusOK, status)
+	conn, _ = s.apps.Store().ConnectionBySlug(u.ID, "cal")
+	assert.Equal(t, store.ConnectionStatusOK, conn.Status)
+}

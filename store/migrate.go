@@ -425,6 +425,12 @@ var (
 		CREATE UNIQUE INDEX idx_provider_owner_name ON provider (owner_id, name);
 		CREATE INDEX idx_provider_owner ON provider (owner_id);
 	`,
+		// Connection health: 'ok' or 'needs_reconnect'. Control keeps it current
+		// by proactively refreshing OAuth tokens; a rejected refresh flips it so
+		// the owner sees the connection needs re-authorizing.
+		`
+		ALTER TABLE connection ADD COLUMN status TEXT NOT NULL DEFAULT 'ok';
+	`,
 		// Slack's bot provider was renamed from the bare id "slack" to "slack-bot",
 		// symmetric with the new "slack-user" personal connection. Rewrite existing
 		// bot connections to the new id so they keep resolving to a provider;

@@ -60,6 +60,7 @@ func (s *Server) newAPIHandler() http.Handler {
 	route(mux, "POST", "/connections", s.requirePerson(s.handleConnectionAdd))
 	route(mux, "PUT", "/connections/{slug}", s.requirePerson(s.handleConnectionUpdate))
 	route(mux, "POST", "/connections/{slug}/reconnect", s.requirePerson(s.handleConnectionReconnect))
+	route(mux, "POST", "/connections/{slug}/verify", s.requirePerson(s.handleConnectionVerify))
 	route(mux, "DELETE", "/connections/{slug}", s.requirePerson(s.handleConnectionDelete))
 	route(mux, "GET", "/connections/{slug}/mcp/tools", s.requirePerson(s.handleConnectionMCPTools))
 	// Provider definitions, in three tiers (control/providers.go). Personal
