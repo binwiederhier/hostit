@@ -45,10 +45,14 @@ func MergeAuthorizedKeys(existing string, managed []string) string {
 	b.WriteString(managedBeginMarker)
 	b.WriteString("\n")
 	for _, key := range managed {
-		if strings.TrimSpace(key) == "" {
+		// Only the first line: an embedded newline in a key would otherwise write
+		// a second authorized_keys entry (or forge the END marker), smuggling a
+		// persistent key past hostit's managed block and defeating revocation.
+		key = strings.SplitN(strings.TrimSpace(key), "\n", 2)[0]
+		if key == "" {
 			continue
 		}
-		b.WriteString(strings.TrimSpace(key))
+		b.WriteString(key)
 		b.WriteString("\n")
 	}
 	b.WriteString(managedEndMarker)

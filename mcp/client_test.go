@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -96,7 +97,7 @@ func newFakeToolServer(t *testing.T, f *fakeToolServer) *fakeToolServer {
 
 func TestListToolsReturnsTheServersCatalog(t *testing.T) {
 	f := newFakeToolServer(t, &fakeToolServer{})
-	c := NewClient(f.URL, "")
+	c := NewClient(nil, f.URL, "")
 
 	tools, err := c.ListTools(context.Background())
 	require.NoError(t, err)
@@ -108,7 +109,7 @@ func TestListToolsReturnsTheServersCatalog(t *testing.T) {
 
 func TestTheSessionFromInitializeIsSentOnEveryLaterCall(t *testing.T) {
 	f := newFakeToolServer(t, &fakeToolServer{})
-	c := NewClient(f.URL, "")
+	c := NewClient(nil, f.URL, "")
 
 	_, err := c.ListTools(context.Background())
 	require.NoError(t, err)
@@ -121,7 +122,7 @@ func TestTheSessionFromInitializeIsSentOnEveryLaterCall(t *testing.T) {
 
 func TestTheBearerTokenIsSent(t *testing.T) {
 	f := newFakeToolServer(t, &fakeToolServer{requireToken: "tok-abc"})
-	c := NewClient(f.URL, "tok-abc")
+	c := NewClient(nil, f.URL, "tok-abc")
 
 	_, err := c.ListTools(context.Background())
 	require.NoError(t, err)
@@ -130,7 +131,7 @@ func TestTheBearerTokenIsSent(t *testing.T) {
 
 func TestAServerThatWantsAuthIsReportedAsSuch(t *testing.T) {
 	f := newFakeToolServer(t, &fakeToolServer{requireToken: "tok-abc"})
-	c := NewClient(f.URL, "stale-token")
+	c := NewClient(nil, f.URL, "stale-token")
 
 	_, err := c.ListTools(context.Background())
 	require.Error(t, err)
@@ -140,7 +141,7 @@ func TestAServerThatWantsAuthIsReportedAsSuch(t *testing.T) {
 
 func TestCallToolReturnsTheTextContent(t *testing.T) {
 	f := newFakeToolServer(t, &fakeToolServer{})
-	c := NewClient(f.URL, "")
+	c := NewClient(nil, f.URL, "")
 
 	out, err := c.CallTool(context.Background(), "search", map[string]any{"q": "invoices"})
 	require.NoError(t, err)
@@ -153,7 +154,7 @@ func TestCallToolReturnsTheTextContent(t *testing.T) {
 // "the server is down", and the app can do something about only one of them.
 func TestAToolThatFailsIsAResultNotAnError(t *testing.T) {
 	f := newFakeToolServer(t, &fakeToolServer{toolError: true})
-	c := NewClient(f.URL, "")
+	c := NewClient(nil, f.URL, "")
 
 	out, err := c.CallTool(context.Background(), "search", map[string]any{"q": "x"})
 	require.NoError(t, err)
@@ -165,10 +166,31 @@ func TestAToolThatFailsIsAResultNotAnError(t *testing.T) {
 // client that handles only JSON works until the day it does not.
 func TestAnSSEAnswerIsReadTheSameAsAJSONOne(t *testing.T) {
 	f := newFakeToolServer(t, &fakeToolServer{streamed: true})
-	c := NewClient(f.URL, "")
+	c := NewClient(nil, f.URL, "")
 
 	tools, err := c.ListTools(context.Background())
 	require.NoError(t, err)
 	require.Len(t, tools, 2)
 	assert.Equal(t, "send", tools[1].Name)
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+// The MCP data plane MUST dial through the injected (SSRF-guarded) HTTP client,
+// not a default one -- otherwise a user-supplied server URL that rebinds DNS to
+// an internal address reaches it. This proves ListTools uses the injected client.
+func TestNewClientUsesTheInjectedHTTPClient(t *testing.T) {
+	t.Parallel()
+	used := false
+	client := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		used = true
+		return nil, errors.New("dial refused by guard")
+	})}
+	c := NewClient(client, "http://mcp.example.invalid/mcp", "")
+	_, _ = c.ListTools(context.Background())
+	if !used {
+		t.Fatal("NewClient must route requests through the injected http client (the SSRF guard), not a default one")
+	}
 }

@@ -436,7 +436,13 @@ func (m *Manager) DeleteToken(userID, id string) error {
 // apps that user owns
 func (m *Manager) AddKey(userID, label, key string) (*store.UserKey, error) {
 	key = strings.TrimSpace(key)
-	if _, _, _, _, err := ssh.ParseAuthorizedKey([]byte(key)); err != nil {
+	// A single key only: reject an embedded newline, and reject anything the
+	// parser leaves behind (a second key on another line). Either would smuggle
+	// an extra authorized_keys entry that survives revocation of the first.
+	if strings.ContainsAny(key, "\n\r") {
+		return nil, fmt.Errorf("%w: an SSH key must be a single line", ErrInvalid)
+	}
+	if _, _, _, rest, err := ssh.ParseAuthorizedKey([]byte(key)); err != nil || len(strings.TrimSpace(string(rest))) != 0 {
 		return nil, fmt.Errorf("%w: not a valid SSH public key", ErrInvalid)
 	}
 	if label == "" {

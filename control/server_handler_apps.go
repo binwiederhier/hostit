@@ -182,13 +182,17 @@ func (s *Server) handleAppsGet(w http.ResponseWriter, r *http.Request, c *caller
 		return
 	}
 	resp := s.appResponseFor(c, a, s.firstActiveDomain(a.Name))
-	resp.AgentToken = s.agentToken(a)
+	// The agent token is the OWNER's app credential (it resolves to the owner's
+	// identity); a collaborator must never read it, or they hold owner powers.
+	if c.isAdmin() || a.OwnerID == c.userID() {
+		resp.AgentToken = s.agentToken(a)
+	}
 	writeJSON(w, http.StatusOK, s.withState([]*apiAppResponse{resp})[0])
 }
 
 // handleAppsRotateToken issues a fresh agent token, invalidating the old one
 func (s *Server) handleAppsRotateToken(w http.ResponseWriter, r *http.Request, c *caller) {
-	a, err := s.ownedApp(c, r.PathValue("name"))
+	a, err := s.ownerApp(c, r.PathValue("name"))
 	if err != nil {
 		writeAppError(w, err)
 		return

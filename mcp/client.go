@@ -62,11 +62,20 @@ type Client struct {
 
 // NewClient returns a client for an MCP endpoint. token may be empty for a
 // server that wants no authorization.
-func NewClient(baseURL, token string) *Client {
+// NewClient builds an MCP client over the given HTTP client. The client MUST be
+// the SSRF-guarded outbound client for any user-supplied server URL: the tool
+// data plane (ListTools/CallTool) re-resolves DNS on every call, so a public
+// name that rebinds to an internal address is only stopped by the guarded
+// dialer -- add-time URL validation cannot. A nil client falls back to a plain
+// one (tests against loopback).
+func NewClient(client *http.Client, baseURL, token string) *Client {
+	if client == nil {
+		client = &http.Client{Timeout: 60 * time.Second}
+	}
 	return &Client{
 		baseURL: baseURL,
 		token:   token,
-		http:    &http.Client{Timeout: 60 * time.Second},
+		http:    client,
 	}
 }
 

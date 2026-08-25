@@ -184,7 +184,7 @@ func (m *connectionManager) addMCP(ctx context.Context, userID, slug, label, ser
 		return nil, "", err
 	}
 	meta := mcpMeta{URL: serverURL, Discovery: fromDiscovery(disco)}
-	if tools, err := mcp.NewClient(serverURL, "").ListTools(ctx); err == nil {
+	if tools, err := mcp.NewClient(m.client, serverURL, "").ListTools(ctx); err == nil {
 		meta.Tools, meta.ToolsAt = tools, time.Now()
 	} else {
 		slog.Warn("Connected an MCP server that would not list its tools", "url", serverURL, "error", err)
@@ -209,7 +209,7 @@ func (e errMCPNeedsConsent) Error() string { return "this MCP server requires au
 func (m *connectionManager) saveMCPToken(ctx context.Context, p mcpPending, tok mcp.OAuthToken) error {
 	meta := mcpMeta{URL: p.serverURL, Discovery: fromDiscovery(p.discovery)}
 	meta.Discovery.ClientID = p.clientID
-	if tools, err := mcp.NewClient(p.serverURL, tok.AccessToken).ListTools(ctx); err == nil {
+	if tools, err := mcp.NewClient(m.client, p.serverURL, tok.AccessToken).ListTools(ctx); err == nil {
 		meta.Tools, meta.ToolsAt = tools, time.Now()
 	} else {
 		slog.Warn("Authorized an MCP server that would not list its tools", "url", p.serverURL, "error", err)
@@ -246,12 +246,12 @@ func (m *connectionManager) mcpClientFor(ctx context.Context, conn *store.Connec
 		return nil, meta, err
 	}
 	if !meta.Discovery.NeedsAuth {
-		return mcp.NewClient(meta.URL, ""), meta, nil
+		return mcp.NewClient(m.client, meta.URL, ""), meta, nil
 	}
 	// Cached against the stored credential, exactly as OAuth connections are:
 	// one tool call per page must not be one token round trip per page.
 	if tok, ok := m.cachedTokenFor(conn); ok {
-		return mcp.NewClient(meta.URL, tok.AccessToken), meta, nil
+		return mcp.NewClient(m.client, meta.URL, tok.AccessToken), meta, nil
 	}
 	refreshToken, err := m.open(conn)
 	if err != nil {
@@ -287,7 +287,7 @@ func (m *connectionManager) mcpClientFor(ctx context.Context, conn *store.Connec
 		}
 	}
 	m.cache(conn, connections.Token{Provider: connections.ProviderMCP, AccessToken: tok.AccessToken, ExpiresAt: tok.ExpiresAt})
-	return mcp.NewClient(meta.URL, tok.AccessToken), meta, nil
+	return mcp.NewClient(m.client, meta.URL, tok.AccessToken), meta, nil
 }
 
 // mcpTools is what a server offers, from the stored list while it is fresh and

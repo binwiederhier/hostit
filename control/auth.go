@@ -190,6 +190,23 @@ func (s *Server) requireActive(next func(http.ResponseWriter, *http.Request, *ca
 	})
 }
 
+// requireAccount wraps a handler that manages an ACCOUNT or an app it OWNS
+// (create/rename/transfer/delete, collaborators, viewers, domains, limits,
+// tokens, connections). An app-scoped token is an AGENT credential -- it may run
+// its app's own agent endpoints (requireApp), but it resolves to the owner's
+// identity, so ownership checks alone would let it transfer, delete or re-grant
+// the app. It must never reach these routes; the agent surface is requireApp.
+func (s *Server) requireAccount(next func(http.ResponseWriter, *http.Request, *caller)) http.HandlerFunc {
+	return s.requireActive(func(w http.ResponseWriter, r *http.Request, c *caller) {
+		if c.appScope != "" {
+			writeError(w, http.StatusForbidden, errors.New(
+				"an app-scoped token cannot manage the account or the app; it is limited to the app's agent endpoints"))
+			return
+		}
+		next(w, r, c)
+	})
+}
+
 // requirePerson wraps a handler that operates on data belonging to ONE PERSON:
 // their connections, their SSH keys, their API tokens.
 //
@@ -204,7 +221,7 @@ func (s *Server) requireActive(next func(http.ResponseWriter, *http.Request, *ca
 // An operator credential is not a person, and the honest answer is to say so
 // rather than to invent one.
 func (s *Server) requirePerson(next func(http.ResponseWriter, *http.Request, *caller)) http.HandlerFunc {
-	return s.requireActive(func(w http.ResponseWriter, r *http.Request, c *caller) {
+	return s.requireAccount(func(w http.ResponseWriter, r *http.Request, c *caller) {
 		if c.userID() == "" {
 			writeError(w, http.StatusForbidden, errors.New(
 				"this belongs to a person, and the admin token is not one: sign in as a user, "+
@@ -217,7 +234,7 @@ func (s *Server) requirePerson(next func(http.ResponseWriter, *http.Request, *ca
 
 // requireAdmin wraps a handler so only admins may proceed
 func (s *Server) requireAdmin(next func(http.ResponseWriter, *http.Request, *caller)) http.HandlerFunc {
-	return s.requireActive(func(w http.ResponseWriter, r *http.Request, c *caller) {
+	return s.requireAccount(func(w http.ResponseWriter, r *http.Request, c *caller) {
 		if !c.isAdmin() {
 			writeError(w, http.StatusForbidden, errors.New("administrator access required"))
 			return

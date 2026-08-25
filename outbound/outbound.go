@@ -97,6 +97,22 @@ func publiclyRoutable(ip net.IP) bool {
 		ip.IsInterfaceLocalMulticast() || ip.IsMulticast() {
 		return false
 	}
+	// IPv6 forms that embed an IPv4 destination under a different representation
+	// must be judged on the embedded v4, or a private/link-local target sails
+	// past the checks above: 6to4 (2002::/16, bytes 2-6) and NAT64 (64:ff9b::/96,
+	// bytes 12-16). IPv4-mapped/compatible are already handled by To4() below.
+	if ip16 := ip.To16(); ip16 != nil && ip.To4() == nil {
+		var embedded net.IP
+		switch {
+		case ip16[0] == 0x20 && ip16[1] == 0x02:
+			embedded = net.IP(ip16[2:6])
+		case ip16[0] == 0x00 && ip16[1] == 0x64 && ip16[2] == 0xff && ip16[3] == 0x9b:
+			embedded = net.IP(ip16[12:16])
+		}
+		if embedded != nil && !publiclyRoutable(embedded) {
+			return false
+		}
+	}
 	// IPv4-mapped IPv6 (::ffff:127.0.0.1) would otherwise sail past the checks
 	// above under a different representation.
 	if v4 := ip.To4(); v4 != nil {

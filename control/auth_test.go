@@ -432,3 +432,30 @@ func TestAppTokenIsScopedByPathPrefix(t *testing.T) {
 		assert.Equal(t, http.StatusForbidden, rr.Code, "%s must be refused", path)
 	}
 }
+
+// An app-scoped token is an AGENT credential: it may run the app's own agent
+// endpoints, but it must NOT perform owner-level management of the app (rename,
+// transfer, delete, manage collaborators, rotate the token, touch connections).
+// It resolves to the owner's identity, so ownership checks alone do not stop it.
+func TestAppTokenCannotDoOwnerOpsOnItsOwnApp(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	u := newActiveTestUser(t, s, "owner@example.com")
+	require.NoError(t, s.apps.Store().AddApp(&store.App{Name: "blog", Port: 10000, Host: store.HostLocal, OwnerID: u.ID}))
+	s.apps.PushMirror()
+	seedAppSubvolume(t, s, "blog")
+	token, _, err := s.users.CreateAppToken(u.ID, "blog", "agent")
+	require.NoError(t, err)
+
+	owner := []struct{ method, path, body string }{
+		{"POST", "/api/apps/blog/rename", `{"name":"stolen"}`},
+		{"POST", "/api/apps/blog/transfer", `{"email":"attacker@example.com"}`},
+		{"POST", "/api/apps/blog/token", ""},
+		{"POST", "/api/apps/blog/collaborators", `{"email":"attacker@example.com"}`},
+		{"DELETE", "/api/apps/blog", ""},
+	}
+	for _, o := range owner {
+		rr := request(t, s.API(), o.method, o.path, o.body, token)
+		assert.Equal(t, http.StatusForbidden, rr.Code, "%s %s must be forbidden for an app token", o.method, o.path)
+	}
+}

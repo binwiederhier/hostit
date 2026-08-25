@@ -74,3 +74,17 @@ func TestMergeAuthorizedKeysDropsDuplicatesOfManagedKeys(t *testing.T) {
 	assert.Contains(t, out, keyC, "genuinely foreign keys are still kept")
 	assert.Contains(t, out, keyB)
 }
+
+// A managed key that smuggles an embedded newline must not write a second
+// authorized_keys line (which would survive revocation of the first). The
+// merged output keeps only the first line of each managed key.
+func TestMergeAuthorizedKeysClampsEmbeddedNewline(t *testing.T) {
+	smuggled := "ssh-ed25519 AAAAlegit legit\nssh-ed25519 AAAAevil attacker"
+	out := MergeAuthorizedKeys("", []string{smuggled})
+	if strings.Contains(out, "AAAAevil") {
+		t.Fatalf("smuggled second key leaked into authorized_keys:\n%s", out)
+	}
+	if !strings.Contains(out, "AAAAlegit") {
+		t.Fatalf("the legitimate key was dropped:\n%s", out)
+	}
+}

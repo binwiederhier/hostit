@@ -486,7 +486,7 @@ func (m *connectionManager) resolved(p connections.Provider) connections.Provide
 		return p
 	}
 	m.customMu.Lock()
-	if endpoints, ok := m.discovered[p.Name]; ok {
+	if endpoints, ok := m.discovered[p.Issuer]; ok { // keyed by issuer: two tenants may share a provider NAME but not an issuer
 		m.customMu.Unlock()
 		return p.WithEndpoints(endpoints.authURL, endpoints.tokenURL)
 	}
@@ -503,7 +503,7 @@ func (m *connectionManager) resolved(p connections.Provider) connections.Provide
 		return p
 	}
 	m.customMu.Lock()
-	m.discovered[p.Name] = oauthEndpoints{authURL: meta.AuthorizationEndpoint, tokenURL: meta.TokenEndpoint}
+	m.discovered[p.Issuer] = oauthEndpoints{authURL: meta.AuthorizationEndpoint, tokenURL: meta.TokenEndpoint}
 	m.customMu.Unlock()
 	slog.Info("Discovered a custom provider's OAuth endpoints",
 		"provider", p.Name, "authorize", meta.AuthorizationEndpoint, "token", meta.TokenEndpoint)

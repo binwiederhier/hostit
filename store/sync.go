@@ -75,7 +75,10 @@ func (s *Store) ReplaceAppSnapshots(appName string, snaps []*Snapshot) error {
 			return err
 		}
 		for _, snap := range snaps {
-			if _, err := tx.Exec(replaceMirrorSnapshotQuery, snap.ID, snap.AppName, snap.AppName, snap.Label, snap.CreatedAt.Unix(), boolToInt(snap.Auto)); err != nil {
+			// Force every reported snapshot under the app the node was authorized
+			// for; never trust snap.AppName, or a compromised node could poison
+			// another tenant's snapshot list.
+			if _, err := tx.Exec(replaceMirrorSnapshotQuery, snap.ID, appName, appName, snap.Label, snap.CreatedAt.Unix(), boolToInt(snap.Auto)); err != nil {
 				return err
 			}
 		}

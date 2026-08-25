@@ -37,6 +37,12 @@ const (
 // serves whatever is cached -- possibly stale, never nothing.
 func (p *Proxy) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
 	sni := strings.ToLower(hello.ServerName)
+	// The SNI becomes a path segment (CacheDir/certs/<sni>.pem), so a crafted
+	// ServerName like "../.." must never reach the filesystem. Accept only a
+	// plain hostname.
+	if !validSNI(sni) {
+		return nil, fmt.Errorf("invalid server name")
+	}
 	if sni == "" {
 		return nil, fmt.Errorf("no sni")
 	}
@@ -136,6 +142,20 @@ func (p *Proxy) storeCert(sni string, cert *tls.Certificate) {
 	p.certMu.Lock()
 	defer p.certMu.Unlock()
 	p.certs[sni] = cert
+}
+
+// validSNI accepts only a plain hostname charset, so an attacker-controlled SNI
+// can never contain a path separator or "..".
+func validSNI(sni string) bool {
+	if sni == "" || len(sni) > 253 || strings.HasPrefix(sni, ".") || strings.Contains(sni, "..") {
+		return false
+	}
+	for _, r := range sni {
+		if !((r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' || r == '.') {
+			return false
+		}
+	}
+	return true
 }
 
 // certPath keeps one PEM bundle (chain + key) per SNI name; the name is a
