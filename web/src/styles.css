@@ -280,7 +280,7 @@ p {
   margin-top: 0;
 }
 
-/* The grant titles ("Selected connections" is the long one) must stay on one
+/* The grant titles ("Select connections" is the long one) must stay on one
    line -- the cards are a third of the dialog each. */
 .newapp-grant-choice.newapp-grant-three .vis-title {
   white-space: nowrap;
@@ -5350,7 +5350,7 @@ body.ws-resizing iframe {
 
 /* ---- New-app modal: avatar + live subdomain/ssh preview ---- */
 .newapp {
-  max-width: 600px;
+  max-width: 580px;
   width: 92vw;
 }
 .newapp-head {

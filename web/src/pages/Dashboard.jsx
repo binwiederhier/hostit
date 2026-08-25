@@ -139,8 +139,8 @@ const NewAppDialog = ({ name, setName, onSubmit, creating, atLimit, onCancel, is
                   onClick={openPicker}
                   disabled={creating}
                 >
-                  <span className="vis-title">Selected connections</span>
-                  <span className="vis-detail">{grantSelected.length > 0 ? `${grantSelected.length} chosen` : "pick which"}</span>
+                  <span className="vis-title">Select connections</span>
+                  <span className="vis-detail">{grantSelected.length > 0 ? `${grantSelected.length} chosen` : "Pick which"}</span>
                 </button>
                 {/* A popup of the connections, each a checkmark toggle -- so any
                     number can be picked without the dialog growing. Fixed-position
