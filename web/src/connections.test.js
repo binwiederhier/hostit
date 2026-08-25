@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { suggestSlug, splitByKind, menuProviders, slugify, filterProviders, filterTools } from "./connections";
+import { suggestSlug, splitByKind, menuProviders, slugify, filterProviders, filterTools, defaultScopeKeys } from "./connections";
 
 describe("suggestSlug", () => {
   it("suggests the provider's own name when nothing uses it", () => {
@@ -185,5 +185,24 @@ describe("filterTools", () => {
 
   it("copes with nothing at all", () => {
     expect(filterTools(null, "x")).toEqual([]);
+  });
+});
+
+describe("defaultScopeKeys", () => {
+  it("picks the options marked default", () => {
+    const provider = {
+      scope_options: [
+        { key: "public", default: true },
+        { key: "private", default: true },
+        { key: "search", default: true },
+        { key: "dms", default: false },
+      ],
+    };
+    expect(defaultScopeKeys(provider)).toEqual(["public", "private", "search"]);
+  });
+
+  it("is empty for a provider with no options", () => {
+    expect(defaultScopeKeys({ name: "slack" })).toEqual([]);
+    expect(defaultScopeKeys(null)).toEqual([]);
   });
 });

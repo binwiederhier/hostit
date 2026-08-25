@@ -133,7 +133,7 @@ func (m *connectionManager) offered() []connections.Provider {
 // saveOAuth completes a consent flow. What gets stored is a refresh token, or
 // -- for a provider whose token does not expire -- the access token itself;
 // either way it is sealed before it reaches the database.
-func (m *connectionManager) saveOAuth(ctx context.Context, userID, slug, label string, p connections.Provider, code, redirectURL string) (*store.Connection, error) {
+func (m *connectionManager) saveOAuth(ctx context.Context, userID, slug, label string, p connections.Provider, code, redirectURL, scopes string) (*store.Connection, error) {
 	id, secret := m.clientForUser(userID, p.Name)
 	credential, err := p.Exchange(ctx, m.client, id, secret, redirectURL, code)
 	if err != nil {
@@ -142,10 +142,13 @@ func (m *connectionManager) saveOAuth(ctx context.Context, userID, slug, label s
 	// The id is assigned here rather than by the store, because the credential
 	// is sealed BOUND to it (see connections.Binding) and cannot be sealed
 	// before it exists.
+	if scopes == "" {
+		scopes = strings.Join(p.Scopes, " ")
+	}
 	c := &store.Connection{
 		ID: store.NewConnectionID(), UserID: userID, Slug: slug, Label: label,
 		Provider: p.Name, Kind: store.ConnectionOAuth,
-		Scopes: strings.Join(p.Scopes, " "), CreatedAt: time.Now(),
+		Scopes: scopes, CreatedAt: time.Now(),
 	}
 	if c.Secret, err = connections.Seal(m.key, credential, connections.Binding(c.UserID, c.ID)); err != nil {
 		return nil, err
@@ -166,7 +169,9 @@ func (m *connectionManager) reconnect(ctx context.Context, c *store.Connection, 
 		return err
 	}
 	m.expireCachedFor(c.ID)
-	return m.store.UpdateConnectionSecret(c.ID, sealed, strings.Join(p.Scopes, " "), c.Meta)
+	// A re-consent keeps the same grants; store what the connection already had,
+	// not the provider baseline (which would wipe the options the owner chose).
+	return m.store.UpdateConnectionSecret(c.ID, sealed, c.Scopes, c.Meta)
 }
 
 // saveStatic stores a pasted credential. Only the field the provider names as

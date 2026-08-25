@@ -22,9 +22,15 @@ func (p Provider) AuthCodeURL(clientID, redirectURL, state string) string {
 		"client_id":     {clientID},
 		"redirect_uri":  {redirectURL},
 		"response_type": {"code"},
-		"scope":         {strings.Join(p.Scopes, " ")},
 		"state":         {state},
 	}
+	// A user-token provider (Slack personal) asks in user_scope, so Slack issues
+	// a token that acts as the person; every other provider uses the bot/app scope.
+	scopeParam := "scope"
+	if p.UserToken {
+		scopeParam = "user_scope"
+	}
+	q.Set(scopeParam, strings.Join(p.Scopes, " "))
 	// Whatever THIS provider needs on top. Google wants offline access or it
 	// never issues a refresh token; Atlassian wants its audience named; Slack
 	// and GitHub want none of it.
@@ -41,6 +47,21 @@ type tokenResponse struct {
 	ExpiresIn    int    `json:"expires_in"`
 	Error        string `json:"error"`
 	ErrorDesc    string `json:"error_description"`
+	// AuthedUser carries the USER token when the request asked in user_scope
+	// (Slack). It is separate from the top-level access_token, which is the bot
+	// token a user-token connection never uses.
+	AuthedUser struct {
+		AccessToken string `json:"access_token"`
+	} `json:"authed_user"`
+}
+
+// keptToken is the access token worth storing from a response: a user-token
+// provider's lives under authed_user, everyone else's at the top level.
+func (p Provider) keptToken(res tokenResponse) string {
+	if p.UserToken {
+		return res.AuthedUser.AccessToken
+	}
+	return res.AccessToken
 }
 
 // Exchange trades the consent code for tokens. The refresh token is what hostit
@@ -60,10 +81,11 @@ func (p Provider) Exchange(ctx context.Context, client *http.Client, clientID, c
 	// A provider whose token does not expire hands back nothing to refresh, so
 	// the access token IS the thing worth keeping.
 	if p.LongLivedToken {
-		if res.AccessToken == "" {
+		tok := p.keptToken(res)
+		if tok == "" {
 			return "", fmt.Errorf("%s returned no access token", p.Label)
 		}
-		return res.AccessToken, nil
+		return tok, nil
 	}
 	if res.RefreshToken == "" {
 		// Without one, the connection would work for an hour and then die in a

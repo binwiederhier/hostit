@@ -79,7 +79,12 @@ func newFakeAuthServer(t *testing.T) *fakeAuthServer {
 				_ = json.NewEncoder(w).Encode(map[string]any{"error": "invalid_grant"})
 				return
 			}
-			body := map[string]any{"access_token": "access-0", "expires_in": 3600}
+			body := map[string]any{
+				"access_token": "access-0", "expires_in": 3600,
+				// A user-token provider reads this instead of access_token, the way
+				// Slack returns the person's token under authed_user.
+				"authed_user": map[string]any{"access_token": "user-access-0"},
+			}
 			if !f.longLived {
 				body["refresh_token"] = refresh
 			}
@@ -599,4 +604,77 @@ func TestRemovingAConnectionPurgesItsCachedToken(t *testing.T) {
 	require.Equal(t, http.StatusOK, rr.Code)
 	_, held = s.connections.cached[c.ID]
 	assert.False(t, held, "nothing of a removed credential is left in memory")
+}
+
+// registerFakeUserProvider registers a user-token provider (Slack personal's
+// shape) with three read options, pointed at the fake server.
+func registerFakeUserProvider(t *testing.T, s *Server, f *fakeAuthServer, name string) {
+	t.Helper()
+	connections.Register(connections.Provider{
+		Name: name, Label: "Fake " + name, Kind: connections.KindOAuth,
+		UserToken: true, LongLivedToken: true,
+		Scopes: []string{"users:read"},
+		ScopeOptions: []connections.ScopeOption{
+			{Key: "public", Label: "Public", Scopes: []string{"channels:read", "channels:history"}, Default: true},
+			{Key: "private", Label: "Private", Scopes: []string{"groups:read", "groups:history"}, Default: true},
+			{Key: "search", Label: "Search", Scopes: []string{"search:read"}, Default: true},
+		},
+		AuthURL: f.URL + "/authorize", TokenURL: f.URL + "/token",
+		Help: "a test user-token provider",
+	})
+	if s.config.ConnectionClients == nil {
+		s.config.ConnectionClients = map[string]controlconf.OAuthClient{}
+	}
+	s.config.ConnectionClients[name] = controlconf.OAuthClient{ClientID: "test-client", ClientSecret: "test-secret"}
+}
+
+// The chosen read options resolve to user_scope (never the bot scope param), the
+// connection records exactly what was granted, and the stored secret is the USER
+// token from authed_user -- not the bot token at the top level.
+func TestConnectAUserScopeAccountWithChosenScopes(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	f := newFakeAuthServer(t)
+	f.longLived = true
+	registerFakeUserProvider(t, s, f, "fake-slack-user")
+	u := newActiveTestUser(t, s, "owner@example.com")
+	token := accountToken(t, s, u)
+	session := signIn(t, s, u)
+
+	rr := request(t, s.API(), "POST", "/api/connections",
+		`{"provider":"fake-slack-user","slug":"myslack","scope_keys":["public","search"]}`, token)
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+	var started apiConnectStartedResponse
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &started))
+
+	consent, err := url.Parse(started.RedirectURL)
+	require.NoError(t, err)
+	assert.Equal(t, "users:read channels:read channels:history search:read", consent.Query().Get("user_scope"))
+	assert.Empty(t, consent.Query().Get("scope"), "a user-token provider must not send the bot scope param")
+
+	cb := browse(t, s, started.RedirectURL, append(rr.Result().Cookies(), session))
+	require.Equal(t, http.StatusFound, cb.Code, cb.Body.String())
+
+	conn, err := s.apps.Store().ConnectionBySlug(u.ID, "myslack")
+	require.NoError(t, err)
+	assert.Equal(t, "users:read channels:read channels:history search:read", conn.Scopes, "the connection records exactly what was granted")
+	opened, err := connections.Open(s.connections.key, conn.Secret, connections.Binding(conn.UserID, conn.ID))
+	require.NoError(t, err)
+	assert.Equal(t, "user-access-0", opened, "the user token (authed_user) is stored, not the bot token")
+}
+
+// A scope key the provider never offered is refused at connect time, so a
+// crafted request cannot smuggle in a scope by naming it.
+func TestUnknownScopeKeyIsRefused(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	f := newFakeAuthServer(t)
+	f.longLived = true
+	registerFakeUserProvider(t, s, f, "fake-slack-user2")
+	u := newActiveTestUser(t, s, "owner@example.com")
+	token := accountToken(t, s, u)
+
+	rr := request(t, s.API(), "POST", "/api/connections",
+		`{"provider":"fake-slack-user2","slug":"myslack","scope_keys":["public","evil"]}`, token)
+	assert.Equal(t, http.StatusBadRequest, rr.Code, rr.Body.String())
 }

@@ -60,6 +60,29 @@ func init() {
 		Help:           "A bot in one Slack workspace: read channels and post messages.",
 	})
 
+	// -- Slack (personal). A USER token (xoxp-, via user_scope), so it acts as
+	// the person who connected it: it reads the channels they are already in and
+	// searches across them, with nothing to invite to a channel. The read grant
+	// is the owner's to narrow at connect time via ScopeOptions; users:read is the
+	// baseline so ids resolve to names. Like the bot token it does not expire.
+	Register(Provider{
+		Name:           "slack-user",
+		Label:          "Slack (personal)",
+		Kind:           KindOAuth,
+		UserToken:      true,
+		LongLivedToken: true,
+		Scopes:         []string{"users:read"},
+		ScopeOptions: []ScopeOption{
+			{Key: "public", Label: "Public channels", Help: "the public channels you are in", Scopes: []string{"channels:read", "channels:history"}, Default: true},
+			{Key: "private", Label: "Private channels", Help: "private channels you are a member of", Scopes: []string{"groups:read", "groups:history"}, Default: true},
+			{Key: "search", Label: "Search across channels", Help: "search your messages across every channel you can see", Scopes: []string{"search:read"}, Default: true},
+		},
+		AuthURL:  "https://slack.com/oauth/v2/authorize",
+		TokenURL: "https://slack.com/api/oauth.v2.access",
+		NameHint: "My Slack",
+		Help:     "Reads the Slack channels you are already in and searches across them, as you -- no bot to invite. To post as a shared bot, use Slack instead.",
+	})
+
 	// -- Discord. Rotates its refresh token on every use, which is exactly why
 	// Provider.Refresh reports the new one and the caller stores it.
 	Register(Provider{
