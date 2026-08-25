@@ -128,15 +128,15 @@ func TestOnlyConfiguredProvidersAreOffered(t *testing.T) {
 	}
 	assert.True(t, byName["imap"], "a pasted credential needs no client")
 	assert.True(t, byName["generic"], "and neither does the escape hatch")
-	assert.False(t, byName["slack"], "no Slack client configured in tests")
+	assert.False(t, byName["slack-bot"], "no Slack client configured in tests")
 
 	// Configure one and it appears, without a restart
-	s.config.ConnectionClients = map[string]controlconf.OAuthClient{"slack": {ClientID: "id", ClientSecret: "sec"}}
+	s.config.ConnectionClients = map[string]controlconf.OAuthClient{"slack-bot": {ClientID: "id", ClientSecret: "sec"}}
 	byName = map[string]bool{}
 	for _, p := range s.connections.offered() {
 		byName[p.Name] = true
 	}
-	assert.True(t, byName["slack"], "configuring a client offers the provider")
+	assert.True(t, byName["slack-bot"], "configuring a client offers the provider")
 }
 
 // A long-lived provider (Slack, GitHub) hands its stored token straight back.
@@ -146,7 +146,7 @@ func TestALongLivedConnectionReturnsItsStoredToken(t *testing.T) {
 	u := newActiveTestUser(t, s, "owner@example.com")
 	require.NoError(t, s.apps.Store().AddApp(&store.App{ID: "a1", Name: "dash", Port: 10000, Host: store.HostLocal, OwnerID: u.ID}))
 
-	c := &store.Connection{ID: store.NewConnectionID(), UserID: u.ID, Slug: "work-slack", Provider: "slack", Kind: store.ConnectionOAuth}
+	c := &store.Connection{ID: store.NewConnectionID(), UserID: u.ID, Slug: "work-slack", Provider: "slack-bot", Kind: store.ConnectionOAuth}
 	sealed, err := connections.Seal(s.connections.key, "xoxb-stored", connections.Binding(c.UserID, c.ID))
 	require.NoError(t, err)
 	c.Secret = sealed

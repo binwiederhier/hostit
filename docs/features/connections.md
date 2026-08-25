@@ -232,6 +232,7 @@ refuses perfectly good connections:
 | Google Calendar, Gmail | refresh token | per request, ~1h access token |
 | Discord, Jira | refresh token | per request |
 | Slack (`xoxb-`), GitHub OAuth App | the access token itself | none -- handed back as-is |
+| Slack personal (`xoxp-`) | the user access token itself | none -- handed back as-is |
 | Discord | refresh token, **rotated every use** | per request, and the new one is stored |
 | IMAP, generic | the pasted secret | none |
 
@@ -249,6 +250,19 @@ Consent parameters are **per provider** (`Provider.AuthParams`) rather than
 Google's copied everywhere: Google needs `access_type=offline` or it never issues
 a refresh token, Atlassian needs `audience=api.atlassian.com` and
 `offline_access` in its scopes, Slack and GitHub need none of it.
+
+**User tokens are a second Slack-shaped quirk, and also a field.** The `slack-bot`
+provider is a bot token; `slack-user` acts as the person who connected it. For a
+user-token provider the authorize URL sends its scopes in `user_scope` rather
+than `scope`, and the token hostit keeps is `authed_user.access_token` from the
+`oauth.v2.access` response, NOT the top-level `access_token` (which is the bot
+token, empty for a user-only app). Like the bot token it does not expire and has
+no refresh token, so it too is a `Provider.LongLivedToken` and is stored as-is.
+Its read grant is chosen by the owner at connect time: the dialog sends back
+option KEYS (public channels, private channels, search), which the server maps to
+scopes against the provider's own allowlist and refuses an unknown key, so a
+crafted request cannot over-grant. `users:read` is always granted so ids resolve
+to names, and there are deliberately no direct-message scopes.
 
 ## Flows
 

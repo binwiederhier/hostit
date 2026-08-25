@@ -23,6 +23,25 @@ default, or on-disk state is called out as **Breaking** or **Upgrade note**.
   `<app>-<id>.tar.gz`) under the normal per-app authorization. Works on an
   archived app too, since its files stay readable.
 
+- **A personal Slack connection that acts as you, alongside the shared bot.** The
+  existing bot provider is renamed from `slack` to **`slack-bot`** (labelled
+  **Slack (bot)**), symmetric with the new personal `slack-user`. Existing bot
+  connections are migrated automatically; **operators must rename the `slack`
+  OAuth client to `slack-bot`** under `connections:` in `control.yml` (a client
+  under the old `slack` key is no longer offered). `slack-bot` is a shared bot
+  that reads and posts only in channels it is invited to. The new `slack-user`
+  provider, **Slack (personal)**, uses a Slack user token (`xoxp-`) and acts as
+  the person who connected it: it reads the public and private channels they are
+  already in and searches across them, with no bot to invite. The Add-account
+  dialog lets the owner choose what it may read (public channels, private
+  channels, search across channels, all on by default); there are no
+  direct-message scopes. To offer it, add **User Token Scopes** to the Slack app
+  (`search:read`, `channels:read`, `channels:history`, `groups:read`,
+  `groups:history`, `users:read`) and a `slack-user` client under `connections:`
+  in `control.yml` -- it can reuse the same Slack app as the bot or be a separate
+  one. The personal token, like the bot token, does not expire and is stored
+  as-is.
+
 ## v0.24.0 (2026-08-24)
 
 - **The New app dialog can grant a chosen subset of connections.** The

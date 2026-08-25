@@ -774,7 +774,8 @@ const AccountsPage = () => (
       <tbody>
         <tr><td>Google Calendar</td><td>Read and write the calendars on that Google account</td></tr>
         <tr><td>Gmail</td><td>Read that mailbox (read-only)</td></tr>
-        <tr><td>Slack</td><td>Read channels and history, post messages, look up users</td></tr>
+        <tr><td>Slack (bot)</td><td>Read and post in channels the bot has been invited to, look up users</td></tr>
+        <tr><td>Slack (personal)</td><td>Read the public and private channels you are already in, and search across them, as you -- no bot to invite</td></tr>
         <tr><td>Discord</td><td>Your profile and which servers you are in. Reading a server&rsquo;s channels needs a <b>Discord bot</b> credential instead</td></tr>
         <tr><td>GitHub</td><td>Your repositories, at the scopes the instance registered</td></tr>
         <tr><td>Jira</td><td>Issues and projects on your Atlassian site</td></tr>
@@ -1767,7 +1768,7 @@ const ConnectionsSetupPage = () => (
         </tr>
         <tr>
           <td><DocsPageLink guide="admin" section="connections" sub="slack">Slack</DocsPageLink></td>
-          <td>Minutes</td><td>Bot token, never expires</td>
+          <td>Minutes</td><td>Bot and personal variants, both never expire</td>
         </tr>
         <tr>
           <td><DocsPageLink guide="admin" section="connections" sub="discord">Discord</DocsPageLink></td>
@@ -1831,11 +1832,18 @@ const SlackPage = () => (
   <>
     <h2>Slack</h2>
     <p>
-      Puts a bot in one Slack workspace: read channels and their history, post messages, look up
-      users.
+      Two providers, two ways to reach Slack. <b>Slack (bot)</b> puts a shared bot in a workspace:
+      it reads and posts only in the channels it has been <b>invited</b> to. <b>Slack (personal)</b>{" "}
+      acts as the person who connected it, reading the channels they are already in -- public and
+      private -- with no bot to invite anywhere. Both can come from the same Slack app if it
+      declares both sets of scopes, or from two separate apps.
     </p>
     <RedirectURIs />
-    <h3>Register the app</h3>
+
+    <h3>Slack (bot)</h3>
+    <p>
+      A shared bot in one workspace: read channels and their history, post messages, look up users.
+    </p>
     <ol className="docs-steps">
       <li><span className="mono">api.slack.com/apps</span> &rarr; <b>Create New App</b> &rarr; <b>From scratch</b>. Pick a workspace.</li>
       <li><b>OAuth &amp; Permissions</b> &rarr; <b>Redirect URLs</b> &rarr; add each URL above &rarr; <b>Save URLs</b>.</li>
@@ -1843,23 +1851,59 @@ const SlackPage = () => (
         Same page, <b>Scopes</b> &rarr; <b>Bot Token Scopes</b> &rarr; add the four below.{" "}
         <b>Bot</b> token scopes, not User token scopes -- hostit stores the top-level{" "}
         <span className="mono">access_token</span> from{" "}
-        <span className="mono">oauth.v2.access</span>, which is the bot token. User scopes produce a
-        connection that authorizes cleanly and then cannot read anything.
+        <span className="mono">oauth.v2.access</span>, which is the bot token.
       </li>
       <li><b>Install to Workspace</b> and approve.</li>
       <li><b>Basic Information</b> &rarr; <b>App Credentials</b> &rarr; copy the <b>Client ID</b> and <b>Client Secret</b>.</li>
     </ol>
-    <h3>Scopes to add</h3>
+    <h3>Bot Token Scopes to add</h3>
     <Snippet text={`channels:read\nchannels:history\nchat:write\nusers:read`} />
     <p>
       These are exactly what hostit requests. A mismatch fails consent with an invalid-scope error.
+      The bot sees nothing until it is invited to a channel, the same way Discord&rsquo;s bot sees
+      nothing until it joins a server.
     </p>
     <ProviderConfig
-      name="slack"
+      name="slack-bot"
       note={
         <p className="hint">
           Slack issues a bot token that does not expire and no refresh token, so hostit stores the
           access token itself and there is nothing to refresh.
+        </p>
+      }
+    />
+
+    <h3>Slack (personal)</h3>
+    <p>
+      Acts <b>as the person</b> who connected it, using a Slack <b>user</b> token
+      (<span className="mono">xoxp-</span>). It reads the channels they are already in and can search
+      across them, so there is no bot to invite. What it may read is chosen by the owner at connect
+      time -- the <b>Add account</b> dialog offers <b>Public channels</b>, <b>Private channels</b>{" "}
+      and <b>Search across channels</b>, all on by default, plus a baseline lookup of users so ids
+      resolve to names. There are deliberately no direct-message scopes.
+    </p>
+    <ol className="docs-steps">
+      <li><span className="mono">api.slack.com/apps</span> &rarr; the same app as the bot, or a new one <b>From scratch</b>.</li>
+      <li><b>OAuth &amp; Permissions</b> &rarr; <b>Redirect URLs</b> &rarr; add each URL above (same as the bot) &rarr; <b>Save URLs</b>.</li>
+      <li>
+        Same page, <b>Scopes</b> &rarr; <b>User Token Scopes</b> (not Bot Token Scopes) &rarr; add
+        the six below.
+      </li>
+      <li><b>Basic Information</b> &rarr; <b>App Credentials</b> &rarr; copy the <b>Client ID</b> and <b>Client Secret</b>.</li>
+    </ol>
+    <h3>User Token Scopes to add</h3>
+    <Snippet text={`search:read\nchannels:read\nchannels:history\ngroups:read\ngroups:history\nusers:read`} />
+    <p>
+      These cover every checkbox the dialog can offer. hostit requests only the ones the owner
+      actually ticked, so declaring all six here does not force all of them on a given connection.
+    </p>
+    <ProviderConfig
+      name="slack-user"
+      note={
+        <p className="hint">
+          Slack issues a user token from <span className="mono">authed_user.access_token</span> in
+          the <span className="mono">oauth.v2.access</span> response (not the top-level bot token).
+          Like the bot token it does not expire and has no refresh token, so hostit stores it as-is.
         </p>
       }
     />

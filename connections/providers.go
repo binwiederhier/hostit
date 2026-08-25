@@ -46,18 +46,20 @@ func init() {
 		Help:       "Read-only access to one Gmail mailbox. A restricted scope: an instance offering this publicly needs Google's CASA review.",
 	})
 
-	// -- Slack. The bot token (xoxb-) does not expire and there is no refresh
-	// token, so hostit stores the access token itself.
+	// -- Slack (bot). The bot token (xoxb-) does not expire and there is no refresh
+	// token, so hostit stores the access token itself. The id is "slack-bot",
+	// symmetric with "slack-user"; a store migration rewrites connections made
+	// under the old bare "slack" id, and operators rename the config key to match.
 	Register(Provider{
-		Name:           "slack",
-		Label:          "Slack",
+		Name:           "slack-bot",
+		Label:          "Slack (bot)",
 		Kind:           KindOAuth,
 		Scopes:         []string{"channels:read", "channels:history", "chat:write", "users:read"},
 		AuthURL:        "https://slack.com/oauth/v2/authorize",
 		TokenURL:       "https://slack.com/api/oauth.v2.access",
 		LongLivedToken: true,
 		NameHint:       "Team Slack",
-		Help:           "A bot in one Slack workspace: read channels and post messages.",
+		Help:           "A shared bot in one Slack workspace: it reads and posts in the channels it is invited to. To read the channels you are already in as yourself, use Slack (personal).",
 	})
 
 	// -- Slack (personal). A USER token (xoxp-, via user_scope), so it acts as
@@ -80,7 +82,7 @@ func init() {
 		AuthURL:  "https://slack.com/oauth/v2/authorize",
 		TokenURL: "https://slack.com/api/oauth.v2.access",
 		NameHint: "My Slack",
-		Help:     "Reads the Slack channels you are already in and searches across them, as you -- no bot to invite. To post as a shared bot, use Slack instead.",
+		Help:     "Reads the Slack channels you are already in and searches across them, as you -- no bot to invite. To post as a shared bot, use Slack (bot) instead.",
 	})
 
 	// -- Discord. Rotates its refresh token on every use, which is exactly why

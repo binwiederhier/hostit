@@ -23,12 +23,12 @@ building** -- vendors move things between tiers, usually in the wrong direction.
 
 ## Built in already
 
-Nineteen providers ship, and **eleven need no OAuth client at all**:
+Twenty providers ship, and **eleven need no OAuth client at all**:
 
 | Static (paste and go) | OAuth (needs a client in `control.yml`) |
 |---|---|
 | `fastmail` (JMAP: mail + calendar + contacts) | `google-calendar`, `gmail` |
-| `imap`, `smtp` | `slack`, `discord` |
+| `imap`, `smtp` | `slack-bot`, `slack-user`, `discord` |
 | `caldav`, `carddav` | `github`, `jira` |
 | `postgres`, `mysql`, `opensearch` | `hubspot`, `linear` |
 | `s3`, `ntfy`, `home-assistant` | |
@@ -43,6 +43,13 @@ an IMAP one plus an SMTP one for the same account.
 OAuth token lists the servers they are in and nothing inside them; channels and
 messages need a bot invited to the server, which is a pasted token, not a consent
 flow.
+
+**`slack-bot` and `slack-user` are the same split.** `slack-bot` is a shared bot
+(`xoxb-`) that reads and posts only in channels it has been invited to;
+`slack-user` (`xoxp-`) acts as the person who connected it, reading the public
+and private channels they are already in and searching across them, with no bot
+to invite. The owner picks what the personal one may read (public channels,
+private channels, search) at connect time.
 
 **Gmail without OAuth:** the `imap` provider reaches the same mailbox at
 `imap.gmail.com:993` using a Google **app password** (needs 2-Step Verification
@@ -107,7 +114,8 @@ Register a client, paste id and secret into `control.yml`, done. **This is where
 to prove the OAuth path**, because none of them gate on a human.
 
 **Built already, need only a client**
-- **GitHub** (long-lived token), **Slack** (`xoxb-`), **Discord**, **Jira**
+- **GitHub** (long-lived token), **Slack (bot)** (`xoxb-`), **Slack (personal)**
+  (`xoxp-`), **Discord**, **Jira**
 
 **Worth adding next**
 - **Linear** -- cleanest API of the lot; the best first real OAuth demo

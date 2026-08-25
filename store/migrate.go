@@ -425,6 +425,14 @@ var (
 		CREATE UNIQUE INDEX idx_provider_owner_name ON provider (owner_id, name);
 		CREATE INDEX idx_provider_owner ON provider (owner_id);
 	`,
+		// Slack's bot provider was renamed from the bare id "slack" to "slack-bot",
+		// symmetric with the new "slack-user" personal connection. Rewrite existing
+		// bot connections to the new id so they keep resolving to a provider;
+		// "slack-user" is an exact non-match and is left alone. Grants live in
+		// app_connection keyed by connection id, so they need no change.
+		`
+		UPDATE connection SET provider = 'slack-bot' WHERE provider = 'slack';
+	`,
 	}
 )
 

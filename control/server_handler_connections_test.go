@@ -100,7 +100,7 @@ func TestConnectionSlugValidation(t *testing.T) {
 	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &made))
 	assert.Equal(t, "work-cal", made.Slug)
 	// A provider this instance cannot offer is refused rather than half-created
-	rr = request(t, s.API(), "POST", "/api/connections", `{"provider":"slack","slug":"work-slack"}`, token)
+	rr = request(t, s.API(), "POST", "/api/connections", `{"provider":"slack-bot","slug":"work-slack"}`, token)
 	assert.Equal(t, http.StatusBadRequest, rr.Code, "no Slack client is configured here")
 }
 

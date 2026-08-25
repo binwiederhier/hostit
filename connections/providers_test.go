@@ -12,7 +12,7 @@ import (
 // Every provider the platform offers, and the shape each one is.
 func TestTheCatalog(t *testing.T) {
 	t.Parallel()
-	for _, name := range []string{"google-calendar", "gmail", "slack", "discord", "github", "jira"} {
+	for _, name := range []string{"google-calendar", "gmail", "slack-bot", "discord", "github", "jira"} {
 		p, ok := Lookup(name)
 		require.True(t, ok, "%s is offered", name)
 		assert.Equal(t, KindOAuth, p.Kind, "%s is an OAuth connection", name)
@@ -49,7 +49,7 @@ func TestCalendarAndMailAreSeparateProviders(t *testing.T) {
 // them like Google would refuse the connection outright.
 func TestProvidersThatIssueLongLivedTokens(t *testing.T) {
 	t.Parallel()
-	for _, name := range []string{"slack", "github"} {
+	for _, name := range []string{"slack-bot", "github"} {
 		p, _ := Lookup(name)
 		assert.True(t, p.LongLivedToken, "%s returns a token that does not expire", name)
 	}
@@ -85,7 +85,7 @@ func TestConsentURLsCarryPerProviderParameters(t *testing.T) {
 	assert.Contains(t, j.Get("scope"), "offline_access", "which is how Jira grants a refresh token")
 
 	// Slack and GitHub take none of Google's parameters
-	for _, name := range []string{"slack", "github"} {
+	for _, name := range []string{"slack-bot", "github"} {
 		q := params(name)
 		assert.Empty(t, q.Get("access_type"), "%s: no Google parameters", name)
 		assert.Empty(t, q.Get("include_granted_scopes"), "%s: no Google parameters", name)
@@ -102,7 +102,7 @@ func TestGenericCredentialTakesAnyKeyValue(t *testing.T) {
 
 func TestConfiguredGatesOnAClient(t *testing.T) {
 	t.Parallel()
-	oauth, _ := Lookup("slack")
+	oauth, _ := Lookup("slack-bot")
 	assert.False(t, oauth.Configured("", ""), "not offered without a client")
 	assert.False(t, oauth.Configured("id", ""), "half a client is not a client")
 	assert.True(t, oauth.Configured("id", "secret"))
@@ -143,7 +143,7 @@ func TestTheStaticCatalog(t *testing.T) {
 // The OAuth half of the catalog, including the two added for CRM and issues.
 func TestTheOAuthCatalogCovers(t *testing.T) {
 	t.Parallel()
-	for _, name := range []string{"google-calendar", "gmail", "slack", "discord", "github", "jira", "hubspot", "linear"} {
+	for _, name := range []string{"google-calendar", "gmail", "slack-bot", "discord", "github", "jira", "hubspot", "linear"} {
 		p, ok := Lookup(name)
 		require.True(t, ok, "%s is offered", name)
 		assert.Equal(t, KindOAuth, p.Kind, name)
