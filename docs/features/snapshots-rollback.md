@@ -150,6 +150,10 @@ HTTP surface:
   `handleAgentRestore` (rollback), `handleAgentSnapshotDelete`; routed in
   `control/api.go` under `/api/apps/{app}/snapshots`. `writeSnapshotError` maps
   an unknown snapshot id to 404.
+- A snapshot can also be **downloaded** as a `.zip`/`.tar.gz`
+  (`GET /api/apps/{app}/snapshots/{id}/export`), archived straight from its
+  immutable subvolume with no new snapshot taken. See
+  [export-download.md](export-download.md).
 - The `/info` guide (`control/server_handler_agent.go:agentGuide`) explicitly
   tells agents to snapshot at intervals with a one-line reason, noting the
   automatic snapshots are coarse.
@@ -179,7 +183,8 @@ HTTP surface:
 - `snapshot.pre` / `snapshot.post` hooks come from `hostit.yml`; a failing `pre`
   hook aborts the snapshot, a failing `post` hook only logs.
 - Related features: `deploy.md` (pre-deploy snapshot), `fork.md` (snapshot as a
-  seed), `quotas-limits.md` (snapshots count toward the app's disk budget), and
+  seed), `export-download.md` (downloading a snapshot as an archive),
+  `quotas-limits.md` (snapshots count toward the app's disk budget), and
   the web `web-dashboard.md` Snapshots tab.
 - Known sharp edge worth noting: retention applies to manual snapshots too, so a
   long-lived manual bookmark is not guaranteed to survive forever.

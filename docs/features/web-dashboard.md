@@ -106,7 +106,9 @@ Frontend (`web/src/`, embedded and served by `control/web.go`):
   description, the agent API token, the SSH command, and custom-domain add/verify/
   remove (`/api/apps/{name}/domains...`). Tab code chunks are lazy-loaded and
   prefetched (`AppAssistant.jsx`, `AppEditor.jsx`, `AppTerminal.jsx`,
-  `AppLogs.jsx`).
+  `AppLogs.jsx`). The header's `DownloadMenu` (and each snapshot row's) offers
+  the workspace / snapshot as a `.zip` or `.tar.gz`; on a narrow screen it folds
+  into the actions kebab as a `MenuDownloadSub` row -- see `export-download.md`.
 - `web/src/pages/Profile.jsx`: `SshKeys` (`/api/account/keys`) and `Tokens`
   (`/api/account/tokens`, new token shown once). Notes that each app also has its
   own token on its page.
@@ -158,4 +160,4 @@ embedded SPA (`control/web.go:webHandler`) for any non-`/api` path.
 - Related features: `accounts-roles.md` (roles, approval, invites),
   `rest-api.md` (everything the SPA calls), `builtin-assistant.md`,
   `browser-workspace.md`, `terminal.md`, `logs.md`, `snapshots-rollback.md`,
-  `custom-domains.md`, `ssh-access.md`.
+  `export-download.md`, `custom-domains.md`, `ssh-access.md`.

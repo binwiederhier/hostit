@@ -93,6 +93,15 @@ func errCode(err error) string {
 	return ""
 }
 
+// writeStreamError reports a raw-stream handler's pre-stream failure in the two
+// headers the client reads (message and sentinel code) before a 500. Shared by
+// the raw-stream handlers so they all report failures identically.
+func writeStreamError(w http.ResponseWriter, err error) {
+	w.Header().Set(errHeader, errString(err))
+	w.Header().Set(errCodeHeader, errCode(err))
+	w.WriteHeader(http.StatusInternalServerError)
+}
+
 func decodeErr(resp *rpcResp) error {
 	if resp.Err == "" && resp.ErrCode == "" {
 		return nil
@@ -262,9 +271,7 @@ func RPCHandler(agent nodeapi.NodeAgent) http.Handler {
 			b, err = agent.ReadFile(q.Get("name"), q.Get("path"))
 		}
 		if err != nil {
-			w.Header().Set(errHeader, errString(err))
-			w.Header().Set(errCodeHeader, errCode(err))
-			w.WriteHeader(http.StatusInternalServerError)
+			writeStreamError(w, err)
 			return
 		}
 		_, _ = w.Write(b)
@@ -272,9 +279,17 @@ func RPCHandler(agent nodeapi.NodeAgent) http.Handler {
 	mux.HandleFunc("GET /v1/export", func(w http.ResponseWriter, r *http.Request) {
 		rc, err := agent.ArchiveWorkspace(r.URL.Query().Get("name"), archive.Format(r.URL.Query().Get("format")))
 		if err != nil {
-			w.Header().Set(errHeader, errString(err))
-			w.Header().Set(errCodeHeader, errCode(err))
-			w.WriteHeader(http.StatusInternalServerError)
+			writeStreamError(w, err)
+			return
+		}
+		defer rc.Close()
+		_, _ = io.Copy(w, rc)
+	})
+	mux.HandleFunc("GET /v1/snapshot-export", func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		rc, err := agent.ArchiveSnapshot(q.Get("name"), q.Get("id"), archive.Format(q.Get("format")))
+		if err != nil {
+			writeStreamError(w, err)
 			return
 		}
 		defer rc.Close()

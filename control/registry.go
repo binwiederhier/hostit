@@ -368,12 +368,22 @@ func (ra *routingAgent) WriteFileFrom(name, relPath string, r io.Reader, mode os
 	return agent.WriteFileFrom(name, relPath, r, mode)
 }
 
+// ArchiveWorkspace routes a live-workspace export to the node holding the app.
 func (ra *routingAgent) ArchiveWorkspace(name string, format archive.Format) (io.ReadCloser, error) {
 	agent, err := ra.route(name)
 	if err != nil {
 		return nil, err
 	}
 	return agent.ArchiveWorkspace(name, format)
+}
+
+// ArchiveSnapshot routes an existing-snapshot export to the node holding the app.
+func (ra *routingAgent) ArchiveSnapshot(name, snapshotID string, format archive.Format) (io.ReadCloser, error) {
+	agent, err := ra.route(name)
+	if err != nil {
+		return nil, err
+	}
+	return agent.ArchiveSnapshot(name, snapshotID, format)
 }
 
 func (ra *routingAgent) DeleteFile(name, relPath string) error {

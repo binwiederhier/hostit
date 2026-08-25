@@ -151,5 +151,5 @@ feature docs.
   disk quota; see `quotas-limits.md`.
 - **Related features.** `builtin-assistant.md` (drives these same edits from the
   chat), `bring-your-own-agent.md` (the `?hostit_preview` cache-busting and the
-  file API over a scoped token), `terminal.md`, `snapshots-rollback.md`,
-  `logs.md`.
+  file API over a scoped token), `export-download.md` (downloading the whole
+  workspace as an archive), `terminal.md`, `snapshots-rollback.md`, `logs.md`.

@@ -377,10 +377,35 @@ func (a *remoteAgent) ArchiveWorkspace(name string, format archive.Format) (io.R
 	}
 	if httpResp.StatusCode != http.StatusOK {
 		defer httpResp.Body.Close()
-		if sentinel, ok := wireErrs[httpResp.Header.Get(errCodeHeader)]; ok {
-			return nil, sentinel
-		}
-		return nil, errors.New(httpResp.Header.Get(errHeader))
+		return nil, streamError(httpResp)
 	}
 	return httpResp.Body, nil
+}
+
+// ArchiveSnapshot streams an existing snapshot's archive off the node, the same
+// way ArchiveWorkspace does but naming the snapshot instead of the live workspace.
+func (a *remoteAgent) ArchiveSnapshot(name, snapshotID string, format archive.Format) (io.ReadCloser, error) {
+	u := "http://node/v1/snapshot-export?" + url.Values{"name": {name}, "id": {snapshotID}, "format": {string(format)}}.Encode()
+	httpResp, err := a.c.Get(u)
+	if err != nil {
+		return nil, err
+	}
+	if httpResp.StatusCode != http.StatusOK {
+		defer httpResp.Body.Close()
+		return nil, streamError(httpResp)
+	}
+	return httpResp.Body, nil
+}
+
+// streamError maps a non-200 raw-stream response to an error: a mapped sentinel
+// when the node named one, its message when it set one, else the HTTP status --
+// so a stream failure is never a blank, sentinel-less error.
+func streamError(resp *http.Response) error {
+	if sentinel, ok := wireErrs[resp.Header.Get(errCodeHeader)]; ok {
+		return sentinel
+	}
+	if msg := resp.Header.Get(errHeader); msg != "" {
+		return errors.New(msg)
+	}
+	return fmt.Errorf("node request failed: %s", resp.Status)
 }

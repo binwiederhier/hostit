@@ -191,6 +191,29 @@ and world-readable (0755 `.ssh`, 0644 `authorized_keys`): the host's sshd reads
 them as the app user (StrictModes accepts root-owned), and through the idmap the
 tenant can still hand-edit them; public keys are not secrets.
 
+## Exporting files: symlinks stay symlinks, ids are validated
+
+Downloading a workspace or a snapshot as a `.zip`/`.tar.gz`
+([export-download.md](../features/export-download.md)) reads the whole files tree
+as root and streams it to the caller, so the same two tenant tricks apply as for
+the file API -- a planted symlink, and a crafted path -- and each is closed.
+
+- **A symlink is archived AS a symlink, never followed** (`archive/archive.go`
+  walks with `Lstat` semantics, so `filepath.WalkDir` does not descend into a
+  link). A link the tenant planted pointing at `/etc/shadow` or another app's
+  subvolume is written into the archive as the one-line link entry, not as the
+  file it points at, so the export cannot leak anything from outside the
+  workspace tree. Sockets, devices and fifos are skipped -- nothing an archive
+  can carry, and nothing worth reading through.
+- **A snapshot id is resolved against the store before any path is built.**
+  `node/machine_archive.go:ArchiveSnapshot` looks the id up
+  (`m.store.Snapshot`), confirms its `AppName` matches the requested app
+  (returning `store.ErrSnapshotNotFound` -> HTTP 404 otherwise), and only then
+  calls `SnapshotPath`. A crafted id (a `../` traversal, or a real snapshot
+  belonging to another app) never reaches `filepath.Join`, so an app-scoped
+  token cannot walk the export out of its own app -- the same store-first check
+  delete and rollback already use.
+
 ## Tenant vs operator: SSH lands in the container
 
 An SSH session must never reach a host shell. The app user's login shell is

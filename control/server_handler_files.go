@@ -156,12 +156,40 @@ func (s *Server) handleAgentReadmePut(w http.ResponseWriter, r *http.Request, c 
 // (zip by default, ?format=tar for a gzipped tar). The node takes a read-only
 // snapshot and archives that, so it is a consistent point-in-time copy.
 func (s *Server) handleAppExport(w http.ResponseWriter, r *http.Request, c *caller, a *store.App) {
-	format := archive.Zip
-	if r.URL.Query().Get("format") == string(archive.TarGz) {
-		format = archive.TarGz
-	}
+	format := exportFormat(r)
 	rc, err := s.node.ArchiveWorkspace(a.Name, format)
+	s.streamArchive(w, a.Name, format, rc, err)
+}
+
+// handleSnapshotExport archives an existing snapshot straight from its immutable
+// subvolume -- no new snapshot is taken. The download is named <app>-<id>.<ext>
+// so several snapshots of the same app do not collide in the browser.
+func (s *Server) handleSnapshotExport(w http.ResponseWriter, r *http.Request, c *caller, a *store.App) {
+	format := exportFormat(r)
+	id := r.PathValue("id")
+	rc, err := s.node.ArchiveSnapshot(a.Name, id, format)
+	s.streamArchive(w, a.Name+"-"+id, format, rc, err)
+}
+
+// exportFormat reads the ?format= query, defaulting to zip.
+func exportFormat(r *http.Request) archive.Format {
+	if r.URL.Query().Get("format") == string(archive.TarGz) {
+		return archive.TarGz
+	}
+	return archive.Zip
+}
+
+// streamArchive writes an archive read-closer to the response as a download. Any
+// error surfaces before the first byte (rc is nil then); a failure mid-copy just
+// truncates -- the node still drops any transient snapshot -- so it is not
+// reportable in a header once streaming has begun.
+func (s *Server) streamArchive(w http.ResponseWriter, base string, format archive.Format, rc io.ReadCloser, err error) {
 	if err != nil {
+		// A missing (or cross-app) snapshot id is the caller's 404, not our 500.
+		if errors.Is(err, store.ErrSnapshotNotFound) {
+			writeError(w, http.StatusNotFound, err)
+			return
+		}
 		writeAppError(w, err)
 		return
 	}
@@ -172,9 +200,6 @@ func (s *Server) handleAppExport(w http.ResponseWriter, r *http.Request, c *call
 	}
 	w.Header().Set("Content-Type", ctype)
 	w.Header().Set("X-Content-Type-Options", "nosniff")
-	w.Header().Set("Content-Disposition", "attachment; filename="+strconv.Quote(a.Name+"."+format.Ext()))
-	// The stream started once ArchiveWorkspace returned without error; a failure
-	// mid-copy (client gone, archive error) just truncates -- the node still drops
-	// its snapshot -- so there is nothing to report to a header now.
+	w.Header().Set("Content-Disposition", "attachment; filename="+strconv.Quote(base+"."+format.Ext()))
 	_, _ = io.Copy(w, rc)
 }

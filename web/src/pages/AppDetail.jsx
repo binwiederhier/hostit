@@ -144,6 +144,7 @@ const PowerIcon = mi(<><path d="M8 2.2v5" /><path d="M4.6 4.6a4.6 4.6 0 1 0 6.8 
 const TrashIcon = mi(<><path d="M3 4.5h10" /><path d="M6.5 4.5V3h3v1.5" /><path d="M4.5 4.5l.6 8.5a1 1 0 0 0 1 .9h3.8a1 1 0 0 0 1-.9l.6-8.5" /></>);
 const ArchiveIcon = mi(<><path d="M2.5 4.5h11" /><path d="M3.5 4.5v8a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1v-8" /><path d="M6.5 7.5h3" /></>);
 const ForkIcon = mi(<><circle cx="4.5" cy="4" r="1.6" /><circle cx="11.5" cy="4" r="1.6" /><circle cx="8" cy="12.5" r="1.6" /><path d="M4.5 5.6v1.4a2 2 0 0 0 2 2H8m3.5-3.4v1.4a2 2 0 0 1-2 2H8m0 0v1.9" /></>);
+const DownloadIcon = mi(<><path d="M8 2v7.5" /><path d="M5 6.5 8 9.5l3-3" /><path d="M3 12.5h10" /></>);
 const DotsIcon = () => (
   <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
     <circle cx="8" cy="3.1" r="1.35" />
@@ -295,6 +296,63 @@ const MenuItem = ({ icon, label, onClick, disabled, danger, title }) => (
   </button>
 );
 
+// The export endpoint returns a .zip by default; ?format=tar switches it to a
+// gzipped tarball. tarHref appends that once so the two download menus stay in sync.
+const tarHref = (base) => `${base}?format=tar`;
+
+// DownloadMenu is a download icon that drops a two-item menu: grab the target
+// (the live workspace, or one snapshot) as a .zip or a .tar.gz. base is the
+// export URL; the tar variant just adds ?format=tar. Plain <a download> links so
+// the browser streams the archive straight to disk (it can be large), the session
+// cookie authenticating the GET.
+const DownloadMenu = ({ base, small, className, title = "Download" }) => {
+  const { open, setOpen, ref } = useDropdown();
+  const btnCls = ["btn", "btn-icon", small ? "btn-small" : ""].filter(Boolean).join(" ");
+  const wrapCls = ["menu", className].filter(Boolean).join(" ");
+  return (
+    <span className={wrapCls} ref={ref}>
+      <button type="button" className={btnCls} onClick={() => setOpen(!open)} aria-haspopup="menu" aria-expanded={open} title={title} aria-label={title}>
+        <DownloadIcon />
+      </button>
+      {open && (
+        <div className="menu-items" role="menu">
+          <a role="menuitem" href={base} download onClick={() => setOpen(false)}>
+            <span className="menu-ico" aria-hidden="true"><DownloadIcon /></span>
+            Download as .zip
+          </a>
+          <a role="menuitem" href={tarHref(base)} download onClick={() => setOpen(false)}>
+            <span className="menu-ico" aria-hidden="true"><ArchiveIcon /></span>
+            Download as .tar.gz
+          </a>
+        </div>
+      )}
+    </span>
+  );
+};
+
+// MenuDownloadSub is the same two format choices as one expandable row inside an
+// existing dropdown -- the form the header download takes once it has collapsed
+// into the kebab on a narrow screen, and the per-snapshot download inside a
+// snapshot's kebab.
+const MenuDownloadSub = ({ base, label }) => {
+  const [subOpen, setSubOpen] = useState(false);
+  return (
+    <>
+      <button type="button" role="menuitem" className="menu-sub-toggle" onClick={() => setSubOpen(!subOpen)} aria-haspopup="menu" aria-expanded={subOpen}>
+        <span className="menu-ico" aria-hidden="true"><DownloadIcon /></span>
+        {label}
+        <span className="menu-sub-caret" aria-hidden="true">{subOpen ? "\u25be" : "\u25b8"}</span>
+      </button>
+      {subOpen && (
+        <div className="menu-subitems">
+          <a role="menuitem" href={base} download>as .zip</a>
+          <a role="menuitem" href={tarHref(base)} download>as .tar.gz</a>
+        </div>
+      )}
+    </>
+  );
+};
+
 // Everything rare about an app behind one button, grouped: app actions (the run:
 // command), container actions (power), settings (token + custom domains), and
 // delete -- dividers between the groups. Only one app verb is ever the sensible
@@ -320,7 +378,7 @@ const MenuGaugeIcon = () => (
   </svg>
 );
 
-const ActionsMenu = ({ running, appRunning, busy, onAction, onDelete, canDelete = true, onSsh, onByoa, onFork, archived, onArchive, onUnarchive, onRename, onTransfer, onResources }) => {
+const ActionsMenu = ({ running, appRunning, busy, onAction, onDelete, canDelete = true, onSsh, onByoa, onFork, downloadBase, archived, onArchive, onUnarchive, onRename, onTransfer, onResources }) => {
   const { open, setOpen, ref } = useDropdown();
 
   const run = (action) => {
@@ -358,6 +416,7 @@ const ActionsMenu = ({ running, appRunning, busy, onAction, onDelete, canDelete 
             <MenuItem icon={<SshMenuIcon />} label="Connect via SSH" onClick={pick(onSsh)} />
             <MenuItem icon={<SparkleIcon />} label="Use your own AI agent" onClick={pick(onByoa)} />
             <MenuItem icon={<ForkIcon />} label="Fork app" onClick={pick(onFork)} />
+            <MenuDownloadSub base={downloadBase} label="Download workspace" />
             <div className="menu-sep" />
           </div>
           {/* An archived app is offered none of the lifecycle verbs: every one
@@ -1881,7 +1940,7 @@ const AppConnections = ({ name }) => {
   );
 };
 
-const SnapRowActions = ({ busy, onRollback, onFork, onDelete }) => {
+const SnapRowActions = ({ busy, onRollback, onFork, onDelete, exportBase }) => {
   const { open, setOpen, ref } = useDropdown();
   const pick = (fn) => () => {
     setOpen(false);
@@ -1892,6 +1951,7 @@ const SnapRowActions = ({ busy, onRollback, onFork, onDelete }) => {
       <span className="snap-actions-inline">
         <button type="button" className="btn btn-small btn-icon" onClick={onRollback} disabled={busy} title="Roll back to this snapshot" aria-label="Roll back to this snapshot"><RollbackIcon /></button>
         <button type="button" className="btn btn-small btn-icon" onClick={onFork} disabled={busy} title="Fork a new app from this snapshot" aria-label="Fork a new app from this snapshot"><ForkIcon /></button>
+        <DownloadMenu base={exportBase} small title="Download this snapshot" />
         <button type="button" className="btn btn-small btn-icon menu-item-danger" onClick={onDelete} disabled={busy} title="Delete this snapshot" aria-label="Delete this snapshot"><TrashIcon /></button>
       </span>
       <span className="menu snap-actions-menu" ref={ref}>
@@ -1900,6 +1960,7 @@ const SnapRowActions = ({ busy, onRollback, onFork, onDelete }) => {
           <div className="menu-items" role="menu">
             <MenuItem icon={<RollbackIcon />} label="Roll back" onClick={pick(onRollback)} />
             <MenuItem icon={<ForkIcon />} label="Fork app" onClick={pick(onFork)} />
+            <MenuDownloadSub base={exportBase} label="Download snapshot" />
             <div className="menu-sep" />
             <MenuItem icon={<TrashIcon />} label="Delete" onClick={pick(onDelete)} danger />
           </div>
@@ -2003,19 +2064,6 @@ const SnapshotsPane = ({ name, showToast, onRolledBack, onFork, onNew, reloadSig
           <div className="ov-desc">hostit snapshots {name} automatically on a schedule and before every deploy. Take one yourself anytime, roll back to any point (reversible -- the current state is snapshotted first), or fork a snapshot into a brand-new app.</div>
         </div>
         <div className="ov-quick">
-          {/* A plain link so the browser streams the archive straight to disk
-              (a workspace can be large); the session cookie authenticates it. */}
-          <a
-            className="btn btn-small workspace-dl"
-            href={`/api/apps/${encodeURIComponent(name)}/export`}
-            download
-            title="Download the whole workspace as a zip -- a consistent snapshot"
-          >
-            Download .zip
-          </a>
-          <a className="workspace-dl-alt" href={`/api/apps/${encodeURIComponent(name)}/export?format=tar`} download>
-            or .tar.gz
-          </a>
           <SnapTakeButton onNew={() => onNew(load)} />
         </div>
       </div>
@@ -2046,6 +2094,7 @@ const SnapshotsPane = ({ name, showToast, onRolledBack, onFork, onNew, reloadSig
                       onRollback={() => setConfirm({ type: "rollback", snap: s })}
                       onFork={() => onFork(s.id)}
                       onDelete={() => setConfirm({ type: "delete", snap: s })}
+                      exportBase={`/api/apps/${encodeURIComponent(name)}/snapshots/${encodeURIComponent(s.id)}/export`}
                     />
                   </div>
                 );
@@ -2550,6 +2599,11 @@ const AppDetail = ({ account, refreshAccount }) => {
               >
                 <SparkleIcon />
               </button>
+              <DownloadMenu
+                base={`/api/apps/${encodeURIComponent(app.name)}/export`}
+                className="ws-collapsible header-dl"
+                title="Download workspace"
+              />
               <button
                 type="button"
                 className="btn btn-icon ws-collapsible"
@@ -2578,6 +2632,7 @@ const AppDetail = ({ account, refreshAccount }) => {
                   setForkSnapshotId(null);
                   setShowFork(true);
                 }}
+                downloadBase={`/api/apps/${encodeURIComponent(app.name)}/export`}
                 onRename={() => setShowRenameApp(true)}
                 onTransfer={() => setShowTransferApp(true)}
                 onResources={() => setShowResourcesApp(true)}

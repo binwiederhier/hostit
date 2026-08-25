@@ -476,6 +476,8 @@ curl -X POST -H "Authorization: Bearer $T" -H "Content-Type: application/json" \
      -d '{"from":"a.txt","to":"public/a.txt"}' $H/apps/myapp/move   # move/rename
 
 curl -H "Authorization: Bearer $T" $H/apps/myapp/events   # activity log (create, deploy, snapshot, ...)
+curl -H "Authorization: Bearer $T" $H/apps/myapp/export -o myapp.zip           # download the whole workspace
+curl -H "Authorization: Bearer $T" "$H/apps/myapp/export?format=tar" -o myapp.tar.gz  # ...as a gzipped tar
 
 curl -X POST -H "Authorization: Bearer $T" -H "Content-Type: application/json" \
      -d '{"command":"cd src && go build -o ../bin/myapp ."}' $H/apps/myapp/run
@@ -522,15 +524,18 @@ You do not need to leave the browser. Each app's page is a workspace with tabs:
   reuses the file REST endpoints, so no SSH is needed for a quick change.
 - **Terminal** -- the same login shell an SSH session gets, over a WebSocket, inline
   (with pop-out and fullscreen). "Connect via SSH" shows the `ssh`/`scp` command.
-- **Snapshots** -- a timeline of point-in-time snapshots with rollback, fork and
-  delete, and a "Take snapshot" action.
+- **Snapshots** -- a timeline of point-in-time snapshots with rollback, fork,
+  download and delete, and a "Take snapshot" action.
 - **Logs** -- an activity log of who did what to the app (create, snapshot,
   rollback, domain, lifecycle) above a live tail of the app's own output.
 - **Settings** -- the app's URLs (including any verified custom domain), SSH, API
   token, description and custom domains.
 
 The top bar shows **live CPU / RAM / disk**, the app's address, and the lifecycle
-actions (start/stop/restart, power on/off, reboot, fork, delete).
+actions (start/stop/restart, power on/off, reboot, fork, delete). A download
+button next to fork grabs the whole workspace as a `.zip` or `.tar.gz` (a
+consistent point-in-time snapshot is taken first), and each snapshot row can be
+downloaded the same way.
 
 The sparkle button on the page hands you the same paste-into-your-own-agent
 prompt, so the browser assistant and an external Claude Code are interchangeable.

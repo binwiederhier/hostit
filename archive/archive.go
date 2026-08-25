@@ -94,13 +94,7 @@ func writeZip(root string, w io.Writer) error {
 			return err
 		}
 		if info.Mode().IsRegular() {
-			f, err := os.Open(filepath.Join(root, rel))
-			if err != nil {
-				return err
-			}
-			defer f.Close()
-			_, err = io.Copy(fw, f)
-			return err
+			return copyInto(fw, filepath.Join(root, rel))
 		}
 		return nil
 	})

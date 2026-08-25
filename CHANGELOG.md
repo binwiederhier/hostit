@@ -7,6 +7,22 @@ changed rather than what an operator had to do about it; from v0.15.0 on, each
 release is written down as it is cut. Anything that changes a config file, a
 default, or on-disk state is called out as **Breaking** or **Upgrade note**.
 
+## v0.25.0 (2026-08-25)
+
+- **Download an app's workspace, or one snapshot, as a `.zip` or `.tar.gz`.** The
+  app detail header gets a download icon next to fork (on a narrow screen it
+  folds into the actions kebab under "Fork app"), and every row on the Snapshots
+  page gets one too. Downloading the **live workspace** takes a consistent
+  read-only btrfs snapshot first, archives that, then drops it, so the archive is
+  a point-in-time copy even while the app keeps writing; a **per-snapshot**
+  download archives the existing snapshot subvolume directly, taking nothing new.
+
+  Over the API this is `GET /api/apps/{app}/export` and
+  `GET /api/apps/{app}/snapshots/{id}/export`, `?format=tar` for the gzipped tar
+  (zip is the default), streamed as an attachment (`<app>.zip` /
+  `<app>-<id>.tar.gz`) under the normal per-app authorization. Works on an
+  archived app too, since its files stay readable.
+
 ## v0.24.0 (2026-08-24)
 
 - **The New app dialog can grant a chosen subset of connections.** The

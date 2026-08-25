@@ -1975,7 +1975,8 @@ th:last-child {
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.14);
 }
 
-.menu-items button {
+.menu-items button,
+.menu-items a {
   white-space: nowrap;
   display: flex;
   align-items: center;
@@ -1984,6 +1985,7 @@ th:last-child {
   text-align: left;
   font: inherit;
   color: var(--text);
+  text-decoration: none;
   background: none;
   border: 0;
   border-radius: 6px;
@@ -2007,8 +2009,11 @@ th:last-child {
   color: var(--danger);
 }
 
-.menu-items button:hover:not(:disabled) {
+.menu-items button:hover:not(:disabled),
+.menu-items a:hover {
   background: var(--surface-2);
+  color: var(--text);
+  text-decoration: none;
 }
 .menu-items button:disabled {
   opacity: 0.45;
@@ -3122,7 +3127,8 @@ a.ws-open {
   display: none;
 }
 @media (max-width: 700px) {
-  .ws-topacts .btn.ws-collapsible {
+  .ws-topacts .btn.ws-collapsible,
+  .ws-topacts .menu.ws-collapsible {
     display: none !important;
   }
   .menu-narrow-only {
@@ -3134,6 +3140,11 @@ a.ws-open {
    the right edge of the controls row instead of the button, or it drifts left. */
 .ws-topacts .menu {
   position: static;
+}
+/* The header download menu opens from a mid-row icon, so it anchors to its own
+   button (relative), unlike the kebab which pins to the row's right edge. */
+.ws-topacts .menu.header-dl {
+  position: relative;
 }
 .ws-topacts .menu-items {
   right: 0;
@@ -6428,13 +6439,30 @@ input[type="number"]::-webkit-inner-spin-button {
   margin-bottom: 4px;
 }
 
-/* Workspace export controls in the Snapshots header. */
-.workspace-dl-alt {
-  font-size: 12px;
-  color: var(--muted);
-  margin: 0 8px 0 2px;
-  white-space: nowrap;
+/* An expandable "Download" row inside a dropdown: the collapsed header download
+   and the per-snapshot download in a kebab. The two format links sit indented
+   under the toggle. */
+.menu-sub-toggle {
+  position: relative;
 }
-.workspace-dl-alt:hover {
-  color: var(--accent);
+.menu-sub-caret {
+  margin-left: auto;
+  padding-left: 8px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.menu-subitems {
+  display: flex;
+  flex-direction: column;
+}
+.menu-subitems a {
+  padding-left: 35px !important;
+  font-size: 13px;
+  color: var(--muted);
+  text-decoration: none;
+}
+.menu-subitems a:hover {
+  color: var(--text);
+  background: var(--surface-2);
+  text-decoration: none;
 }

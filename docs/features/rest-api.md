@@ -116,8 +116,10 @@ Endpoint surface:
   `control/server_handler_agent.go:newAgentRoutes` under `/api/apps/{app}/*`:
   `info`, `logs`, `files` (GET/PUT/GET-one/DELETE, plus tar upload, `move`,
   `mkdir`, `readme`), `run`, `deploy`, `poweron|poweroff|reboot`,
-  `start|stop|restart`, `archive|unarchive`, and `snapshots*`. `requireApp`
-  resolves and authorizes the `{app}` path value against the caller.
+  `start|stop|restart`, `archive|unarchive`, `snapshots*`, and `export`
+  (the live workspace, and `snapshots/{id}/export` for one snapshot, streamed as
+  a `.zip`/`.tar.gz` download). `requireApp` resolves and authorizes the `{app}`
+  path value against the caller.
 - Admin (behind `requireAdmin`): `/api/users` (list/invite/update/delete),
   `/api/domains` (approval domains) and `/api/settings` (global default limits)
   in `control/server_handler_admin.go`. There is no assistant-defaults endpoint
@@ -161,4 +163,5 @@ not part of the public `/api` and is documented with SSH/CLI, not here.
 - Related features: `bring-your-own-agent.md` (app-scoped tokens in practice),
   `accounts-roles.md` (who may call what), `web-dashboard.md` (the session-cookie
   caller and same-origin guard), `ssh-access.md`, `snapshots-rollback.md`,
+  `export-download.md` (the workspace/snapshot export endpoints),
   `custom-domains.md`.

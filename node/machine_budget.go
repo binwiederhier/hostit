@@ -162,6 +162,7 @@ func (m *Machine) SweepStaleQgroups() {
 // QgroupSweepLoop sweeps at start and then every interval, until done closes.
 func (m *Machine) QgroupSweepLoop(interval time.Duration, done <-chan struct{}) {
 	m.SweepStaleQgroups()
+	m.sweepExports()
 	for {
 		select {
 		case <-time.After(interval):
@@ -169,5 +170,13 @@ func (m *Machine) QgroupSweepLoop(interval time.Duration, done <-chan struct{}) 
 			return
 		}
 		m.SweepStaleQgroups()
+		m.sweepExports()
+	}
+}
+
+// sweepExports drops leftover transient export snapshots, logging when it does.
+func (m *Machine) sweepExports() {
+	if n := m.SweepExportSnapshots(); n > 0 {
+		slog.Info("Swept leftover export snapshots", "count", n)
 	}
 }

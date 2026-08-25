@@ -154,6 +154,28 @@ hostit takes them:
 container** to quiesce a database first; a failing `pre` hook **aborts** the
 snapshot, so a torn state is never captured (`snapshot/service.go:takeSnapshot`).
 
+### Transient export snapshots
+
+Downloading the **live workspace** (the `.zip`/`.tar.gz` export) reuses the
+snapshot primitive to get a consistent copy without pausing the app
+(`node/machine_archive.go:ArchiveWorkspace`): it takes a read-only snapshot named
+`.export-<rand>` under the apps dir, archives that snapshot's `home/app`, and
+**deletes it the moment the archive stream ends** -- including on an early client
+disconnect, since the failed write triggers the cleanup. The name is
+dot-prefixed (`exportSnapPrefix = ".export-"`) so the reconcile sweep skips it,
+and unlike a recorded snapshot it never joins the budget qgroup or the `snapshot`
+table -- it lives only for the length of the download. (Downloading an **existing
+snapshot** takes no new snapshot at all: `ArchiveSnapshot` walks the snapshot
+subvolume straight into the stream.)
+
+A crashed export could leak one, and a read-only snapshot pins the workspace's
+old blocks for as long as it lives, so a backstop sweep runs at node startup and
+every 6h (`node/machine_budget.go:QgroupSweepLoop` -> `sweepExports` ->
+`SweepExportSnapshots`, from `node/server.go`): it deletes any `.export-*`
+subvolume older than an hour (`exportSnapMaxAge`), an age generous enough that a
+slow client streaming a big workspace is never pulled out from under an in-flight
+export. See the [export-download feature](../features/export-download.md).
+
 ### Rollback is stage-and-swap
 
 Because a snapshot is the whole app subvolume, rollback restores **everything
@@ -294,6 +316,7 @@ it: the preflight is the single gate, and everything downstream assumes btrfs.
 | the raw (non-idmapped) apps view bind | `app/deploy.go:MountRawAppsView` |
 | file I/O inside the files dir (chained `os.Root`) | `homefs/service.go` |
 | snapshot / rollback / prune orchestration | `snapshot/service.go` (bound to the Manager in `app/snapshot.go`) |
+| workspace / snapshot export (archive stream + transient `.export-*` snapshot + sweep) | `node/machine_archive.go`, `archive/archive.go` |
 | budget qgroup setup (app subvolume + snapshots) | `app/budget.go` |
 | disk limit + usage accounting | `app/quota.go` |
 | the GFS retention policy (pure, unit-tested) | `retention/retention.go` |

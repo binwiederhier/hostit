@@ -20,6 +20,7 @@ One file per user-facing feature. Every file uses the **exact same structure** (
 - [mcp-servers.md](mcp-servers.md) -- MCP tool servers added by URL; hostit holds the token and makes the calls
 - [custom-domains.md](custom-domains.md) -- serve an app on your own hostname (DNS-01 certs)
 - [snapshots-rollback.md](snapshots-rollback.md) -- automatic and manual snapshots, rollback
+- [export-download.md](export-download.md) -- download an app's workspace or one snapshot as a .zip / .tar.gz
 - [archiving.md](archiving.md) -- shelve an app instead of deleting it
 - [quotas-limits.md](quotas-limits.md) -- disk (btrfs qgroup) and memory limits, app-count limits
 - [logs.md](logs.md) -- the activity feed and live app output

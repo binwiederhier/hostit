@@ -108,6 +108,10 @@ type NodeAgent interface {
 	// caller closes the reader; closing it early aborts the archive and drops
 	// the snapshot.
 	ArchiveWorkspace(name string, format archive.Format) (io.ReadCloser, error)
+	// ArchiveSnapshot streams an existing snapshot's workspace (home/app) as an
+	// archive. The snapshot is already immutable, so no new snapshot is taken and
+	// nothing is deleted; the caller closes the reader.
+	ArchiveSnapshot(name, snapshotID string, format archive.Format) (io.ReadCloser, error)
 
 	// Keys and limits, applied where the app user lives.
 	// SetKeys writes the app's complete authorized_keys set. Control resolves
