@@ -339,6 +339,7 @@ type apiAgentInfoResponse struct {
 	HostitYml      string             `json:"hostit_yml"`
 	Runtimes       string             `json:"runtimes"`
 	SuggestedStack string             `json:"suggested_stack"`
+	Preview        string             `json:"preview"`
 	Endpoints      []apiAgentEndpoint `json:"endpoints"`
 	Notes          []string           `json:"notes"`
 }

@@ -362,6 +362,9 @@ func (s *Server) agentGuide(appName, description string) *apiAgentInfoResponse {
 			"faster -- build it with CGO_ENABLED=0 GOOS=linux GOARCH=amd64 -- but then only the binary is here, and whoever " +
 			"comes next has nothing to edit.",
 		Auth: "Send the token as: Authorization: Bearer <token>",
+		Preview: "The owner's dashboard shows a LIVE PREVIEW of your app inside an iframe. Two things make it render:\n\n" +
+			"1. Let hostit embed you. Do NOT send X-Frame-Options: DENY (or SAMEORIGIN), and if you set a Content-Security-Policy, its frame-ancestors must include the hostit dashboard -- the top-level domain your app's subdomain sits under -- not just 'self'. The default of blocking all framing shows a blank preview.\n" +
+			"2. hostit refreshes the cached preview by requesting your app with a ?hostit_preview=<number> query parameter. Serve a request that carries a query string as UNCACHEABLE -- render it fresh and do not store it -- so the refresh returns the current page instead of a stale one.",
 		Endpoints: []apiAgentEndpoint{
 			{Method: "GET", Path: "" + appsPath(name) + "/info", What: "This document plus the app's URL, state, README, file list and hostit.yml"},
 			{Method: "GET", Path: "" + appsPath(name) + "/assistant/transcript", What: "The built-in assistant's chat history for this app, rendered as markdown. Read it to continue prior work with full context; enabled:false if the server has no assistant"},
