@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 )
 
 const (
@@ -439,6 +440,13 @@ var (
 		`
 		ALTER TABLE connection ADD COLUMN status TEXT NOT NULL DEFAULT 'ok';
 	`,
+		// Heal: the status column above was once shipped mid-slice, so a database
+		// already past that version ran the slack-bot rename and SKIPPED status.
+		// Re-adding it here reaches those databases; it is a no-op (tolerated
+		// duplicate-column) everywhere the column already exists.
+		`
+		ALTER TABLE connection ADD COLUMN status TEXT NOT NULL DEFAULT 'ok';
+	`,
 	}
 )
 
@@ -471,7 +479,12 @@ func applyMigration(db *sql.DB, index int) error {
 	}
 	defer tx.Rollback() // No-op once committed
 	if _, err := tx.Exec(migrations[index]); err != nil {
-		return fmt.Errorf("migration %d failed: %w", index+1, err)
+		// An idempotent ADD COLUMN whose column is already present is not a
+		// failure: it lets a heal migration re-add a column a mis-ordered earlier
+		// one left missing on some databases, while staying a no-op on the rest.
+		if !strings.Contains(err.Error(), "duplicate column name") {
+			return fmt.Errorf("migration %d failed: %w", index+1, err)
+		}
 	}
 	if _, err := tx.Exec(deleteSchemaVersionQuery); err != nil {
 		return err
