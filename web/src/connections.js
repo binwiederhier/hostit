@@ -89,3 +89,10 @@ export function filterTools(tools, query) {
     (t) => (t.name || "").toLowerCase().includes(q) || (t.description || "").toLowerCase().includes(q)
   );
 }
+
+// defaultScopeKeys are the read options checked when the connect dialog opens --
+// every option the provider marks default. A provider with no options yields an
+// empty list, so the checklist simply does not render.
+export function defaultScopeKeys(provider) {
+  return (provider?.scope_options || []).filter((o) => o.default).map((o) => o.key);
+}

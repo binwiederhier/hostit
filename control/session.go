@@ -28,7 +28,11 @@ const (
 	// round trip. It is free text, so it stays out of the state parameter the
 	// provider echoes back.
 	connectLabelCookieName = "hostit_connect_label"
-	hostCookiePrefix       = "__Host-"
+	// connectScopesCookieName carries the granted scopes through the OAuth round
+	// trip so the callback records exactly what the owner chose. Like the label,
+	// it stays out of the state parameter the provider echoes back.
+	connectScopesCookieName = "hostit_connect_scopes"
+	hostCookiePrefix        = "__Host-"
 	// sessionTTL is how long a web login lasts
 	sessionTTL = 30 * 24 * time.Hour
 )

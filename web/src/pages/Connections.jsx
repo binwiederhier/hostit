@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { filterProviders, filterTools, slugify, splitByKind, suggestSlug } from "../connections";
+import { filterProviders, filterTools, slugify, splitByKind, suggestSlug, defaultScopeKeys } from "../connections";
 import { api } from "../api";
 import { useDropdown } from "../hooks";
 import { ConfirmDialog, DocsLink, ErrorBanner, Skeleton, Snippet } from "../components";
@@ -741,6 +741,9 @@ const AddConnectionDialog = ({ provider, existing, onClose, onAdded }) => {
   const [slug, setSlug] = useState("");
   const [slugEdited, setSlugEdited] = useState(false);
   const [values, setValues] = useState(preset ? { url: preset.url } : {});
+  const scopeOptions = provider.scope_options || [];
+  const [scopeKeys, setScopeKeys] = useState(() => defaultScopeKeys(provider));
+  const toggleScope = (key, on) => setScopeKeys((keys) => (on ? [...keys, key] : keys.filter((k) => k !== key)));
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const oauth = provider.kind === "oauth";
@@ -759,12 +762,11 @@ const AddConnectionDialog = ({ provider, existing, onClose, onAdded }) => {
     setBusy(true);
     setError("");
     try {
-      const res = await api.post("/api/connections", {
-        provider: provider.name,
-        slug: reference,
-        label: label.trim(),
-        values,
-      });
+      const body = { provider: provider.name, slug: reference, label: label.trim(), values };
+      if (scopeOptions.length > 0) {
+        body.scope_keys = scopeKeys;
+      }
+      const res = await api.post("/api/connections", body);
       if (res.redirect_url) {
         window.location.href = res.redirect_url;
         return;
@@ -816,6 +818,25 @@ const AddConnectionDialog = ({ provider, existing, onClose, onAdded }) => {
           </span>
           . Renaming it later breaks any app already using the old one.
         </p>
+        {scopeOptions.length > 0 && (
+          <fieldset className="conn-scopes">
+            <legend>What should this connection be able to read?</legend>
+            {scopeOptions.map((o) => (
+              <label key={o.key} className="conn-scope">
+                <input
+                  type="checkbox"
+                  checked={scopeKeys.includes(o.key)}
+                  onChange={(e) => toggleScope(o.key, e.target.checked)}
+                  disabled={busy}
+                />
+                <span className="conn-scope-text">
+                  <span className="conn-scope-label">{o.label}</span>
+                  {o.help && <span className="conn-scope-help">{o.help}</span>}
+                </span>
+              </label>
+            ))}
+          </fieldset>
+        )}
         {(provider.fields || []).map((f) => (
           <label key={f.name} className="conn-field">
             <span>{f.label}{f.optional ? " (optional)" : ""}</span>

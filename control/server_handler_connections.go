@@ -63,6 +63,9 @@ type apiProviderResponse struct {
 	// provider and is not something the form can guess.
 	NameHint string              `json:"name_hint,omitempty"`
 	Fields   []connections.Field `json:"fields,omitempty"`
+	// ScopeOptions are the read choices this provider offers as checkboxes; the
+	// dialog renders them and sends back the ticked keys.
+	ScopeOptions []connections.ScopeOption `json:"scope_options,omitempty"`
 	// Custom marks a provider the operator wrote; Personal one the USER wrote.
 	// The UI badges them so a person can tell whose entries are whose.
 	Custom   bool `json:"custom,omitempty"`
@@ -96,6 +99,10 @@ type apiAddConnectionRequest struct {
 	Slug     string            `json:"slug"`
 	Label    string            `json:"label,omitempty"`
 	Values   map[string]string `json:"values,omitempty"`
+	// ScopeKeys are the read options the owner ticked for a provider that offers
+	// ScopeOptions (Slack personal). The server maps them to scopes against the
+	// provider's allowlist; a provider with no options ignores them.
+	ScopeKeys []string `json:"scope_keys,omitempty"`
 }
 
 // apiUpdateConnectionRequest renames a connection, replaces a pasted
@@ -211,7 +218,7 @@ func (s *Server) offeredProviders(kind, userID string) []apiProviderResponse {
 			continue
 		}
 		out = append(out, apiProviderResponse{Name: p.Name, Label: p.Label, Kind: p.Kind,
-			Help: p.Help, NameHint: p.NameHint, Fields: p.Fields,
+			Help: p.Help, NameHint: p.NameHint, Fields: p.Fields, ScopeOptions: p.ScopeOptions,
 			Custom: p.Custom, Personal: p.Personal})
 	}
 	return out
@@ -297,9 +304,23 @@ func (s *Server) handleConnectionAdd(w http.ResponseWriter, r *http.Request, c *
 		writeJSON(w, http.StatusCreated, s.connectionView(conn))
 		return
 	}
-	// OAuth: the slug is carried through the consent round trip in the state,
-	// so the callback knows what to call the connection it is about to create.
-	url, err := s.startConsent(w, r, c.userID(), p, slug, label)
+	// OAuth: resolve the read options the dialog chose (its defaults if it named
+	// none) into the effective scopes, validated against what THIS provider
+	// offers. A fixed-grant provider ignores any keys a client sends.
+	scopeKeys := req.ScopeKeys
+	if len(p.ScopeOptions) == 0 {
+		scopeKeys = nil
+	} else if len(scopeKeys) == 0 {
+		scopeKeys = p.DefaultScopeKeys()
+	}
+	scopes, err := p.ResolveScopes(scopeKeys)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	// The slug is carried through the consent round trip in the state, so the
+	// callback knows what to call the connection it is about to create.
+	url, err := s.startConsent(w, r, c.userID(), p, slug, label, scopes)
 	if err != nil {
 		writeConnectionError(w, err)
 		return
@@ -389,7 +410,7 @@ func (s *Server) handleConnectionReconnect(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusBadRequest, errors.New("this connection is not an OAuth account"))
 		return
 	}
-	url, err := s.startConsent(w, r, conn.UserID, p, conn.Slug, conn.Label)
+	url, err := s.startConsent(w, r, conn.UserID, p, conn.Slug, conn.Label, strings.Fields(conn.Scopes))
 	if err != nil {
 		writeConnectionError(w, err)
 		return
@@ -503,7 +524,7 @@ func (s *Server) ownedConnection(c *caller, slug string) (*store.Connection, err
 
 // startConsent builds the provider's consent URL and remembers, in the state
 // cookie, which connection is being made.
-func (s *Server) startConsent(w http.ResponseWriter, r *http.Request, userID string, p connections.Provider, slug, label string) (string, error) {
+func (s *Server) startConsent(w http.ResponseWriter, r *http.Request, userID string, p connections.Provider, slug, label string, scopes []string) (string, error) {
 	nonce := make([]byte, 16)
 	if _, err := rand.Read(nonce); err != nil {
 		return "", err
@@ -513,11 +534,18 @@ func (s *Server) startConsent(w http.ResponseWriter, r *http.Request, userID str
 	// The label is remembered separately: it is free text and has no business
 	// in an OAuth state parameter the provider echoes back.
 	http.SetCookie(w, s.cookie(s.cookieName(connectLabelCookieName), label, int((30*time.Minute).Seconds())))
+	// The granted scopes ride a cookie for the same reason, so the callback
+	// records exactly what was asked for.
+	http.SetCookie(w, s.cookie(s.cookieName(connectScopesCookieName), strings.Join(scopes, " "), int((30*time.Minute).Seconds())))
 	// The user's OWN client if this is their own provider; the instance's
 	// otherwise. Sending the wrong one fails at the provider with a message
 	// nobody can trace back to here.
 	clientID, _ := s.connections.clientForUser(userID, p.Name)
-	return p.AuthCodeURL(clientID, s.config.RedirectURL(hostOnly(r.Host)), state), nil
+	// The effective grant drives the consent URL; a copy so the registered
+	// provider's baseline is untouched.
+	pp := p
+	pp.Scopes = scopes
+	return pp.AuthCodeURL(clientID, s.config.RedirectURL(hostOnly(r.Host)), state), nil
 }
 
 // connectionFromState handles the OAuth callback when it belongs to a
@@ -568,6 +596,13 @@ func (s *Server) connectionFromState(w http.ResponseWriter, r *http.Request, sta
 		label = ck.Value
 	}
 	http.SetCookie(w, s.cookie(s.cookieName(connectLabelCookieName), "", -1))
+	// The scopes the owner granted, carried alongside the label. Falls back to
+	// the provider baseline if the cookie is gone (an expired round trip).
+	scopes := strings.Join(p.Scopes, " ")
+	if ck, err := r.Cookie(s.cookieName(connectScopesCookieName)); err == nil && ck.Value != "" {
+		scopes = ck.Value
+	}
+	http.SetCookie(w, s.cookie(s.cookieName(connectScopesCookieName), "", -1))
 	redirectURL := s.config.RedirectURL(hostOnly(r.Host))
 
 	// An existing slug means this is a re-consent: keep the connection and its
@@ -577,7 +612,7 @@ func (s *Server) connectionFromState(w http.ResponseWriter, r *http.Request, sta
 			writeError(w, http.StatusBadGateway, err)
 			return true
 		}
-	} else if _, err := s.connections.saveOAuth(r.Context(), user.ID, slug, label, p, code, redirectURL); err != nil {
+	} else if _, err := s.connections.saveOAuth(r.Context(), user.ID, slug, label, p, code, redirectURL, scopes); err != nil {
 		writeError(w, http.StatusBadGateway, err)
 		return true
 	}

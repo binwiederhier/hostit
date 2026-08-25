@@ -46,8 +46,19 @@ type Provider struct {
 	Kind  string
 	// Scopes are requested at connect time (OAuth only). Asked for per
 	// capability rather than all at once, so connecting Calendar does not
-	// demand Gmail.
+	// demand Gmail. When a provider offers ScopeOptions, Scopes is the BASELINE
+	// always granted on top of whatever the owner picks.
 	Scopes []string
+	// ScopeOptions are the read choices the add dialog offers as checkboxes, each
+	// a labelled bundle of scopes the owner can grant or withhold. Empty means
+	// the grant is fixed (Scopes exactly). The client sends back the chosen
+	// KEYS, never raw scopes, and ResolveScopes maps them against this allowlist.
+	ScopeOptions []ScopeOption
+	// UserToken means the OAuth dance asks for a token that acts AS the person,
+	// not a bot: the scopes go in user_scope (not scope) and the token comes back
+	// under authed_user.access_token. Slack's personal connection is the one case
+	// -- it reads the channels the owner is already in with no bot to invite.
+	UserToken bool
 	// Fields are what a static provider asks the owner to paste. The one named
 	// by SecretField is the credential; the rest are non-secret context (an
 	// IMAP host) and are stored in the clear as meta.
@@ -83,6 +94,64 @@ type Provider struct {
 	// credential to be called "OpenAI key" is how Home Assistant ended up
 	// suggesting that.
 	NameHint string
+}
+
+// ScopeOption is one read choice the add dialog offers as a checkbox: a labelled
+// bundle of provider scopes the owner can grant or withhold at connect time.
+type ScopeOption struct {
+	// Key is the stable id the client checks and sends back; the scopes
+	// themselves never cross from the client, so a crafted request cannot
+	// over-grant.
+	Key string `json:"key"`
+	// Label and Help are what the checkbox reads.
+	Label string `json:"label"`
+	Help  string `json:"help,omitempty"`
+	// Scopes is what granting this option adds to the baseline. Not sent to the
+	// client -- the raw scopes are the server's business; the client only names keys.
+	Scopes []string `json:"-"`
+	// Default is whether the box is checked when the dialog opens.
+	Default bool `json:"default,omitempty"`
+}
+
+// ResolveScopes turns the option keys the dialog sent into the effective scope
+// list: the baseline Scopes plus every selected option's scopes, in order and
+// deduplicated. An unknown key is an error rather than a silent drop, so a
+// crafted request cannot smuggle in a scope this provider never offered.
+func (p Provider) ResolveScopes(keys []string) ([]string, error) {
+	byKey := make(map[string]ScopeOption, len(p.ScopeOptions))
+	for _, o := range p.ScopeOptions {
+		byKey[o.Key] = o
+	}
+	seen := make(map[string]bool)
+	var out []string
+	add := func(scopes []string) {
+		for _, scope := range scopes {
+			if !seen[scope] {
+				seen[scope] = true
+				out = append(out, scope)
+			}
+		}
+	}
+	add(p.Scopes) // the baseline is always granted, first
+	for _, key := range keys {
+		o, ok := byKey[key]
+		if !ok {
+			return nil, fmt.Errorf("unknown scope option %q", key)
+		}
+		add(o.Scopes)
+	}
+	return out, nil
+}
+
+// DefaultScopeKeys are the options checked when the dialog opens.
+func (p Provider) DefaultScopeKeys() []string {
+	var keys []string
+	for _, o := range p.ScopeOptions {
+		if o.Default {
+			keys = append(keys, o.Key)
+		}
+	}
+	return keys
 }
 
 // Field is one input a static provider needs.

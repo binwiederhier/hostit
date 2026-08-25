@@ -68,7 +68,7 @@ func TestAUserDefinesTheirOwnProviderAndConnectsWithIt(t *testing.T) {
 	assert.Equal(t, "my-own-secret", secret, "unsealed from the row, not from control.yml")
 
 	code := consentCode(t, p, id)
-	conn, err := s.connections.saveOAuth(t.Context(), u.ID, "acme", "Acme", p, code, "https://hostit.example/auth/callback")
+	conn, err := s.connections.saveOAuth(t.Context(), u.ID, "acme", "Acme", p, code, "https://hostit.example/auth/callback", "")
 	require.NoError(t, err)
 	require.NoError(t, s.apps.Store().AddApp(&store.App{ID: "a1", Name: "dash", Port: 10000, Host: store.HostLocal, OwnerID: u.ID}))
 	require.NoError(t, s.apps.Store().GrantConnection("a1", conn.ID))
