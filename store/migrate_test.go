@@ -173,7 +173,7 @@ func TestSlackRenameMigration(t *testing.T) {
 	db, err := sql.Open("sqlite", file)
 	require.NoError(t, err)
 	// Everything up to, but not including, the rename migration (the last one).
-	for i := 0; i < len(migrations)-1; i++ {
+	for i := 0; i < len(migrations)-2; i++ {
 		_, err := db.Exec(migrations[i])
 		require.NoError(t, err, "migration %d", i+1)
 	}
@@ -183,7 +183,7 @@ func TestSlackRenameMigration(t *testing.T) {
 	require.NoError(t, err)
 	_, err = db.Exec(createSchemaVersionTableQuery)
 	require.NoError(t, err)
-	_, err = db.Exec(insertSchemaVersionQuery, len(migrations)-1) // recorded just before the rename
+	_, err = db.Exec(insertSchemaVersionQuery, len(migrations)-2) // recorded just before the rename
 	require.NoError(t, err)
 	require.NoError(t, db.Close())
 
@@ -196,4 +196,32 @@ func TestSlackRenameMigration(t *testing.T) {
 	require.NoError(t, s.db.QueryRow(`SELECT provider FROM connection WHERE id='c2'`).Scan(&personal))
 	assert.Equal(t, "slack-bot", bot, "the bot connection is rewritten to the new id")
 	assert.Equal(t, "slack-user", personal, "the personal connection is left alone")
+}
+
+// A database that has run every migration EXCEPT the last (status) must get the
+// status column when opened. Guards the append-only rule: the status migration
+// was once inserted mid-slice, so a version-N DB skipped it (no such column).
+func TestStatusColumnAddedOnUpgrade(t *testing.T) {
+	t.Parallel()
+	file := filepath.Join(t.TempDir(), "hostit.db")
+	db, err := sql.Open("sqlite", file)
+	require.NoError(t, err)
+	for i := 0; i < len(migrations)-1; i++ {
+		_, err := db.Exec(migrations[i])
+		require.NoError(t, err, "migration %d", i+1)
+	}
+	_, err = db.Exec(createSchemaVersionTableQuery)
+	require.NoError(t, err)
+	_, err = db.Exec(insertSchemaVersionQuery, len(migrations)-1) // one before the status migration
+	require.NoError(t, err)
+	require.NoError(t, db.Close())
+
+	s, err := NewStore(file) // opening must run the appended status migration
+	require.NoError(t, err)
+	defer s.Close()
+	_, err = s.db.Exec(`INSERT INTO connection (id, user_id, slug, provider, kind, secret, created_at) VALUES ('c1','u1','s','p','oauth','x',0)`)
+	require.NoError(t, err, "the status column must exist")
+	var status string
+	require.NoError(t, s.db.QueryRow(`SELECT status FROM connection WHERE id='c1'`).Scan(&status))
+	assert.Equal(t, "ok", status, "status defaults to ok")
 }
