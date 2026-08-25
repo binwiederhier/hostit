@@ -90,19 +90,29 @@ dialing the worker node directly (and by the login shell as the app user).
 Isolation, keys, and the login shell are all correct on the node; only the
 ADVERTISED host is wrong.
 
-The fix: build `ssh.host`/`ssh.command` from the app's node (`app.Host`) instead
-of the single global `s.config.SSHHostname()`. Two sites hardcode it today:
-`control/service.go` (~537) and `control/server_handler_agent.go` (~113). A
-per-node PUBLIC SSH endpoint is needed because the node table's `Address` is the
-node's INTERNAL cluster address, not reachable from outside. Options, undecided
-(an infra call -- raw IP now vs a DNS name):
-- control.yml `node-ssh-hosts: {name -> host}` map, API looks up the app's node,
-  falls back to `SSHHostname()` for the local node. No schema migration, no
-  node-side change. Simplest.
-- Same map but a per-node DNS name (needs an A record per node pointing at the
-  node's public IP). Nicer UX, survives IP changes.
-- Node reports its own `ssh-host` from node.yml; control stores it in the node
-  table (append-only migration). Most self-configuring, most surface.
+Direction (decided): BOUNCE SSH THROUGH CONTROL, keeping one entry point and the
+nodes on their internal addresses (reached over the reverse yamux tunnel), rather
+than advertising a per-node public hostname. Full design in
+`~/Code/plans/260825-multinode-ssh.md`.
+
+Because the app name is the SSH username (encrypted after key exchange), control
+cannot route by it at the TCP level -- it must either be the SSH server or tunnel
+to the node's sshd. Two options in the plan:
+- **A. Control is a Go SSH gateway**: terminates SSH, auth against the app's
+  keys, services the session via the existing `Terminal` RPC + a NEW streamed
+  `ExecStream` (for rsync/scp/sftp). Bare `ssh <app>@<host>`, but reimplements
+  session semantics + needs sftp-server/rsync in the image + a control SSH port.
+- **B. Control tunnels raw TCP to the node's real sshd** (RECOMMENDED): a
+  `hostit ssh <app>` ProxyCommand rides the existing 443 API; control splices it
+  over the tunnel to the node's `127.0.0.1:22`; the client auths end-to-end to
+  the real sshd. rsync/scp/sftp work for free, no new port, no master key,
+  control never sees SSH plaintext. Cost: a ProxyCommand/config, not bare ssh.
+
+Blocked on a decision: A vs B (bare-ssh UX vs real-sshd robustness), and if B,
+whether the `hostit` binary as the ProxyCommand dependency is acceptable. Then:
+build the chosen path behind a flag, advertise from `app.Host` at the two
+hardcoded sites (`control/service.go` ~537, `control/server_handler_agent.go`
+~113), and validate on stage with a real `rsync` to an app on a WORKER node.
 
 Related invariant to keep: app homes are root-owned (daemon-created) and sshd
 reads `authorized_keys` AS the app user, so the home MUST stay world-traversable
