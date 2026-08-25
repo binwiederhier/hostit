@@ -7,6 +7,44 @@ changed rather than what an operator had to do about it; from v0.15.0 on, each
 release is written down as it is cut. Anything that changes a config file, a
 default, or on-disk state is called out as **Breaking** or **Upgrade note**.
 
+## v0.26.0 (2026-08-25)
+
+- **Security fixes (from a full audit).** A critical read-SSRF in the MCP client
+  (a user-supplied server URL could rebind DNS past the outbound guard to reach
+  cloud metadata / internal services) is closed. A privilege escalation is
+  closed: an app-scoped token could reach its app's OWNER routes (transfer,
+  delete, rename, collaborators, token rotation, connections) because it resolved
+  to the owner -- it is now refused on account/owner routes (agent routes still
+  work). Also fixed: a newline in an SSH key smuggled a persistent
+  `authorized_keys` entry past revocation; the OAuth endpoint-discovery cache was
+  keyed by provider name so two tenants with a same-named personal provider could
+  poison each other's consent; a collaborator could read the owner's agent token;
+  a node could attribute snapshots to another app; an unvalidated TLS SNI reached
+  a cert file path; and the SSRF guard missed 6to4/NAT64 IPv6 encodings.
+
+- **Connections stay alive on their own, and their health is visible.** Control
+  now refreshes OAuth access tokens **proactively** in the background, before they
+  expire, so a connection does not silently lapse and force a re-auth. Each
+  connection carries a health status: a refresh the provider rejects flips it to
+  **needs-reconnect** (persisted), and a successful refresh or reconnect clears
+  it. The UI shows a per-connection badge and a bell by the profile icon when any
+  connection needs re-authorizing; `POST /api/connections/{slug}/verify` checks
+  one on demand; and the app-facing `GET /api/container/connections` list now
+  carries each connection's status. Long-lived-token providers (Slack, GitHub)
+  have nothing to refresh and are reported healthy unless a use fails.
+
+- **Resource-exhaustion hardening.** Request bodies and app-controlled file reads
+  are now bounded (readme, keys/tokens, cluster callbacks, the assistant's
+  read-file and attachment count, config reads); per-app custom-domain and
+  per-instance terminal-session caps; the memory/disk pool check is now atomic
+  (closing a TOCTOU overcommit) and rejects overflowing values; the proxy's
+  fallback-cert keygen no longer runs under the global cert mutex; and concurrent
+  workspace exports are bounded so one tenant cannot pin a shared node's disk.
+
+- **The agent `/info` guide documents the live-preview contract:** allow the
+  hostit dashboard to frame the app, treat a request carrying `?hostit_preview=`
+  as uncacheable, and know that connection tokens are auto-refreshed.
+
 ## v0.25.0 (2026-08-25)
 
 - **Download an app's workspace, or one snapshot, as a `.zip` or `.tar.gz`.** The
