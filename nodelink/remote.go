@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"heckel.io/hostit/archive"
 	"heckel.io/hostit/cluster"
 	"heckel.io/hostit/nodeapi"
 	"heckel.io/hostit/store"
@@ -363,4 +364,23 @@ func (a *remoteAgent) postJSON(verb string, payload any) error {
 		return fmt.Errorf("node rpc %s: %w", verb, err)
 	}
 	return decodeErr(&resp)
+}
+
+// ArchiveWorkspace streams the app's workspace archive off the node: the node
+// snapshots and archives on its side, and the archive rides back as the response
+// body, which the caller reads and closes.
+func (a *remoteAgent) ArchiveWorkspace(name string, format archive.Format) (io.ReadCloser, error) {
+	u := "http://node/v1/export?" + url.Values{"name": {name}, "format": {string(format)}}.Encode()
+	httpResp, err := a.c.Get(u)
+	if err != nil {
+		return nil, err
+	}
+	if httpResp.StatusCode != http.StatusOK {
+		defer httpResp.Body.Close()
+		if sentinel, ok := wireErrs[httpResp.Header.Get(errCodeHeader)]; ok {
+			return nil, sentinel
+		}
+		return nil, errors.New(httpResp.Header.Get(errHeader))
+	}
+	return httpResp.Body, nil
 }

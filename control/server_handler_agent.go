@@ -35,6 +35,7 @@ func (s *Server) newAgentRoutes(mux *http.ServeMux) {
 	route(mux, "GET", "/apps/{app}/files", s.requireApp(s.handleAgentFileList))
 	route(mux, "PUT", "/apps/{app}/files/{path...}", s.requireApp(s.handleAgentFilePut))
 	route(mux, "GET", "/apps/{app}/files/{path...}", s.requireApp(s.handleAgentFileGet))
+	route(mux, "GET", "/apps/{app}/export", s.requireApp(s.handleAppExport))
 	route(mux, "DELETE", "/apps/{app}/files/{path...}", s.requireApp(s.handleAgentFileDelete))
 	route(mux, "POST", "/apps/{app}/move", s.requireApp(s.handleAgentMove))
 	route(mux, "POST", "/apps/{app}/mkdir", s.requireApp(s.handleAgentMkdir))

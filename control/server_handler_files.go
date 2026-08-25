@@ -10,6 +10,7 @@ import (
 	"path"
 	"strconv"
 
+	"heckel.io/hostit/archive"
 	"heckel.io/hostit/store"
 )
 
@@ -149,4 +150,31 @@ func (s *Server) handleAgentReadmePut(w http.ResponseWriter, r *http.Request, c 
 		return
 	}
 	writeJSON(w, http.StatusOK, &apiMessageResponse{Message: "README.md updated"})
+}
+
+// handleAppExport streams the app's whole workspace as a downloadable archive
+// (zip by default, ?format=tar for a gzipped tar). The node takes a read-only
+// snapshot and archives that, so it is a consistent point-in-time copy.
+func (s *Server) handleAppExport(w http.ResponseWriter, r *http.Request, c *caller, a *store.App) {
+	format := archive.Zip
+	if r.URL.Query().Get("format") == string(archive.TarGz) {
+		format = archive.TarGz
+	}
+	rc, err := s.node.ArchiveWorkspace(a.Name, format)
+	if err != nil {
+		writeAppError(w, err)
+		return
+	}
+	defer rc.Close()
+	ctype := "application/zip"
+	if format == archive.TarGz {
+		ctype = "application/gzip"
+	}
+	w.Header().Set("Content-Type", ctype)
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Content-Disposition", "attachment; filename="+strconv.Quote(a.Name+"."+format.Ext()))
+	// The stream started once ArchiveWorkspace returned without error; a failure
+	// mid-copy (client gone, archive error) just truncates -- the node still drops
+	// its snapshot -- so there is nothing to report to a header now.
+	_, _ = io.Copy(w, rc)
 }

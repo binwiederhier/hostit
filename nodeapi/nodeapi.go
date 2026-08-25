@@ -16,6 +16,7 @@ import (
 
 	"heckel.io/hostit/hoststats"
 
+	"heckel.io/hostit/archive"
 	"heckel.io/hostit/homefs"
 	"heckel.io/hostit/store"
 )
@@ -102,6 +103,11 @@ type NodeAgent interface {
 	StatFile(name, relPath string) (*FileInfo, error)
 	FileExists(name, relPath string) bool
 	ExtractTar(name string, r io.Reader) ([]string, error)
+	// ArchiveWorkspace streams the app's whole workspace (home/app) as an
+	// archive in the given format, from a consistent read-only snapshot. The
+	// caller closes the reader; closing it early aborts the archive and drops
+	// the snapshot.
+	ArchiveWorkspace(name string, format archive.Format) (io.ReadCloser, error)
 
 	// Keys and limits, applied where the app user lives.
 	// SetKeys writes the app's complete authorized_keys set. Control resolves

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"heckel.io/hostit/appctl"
+	"heckel.io/hostit/archive"
 	"heckel.io/hostit/nodeapi"
 	"heckel.io/hostit/store"
 )
@@ -267,6 +268,17 @@ func RPCHandler(agent nodeapi.NodeAgent) http.Handler {
 			return
 		}
 		_, _ = w.Write(b)
+	})
+	mux.HandleFunc("GET /v1/export", func(w http.ResponseWriter, r *http.Request) {
+		rc, err := agent.ArchiveWorkspace(r.URL.Query().Get("name"), archive.Format(r.URL.Query().Get("format")))
+		if err != nil {
+			w.Header().Set(errHeader, errString(err))
+			w.Header().Set(errCodeHeader, errCode(err))
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		defer rc.Close()
+		_, _ = io.Copy(w, rc)
 	})
 	mux.HandleFunc("POST /v1/tar", func(w http.ResponseWriter, r *http.Request) {
 		paths, err := agent.ExtractTar(r.URL.Query().Get("name"), r.Body)

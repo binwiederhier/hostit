@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"heckel.io/hostit/archive"
 	"heckel.io/hostit/nodeapi"
 	"heckel.io/hostit/store"
 )
@@ -365,6 +366,14 @@ func (ra *routingAgent) WriteFileFrom(name, relPath string, r io.Reader, mode os
 		return err
 	}
 	return agent.WriteFileFrom(name, relPath, r, mode)
+}
+
+func (ra *routingAgent) ArchiveWorkspace(name string, format archive.Format) (io.ReadCloser, error) {
+	agent, err := ra.route(name)
+	if err != nil {
+		return nil, err
+	}
+	return agent.ArchiveWorkspace(name, format)
 }
 
 func (ra *routingAgent) DeleteFile(name, relPath string) error {

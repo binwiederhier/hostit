@@ -2003,6 +2003,19 @@ const SnapshotsPane = ({ name, showToast, onRolledBack, onFork, onNew, reloadSig
           <div className="ov-desc">hostit snapshots {name} automatically on a schedule and before every deploy. Take one yourself anytime, roll back to any point (reversible -- the current state is snapshotted first), or fork a snapshot into a brand-new app.</div>
         </div>
         <div className="ov-quick">
+          {/* A plain link so the browser streams the archive straight to disk
+              (a workspace can be large); the session cookie authenticates it. */}
+          <a
+            className="btn btn-small workspace-dl"
+            href={`/api/apps/${encodeURIComponent(name)}/export`}
+            download
+            title="Download the whole workspace as a zip -- a consistent snapshot"
+          >
+            Download .zip
+          </a>
+          <a className="workspace-dl-alt" href={`/api/apps/${encodeURIComponent(name)}/export?format=tar`} download>
+            or .tar.gz
+          </a>
           <SnapTakeButton onNew={() => onNew(load)} />
         </div>
       </div>
