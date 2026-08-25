@@ -38,12 +38,25 @@ const (
 // mapped user, exactly like an SSH session. The origin check on the upgrade stops
 // another site -- including a tenant's own app page -- from opening one on a
 // signed-in user's behalf.
+// maxConcurrentTerminals bounds live pty sessions across this instance so one
+// owner cannot exhaust a shared node.
+const maxConcurrentTerminals = 32
+
 func (s *Server) handleTerminal(w http.ResponseWriter, r *http.Request, c *caller) {
 	a, err := s.ownedApp(c, r.PathValue("name"))
 	if err != nil {
 		writeAppError(w, err)
 		return
 	}
+	// Bound concurrent terminals: each is a live pty on a node, so an unbounded
+	// count lets one owner exhaust a shared node. Reserve a slot before the
+	// upgrade, release it when the session ends.
+	if s.activeTerminals.Add(1) > maxConcurrentTerminals {
+		s.activeTerminals.Add(-1)
+		writeError(w, http.StatusServiceUnavailable, errors.New("too many terminal sessions are open; close one and try again"))
+		return
+	}
+	defer s.activeTerminals.Add(-1)
 
 	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
 		OriginPatterns: s.config.WebHostnames(), // only our own web origins may connect

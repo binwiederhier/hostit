@@ -39,6 +39,10 @@ type apiLimitsPatch struct {
 // the next container recreation (reboot, power cycle or deploy) --
 // deliberately no auto-reboot, since editing a number must not secretly
 // restart a tenant's app.
+// maxAppLimitMB is a sanity ceiling on a per-app override: far above any real
+// app, far below where summing a few would overflow the pool-fit arithmetic.
+const maxAppLimitMB = 1 << 30
+
 func (s *Server) handleAppLimitsUpdate(w http.ResponseWriter, r *http.Request, c *caller) {
 	if c.appScope != "" {
 		writeError(w, http.StatusForbidden, errors.New("an app token cannot edit its own limits"))
@@ -62,6 +66,8 @@ func (s *Server) handleAppLimitsUpdate(w http.ResponseWriter, r *http.Request, c
 			return 0, nil
 		case requested < floor:
 			return 0, fmt.Errorf("%s must be at least %d (or -1 to clear the override)", what, floor)
+		case requested > maxAppLimitMB:
+			return 0, fmt.Errorf("%s is unreasonably large", what)
 		default:
 			return requested, nil
 		}
@@ -85,14 +91,20 @@ func (s *Server) handleAppLimitsUpdate(w http.ResponseWriter, r *http.Request, c
 		writeError(w, http.StatusForbidden, errors.New("the CPU cap is set by an admin"))
 		return
 	}
+	// The pool-fit check reads every sibling app's limits, so it must be atomic
+	// with the write, or two concurrent updates each pass and overcommit the pool.
+	s.limitsMu.Lock()
 	if err := s.checkPoolFits(a, memoryMB, diskMB); err != nil {
+		s.limitsMu.Unlock()
 		writeError(w, http.StatusForbidden, err)
 		return
 	}
 	if err := s.apps.Store().UpdateAppLimits(a.Name, memoryMB, diskMB, cpuMilli); err != nil {
+		s.limitsMu.Unlock()
 		writeAppError(w, err)
 		return
 	}
+	s.limitsMu.Unlock()
 	// Record and assert the EFFECTIVE limits (override where set, else the
 	// owner's defaults), so the desired state, the API and the node agree
 	// immediately -- a disconnected node picks them up on its next reconcile.

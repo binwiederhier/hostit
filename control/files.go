@@ -98,7 +98,7 @@ func (m *Manager) SetSnapshotConfig(name string, hooks app.SnapshotHooks) error 
 		return err
 	}
 	var content string
-	if b, err := m.node.ReadFile(name, configFile); err == nil {
+	if b, err := m.node.ReadFileMax(name, configFile, maxConfigSize); err == nil {
 		content = string(b)
 	}
 	return m.node.WriteFile(name, configFile, []byte(app.SetSnapshotConfig(content, hooks)), 0)
@@ -111,7 +111,7 @@ func (m *Manager) SetSnapshotConfig(name string, hooks app.SnapshotHooks) error 
 func (m *Manager) SetDescription(name, desc string) error {
 	desc = strings.ReplaceAll(strings.TrimSpace(desc), "\n", " ")
 	var content string
-	if b, err := m.node.ReadFile(name, configFile); err == nil {
+	if b, err := m.node.ReadFileMax(name, configFile, maxConfigSize); err == nil {
 		content = string(b)
 	}
 	return m.node.WriteFile(name, configFile, []byte(app.SetDescription(content, desc)), 0)

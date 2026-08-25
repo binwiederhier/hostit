@@ -32,7 +32,7 @@ func (s *Server) handleKeysList(w http.ResponseWriter, _ *http.Request, c *calle
 
 func (s *Server) handleKeysAdd(w http.ResponseWriter, r *http.Request, c *caller) {
 	var req apiAddKeyRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8192)).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
@@ -99,7 +99,7 @@ func (s *Server) handleTokensList(w http.ResponseWriter, _ *http.Request, c *cal
 
 func (s *Server) handleTokensAdd(w http.ResponseWriter, r *http.Request, c *caller) {
 	var req apiAddTokenRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8192)).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}

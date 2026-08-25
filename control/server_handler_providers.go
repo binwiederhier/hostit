@@ -3,6 +3,7 @@ package control
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -256,6 +257,12 @@ func (s *Server) providerRowFrom(name, ownerID string, req apiProviderRequest) (
 			}
 			if err := outbound.CheckURL(u); err != nil {
 				return nil, err
+			}
+			// Plaintext OAuth would exchange the client secret and code in the
+			// clear; require https unless this instance has opted into private
+			// outbound (the self-hosted-dev case that also allows loopback).
+			if strings.HasPrefix(u, "http://") && !s.config.OutboundAllowPrivate {
+				return nil, fmt.Errorf("%s must use https://; plain http is only accepted where private outbound is enabled", u)
 			}
 		}
 		row.Scopes = strings.Join(req.Scopes, " ")

@@ -115,7 +115,9 @@ func (o *appOps) ListFiles(name, path string) (string, error) {
 }
 
 func (o *appOps) ReadFile(name, path string) (string, error) {
-	b, err := o.node.ReadFile(name, path)
+	// Bound the read at the node (cap+1 to detect truncation) so a huge file
+	// never lands whole in the shared daemon's memory before we trim it.
+	b, err := o.node.ReadFileMax(name, path, assistantReadCap+1)
 	if err != nil {
 		return "", err
 	}

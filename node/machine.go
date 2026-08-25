@@ -165,6 +165,11 @@ type Machine struct {
 	appLocksMu sync.Mutex // Protects appLocks
 	syncMu     sync.Mutex // Protects syncSeq
 	orphanMu   sync.Mutex // Protects orphansLastPass, orphansThisPass
+
+	// exportSem bounds concurrent workspace exports: each takes a read-only btrfs
+	// snapshot that pins the workspace's old blocks until the stream ends, so an
+	// unbounded count is a shared-node disk-exhaustion vector.
+	exportSem chan struct{}
 }
 
 // NewMachine creates the Machine half from its config, the store view (the
@@ -192,6 +197,7 @@ func NewMachine(conf *Config, s *store.Store, svc *Services) *Machine {
 		appLocks:        make(map[string]*sync.Mutex),
 		orphansLastPass: make(map[string]bool),
 		orphansThisPass: make(map[string]bool),
+		exportSem:       make(chan struct{}, maxConcurrentExports),
 	}
 	// The snapshot Service reuses the Machine's node-local services and store, and
 	// calls back into it through snapshotHost for the app-lifecycle operations and

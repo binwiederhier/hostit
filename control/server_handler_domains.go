@@ -66,6 +66,10 @@ func (s *Server) handleAppDomainsList(w http.ResponseWriter, r *http.Request, c 
 }
 
 // handleAppDomainAdd attaches a custom domain and starts certificate issuance.
+// maxDomainsPerApp caps custom domains on one app (the verify/retry loop does a
+// DNS lookup per domain).
+const maxDomainsPerApp = 10
+
 func (s *Server) handleAppDomainAdd(w http.ResponseWriter, r *http.Request, c *caller) {
 	a, err := s.ownedApp(c, r.PathValue("name"))
 	if err != nil {
@@ -75,6 +79,12 @@ func (s *Server) handleAppDomainAdd(w http.ResponseWriter, r *http.Request, c *c
 	var req apiAddAppDomainRequest
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	// Bound custom domains per app: the verify/retry loop does a DNS lookup per
+	// domain, so an unbounded list is a fan-out an owner should not be able to arm.
+	if existing, err := s.appDomains(a.Name); err == nil && len(existing) >= maxDomainsPerApp {
+		writeError(w, http.StatusForbidden, fmt.Errorf("an app may have at most %d custom domains", maxDomainsPerApp))
 		return
 	}
 	d, err := s.addAppDomain(a.Name, req.Domain)

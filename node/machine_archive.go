@@ -26,6 +26,9 @@ const (
 	exportSnapMaxAge = time.Hour
 )
 
+// maxConcurrentExports bounds simultaneous workspace exports per node.
+const maxConcurrentExports = 4
+
 // ArchiveWorkspace streams the app's whole workspace (home/app) as an archive in
 // the given format. It first takes a read-only btrfs snapshot, so the archive is
 // a consistent point-in-time copy even while the app keeps writing, and drops
@@ -35,16 +38,27 @@ const (
 // surface before any bytes are written; an error mid-stream closes the reader
 // with it.
 func (m *Machine) ArchiveWorkspace(name string, format archive.Format) (io.ReadCloser, error) {
+	// One export snapshot pins disk until its stream ends; cap how many run at
+	// once so a burst cannot exhaust the shared node's disk. Non-blocking: reject
+	// rather than queue, since each waiter would hold a request open.
+	select {
+	case m.exportSem <- struct{}{}:
+	default:
+		return nil, fmt.Errorf("too many workspace exports are in progress; try again shortly")
+	}
 	subvol := m.AppSubvolume(name)
 	if _, err := os.Stat(subvol); err != nil {
+		<-m.exportSem
 		return nil, fmt.Errorf("workspace for %q is not on this node", name)
 	}
 	snap := filepath.Join(m.config.AppsDir, exportSnapPrefix+randomExportID())
 	if err := m.btrfs.Snapshot(subvol, snap, true, ""); err != nil {
+		<-m.exportSem
 		return nil, fmt.Errorf("cannot snapshot workspace for export: %w", err)
 	}
 	return m.pipeArchive(filepath.Join(snap, workspace.FilesDir), format, func() {
 		_ = m.btrfs.DeleteSubvolume(snap)
+		<-m.exportSem
 	}), nil
 }
 

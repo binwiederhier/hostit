@@ -22,6 +22,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"heckel.io/hostit/appgrant"
@@ -111,9 +112,11 @@ type Server struct {
 	proxies *ProxyRegistry
 
 	// routesHash/routesSeq version the routing table (see proxies.go)
-	routesHash string
-	routesSeq  int64
-	routesMu   sync.Mutex // Protects routesHash, routesSeq
+	routesHash      string
+	routesSeq       int64
+	routesMu        sync.Mutex   // Protects routesHash, routesSeq
+	limitsMu        sync.Mutex   // Serializes limit updates so the pool-fit check and apply are atomic
+	activeTerminals atomic.Int32 // Count of open terminal sessions, capped to protect the node
 
 	domainMu sync.RWMutex // Protects domainCache and issuing
 }

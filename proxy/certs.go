@@ -77,11 +77,16 @@ func (p *Proxy) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, er
 // fallbackCert mints (once per name) a self-signed certificate so TLS can
 // complete while the real material is unreachable.
 func (p *Proxy) fallbackCert(sni string) (*tls.Certificate, error) {
+	// Check the cache under the lock, then release it: the ECDSA keygen below is
+	// expensive and must not hold the global cert mutex (which every TLS
+	// handshake contends), or a burst of unknown SNIs serializes the whole proxy.
 	p.certMu.Lock()
-	defer p.certMu.Unlock()
 	if cert, ok := p.fallbacks[sni]; ok {
+		p.certMu.Unlock()
 		return cert, nil
 	}
+	p.certMu.Unlock()
+
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		return nil, err
@@ -108,12 +113,18 @@ func (p *Proxy) fallbackCert(sni string) (*tls.Certificate, error) {
 		return nil, err
 	}
 	cert := &tls.Certificate{Certificate: [][]byte{der}, PrivateKey: key, Leaf: leaf}
+	p.certMu.Lock()
+	if existing, ok := p.fallbacks[sni]; ok { // another handshake won the race; reuse its cert
+		p.certMu.Unlock()
+		return existing, nil
+	}
 	if p.fallbacks == nil {
 		p.fallbacks = make(map[string]*tls.Certificate)
 	}
 	if len(p.fallbacks) < maxFallbackCerts {
 		p.fallbacks[sni] = cert
 	}
+	p.certMu.Unlock()
 	slog.Warn("Serving a self-signed certificate: no cached material and control is unreachable", "sni", sni)
 	return cert, nil
 }

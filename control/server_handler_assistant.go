@@ -15,6 +15,9 @@ import (
 	"heckel.io/hostit/assistant"
 )
 
+// maxAttachments bounds how many files one assistant turn may attach.
+const maxAttachments = 16
+
 const (
 	// assistantMaxMessage caps a single user prompt to the assistant
 	assistantMaxMessage = 32 * 1024
@@ -60,6 +63,11 @@ func (s *Server) handleAssistant(w http.ResponseWriter, r *http.Request, c *call
 	// can see them (other files are referenced by path only). Only chat-uploaded
 	// files (under uploads/) may be attached, and images are read with a size cap so
 	// a large file the owner staged cannot blow up memory on the shared daemon.
+	// Cap the attachment COUNT: each image is read (size-capped) into memory, so
+	// an unbounded list is a memory-amplification vector on the shared daemon.
+	if len(req.Attachments) > maxAttachments {
+		req.Attachments = req.Attachments[:maxAttachments]
+	}
 	attachments := make([]assistant.Attachment, 0, len(req.Attachments))
 	for _, at := range req.Attachments {
 		if !strings.HasPrefix(at.Path, "uploads/") {

@@ -126,6 +126,10 @@ type CallbackStore interface {
 // report data for apps it hosts. Without this, a compromised node could flip
 // another tenant's app powered_off, poison its usage, or wipe its snapshot
 // records by naming it in a callback.
+// maxCallbackBody caps a cluster callback payload (the largest is an app's full
+// snapshot list); a node cannot exhaust control's memory with one request.
+const maxCallbackBody = 16 << 20
+
 func CallbackHandler(nodeID string, st CallbackStore) http.Handler {
 	mux := http.NewServeMux()
 	// handle decodes the body, checks the named app belongs to this node, then
@@ -133,7 +137,7 @@ func CallbackHandler(nodeID string, st CallbackStore) http.Handler {
 	handle := func(kind string, fn func(body []byte) error) {
 		mux.HandleFunc("POST "+callbackPathPrefix+kind, func(w http.ResponseWriter, r *http.Request) {
 			var buf bytes.Buffer
-			if _, err := buf.ReadFrom(r.Body); err != nil {
+			if _, err := buf.ReadFrom(http.MaxBytesReader(w, r.Body, maxCallbackBody)); err != nil {
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
 			}

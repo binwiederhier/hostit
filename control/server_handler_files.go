@@ -14,6 +14,9 @@ import (
 	"heckel.io/hostit/store"
 )
 
+// maxReadmeBody caps a README upload; markdown docs, not archives.
+const maxReadmeBody = 1 << 20
+
 // Agent-API file operations: list, read, write, move, mkdir, delete, tar upload
 // and README replacement. Thin handlers over Manager's file methods.
 
@@ -141,7 +144,7 @@ func (s *Server) handleAgentFileUpload(w http.ResponseWriter, r *http.Request, c
 
 func (s *Server) handleAgentReadmePut(w http.ResponseWriter, r *http.Request, c *caller, a *store.App) {
 	var req apiReadmeRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxReadmeBody)).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
