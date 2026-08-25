@@ -167,14 +167,23 @@ func (s *Server) accountResponse(c *caller) (*apiAccountResponse, error) {
 	if err != nil {
 		return nil, err
 	}
+	attention := 0
+	if conns, err := s.apps.Store().Connections(c.user.ID); err == nil {
+		for _, cc := range conns {
+			if cc.Status == store.ConnectionStatusNeedsReconnect {
+				attention++
+			}
+		}
+	}
 	return &apiAccountResponse{
-		Email:   c.user.Email,
-		Name:    c.user.Name,
-		Role:    c.user.Role,
-		Status:  c.user.Status,
-		Limits:  limits,
-		Usage:   &apiUsage{Apps: len(apps), DiskMB: diskMB, PoolMemoryMB: poolMemory, PoolDiskMB: poolDisk},
-		Version: node.Version,
+		Email:                    c.user.Email,
+		Name:                     c.user.Name,
+		Role:                     c.user.Role,
+		Status:                   c.user.Status,
+		ConnectionsNeedReconnect: attention,
+		Limits:                   limits,
+		Usage:                    &apiUsage{Apps: len(apps), DiskMB: diskMB, PoolMemoryMB: poolMemory, PoolDiskMB: poolDisk},
+		Version:                  node.Version,
 	}, nil
 }
 

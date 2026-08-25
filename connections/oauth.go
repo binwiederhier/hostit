@@ -156,7 +156,7 @@ func (p Provider) postToken(ctx context.Context, client *http.Client, form url.V
 	if res.Error != "" {
 		// The provider's own words: "invalid_grant" almost always means the
 		// owner revoked access, and saying so beats a generic failure.
-		return tokenResponse{}, fmt.Errorf("%s refused: %s %s", p.Label, res.Error, res.ErrorDesc)
+		return tokenResponse{}, fmt.Errorf("%w: %s refused: %s %s", ErrReauthRequired, p.Label, res.Error, res.ErrorDesc)
 	}
 	if resp.StatusCode != http.StatusOK {
 		return tokenResponse{}, fmt.Errorf("%s returned HTTP %d", p.Label, resp.StatusCode)

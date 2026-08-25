@@ -44,6 +44,8 @@ type apiConnectionResponse struct {
 	Meta          string    `json:"meta,omitempty"`
 	CreatedAt     time.Time `json:"created_at"`
 	GrantedApps   int       `json:"granted_apps"`
+	// Status is the connection's health: "ok" or "needs_reconnect".
+	Status string `json:"status"`
 	// URL and Tools are set for an MCP connection only. They come out of the
 	// meta column, which for MCP holds a JSON document rather than the "k=v"
 	// context a pasted credential carries -- so it is unpacked here instead of
@@ -152,6 +154,7 @@ func (s *Server) connectionView(c *store.Connection) *apiConnectionResponse {
 	out := &apiConnectionResponse{
 		Slug: c.Slug, Label: c.Label, Provider: c.Provider, ProviderLabel: label,
 		Kind: c.Kind, Meta: c.Meta, CreatedAt: c.CreatedAt, GrantedApps: n,
+		Status: c.Status,
 	}
 	if c.Kind == store.ConnectionMCP {
 		out.Meta = "" // it is a JSON document, not something to show as-is
@@ -374,6 +377,26 @@ func (s *Server) handleConnectionUpdate(w http.ResponseWriter, r *http.Request, 
 
 // handleConnectionReconnect starts a fresh consent for an existing OAuth
 // connection, keeping its slug and every grant that names it.
+// handleConnectionVerify actively checks a connection's health by refreshing it
+// now, and returns the resulting status ("ok" or "needs_reconnect").
+func (s *Server) handleConnectionVerify(w http.ResponseWriter, r *http.Request, c *caller) {
+	if s.connections == nil {
+		writeError(w, http.StatusNotImplemented, errors.New("connections are not available on this server"))
+		return
+	}
+	conn, err := s.ownedConnection(c, r.PathValue("slug"))
+	if err != nil {
+		writeConnectionError(w, err)
+		return
+	}
+	status, err := s.connections.Verify(r.Context(), c.userID(), conn.Slug)
+	if err != nil {
+		writeConnectionError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": status})
+}
+
 func (s *Server) handleConnectionReconnect(w http.ResponseWriter, r *http.Request, c *caller) {
 	conn, err := s.ownedConnection(c, r.PathValue("slug"))
 	if err != nil {
@@ -671,6 +694,10 @@ type apiSelfConnectionResponse struct {
 	ProviderLabel string `json:"provider_label"`
 	Kind          string `json:"kind"`
 	Meta          string `json:"meta,omitempty"`
+	// Status is the connection's health: "ok" or "needs_reconnect". A needs-
+	// reconnect connection still lists, but its token call will fail until the
+	// owner re-authorizes.
+	Status string `json:"status"`
 }
 
 // handleSelfConnectionsList tells an app which connections it was granted, so
@@ -689,7 +716,7 @@ func (s *Server) handleSelfConnectionsList(w http.ResponseWriter, r *http.Reques
 		}
 		out = append(out, &apiSelfConnectionResponse{
 			Slug: c.Slug, Label: c.Label, Provider: c.Provider,
-			ProviderLabel: label, Kind: c.Kind, Meta: c.Meta,
+			ProviderLabel: label, Kind: c.Kind, Meta: c.Meta, Status: c.Status,
 		})
 	}
 	writeJSON(w, http.StatusOK, out)

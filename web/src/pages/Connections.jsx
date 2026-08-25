@@ -48,6 +48,15 @@ const Connections = () => {
   const { accounts, credentials, servers } = splitByKind(data?.connections);
   const mcpProvider = providers.find((p) => p.kind === "mcp") || null;
 
+  const verify = async (c) => {
+    setError("");
+    try {
+      await api.post(`/api/connections/${encodeURIComponent(c.slug)}/verify`, {});
+      await load();
+    } catch (err) {
+      setError(err.message);
+    }
+  };
   const reconnect = async (c) => {
     setError("");
     try {
@@ -92,7 +101,7 @@ const Connections = () => {
     }
   };
 
-  const shared = { onRename: setRenaming, onReconnect: reconnect, onRemove: setRemoving, onAdd: setAdding };
+  const shared = { onRename: setRenaming, onReconnect: reconnect, onRemove: setRemoving, onAdd: setAdding, onVerify: verify };
 
   return (
     <>
@@ -429,7 +438,7 @@ const ProviderDialog = ({ existing, redirectURI, onClose, onSaved }) => {
 // One of the two cards. Both are the same shape -- what is attached, and one
 // button to attach more -- so they share a component rather than being copied
 // with the nouns changed.
-const ConnectionsCard = ({ title, hint, emptyText, cta, items, providers, singleProvider, presets, loading, onAdd, onRename, onReconnect, onRemove, noProvidersText, onAddOwn }) => (
+const ConnectionsCard = ({ title, hint, emptyText, cta, items, providers, singleProvider, presets, loading, onAdd, onRename, onReconnect, onRemove, onVerify, noProvidersText, onAddOwn }) => (
   <div className="card">
     <div className="conn-head">
       <h2>{title}</h2>
@@ -464,6 +473,11 @@ const ConnectionsCard = ({ title, hint, emptyText, cta, items, providers, single
             <span className="conn-name">
               {c.label || c.slug}
               <span className="conn-provider">{c.provider_label}</span>
+              {c.status === "needs_reconnect" ? (
+                <span className="conn-health conn-health-warn" title="The provider rejected this connection -- reconnect it">Reconnect needed</span>
+              ) : c.kind === "oauth" ? (
+                <span className="conn-health-dot" title="Healthy" aria-label="Healthy" />
+              ) : null}
             </span>
             <span className="conn-note">
               apps use <span className="mono">{c.slug}</span>
@@ -475,7 +489,7 @@ const ConnectionsCard = ({ title, hint, emptyText, cta, items, providers, single
             </span>
             {c.kind === "mcp" && <MCPDetail conn={c} />}
           </div>
-          <RowMenu conn={c} onRename={onRename} onReconnect={onReconnect} onRemove={onRemove} />
+          <RowMenu conn={c} onRename={onRename} onReconnect={onReconnect} onRemove={onRemove} onVerify={onVerify} />
         </div>
       ))}
     {noProvidersText && singleProvider === undefined && providers.length === 0 && (
@@ -565,7 +579,7 @@ const ToolsDialog = ({ conn, tools, onClose }) => {
 
 // Three dots rather than three buttons. The row is about WHAT is attached; the
 // things you can do to it are one click away instead of competing with it.
-const RowMenu = ({ conn, onRename, onReconnect, onRemove }) => {
+const RowMenu = ({ conn, onRename, onReconnect, onRemove, onVerify }) => {
   const { open, setOpen, ref } = useDropdown();
   const pick = (fn) => () => {
     setOpen(false);
@@ -586,6 +600,9 @@ const RowMenu = ({ conn, onRename, onReconnect, onRemove }) => {
       {open && (
         <div className="menu-items" role="menu">
           <button type="button" role="menuitem" onClick={pick(onRename)}>Edit</button>
+          {conn.kind === "oauth" && onVerify && (
+            <button type="button" role="menuitem" onClick={pick(onVerify)}>Check health</button>
+          )}
           {(conn.kind === "oauth" || conn.kind === "mcp") && (
             <button type="button" role="menuitem" onClick={pick(onReconnect)}>Reconnect</button>
           )}

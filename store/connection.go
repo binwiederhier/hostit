@@ -37,10 +37,10 @@ const (
 )
 
 const (
-	connectionCols        = `id, user_id, slug, provider, kind, label, secret, scopes, meta, created_at`
+	connectionCols        = `id, user_id, slug, provider, kind, label, secret, scopes, meta, created_at, status`
 	insertConnectionQuery = `
 		INSERT INTO connection (` + connectionCols + `)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
 	selectConnectionQuery           = `SELECT ` + connectionCols + ` FROM connection WHERE id = ?`
 	selectConnectionBySlugQuery     = `SELECT ` + connectionCols + ` FROM connection WHERE user_id = ? AND slug = ?`
@@ -50,6 +50,7 @@ const (
 	deleteConnectionQuery           = `DELETE FROM connection WHERE id = ?`
 	selectAllConnectionsQuery       = `SELECT ` + connectionCols + ` FROM connection ORDER BY user_id, slug`
 	updateConnectionSecretOnlyQuery = `UPDATE connection SET secret = ? WHERE id = ?`
+	setConnectionStatusQuery        = `UPDATE connection SET status = ? WHERE id = ?`
 
 	insertGrantQuery          = `INSERT OR IGNORE INTO app_connection (app_id, connection_id, created_at) VALUES (?, ?, ?)`
 	deleteGrantQuery          = `DELETE FROM app_connection WHERE app_id = ? AND connection_id = ?`
@@ -83,6 +84,10 @@ type Connection struct {
 	Scopes    string
 	Meta      string // provider-specific, non-secret (an IMAP host, an account email)
 	CreatedAt time.Time
+	// Status is the connection's health: ConnectionStatusOK, or
+	// ConnectionStatusNeedsReconnect when a refresh was rejected and the owner
+	// must re-authorize. Refreshing providers keep it current automatically.
+	Status string
 }
 
 // NewConnectionID returns a fresh id. Callers that must seal a credential
@@ -93,12 +98,27 @@ func NewConnectionID() string {
 }
 
 // AddConnection stores a new connection, assigning an id if it has none.
+// Connection health states.
+const (
+	ConnectionStatusOK             = "ok"
+	ConnectionStatusNeedsReconnect = "needs_reconnect"
+)
+
+// SetConnectionStatus records a connection's health (OK or needs-reconnect).
+func (s *Store) SetConnectionStatus(id, status string) error {
+	_, err := s.db.Exec(setConnectionStatusQuery, status, id)
+	return err
+}
+
 func (s *Store) AddConnection(c *Connection) error {
 	if c.ID == "" {
 		c.ID = connectionIDPrefix + randomID()
 	}
+	if c.Status == "" {
+		c.Status = ConnectionStatusOK
+	}
 	_, err := s.db.Exec(insertConnectionQuery, c.ID, c.UserID, c.Slug, c.Provider, c.Kind, c.Label,
-		c.Secret, c.Scopes, c.Meta, c.CreatedAt.Unix())
+		c.Secret, c.Scopes, c.Meta, c.CreatedAt.Unix(), c.Status)
 	if err != nil && strings.Contains(err.Error(), "UNIQUE") {
 		return ErrConnectionSlugExists
 	}
@@ -229,7 +249,7 @@ func scanConnection(row scanner) (*Connection, error) {
 	var c Connection
 	var createdAt int64
 	if err := row.Scan(&c.ID, &c.UserID, &c.Slug, &c.Provider, &c.Kind, &c.Label,
-		&c.Secret, &c.Scopes, &c.Meta, &createdAt); err != nil {
+		&c.Secret, &c.Scopes, &c.Meta, &createdAt, &c.Status); err != nil {
 		return nil, err
 	}
 	c.CreatedAt = time.Unix(createdAt, 0)

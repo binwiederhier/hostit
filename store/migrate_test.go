@@ -3,6 +3,7 @@ package store
 import (
 	"database/sql"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -77,7 +78,7 @@ func TestMigrationRecordsVersion(t *testing.T) {
 // PoC-touched database (at 23) and a clean one (at 22) still reach them.
 func TestBurnedSlotKeepsHistoriesAligned(t *testing.T) {
 	t.Parallel()
-	require.Len(t, migrations, 34)
+	require.Len(t, migrations, 36)
 	assert.Contains(t, migrations[22], "SELECT 1", "index 22 is the burned no-op slot")
 	assert.Contains(t, migrations[23], "memory_limit_mb", "the limits columns follow the burned slot")
 	assert.Contains(t, migrations[24], "memory_pool_mb", "then the per-user pools")
@@ -172,8 +173,16 @@ func TestSlackRenameMigration(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "hostit.db")
 	db, err := sql.Open("sqlite", file)
 	require.NoError(t, err)
-	// Everything up to, but not including, the rename migration (the last one).
-	for i := 0; i < len(migrations)-1; i++ {
+	// Seed the database at the version just before the slack-bot rename, wherever
+	// it sits, so later appended migrations do not shift this test.
+	slackBotIdx := 0
+	for i, m := range migrations {
+		if strings.Contains(m, "SET provider = 'slack-bot'") {
+			slackBotIdx = i
+			break
+		}
+	}
+	for i := 0; i < slackBotIdx; i++ {
 		_, err := db.Exec(migrations[i])
 		require.NoError(t, err, "migration %d", i+1)
 	}
@@ -183,7 +192,7 @@ func TestSlackRenameMigration(t *testing.T) {
 	require.NoError(t, err)
 	_, err = db.Exec(createSchemaVersionTableQuery)
 	require.NoError(t, err)
-	_, err = db.Exec(insertSchemaVersionQuery, len(migrations)-1) // recorded just before the rename
+	_, err = db.Exec(insertSchemaVersionQuery, slackBotIdx) // recorded just before the rename
 	require.NoError(t, err)
 	require.NoError(t, db.Close())
 
@@ -196,4 +205,70 @@ func TestSlackRenameMigration(t *testing.T) {
 	require.NoError(t, s.db.QueryRow(`SELECT provider FROM connection WHERE id='c2'`).Scan(&personal))
 	assert.Equal(t, "slack-bot", bot, "the bot connection is rewritten to the new id")
 	assert.Equal(t, "slack-user", personal, "the personal connection is left alone")
+}
+
+// A database that has run every migration EXCEPT the last (status) must get the
+// status column when opened. Guards the append-only rule: the status migration
+// was once inserted mid-slice, so a version-N DB skipped it (no such column).
+func TestStatusColumnAddedOnUpgrade(t *testing.T) {
+	t.Parallel()
+	file := filepath.Join(t.TempDir(), "hostit.db")
+	db, err := sql.Open("sqlite", file)
+	require.NoError(t, err)
+	for i := 0; i < len(migrations)-1; i++ {
+		_, err := db.Exec(migrations[i])
+		require.NoError(t, err, "migration %d", i+1)
+	}
+	_, err = db.Exec(createSchemaVersionTableQuery)
+	require.NoError(t, err)
+	_, err = db.Exec(insertSchemaVersionQuery, len(migrations)-1) // one before the status migration
+	require.NoError(t, err)
+	require.NoError(t, db.Close())
+
+	s, err := NewStore(file) // opening must run the appended status migration
+	require.NoError(t, err)
+	defer s.Close()
+	_, err = s.db.Exec(`INSERT INTO connection (id, user_id, slug, provider, kind, secret, created_at) VALUES ('c1','u1','s','p','oauth','x',0)`)
+	require.NoError(t, err, "the status column must exist")
+	var status string
+	require.NoError(t, s.db.QueryRow(`SELECT status FROM connection WHERE id='c1'`).Scan(&status))
+	assert.Equal(t, "ok", status, "status defaults to ok")
+}
+
+// The heal case: a database whose connection table is MISSING status yet whose
+// recorded version is already past the status migration (what the mis-ordered
+// migration left behind). Opening must re-add the column via the heal migration.
+func TestHealReaddsSkippedStatusColumn(t *testing.T) {
+	t.Parallel()
+	file := filepath.Join(t.TempDir(), "hostit.db")
+	db, err := sql.Open("sqlite", file)
+	require.NoError(t, err)
+	// Run through the slack-bot rename but NOT the status add: the connection
+	// table exists without a status column.
+	slackBotIdx := 0
+	for i, m := range migrations {
+		if strings.Contains(m, "SET provider = 'slack-bot'") {
+			slackBotIdx = i
+			break
+		}
+	}
+	for i := 0; i <= slackBotIdx; i++ {
+		_, err := db.Exec(migrations[i])
+		require.NoError(t, err, "migration %d", i+1)
+	}
+	// Claim a version that skipped the status add (all but the final heal).
+	_, err = db.Exec(createSchemaVersionTableQuery)
+	require.NoError(t, err)
+	_, err = db.Exec(insertSchemaVersionQuery, len(migrations)-1)
+	require.NoError(t, err)
+	require.NoError(t, db.Close())
+
+	s, err := NewStore(file) // the heal migration must add the missing column
+	require.NoError(t, err)
+	defer s.Close()
+	_, err = s.db.Exec(`INSERT INTO connection (id, user_id, slug, provider, kind, secret, created_at) VALUES ('c1','u1','s','p','oauth','x',0)`)
+	require.NoError(t, err, "status column must exist after the heal")
+	var status string
+	require.NoError(t, s.db.QueryRow(`SELECT status FROM connection WHERE id='c1'`).Scan(&status))
+	assert.Equal(t, "ok", status)
 }

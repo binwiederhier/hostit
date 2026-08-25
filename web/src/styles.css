@@ -6503,3 +6503,58 @@ input[type="number"]::-webkit-inner-spin-button {
   font-size: 12px;
   color: var(--muted);
 }
+
+/* Connection health: a bell in the nav when any needs re-auth, a badge/dot per row. */
+.nav-bell {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  color: var(--warn-strong, #9a6b00);
+  text-decoration: none;
+}
+.nav-bell:hover {
+  background: var(--surface-2);
+}
+.nav-bell-count {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 3px;
+  border-radius: 999px;
+  background: var(--danger);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 15px;
+  text-align: center;
+}
+.conn-health {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 8px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.conn-health-warn {
+  color: var(--warn-strong, #8a5a00);
+  background: var(--warn-bg, #fbf3dd);
+  border: 1px solid var(--warn-border, #e4c65b);
+}
+.conn-health-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-left: 8px;
+  border-radius: 50%;
+  background: #2f9e5e;
+  vertical-align: middle;
+}

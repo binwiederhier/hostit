@@ -40,6 +40,11 @@ const (
 	// being served. Wide enough that a token handed out now is still valid by
 	// the time the app has finished using it.
 	tokenCacheMargin = 2 * time.Minute
+	// connectionRefreshInterval is how often the proactive sweep runs;
+	// connectionRefreshHorizon is how far ahead of expiry it refreshes, so a
+	// token is renewed comfortably before it lapses.
+	connectionRefreshInterval = 10 * time.Minute
+	connectionRefreshHorizon  = 15 * time.Minute
 	// discoveryTimeout bounds asking a custom provider's issuer where its
 	// endpoints are. Short: it is on the path of rendering the Add menu.
 	discoveryTimeout = 10 * time.Second
@@ -59,6 +64,8 @@ type connectionManager struct {
 	// database writes as well.
 	cached  map[string]cachedToken
 	cacheMu sync.Mutex // Protects cached
+	// refreshStop ends the proactive refresh loop on shutdown.
+	refreshStop chan struct{}
 	// custom are the providers this operator wrote in control.yml; discovered
 	// holds the endpoints resolved for the ones that gave an issuer instead of
 	// writing them out.
@@ -92,11 +99,12 @@ func newConnectionManager(st *store.Store, key []byte, conf *controlconf.Config)
 		// GUARDED: this client fetches URLs users supply -- an MCP server's
 		// endpoint, a custom provider's issuer -- so it must refuse to connect
 		// anywhere that is not publicly routable. See the outbound package.
-		client:     outbound.NewClient(20*time.Second, conf.OutboundAllowPrivate),
-		conf:       conf,
-		cached:     map[string]cachedToken{},
-		custom:     map[string]connections.Provider{},
-		discovered: map[string]oauthEndpoints{},
+		client:      outbound.NewClient(20*time.Second, conf.OutboundAllowPrivate),
+		conf:        conf,
+		cached:      map[string]cachedToken{},
+		refreshStop: make(chan struct{}),
+		custom:      map[string]connections.Provider{},
+		discovered:  map[string]oauthEndpoints{},
 	}
 }
 
@@ -169,6 +177,7 @@ func (m *connectionManager) reconnect(ctx context.Context, c *store.Connection, 
 		return err
 	}
 	m.expireCachedFor(c.ID)
+	_ = m.store.SetConnectionStatus(c.ID, store.ConnectionStatusOK) // a fresh consent clears needs-reconnect
 	// A re-consent keeps the same grants; store what the connection already had,
 	// not the provider baseline (which would wipe the options the owner chose).
 	return m.store.UpdateConnectionSecret(c.ID, sealed, c.Scopes, c.Meta)
@@ -251,9 +260,21 @@ func (m *connectionManager) tokenFor(ctx context.Context, a *store.App, slug str
 	if tok, ok := m.cachedTokenFor(conn); ok {
 		return tok, nil
 	}
+	return m.refreshAndStore(ctx, conn, p, secret)
+}
+
+// refreshAndStore exchanges the stored refresh token for an access token, stores
+// any rotated refresh token, updates the connection's health, and caches the
+// result. Shared by the on-demand token path, the proactive sweep, and verify.
+func (m *connectionManager) refreshAndStore(ctx context.Context, conn *store.Connection, p connections.Provider, secret string) (connections.Token, error) {
 	id, clientSecret := m.clientForUser(conn.UserID, p.Name)
 	tok, rotated, err := p.Refresh(ctx, m.client, id, clientSecret, secret)
 	if err != nil {
+		// A rejected credential means the owner must reconnect; a transient
+		// error leaves the health untouched so a blip is not reported as broken.
+		if errors.Is(err, connections.ErrReauthRequired) {
+			m.setStatus(conn, store.ConnectionStatusNeedsReconnect)
+		}
 		return connections.Token{}, err
 	}
 	// Some providers rotate the refresh token on every use (Discord does), and
@@ -266,8 +287,6 @@ func (m *connectionManager) tokenFor(ctx context.Context, a *store.App, slug str
 			return connections.Token{}, err
 		}
 		if err := m.store.UpdateConnectionSecret(conn.ID, sealed, conn.Scopes, conn.Meta); err != nil {
-			// The token in hand is still good, so answer with it -- but say so,
-			// because the connection is now one request from breaking.
 			slog.Error("Cannot store a rotated refresh token; this connection will fail on its next use",
 				"slug", conn.Slug, "provider", conn.Provider, "error", err)
 		}
@@ -275,8 +294,115 @@ func (m *connectionManager) tokenFor(ctx context.Context, a *store.App, slug str
 		// mismatch and refresh again immediately.
 		conn.Secret = sealed
 	}
+	// A successful refresh clears any prior needs-reconnect.
+	m.setStatus(conn, store.ConnectionStatusOK)
 	m.cache(conn, tok)
 	return tok, nil
+}
+
+// setStatus persists a connection's health, in-place, only when it changed.
+func (m *connectionManager) setStatus(conn *store.Connection, status string) {
+	if conn.Status == status {
+		return
+	}
+	if err := m.store.SetConnectionStatus(conn.ID, status); err != nil {
+		slog.Warn("Cannot update connection health", "slug", conn.Slug, "status", status, "error", err)
+		return
+	}
+	conn.Status = status
+}
+
+// cacheFreshFor reports whether the cached access token, minted from the CURRENT
+// stored credential, is still valid at least `horizon` from now.
+func (m *connectionManager) cacheFreshFor(conn *store.Connection, horizon time.Duration) bool {
+	m.cacheMu.Lock()
+	defer m.cacheMu.Unlock()
+	e, ok := m.cached[conn.ID]
+	return ok && e.mintedFrom == conn.Secret && time.Now().Add(horizon).Before(e.expires)
+}
+
+// refreshDue proactively refreshes every OAuth connection whose access token is
+// missing or about to expire, so a connection stays alive without the owner
+// re-authorizing. Long-lived-token providers (Slack, GitHub) have nothing to
+// refresh and are skipped; their health only moves on a real use or verify.
+func (m *connectionManager) refreshDue(ctx context.Context) {
+	conns, err := m.store.AllConnections()
+	if err != nil {
+		slog.Warn("Proactive refresh: cannot list connections", "error", err)
+		return
+	}
+	for _, conn := range conns {
+		if conn.Kind != store.ConnectionOAuth {
+			continue
+		}
+		p, ok := m.providerFor(conn.UserID, conn.Provider)
+		if !ok || p.LongLivedToken {
+			continue
+		}
+		if m.cacheFreshFor(conn, connectionRefreshHorizon) {
+			continue // still warm well past the next sweep
+		}
+		secret, err := m.open(conn)
+		if err != nil {
+			continue
+		}
+		if _, err := m.refreshAndStore(ctx, conn, p, secret); err != nil && !errors.Is(err, connections.ErrReauthRequired) {
+			slog.Warn("Proactive refresh failed", "slug", conn.Slug, "provider", conn.Provider, "error", err)
+		}
+	}
+}
+
+// RefreshLoop keeps OAuth tokens warm until stopped: once at start, then every
+// interval.
+func (m *connectionManager) RefreshLoop(interval time.Duration) {
+	m.refreshDue(context.Background())
+	t := time.NewTicker(interval)
+	defer t.Stop()
+	for {
+		select {
+		case <-t.C:
+			m.refreshDue(context.Background())
+		case <-m.refreshStop:
+			return
+		}
+	}
+}
+
+// StopRefresh ends the proactive refresh loop.
+func (m *connectionManager) StopRefresh() {
+	select {
+	case <-m.refreshStop:
+	default:
+		close(m.refreshStop)
+	}
+}
+
+// Verify actively checks one connection's health by refreshing it now, and
+// returns the resulting status. A long-lived or static connection has nothing to
+// refresh, so its stored status is returned as-is.
+func (m *connectionManager) Verify(ctx context.Context, userID, slug string) (string, error) {
+	conn, err := m.store.ConnectionBySlug(userID, slug)
+	if err != nil {
+		return "", err
+	}
+	p, ok := m.providerFor(conn.UserID, conn.Provider)
+	if !ok {
+		return "", fmt.Errorf("unknown provider %q", conn.Provider)
+	}
+	if conn.Kind != store.ConnectionOAuth || p.LongLivedToken {
+		return conn.Status, nil
+	}
+	secret, err := m.open(conn)
+	if err != nil {
+		return "", err
+	}
+	if _, err := m.refreshAndStore(ctx, conn, p, secret); err != nil {
+		if errors.Is(err, connections.ErrReauthRequired) {
+			return store.ConnectionStatusNeedsReconnect, nil
+		}
+		return "", err
+	}
+	return store.ConnectionStatusOK, nil
 }
 
 // open decrypts a stored credential, tolerating one sealed before credentials

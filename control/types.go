@@ -186,6 +186,9 @@ type apiAccountResponse struct {
 	Status store.Status `json:"status"`
 	Limits *user.Limits `json:"limits,omitempty"`
 	Usage  *apiUsage    `json:"usage,omitempty"`
+	// ConnectionsNeedReconnect is how many of this account's connections are
+	// unhealthy (a rejected credential), so the UI can raise a bell.
+	ConnectionsNeedReconnect int `json:"connections_need_reconnect,omitempty"`
 	// Version is what this server is running, for the About box. It rides here
 	// rather than on /api/health, which is public: a version number tells
 	// whoever asks exactly which advisories apply, and there is no reason to
