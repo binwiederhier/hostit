@@ -774,3 +774,33 @@ func TestVerifyProbesLongLivedConnection(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, store.ConnectionStatusOK, status)
 }
+
+// The proactive sweep must PROBE long-lived-token connections, not skip them:
+// they have nothing to refresh, so the sweep is the only thing that would catch
+// a token revoked or invalidated at the provider without warning.
+func TestPeriodicProbeUpdatesLongLivedHealth(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	f := newFakeAuthServer(t)
+	registerFakeProvider(t, s, f, "fake-periodic", true)
+	u := newActiveTestUser(t, s, "owner@example.com")
+	token := accountToken(t, s, u)
+	session := signIn(t, s, u)
+	rr := request(t, s.API(), "POST", "/api/connections", `{"provider":"fake-periodic","slug":"conn1"}`, token)
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+	var started apiConnectStartedResponse
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &started))
+	require.Equal(t, http.StatusFound, browse(t, s, started.RedirectURL, append(rr.Result().Cookies(), session)).Code)
+
+	// Revoked at the provider (probe 401): one sweep flips it to needs-reconnect.
+	f.denyProbe = true
+	s.connections.refreshDue(context.Background())
+	conn, _ := s.apps.Store().ConnectionBySlug(u.ID, "conn1")
+	assert.Equal(t, store.ConnectionStatusNeedsReconnect, conn.Status, "the sweep probed and flagged it")
+
+	// It recovers on a later sweep.
+	f.denyProbe = false
+	s.connections.refreshDue(context.Background())
+	conn, _ = s.apps.Store().ConnectionBySlug(u.ID, "conn1")
+	assert.Equal(t, store.ConnectionStatusOK, conn.Status)
+}

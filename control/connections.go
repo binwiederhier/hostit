@@ -337,7 +337,18 @@ func (m *connectionManager) refreshDue(ctx context.Context) {
 			continue
 		}
 		p, ok := m.providerFor(conn.UserID, conn.Provider)
-		if !ok || p.LongLivedToken {
+		if !ok {
+			continue
+		}
+		if p.LongLivedToken {
+			// Nothing to refresh, but a long-lived token can be revoked or
+			// invalidated at the provider with no signal, so the sweep is the
+			// only thing that would notice: probe it and let its health follow.
+			if p.ProbeURL != "" {
+				if _, err := m.verifyLongLived(ctx, conn, p); err != nil {
+					slog.Warn("Proactive probe failed", "slug", conn.Slug, "provider", conn.Provider, "error", err)
+				}
+			}
 			continue
 		}
 		if m.cacheFreshFor(conn, connectionRefreshHorizon) {
