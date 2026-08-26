@@ -77,6 +77,64 @@ sequenceDiagram
     podman-->>User: shell inside the app container
 ```
 
+## Multi-node SSH
+
+On a single host, `ssh <app>@<hostit_domain>` just works: the base domain *is*
+the node, and its `sshd` authenticates the app user locally. With MULTIPLE nodes
+an app runs on whichever node was chosen for it, and its Unix user and
+`authorized_keys` exist only there -- so the advertised SSH host has to point at
+the right node. hostit supports two ways to do that; both are configured in
+[`deploy/ansible`](../../deploy/ansible).
+
+### Direct-to-node (default)
+
+Each node reports its own reachable SSH hostname to control (in the cluster
+heartbeat, stored on the node row), and control advertises
+`ssh <app>@<that node's host>` for the app. The connection lands directly on the
+node's own `sshd` -- control is never in the SSH path, so app SSH keeps working
+even while the control *process* is down. Set each remote node's hostname in
+Ansible; leave it unset on the single/colocated host, where it falls back to the
+base domain:
+
+```yaml
+# host_vars/<node>.yml (or the inventory) -- per remote node
+hostit_ssh_host: "node2.ssh.apps.example.com"   # an A record pointing at that node
+```
+
+The app page and the agent `/info` response then print the right per-node
+command, e.g. `ssh blog@node2.ssh.apps.example.com`. When an app migrates to
+another node the advertised host changes with it (a new `known_hosts` entry, not
+a mismatch, since each node has its own hostname).
+
+### Single-hostname relay gateway (optional, EXPERIMENTAL)
+
+If you want ONE stable `ssh <app>@<hostit_domain>` regardless of which node runs
+the app, enable the relay gateway on the control host. It routes by app name
+through the host's own `sshd`: the app user's login shell resolves the app's node
+from a local file and, for a *remote* app, hands off to a small privileged helper
+(`hostit-relay`) that `ssh`es to the node with a control-held **relay key**; a
+colocated app is entered locally exactly as before. `ssh`, `scp`, `rsync` and
+`sftp` all work, and forwarding stays off. Enable it on the control host:
+
+```yaml
+hostit_ssh_relay: true
+hostit_ssh_relay_from_address: "<control host's egress IP as the nodes see it>"
+```
+
+That generates a relay key (`/etc/hostit/relay_key`, root-only), grants the
+`hostit-apps` group sudo to the relay helper, and makes control write the routing
+files. No extra port and no SSH daemon of hostit's own -- it rides the system
+`sshd`.
+
+Trade-offs, deliberately accepted: the control host terminates the outer SSH and
+holds a key that reaches every node, so a control-host compromise reaches every
+app (it already holds the key material); the frontend authenticates the user and
+the node then trusts the relay key, so a revoked key keeps working *on the relay
+path* for a few seconds after the change (the direct path revokes at once); and
+the control host must be up for the relay path (the direct-to-node path is
+unaffected either way). It is OFF by default -- prefer direct-to-node unless a
+single stable hostname is worth those trade-offs.
+
 ## Technical details
 
 Key management (the daemon side):
@@ -146,10 +204,12 @@ sshd forwarding hardening:
 
 ## Other notes
 
-- The SSH host reported to clients is `config/config.go:Config.SSHHostname`
-  (`ssh-host`, defaulting to the base domain); it is what the app page and the
-  agent `/info` response print as the ready-made `ssh <app>@<host>` command
-  (`control/server_handler_agent.go:handleAgentAppInfo`, `apiSSHInfo`).
+- The SSH host reported to clients is resolved per app by
+  `control/service.go:Server.sshHostFor(app.Host)`: the hosting node's own
+  reported `ssh_host` (see Multi-node SSH above), falling back to
+  `controlconf/config.go:Config.SSHHostname` (`ssh-host`, then the base domain).
+  It is what the app page and the agent `/info` response print as the ready-made
+  `ssh <app>@<host>` command (`control/server_handler_agent.go`, `apiSSHInfo`).
 - hostit never generates a key pair; an app with no keys is API-only until a key
   is added. This is intentional (no private key to hand out or store).
 - Whether SSH is usable at all is a property of the owner's profile, not the app,

@@ -62,3 +62,11 @@ anthropic-api-key: {{ hostit_anthropic_api_key }}
 # switch.
 claude-code-oauth-token: {{ hostit_claude_code_oauth_token }}
 {% endif %}
+{% if hostit_ssh_relay | default(false) %}
+
+# Optional single-hostname SSH relay gateway (see docs/features/ssh-access.md).
+# Control writes the routes/known_hosts/per-app keys the system sshd uses and
+# adds the relay key to remote apps' authorized_keys. EXPERIMENTAL; off by default.
+ssh-relay: true
+ssh-relay-from-address: "{{ hostit_ssh_relay_from_address | default('') }}"
+{% endif %}

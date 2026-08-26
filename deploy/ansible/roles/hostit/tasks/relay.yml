@@ -1,0 +1,44 @@
+---
+# SSH relay gateway on the frontend (the control host). Generates the relay key
+# control adds to remote apps' authorized_keys, and grants hostit-apps sudo to
+# the relay helper. The relay itself lives in hostit-shell + the packaged
+# hostit-relay helper; sshd needs NO change here -- sshd runs a Subsystem (sftp)
+# through the login shell, so the relay branch relays sftp automatically, and the
+# app-user forwarding restrictions are already applied in apps-host.yml.
+
+- name: Ensure /etc/hostit exists
+  file:
+    path: /etc/hostit
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Generate the relay key (frontend -> node authentication)
+  command: ssh-keygen -t ed25519 -f /etc/hostit/relay_key -N "" -C hostit-relay
+  args:
+    creates: /etc/hostit/relay_key
+
+- name: Lock down the relay private key
+  file:
+    path: /etc/hostit/relay_key
+    owner: root
+    group: root
+    mode: "0600"
+
+# The relay grant lives in its own drop-in (only on relay hosts), not the
+# packaged hostit sudoers, whose config|noreplace would skip it on upgrade.
+- name: Grant hostit-apps sudo to the relay helper
+  copy:
+    dest: /etc/sudoers.d/hostit-relay
+    owner: root
+    group: root
+    mode: "0440"
+    content: |
+      # Managed by ansible (hostit relay) -- do not edit on the host.
+      # The relay's privileged inner hop: like hostit-enter it derives the app
+      # from SUDO_UID and ignores its arguments, so a hostit-apps member can only
+      # relay as their own app.
+      Defaults!/usr/bin/hostit-relay !requiretty
+      %{{ hostit_apps_group }} ALL=(root) NOPASSWD: /usr/bin/hostit-relay
+    validate: "visudo -cf %s"

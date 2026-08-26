@@ -44,3 +44,12 @@ hostit_btrfs: true
 # hostit_anthropic_api_key: "sk-ant-..."  # -> Vault
 # ...and/or additionally offer Claude.ai (a Claude Pro/Max subscription token):
 # hostit_claude_code_oauth_token: "..."   # -> Vault (claude setup-token)
+
+# Multi-node SSH (only for deployments with remote nodes; a single host needs
+# none of this). Each remote node advertises its own reachable SSH hostname:
+# hostit_ssh_host: "node2.ssh.apps.example.com"   # set PER NODE (host_vars)
+#
+# Optional single-hostname SSH relay so `ssh <app>@apps.example.com` reaches an
+# app on any node (EXPERIMENTAL; see docs/features/ssh-access.md):
+# hostit_ssh_relay: true
+# hostit_ssh_relay_from_address: "<control host's egress IP>"

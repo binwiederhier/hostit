@@ -12,3 +12,10 @@ control-url: {{ hostit_control_cluster }}
 
 # Where apps live, and the socket the in-container CLI reaches this node on.
 apps-dir: {{ hostit_apps_dir }}
+{% if hostit_ssh_host %}
+
+# The hostname clients use to SSH to apps on THIS node (multi-node). Reported to
+# control, which advertises it in an app's ssh command. Unset -> control's base
+# domain (right for the single/colocated host).
+ssh-host: "{{ hostit_ssh_host }}"
+{% endif %}

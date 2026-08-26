@@ -68,6 +68,19 @@ hostit_apps_mount_unit: var-lib-hostit-apps.mount
 # app logins (must match app.AppsGroup in the hostit source).
 hostit_apps_group: "hostit-apps"
 
+# Multi-node SSH (optional). On a MULTI-NODE deployment each remote node must
+# advertise its own reachable SSH hostname, so `ssh <app>@...` lands on the node
+# that runs the app; unset falls back to hostit_domain (right for a single host).
+hostit_ssh_host: ""
+# Optional single-hostname SSH relay gateway on the control host: lets
+# `ssh <app>@<hostit_domain>` reach an app on ANY node through the system sshd
+# (no daemon of its own, no extra port). Off by default -- the per-node hostnames
+# above work without it. EXPERIMENTAL; see docs/features/ssh-access.md.
+hostit_ssh_relay: false
+# The control host's source address as the nodes see it, to scope the relay key
+# with from=. Empty leaves the relay key unrestricted (works, less defence).
+hostit_ssh_relay_from_address: ""
+
 # Static crun for idmapped rootfs mounts: hostit requires crun >= 1.29 (Ubuntu
 # 24.04 ships 1.14.1, which cannot idmap-mount a --rootfs, and hostit's preflight
 # refuses to start on it). The official static release binary is installed next

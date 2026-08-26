@@ -193,6 +193,13 @@
     validate: "sshd -t -f %s"
   notify: restart ssh
 
+# Optional SSH relay gateway on the control host (multi-node convenience; off by
+# default). Generates the relay key and grants hostit-apps sudo to the relay
+# helper. See docs/features/ssh-access.md.
+- name: Set up the SSH relay gateway
+  ansible.builtin.import_tasks: relay.yml
+  when: hostit_ssh_relay | default(false)
+
 # The three run as three processes, in order: control holds the registry and
 # decides, the node owns this machine's app work and dials in, the proxy
 # terminates TLS and serves the table control pushes it.
