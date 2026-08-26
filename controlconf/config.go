@@ -126,6 +126,9 @@ type Config struct {
 	SSHRelayEnabled        bool    `yaml:"ssh-relay"`                  // Optional single-hostname SSH relay gateway (off by default)
 	SSHRelayRoutesFile     string  `yaml:"ssh-relay-routes-file"`      // app->node routes the relay shell reads (local file, survives control crash)
 	SSHRelayKnownHostsFile string  `yaml:"ssh-relay-known-hosts-file"` // node host keys for the relay's inner hop
+	SSHRelayPublicKeyFile  string  `yaml:"ssh-relay-public-key-file"`  // relay_key.pub; added to remote apps authorized_keys
+	SSHRelayFromAddress    string  `yaml:"ssh-relay-from-address"`     // frontend address the node sees; scopes the relay key with from=
+	SSHRelayKeysDir        string  `yaml:"ssh-relay-keys-dir"`         // per-app authorized_keys the frontend stub accounts serve
 	TLS                    TLSMode `yaml:"tls"`                        // "letsencrypt" or "off"
 	LetsEncryptEmail       string  `yaml:"letsencrypt-email"`          // Optional contact email for ACME
 
@@ -243,6 +246,8 @@ func NewConfig() *Config {
 		DataDir:                "/var/lib/hostit",
 		SSHRelayRoutesFile:     "/var/lib/hostit/ssh-routes",
 		SSHRelayKnownHostsFile: "/etc/hostit/relay_known_hosts",
+		SSHRelayPublicKeyFile:  "/etc/hostit/relay_key.pub",
+		SSHRelayKeysDir:        "/var/lib/hostit/relay-keys",
 		AppsDir:                "/var/lib/hostit/apps",
 		TLS:                    TLSLetsEncrypt,
 		AppPreview:             AppPreviewLive,

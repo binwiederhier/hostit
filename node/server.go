@@ -150,6 +150,7 @@ func Serve(configPath, version string) error {
 		}
 	}()
 	go machine.DiskUsageLoop(done)
+	go machine.RelayStubLoop(done) // relay-gateway frontend stubs (no-op unless configured)
 	machine.SeedStates()
 	go machine.StateLoop(done)
 	go machine.QgroupSweepLoop(6*time.Hour, done)

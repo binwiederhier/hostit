@@ -84,6 +84,13 @@ func (m *Manager) DesiredState(nodeID string) (*nodeapi.DesiredState, error) {
 			continue
 		}
 		keys, memoryMB, diskMB := m.appPolicy(a)
+		// A remote node also trusts the relay key so the frontend can ssh in as
+		// the app user for the relay gateway (no-op unless the relay is on).
+		if nodeID != "" && nodeID != store.HostLocal {
+			if line := m.relayKeyLine(); line != "" {
+				keys = append(append([]string{}, keys...), line)
+			}
+		}
 		desired.Apps = append(desired.Apps, &nodeapi.AppDesired{
 			ProvisionSpec: nodeapi.ProvisionSpec{
 				Host:    hostOrLocal(a.Host),

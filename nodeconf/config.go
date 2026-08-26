@@ -63,6 +63,11 @@ type Config struct {
 	// SSHHostKeyFile is this node's sshd public host key, reported to control for
 	// the relay gateway's known_hosts. Defaults to the standard ed25519 host key.
 	SSHHostKeyFile string `yaml:"ssh-host-key-file"`
+	// Relay gateway (frontend) paths -- where control writes routes/keys and
+	// where the frontend stub accounts live. Empty disables the stub reconcile.
+	SSHRoutesFile string `yaml:"ssh-routes-file"`
+	RelayKeysDir  string `yaml:"relay-keys-dir"`
+	RelayStubsDir string `yaml:"relay-stubs-dir"`
 	// AppsAllowedAddresses are the addresses allowed to reach a published app
 	// port -- in practice the proxies, which are what dials an app; control
 	// never does. Ignored on a loopback node; required on a remote one, or its
@@ -94,6 +99,9 @@ func NewConfig() *Config {
 		SocketFile:     "/run/hostit/app/hostit.sock",
 		NodeSocketFile: DefaultNodeSocketFile,
 		SSHHostKeyFile: "/etc/ssh/ssh_host_ed25519_key.pub",
+		SSHRoutesFile:  "/var/lib/hostit/ssh-routes",
+		RelayKeysDir:   "/var/lib/hostit/relay-keys",
+		RelayStubsDir:  "/var/lib/hostit/relay-stubs",
 	}
 }
 

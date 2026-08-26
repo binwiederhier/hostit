@@ -134,7 +134,11 @@ func (s *Server) resyncAppKeys(a *store.App) error {
 	if err != nil {
 		return err
 	}
-	return s.node.SetKeys(a.Name, appKeys, profileKeys)
+	if err := s.node.SetKeys(a.Name, appKeys, profileKeys); err != nil {
+		return err
+	}
+	s.apps.refreshSSHRelay() // keep the relay frontend's authorized_keys current (prompt revocation)
+	return nil
 }
 
 // handleAppsTransfer moves the app to a new owner (an existing, approved

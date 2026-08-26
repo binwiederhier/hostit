@@ -266,6 +266,7 @@ func (s *Server) handleAppsSetKeys(w http.ResponseWriter, r *http.Request, c *ca
 		writeAppError(w, err)
 		return
 	}
+	s.apps.refreshSSHRelay() // keep the relay frontend's authorized_keys current
 	writeJSON(w, http.StatusOK, s.withState([]*apiAppResponse{s.appResponseFor(c, a, s.firstActiveDomain(a.Name))})[0])
 }
 

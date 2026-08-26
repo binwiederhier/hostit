@@ -315,6 +315,8 @@ func (f *fakeSystem) LookupUID(username string) (int, error) {
 	return 1001, nil
 }
 
+func (f *fakeSystem) CreateStub(username, home string) error { return f.Create(username, home, 0) }
+
 func (f *fakeSystem) Create(username, home string, uid int) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()

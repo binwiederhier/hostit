@@ -84,6 +84,7 @@ func (nopUser) List() ([]unixuser.Account, error)             { return nil, nil 
 func (nopUser) LookupUID(string) (int, error)                 { return 1001, nil }
 func (nopUser) LookupIDs(string) (int, int, error)            { return 1001, 1001, nil }
 func (nopUser) Create(string, string, int) error              { return nil }
+func (nopUser) CreateStub(string, string) error               { return nil }
 func (nopUser) Rename(string, string) error                   { return nil }
 func (nopUser) KillProcesses(string) error                    { return nil }
 func (nopUser) Delete(string) error                           { return nil }

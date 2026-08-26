@@ -121,6 +121,11 @@ type Manager struct {
 	// server sets it (those answers need the user tables). See AppPolicy.
 	policy   AppPolicy
 	mirrorMu sync.Mutex
+
+	// relayLine is the cached authorized_keys line for the SSH relay key, added
+	// to remote apps' keys; relayLineOnce guards the one-time read of the pubkey.
+	relayLine     string
+	relayLineOnce sync.Once
 }
 
 // NewManager creates a Manager from its config, store and the node-local services

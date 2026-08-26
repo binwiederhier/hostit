@@ -77,7 +77,53 @@ func (m *Manager) WriteSSHRelayFiles() error {
 	if err := atomicWriteFile(m.config.SSHRelayRoutesFile, routes, 0644); err != nil {
 		return err
 	}
-	return atomicWriteFile(m.config.SSHRelayKnownHostsFile, knownHosts, 0644)
+	if err := atomicWriteFile(m.config.SSHRelayKnownHostsFile, knownHosts, 0644); err != nil {
+		return err
+	}
+	return m.writeRelayKeyFiles(apps, byID)
+}
+
+// writeRelayKeyFiles writes each remote app's user authorized_keys to a per-app
+// file the frontend stub accounts serve (the frontend authenticates the real
+// user; the relay key is added only on the node hop, not here). Keys files for
+// apps that are no longer remote are removed.
+func (m *Manager) writeRelayKeyFiles(apps []*store.App, byID map[string]*store.Node) error {
+	dir := m.config.SSHRelayKeysDir
+	if dir == "" {
+		return nil
+	}
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return err
+	}
+	wanted := make(map[string]bool)
+	for _, a := range apps {
+		if a.Host == "" || a.Host == store.HostLocal {
+			continue
+		}
+		if n := byID[a.Host]; n == nil || n.SSHHost == "" {
+			continue
+		}
+		keys, _, _ := m.appPolicy(a)
+		content := ""
+		if len(keys) > 0 {
+			content = strings.Join(keys, "\n") + "\n"
+		}
+		if err := atomicWriteFile(filepath.Join(dir, a.Name), content, 0644); err != nil {
+			slog.Warn("Cannot write a relay keys file", "app", a.Name, "error", err)
+			continue
+		}
+		wanted[a.Name] = true
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	for _, e := range entries {
+		if !wanted[e.Name()] && !strings.HasSuffix(e.Name(), ".tmp") {
+			_ = os.Remove(filepath.Join(dir, e.Name()))
+		}
+	}
+	return nil
 }
 
 // refreshSSHRelay rewrites the relay files best-effort; a failure logs but never
@@ -102,4 +148,31 @@ func atomicWriteFile(path, content string, mode os.FileMode) error {
 		return err
 	}
 	return os.Rename(tmp, path)
+}
+
+// relayKeyLine is the authorized_keys line for the relay key, added to REMOTE
+// apps' authorized_keys so the frontend can ssh in as the app user. Empty if the
+// relay is off or the public key cannot be read. Read once and cached.
+func (m *Manager) relayKeyLine() string {
+	if !m.config.SSHRelayEnabled || m.config.SSHRelayPublicKeyFile == "" {
+		return ""
+	}
+	m.relayLineOnce.Do(func() {
+		data, err := os.ReadFile(m.config.SSHRelayPublicKeyFile)
+		if err != nil {
+			slog.Warn("Cannot read the relay public key", "file", m.config.SSHRelayPublicKeyFile, "error", err)
+			return
+		}
+		pub := strings.TrimSpace(string(data))
+		if pub == "" {
+			return
+		}
+		from := m.config.SSHRelayFromAddress
+		opts := "restrict,pty"
+		if from != "" {
+			opts = "from=\"" + from + "\"," + opts
+		}
+		m.relayLine = opts + " " + pub
+	})
+	return m.relayLine
 }

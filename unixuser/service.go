@@ -46,6 +46,9 @@ type Interface interface {
 	LookupUID(username string) (int, error)
 	LookupIDs(username string) (uid, gid int, err error)
 	Create(username, home string, uid int) error
+	// CreateStub makes a shell-only account (auto uid, no matching group, no idmap
+	// block): a relay-gateway frontend stub that owns nothing but its keys.
+	CreateStub(username, home string) error
 	Rename(oldName, newName string) error
 	KillProcesses(username string) error
 	Delete(username string) error
@@ -143,6 +146,16 @@ func (s *Service) Create(username, home string, uid int) error {
 		return err
 	}
 	args := createUserArgs(username, home, uid, s.shell, s.group)
+	return run(args[0], args[1:]...)
+}
+
+// CreateStub adds a relay-gateway frontend stub account: the app users' login
+// shell and group, an auto-assigned uid, and a home OUTSIDE the apps pool so the
+// user reaper leaves it alone. It relays SSH to the app's real node; it owns no
+// container, subvolume or idmap block.
+func (s *Service) CreateStub(username, home string) error {
+	args := []string{"useradd", "--no-create-home", "--home-dir", home, "--shell", s.shell,
+		"--groups", s.group, "--comment", "hostit relay stub", username}
 	return run(args[0], args[1:]...)
 }
 
