@@ -7,6 +7,20 @@ changed rather than what an operator had to do about it; from v0.15.0 on, each
 release is written down as it is cut. Anything that changes a config file, a
 default, or on-disk state is called out as **Breaking** or **Upgrade note**.
 
+## v0.28.1 (2026-08-26)
+
+- **Long-lived-token connections are now health-checked.** A long-lived-token
+  provider (GitHub, Linear, Slack) issues a non-expiring token with no refresh,
+  so nothing ever re-checked it: the refresh loop skipped it and `Verify()` just
+  echoed the status written once at connect time. A token revoked or invalidated
+  at the provider -- a rotated client id/secret, or a user revoking access --
+  therefore stayed green forever. A provider can now carry a cheap authenticated
+  probe, and BOTH the explicit Verify action AND the proactive sweep call it: a
+  401/403 flips the connection to needs-reconnect (a network blip is treated as
+  inconclusive and left alone). Wired for GitHub and Linear; Slack reports auth
+  failure in the response body rather than the status code, so it has no probe
+  yet and keeps trusting its stored status.
+
 ## v0.28.0 (2026-08-26)
 
 - **Optional single-hostname SSH relay gateway (experimental, off by default).**
