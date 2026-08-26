@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"sort"
@@ -389,8 +390,11 @@ func (m *connectionManager) Verify(ctx context.Context, userID, slug string) (st
 	if !ok {
 		return "", fmt.Errorf("unknown provider %q", conn.Provider)
 	}
-	if conn.Kind != store.ConnectionOAuth || p.LongLivedToken {
+	if conn.Kind != store.ConnectionOAuth {
 		return conn.Status, nil
+	}
+	if p.LongLivedToken {
+		return m.verifyLongLived(ctx, conn, p)
 	}
 	secret, err := m.open(conn)
 	if err != nil {
@@ -402,6 +406,48 @@ func (m *connectionManager) Verify(ctx context.Context, userID, slug string) (st
 		}
 		return "", err
 	}
+	return store.ConnectionStatusOK, nil
+}
+
+// verifyLongLived actively tests a LongLivedToken connection against its
+// provider, since nothing else ever does: the refresh loop skips it (there is
+// nothing to refresh), and the stored status would otherwise sit at whatever it
+// was set to at connect time forever. A provider with no ProbeURL keeps the old
+// behaviour (trust the stored status) rather than reporting it unhealthy blind.
+func (m *connectionManager) verifyLongLived(ctx context.Context, conn *store.Connection, p connections.Provider) (string, error) {
+	if p.ProbeURL == "" {
+		return conn.Status, nil
+	}
+	secret, err := m.open(conn)
+	if err != nil {
+		return "", err
+	}
+	method := http.MethodGet
+	var body io.Reader
+	if p.ProbeBody != "" {
+		method = http.MethodPost
+		body = strings.NewReader(p.ProbeBody)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, p.ProbeURL, body)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Authorization", "Bearer "+secret)
+	if p.ProbeBody != "" {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	resp, err := m.client.Do(req)
+	if err != nil {
+		// Inconclusive (a network blip or provider outage): do not punish the
+		// connection for something that is not its fault.
+		return conn.Status, nil
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		m.setStatus(conn, store.ConnectionStatusNeedsReconnect)
+		return store.ConnectionStatusNeedsReconnect, nil
+	}
+	m.setStatus(conn, store.ConnectionStatusOK)
 	return store.ConnectionStatusOK, nil
 }
 

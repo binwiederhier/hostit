@@ -127,6 +127,7 @@ func init() {
 		AuthURL:        "https://github.com/login/oauth/authorize",
 		TokenURL:       "https://github.com/login/oauth/access_token",
 		LongLivedToken: true,
+		ProbeURL:       "https://api.github.com/user",
 		NameHint:       "GitHub",
 		Help:           "Repositories and your profile, as you.",
 	})
@@ -170,6 +171,8 @@ func init() {
 		AuthURL:        "https://linear.app/oauth/authorize",
 		TokenURL:       "https://api.linear.app/oauth/token",
 		LongLivedToken: true,
+		ProbeURL:       "https://api.linear.app/graphql",
+		ProbeBody:      `{"query":"{ viewer { id } }"}`,
 		NameHint:       "Linear",
 		Help:           "Read issues, projects and teams from your Linear workspace.",
 	})

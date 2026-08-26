@@ -41,6 +41,8 @@ type fakeAuthServer struct {
 	longLived bool
 	// denyRefresh makes the next refresh fail the way a revoked grant does.
 	denyRefresh bool
+	// denyProbe makes the health probe fail the way a revoked long-lived token does.
+	denyProbe bool
 	// rotateRefresh behaves like Discord: every refresh issues a new refresh
 	// token and refuses any older one.
 	rotateRefresh bool
@@ -64,6 +66,19 @@ func newFakeAuthServer(t *testing.T) *fakeAuthServer {
 		redirect := r.URL.Query().Get("redirect_uri")
 		http.Redirect(w, r, fmt.Sprintf("%s?code=%s&state=%s", redirect, code,
 			url.QueryEscape(r.URL.Query().Get("state"))), http.StatusFound)
+	})
+
+	// A cheap authenticated endpoint the long-lived-token probe hits: 401 when a
+	// test revokes it, 200 otherwise.
+	mux.HandleFunc("/probe", func(w http.ResponseWriter, r *http.Request) {
+		f.mu.Lock()
+		deny := f.denyProbe
+		f.mu.Unlock()
+		if deny || r.Header.Get("Authorization") == "" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
 	})
 
 	mux.HandleFunc("/token", func(w http.ResponseWriter, r *http.Request) {
@@ -148,6 +163,7 @@ func registerFakeProvider(t *testing.T, s *Server, f *fakeAuthServer, name strin
 		TokenURL:       f.URL + "/token",
 		AuthParams:     map[string]string{"access_type": "offline"},
 		LongLivedToken: longLived,
+		ProbeURL:       f.URL + "/probe",
 		Help:           "a test provider",
 	})
 	if s.config.ConnectionClients == nil {
@@ -716,4 +732,45 @@ func TestConnectionHealthReflectsRefresh(t *testing.T) {
 	assert.Equal(t, store.ConnectionStatusOK, status)
 	conn, _ = s.apps.Store().ConnectionBySlug(u.ID, "cal")
 	assert.Equal(t, store.ConnectionStatusOK, conn.Status)
+}
+
+// A LONG-LIVED-token connection (Slack/GitHub/Linear class) has nothing to
+// refresh, so nothing else ever re-checks it. Verify must actively probe the
+// provider: a rejected probe flips it to needs-reconnect (and persists that),
+// and a recovering probe clears it. Regression for "Verify never checks a
+// long-lived connection".
+func TestVerifyProbesLongLivedConnection(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	f := newFakeAuthServer(t)
+	registerFakeProvider(t, s, f, "fake-longlived", true) // long-lived + a ProbeURL
+	u := newActiveTestUser(t, s, "owner@example.com")
+	token := accountToken(t, s, u)
+	session := signIn(t, s, u)
+
+	rr := request(t, s.API(), "POST", "/api/connections", `{"provider":"fake-longlived","slug":"ghconn"}`, token)
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+	var started apiConnectStartedResponse
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &started))
+	require.Equal(t, http.StatusFound, browse(t, s, started.RedirectURL, append(rr.Result().Cookies(), session)).Code)
+
+	// Healthy: the probe answers 200.
+	status, err := s.connections.Verify(context.Background(), u.ID, "ghconn")
+	require.NoError(t, err)
+	assert.Equal(t, store.ConnectionStatusOK, status)
+
+	// The token is revoked at the provider (probe now 401): Verify reports AND
+	// persists needs-reconnect -- the whole point, since nothing else would.
+	f.denyProbe = true
+	status, err = s.connections.Verify(context.Background(), u.ID, "ghconn")
+	require.NoError(t, err)
+	assert.Equal(t, store.ConnectionStatusNeedsReconnect, status)
+	conn, _ := s.apps.Store().ConnectionBySlug(u.ID, "ghconn")
+	assert.Equal(t, store.ConnectionStatusNeedsReconnect, conn.Status, "persisted")
+
+	// It recovers: the probe answers 200 again and Verify clears the flag.
+	f.denyProbe = false
+	status, err = s.connections.Verify(context.Background(), u.ID, "ghconn")
+	require.NoError(t, err)
+	assert.Equal(t, store.ConnectionStatusOK, status)
 }

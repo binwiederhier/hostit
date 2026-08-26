@@ -91,6 +91,14 @@ type Provider struct {
 	// nothing to refresh, and demanding a refresh token would refuse a
 	// perfectly good connection.
 	LongLivedToken bool
+	// ProbeURL, if set, is a cheap authenticated request Verify uses to actually
+	// test a LongLivedToken connection -- nothing else ever re-checks one (the
+	// refresh loop skips it, there being nothing to refresh, and an app that
+	// holds the raw token fails outside hostit's view). A 401/403 means the token
+	// no longer works. Empty ProbeBody sends a GET; a non-empty one is POSTed as
+	// the body (a GraphQL query, for a provider with no plain REST endpoint).
+	ProbeURL  string
+	ProbeBody string
 	// Help is one line shown in the UI: where to get the credential.
 	Help string
 	// NameHint is what the add dialog suggests calling this connection. It is
