@@ -1,0 +1,6 @@
+#!/bin/sh
+# Privileged helper for the SSH relay gateway: entered through the sudoers grant
+# in /etc/sudoers.d/hostit, it execs ssh to the app's node with the root-only
+# relay key. The app is derived from SUDO_UID inside "hostit relay", never from
+# these arguments, so a member of hostit-apps can only ever relay as their own app.
+exec /usr/bin/hostit relay "$@"
