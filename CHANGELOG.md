@@ -7,6 +7,24 @@ changed rather than what an operator had to do about it; from v0.15.0 on, each
 release is written down as it is cut. Anything that changes a config file, a
 default, or on-disk state is called out as **Breaking** or **Upgrade note**.
 
+## v0.27.0 (2026-08-26)
+
+- **Multi-node SSH lands on the right node.** An app hosted on a remote (worker)
+  node used to advertise `ssh <app>@<base-domain>`, which resolves to the control
+  node, where the app user does not exist -- so SSH to any off-control app failed
+  with `Permission denied (publickey)`. Each node now reports its own reachable
+  SSH hostname to control (in the cluster heartbeat, like it already reports its
+  app-bind address), control records it per node, and it advertises
+  `ssh <app>@<that node's host>` for the app. Control is never in the SSH data
+  path; the node's own sshd terminates the connection. A single-node deploy and
+  the colocated control node are unaffected -- an unset SSH host falls back to the
+  base domain, exactly as before.
+- **Upgrade note.** For a REMOTE node to be reachable, set its SSH host: in the
+  ansible inventory, `hostit_ssh_host: <node's public hostname or IP>` on that
+  node (the role emits `ssh-host:` into its node.yml). Leave it unset on the
+  colocated node. Without it, a remote node's apps keep advertising the base
+  domain (the pre-existing behavior), so this is additive and safe to roll out.
+
 ## v0.26.0 (2026-08-25)
 
 - **Security fixes (from a full audit).** A critical read-SSRF in the MCP client

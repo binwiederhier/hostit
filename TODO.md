@@ -14,28 +14,26 @@ before either is built.
 
 ## Now (next few sessions)
 
-### 0. Connections: what is left before it ships
+### 0. Connections: shipped -- remaining follow-ups
 
-Built on `connections-v2` and running on stage. Nineteen providers, two of them
-with live OAuth clients (GitHub, Discord) and Google's two on the login client,
-plus **MCP servers** (added by URL, no client to register -- see
-`docs/features/mcp-servers.md`). Docs both ways; e2e covers the whole flow.
-`plans/260819-connections.md` is the original design, superseded in places by
-what was built.
+Shipped to prod (connections + MCP servers), twenty providers. Live OAuth
+clients: GitHub, Discord, Slack (both `slack-bot` and `slack-user`), plus
+Google's two on the login client. MCP servers are added by URL with no client to
+register (see `docs/features/mcp-servers.md`). Docs both ways; e2e covers the
+whole flow. Health + proactive token refresh shipped in v0.26.0.
+`plans/260819-connections.md` is the original design, superseded in places.
 
-Open, in the order that matters:
+Still open:
 
-- **OAuth clients for Slack, Linear, Jira and HubSpot.** The providers are built;
-  each needs a client registered and dropped in `secrets/<env>.yml`. Nothing else.
-  (Slack's scopes must be added as BOT token scopes, not user ones: hostit stores
-  the top-level `access_token` from `oauth.v2.access`, which is the bot token.)
+- **OAuth clients for Linear, Jira and HubSpot.** The providers are built; each
+  needs a client registered and dropped in `secrets/<env>.yml`. Nothing else.
+  (Slack's two are already configured on stage and prod.)
 - **Google verification for Calendar.** Free (sensitive scope, no CASA), and it
   is what removes the 7-day refresh-token expiry that otherwise means
   reconnecting every account weekly. Gmail is the expensive one and is dominated
   by the IMAP credential for a personal instance.
 - **The `examples/caldav-agenda` app has never been run.** It needs a CalDAV
   credential nobody has attached yet. Until then it is untested code.
-- **Prod.** Nothing here has gone near it; the branch is unmerged and unreleased.
 - **`/.well-known/oauth-client` must be publicly reachable** wherever MCP is used:
   an authorization server fetches it to identify hostit, so a deploy that hides it
   behind auth breaks every MCP consent. Untested against a real third-party MCP
@@ -90,29 +88,23 @@ dialing the worker node directly (and by the login shell as the app user).
 Isolation, keys, and the login shell are all correct on the node; only the
 ADVERTISED host is wrong.
 
-Direction (decided): BOUNCE SSH THROUGH CONTROL, keeping one entry point and the
-nodes on their internal addresses (reached over the reverse yamux tunnel), rather
-than advertising a per-node public hostname. Full design in
-`~/Code/plans/260825-multinode-ssh.md`.
+Direction (decided + code built 2026-08-26): DIRECT-TO-NODE. Each node advertises
+its OWN reachable SSH hostname; control is control-plane only (records what the
+node reports, advertises `ssh <app>@<node-host>`); the node's own sshd terminates.
+Control is never in the SSH path, hostit owns no sshd, and app SSH survives a
+control outage. ProxyJump / gateway / master-key were all rejected (control-in-path
+or hostit-owns-sshd); a username-mux is impossible (username is encrypted post-KEX).
+Full design + what shipped in `~/Code/plans/260825-multinode-ssh.md`.
 
-Because the app name is the SSH username (encrypted after key exchange), control
-cannot route by it at the TCP level -- it must either be the SSH server or tunnel
-to the node's sshd. Two options in the plan:
-- **A. Control is a Go SSH gateway**: terminates SSH, auth against the app's
-  keys, services the session via the existing `Terminal` RPC + a NEW streamed
-  `ExecStream` (for rsync/scp/sftp). Bare `ssh <app>@<host>`, but reimplements
-  session semantics + needs sftp-server/rsync in the image + a control SSH port.
-- **B. Control tunnels raw TCP to the node's real sshd** (RECOMMENDED): a
-  `hostit ssh <app>` ProxyCommand rides the existing 443 API; control splices it
-  over the tunnel to the node's `127.0.0.1:22`; the client auths end-to-end to
-  the real sshd. rsync/scp/sftp work for free, no new port, no master key,
-  control never sees SSH plaintext. Cost: a ProxyCommand/config, not bare ssh.
+Built (code, tests green): node reports `ssh-host` via the heartbeat ->
+`store.node.ssh_host` -> `Server.sshHostFor(app.Host)` at both advertise sites,
+falling back to the base domain when unset (so single-node needs no config).
 
-Blocked on a decision: A vs B (bare-ssh UX vs real-sshd robustness), and if B,
-whether the `hostit` binary as the ProxyCommand dependency is acceptable. Then:
-build the chosen path behind a flag, advertise from `app.Host` at the two
-hardcoded sites (`control/service.go` ~537, `control/server_handler_agent.go`
-~113), and validate on stage with a real `rsync` to an app on a WORKER node.
+Remaining (deploy config, NOT code): give the remote node a reachable `ssh-host`.
+On stage, `hostit-stage-2`'s heartbeat address is the VPC `10.111.32.4`, so add a
+node var (e.g. `hostit_ssh_host`), emit `ssh-host:` in the node.yml template, set
+it to the public `138.197.20.72` on stage-2 (leave stage-1 unset). Then validate a
+real shell + `rsync` to a stage-2 app.
 
 Related invariant to keep: app homes are root-owned (daemon-created) and sshd
 reads `authorized_keys` AS the app user, so the home MUST stay world-traversable
@@ -184,24 +176,6 @@ difference between a small feature and a real one), and are owner-provided
 credentials (GitHub, needing profile-level OAuth) in scope or is v1
 operator-provided AI only.
 
-### 5. Dev/stage -> promote to prod (the "we work in prod" problem)
-
-The biggest missing *feature*, and the one with the largest design surface --
-which is why it sits below the decision above rather than competing with it.
-
-Right now the only copy of an app is the live one, so every edit (and every
-assistant change) is in production. Give each app an optional **staging**
-environment -- its own container + subdomain (`stage.<app>.<base>` or
-`<app>-stage`) sharing nothing live -- where changes and deploys land first,
-then a **Promote** action swaps it into prod atomically (blue/green: build and
-verify on stage, then flip the proxy, keeping the old prod as instant
-rollback). Ties into the fork primitive (a stage is a fork that promotes back).
-Likely a `hostit promote` verb plus a store notion of two environments per app.
-
-Write a plan in `plans/` before writing code: the interactions with pools
-(does a stage env draw from the owner's pool?), snapshots, domains and the
-assistant all need deciding up front.
-
 ## Soon (small, self-contained)
 
 ### 6. MCP bridge: return images as image content
@@ -258,18 +232,6 @@ reused, which would keep the two surfaces from drifting.
 on a small box can outlast it. Anything longer has to become a `prepare:` step,
 which is fine but not obvious. A job id plus a poll/stream endpoint would be
 the honest fix.
-
-### 9b. Download an app's data (snapshot or live)
-
-Let an owner pull an app's files out as an archive: a zip or tarball of the
-live dataset, or of a chosen snapshot. The btrfs layer already has the raw
-material -- a snapshot is a read-only subvolume, and `btrfs send` streams one
-efficiently -- so the options are a plain zip/tar built from the files, or a
-btrfs stream for a same-filesystem restore elsewhere. Useful for backups the
-owner keeps themselves, moving an app off hostit, or grabbing a point-in-time
-copy before a risky change. Scope open: which formats, snapshot vs live (live
-needs a consistent read -- snapshot first, then archive that), and how it is
-served (a streamed download endpoint, size-capped).
 
 ## Later (real, but not now)
 
@@ -329,7 +291,8 @@ Also from the v0.18.0 pass (`plans/260820-per-app-resources.md`): the pool
 checks are check-then-act without an owner-level lock, so two concurrent
 creates can overshoot a pool by one app's allocation. Accepted -- it
 self-corrects on the next edit and cannot run away -- but an owner-scoped lock
-is the fix if it ever matters.
+is the fix if it ever matters. (v0.26.0 put a lock around the limit-EDIT pool
+check, closing that race; the CREATE path is still check-then-act.)
 
 ### 12. Could a static app skip the container entirely?
 
@@ -543,6 +506,30 @@ Kept briefly so they are not re-proposed; delete after a few weeks.
 
 Kept briefly for context; prune when stale. Everything older is in CHANGELOG.md.
 
+- **Security + connection health + DoS hardening (2026-08-25, v0.26.0).** From a
+  full per-file security audit and an adversarial pass: closed a CRITICAL MCP
+  read-SSRF (a user-supplied server URL could rebind DNS past the outbound guard
+  to cloud metadata / internal services) and an app-token privilege escalation
+  (an app-scoped token could reach its app's OWNER routes -- new `requireAccount`
+  refuses them), plus SSH-key-newline, OAuth-cache-poisoning, collaborator-token
+  read, cross-tenant-snapshot, SNI-traversal and IPv6-SSRF fixes. Connections now
+  refresh PROACTIVELY (a background loop) and carry a health status shown as a
+  per-connection badge, a nav bell, `POST /connections/{slug}/verify`, and
+  `status` in the container list. DoS hardening: bounded reads/bodies,
+  per-app/instance caps, an atomic pool check. Merged from `security-hardening` +
+  `connections-health`. Migration trap logged: the status column was first
+  INSERTED mid-slice, so a v34 database skipped it ("no such column: status") --
+  fixed by appending it plus a tolerant heal migration. Never insert a migration.
+
+- **Workspace/snapshot export + Slack personal (2026-08-25, v0.25.0).** Owners
+  download an app's whole workspace, or any one snapshot, as `.zip`/`.tar.gz`
+  (`GET /api/apps/{app}/export` and `.../snapshots/{id}/export`) -- this is what
+  the old "download an app's data" item asked for. The live export snapshots
+  first then archives; a per-snapshot download archives the existing subvolume.
+  Also added `slack-user` (a personal, user-token Slack connection) alongside the
+  shared bot, renamed `slack` -> `slack-bot` (store migration + operator config-
+  key rename).
+
 - **Cross-tenant apps-raw exposure closed (2026-08-24).** Every container mounted
   the node's whole `/run/hostit`, which also held `apps-raw` -- the daemon's
   idmap-free view of EVERY app's files -- plus the operator sockets. Any tenant
@@ -591,28 +578,3 @@ Kept briefly for context; prune when stale. Everything older is in CHANGELOG.md.
   dashboard, app page and admin views, and `/info` now tells an agent its own
   budget. Plan: `plans/260820-per-app-resources.md`.
 
-- **CLI round + reviews (2026-08-20, v0.17.0).** `hostit control app`
-  (singular, plural aliased); `hostit node status`, `hostit proxy status`,
-  `hostit proxy route list`, each answering from the daemon's OWN state over a
-  new root-only socket (works exactly when control is down); lipgloss tables;
-  bash+zsh completion for all binaries. Full security/style/architecture
-  review, no HIGH findings: `plans/260820-hostit-review-findings.md`.
-
-- **The node owns the app socket + the terminal runs on the app's node
-  (2026-08-20, v0.17.0).** An app on a node-only host had no daemon socket at
-  all: no SSH, no in-container CLI, no MCP bridge. hostit-node now serves
-  /run/hostit/hostit.sock on every host and relays to control over the cluster
-  link, never answering locally, so control keeps every guard. The browser
-  terminal's pty moved to the app's node over the same link.
-
-- **The binary split (2026-08-20, v0.17.0).** hostit-app is the in-container
-  command set (mounted in as /usr/bin/hostit), hostit is the operator's front
-  door, and the app commands live on hostit-control. The lesson that cost an
-  hour on stage: the mount SOURCE is the host path and the exec is the
-  CONTAINER path; a test now pins it.
-
-- **btrfs simple quotas (2026-08-16, live everywhere).** Classic qgroups NEVER
-  enforced (seeding from the shared base marks quota state inconsistent;
-  verified 300MB written past a 200MB cap). squota mode enforced from startup,
-  with automatic migration; rescans gone wholesale -- which also fixed the slow
-  snapshots above.

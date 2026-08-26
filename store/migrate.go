@@ -447,6 +447,12 @@ var (
 		`
 		ALTER TABLE connection ADD COLUMN status TEXT NOT NULL DEFAULT 'ok';
 	`,
+		// Per-node SSH hostname: clients SSH to an app on the node's own reachable
+		// address, not the control base domain. Reported by the node; empty falls
+		// back to the base domain.
+		`
+		ALTER TABLE node ADD COLUMN ssh_host TEXT NOT NULL DEFAULT '';
+	`,
 	}
 )
 

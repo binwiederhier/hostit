@@ -42,6 +42,11 @@ type Node struct {
 	JoinedAt time.Time `json:"joined_at"`
 	// LastSeen is the last connect/heartbeat, for liveness display and placement.
 	LastSeen time.Time `json:"last_seen"`
+	// SSHHost is the hostname clients use to SSH to apps on this node, reported
+	// by the node itself (it knows its own reachable address). Empty falls back
+	// to control's base domain -- correct for the colocated node, wrong for a
+	// remote node, which is why a remote node sets it.
+	SSHHost string `json:"ssh_host,omitempty"`
 }
 
 // Role is a user's permission level

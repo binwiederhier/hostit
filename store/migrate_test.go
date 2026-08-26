@@ -78,7 +78,7 @@ func TestMigrationRecordsVersion(t *testing.T) {
 // PoC-touched database (at 23) and a clean one (at 22) still reach them.
 func TestBurnedSlotKeepsHistoriesAligned(t *testing.T) {
 	t.Parallel()
-	require.Len(t, migrations, 36)
+	require.Len(t, migrations, 37)
 	assert.Contains(t, migrations[22], "SELECT 1", "index 22 is the burned no-op slot")
 	assert.Contains(t, migrations[23], "memory_limit_mb", "the limits columns follow the burned slot")
 	assert.Contains(t, migrations[24], "memory_pool_mb", "then the per-user pools")
@@ -207,25 +207,46 @@ func TestSlackRenameMigration(t *testing.T) {
 	assert.Equal(t, "slack-user", personal, "the personal connection is left alone")
 }
 
+// migrationIndex finds a migration by a substring of its SQL. last picks the
+// final match (e.g. the heal re-add) rather than the first. Content-based so
+// appended migrations never shift what these upgrade tests target.
+func migrationIndex(t *testing.T, substr string, last bool) int {
+	t.Helper()
+	idx := -1
+	for i, m := range migrations {
+		if strings.Contains(m, substr) {
+			idx = i
+			if !last {
+				break
+			}
+		}
+	}
+	require.GreaterOrEqual(t, idx, 0, "no migration contains %q", substr)
+	return idx
+}
+
 // A database that has run every migration EXCEPT the last (status) must get the
 // status column when opened. Guards the append-only rule: the status migration
 // was once inserted mid-slice, so a version-N DB skipped it (no such column).
 func TestStatusColumnAddedOnUpgrade(t *testing.T) {
 	t.Parallel()
+	// Locate the status add by CONTENT, not position: later migrations are
+	// appended after it, so "the last migration" is no longer the status one.
+	statusIdx := migrationIndex(t, "ADD COLUMN status", false)
 	file := filepath.Join(t.TempDir(), "hostit.db")
 	db, err := sql.Open("sqlite", file)
 	require.NoError(t, err)
-	for i := 0; i < len(migrations)-1; i++ {
+	for i := 0; i < statusIdx; i++ {
 		_, err := db.Exec(migrations[i])
 		require.NoError(t, err, "migration %d", i+1)
 	}
 	_, err = db.Exec(createSchemaVersionTableQuery)
 	require.NoError(t, err)
-	_, err = db.Exec(insertSchemaVersionQuery, len(migrations)-1) // one before the status migration
+	_, err = db.Exec(insertSchemaVersionQuery, statusIdx) // everything before the status add is applied
 	require.NoError(t, err)
 	require.NoError(t, db.Close())
 
-	s, err := NewStore(file) // opening must run the appended status migration
+	s, err := NewStore(file) // opening must run the status migration and everything after it
 	require.NoError(t, err)
 	defer s.Close()
 	_, err = s.db.Exec(`INSERT INTO connection (id, user_id, slug, provider, kind, secret, created_at) VALUES ('c1','u1','s','p','oauth','x',0)`)
@@ -245,21 +266,17 @@ func TestHealReaddsSkippedStatusColumn(t *testing.T) {
 	require.NoError(t, err)
 	// Run through the slack-bot rename but NOT the status add: the connection
 	// table exists without a status column.
-	slackBotIdx := 0
-	for i, m := range migrations {
-		if strings.Contains(m, "SET provider = 'slack-bot'") {
-			slackBotIdx = i
-			break
-		}
-	}
+	slackBotIdx := migrationIndex(t, "SET provider = 'slack-bot'", false)
+	healIdx := migrationIndex(t, "ADD COLUMN status", true) // the heal is the LAST status add
 	for i := 0; i <= slackBotIdx; i++ {
 		_, err := db.Exec(migrations[i])
 		require.NoError(t, err, "migration %d", i+1)
 	}
-	// Claim a version that skipped the status add (all but the final heal).
+	// Claim a version that already ran the status add (the mis-order left this):
+	// only the heal, and anything appended after it, remains to run.
 	_, err = db.Exec(createSchemaVersionTableQuery)
 	require.NoError(t, err)
-	_, err = db.Exec(insertSchemaVersionQuery, len(migrations)-1)
+	_, err = db.Exec(insertSchemaVersionQuery, healIdx)
 	require.NoError(t, err)
 	require.NoError(t, db.Close())
 

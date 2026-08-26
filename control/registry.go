@@ -82,6 +82,11 @@ func (m *Manager) RecordNodeStatus(nodeID string, hb *nodeapi.Heartbeat) error {
 			return err
 		}
 	}
+	if hb.SSHHost != "" {
+		if err := m.store.SetNodeSSHHost(nodeID, hb.SSHHost); err != nil {
+			slog.Warn("Cannot record a node's SSH host", "node", nodeID, "error", err)
+		}
+	}
 	if blob, err := json.Marshal(hb.Stats); err == nil {
 		if err := m.store.SetNodeStats(nodeID, string(blob)); err != nil {
 			slog.Warn("Cannot record a node's machine stats", "node", nodeID, "error", err)

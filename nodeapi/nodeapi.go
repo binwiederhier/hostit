@@ -292,4 +292,8 @@ type Heartbeat struct {
 	// (it is the address its containers publish on); control records it so
 	// routing needs no operator-supplied flag to be correct.
 	Address string `json:"address"`
+	// SSHHost is the hostname clients use to SSH to apps on this node. The node
+	// reports it for the same reason as Address: it knows its own reachable
+	// address. Empty leaves control advertising its base domain.
+	SSHHost string `json:"ssh_host"`
 }

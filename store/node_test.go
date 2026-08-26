@@ -38,3 +38,31 @@ func TestNodeSeenAndRemove(t *testing.T) {
 	_, err = s.Node("local")
 	require.ErrorIs(t, err, ErrNodeNotFound)
 }
+
+func TestNodeSSHHostRoundTrip(t *testing.T) {
+	s := newTestStore(t)
+	require.NoError(t, s.EnsureNode("worker", "10.111.32.4"))
+
+	// A node that has reported no SSH host has an empty one.
+	n, err := s.Node("worker")
+	require.NoError(t, err)
+	require.Equal(t, "", n.SSHHost)
+
+	// Once recorded, it round-trips, and re-recording overwrites it.
+	require.NoError(t, s.SetNodeSSHHost("worker", "node2.ssh.example.com"))
+	n, err = s.Node("worker")
+	require.NoError(t, err)
+	require.Equal(t, "node2.ssh.example.com", n.SSHHost)
+
+	require.NoError(t, s.SetNodeSSHHost("worker", "moved.example.com"))
+	n, err = s.Node("worker")
+	require.NoError(t, err)
+	require.Equal(t, "moved.example.com", n.SSHHost)
+
+	// EnsureNode (an upsert on reconnect) updates the address without wiping the
+	// SSH host a node reported separately.
+	require.NoError(t, s.EnsureNode("worker", "10.111.32.9"))
+	n, err = s.Node("worker")
+	require.NoError(t, err)
+	require.Equal(t, "moved.example.com", n.SSHHost)
+}

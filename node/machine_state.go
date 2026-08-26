@@ -308,6 +308,7 @@ func (m *Machine) Heartbeat() *nodeapi.Heartbeat {
 		Version:      Version,
 		BtrfsCapable: m.btrfs.IsBtrfs(m.config.AppsDir),
 		Address:      m.config.AppsBindAddress,
+		SSHHost:      m.config.SSHHost,
 		// The apps pool is the filesystem that matters here: it filling up is
 		// what breaks this node.
 		Stats: hoststats.Measure(m.config.AppsDir),

@@ -110,13 +110,9 @@ func (s *Server) handleAgentAppInfo(w http.ResponseWriter, _ *http.Request, c *c
 		Readme:    readme,
 		HostitYml: string(hostitYml),
 		Files:     files,
-		SSH: apiSSHInfo{
-			User:    a.Name,
-			Host:    s.config.SSHHostname(),
-			Command: "ssh " + a.Name + "@" + s.config.SSHHostname(),
-		},
-		Hint:  "Upload files, write hostit.yml, then POST " + appsPath(a.Name) + "/deploy. Everything you need is in this response.",
-		Guide: s.agentGuide(a.Name, s.apps.Description(a.Name)),
+		SSH:       sshInfoFor(a.Name, s.sshHostFor(a.Host)),
+		Hint:      "Upload files, write hostit.yml, then POST " + appsPath(a.Name) + "/deploy. Everything you need is in this response.",
+		Guide:     s.agentGuide(a.Name, s.apps.Description(a.Name)),
 	})
 }
 

@@ -526,6 +526,22 @@ func (s *Server) appResponseFor(c *caller, a *store.App, customDomain string) *a
 	return resp
 }
 
+// sshHostFor returns the SSH hostname to advertise for an app on the given node:
+// the node's own reported host, falling back to control's base domain.
+func (s *Server) sshHostFor(nodeID string) string {
+	if nodeID != "" {
+		if n, err := s.apps.Store().Node(nodeID); err == nil && n.SSHHost != "" {
+			return n.SSHHost
+		}
+	}
+	return s.config.SSHHostname()
+}
+
+// sshInfoFor builds the SSH access block advertised for an app.
+func sshInfoFor(user, host string) apiSSHInfo {
+	return apiSSHInfo{User: user, Host: host, Command: fmt.Sprintf("ssh %s@%s", user, host)}
+}
+
 func (s *Server) appResponse(a *store.App, customDomain string) *apiAppResponse {
 	ownerEmail, ownerName := s.ownerIdentity(a.OwnerID)
 	resp := &apiAppResponse{
@@ -547,11 +563,7 @@ func (s *Server) appResponse(a *store.App, customDomain string) *apiAppResponse 
 		Private:        a.Private,
 		CreatedAt:      a.CreatedAt,
 		LimitOverrides: apiLimitOverrides{MemoryMB: a.MemoryLimitMB, DiskMB: a.DiskLimitMB, CPUMilli: a.CPUMilli},
-		SSH: apiSSHInfo{
-			User:    a.Name,
-			Host:    s.config.SSHHostname(),
-			Command: fmt.Sprintf("ssh %s@%s", a.Name, s.config.SSHHostname()),
-		},
+		SSH:            sshInfoFor(a.Name, s.sshHostFor(a.Host)),
 	}
 	// The first verified custom domain becomes the app's primary public URL. The
 	// caller looks it up (one query for a single app, batched for the list).
