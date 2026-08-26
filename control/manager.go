@@ -375,7 +375,7 @@ func (m *Manager) create(name string, opts *CreateOptions, seed *seedRef) (*stor
 		ID:      app.ID,
 		Name:    name,
 		Port:    port,
-		SSHKeys: append(append([]string{}, appKeys...), opts.ProfileKeys...),
+		SSHKeys: m.appendRelayKey(host, append(append([]string{}, appKeys...), opts.ProfileKeys...)),
 		URL:     m.URL(&store.App{Name: name, Port: port}),
 		DiskMB:  m.DiskLimit(name),
 	}
