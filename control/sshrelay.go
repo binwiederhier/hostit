@@ -180,3 +180,17 @@ func (m *Manager) relayKeyLine() string {
 	m.relayLine = opts + " " + pub
 	return m.relayLine
 }
+
+// appendRelayKey appends the relay key line to a REMOTE app's key set (the
+// frontend must be able to ssh in as the app user). Used by BOTH the desired
+// state (mirror) and the explicit SetKeys path, so a key resync cannot drop it.
+func (m *Manager) appendRelayKey(host string, keys []string) []string {
+	if host == "" || host == store.HostLocal {
+		return keys
+	}
+	line := m.relayKeyLine()
+	if line == "" {
+		return keys
+	}
+	return append(append([]string{}, keys...), line)
+}

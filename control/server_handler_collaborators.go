@@ -134,7 +134,7 @@ func (s *Server) resyncAppKeys(a *store.App) error {
 	if err != nil {
 		return err
 	}
-	if err := s.node.SetKeys(a.Name, appKeys, profileKeys); err != nil {
+	if err := s.node.SetKeys(a.Name, appKeys, s.apps.appendRelayKey(a.Host, profileKeys)); err != nil {
 		return err
 	}
 	s.apps.refreshSSHRelay() // keep the relay frontend's authorized_keys current (prompt revocation)

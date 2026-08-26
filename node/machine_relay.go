@@ -65,6 +65,9 @@ func (m *Machine) ensureRelayStub(app string) error {
 	if err := os.MkdirAll(filepath.Join(home, ".ssh"), 0755); err != nil {
 		return err
 	}
+	// Suppress the frontend host's MOTD on an interactive relay login (it would
+	// otherwise leak the control host's banner and stats to the tenant).
+	_ = os.WriteFile(filepath.Join(home, ".hushlogin"), nil, 0644)
 	var keys []byte
 	if m.config.RelayKeysDir != "" {
 		keys, _ = os.ReadFile(filepath.Join(m.config.RelayKeysDir, app)) // absent -> deny all

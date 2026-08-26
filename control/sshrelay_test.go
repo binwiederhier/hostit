@@ -114,3 +114,24 @@ func TestRelayKeyLineDoesNotCacheEmpty(t *testing.T) {
 	require.Equal(t, `from="10.0.0.1",restrict,pty ssh-ed25519 AAAAKEY hostit-relay`,
 		s.apps.relayKeyLine(), "key appears -> picked up without a restart")
 }
+
+// The relay key must ride BOTH the mirror and the explicit SetKeys path (a key
+// resync via SetKeys once dropped it on stage). appendRelayKey is the shared
+// point; it adds the line for remote apps only, and only when the relay is on.
+func TestAppendRelayKey(t *testing.T) {
+	s := newTestServer(t)
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(dir+"/relay_key.pub", []byte("ssh-ed25519 AAAAK hostit-relay\n"), 0644))
+	s.config.SSHRelayEnabled = true
+	s.config.SSHRelayPublicKeyFile = dir + "/relay_key.pub"
+
+	user := []string{"ssh-ed25519 AAAAUSER u"}
+	line := "restrict,pty ssh-ed25519 AAAAK hostit-relay"
+
+	require.Equal(t, []string{"ssh-ed25519 AAAAUSER u", line}, s.apps.appendRelayKey("node2", user), "remote app gets it")
+	require.Equal(t, user, s.apps.appendRelayKey(store.HostLocal, user), "colocated app never does")
+	require.Equal(t, user, s.apps.appendRelayKey("", user), "unplaced app never does")
+
+	s.config.SSHRelayEnabled = false
+	require.Equal(t, user, s.apps.appendRelayKey("node2", user), "off -> never")
+}
