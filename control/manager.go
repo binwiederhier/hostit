@@ -124,8 +124,8 @@ type Manager struct {
 
 	// relayLine is the cached authorized_keys line for the SSH relay key, added
 	// to remote apps' keys; relayLineOnce guards the one-time read of the pubkey.
-	relayLine     string
-	relayLineOnce sync.Once
+	relayLine   string
+	relayLineMu sync.Mutex
 }
 
 // NewManager creates a Manager from its config, store and the node-local services

@@ -97,3 +97,20 @@ func TestDesiredStateInjectsRelayKeyForRemoteNodesOnly(t *testing.T) {
 	require.Len(t, local.Apps, 1)
 	require.NotContains(t, local.Apps[0].SSHKeys, relayLine, "colocated node does not get the relay key")
 }
+
+// Regression: relayKeyLine must not permanently cache an empty result. Control
+// can start before the deploy generates relay_key.pub; caching empty would drop
+// the relay key from every node until a restart (found live on stage).
+func TestRelayKeyLineDoesNotCacheEmpty(t *testing.T) {
+	s := newTestServer(t)
+	dir := t.TempDir()
+	s.config.SSHRelayEnabled = true
+	s.config.SSHRelayPublicKeyFile = dir + "/relay_key.pub" // absent for now
+	s.config.SSHRelayFromAddress = "10.0.0.1"
+
+	require.Equal(t, "", s.apps.relayKeyLine(), "no key file yet -> empty")
+
+	require.NoError(t, os.WriteFile(dir+"/relay_key.pub", []byte("ssh-ed25519 AAAAKEY hostit-relay\n"), 0644))
+	require.Equal(t, `from="10.0.0.1",restrict,pty ssh-ed25519 AAAAKEY hostit-relay`,
+		s.apps.relayKeyLine(), "key appears -> picked up without a restart")
+}

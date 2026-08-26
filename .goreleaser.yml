@@ -148,10 +148,6 @@ nfpms:
         dst: /usr/bin/hostit-relay
         file_info:
           mode: 0755
-      - src: hostit-sftp-dispatch
-        dst: /usr/bin/hostit-sftp-dispatch
-        file_info:
-          mode: 0755
       - src: hostit.sudoers
         dst: /etc/sudoers.d/hostit
         type: "config|noreplace"

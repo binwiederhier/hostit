@@ -157,22 +157,26 @@ func (m *Manager) relayKeyLine() string {
 	if !m.config.SSHRelayEnabled || m.config.SSHRelayPublicKeyFile == "" {
 		return ""
 	}
-	m.relayLineOnce.Do(func() {
-		data, err := os.ReadFile(m.config.SSHRelayPublicKeyFile)
-		if err != nil {
-			slog.Warn("Cannot read the relay public key", "file", m.config.SSHRelayPublicKeyFile, "error", err)
-			return
-		}
-		pub := strings.TrimSpace(string(data))
-		if pub == "" {
-			return
-		}
-		from := m.config.SSHRelayFromAddress
-		opts := "restrict,pty"
-		if from != "" {
-			opts = "from=\"" + from + "\"," + opts
-		}
-		m.relayLine = opts + " " + pub
-	})
+	m.relayLineMu.Lock()
+	defer m.relayLineMu.Unlock()
+	if m.relayLine != "" {
+		return m.relayLine // read once, successfully -- the key does not change under us
+	}
+	// Deliberately do NOT cache a failure: control can start before the deploy
+	// has generated the key, and a permanent empty cache would drop the relay
+	// key from every node's authorized_keys until the next restart.
+	data, err := os.ReadFile(m.config.SSHRelayPublicKeyFile)
+	if err != nil {
+		return ""
+	}
+	pub := strings.TrimSpace(string(data))
+	if pub == "" {
+		return ""
+	}
+	opts := "restrict,pty"
+	if from := m.config.SSHRelayFromAddress; from != "" {
+		opts = "from=\"" + from + "\"," + opts
+	}
+	m.relayLine = opts + " " + pub
 	return m.relayLine
 }
