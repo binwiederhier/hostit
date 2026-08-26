@@ -6,9 +6,3 @@
 # member of hostit-apps can only ever reach their own app.
 Defaults!/usr/bin/hostit-enter !requiretty
 %hostit-apps ALL=(root) NOPASSWD: /usr/bin/hostit-enter
-
-# The relay gateway's privileged inner hop: like hostit-enter, it ignores its
-# arguments when choosing the app (derived from SUDO_UID) and only ever relays
-# as the caller's own app.
-Defaults!/usr/bin/hostit-relay !requiretty
-%hostit-apps ALL=(root) NOPASSWD: /usr/bin/hostit-relay
