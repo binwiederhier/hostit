@@ -41,7 +41,7 @@ func TestNodeSeenAndRemove(t *testing.T) {
 
 func TestNodeSSHHostRoundTrip(t *testing.T) {
 	s := newTestStore(t)
-	require.NoError(t, s.EnsureNode("worker", "10.111.32.4"))
+	require.NoError(t, s.EnsureNode("worker", "10.0.0.4"))
 
 	// A node that has reported no SSH host has an empty one.
 	n, err := s.Node("worker")
@@ -61,7 +61,7 @@ func TestNodeSSHHostRoundTrip(t *testing.T) {
 
 	// EnsureNode (an upsert on reconnect) updates the address without wiping the
 	// SSH host a node reported separately.
-	require.NoError(t, s.EnsureNode("worker", "10.111.32.9"))
+	require.NoError(t, s.EnsureNode("worker", "10.0.0.9"))
 	n, err = s.Node("worker")
 	require.NoError(t, err)
 	require.Equal(t, "moved.example.com", n.SSHHost)
@@ -69,7 +69,7 @@ func TestNodeSSHHostRoundTrip(t *testing.T) {
 
 func TestNodeHostKeyRoundTrip(t *testing.T) {
 	s := newTestStore(t)
-	require.NoError(t, s.EnsureNode("worker", "10.111.32.4"))
+	require.NoError(t, s.EnsureNode("worker", "10.0.0.4"))
 	n, err := s.Node("worker")
 	require.NoError(t, err)
 	require.Equal(t, "", n.HostKey)

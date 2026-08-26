@@ -14,7 +14,7 @@ import (
 func TestSSHHostForUsesNodeReportedHost(t *testing.T) {
 	s := newTestServer(t)
 	st := s.apps.Store()
-	require.NoError(t, st.EnsureNode("worker", "10.111.32.4"))
+	require.NoError(t, st.EnsureNode("worker", "10.0.0.4"))
 	require.NoError(t, st.SetNodeSSHHost("worker", "node2.ssh.example.com"))
 
 	require.Equal(t, "node2.ssh.example.com", s.sshHostFor("worker"))
@@ -29,7 +29,7 @@ func TestSSHHostForUsesNodeReportedHost(t *testing.T) {
 func TestRecordNodeStatusStoresSSHHost(t *testing.T) {
 	m, _ := newTestManager(t)
 	err := m.RecordNodeStatus("worker", &nodeapi.Heartbeat{
-		Address: "10.111.32.4",
+		Address: "10.0.0.4",
 		SSHHost: "node2.ssh.example.com",
 	})
 	require.NoError(t, err)
@@ -44,7 +44,7 @@ func TestRecordNodeStatusStoresSSHHost(t *testing.T) {
 func TestRecordNodeStatusStoresHostKey(t *testing.T) {
 	m, _ := newTestManager(t)
 	key := "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHOSTKEY node2"
-	err := m.RecordNodeStatus("worker", &nodeapi.Heartbeat{Address: "10.111.32.4", SSHHostKey: key})
+	err := m.RecordNodeStatus("worker", &nodeapi.Heartbeat{Address: "10.0.0.4", SSHHostKey: key})
 	require.NoError(t, err)
 	n, err := m.store.Node("worker")
 	require.NoError(t, err)

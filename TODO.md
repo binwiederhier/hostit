@@ -106,11 +106,11 @@ app's node, resolves from a local file so a control-app crash does not break SSH
 no forwarding, no extra port). Design: `~/Code/plans/260826-ssh-relay-gateway.md`.
 The per-node hostnames stay primary.
 
-Remaining (deploy config, NOT code): give the remote node a reachable `ssh-host`.
-On stage, `hostit-stage-2`'s heartbeat address is the VPC `10.111.32.4`, so add a
-node var (e.g. `hostit_ssh_host`), emit `ssh-host:` in the node.yml template, set
-it to the public `138.197.20.72` on stage-2 (leave stage-1 unset). Then validate a
-real shell + `rsync` to a stage-2 app.
+Remaining (deploy config, NOT code): give each remote node a reachable `ssh-host`.
+A remote node's heartbeat address is its internal/VPC address, so set the node var
+`hostit_ssh_host` (emitted as `ssh-host:` in the node.yml template) to a publicly
+reachable hostname or IP for that node; leave the colocated node unset. Then
+validate a real shell + `rsync` to an app on a remote node.
 
 Related invariant to keep: app homes are root-owned (daemon-created) and sshd
 reads `authorized_keys` AS the app user, so the home MUST stay world-traversable
