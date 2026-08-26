@@ -19,3 +19,7 @@ apps-dir: {{ hostit_apps_dir }}
 # domain (right for the single/colocated host).
 ssh-host: "{{ hostit_ssh_host }}"
 {% endif %}
+{% if hostit_node_listen_metrics %}
+# Prometheus metrics on a separate interface (unauthenticated -- keep it internal).
+listen-metrics: "{{ hostit_node_listen_metrics }}"
+{% endif %}

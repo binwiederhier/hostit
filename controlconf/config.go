@@ -120,6 +120,7 @@ type Config struct {
 	SocketFile             string  `yaml:"socket-file"`                // The app socket (served by hostit-node; control only names it)
 	ControlSocketFile      string  `yaml:"control-socket-file"`        // Control's own socket: operator CLI + assistant sandbox
 	DataDir                string  `yaml:"data-dir"`                   // SQLite registry + ACME certs
+	ListenMetrics          string  `yaml:"listen-metrics"`             // optional Prometheus /metrics listener, e.g. "10.0.0.1:9110" (empty = off)
 	AppsDir                string  `yaml:"apps-dir"`                   // Home directories of app users
 	APIHost                string  `yaml:"api-host"`                   // Hostname routed to the admin API; defaults to <base-domain>
 	SSHHost                string  `yaml:"ssh-host"`                   // Hostname reported for SSH access; defaults to base-domain
@@ -127,7 +128,6 @@ type Config struct {
 	SSHRelayRoutesFile     string  `yaml:"ssh-relay-routes-file"`      // app->node routes the relay shell reads (local file, survives control crash)
 	SSHRelayKnownHostsFile string  `yaml:"ssh-relay-known-hosts-file"` // node host keys for the relay's inner hop
 	SSHRelayPublicKeyFile  string  `yaml:"ssh-relay-public-key-file"`  // relay_key.pub; added to remote apps authorized_keys
-	SSHRelayFromAddress    string  `yaml:"ssh-relay-from-address"`     // frontend address the node sees; scopes the relay key with from=
 	SSHRelayKeysDir        string  `yaml:"ssh-relay-keys-dir"`         // per-app authorized_keys the frontend stub accounts serve
 	TLS                    TLSMode `yaml:"tls"`                        // "letsencrypt" or "off"
 	LetsEncryptEmail       string  `yaml:"letsencrypt-email"`          // Optional contact email for ACME

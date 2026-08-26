@@ -7,6 +7,51 @@ changed rather than what an operator had to do about it; from v0.15.0 on, each
 release is written down as it is cut. Anything that changes a config file, a
 default, or on-disk state is called out as **Breaking** or **Upgrade note**.
 
+## v0.28.0 (2026-08-26)
+
+- **Optional single-hostname SSH relay gateway (experimental, off by default).**
+  On a multi-node deployment you can now offer one stable `ssh <app>@<base-domain>`
+  that reaches an app on any node, routed by app name through the control host's
+  own `sshd` -- no SSH daemon of hostit's own and no extra port. The app user's
+  login shell resolves the node from a local file and, for a remote app, hands
+  off to a small privileged helper (`hostit-relay`) that `ssh`es to the node with
+  a control-held relay key; a colocated app is entered locally as before. `ssh`,
+  `scp`, `sftp` and `rsync` all work; forwarding stays off. The per-node
+  hostnames from v0.27.0 remain the default and work without this. Enable with
+  `hostit_ssh_relay: true` on the control host (see docs/features/ssh-access.md).
+  Trade-off, deliberately accepted: the control host holds a key trusted by every
+  node, so a control-host compromise reaches every app. It stays OFF unless you
+  turn it on.
+- **Prometheus metrics.** Control, node and proxy each expose `/metrics` on an
+  optional separate listener, set with `listen-metrics: <addr>` (empty = off) in
+  the component's config -- Go runtime and process collectors plus hostit series:
+  control request histograms by route, app/user/connected-node gauges and a
+  deploy counter; per-node memory/disk/load gauges, app count and an exec
+  counter; proxy request counters, latency and a routes gauge. Bind it to an
+  internal interface: `/metrics` is unauthenticated.
+- **Upgrade note.** Both features are opt-in and off by default, so an upgrade
+  changes nothing until you set `hostit_ssh_relay` or a `listen-metrics` address.
+- `hostit control app keys` now prints the correct flag order in its usage line
+  (flags come before the app name, as with `app logs`).
+
+## v0.27.0 (2026-08-26)
+
+- **Multi-node SSH lands on the right node.** An app hosted on a remote (worker)
+  node used to advertise `ssh <app>@<base-domain>`, which resolves to the control
+  node, where the app user does not exist -- so SSH to any off-control app failed
+  with `Permission denied (publickey)`. Each node now reports its own reachable
+  SSH hostname to control (in the cluster heartbeat, like it already reports its
+  app-bind address), control records it per node, and it advertises
+  `ssh <app>@<that node's host>` for the app. Control is never in the SSH data
+  path; the node's own sshd terminates the connection. A single-node deploy and
+  the colocated control node are unaffected -- an unset SSH host falls back to the
+  base domain, exactly as before.
+- **Upgrade note.** For a REMOTE node to be reachable, set its SSH host: in the
+  ansible inventory, `hostit_ssh_host: <node's public hostname or IP>` on that
+  node (the role emits `ssh-host:` into its node.yml). Leave it unset on the
+  colocated node. Without it, a remote node's apps keep advertising the base
+  domain (the pre-existing behavior), so this is additive and safe to roll out.
+
 ## v0.26.0 (2026-08-25)
 
 - **Security fixes (from a full audit).** A critical read-SSRF in the MCP client

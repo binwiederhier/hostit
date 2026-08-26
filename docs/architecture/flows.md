@@ -142,6 +142,73 @@ calls it directly with someone else's name still lands in their own
 (`cmd/agent/enter.go:execEnter`). scp, rsync and `ssh host <command>` get no banner; only an
 interactive human session does (`cmd/agent/shell.go:execShell`).
 
+## Multi-node SSH
+
+With more than one node, the app's Unix user and `authorized_keys` live only on
+the node that runs it, so control has to point the client at the right node.
+There are two paths (see `docs/features/ssh-access.md`).
+
+### Direct-to-node (default)
+
+Each node reports its own reachable SSH hostname in the cluster heartbeat;
+control stores it (`store.node.ssh_host`) and advertises `ssh <app>@<node-host>`.
+The client connects straight to that node's own `sshd` -- control is never in the
+SSH path, so this works even while the control *process* is down.
+
+```mermaid
+sequenceDiagram
+    participant N as node (worker)
+    participant CTL as control
+    participant U as User
+    participant SD as node sshd
+    participant C as Container
+
+    N->>CTL: heartbeat { ssh_host: node2.ssh.example.com, host_key }
+    CTL->>CTL: store on the node row; sshHostFor(app.Host)
+    U->>CTL: GET app / info
+    CTL-->>U: ssh blog@node2.ssh.example.com
+    U->>SD: ssh blog@node2.ssh.example.com  (direct)
+    SD->>SD: blog's authorized_keys (managed block)
+    SD->>C: hostit-shell -> sudo hostit-enter -> podman exec
+    C-->>U: a shell inside blog's container
+```
+
+### Relay gateway (optional)
+
+One stable `ssh <app>@<base-domain>` on the control host, routed by app name
+through the system `sshd`. `hostit-shell` reads the app's node from a local
+routes file control writes; a colocated app is entered locally, a remote app is
+handed to `sudo hostit-relay` (root, holds the relay key) which `ssh`es to the
+node. The node then runs its normal login shell into the container, so the
+second hop is an ordinary node login. `scp`/`sftp`/`rsync` ride the same path;
+all forwarding stays off.
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant FSD as control-host sshd
+    participant SH as hostit-shell (stub, as the app uid)
+    participant RY as sudo hostit-relay (root)
+    participant NSD as node sshd
+    participant C as Container
+
+    U->>FSD: ssh blog@apps.example.com
+    FSD->>FSD: blog stub's authorized_keys (the frontend gate)
+    FSD->>SH: exec login shell
+    SH->>SH: route for "blog" in /var/lib/hostit/ssh-routes? -> remote
+    SH->>RY: exec sudo -n hostit-relay [args]
+    RY->>NSD: ssh -i relay_key blog@node2  (relay key, host key pinned)
+    NSD->>C: hostit-shell -> sudo hostit-enter -> podman exec
+    C-->>U: a shell inside blog's container
+```
+
+Key points: the control host holds a relay key trusted by every node (a
+compromise reaches every app -- accepted; it already holds the key material);
+the frontend `authorized_keys` is the sole per-user gate on the relay path, so
+control re-writes it on every key change; and `hostit-relay` derives the app from
+`SUDO_UID`, never its arguments. The relay is off by default and experimental --
+prefer direct-to-node.
+
 ## An agent deploying
 
 An app-scoped token reaches exactly one app's endpoints; the daemon refuses anything

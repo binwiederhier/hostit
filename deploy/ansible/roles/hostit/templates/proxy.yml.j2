@@ -11,3 +11,7 @@
 # machine instead needs proxy-id, cluster-url and the three credential files
 # that `hostit-control proxy add` prints.
 control-url: http://{{ hostit_control_http }}
+{% if hostit_proxy_listen_metrics %}
+# Prometheus metrics on a separate interface (unauthenticated -- keep it internal).
+listen-metrics: "{{ hostit_proxy_listen_metrics }}"
+{% endif %}

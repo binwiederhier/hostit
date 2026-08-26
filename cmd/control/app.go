@@ -364,7 +364,7 @@ func execAppsKeys(c *cli.Context) error {
 		return err
 	}
 	if c.NArg() != 1 || len(c.StringSlice("ssh-key")) == 0 {
-		return errors.New("usage: hostit control app keys <name> --ssh-key <key-or-file> [--ssh-key ...]")
+		return errors.New("usage: hostit control app keys --ssh-key <key-or-file> [--ssh-key ...] <name>  (flags come before the name)")
 	}
 	keys, err := readKeyFlags(c.StringSlice("ssh-key"))
 	if err != nil {

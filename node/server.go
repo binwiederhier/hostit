@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"heckel.io/hostit/cluster"
+	"heckel.io/hostit/metrics"
 	"heckel.io/hostit/nodeconf"
 	"heckel.io/hostit/nodelink"
 	"heckel.io/hostit/preflight"
@@ -112,6 +113,13 @@ func Serve(configPath, version string) error {
 	}
 	done := make(chan struct{})
 	defer close(done)
+	// Optional Prometheus metrics on a separate interface.
+	if conf.ListenMetrics != "" {
+		if _, err := metrics.Serve(conf.ListenMetrics); err != nil {
+			return fmt.Errorf("metrics listener on %s: %w", conf.ListenMetrics, err)
+		}
+		go machine.MetricsLoop(done)
+	}
 	// Migrate app users still on the old login-shell path. Best effort and
 	// loud: the old path stays shipped this release, so a failed sweep strands
 	// nobody -- it just postpones dropping the old file.

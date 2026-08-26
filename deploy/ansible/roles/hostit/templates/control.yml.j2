@@ -68,5 +68,8 @@ claude-code-oauth-token: {{ hostit_claude_code_oauth_token }}
 # Control writes the routes/known_hosts/per-app keys the system sshd uses and
 # adds the relay key to remote apps' authorized_keys. EXPERIMENTAL; off by default.
 ssh-relay: true
-ssh-relay-from-address: "{{ hostit_ssh_relay_from_address | default('') }}"
+{% endif %}
+{% if hostit_control_listen_metrics %}
+# Prometheus metrics on a separate interface (unauthenticated -- keep it internal).
+listen-metrics: "{{ hostit_control_listen_metrics }}"
 {% endif %}

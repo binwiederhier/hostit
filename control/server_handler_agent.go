@@ -170,6 +170,7 @@ func (s *Server) handleAgentLogs(w http.ResponseWriter, r *http.Request, c *call
 }
 
 func (s *Server) handleAgentDeploy(w http.ResponseWriter, _ *http.Request, c *caller, a *store.App) {
+	deploysTotal.Inc()
 	msg, err := s.node.Up(a.Name)
 	if err != nil {
 		writeAppError(w, err)

@@ -63,6 +63,8 @@ type Config struct {
 	// SSHHostKeyFile is this node's sshd public host key, reported to control for
 	// the relay gateway's known_hosts. Defaults to the standard ed25519 host key.
 	SSHHostKeyFile string `yaml:"ssh-host-key-file"`
+	// ListenMetrics is an optional Prometheus /metrics listener (empty = off).
+	ListenMetrics string `yaml:"listen-metrics"`
 	// Relay gateway (frontend) paths -- where control writes routes/keys and
 	// where the frontend stub accounts live. Empty disables the stub reconcile.
 	SSHRoutesFile string `yaml:"ssh-routes-file"`

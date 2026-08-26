@@ -7,6 +7,8 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+
+	"heckel.io/hostit/metrics"
 	"os/signal"
 	"strings"
 	"syscall"
@@ -52,12 +54,13 @@ type FileConfig struct {
 	ClusterURL string `yaml:"cluster-url"`
 	// The cluster credentials, minted by `hostit-control proxy add`. On a
 	// colocated proxy they are the pair control keeps under its data dir.
-	CertFile    string `yaml:"proxy-cert-file"`
-	KeyFile     string `yaml:"proxy-key-file"`
-	CACertFile  string `yaml:"cluster-ca-cert-file"`
-	ListenHTTPS string `yaml:"listen-https"` // default :443
-	ListenHTTP  string `yaml:"listen-http"`  // default :80
-	CacheDir    string `yaml:"cache-dir"`    // routes + cert cache; default /var/lib/hostit-proxy
+	CertFile      string `yaml:"proxy-cert-file"`
+	KeyFile       string `yaml:"proxy-key-file"`
+	CACertFile    string `yaml:"cluster-ca-cert-file"`
+	ListenHTTPS   string `yaml:"listen-https"`   // default :443
+	ListenHTTP    string `yaml:"listen-http"`    // default :80
+	ListenMetrics string `yaml:"listen-metrics"` // optional Prometheus /metrics listener (empty = off)
+	CacheDir      string `yaml:"cache-dir"`      // routes + cert cache; default /var/lib/hostit-proxy
 	// SocketFile is the proxy's own root-only status socket, which is what
 	// `hostit proxy status` and `hostit proxy route list` read.
 	SocketFile string `yaml:"proxy-socket-file"`
@@ -111,6 +114,13 @@ func Serve(configPath string) error {
 	done := make(chan struct{})
 	defer close(done)
 	go p.Link(done)
+	// Optional Prometheus metrics on a separate interface.
+	if conf.ListenMetrics != "" {
+		p.registerRoutesGauge()
+		if _, err := metrics.Serve(conf.ListenMetrics); err != nil {
+			return fmt.Errorf("metrics listener on %s: %w", conf.ListenMetrics, err)
+		}
+	}
 	// The proxy's own status socket, root-only: what `hostit proxy status` and
 	// `hostit proxy route list` read.
 	statusSocket, err := ServeStatusSocket(conf.SocketFile, p)

@@ -173,11 +173,7 @@ func (m *Manager) relayKeyLine() string {
 	if pub == "" {
 		return ""
 	}
-	opts := "restrict,pty"
-	if from := m.config.SSHRelayFromAddress; from != "" {
-		opts = "from=\"" + from + "\"," + opts
-	}
-	m.relayLine = opts + " " + pub
+	m.relayLine = "restrict,pty " + pub
 	return m.relayLine
 }
 

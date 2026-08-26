@@ -33,6 +33,7 @@ import (
 	"heckel.io/hostit/assistant"
 	"heckel.io/hostit/connections"
 	"heckel.io/hostit/controlconf"
+	"heckel.io/hostit/metrics"
 	"heckel.io/hostit/node"
 	"heckel.io/hostit/preview"
 	"heckel.io/hostit/store"
@@ -215,6 +216,18 @@ func New(conf *controlconf.Config, apps *Manager, users *user.Manager) *Server {
 // Run starts all listeners and blocks until the first one fails
 func (s *Server) Run() error {
 	g := &errgroup.Group{}
+
+	// Optional Prometheus metrics on a separate interface: instrument the API
+	// handler, wire the fleet gauges, and start the /metrics listener.
+	if s.config.ListenMetrics != "" {
+		s.api = instrumentHTTP(s.api)
+		s.registerMetrics()
+		ms, err := metrics.Serve(s.config.ListenMetrics)
+		if err != nil {
+			return fmt.Errorf("metrics listener on %s: %w", s.config.ListenMetrics, err)
+		}
+		s.servers = append(s.servers, ms)
+	}
 
 	// Materialize the SSH relay files at boot so the relay shell has current
 	// routes even before any node heartbeat (a no-op unless the relay is on).

@@ -44,6 +44,7 @@ const (
 // The command runs as the container's root, which is the app's own unprivileged
 // uid on the host, in the app's home directory.
 func (m *Machine) Exec(name, command string, timeout time.Duration) (*nodeapi.ExecResult, error) {
+	nodeExecs.Inc()
 	// Exec needs a running container, so it enters like a login does: a fresh
 	// fork or crashed app is brought up first (instead of racing the background
 	// start into a podman error), and a deliberately powered-off app is refused

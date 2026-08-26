@@ -52,4 +52,3 @@ hostit_btrfs: true
 # Optional single-hostname SSH relay so `ssh <app>@apps.example.com` reaches an
 # app on any node (EXPERIMENTAL; see docs/features/ssh-access.md):
 # hostit_ssh_relay: true
-# hostit_ssh_relay_from_address: "<control host's egress IP>"

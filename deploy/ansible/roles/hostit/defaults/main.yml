@@ -77,9 +77,6 @@ hostit_ssh_host: ""
 # (no daemon of its own, no extra port). Off by default -- the per-node hostnames
 # above work without it. EXPERIMENTAL; see docs/features/ssh-access.md.
 hostit_ssh_relay: false
-# The control host's source address as the nodes see it, to scope the relay key
-# with from=. Empty leaves the relay key unrestricted (works, less defence).
-hostit_ssh_relay_from_address: ""
 
 # Static crun for idmapped rootfs mounts: hostit requires crun >= 1.29 (Ubuntu
 # 24.04 ships 1.14.1, which cannot idmap-mount a --rootfs, and hostit's preflight
@@ -90,3 +87,9 @@ hostit_crun_version: "1.29.1"
 hostit_crun_sha256: "0a5ea25cafe618bbfbf1c747871155063619f18025ccdd8ad648c97633f35d57"
 hostit_crun_path: /usr/local/lib/hostit-crun
 
+# Optional Prometheus /metrics listeners (empty = off). The three components
+# share a single host, so give each its own port, and bind to an internal
+# interface -- /metrics is unauthenticated.
+hostit_control_listen_metrics: ""   # e.g. "10.0.0.1:9110"
+hostit_node_listen_metrics: ""      # e.g. "10.0.0.1:9111"
+hostit_proxy_listen_metrics: ""     # e.g. "10.0.0.1:9112"

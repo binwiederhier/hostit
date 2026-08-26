@@ -71,6 +71,7 @@ func (s *Server) handleSelfPowerOn(w http.ResponseWriter, r *http.Request, a *st
 
 // handleSelfDeploy applies hostit.yml and (re)starts the app
 func (s *Server) handleSelfDeploy(w http.ResponseWriter, r *http.Request, a *store.App) {
+	deploysTotal.Inc()
 	msg, err := s.node.Up(a.Name)
 	if err != nil {
 		writeAppError(w, err)

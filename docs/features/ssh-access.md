@@ -118,7 +118,6 @@ colocated app is entered locally exactly as before. `ssh`, `scp`, `rsync` and
 
 ```yaml
 hostit_ssh_relay: true
-hostit_ssh_relay_from_address: "<control host's egress IP as the nodes see it>"
 ```
 
 That generates a relay key (`/etc/hostit/relay_key`, root-only), grants the

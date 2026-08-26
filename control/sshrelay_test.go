@@ -74,7 +74,6 @@ func TestDesiredStateInjectsRelayKeyForRemoteNodesOnly(t *testing.T) {
 	require.NoError(t, os.WriteFile(dir+"/relay_key.pub", []byte(pub+"\n"), 0644))
 	s.config.SSHRelayEnabled = true
 	s.config.SSHRelayPublicKeyFile = dir + "/relay_key.pub"
-	s.config.SSHRelayFromAddress = "10.111.32.3"
 
 	st := s.apps.Store()
 	require.NoError(t, st.AddApp(&store.App{Name: "shop", Port: 13001, Host: "node2"}))
@@ -82,7 +81,7 @@ func TestDesiredStateInjectsRelayKeyForRemoteNodesOnly(t *testing.T) {
 	require.NoError(t, st.SetAppKeys("shop", []string{"ssh-ed25519 AAAAUSER shopper"}))
 	require.NoError(t, st.SetAppKeys("blog", []string{"ssh-ed25519 AAAAUSER blogger"}))
 
-	relayLine := `from="10.111.32.3",restrict,pty ` + pub
+	relayLine := "restrict,pty " + pub
 
 	// Remote node: the relay line is appended to the app's keys.
 	remote, err := s.apps.DesiredState("node2")
@@ -106,12 +105,11 @@ func TestRelayKeyLineDoesNotCacheEmpty(t *testing.T) {
 	dir := t.TempDir()
 	s.config.SSHRelayEnabled = true
 	s.config.SSHRelayPublicKeyFile = dir + "/relay_key.pub" // absent for now
-	s.config.SSHRelayFromAddress = "10.0.0.1"
 
 	require.Equal(t, "", s.apps.relayKeyLine(), "no key file yet -> empty")
 
 	require.NoError(t, os.WriteFile(dir+"/relay_key.pub", []byte("ssh-ed25519 AAAAKEY hostit-relay\n"), 0644))
-	require.Equal(t, `from="10.0.0.1",restrict,pty ssh-ed25519 AAAAKEY hostit-relay`,
+	require.Equal(t, `restrict,pty ssh-ed25519 AAAAKEY hostit-relay`,
 		s.apps.relayKeyLine(), "key appears -> picked up without a restart")
 }
 
