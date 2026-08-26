@@ -66,3 +66,17 @@ func TestNodeSSHHostRoundTrip(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "moved.example.com", n.SSHHost)
 }
+
+func TestNodeHostKeyRoundTrip(t *testing.T) {
+	s := newTestStore(t)
+	require.NoError(t, s.EnsureNode("worker", "10.111.32.4"))
+	n, err := s.Node("worker")
+	require.NoError(t, err)
+	require.Equal(t, "", n.HostKey)
+
+	key := "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAISOMEKEY node2"
+	require.NoError(t, s.SetNodeHostKey("worker", key))
+	n, err = s.Node("worker")
+	require.NoError(t, err)
+	require.Equal(t, key, n.HostKey)
+}

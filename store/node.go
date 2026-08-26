@@ -6,7 +6,7 @@ import (
 )
 
 const (
-	nodeCols               = `name, address, joined_at, last_seen, stats, ssh_host`
+	nodeCols               = `name, address, joined_at, last_seen, stats, ssh_host, host_key`
 	insertNodeQuery        = `INSERT INTO node (name, address, token_hash, token_expires_at, joined_at) VALUES (?, ?, ?, ?, 0)`
 	remintNodeQuery        = `UPDATE node SET address = ?, token_hash = ?, token_expires_at = ? WHERE name = ? AND joined_at = 0`
 	ensureNodeQuery        = `INSERT INTO node (name, address, token_hash, token_expires_at, joined_at) VALUES (?, ?, '', 0, ?) ON CONFLICT (name) DO UPDATE SET address = excluded.address`
@@ -16,6 +16,7 @@ const (
 	updateNodeSeenQuery    = `UPDATE node SET last_seen = ? WHERE name = ?`
 	updateNodeStatsQuery   = `UPDATE node SET stats = ? WHERE name = ?`
 	updateNodeSSHHostQuery = `UPDATE node SET ssh_host = ? WHERE name = ?`
+	updateNodeHostKeyQuery = `UPDATE node SET host_key = ? WHERE name = ?`
 	deleteNodeQuery        = `DELETE FROM node WHERE name = ?`
 )
 
@@ -76,6 +77,12 @@ func (s *Store) SetNodeSSHHost(name, host string) error {
 	return err
 }
 
+// SetNodeHostKey records the sshd host key a node reports for relay known_hosts.
+func (s *Store) SetNodeHostKey(name, key string) error {
+	_, err := s.db.Exec(updateNodeHostKeyQuery, key, name)
+	return err
+}
+
 // RemoveNode unregisters a node; its certificate stops being accepted because
 // registration is checked at connect time.
 func (s *Store) RemoveNode(name string) error {
@@ -90,7 +97,7 @@ type rowScanner interface {
 func scanNode(row rowScanner) (*Node, error) {
 	var joinedAt, lastSeen int64
 	n := &Node{}
-	if err := row.Scan(&n.Name, &n.Address, &joinedAt, &lastSeen, &n.Stats, &n.SSHHost); err != nil {
+	if err := row.Scan(&n.Name, &n.Address, &joinedAt, &lastSeen, &n.Stats, &n.SSHHost, &n.HostKey); err != nil {
 		return nil, ErrNodeNotFound
 	}
 	if joinedAt > 0 {

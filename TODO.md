@@ -100,6 +100,12 @@ Built (code, tests green): node reports `ssh-host` via the heartbeat ->
 `store.node.ssh_host` -> `Server.sshHostFor(app.Host)` at both advertise sites,
 falling back to the base domain when unset (so single-node needs no config).
 
+Optional follow-up (NOT default): a single stable `ssh <app>@apps.heckel.io`
+endpoint via a relay login shell in the SYSTEM sshd (routes by username to the
+app's node, resolves from a local file so a control-app crash does not break SSH,
+no forwarding, no extra port). Design: `~/Code/plans/260826-ssh-relay-gateway.md`.
+The per-node hostnames stay primary.
+
 Remaining (deploy config, NOT code): give the remote node a reachable `ssh-host`.
 On stage, `hostit-stage-2`'s heartbeat address is the VPC `10.111.32.4`, so add a
 node var (e.g. `hostit_ssh_host`), emit `ssh-host:` in the node.yml template, set

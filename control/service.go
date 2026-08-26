@@ -216,6 +216,10 @@ func New(conf *controlconf.Config, apps *Manager, users *user.Manager) *Server {
 func (s *Server) Run() error {
 	g := &errgroup.Group{}
 
+	// Materialize the SSH relay files at boot so the relay shell has current
+	// routes even before any node heartbeat (a no-op unless the relay is on).
+	s.apps.refreshSSHRelay()
+
 	// Keep OAuth connections alive without the owner re-authorizing: refresh
 	// tokens proactively before they expire, and flag any the provider rejects.
 	if s.connections != nil {

@@ -87,11 +87,18 @@ func (m *Manager) RecordNodeStatus(nodeID string, hb *nodeapi.Heartbeat) error {
 			slog.Warn("Cannot record a node's SSH host", "node", nodeID, "error", err)
 		}
 	}
+	if hb.SSHHostKey != "" {
+		if err := m.store.SetNodeHostKey(nodeID, hb.SSHHostKey); err != nil {
+			slog.Warn("Cannot record a node's SSH host key", "node", nodeID, "error", err)
+		}
+	}
 	if blob, err := json.Marshal(hb.Stats); err == nil {
 		if err := m.store.SetNodeStats(nodeID, string(blob)); err != nil {
 			slog.Warn("Cannot record a node's machine stats", "node", nodeID, "error", err)
 		}
 	}
+	// A node's ssh host/key may have changed -> keep the relay files current.
+	m.refreshSSHRelay()
 	return m.store.SetNodeSeen(nodeID, time.Now())
 }
 

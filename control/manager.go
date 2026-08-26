@@ -393,6 +393,7 @@ func (m *Manager) create(name string, opts *CreateOptions, seed *seedRef) (*stor
 	// app's unix user and the right firewall table live).
 
 	m.startInBackground(name, forking)
+	m.refreshSSHRelay() // app placed -> update the relay routes (no-op if the relay is off)
 	return app, nil
 }
 
@@ -436,6 +437,7 @@ func (m *Manager) DeleteApp(name string) error {
 		return err
 	}
 	m.PushMirror()
+	m.refreshSSHRelay() // app gone -> update the relay routes
 	m.pmu.Lock()
 	m.reservedPorts[a.Port] = true
 	m.pmu.Unlock()

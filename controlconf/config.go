@@ -115,16 +115,19 @@ type Config struct {
 	AdminToken string `yaml:"admin-token"` // Bearer token for the admin REST API
 	// ListenHTTP is where hostit-proxy forwards; a local address, since the
 	// proxy owns :443 in every deployment and control never binds it.
-	ListenHTTP        string  `yaml:"listen-http"`         // HTTP listener (ACME challenges + redirect, or plain proxy if TLS off)
-	ListenAPI         string  `yaml:"listen-api"`          // Optional extra plain-HTTP admin API listener, e.g. 127.0.0.1:2900
-	SocketFile        string  `yaml:"socket-file"`         // The app socket (served by hostit-node; control only names it)
-	ControlSocketFile string  `yaml:"control-socket-file"` // Control's own socket: operator CLI + assistant sandbox
-	DataDir           string  `yaml:"data-dir"`            // SQLite registry + ACME certs
-	AppsDir           string  `yaml:"apps-dir"`            // Home directories of app users
-	APIHost           string  `yaml:"api-host"`            // Hostname routed to the admin API; defaults to <base-domain>
-	SSHHost           string  `yaml:"ssh-host"`            // Hostname reported for SSH access; defaults to base-domain
-	TLS               TLSMode `yaml:"tls"`                 // "letsencrypt" or "off"
-	LetsEncryptEmail  string  `yaml:"letsencrypt-email"`   // Optional contact email for ACME
+	ListenHTTP             string  `yaml:"listen-http"`                // HTTP listener (ACME challenges + redirect, or plain proxy if TLS off)
+	ListenAPI              string  `yaml:"listen-api"`                 // Optional extra plain-HTTP admin API listener, e.g. 127.0.0.1:2900
+	SocketFile             string  `yaml:"socket-file"`                // The app socket (served by hostit-node; control only names it)
+	ControlSocketFile      string  `yaml:"control-socket-file"`        // Control's own socket: operator CLI + assistant sandbox
+	DataDir                string  `yaml:"data-dir"`                   // SQLite registry + ACME certs
+	AppsDir                string  `yaml:"apps-dir"`                   // Home directories of app users
+	APIHost                string  `yaml:"api-host"`                   // Hostname routed to the admin API; defaults to <base-domain>
+	SSHHost                string  `yaml:"ssh-host"`                   // Hostname reported for SSH access; defaults to base-domain
+	SSHRelayEnabled        bool    `yaml:"ssh-relay"`                  // Optional single-hostname SSH relay gateway (off by default)
+	SSHRelayRoutesFile     string  `yaml:"ssh-relay-routes-file"`      // app->node routes the relay shell reads (local file, survives control crash)
+	SSHRelayKnownHostsFile string  `yaml:"ssh-relay-known-hosts-file"` // node host keys for the relay's inner hop
+	TLS                    TLSMode `yaml:"tls"`                        // "letsencrypt" or "off"
+	LetsEncryptEmail       string  `yaml:"letsencrypt-email"`          // Optional contact email for ACME
 
 	// Wildcard TLS: with a DNS provider configured, hostit obtains ONE wildcard
 	// certificate for *.<base-domain> instead of a certificate per app. New apps
@@ -233,15 +236,17 @@ func (c *Config) IsAdminEmail(email string) bool {
 // NewConfig returns a Config with all defaults set; BaseDomain and AdminToken must be filled in
 func NewConfig() *Config {
 	return &Config{
-		ClusterSocket:       cluster.DefaultSocketFile,
-		ListenHTTP:          ":80",
-		SocketFile:          HostAppSocketFile, // control names the HOST-served socket
-		ControlSocketFile:   DefaultControlSocketFile,
-		DataDir:             "/var/lib/hostit",
-		AppsDir:             "/var/lib/hostit/apps",
-		TLS:                 TLSLetsEncrypt,
-		AppPreview:          AppPreviewLive,
-		AppPreviewIsolation: AppPreviewIsolationStrict,
+		ClusterSocket:          cluster.DefaultSocketFile,
+		ListenHTTP:             ":80",
+		SocketFile:             HostAppSocketFile, // control names the HOST-served socket
+		ControlSocketFile:      DefaultControlSocketFile,
+		DataDir:                "/var/lib/hostit",
+		SSHRelayRoutesFile:     "/var/lib/hostit/ssh-routes",
+		SSHRelayKnownHostsFile: "/etc/hostit/relay_known_hosts",
+		AppsDir:                "/var/lib/hostit/apps",
+		TLS:                    TLSLetsEncrypt,
+		AppPreview:             AppPreviewLive,
+		AppPreviewIsolation:    AppPreviewIsolationStrict,
 	}
 }
 

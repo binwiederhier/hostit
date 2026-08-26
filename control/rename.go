@@ -45,5 +45,6 @@ func (m *Manager) RenameApp(oldName, newName string) (*store.App, error) {
 		return nil, err
 	}
 	m.PushMirror()
+	m.refreshSSHRelay() // route key changed -> update the relay routes
 	return m.store.App(newName)
 }

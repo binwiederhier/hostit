@@ -296,4 +296,7 @@ type Heartbeat struct {
 	// reports it for the same reason as Address: it knows its own reachable
 	// address. Empty leaves control advertising its base domain.
 	SSHHost string `json:"ssh_host"`
+	// SSHHostKey is this node's sshd public host key (one authorized-keys-format
+	// line), reported so control can write the relay gateway's known_hosts.
+	SSHHostKey string `json:"ssh_host_key"`
 }

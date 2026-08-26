@@ -60,6 +60,9 @@ type Config struct {
 	// remote node must set its own reachable address or its apps' SSH lands on
 	// control, where the app user does not exist.
 	SSHHost string `yaml:"ssh-host"`
+	// SSHHostKeyFile is this node's sshd public host key, reported to control for
+	// the relay gateway's known_hosts. Defaults to the standard ed25519 host key.
+	SSHHostKeyFile string `yaml:"ssh-host-key-file"`
 	// AppsAllowedAddresses are the addresses allowed to reach a published app
 	// port -- in practice the proxies, which are what dials an app; control
 	// never does. Ignored on a loopback node; required on a remote one, or its
@@ -90,6 +93,7 @@ func NewConfig() *Config {
 		AppsDir:        "/var/lib/hostit/apps",
 		SocketFile:     "/run/hostit/app/hostit.sock",
 		NodeSocketFile: DefaultNodeSocketFile,
+		SSHHostKeyFile: "/etc/ssh/ssh_host_ed25519_key.pub",
 	}
 }
 

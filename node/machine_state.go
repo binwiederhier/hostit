@@ -2,6 +2,7 @@ package node
 
 import (
 	"log/slog"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -309,8 +310,23 @@ func (m *Machine) Heartbeat() *nodeapi.Heartbeat {
 		BtrfsCapable: m.btrfs.IsBtrfs(m.config.AppsDir),
 		Address:      m.config.AppsBindAddress,
 		SSHHost:      m.config.SSHHost,
+		SSHHostKey:   m.sshHostKey(),
 		// The apps pool is the filesystem that matters here: it filling up is
 		// what breaks this node.
 		Stats: hoststats.Measure(m.config.AppsDir),
 	}
+}
+
+// sshHostKey reads this node's sshd public host key (one line), for the relay
+// gateway's known_hosts. Empty if unreadable -- control then keeps its last
+// value and the node simply has no relay entry until it reports one.
+func (m *Machine) sshHostKey() string {
+	if m.config.SSHHostKeyFile == "" {
+		return ""
+	}
+	data, err := os.ReadFile(m.config.SSHHostKeyFile)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(data))
 }

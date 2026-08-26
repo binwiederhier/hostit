@@ -38,3 +38,15 @@ func TestRecordNodeStatusStoresSSHHost(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "node2.ssh.example.com", n.SSHHost)
 }
+
+// A node reports its sshd host key in the heartbeat; control records it so the
+// relay gateway's known_hosts can be written.
+func TestRecordNodeStatusStoresHostKey(t *testing.T) {
+	m, _ := newTestManager(t)
+	key := "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHOSTKEY node2"
+	err := m.RecordNodeStatus("worker", &nodeapi.Heartbeat{Address: "10.111.32.4", SSHHostKey: key})
+	require.NoError(t, err)
+	n, err := m.store.Node("worker")
+	require.NoError(t, err)
+	require.Equal(t, key, n.HostKey)
+}

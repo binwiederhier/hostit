@@ -453,6 +453,11 @@ var (
 		`
 		ALTER TABLE node ADD COLUMN ssh_host TEXT NOT NULL DEFAULT '';
 	`,
+		// Per-node sshd host key, reported by the node over the authenticated
+		// cluster tunnel; used to write the relay gateway's known_hosts.
+		`
+		ALTER TABLE node ADD COLUMN host_key TEXT NOT NULL DEFAULT '';
+	`,
 	}
 )
 

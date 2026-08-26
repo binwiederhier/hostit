@@ -47,6 +47,10 @@ type Node struct {
 	// to control's base domain -- correct for the colocated node, wrong for a
 	// remote node, which is why a remote node sets it.
 	SSHHost string `json:"ssh_host,omitempty"`
+	// HostKey is this node's sshd public host key (authorized-keys line format),
+	// reported by the node over the authenticated cluster tunnel. Used to write
+	// the relay gateway's known_hosts so the frontend->node hop is verified.
+	HostKey string `json:"host_key,omitempty"`
 }
 
 // Role is a user's permission level
