@@ -1,6 +1,9 @@
 package control
 
 import (
+	"bufio"
+	"errors"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -49,6 +52,13 @@ func instrumentHTTP(next http.Handler) http.Handler {
 	})
 }
 
+// A wrapped ResponseWriter must still expose Hijacker/Flusher, or WebSocket
+// upgrades (the terminal, app WebSockets) and SSE break.
+var (
+	_ http.Hijacker = (*statusRecorder)(nil)
+	_ http.Flusher  = (*statusRecorder)(nil)
+)
+
 type statusRecorder struct {
 	http.ResponseWriter
 	status int
@@ -57,6 +67,23 @@ type statusRecorder struct {
 func (r *statusRecorder) WriteHeader(code int) {
 	r.status = code
 	r.ResponseWriter.WriteHeader(code)
+}
+
+// Hijack forwards to the underlying writer so WebSocket upgrades (the terminal,
+// app WebSockets) keep working through this wrapper.
+func (r *statusRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	if h, ok := r.ResponseWriter.(http.Hijacker); ok {
+		return h.Hijack()
+	}
+	return nil, nil, errors.New("underlying ResponseWriter is not a http.Hijacker")
+}
+
+// Flush forwards to the underlying writer so streaming responses (SSE) keep
+// flushing through this wrapper.
+func (r *statusRecorder) Flush() {
+	if f, ok := r.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
 }
 
 // registerMetrics wires the on-scrape fleet gauges. Called once from Run when
