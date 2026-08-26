@@ -28,7 +28,7 @@ var (
 )
 
 func New(version string) *cli.App {
-	commands := []*cli.Command{cmdShell, cmdEnter, cmdInternal, cmdAppsAlias}
+	commands := []*cli.Command{cmdShell, cmdEnter, cmdInternal, cmdAppsAlias, cmdRelay}
 	for _, name := range components {
 		commands = append(commands, dispatchCommand(name))
 	}
