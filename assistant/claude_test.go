@@ -162,6 +162,86 @@ func TestAPITurnRepairsCollidingToolIDsFromExternalTurns(t *testing.T) {
 	assert.GreaterOrEqual(t, len(uses), 2, "both tool calls survived the repair")
 }
 
+func TestCloseDanglingToolUses(t *testing.T) {
+	t.Parallel()
+
+	// A well-formed transcript is returned unchanged.
+	good := []Message{
+		{Role: "assistant", Content: []ContentBlock{{Type: "tool_use", ID: "call_a", Name: "read"}}},
+		{Role: "user", Content: []ContentBlock{{Type: "tool_result", ToolUseID: "call_a", Content: "ok"}}},
+	}
+	assert.Equal(t, good, closeDanglingToolUses(good), "a complete transcript is left alone")
+
+	// A dangling call at the very end (no message follows) gains a user message
+	// carrying a synthetic error result.
+	end := closeDanglingToolUses([]Message{
+		{Role: "assistant", Content: []ContentBlock{{Type: "tool_use", ID: "call_a", Name: "read"}}},
+	})
+	require.Len(t, end, 2, "a closing user message was appended")
+	require.Len(t, end[1].Content, 1)
+	assert.Equal(t, blockToolResult, end[1].Content[0].Type)
+	assert.Equal(t, "call_a", end[1].Content[0].ToolUseID)
+	assert.True(t, end[1].Content[0].IsError, "the synthetic result is an error")
+
+	// A partial batch: two parallel calls, only one answered. The missing result
+	// is prepended to the existing user message (tool_results must lead the turn),
+	// and the answered one is not duplicated.
+	partial := closeDanglingToolUses([]Message{
+		{Role: "assistant", Content: []ContentBlock{
+			{Type: "tool_use", ID: "call_a", Name: "read"},
+			{Type: "tool_use", ID: "call_b", Name: "read"},
+		}},
+		{Role: "user", Content: []ContentBlock{{Type: "tool_result", ToolUseID: "call_a", Content: "ok"}}},
+	})
+	require.Len(t, partial, 2, "no extra message: the missing result folded into the existing user turn")
+	results := map[string]bool{}
+	for _, b := range partial[1].Content {
+		if b.Type == blockToolResult {
+			assert.False(t, results[b.ToolUseID], "no duplicate result for %q", b.ToolUseID)
+			results[b.ToolUseID] = true
+		}
+	}
+	assert.True(t, results["call_a"] && results["call_b"], "both calls are answered exactly once")
+	assert.Equal(t, "call_b", partial[1].Content[0].ToolUseID, "the synthetic result leads the user turn")
+}
+
+func TestAPITurnRepairsDanglingToolUse(t *testing.T) {
+	t.Parallel()
+	// A prior turn was interrupted (Stop, timeout, or a control restart) AFTER the
+	// assistant's tool_use was saved but BEFORE its tool_result -- so the stored
+	// transcript ends with a tool_use that nothing answers. The Messages API rejects
+	// that ("tool_use ids were found without tool_result blocks immediately after").
+	// The next API turn must close the dangling call with a synthetic result rather
+	// than 400 forever.
+	store := NewMemoryStore()
+	require.NoError(t, store.Save("blog", []Message{
+		{Role: "user", Content: []ContentBlock{{Type: "text", Text: "read it"}}},
+		{Role: "assistant", Content: []ContentBlock{{Type: "tool_use", ID: "call_abc", Name: "read_file", Input: json.RawMessage(`{}`)}}},
+		// No tool_result message follows: the interruption left the tool_use dangling.
+	}))
+	fc := &fakeCompleter{replies: []response{{StopReason: "end_turn", Content: []ContentBlock{{Type: "text", Text: "done"}}}}}
+	m := NewManager(fc, newFakeOps(), store, Credentials{AnthropicAPIKey: "k", ClaudeCodeOAuthToken: "t"})
+
+	runTurn(t, m, "blog", "again")
+
+	require.NotEmpty(t, fc.calls)
+	uses, results := map[string]bool{}, map[string]bool{}
+	for _, msg := range fc.calls[0].Messages {
+		for _, b := range msg.Content {
+			if b.Type == "tool_use" {
+				uses[b.ID] = true
+			}
+			if b.Type == "tool_result" {
+				results[b.ToolUseID] = true
+			}
+		}
+	}
+	require.NotEmpty(t, uses, "the prior tool_use is still in the request")
+	for id := range uses {
+		assert.Truef(t, results[id], "tool_use %q must be answered by a tool_result, not left dangling", id)
+	}
+}
+
 func TestClaudeBackendPairsParallelToolResults(t *testing.T) {
 	t.Parallel()
 	// Claude may batch parallel calls: two tool_use blocks in one message, then two

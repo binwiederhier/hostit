@@ -201,6 +201,70 @@ func dedupeToolIDs(history []Message) []Message {
 	return out
 }
 
+// toolInterruptedNote is the synthetic tool_result content used to close a
+// tool_use whose real result never arrived (see closeDanglingToolUses).
+const toolInterruptedNote = "[interrupted: this tool call did not complete and produced no result]"
+
+// closeDanglingToolUses returns a copy of history in which every tool_use is
+// answered. A tool_use whose tool_result was never saved -- an interruption
+// between the assistant reply and its results (Stop, timeout, a control restart)
+// -- leaves the transcript ending in an unanswered call, which the Messages API
+// rejects with "tool_use ids were found without tool_result blocks immediately
+// after". For each such call it inserts a synthetic error tool_result into the
+// user message that must follow (creating that message when none does), so a
+// transcript corrupted by an interruption self-heals on the next turn instead of
+// failing forever. It copies; storage changes only when the turn saves the result.
+func closeDanglingToolUses(history []Message) []Message {
+	out := make([]Message, 0, len(history))
+	for i := 0; i < len(history); i++ {
+		msg := history[i]
+		out = append(out, msg)
+		// Collect the tool_use ids this (assistant) message opened.
+		var ids []string
+		for _, b := range msg.Content {
+			if b.Type == blockToolUse {
+				ids = append(ids, b.ID)
+			}
+		}
+		if len(ids) == 0 {
+			continue
+		}
+		// Which ids does the immediately following user message already answer?
+		hasNext := i+1 < len(history) && history[i+1].Role == roleUser
+		answered := map[string]bool{}
+		if hasNext {
+			for _, b := range history[i+1].Content {
+				if b.Type == blockToolResult {
+					answered[b.ToolUseID] = true
+				}
+			}
+		}
+		// Synthesize a result for every unanswered call, in call order.
+		var synth []ContentBlock
+		for _, id := range ids {
+			if !answered[id] {
+				synth = append(synth, ContentBlock{Type: blockToolResult, ToolUseID: id, Content: toolInterruptedNote, IsError: true})
+			}
+		}
+		if len(synth) == 0 {
+			continue
+		}
+		if hasNext {
+			// tool_result blocks must lead the user turn, so the synthetic ones go
+			// in front of whatever that message already holds.
+			next := history[i+1]
+			next.Content = append(synth, next.Content...)
+			out = append(out, next)
+			i++ // that user message is now emitted; do not process it again
+		} else {
+			// Nothing follows the dangling call: a fresh user message carries the
+			// synthetic results so the pairing is complete.
+			out = append(out, Message{Role: roleUser, Content: synth})
+		}
+	}
+	return out
+}
+
 // newToolID mints a transcript-wide-unique id for a reconstructed tool call, so
 // ids never repeat across turns (see claudeAccumulator).
 func newToolID() string {

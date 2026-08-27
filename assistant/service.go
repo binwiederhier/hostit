@@ -340,6 +340,9 @@ func (m *Manager) runAPILoop(ctx context.Context, s *session, app string, option
 	// rejects. This re-mints them uniquely (and persists the repair when the turn
 	// saves), so switching to an API model after using External Claude just works.
 	history = dedupeToolIDs(history)
+	// Close any tool_use whose result was never saved (an interruption between the
+	// reply and its results, e.g. a restart), which the Messages API would reject.
+	history = closeDanglingToolUses(history)
 	// Tell watchers which option is answering this turn (so the chat can badge the
 	// reply, and name the fallback truthfully when the subscription failed).
 	s.publish(Event{Type: evtModel, Text: option.ID})
