@@ -1261,7 +1261,125 @@ const AdminInner = () => {
       {settings !== null && (
         <Defaults settings={settings} onSaved={load} setError={setError} />
       )}
+      {settings !== null && (
+        <InstancePrompt settings={settings} onSaved={load} setError={setError} />
+      )}
+      <AdminLogs cluster={cluster} setError={setError} />
     </>
+  );
+};
+
+// The instance-wide prompt added to every app's assistant and every /info
+// response. Stored in the DB (editable live here); a control.yml default fills
+// in when this is empty. Clearing the box restores that default.
+const InstancePrompt = ({ settings, onSaved, setError }) => {
+  const [text, setText] = useState(settings.info_prompt || "");
+  const [busy, setBusy] = useState(false);
+  const [saved, setSaved] = useState(false);
+  useEffect(() => {
+    setText(settings.info_prompt || "");
+  }, [settings]);
+  const save = async (e) => {
+    e.preventDefault();
+    setBusy(true);
+    setError("");
+    try {
+      await api.patch("/api/settings", { info_prompt: text });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 1500);
+      if (onSaved) onSaved();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="card">
+      <h2>Assistant &amp; info instructions</h2>
+      <p className="hint">
+        Added to every app&rsquo;s assistant prompt and every <span className="mono">/info</span> response, for
+        instance-specific context (house rules, what this instance is for, deployment notes). Editable
+        live; a <span className="mono">control.yml</span> default fills in when this is empty.
+      </p>
+      <form onSubmit={save}>
+        <textarea
+          className="profile-prompt"
+          rows={5}
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          placeholder="e.g. This is the acme.co internal instance. Prefer Postgres over SQLite for anything shared."
+        />
+        <div className="btn-row" style={{ justifyContent: "flex-start" }}>
+          <button type="submit" className="btn btn-primary" disabled={busy}>
+            {busy ? "Saving..." : saved ? "Saved!" : "Save"}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+};
+
+// hostit's own machine logs (systemd journal): the control process and each
+// node, distinct from an app's output. Read on demand, admin-only.
+const AdminLogs = ({ cluster, setError }) => {
+  const nodes = (cluster && cluster.nodes ? cluster.nodes : []).map((n) => n.name).filter(Boolean);
+  const [source, setSource] = useState("control");
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const fetchLogs = useCallback(
+    async (src) => {
+      setBusy(true);
+      setError("");
+      try {
+        const path =
+          src === "control"
+            ? "/api/admin/logs/control"
+            : `/api/admin/logs/node/${encodeURIComponent(src)}`;
+        const r = await api.get(path);
+        setText(r.text && r.text.trim() ? r.text : "(the journal is empty)");
+      } catch (err) {
+        setText("");
+        setError(err.message);
+      } finally {
+        setBusy(false);
+      }
+    },
+    [setError],
+  );
+  useEffect(() => {
+    fetchLogs(source);
+  }, [source, fetchLogs]);
+  return (
+    <div className="card">
+      <div className="conn-head">
+        <h2>Logs</h2>
+        <button type="button" className="btn btn-small" onClick={() => fetchLogs(source)} disabled={busy}>
+          Refresh
+        </button>
+      </div>
+      <p className="hint">hostit&rsquo;s own machine logs (the systemd journal), not an app&rsquo;s output.</p>
+      <div className="log-source-tabs">
+        <button
+          type="button"
+          className={source === "control" ? "log-source on" : "log-source"}
+          onClick={() => setSource("control")}
+        >
+          Control
+        </button>
+        {nodes.map((n) => (
+          <button
+            key={n}
+            type="button"
+            className={source === n ? "log-source on" : "log-source"}
+            onClick={() => setSource(n)}
+          >
+            {n}
+          </button>
+        ))}
+      </div>
+      <pre className="admin-log">{busy ? "Loading..." : text}</pre>
+    </div>
   );
 };
 

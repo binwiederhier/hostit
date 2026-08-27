@@ -9,6 +9,7 @@ import { AppHeaderContext } from "./appHeader";
 import Dashboard from "./pages/Dashboard";
 import AppDetail from "./pages/AppDetail";
 import Profile from "./pages/Profile";
+import WelcomeModal from "./pages/WelcomeModal";
 import Connections from "./pages/Connections";
 import Admin from "./pages/Admin";
 import Docs from "./pages/Docs";
@@ -502,12 +503,13 @@ const App = () => {
     <BrowserRouter>
       <AppHeaderContext.Provider value={setAppHeader}>
         <Nav account={account} appHeader={appHeader} />
+        {!account.onboarded && <WelcomeModal account={account} refreshAccount={refreshAccount} />}
         <RoutedMain>
           <Routes>
             <Route path="/" element={<Dashboard account={account} refreshAccount={refreshAccount} />} />
             <Route path="/app/:name" element={<AppDetail account={account} refreshAccount={refreshAccount} />} />
             <Route path="/app/:name/:viewSlug" element={<AppDetail account={account} refreshAccount={refreshAccount} />} />
-            <Route path="/profile" element={<Profile />} />
+            <Route path="/profile" element={<Profile account={account} refreshAccount={refreshAccount} />} />
             <Route path="/connections" element={<Connections />} />
             <Route path="/admin" element={<Admin account={account} />} />
             <Route path="*" element={<Navigate to="/" replace />} />

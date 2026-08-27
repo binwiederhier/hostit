@@ -568,6 +568,55 @@ const WorkingIndicator = ({ tokens }) => {
   );
 };
 
+// Plain-English asks the box can take, cycled through as a typing hint.
+const ASSISTANT_EXAMPLES = [
+  "Make a tic-tac-toe game",
+  "Make a personal home page from my email and calendar",
+  "Build a URL shortener with a click counter",
+  "Add a leaderboard to my game",
+  "Make a Markdown notes app with search",
+  "Turn my CSV into a sortable table",
+];
+
+// Types an example out, holds it, backspaces it, and moves to the next -- a hint
+// that the box takes plain-English asks. Honours reduced-motion (shows one, still).
+const TypingExamples = () => {
+  const [text, setText] = useState("");
+  const [idx, setIdx] = useState(0);
+  const [phase, setPhase] = useState("typing"); // typing | holding | deleting
+  const reduce = useRef(
+    typeof window !== "undefined" && window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+  ).current;
+  useEffect(() => {
+    if (reduce) {
+      setText(ASSISTANT_EXAMPLES[0]);
+      return undefined;
+    }
+    const cur = ASSISTANT_EXAMPLES[idx];
+    let t;
+    if (phase === "typing") {
+      t =
+        text.length < cur.length
+          ? setTimeout(() => setText(cur.slice(0, text.length + 1)), 55)
+          : setTimeout(() => setPhase("holding"), 1600);
+    } else if (phase === "holding") {
+      t = setTimeout(() => setPhase("deleting"), 700);
+    } else if (text.length > 0) {
+      t = setTimeout(() => setText(cur.slice(0, text.length - 1)), 28);
+    } else {
+      setPhase("typing");
+      setIdx((idx + 1) % ASSISTANT_EXAMPLES.length);
+    }
+    return () => clearTimeout(t);
+  }, [text, phase, idx, reduce]);
+  return (
+    <span className="asst-typing">
+      {text}
+      <span className="asst-caret" aria-hidden="true" />
+    </span>
+  );
+};
+
 const AppAssistant = ({
   name,
   onClose,
@@ -940,11 +989,23 @@ const AppAssistant = ({
 
       <div className="asst-transcript" ref={scrollRef}>
         {loaded && items.length === 0 && (
-          <p className="asst-empty">
-            Ask me to build or change <strong>{name}</strong> &mdash; in plain
-            English. I can read and write its files and run commands in its
-            container, then publish. Try: &ldquo;add a leaderboard&rdquo;.
-          </p>
+          <div className="asst-empty">
+            <div className="asst-empty-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 15a2 2 0 0 1-2 2H8l-4 4V5a2 2 0 0 1 2-2h13a2 2 0 0 1 2 2z" />
+                <path d="M8.5 9.5h9M8.5 12.5h5" />
+              </svg>
+            </div>
+            <div className="asst-empty-box">
+              <p>
+                Ask me to build or change <strong>{name}</strong> &mdash; in plain English. I can read and
+                write its files and run commands in its container, then publish.
+              </p>
+              <p className="asst-empty-try">
+                Try: &ldquo;<TypingExamples />&rdquo;
+              </p>
+            </div>
+          </div>
         )}
         {renderTranscript(items, busy, modes)}
         {busy && <WorkingIndicator tokens={turnTokens} />}

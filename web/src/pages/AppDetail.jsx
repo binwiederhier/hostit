@@ -1,5 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
+import { createPortal } from "react-dom";
 import { api, ApiError, isNetworkError } from "../api";
 import { viewFromSlug, VIEW_TO_SLUG } from "../views";
 import { limitInputs, limitsPatchBody } from "../limits";
@@ -7,6 +8,7 @@ import { visibilityChanges } from "../visibility";
 import { retryChunk } from "../chunkreload";
 import { useDropdown, useReconnect } from "../hooks";
 import { CopyButton, DocsLink, ErrorBanner, Loading, Snippet, StatusDot, VisibilityBadge, VisibilityChoice, pairMB, usageLevel, UsagePair, cores, visibilityOf } from "../components";
+import { resolveTabs, normalizeTabs, tabsFromCsv, tabsToCsv, TOGGLEABLE_TABS, TAB_LABELS } from "../tabs";
 import { useSetAppHeader } from "../appHeader";
 
 // xterm is heavy and only needed when a terminal is actually opened, so it is
@@ -26,6 +28,13 @@ const AppAssistant = lazy(importAssistant);
 // The file-tree editor is its own view, loaded on demand when selected.
 const AppEditor = lazy(importEditor);
 const AppLogs = lazy(importLogs);
+
+// The toggleable app-detail views, mapped to and from the tab keys the profile
+// and per-app override speak (tabs.js). "editor" is the internal name of the
+// "files" tab. The always-on views (snapshots, connections, settings) are not
+// in these maps, so they are never hidden by a tab preference.
+const VIEW_TO_TABKEY = { assistant: "assistant", editor: "files", terminal: "terminal", logs: "logs" };
+const TABKEY_TO_VIEW = { assistant: "assistant", files: "editor", terminal: "terminal", logs: "logs" };
 
 // tabChunkLoaders maps a view to its code-chunk loader, for eager prefetching.
 const tabChunkLoaders = {
@@ -104,12 +113,6 @@ ${apiLine}
 Read that plus the app's README.md and docs/, then reply exactly: "I understand this app. Tell me what you want to change." Don't rebuild it from scratch or change anything until I do.
 `;
 };
-
-// connectionText is the bare-details variant: just the info endpoint and the
-// token, for pasting into your own agent's context however you like.
-const connectionText = (name, token) => `Project info: ${origin}/api/apps/${name}/info
-Bearer token: ${token}
-`;
 
 // A small svg icon set, so the top bar reads as buttons, not a wall of words.
 const TerminalIcon = () => (
@@ -528,10 +531,11 @@ const NotFound = ({ name }) => (
 // "Bring your own Claude": just the ready-to-paste prompt (which already carries
 // the app's URL and token). The token's own copy/regenerate controls live in the
 // Actions menu now.
-const PromptDialog = ({ prompt, details, token, onClose }) => {
+const PromptDialog = ({ prompt, infoUrl, token, onClose }) => {
   // Two audiences, one dialog: paste a kick-off prompt into a chat agent, or
-  // grab the bare app details for your own agent's context. Both panes stay
-  // mounted (stacked via CSS grid) so the modal doesn't resize on tab switch.
+  // grab the app's details as individual copyable fields for your own agent's
+  // context. Both panes stay mounted (stacked via CSS grid) so the modal doesn't
+  // resize on tab switch.
   const [tab, setTab] = useState("agent");
   useEscape(onClose);
   const pane = (key, hint, text, copyLabel) => (
@@ -544,6 +548,18 @@ const PromptDialog = ({ prompt, details, token, onClose }) => {
             {copyLabel}
           </CopyButton>
         </div>
+      </div>
+    </div>
+  );
+  // One labelled, copyable field. The token is masked on screen but copies whole.
+  const field = (label, value, secret) => (
+    <div className="byoa-field">
+      <span className="byoa-field-label">{label}</span>
+      <div className="byoa-field-row">
+        <span className="byoa-field-value mono">{secret ? "•".repeat(24) : value}</span>
+        <CopyButton text={value} small>
+          Copy
+        </CopyButton>
       </div>
     </div>
   );
@@ -561,12 +577,21 @@ const PromptDialog = ({ prompt, details, token, onClose }) => {
             Start an agent
           </button>
           <button type="button" role="tab" aria-selected={tab === "details"} className={"modal-tab" + (tab === "details" ? " on" : "")} onClick={() => setTab("details")}>
-            Project snippet
+            Project details
           </button>
         </div>
         <div className="modal-tabpanes">
           {pane("agent", "Paste this into Claude Code, ChatGPT or any agent: it will learn this app's API and wait for your instructions. No setup needed.", prompt, "Copy prompt")}
-          {pane("details", "The app's details, for pasting into your own agent's context (a README, CLAUDE.md or chat). The info URL returns everything an agent needs to work with this app.", details, "Copy snippet")}
+          <div className={"modal-tabpane" + (tab === "details" ? " on" : "")} role="tabpanel" aria-hidden={tab !== "details"}>
+            <p className="hint">
+              Give your own agent these two. The Info URL returns everything it needs to work with this app; it
+              authenticates with the Bearer token.
+            </p>
+            <div className="byoa-fields">
+              {field("Info URL", infoUrl, false)}
+              {field("Bearer token", token, true)}
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -937,7 +962,10 @@ const SnapshotIntervalSelect = ({ value, defaultLabel, onChange }) => {
 // height as you switch between the two.
 const VisibilityDialog = ({ app, isPrivate, viewers, collabs, onSave, onClose }) => {
   useEscape(onClose);
-  const [draft, setDraft] = useState(isPrivate);
+  // The draft is one of the three states, not a private/public boolean:
+  // "restricted" is what the people list is FOR, so picking it is what reveals
+  // the list. It starts on whatever the app is now.
+  const [draft, setDraft] = useState(() => visibilityOf(isPrivate, viewers === null ? app.viewer_count : viewers.length));
   const [added, setAdded] = useState([]);
   const [dropped, setDropped] = useState([]);
   const [email, setEmail] = useState("");
@@ -949,7 +977,12 @@ const VisibilityDialog = ({ app, isPrivate, viewers, collabs, onSave, onClose })
   // after the page, and a snapshot taken in that window would be empty and
   // would make Save revoke everybody.
   const people = [...(viewers || []).filter((v) => !dropped.includes(v.id)), ...added];
-  const changes = visibilityChanges(viewers, people, isPrivate, draft);
+  // "Private" means private with NOBODY named, so choosing it commits an empty
+  // list (which revokes any viewers the app had). "Restricted" commits the
+  // edited list; "public" flips the flag and leaves the list untouched.
+  const draftPrivate = draft !== "public";
+  const effectivePeople = draft === "private" ? [] : people;
+  const changes = visibilityChanges(viewers, effectivePeople, isPrivate, draftPrivate);
 
   const add = (e) => {
     e.preventDefault();
@@ -986,15 +1019,18 @@ const VisibilityDialog = ({ app, isPrivate, viewers, collabs, onSave, onClose })
         </button>
         <h2>Who can see {app.name}?</h2>
         <p className="hint vis-intro">
-          A public app is open to anyone with the link. A private one asks visitors to sign in and lets
-          through only you, your collaborators, and the people you list below.
+          Public is open to anyone with the link. Private asks visitors to sign in and lets through only
+          you, your collaborators, and admins. Restricted is private plus the specific people you name.
         </p>
         <VisibilityChoice value={draft} onChange={setDraft} disabled={saving} />
 
-        <fieldset className="vis-people" disabled={!draft || saving}>
-          <label className="newapp-label">People with access</label>
-          <p className="hint">
-            They can open the app and nothing else -- no files, no terminal, no deploys. Your{" "}
+        {/* Always shown -- disabled, not hidden -- when the app is not Restricted,
+            so the modal does not jump and it is clear what Restricted adds. */}
+        <fieldset className="vis-people" disabled={draft !== "restricted" || saving}>
+          <label className="newapp-label vis-people-lab">People with access</label>
+          <p className="hint vis-people-hint">
+            They can open the app and nothing else -- no files, no terminal, no deploys. Someone with no
+            account yet is invited and gets access the first time they sign in. Your{" "}
             {collabs && collabs.length > 0 ? `${collabs.length} collaborator${collabs.length === 1 ? "" : "s"}` : "collaborators"}{" "}
             can already see it without being listed here.
           </p>
@@ -1002,33 +1038,32 @@ const VisibilityDialog = ({ app, isPrivate, viewers, collabs, onSave, onClose })
             <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="someone@example.com" aria-label="Give access to" />
             <button type="submit" className="btn btn-primary btn-small" disabled={!email.trim()}>Add</button>
           </form>
-          <div className="vis-people-list">
-            {viewers === null ? (
-              <p className="empty">Loading...</p>
-            ) : people.length === 0 ? (
-              <p className="empty">Nobody else yet. Only you, your collaborators and admins can open it.</p>
-            ) : (
-              <div className="domain-list">
-                {people.map((u) => (
-                  <div className="domain-row" key={u.email}>
-                    <div className="domain-head">
-                      <span className="domain-name">{u.email}</span>
-                      {u.name && u.name !== u.email && <span className="collab-name">{u.name}</span>}
-                      <span className="domain-actions">
-                        <button
-                          type="button"
-                          className="btn btn-small"
-                          onClick={() => (u.id ? setDropped([...dropped, u.id]) : setAdded(added.filter((a) => a.email !== u.email)))}
-                        >
-                          Remove
-                        </button>
-                      </span>
-                    </div>
+          {viewers === null ? (
+            <p className="hint vis-people-empty">Loading...</p>
+          ) : people.length === 0 ? (
+            <p className="hint vis-people-empty">Nobody added yet.</p>
+          ) : (
+            <div className="domain-list vis-people-list">
+              {people.map((u) => (
+                <div className="domain-row" key={u.email}>
+                  <div className="domain-head">
+                    <span className="domain-name">{u.email}</span>
+                    {u.pending && <span className="viewer-pending" title="Gets access the first time they sign in">Pending sign-in</span>}
+                    {u.name && u.name !== u.email && <span className="collab-name">{u.name}</span>}
+                    <span className="domain-actions">
+                      <button
+                        type="button"
+                        className="btn btn-small"
+                        onClick={() => (u.id ? setDropped([...dropped, u.id]) : setAdded(added.filter((a) => a.email !== u.email)))}
+                      >
+                        Remove
+                      </button>
+                    </span>
                   </div>
-                ))}
-              </div>
-            )}
-          </div>
+                </div>
+              ))}
+            </div>
+          )}
         </fieldset>
 
         <ErrorBanner message={error} onDismiss={() => setError("")} />
@@ -1302,7 +1337,7 @@ const RenameDialog = ({ name, onClose, onRenamed }) => {
 // The Settings view: the app's identity + details (address, access, resources)
 // with the former Settings dialog folded in -- editable description, API token,
 // and custom domains -- all inline in one tab.
-const AppSettings = ({ app, isAdmin, account, showToast, onCopyToken, onRegenerateToken, hasToken, onSaved, onConfigureKeys }) => {
+const AppSettings = ({ app, isAdmin, account, showToast, onCopyToken, onRegenerateToken, hasToken, onSaved, onConfigureKeys, showVisibility, setShowVisibility }) => {
   const name = app.name;
   const navigate = useNavigate();
   const [desc, setDesc] = useState(app.description || "");
@@ -1321,7 +1356,8 @@ const AppSettings = ({ app, isAdmin, account, showToast, onCopyToken, onRegenera
   const [confirmId, setConfirmId] = useState(null);
   const [collabs, setCollabs] = useState(null);
   const [viewers, setViewers] = useState(null);
-  const [showVisibility, setShowVisibility] = useState(false);
+  // showVisibility is lifted to AppDetail so the always-visible title-bar badge
+  // can open this dialog too, not just the overview row here.
   const [collabInput, setCollabInput] = useState("");
   const [showTransfer, setShowTransfer] = useState(false);
   const [showResources, setShowResources] = useState(false);
@@ -1590,7 +1626,20 @@ const AppSettings = ({ app, isAdmin, account, showToast, onCopyToken, onRegenera
           </div>
           <div className="ov-line">
             <span className="ov-k">Visibility</span>
-            <span className="ov-v"><VisibilityBadge state={visibility} /></span>
+            <span className="ov-v">
+              {isOwner ? (
+                <button
+                  type="button"
+                  className="vis-badge-btn"
+                  onClick={() => setShowVisibility(true)}
+                  title="Change who can see this app"
+                >
+                  <VisibilityBadge state={visibility} />
+                </button>
+              ) : (
+                <VisibilityBadge state={visibility} />
+              )}
+            </span>
             <button
               type="button"
               className="copy-mini"
@@ -1797,16 +1846,21 @@ const AppSettings = ({ app, isAdmin, account, showToast, onCopyToken, onRegenera
       </section>
 
       {showRename && <RenameDialog name={name} onClose={() => setShowRename(false)} onRenamed={onRenamed} />}
-      {showVisibility && (
-        <VisibilityDialog
-          app={app}
-          isPrivate={!!app.private}
-          viewers={viewers}
-          collabs={collabs}
-          onSave={saveVisibility}
-          onClose={() => setShowVisibility(false)}
-        />
-      )}
+      {/* Portaled to <body>: this dialog is opened from the title bar too, but it
+          lives inside the Settings pane, which is display:none unless the Settings
+          tab is active -- so without the portal it stays invisible until then. */}
+      {showVisibility &&
+        createPortal(
+          <VisibilityDialog
+            app={app}
+            isPrivate={!!app.private}
+            viewers={viewers}
+            collabs={collabs}
+            onSave={saveVisibility}
+            onClose={() => setShowVisibility(false)}
+          />,
+          document.body,
+        )}
       {showResources && (
         <ResourcesDialog
           app={app}
@@ -1901,20 +1955,20 @@ const AppConnections = ({ name }) => {
               <div key={c.slug} className="conn-row">
                 <div className="conn-id">
                   <span className="conn-name">
-                    <span className="mono">{c.slug}</span>
+                    {c.label || c.slug}
                     <span className="conn-provider">{c.provider_label}</span>
+                    <span className="conn-granted-chip">Granted</span>
                   </span>
                   <span className="conn-note">
+                    Identified as <span className="mono">{c.slug}</span>
+                    {" -- "}
                     {c.kind === "mcp" ? (
                       <>
-                        this app calls its tools at{" "}
-                        <span className="mono">/api/container/mcp/{c.slug}/call</span>
-                        {(c.tools || []).length > 0 && ` -- ${c.tools.length} tool${c.tools.length === 1 ? "" : "s"}`}
+                        app calls its tools via the container API
+                        {(c.tools || []).length > 0 && ` (${c.tools.length} tool${c.tools.length === 1 ? "" : "s"})`}
                       </>
                     ) : (
-                      <>
-                        this app reads it at <span className="mono">/api/container/connections/{c.slug}/token</span>
-                      </>
+                      <>app can read the token via the container API</>
                     )}
                   </span>
                 </div>
@@ -1925,10 +1979,12 @@ const AppConnections = ({ name }) => {
               <div key={c.slug} className="conn-row conn-ungranted">
                 <div className="conn-id">
                   <span className="conn-name">
-                    <span className="mono">{c.slug}</span>
+                    {c.label || c.slug}
                     <span className="conn-provider">{c.provider_label}</span>
                   </span>
-                  <span className="conn-note">{c.label || "not granted to this app"}</span>
+                  <span className="conn-note">
+                    Identified as <span className="mono">{c.slug}</span> -- not granted to this app yet
+                  </span>
                 </div>
                 <button type="button" className="btn btn-small btn-primary" onClick={() => onToggle(c, false)}>Grant</button>
               </div>
@@ -2117,10 +2173,110 @@ const SnapshotsPane = ({ name, showToast, onRolledBack, onFork, onNew, reloadSig
   );
 };
 
+// TabsMenu is the owner's "View" control in the tab strip: a small dropdown that
+// picks which tabs this app shows for everyone who opens it (owner and
+// collaborators). It edits the per-app OVERRIDE -- with none set, the checkboxes
+// show the built-in default (all available), and "Reset to my default" clears
+// the override so each viewer's own profile preference applies again.
+const TabsMenu = ({ app, assistantEnabled, onSetTabs }) => {
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState(null); // {top,right} for the fixed popup
+  const ref = useRef(null);
+  const btnRef = useRef(null);
+  // The tab strip scrolls horizontally, so it clips an absolutely positioned
+  // popup. Position it FIXED at the button's coordinates instead, the same way
+  // the new-app connection picker escapes the modal's clip.
+  const openMenu = () => {
+    if (!open && btnRef.current) {
+      const r = btnRef.current.getBoundingClientRect();
+      setPos({ top: r.bottom + 6, right: Math.max(8, window.innerWidth - r.right) });
+    }
+    setOpen((o) => !o);
+  };
+  useEffect(() => {
+    if (!open) return undefined;
+    const onDown = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [open]);
+  const override = tabsFromCsv(app.tabs);
+  const keys = TOGGLEABLE_TABS.filter((k) => k !== "assistant" || assistantEnabled);
+  const checked = new Set(override.length ? normalizeTabs(override, assistantEnabled) : keys);
+  // Assistant and Files are the two primary panes, and one must always be on.
+  // A primary is LOCKED (shown checked and greyed, cannot be turned off) when it
+  // is the only primary left on -- so unchecking one flips the other on and locks
+  // it, and there is never a moment with neither.
+  const filesOn = checked.has("files");
+  const assistantOn = checked.has("assistant");
+  const locked = (key) =>
+    (key === "files" && filesOn && !assistantOn) || (key === "assistant" && assistantOn && !filesOn);
+  const toggle = (key) => {
+    if (locked(key)) return; // the sole remaining primary cannot be turned off
+    const next = new Set(checked);
+    if (next.has(key)) {
+      next.delete(key);
+    } else {
+      next.add(key);
+    }
+    onSetTabs(tabsToCsv(normalizeTabs([...next], assistantEnabled)));
+  };
+  return (
+    <div className="ws-tabsmenu" ref={ref}>
+      <button
+        ref={btnRef}
+        type="button"
+        className={"btn btn-icon ws-collapsible" + (open ? " on" : "")}
+        onClick={openMenu}
+        aria-haspopup="true"
+        aria-expanded={open}
+        title="Choose which tabs this app shows"
+        aria-label="Choose which tabs this app shows"
+      >
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
+          <rect x="3" y="4" width="18" height="16" rx="2" />
+          <path d="M9 4v16" />
+        </svg>
+      </button>
+      {open && pos && (
+        <div className="ws-tabsmenu-pop" role="menu" style={{ top: pos.top, right: pos.right }}>
+          <p className="ws-tabsmenu-hint">Tabs shown for this app</p>
+          {keys.map((key) => {
+            const isLocked = locked(key);
+            return (
+              <button
+                key={key}
+                type="button"
+                role="menuitemcheckbox"
+                aria-checked={checked.has(key)}
+                disabled={isLocked}
+                className={"ws-tabsmenu-item" + (checked.has(key) ? " on" : "") + (isLocked ? " locked" : "")}
+                onClick={() => toggle(key)}
+                title={isLocked ? "Assistant or Files must stay on" : undefined}
+              >
+                <span className="ws-tabsmenu-check" aria-hidden="true">{checked.has(key) ? "✓" : ""}</span>
+                {TAB_LABELS[key]}
+              </button>
+            );
+          })}
+          <button type="button" className="ws-tabsmenu-reset" onClick={() => { onSetTabs(""); setOpen(false); }}>
+            Reset to my default
+          </button>
+        </div>
+      )}
+    </div>
+  );
+};
+
 const AppDetail = ({ account, refreshAccount }) => {
   const { name, viewSlug } = useParams();
   const navigate = useNavigate();
   const [app, setApp] = useState(null);
+  // The visibility dialog lives in AppSettings (always mounted, so it shows as a
+  // modal over any view), but its open-state is here so the title-bar badge can
+  // open it as well as the settings overview row.
+  const [showVisibility, setShowVisibility] = useState(false);
   const [error, setError] = useState("");
   const [missing, setMissing] = useState(false);
   const [pending, setPending] = useState(null); // an in-flight lifecycle transition, or null
@@ -2179,9 +2335,22 @@ const AppDetail = ({ account, refreshAccount }) => {
   useEffect(() => {
     prefetchTabs(initialView.current);
   }, []);
-  // With no Anthropic key there is no assistant, so open straight into the editor.
+  // Which toggleable tabs this app shows: the app's own override, else the
+  // viewer's profile default, else the built-in default (all available). The
+  // always-on views (snapshots/connections/settings) are not governed by this.
+  const visibleTabList = app ? resolveTabs(app.tabs, account.default_tabs, app.assistant_enabled) : [];
+  const visibleTabs = new Set(visibleTabList);
+  // If the current view's tab has been hidden (no assistant key, or a tab turned
+  // off in the preference), fall through to the first visible tab rather than
+  // showing an empty pane. This also covers the old "no assistant -> editor" case.
   useEffect(() => {
-    if (app && !app.assistant_enabled && view === "assistant") setView("editor");
+    if (!app) return;
+    const key = VIEW_TO_TABKEY[view];
+    if (key && !visibleTabs.has(key)) {
+      const firstVisible = TABKEY_TO_VIEW[visibleTabList[0]] || "settings";
+      setView(firstVisible);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [app, view]);
   // Refresh the Snapshots pane every time it is opened, so it is never stale.
   useEffect(() => {
@@ -2196,6 +2365,21 @@ const AppDetail = ({ account, refreshAccount }) => {
     clearTimeout(toastTimer.current);
     toastTimer.current = setTimeout(() => setToast(""), 3000);
   }, []);
+
+  // setTabs writes the owner's per-app tab override (empty clears it). The PUT
+  // returns the updated app, so the tab strip re-renders from it immediately.
+  const setTabs = async (csv) => {
+    try {
+      const updated = await api.put(`/api/apps/${encodeURIComponent(name)}/tabs`, { tabs: csv });
+      // Merge ONLY the tabs field, so the live state the poller keeps fresh
+      // (running, app_running, usage) is not clobbered by this write's response
+      // -- which would flash the app as powered off until the next poll.
+      setApp((prev) => (prev ? { ...prev, tabs: updated.tabs } : updated));
+      showToast(csv ? "View saved for this app" : "View reset to your default");
+    } catch (err) {
+      showToast(err.message);
+    }
+  };
 
   // Copy the current app token to the clipboard; regenerate mints a new one, points
   // the page at it, and copies that. Both flash a snackbar.
@@ -2522,7 +2706,7 @@ const AppDetail = ({ account, refreshAccount }) => {
   const own = !account.limits || app.owner_email === undefined || app.owner_email === account.email;
   const token = app.agent_token || "";
   const prompt = promptText(app.name, app.url, token || tokenPlaceholder, Boolean((app.description || "").trim()));
-  const connectionDetails = connectionText(app.name, token || tokenPlaceholder);
+  const infoUrl = `${origin}/api/apps/${app.name}/info`;
 
   // A cache-busting query on the preview URL, bumped on every reload, so a refresh
   // always fetches the live app rather than the browser's cached copy.
@@ -2575,12 +2759,26 @@ const AppDetail = ({ account, refreshAccount }) => {
                 <span className={"status-label" + (refreshing ? " status-label-pending" : "") + (crashed ? " status-label-crashed" : "")}>{statusText}</span>
               )
             )}
-            <VisibilityBadge state={visibilityOf(!!app.private, app.viewer_count)} />
+            {app.is_owner ? (
+              <button
+                type="button"
+                className="vis-badge-btn"
+                onClick={() => setShowVisibility(true)}
+                title="Change who can see this app"
+              >
+                <VisibilityBadge state={visibilityOf(!!app.private, app.viewer_count)} />
+              </button>
+            ) : (
+              <VisibilityBadge state={visibilityOf(!!app.private, app.viewer_count)} />
+            )}
           </div>
 
           <div className="ws-topright">
             {app.running && <UsageGrid app={app} />}
             <div className="ws-topacts">
+              {app.is_owner && (
+                <TabsMenu app={app} assistantEnabled={app.assistant_enabled} onSetTabs={setTabs} />
+              )}
               <button
                 type="button"
                 className="btn btn-icon ws-collapsible"
@@ -2685,7 +2883,7 @@ const AppDetail = ({ account, refreshAccount }) => {
         {/* View switcher: the chat + preview split is one view; the file editor is
             another. More can join as tabs (terminal, details) later. */}
         <div className="ws-viewtabs" role="tablist" aria-label="Workspace view">
-          {app.assistant_enabled && (
+          {visibleTabs.has("assistant") && (
             <button
               type="button"
               role="tab"
@@ -2699,31 +2897,35 @@ const AppDetail = ({ account, refreshAccount }) => {
               Assistant
             </button>
           )}
-          <button
-            type="button"
-            role="tab"
-            aria-selected={view === "editor"}
-            className={"ws-viewtab" + (view === "editor" ? " on" : "")}
-            onClick={() => setView("editor")}
-          >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
-              <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-            </svg>
-            Files
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={view === "terminal"}
-            className={"ws-viewtab" + (view === "terminal" ? " on" : "")}
-            onClick={() => setView("terminal")}
-          >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
-              <path d="M4 5h16v14H4z" />
-              <path d="m8 10 3 2-3 2M13 16h4" />
-            </svg>
-            Terminal
-          </button>
+          {visibleTabs.has("files") && (
+            <button
+              type="button"
+              role="tab"
+              aria-selected={view === "editor"}
+              className={"ws-viewtab" + (view === "editor" ? " on" : "")}
+              onClick={() => setView("editor")}
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+                <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+              </svg>
+              Files
+            </button>
+          )}
+          {visibleTabs.has("terminal") && (
+            <button
+              type="button"
+              role="tab"
+              aria-selected={view === "terminal"}
+              className={"ws-viewtab" + (view === "terminal" ? " on" : "")}
+              onClick={() => setView("terminal")}
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+                <path d="M4 5h16v14H4z" />
+                <path d="m8 10 3 2-3 2M13 16h4" />
+              </svg>
+              Terminal
+            </button>
+          )}
           {app.snapshots_enabled && (
             <button
               type="button"
@@ -2757,19 +2959,21 @@ const AppDetail = ({ account, refreshAccount }) => {
             </svg>
             Connections
           </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={view === "logs"}
-            className={"ws-viewtab" + (view === "logs" ? " on" : "")}
-            onClick={() => setView("logs")}
-          >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
-              <path d="M5 3h14v18l-3-2-2 2-2-2-2 2-2-2-3 2z" />
-              <path d="M8 8h8M8 12h8M8 16h5" />
-            </svg>
-            Logs
-          </button>
+          {visibleTabs.has("logs") && (
+            <button
+              type="button"
+              role="tab"
+              aria-selected={view === "logs"}
+              className={"ws-viewtab" + (view === "logs" ? " on" : "")}
+              onClick={() => setView("logs")}
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+                <path d="M5 3h14v18l-3-2-2 2-2-2-2 2-2-2-3 2z" />
+                <path d="M8 8h8M8 12h8M8 16h5" />
+              </svg>
+              Logs
+            </button>
+          )}
           <button
             type="button"
             role="tab"
@@ -2856,6 +3060,8 @@ const AppDetail = ({ account, refreshAccount }) => {
             onRegenerateToken={regenerateToken}
             onSaved={load}
             onConfigureKeys={() => setShowSsh(true)}
+            showVisibility={showVisibility}
+            setShowVisibility={setShowVisibility}
           />
         </div>
         <div className={"ws-editorwrap" + (view === "editor" ? "" : " ws-inactive")}>
@@ -2940,7 +3146,7 @@ const AppDetail = ({ account, refreshAccount }) => {
       </div>
 
       {showSsh && <SshDialog app={app} hasKeys={hasKeys} onClose={() => setShowSsh(false)} />}
-      {showPrompt && <PromptDialog prompt={prompt} details={connectionDetails} token={token} onClose={() => setShowPrompt(false)} />}
+      {showPrompt && <PromptDialog prompt={prompt} infoUrl={infoUrl} token={token || tokenPlaceholder} onClose={() => setShowPrompt(false)} />}
       {showNewSnapshot && (
         <NewSnapshotDialog
           name={app.name}

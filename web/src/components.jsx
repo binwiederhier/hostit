@@ -247,29 +247,72 @@ export const Snippet = ({ text }) => (
 // The visibility choice, shown wherever an app's audience is decided. Both
 // options are always on screen rather than one checkbox: "private" should be a
 // thing you picked, not a box you failed to notice.
+// Three cards, one per visibility state, so "restricted" is a thing you pick
+// rather than an emergent side effect of a private app with a viewer list.
+// `value` is the state string ("private" | "restricted" | "public"); the
+// caller decides what, if anything, to render beneath a picked "restricted".
+// Private FIRST: landing on public by accident publishes something, on private
+// it does not. Restricted sits between the two -- private, plus named people.
 export const VisibilityChoice = ({ value, onChange, disabled }) => (
-  <div className="visibility-choice" role="radiogroup" aria-label="Visibility">
-    {/* Private FIRST, and the default where one is chosen. The two options are
-        not equal: landing on public by accident publishes something, and
-        landing on private by accident does not. */}
+  <div className="visibility-choice visibility-choice-three" role="radiogroup" aria-label="Visibility">
+    {["private", "restricted", "public"].map((key) => (
+      <button
+        key={key}
+        type="button"
+        role="radio"
+        aria-checked={value === key}
+        className={value === key ? "vis-option vis-option-on" : "vis-option"}
+        onClick={() => onChange(key)}
+        disabled={disabled}
+      >
+        <VisibilityIcon state={key} />
+        <span className="vis-title">{VISIBILITY[key].label}</span>
+        <span className="vis-detail">{VISIBILITY[key].detail}</span>
+      </button>
+    ))}
+  </div>
+);
+
+// The three self-selected technical levels, as picture cards, shared by the
+// welcome modal and the profile page. Least-technical first, as the design asks:
+// picking "not technical" by reflex is the safe landing, and the order puts it
+// under the reader's eye first. `value` is the level key; onChange(key).
+export const TechLevelCards = ({ value, onChange, disabled }) => (
+  <div className="tech-cards" role="radiogroup" aria-label="How technical are you?">
     {[
-      { key: true, title: "Private", detail: "Only you and people you add", icon: <><rect x="3" y="7" width="10" height="7" rx="1.5" /><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" /></> },
-      { key: false, title: "Public", detail: "Anyone with the link can open it", icon: <path d="M8 1.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13ZM1.5 8h13M8 1.5c1.7 1.8 2.6 4 2.6 6.5S9.7 12.7 8 14.5c-1.7-1.8-2.6-4-2.6-6.5S6.3 3.3 8 1.5Z" /> },
+      {
+        key: "novice",
+        title: "Not technical at all",
+        detail: "Describe what you want in plain words and let the assistant build it.",
+        icon: <><path d="M12 3v2M12 19v2M5 12H3M21 12h-2M6 6l1.5 1.5M16.5 16.5 18 18M18 6l-1.5 1.5M7.5 16.5 6 18" /><circle cx="12" cy="12" r="3.5" /></>,
+      },
+      {
+        key: "intermediate",
+        title: "Somewhat technical",
+        detail: "You can follow along, tweak files, and read the logs when needed.",
+        icon: <path d="M14.5 5.5a3.5 3.5 0 0 1-4.6 4.6L4 16l1.5 1.5 1-1 1 1 1.5-1.5-1-1 1-1 5.9-5.9a3.5 3.5 0 0 1 4.6-4.6l-2.8 2.8 1.4 1.4 2.9-2.7Z" />,
+      },
+      {
+        key: "expert",
+        title: "Very technical",
+        detail: "You write code and want the terminal, files, and logs at hand.",
+        icon: <path d="m8 8-4 4 4 4M16 8l4 4-4 4M13 5l-2 14" />,
+      },
     ].map((option) => (
       <button
-        key={String(option.key)}
+        key={option.key}
         type="button"
         role="radio"
         aria-checked={value === option.key}
-        className={value === option.key ? "vis-option vis-option-on" : "vis-option"}
+        className={value === option.key ? "tech-card tech-card-on" : "tech-card"}
         onClick={() => onChange(option.key)}
         disabled={disabled}
       >
-        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           {option.icon}
         </svg>
-        <span className="vis-title">{option.title}</span>
-        <span className="vis-detail">{option.detail}</span>
+        <span className="tech-card-title">{option.title}</span>
+        <span className="tech-card-detail">{option.detail}</span>
       </button>
     ))}
   </div>
@@ -285,9 +328,9 @@ export const visibilityOf = (isPrivate, viewerCount = 0) => {
 };
 
 const VISIBILITY = {
-  public: { label: "Public", hint: "Anyone with the link can open this app" },
-  private: { label: "Private", hint: "Only you, your collaborators and admins can open this app" },
-  restricted: { label: "Restricted", hint: "Your collaborators, the people you have given access, and admins" },
+  public: { label: "Public", detail: "Anyone with the link", hint: "Anyone with the link can open this app" },
+  private: { label: "Private", detail: "Only you, collaborators and admins", hint: "Only you, your collaborators and admins can open this app" },
+  restricted: { label: "Restricted", detail: "Also specific people you add", hint: "Your collaborators, the people you have given access, and admins" },
 };
 
 const GlobeIcon = () => <path d="M8 1.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13ZM1.5 8h13M8 1.5c1.7 1.8 2.6 4 2.6 6.5S9.7 12.7 8 14.5c-1.7-1.8-2.6-4-2.6-6.5S6.3 3.3 8 1.5Z" />;

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
 import { useDropdown } from "../hooks";
 import { ConfirmDialog, CopyButton, DocsLink, ErrorBanner, formatDate, Skeleton } from "../components";
+import { TOGGLEABLE_TABS, TAB_LABELS, normalizeTabs, tabsFromCsv, tabsToCsv } from "../tabs";
 
 // Shortens an authorized_keys line to "ssh-ed25519 ...<tail> comment".
 const keyPreview = (key) => {
@@ -508,11 +509,110 @@ const RenameConnectionDialog = ({ conn, busy, onClose, onSave }) => {
   );
 };
 
-const Profile = () => (
+// ProfilePrefs is the self-service part of the profile: technical level (which
+// the welcome modal first set), the default app-detail tabs, and -- when the
+// instance has an assistant -- a personal instruction appended to every app's
+// assistant. Each control saves on change; the server normalizes the tab set.
+const ProfilePrefs = ({ account, refreshAccount }) => {
+  const [prompt, setPrompt] = useState("");
+  const [tabs, setTabs] = useState(new Set());
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [saved, setSaved] = useState(false);
+  const assistantEnabled = !!(account && account.assistant_enabled);
+
+  useEffect(() => {
+    if (!account) return;
+    setPrompt(account.assistant_prompt || "");
+    setTabs(new Set(tabsFromCsv(account.default_tabs)));
+  }, [account]);
+
+  const flashSaved = () => {
+    setSaved(true);
+    setTimeout(() => setSaved(false), 1500);
+  };
+  const save = async (patch) => {
+    setSaving(true);
+    setError("");
+    try {
+      await api.patch("/api/account", patch);
+      if (refreshAccount) await refreshAccount();
+      flashSaved();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+  const toggleTab = (key) => {
+    const next = new Set(tabs);
+    if (next.has(key)) {
+      next.delete(key);
+    } else {
+      next.add(key);
+    }
+    const csv = tabsToCsv(normalizeTabs([...next], assistantEnabled));
+    setTabs(new Set(tabsFromCsv(csv)));
+    save({ default_tabs: csv });
+  };
+
+  if (!account) return null;
+  const tabKeys = TOGGLEABLE_TABS.filter((k) => k !== "assistant" || assistantEnabled);
+  return (
+    <div className="card profile-prefs">
+      <div className="conn-head">
+        <h2>Preferences</h2>
+        {saved && <span className="profile-saved">Saved</span>}
+      </div>
+
+      <label className="newapp-label">Default app tabs</label>
+      <p className="hint">Which tabs an app opens with. Each app can override this from its own View menu.</p>
+      <div className="tab-toggle-row">
+        {tabKeys.map((key) => {
+          const on = tabs.size === 0 ? true : tabs.has(key);
+          return (
+            <button
+              key={key}
+              type="button"
+              role="checkbox"
+              aria-checked={on}
+              className={on ? "tab-toggle on" : "tab-toggle"}
+              onClick={() => toggleTab(key)}
+              disabled={saving}
+            >
+              <span className="tab-toggle-check" aria-hidden="true">{on ? "✓" : ""}</span>
+              {TAB_LABELS[key]}
+            </button>
+          );
+        })}
+      </div>
+      {tabs.size === 0 && <p className="hint profile-prefs-sub">All tabs (the default). Turn some off to hide them by default.</p>}
+
+      {assistantEnabled && (
+        <>
+          <label className="newapp-label profile-prefs-gap">Assistant instructions</label>
+          <p className="hint">Added to the assistant&rsquo;s prompt in every app you own, and to each app&rsquo;s <span className="mono">/info</span>. Say how you want it to work.</p>
+          <textarea
+            className="profile-prompt"
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            onBlur={() => { if (prompt !== (account.assistant_prompt || "")) save({ assistant_prompt: prompt }); }}
+            placeholder="e.g. Explain changes in plain language and always write tests."
+            rows={4}
+          />
+        </>
+      )}
+      <ErrorBanner message={error} onDismiss={() => setError("")} />
+    </div>
+  );
+};
+
+const Profile = ({ account, refreshAccount }) => (
   <>
     <div className="page-header">
       <h1>Profile</h1>
     </div>
+    <ProfilePrefs account={account} refreshAccount={refreshAccount} />
     <SshKeys />
     <Tokens />
   </>

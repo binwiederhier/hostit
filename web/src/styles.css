@@ -1621,6 +1621,12 @@ th:last-child {
   gap: 10px;
 }
 
+/* Three states do not fit two even columns, and side-by-side they crush the
+   detail line; stack them as full-width radio cards instead. */
+.visibility-choice-three {
+  grid-template-columns: 1fr;
+}
+
 .vis-option {
   display: grid;
   grid-template-columns: auto 1fr;
@@ -2299,9 +2305,53 @@ th:last-child {
 }
 
 .asst-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  min-height: 55vh;
+  text-align: center;
   color: var(--muted);
-  max-width: 46ch;
+}
+.asst-empty-icon svg {
+  width: 54px;
+  height: 54px;
+  color: var(--muted);
+  opacity: 0.85;
+}
+.asst-empty-box {
+  max-width: 24rem;
+  text-align: left;
   line-height: 1.5;
+}
+.asst-empty-box p {
+  margin: 0 0 10px;
+}
+.asst-empty-try {
+  color: var(--muted);
+}
+.asst-typing {
+  color: var(--text);
+}
+.asst-caret {
+  display: inline-block;
+  width: 2px;
+  height: 1.05em;
+  margin-left: 1px;
+  vertical-align: text-bottom;
+  background: var(--accent);
+  animation: asst-caret-blink 1s step-end infinite;
+}
+@keyframes asst-caret-blink {
+  50% {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .asst-caret {
+    animation: none;
+  }
 }
 
 .asst-turn {
@@ -6189,7 +6239,7 @@ input[type="number"]::-webkit-inner-spin-button {
 .vis-people {
   border: 0;
   padding: 0;
-  margin: 18px 0 0;
+  margin: 10px 0 0;
   min-inline-size: 0;
 }
 
@@ -6198,7 +6248,7 @@ input[type="number"]::-webkit-inner-spin-button {
 }
 
 .vis-people-list {
-  min-height: 86px;
+  margin-top: 8px;
 }
 
 /* In the create dialog the choice leads, with no label above it, so it takes
@@ -6557,4 +6607,468 @@ input[type="number"]::-webkit-inner-spin-button {
   border-radius: 50%;
   background: #2f9e5e;
   vertical-align: middle;
+}
+
+/* The "Reconnect needed" pill is now a button that starts the OAuth flow, so it
+   needs a button reset on top of the .conn-health pill styling and a pointer.
+   It stays a pill, not a link, so the affordance reads the same as before. */
+.conn-health-btn {
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+}
+.conn-health-btn:hover {
+  filter: brightness(0.97);
+}
+
+/* The visibility badge in the app-detail overview is clickable for the owner:
+   a plain button wrapper so the badge itself opens the dialog. */
+.vis-badge-btn {
+  border: 0;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+  display: inline-flex;
+}
+.vis-badge-btn:hover .vis-badge {
+  color: var(--text);
+  outline: 1px solid var(--border);
+}
+
+/* The "restricted" people editor in the new-app dialog: chips for who is in,
+   one-click suggestions for people shared with before, and a field for anyone
+   new. Sits just under the visibility cards, so it is quiet and compact. */
+.newapp-viewers {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.newapp-viewers-lab {
+  font-size: 12px;
+  color: var(--muted);
+}
+.newapp-viewer-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.newapp-viewer-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 4px 2px 10px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  font-size: 13px;
+}
+.newapp-viewer-chip button {
+  border: 0;
+  background: none;
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1;
+  padding: 0 4px;
+  border-radius: 999px;
+}
+.newapp-viewer-chip button:hover {
+  color: var(--text);
+}
+/* Inside the "Restricted" popover the suggestions and "+ Add viewer" read as a
+   menu: full-width rows with a hover background, not link/chips. */
+.newapp-viewer-suggest {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.newapp-viewer-suggestion,
+.newapp-viewer-add {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+.newapp-viewer-suggestion {
+  color: var(--muted);
+}
+.newapp-viewer-suggestion:hover:not(:disabled),
+.newapp-viewer-add:hover:not(:disabled) {
+  background: var(--surface-2, rgba(127, 127, 127, 0.1));
+  color: var(--text);
+}
+.newapp-viewer-plus {
+  width: 14px;
+  text-align: center;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+/* Icons on the new-app visibility + connections cards: stack them (icon on top,
+   then title, then detail) so three fit side by side and read at a glance. */
+.newapp-grant-choice.newapp-grant-three .vis-option {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 5px;
+  padding: 12px 8px;
+}
+.newapp-grant-choice.newapp-grant-three .vis-option svg {
+  width: 22px;
+  height: 22px;
+  color: var(--muted);
+}
+.newapp-grant-choice.newapp-grant-three .vis-option-on svg {
+  color: var(--accent);
+}
+
+/* The new-app dialog is a touch wider now that both card rows carry icons. */
+.newapp.modal-wide {
+  max-width: 50rem;
+}
+
+/* The owner's "View" dropdown in the app tab strip (which tabs this app shows). */
+.ws-tabsmenu {
+  position: relative;
+  display: inline-flex;
+}
+.ws-tabsmenu-pop {
+  position: fixed;
+  z-index: 60;
+  min-width: 200px;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.ws-tabsmenu-hint {
+  margin: 4px 8px 6px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.ws-tabsmenu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font-size: 14px;
+  text-align: left;
+  border-radius: 7px;
+  cursor: pointer;
+}
+.ws-tabsmenu-item:hover {
+  background: var(--surface-2);
+}
+.ws-tabsmenu-check {
+  width: 14px;
+  color: var(--accent);
+  font-weight: 700;
+}
+.ws-tabsmenu-reset {
+  margin-top: 4px;
+  padding: 7px 8px;
+  border: 0;
+  border-top: 1px solid var(--border);
+  background: none;
+  color: var(--muted);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 0 0 7px 7px;
+}
+.ws-tabsmenu-reset:hover {
+  color: var(--text);
+}
+
+/* Technical-level picture cards (welcome modal + profile). */
+.tech-cards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+@media (max-width: 620px) {
+  .tech-cards {
+    grid-template-columns: 1fr;
+  }
+}
+.tech-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 16px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+.tech-card:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+.tech-card svg {
+  width: 26px;
+  height: 26px;
+  color: var(--muted);
+}
+.tech-card-on {
+  border-color: var(--accent);
+  background: var(--surface-2);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.tech-card-on svg {
+  color: var(--accent);
+}
+.tech-card-title {
+  font-weight: 600;
+  font-size: 15px;
+}
+.tech-card-detail {
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+/* Default-tabs toggles + profile preferences layout. */
+.profile-prefs-gap {
+  margin-top: 20px;
+}
+.profile-prefs-sub {
+  margin-top: 6px;
+}
+.profile-saved {
+  font-size: 13px;
+  color: var(--good, #2f9e5e);
+}
+.tab-toggle-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.tab-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 14px;
+  cursor: pointer;
+}
+.tab-toggle.on {
+  border-color: var(--accent);
+  color: var(--text);
+  background: var(--surface-2);
+}
+.tab-toggle-check {
+  width: 12px;
+  color: var(--accent);
+  font-weight: 700;
+}
+.profile-prompt {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+}
+
+/* The first-run welcome modal. */
+.welcome-backdrop {
+  z-index: 60;
+}
+.welcome-modal {
+  max-width: 640px;
+  text-align: left;
+}
+.welcome-hero {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.welcome-mark {
+  font-size: 34px;
+  line-height: 1;
+}
+.welcome-hero h1 {
+  margin: 4px 0 0;
+  font-size: 26px;
+}
+.welcome-hero p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.5;
+}
+.welcome-q {
+  font-weight: 600;
+  margin: 4px 0 12px;
+}
+.welcome-actions {
+  margin-top: 18px;
+}
+
+/* Admin logs viewer. */
+.log-source-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 10px 0;
+}
+.log-source {
+  padding: 5px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 13px;
+  cursor: pointer;
+}
+.log-source.on {
+  border-color: var(--accent);
+  color: var(--text);
+  background: var(--surface-2);
+}
+.admin-log {
+  max-height: 460px;
+  overflow: auto;
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-2);
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* "Use your own AI agent" -> Project details: individual copyable fields. */
+.byoa-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.byoa-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.byoa-field-label {
+  font-size: 12px;
+  color: var(--muted);
+}
+.byoa-field-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-2);
+}
+.byoa-field-value {
+  flex: 1;
+  overflow-x: auto;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+/* A primary tab (Assistant/Files) that cannot be turned off -- it is the only
+   one left on -- shows checked but greyed. */
+.ws-tabsmenu-item.locked {
+  opacity: 0.55;
+  cursor: default;
+}
+.ws-tabsmenu-item.locked:hover {
+  background: none;
+}
+
+/* The "Restricted" popover reuses the connections-popup chrome, but holds the
+   people editor rather than a checkbox list, so it wants a little more padding
+   and no standalone top margin on the editor inside it. */
+.newapp-vis-popup {
+  padding: 12px;
+  max-height: 320px;
+}
+.newapp-vis-popup .newapp-viewers {
+  margin-top: 0;
+}
+@media (max-width: 440px) {
+  /* On a narrow screen the fixed popover could run past the edge; keep it in. */
+  .newapp-vis-popup {
+    max-width: calc(100vw - 24px);
+  }
+}
+
+/* Visibility dialog: keep the people section compact and readable when
+   disabled/empty, and mark viewers who have not signed in yet. */
+.vis-people-lab {
+  margin-top: 0;
+}
+.vis-people-hint {
+  margin-top: 4px;
+}
+.vis-people-empty {
+  margin: 8px 0 0;
+  opacity: 0.75;
+}
+.vis-people[disabled] {
+  opacity: 0.55;
+}
+.viewer-pending {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 8px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--warn-strong, #8a5a00);
+  background: var(--warn-bg, #fbf3dd);
+  border: 1px solid var(--warn-border, #e4c65b);
+}
+
+/* Green "Granted" chip on the app's Connections tab, so it reads at a glance
+   which connections this app can actually use. */
+.conn-granted-chip {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 8px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--good-strong, #1f7a46);
+  background: var(--good-bg, #e5f5ec);
+  border: 1px solid var(--good-border, #9cd8b4);
 }

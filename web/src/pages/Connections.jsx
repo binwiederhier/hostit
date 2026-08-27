@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { filterProviders, filterTools, slugify, splitByKind, suggestSlug, defaultScopeKeys } from "../connections";
 import { api } from "../api";
 import { useDropdown } from "../hooks";
@@ -438,6 +439,28 @@ const ProviderDialog = ({ existing, redirectURI, onClose, onSaved }) => {
 // One of the two cards. Both are the same shape -- what is attached, and one
 // button to attach more -- so they share a component rather than being copied
 // with the nouns changed.
+// The apps that hold a connection, named and each linked to its detail page.
+// Capped so a widely shared connection names the first few and then counts the
+// rest, rather than turning one row into a wall of links.
+const grantedAppsCap = 5;
+const GrantedApps = ({ names }) => {
+  if (!names || names.length === 0) return <>not granted to any app yet</>;
+  const shown = names.slice(0, grantedAppsCap);
+  const rest = names.length - shown.length;
+  return (
+    <>
+      granted to{" "}
+      {shown.map((name, i) => (
+        <span key={name}>
+          {i > 0 ? ", " : ""}
+          <Link to={`/app/${name}/connections`}>{name}</Link>
+        </span>
+      ))}
+      {rest > 0 ? `, and ${rest} other${rest === 1 ? "" : "s"}` : ""}
+    </>
+  );
+};
+
 const ConnectionsCard = ({ title, hint, emptyText, cta, items, providers, singleProvider, presets, loading, onAdd, onRename, onReconnect, onRemove, onVerify, noProvidersText, onAddOwn }) => (
   <div className="card">
     <div className="conn-head">
@@ -474,17 +497,22 @@ const ConnectionsCard = ({ title, hint, emptyText, cta, items, providers, single
               {c.label || c.slug}
               <span className="conn-provider">{c.provider_label}</span>
               {c.status === "needs_reconnect" ? (
-                <span className="conn-health conn-health-warn" title="The provider rejected this connection -- reconnect it">Reconnect needed</span>
+                <button
+                  type="button"
+                  className="conn-health conn-health-warn conn-health-btn"
+                  onClick={() => onReconnect(c)}
+                  title="The provider rejected this connection -- click to reconnect it"
+                >
+                  Reconnect needed
+                </button>
               ) : c.kind === "oauth" ? (
                 <span className="conn-health-dot" title="Healthy" aria-label="Healthy" />
               ) : null}
             </span>
             <span className="conn-note">
-              apps use <span className="mono">{c.slug}</span>
-              {" -- "}
-              {c.granted_apps > 0
-                ? `granted to ${c.granted_apps} app${c.granted_apps === 1 ? "" : "s"}`
-                : "not granted to any app yet"}
+              Identified as <span className="mono">{c.slug}</span>
+              {", "}
+              <GrantedApps names={c.granted_app_names} />
               {c.meta ? ` -- ${c.meta}` : ""}
             </span>
             {c.kind === "mcp" && <MCPDetail conn={c} />}

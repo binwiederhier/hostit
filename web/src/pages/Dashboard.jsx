@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { api, isNetworkError } from "../api";
 import { useReconnect } from "../hooks";
-import { ErrorBanner, Loading, Skeleton, VisibilityChoice, VisibilityMark, Wordmark, pairMB, UsagePair, usageLevel, visibilityOf } from "../components";
+import { ErrorBanner, Loading, Skeleton, VisibilityMark, VisibilityIcon, Wordmark, pairMB, UsagePair, usageLevel, visibilityOf } from "../components";
 import { previewSrc, previewShotSrc, previewScale, DESKTOP_WIDTH, DESKTOP_HEIGHT } from "../preview";
 import { filterAppName, isValidAppName } from "../appname";
 import { slugsToGrant } from "../newappgrant";
@@ -41,7 +41,172 @@ const CreateForm = ({ name, setName, onSubmit, creating, atLimit, big = false, i
 // New app behind a modal, reached from the "New app" button. A dialog asks for
 // the one thing needed -- the name -- instead of a field unfolding in place,
 // which read as an odd half-state next to the app list.
-const NewAppDialog = ({ name, setName, onSubmit, creating, atLimit, onCancel, isPrivate, setPrivate, connections, grantMode, setGrantMode, grantSelected, setGrantSelected }) => {
+// Card icons for the connections chooser, matching the visibility cards beside
+// them: a full chain link (all), a checklist (select), a circle-slash (none).
+const grantSvg = (children) => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    {children}
+  </svg>
+);
+const GrantAllIcon = () => grantSvg(<><path d="M9 7H6a5 5 0 0 0 0 10h3M15 7h3a5 5 0 0 1 0 10h-3" /><path d="M8 12h8" /></>);
+const GrantSelectIcon = () => grantSvg(<><path d="M4 6h9M4 12h9M4 18h6" /><path d="m15 15 2 2 4-4" /></>);
+const GrantNoneIcon = () => grantSvg(<><circle cx="12" cy="12" r="8.5" /><path d="m8.5 8.5 7 7" /></>);
+
+// The people a "restricted" new app lets in, picked before the app exists.
+// Emails the owner has shared with before are offered as one-click adds; the
+// "+ Add viewer" affordance turns into a field for anyone new. It lives inside
+// the outer create <form>, so the field commits on its own button / Enter
+// rather than a nested form, which is invalid and would submit the whole dialog.
+const NewAppViewers = ({ known, emails, setEmails, disabled }) => {
+  const [adding, setAdding] = useState(false);
+  const [value, setValue] = useState("");
+  const add = (raw) => {
+    const email = (raw || "").trim().toLowerCase();
+    if (email && !emails.includes(email)) {
+      setEmails([...emails, email]);
+    }
+    setValue("");
+    setAdding(false);
+  };
+  const suggestions = (known || []).filter((e) => !emails.includes(e));
+  return (
+    <div className="newapp-viewers">
+      <span className="newapp-viewers-lab">People with access</span>
+      {emails.length > 0 && (
+        <div className="newapp-viewer-chips">
+          {emails.map((e) => (
+            <span className="newapp-viewer-chip" key={e}>
+              {e}
+              <button type="button" onClick={() => setEmails(emails.filter((x) => x !== e))} disabled={disabled} aria-label={`Remove ${e}`}>
+                &times;
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+      {suggestions.length > 0 && (
+        <div className="newapp-viewer-suggest">
+          {suggestions.map((e) => (
+            <button type="button" key={e} className="newapp-viewer-suggestion" onClick={() => add(e)} disabled={disabled}>
+              + {e}
+            </button>
+          ))}
+        </div>
+      )}
+      {adding ? (
+        <div className="domain-add">
+          <input
+            type="email"
+            autoFocus
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); add(value); } }}
+            placeholder="someone@example.com"
+            aria-label="Add viewer email"
+            disabled={disabled}
+          />
+          <button type="button" className="btn btn-primary btn-small" onClick={() => add(value)} disabled={disabled || !value.trim()}>
+            Add
+          </button>
+        </div>
+      ) : (
+        <button type="button" className="newapp-viewer-add" onClick={() => setAdding(true)} disabled={disabled}>
+          <span className="newapp-viewer-plus" aria-hidden="true">+</span> Add viewer
+        </button>
+      )}
+    </div>
+  );
+};
+
+// The app-visibility chooser in the new-app dialog: three cards side by side,
+// the same shape as the connections chooser below it. "Restricted" is the one
+// that needs more than a click, so -- exactly like "Select connections" -- it
+// opens a popover anchored under the card, and the whole people-picking happens
+// in there rather than growing the dialog.
+const NewAppVisibility = ({ visibility, setVisibility, viewerEmails, setViewerEmails, knownViewers, disabled }) => {
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState(null); // {top,left,width} for the fixed popover
+  const selRef = useRef(null);
+  const openRestricted = () => {
+    setVisibility("restricted");
+    if (selRef.current) {
+      const r = selRef.current.getBoundingClientRect();
+      setPos({ top: r.bottom + 6, left: r.left, width: r.width });
+    }
+    setOpen((o) => !o);
+  };
+  // Close on a click outside, in CAPTURE (the modal form stops mousedown from
+  // bubbling), like the connections popover.
+  useEffect(() => {
+    if (!open) return undefined;
+    const onDown = (e) => {
+      if (selRef.current && !selRef.current.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown, true);
+    return () => document.removeEventListener("mousedown", onDown, true);
+  }, [open]);
+  const pick = (v) => {
+    setVisibility(v);
+    setOpen(false);
+  };
+  const restrictedDetail = viewerEmails.length > 0 ? `${viewerEmails.length} added` : "Pick who";
+  return (
+    <div className="visibility-choice newapp-grant-choice newapp-grant-three" role="radiogroup" aria-label="App visibility">
+      <button
+        type="button"
+        role="radio"
+        aria-checked={visibility === "private"}
+        className={visibility === "private" ? "vis-option vis-option-on" : "vis-option"}
+        onClick={() => pick("private")}
+        disabled={disabled}
+      >
+        <VisibilityIcon state="private" />
+        <span className="vis-title">Private</span>
+        <span className="vis-detail">Only you &amp; admins</span>
+      </button>
+      <div className="newapp-grant-selwrap" ref={selRef}>
+        <button
+          type="button"
+          role="radio"
+          aria-checked={visibility === "restricted"}
+          aria-haspopup="true"
+          aria-expanded={open}
+          className={visibility === "restricted" ? "vis-option vis-option-on" : "vis-option"}
+          onClick={openRestricted}
+          disabled={disabled}
+        >
+          <VisibilityIcon state="restricted" />
+          <span className="vis-title">Restricted</span>
+          <span className="vis-detail">{restrictedDetail}</span>
+        </button>
+        {open && pos && (
+          <div
+            className="newapp-grant-popup newapp-vis-popup"
+            role="menu"
+            aria-label="People with access"
+            style={{ top: pos.top, left: pos.left, minWidth: Math.max(pos.width, 240) }}
+          >
+            <NewAppViewers known={knownViewers} emails={viewerEmails} setEmails={setViewerEmails} disabled={disabled} />
+          </div>
+        )}
+      </div>
+      <button
+        type="button"
+        role="radio"
+        aria-checked={visibility === "public"}
+        className={visibility === "public" ? "vis-option vis-option-on" : "vis-option"}
+        onClick={() => pick("public")}
+        disabled={disabled}
+      >
+        <VisibilityIcon state="public" />
+        <span className="vis-title">Public</span>
+        <span className="vis-detail">Anyone with the link</span>
+      </button>
+    </div>
+  );
+};
+
+const NewAppDialog = ({ name, setName, onSubmit, creating, atLimit, onCancel, visibility, setVisibility, viewerEmails, setViewerEmails, knownViewers, connections, grantMode, setGrantMode, grantSelected, setGrantSelected }) => {
   const toggleGrant = (slug) =>
     setGrantSelected(grantSelected.includes(slug) ? grantSelected.filter((s) => s !== slug) : [...grantSelected, slug]);
   const connName = (c) => c.label || c.name || c.slug;
@@ -74,7 +239,7 @@ const NewAppDialog = ({ name, setName, onSubmit, creating, atLimit, onCancel, is
   const sub = (name || "").replace(/[^a-z0-9-]/g, "") || "app";
   return (
     <div className="modal-backdrop" role="dialog" aria-modal="true" onMouseDown={onCancel}>
-      <form className="card modal newapp modal-sheet" onSubmit={onSubmit} onMouseDown={(e) => e.stopPropagation()}>
+      <form className="card modal newapp modal-wide modal-sheet" onSubmit={onSubmit} onMouseDown={(e) => e.stopPropagation()}>
         <button type="button" className="modal-x" onClick={onCancel} title="Close" aria-label="Close">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
         </button>
@@ -107,14 +272,21 @@ const NewAppDialog = ({ name, setName, onSubmit, creating, atLimit, onCancel, is
         </div>
         <div className="newapp-grant">
           <span className="newapp-grant-lab">App visibility</span>
-          <VisibilityChoice value={isPrivate} onChange={setPrivate} disabled={creating} />
+          <NewAppVisibility
+            visibility={visibility}
+            setVisibility={setVisibility}
+            viewerEmails={viewerEmails}
+            setViewerEmails={setViewerEmails}
+            knownViewers={knownViewers}
+            disabled={creating}
+          />
         </div>
         {/* Only when there is something to grant. An empty chooser explaining a
             feature nobody has used yet is noise on the one dialog that has to
             stay quick. */}
         {connections.length > 0 && (
           <div className="newapp-grant">
-            <span className="newapp-grant-lab">Grant access to</span>
+            <span className="newapp-grant-lab">Connections the app can access</span>
             <div className="visibility-choice newapp-grant-choice newapp-grant-three" role="radiogroup" aria-label="Grant connections">
               <button
                 type="button"
@@ -125,6 +297,7 @@ const NewAppDialog = ({ name, setName, onSubmit, creating, atLimit, onCancel, is
                 disabled={creating}
                 title={connections.map(connName).join(", ")}
               >
+                <GrantAllIcon />
                 <span className="vis-title">All connections</span>
                 <span className="vis-detail">{connections.length} attached</span>
               </button>
@@ -139,6 +312,7 @@ const NewAppDialog = ({ name, setName, onSubmit, creating, atLimit, onCancel, is
                   onClick={openPicker}
                   disabled={creating}
                 >
+                  <GrantSelectIcon />
                   <span className="vis-title">Select connections</span>
                   <span className="vis-detail">{grantSelected.length > 0 ? `${grantSelected.length} chosen` : "Pick which"}</span>
                 </button>
@@ -176,6 +350,7 @@ const NewAppDialog = ({ name, setName, onSubmit, creating, atLimit, onCancel, is
                 onClick={() => { setGrantMode("none"); setPickerOpen(false); }}
                 disabled={creating}
               >
+                <GrantNoneIcon />
                 <span className="vis-title">No connections</span>
                 <span className="vis-detail">Grant them later</span>
               </button>
@@ -523,8 +698,13 @@ const Dashboard = ({ account, refreshAccount }) => {
   const [creating, setCreating] = useState(false);
   const [adding, setAdding] = useState(false);
   // Private by default: landing on public by accident publishes something, and
-  // landing on private by accident does not.
-  const [isPrivate, setPrivate] = useState(true);
+  // landing on private by accident does not. One of "private" | "restricted" |
+  // "public" -- the same three the visibility dialog offers.
+  const [visibility, setVisibility] = useState("private");
+  // The people to let in when the new app is "restricted", and the emails this
+  // owner has shared with before (offered as picks, so a repeat needs no typing).
+  const [viewerEmails, setViewerEmails] = useState([]);
+  const [knownViewers, setKnownViewers] = useState([]);
   // The connections this person already has, so the New app dialog can offer
   // to grant them. Loaded once; an empty list simply hides the chooser.
   const [connections, setConnections] = useState([]);
@@ -595,6 +775,10 @@ const Dashboard = ({ account, refreshAccount }) => {
       .get("/api/connections")
       .then((d) => setConnections(d.connections || []))
       .catch(() => setConnections([]));
+    api
+      .get("/api/viewers/known")
+      .then((d) => setKnownViewers(d.emails || []))
+      .catch(() => setKnownViewers([]));
   }, []);
 
   useEffect(() => {
@@ -616,7 +800,7 @@ const Dashboard = ({ account, refreshAccount }) => {
     setCreating(true);
     setError("");
     try {
-      const res = await api.post("/api/apps", { name, private: isPrivate });
+      const res = await api.post("/api/apps", { name, private: visibility !== "public" });
       // Granted AFTER the app exists, one call each, and failures are not fatal:
       // the app was created and losing a grant is something the app's own
       // Connections tab can fix, where losing the app would not be.
@@ -628,8 +812,19 @@ const Dashboard = ({ account, refreshAccount }) => {
           )
         );
       }
+      // Restricted only: add the viewers the same way, after the app exists.
+      // Non-fatal too -- an email that is not a registered account just does not
+      // get added, which the app's own visibility dialog can sort out later.
+      if (visibility === "restricted" && viewerEmails.length > 0) {
+        await Promise.all(
+          viewerEmails.map((email) =>
+            api.post(`/api/apps/${encodeURIComponent(name)}/viewers`, { email }).catch(() => {})
+          )
+        );
+      }
       setName("");
-      setPrivate(true);
+      setVisibility("private");
+      setViewerEmails([]);
       setGrantMode("none");
       setGrantSelected([]);
       setAdding(false);
@@ -645,7 +840,8 @@ const Dashboard = ({ account, refreshAccount }) => {
   const cancelAdding = () => {
     setAdding(false);
     setName("");
-    setPrivate(true);
+    setVisibility("private");
+    setViewerEmails([]);
   };
 
   const formProps = { name, setName, onSubmit: create, creating, atLimit, inputRef };
@@ -730,7 +926,7 @@ const Dashboard = ({ account, refreshAccount }) => {
         </>
       )}
       {adding && (
-        <NewAppDialog name={name} setName={setName} onSubmit={create} creating={creating} atLimit={atLimit} onCancel={cancelAdding} isPrivate={isPrivate} setPrivate={setPrivate} connections={connections} grantMode={grantMode} setGrantMode={setGrantMode} grantSelected={grantSelected} setGrantSelected={setGrantSelected} />
+        <NewAppDialog name={name} setName={setName} onSubmit={create} creating={creating} atLimit={atLimit} onCancel={cancelAdding} visibility={visibility} setVisibility={setVisibility} viewerEmails={viewerEmails} setViewerEmails={setViewerEmails} knownViewers={knownViewers} connections={connections} grantMode={grantMode} setGrantMode={setGrantMode} grantSelected={grantSelected} setGrantSelected={setGrantSelected} />
       )}
       {toast && (
         <div className="snackbar" role="status" aria-live="polite">
