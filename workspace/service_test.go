@@ -9,9 +9,9 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"heckel.io/hostit/btrfs"
-	"heckel.io/hostit/container"
 	"heckel.io/hostit/store"
+	"heckel.io/hostit/system/btrfs"
+	"heckel.io/hostit/system/podman"
 )
 
 func TestWorkspaceImageTagFollowsItsContent(t *testing.T) {
@@ -90,12 +90,12 @@ func newTestService(t *testing.T) (*Service, *fakeContainer, *fakeRunner, *store
 	return New(fc, s, btrfs.New(r), r, t.TempDir(), t.TempDir()), fc, r, s
 }
 
-// fakeContainer fakes the image-store and export half of container.Interface:
+// fakeContainer fakes the image-store and export half of podman.Interface:
 // which tags exist, what was built, removed, created-from and exported. The
 // remaining container-lifecycle methods are never called by this package and
 // panic via the embedded nil Interface.
 type fakeContainer struct {
-	container.Interface
+	podman.Interface
 	images      map[string]bool
 	builds      []string
 	removed     []string

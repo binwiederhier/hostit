@@ -9,7 +9,7 @@ import (
 	"github.com/urfave/cli/v2"
 
 	"heckel.io/hostit/control"
-	"heckel.io/hostit/controlconf"
+	"heckel.io/hostit/control/config"
 )
 
 // The command exists and is discoverable: an operator looking for "how is the
@@ -74,6 +74,6 @@ func TestStatusOutputNamesMembersAndCallsOutSilence(t *testing.T) {
 // instructions that cannot work: the printed control-url would carry an empty
 // port. Refuse with the fix instead.
 func TestEnrollingARemoteMemberNeedsAListener(t *testing.T) {
-	conf := controlconf.NewConfig()
+	conf := config.NewConfig()
 	assert.Empty(t, conf.ListenCluster, "a single-box install admits no remote members")
 }

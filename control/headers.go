@@ -3,8 +3,8 @@ package control
 import (
 	"net/http"
 
-	"heckel.io/hostit/controlconf"
-	"heckel.io/hostit/proxyapi"
+	"heckel.io/hostit/control/config"
+	"heckel.io/hostit/proxy/api"
 )
 
 const (
@@ -28,10 +28,10 @@ func (s *Server) webCSP() string {
 func (s *Server) withBaseSecurityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
-		h.Set("X-Content-Type-Options", proxyapi.ContentTypeOptions)
-		h.Set("Referrer-Policy", proxyapi.ReferrerPolicy)
-		if s.config.TLS != controlconf.TLSOff {
-			h.Set("Strict-Transport-Security", proxyapi.HSTSValue)
+		h.Set("X-Content-Type-Options", api.ContentTypeOptions)
+		h.Set("Referrer-Policy", api.ReferrerPolicy)
+		if s.config.TLS != config.TLSOff {
+			h.Set("Strict-Transport-Security", api.HSTSValue)
 		}
 		next.ServeHTTP(w, r)
 	})

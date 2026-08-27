@@ -8,7 +8,7 @@ import (
 
 	"github.com/urfave/cli/v2"
 	"heckel.io/hostit/assistant"
-	"heckel.io/hostit/controlconf"
+	"heckel.io/hostit/control/config"
 )
 
 // cmdInternal groups host-side debug/plumbing commands that app owners never run.
@@ -33,7 +33,7 @@ var (
 			// The subscription token is a CONTROL setting, so this reads control's
 			// config -- pointing it at the node's would parse (yaml is lenient) and
 			// then report the token missing from a file it never belonged in.
-			&cli.StringFlag{Name: "config", Aliases: []string{"c"}, Value: controlconf.DefaultControlConfigFile, Usage: "control config file"},
+			&cli.StringFlag{Name: "config", Aliases: []string{"c"}, Value: config.DefaultControlConfigFile, Usage: "control config file"},
 			&cli.BoolFlag{Name: "shell", Usage: "drop into a shell in the sandbox instead of running claude (debugging)"},
 			&cli.BoolFlag{Name: "raw", Usage: "print raw event fields instead of a pretty summary"},
 		},
@@ -42,7 +42,7 @@ var (
 )
 
 func execInternalAssistant(c *cli.Context) error {
-	conf, err := controlconf.LoadConfig(c.String("config"))
+	conf, err := config.LoadConfig(c.String("config"))
 	if err != nil {
 		return err
 	}

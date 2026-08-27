@@ -32,7 +32,7 @@ import (
 
 	"heckel.io/hostit/assistant"
 	"heckel.io/hostit/connections"
-	"heckel.io/hostit/controlconf"
+	"heckel.io/hostit/control/config"
 	"heckel.io/hostit/metrics"
 	"heckel.io/hostit/node"
 	"heckel.io/hostit/preview"
@@ -50,7 +50,7 @@ const (
 
 // Server is the hostit daemon; create with New, run with Run
 type Server struct {
-	config    *controlconf.Config
+	config    *config.Config
 	apps      *Manager
 	users     *user.Manager
 	assistant *assistant.Manager // nil unless an Anthropic API key is configured
@@ -123,7 +123,7 @@ type Server struct {
 }
 
 // New creates a Server; it does not start any listeners
-func New(conf *controlconf.Config, apps *Manager, users *user.Manager) *Server {
+func New(conf *config.Config, apps *Manager, users *user.Manager) *Server {
 	s := &Server{
 		config:         conf,
 		apps:           apps,
@@ -269,7 +269,7 @@ func (s *Server) Run() error {
 	// here, and the proxy asks for material over the cluster link.
 	//
 	// tls: off skips certificate management entirely, for development.
-	if s.config.TLS == controlconf.TLSOff {
+	if s.config.TLS == config.TLSOff {
 		httpServer := &http.Server{Addr: s.config.ListenHTTP, Handler: s.proxy, ReadHeaderTimeout: readHeaderTimeout}
 		s.servers = append(s.servers, httpServer)
 		g.Go(func() error {

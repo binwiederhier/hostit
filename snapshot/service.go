@@ -17,10 +17,10 @@ import (
 	"os"
 	"time"
 
-	"heckel.io/hostit/btrfs"
-	"heckel.io/hostit/container"
 	"heckel.io/hostit/store"
-	"heckel.io/hostit/systemd"
+	"heckel.io/hostit/system/btrfs"
+	"heckel.io/hostit/system/podman"
+	"heckel.io/hostit/system/systemd"
 )
 
 const (
@@ -90,14 +90,14 @@ type Host interface {
 type Service struct {
 	btrfs     btrfs.Interface
 	systemd   systemd.Interface
-	container container.Interface
+	container podman.Interface
 	store     *store.Store
 	host      Host
 }
 
 // New builds a snapshot Service from the node-local services, the store and the
 // host callbacks.
-func New(bt btrfs.Interface, sd systemd.Interface, ct container.Interface, st *store.Store, host Host) *Service {
+func New(bt btrfs.Interface, sd systemd.Interface, ct podman.Interface, st *store.Store, host Host) *Service {
 	return &Service{btrfs: bt, systemd: sd, container: ct, store: st, host: host}
 }
 

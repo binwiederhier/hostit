@@ -10,12 +10,12 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"heckel.io/hostit/archive"
-	"heckel.io/hostit/btrfs"
-	"heckel.io/hostit/container"
 	"heckel.io/hostit/run"
-	"heckel.io/hostit/ssh"
 	"heckel.io/hostit/store"
-	"heckel.io/hostit/systemd"
+	"heckel.io/hostit/system/btrfs"
+	"heckel.io/hostit/system/podman"
+	"heckel.io/hostit/system/ssh"
+	"heckel.io/hostit/system/systemd"
 )
 
 // recordRunner is a nop runner that records every "subvolume delete" target, so
@@ -41,7 +41,7 @@ func newSweepTestMachine(t *testing.T, rec *recordRunner) *Machine {
 	t.Cleanup(func() { _ = s.Close() })
 	return NewMachine(conf, s, &Services{
 		Runner: run.Nop{}, Btrfs: btrfs.New(rec), Systemd: systemd.New(run.Nop{}),
-		Container: container.New(run.Nop{}), User: nopUser{}, SSH: ssh.New(), Firewall: nopFirewall{},
+		Container: podman.New(run.Nop{}), User: nopUser{}, SSH: ssh.New(), Firewall: nopFirewall{},
 	})
 }
 

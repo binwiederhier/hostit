@@ -15,7 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"heckel.io/hostit/connections"
-	"heckel.io/hostit/controlconf"
+	"heckel.io/hostit/control/config"
 	"heckel.io/hostit/store"
 )
 
@@ -167,9 +167,9 @@ func registerFakeProvider(t *testing.T, s *Server, f *fakeAuthServer, name strin
 		Help:           "a test provider",
 	})
 	if s.config.ConnectionClients == nil {
-		s.config.ConnectionClients = map[string]controlconf.OAuthClient{}
+		s.config.ConnectionClients = map[string]config.OAuthClient{}
 	}
-	s.config.ConnectionClients[name] = controlconf.OAuthClient{ClientID: "test-client", ClientSecret: "test-secret"}
+	s.config.ConnectionClients[name] = config.OAuthClient{ClientID: "test-client", ClientSecret: "test-secret"}
 }
 
 // signIn gives the test a browser-shaped session cookie, which is what the
@@ -639,9 +639,9 @@ func registerFakeUserProvider(t *testing.T, s *Server, f *fakeAuthServer, name s
 		Help: "a test user-token provider",
 	})
 	if s.config.ConnectionClients == nil {
-		s.config.ConnectionClients = map[string]controlconf.OAuthClient{}
+		s.config.ConnectionClients = map[string]config.OAuthClient{}
 	}
-	s.config.ConnectionClients[name] = controlconf.OAuthClient{ClientID: "test-client", ClientSecret: "test-secret"}
+	s.config.ConnectionClients[name] = config.OAuthClient{ClientID: "test-client", ClientSecret: "test-secret"}
 }
 
 // The chosen read options resolve to user_scope (never the bot scope param), the

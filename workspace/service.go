@@ -12,10 +12,10 @@ import (
 	"sync"
 	"time"
 
-	"heckel.io/hostit/btrfs"
-	"heckel.io/hostit/container"
 	"heckel.io/hostit/run"
 	"heckel.io/hostit/store"
+	"heckel.io/hostit/system/btrfs"
+	"heckel.io/hostit/system/podman"
 )
 
 // containerfile builds the default workspace image: small, but with
@@ -41,7 +41,7 @@ const (
 // the btrfs storage its containers actually run: per-tag base subvolumes exported
 // from the image, and the per-app subvolumes snapshotted from a base.
 type Service struct {
-	container container.Interface
+	container podman.Interface
 	store     *store.Store
 	btrfs     btrfs.Interface
 	runner    run.Runner
@@ -56,7 +56,7 @@ type Service struct {
 // subvolume work), the daemon's data directory (where the build context is
 // staged) and the apps directory (the btrfs pool holding the app subvolumes
 // and .bases).
-func New(ct container.Interface, st *store.Store, bt btrfs.Interface, runner run.Runner, dataDir, appsDir string) *Service {
+func New(ct podman.Interface, st *store.Store, bt btrfs.Interface, runner run.Runner, dataDir, appsDir string) *Service {
 	return &Service{container: ct, store: st, btrfs: bt, runner: runner, dataDir: dataDir, appsDir: appsDir}
 }
 

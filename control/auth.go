@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"heckel.io/hostit/controlconf"
+	"heckel.io/hostit/control/config"
 	"heckel.io/hostit/store"
 	"heckel.io/hostit/user"
 )
@@ -289,7 +289,7 @@ func (s *Server) isWebOrigin(origin string) bool {
 // The prefix requires Secure, so a plain-HTTP deployment (local development)
 // keeps the bare name rather than setting a cookie no browser will store.
 func (s *Server) cookieName(name string) string {
-	if s.config.TLS == controlconf.TLSOff {
+	if s.config.TLS == config.TLSOff {
 		return name
 	}
 	return hostCookiePrefix + name
@@ -303,7 +303,7 @@ func (s *Server) cookie(name, value string, maxAge int) *http.Cookie {
 		Path:     "/",
 		MaxAge:   maxAge,
 		HttpOnly: true,
-		Secure:   s.config.TLS != controlconf.TLSOff,
+		Secure:   s.config.TLS != config.TLSOff,
 		SameSite: http.SameSiteLaxMode,
 	}
 }

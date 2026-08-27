@@ -14,12 +14,12 @@ import (
 
 	"heckel.io/hostit/cluster"
 	"heckel.io/hostit/metrics"
+	"heckel.io/hostit/node/link"
 	"heckel.io/hostit/nodeconf"
-	"heckel.io/hostit/nodelink"
 	"heckel.io/hostit/preflight"
 	"heckel.io/hostit/run"
 	"heckel.io/hostit/store"
-	"heckel.io/hostit/unixuser"
+	"heckel.io/hostit/system/unixuser"
 	"heckel.io/hostit/workspace"
 )
 
@@ -171,24 +171,24 @@ func Serve(configPath, version string) error {
 	sameHost := cluster.IsSocketAddr(conf.ControlURL)
 	var tlsConf *tls.Config
 	if !sameHost {
-		tlsConf, err = nodelink.DialCreds(conf)
+		tlsConf, err = link.DialCreds(conf)
 		if err != nil {
 			return err
 		}
 	}
-	link := nodelink.NewControlLink()
-	machine.SetControlSink(link)
+	ctl := link.NewControlLink()
+	machine.SetControlSink(ctl)
 	// The app socket: served HERE on every host, relayed to control over the
 	// link. Started before the dial loop so the file exists the moment a
 	// container starts; requests before the first connection answer 502, which
 	// the in-container CLI can retry, unlike a missing socket file.
-	appSocket, err := ServeAppSocket(conf.SocketFile, s, link)
+	appSocket, err := ServeAppSocket(conf.SocketFile, s, ctl)
 	if err != nil {
 		return err
 	}
 	defer appSocket.Close()
 	// The node's own status socket, root-only: what `hostit node status` reads.
-	statusSocket, err := ServeStatusSocket(conf.NodeSocketFile, conf, s, link, version)
+	statusSocket, err := ServeStatusSocket(conf.NodeSocketFile, conf, s, ctl, version)
 	if err != nil {
 		return err
 	}
@@ -226,7 +226,7 @@ func Serve(configPath, version string) error {
 		connMu.Unlock()
 		slog.Info("Connected to control", "addr", conf.ControlURL)
 		machine.ResetSyncSeq() // control's sequence restarts with its process
-		if err := nodelink.ServeAgent(conn, conf.NodeID, machine, link.SetClient); err != nil {
+		if err := link.ServeAgent(conn, conf.NodeID, machine, ctl.SetClient); err != nil {
 			slog.Warn("Control connection failed", "error", err)
 		}
 		_ = conn.Close()

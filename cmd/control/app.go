@@ -12,8 +12,8 @@ import (
 	"github.com/urfave/cli/v2"
 
 	"heckel.io/hostit/client"
-	"heckel.io/hostit/clitable"
-	"heckel.io/hostit/controlconf"
+	"heckel.io/hostit/cmd/util"
+	"heckel.io/hostit/control/config"
 )
 
 var (
@@ -328,7 +328,7 @@ func execAppsList(c *cli.Context) error {
 	for _, app := range apps {
 		rows = append(rows, []string{app.Name, app.ID, app.URL, strconv.Itoa(app.Port), app.CreatedAt.Format("2006-01-02")})
 	}
-	fmt.Println(clitable.Render([]string{"NAME", "ID", "URL", "PORT", "CREATED"}, rows))
+	fmt.Println(util.Render([]string{"NAME", "ID", "URL", "PORT", "CREATED"}, rows))
 	return nil
 }
 
@@ -422,10 +422,10 @@ func resolveTransport(host, token, socketFile string, socketExists bool) (transp
 // operator may not be able to read that file, so failures fall back to the
 // built-in default rather than erroring.
 func localSocketFile() string {
-	if conf, err := controlconf.LoadConfig(controlconf.DefaultControlConfigFile); err == nil && conf.ControlSocketFile != "" {
+	if conf, err := config.LoadConfig(config.DefaultControlConfigFile); err == nil && conf.ControlSocketFile != "" {
 		return conf.ControlSocketFile
 	}
-	return controlconf.DefaultControlSocketFile
+	return config.DefaultControlSocketFile
 }
 
 // readKeyFlags resolves --ssh-key values: file paths are read, literals passed through

@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"heckel.io/hostit/controlconf"
+	"heckel.io/hostit/control/config"
 	"heckel.io/hostit/store"
 )
 
@@ -97,7 +97,7 @@ func (s *Server) writeErrorPage(w http.ResponseWriter, status int, data *errorPa
 		data.Badge = "Error " + data.Code
 	}
 	scheme := "https"
-	if s.config.TLS == controlconf.TLSOff {
+	if s.config.TLS == config.TLSOff {
 		scheme = "http"
 	}
 	data.Home = scheme + "://" + s.config.APIHostname()

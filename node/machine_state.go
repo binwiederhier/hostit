@@ -8,9 +8,9 @@ import (
 	"time"
 
 	"heckel.io/hostit/app"
-	"heckel.io/hostit/container"
-	"heckel.io/hostit/hoststats"
 	"heckel.io/hostit/nodeapi"
+	"heckel.io/hostit/system/podman"
+	"heckel.io/hostit/system/stats"
 	"heckel.io/hostit/workspace"
 )
 
@@ -267,7 +267,7 @@ func (m *Machine) resourceUsage() map[string]usage {
 	if err != nil {
 		return usages
 	}
-	stats, err := container.ParseStats(out)
+	stats, err := podman.ParseStats(out)
 	if err != nil {
 		return usages
 	}
@@ -313,7 +313,7 @@ func (m *Machine) Heartbeat() *nodeapi.Heartbeat {
 		SSHHostKey:   m.sshHostKey(),
 		// The apps pool is the filesystem that matters here: it filling up is
 		// what breaks this node.
-		Stats: hoststats.Measure(m.config.AppsDir),
+		Stats: stats.Measure(m.config.AppsDir),
 	}
 }
 

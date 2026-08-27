@@ -10,7 +10,7 @@ import (
 
 	"heckel.io/hostit/app"
 	"heckel.io/hostit/assistant"
-	"heckel.io/hostit/controlconf"
+	"heckel.io/hostit/control/config"
 	"heckel.io/hostit/platformdoc"
 	"heckel.io/hostit/store"
 	"heckel.io/hostit/workspace"
@@ -275,7 +275,7 @@ func logLines(raw string) int {
 // that single URL.
 func (s *Server) agentGuide(appName, description, ownerID string) *apiAgentInfoResponse {
 	base := "https://" + s.config.APIHostname()
-	if s.config.TLS == controlconf.TLSOff {
+	if s.config.TLS == config.TLSOff {
 		base = "http://" + s.config.APIHostname()
 	}
 	name := appName
@@ -325,7 +325,7 @@ func (s *Server) agentGuide(appName, description, ownerID string) *apiAgentInfoR
 			"Keep the app's own documentation in " + app.DocsDir + "/ -- how it works, why it is built the way it is, anything the next session would otherwise have to re-derive. Read it before you change anything, and update it after every change that matters. README.md is the summary and worklog; " + app.DocsDir + "/ is the detail.",
 			"Compiling or installing dependencies: POST " + appsPath(name) + "/run with a shell command. It runs in the app's container, where the toolchains are, and returns the output and exit code -- so you can iterate on a build error without SSH. It is bounded (a minute by default, five at most): make the build a \"prepare:\" step in hostit.yml once it works, so it also runs on every deploy.",
 			"Keep a one-line \"description:\" in hostit.yml saying what this app is. The owner's web page shows it, and the next session (or a different agent) starts from it instead of from a blank page.",
-			"Connected accounts: if the owner has connected Google, GitHub or an IMAP mailbox and granted it to this app, GET /api/container/connections on the container API (" + controlconf.ContainerAPIURL + ") lists them and GET /api/container/connections/{provider}/token returns a usable, short-lived credential. hostit refreshes the access token automatically before it expires and hands you a fresh one, so ask for it per request and do not cache it. Each connection also carries a \"status\": \"ok\" means usable, \"needs_reconnect\" means the owner must re-authorize it (the token call will fail until they do). The app acts as its owner.",
+			"Connected accounts: if the owner has connected Google, GitHub or an IMAP mailbox and granted it to this app, GET /api/container/connections on the container API (" + config.ContainerAPIURL + ") lists them and GET /api/container/connections/{provider}/token returns a usable, short-lived credential. hostit refreshes the access token automatically before it expires and hands you a fresh one, so ask for it per request and do not cache it. Each connection also carries a \"status\": \"ok\" means usable, \"needs_reconnect\" means the owner must re-authorize it (the token call will fail until they do). The app acts as its owner.",
 			"Snapshot as you go: POST " + appsPath(name) + "/snapshots at regular intervals -- before any risky change and after each chunk of working progress -- so there is always a recent point to roll back to. A snapshot captures the container's whole filesystem, your files AND anything you installed, so a broken apt-get or system change rolls back too. Always include a short one-line description of why, e.g. {\"label\": \"before rewriting the router\"}. (hostit also snapshots automatically before every deploy and every few hours, but those are coarse; your own labelled snapshots are what make a mistake easy to undo.)",
 		},
 		Layout: "The app's home directory has a place for each kind of thing:\n\n" +
@@ -405,7 +405,7 @@ func (s *Server) agentGuide(appName, description, ownerID string) *apiAgentInfoR
 			},
 		},
 		ContainerAPI: apiAgentAPISection{
-			Description: "Called by the APP ITSELF, from INSIDE its container, at " + controlconf.ContainerAPIURL + " -- a plain loopback URL, ordinary HTTP client, no token (the app is identified by where the call comes from). This is how the RUNNING app reaches its granted accounts, MCP tools and the built-in model. You do not call this yourself; you build code into the app that does. Not reachable from outside the container.",
+			Description: "Called by the APP ITSELF, from INSIDE its container, at " + config.ContainerAPIURL + " -- a plain loopback URL, ordinary HTTP client, no token (the app is identified by where the call comes from). This is how the RUNNING app reaches its granted accounts, MCP tools and the built-in model. You do not call this yourself; you build code into the app that does. Not reachable from outside the container.",
 			Endpoints: []apiAgentEndpoint{
 				{Method: "GET", Path: "/api/container/connections", What: "The accounts and credentials this app was granted, each by the slug its owner named it"},
 				{Method: "GET", Path: "/api/container/connections/{slug}/token", What: `A usable, short-lived credential for one of them -> {"access_token":"...","expires_at":"..."}. hostit refreshes it, so fetch per request and never cache, print, or write it to a file`},

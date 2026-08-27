@@ -22,7 +22,7 @@ import (
 // The header is trustworthy for one reason only: this handler exists PER
 // AUTHENTICATED NODE CONNECTION, reachable solely over that node's duplex
 // session, and every request is checked against the apps that node actually
-// hosts -- the same scoping nodelink.CallbackHandler applies to snapshot and
+// hosts -- the same scoping link.CallbackHandler applies to snapshot and
 // usage callbacks. The same header on any public surface is meaningless;
 // nothing there reads it, and a test pins that.
 

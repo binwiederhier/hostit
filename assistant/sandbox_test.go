@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"heckel.io/hostit/controlconf"
+	"heckel.io/hostit/control/config"
 	"heckel.io/hostit/workspace"
 )
 
@@ -25,7 +25,7 @@ import (
 
 func testSandbox() *Sandbox {
 	return &Sandbox{
-		conf: &controlconf.Config{
+		conf: &config.Config{
 			ControlSocketFile:    "/run/hostit/hostit.sock",
 			DataDir:              "/var/lib/hostit",
 			ClaudeCodeOAuthToken: "sk-test-subscription-token",
@@ -248,7 +248,7 @@ func TestSandboxSessionLogKeysOnAppID(t *testing.T) {
 // the cmd split the daemon is hostit-control, which has no "mcp" command, and
 // mounting it silently broke the sandbox's only tool surface.
 func TestNewSandboxMountsTheAgentBinary(t *testing.T) {
-	s, err := NewSandbox(&controlconf.Config{ClaudeCodeOAuthToken: "sk-test"})
+	s, err := NewSandbox(&config.Config{ClaudeCodeOAuthToken: "sk-test"})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -5,7 +5,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	"heckel.io/hostit/hoststats"
+	"heckel.io/hostit/system/stats"
 )
 
 // Node metrics, exposed on the optional listen-metrics endpoint. The gauges are
@@ -27,7 +27,7 @@ const metricsInterval = 15 * time.Second
 // MetricsLoop refreshes the node's resource/app gauges until done closes.
 func (m *Machine) MetricsLoop(done <-chan struct{}) {
 	update := func() {
-		st := hoststats.Measure(m.config.AppsDir)
+		st := stats.Measure(m.config.AppsDir)
 		nodeMemUsed.Set(float64(st.MemoryUsedMB) * 1e6)
 		nodeMemTotal.Set(float64(st.MemoryTotalMB) * 1e6)
 		nodeDiskUsed.Set(float64(st.DiskUsedMB) * 1e6)

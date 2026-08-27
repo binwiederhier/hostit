@@ -11,7 +11,7 @@ import (
 	"github.com/urfave/cli/v2"
 	"golang.org/x/term"
 	"heckel.io/hostit/appctl"
-	"heckel.io/hostit/controlconf"
+	"heckel.io/hostit/control/config"
 	"heckel.io/hostit/workspace"
 )
 
@@ -53,7 +53,7 @@ func execShell(c *cli.Context) error {
 	// The login shell runs on the HOST as the app user, so it dials the socket at
 	// its host path -- the container-side /run/hostit/hostit.sock does not exist
 	// out here.
-	ctl := appctl.NewController(controlconf.HostAppSocketFile)
+	ctl := appctl.NewController(config.HostAppSocketFile)
 
 	// Identify the app and make sure its container is up
 	self, err := ctl.Self()

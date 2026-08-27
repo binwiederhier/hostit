@@ -7,7 +7,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"heckel.io/hostit/controlconf"
+	"heckel.io/hostit/control/config"
 )
 
 // The web app performs privileged admin actions, so its own responses must carry
@@ -49,7 +49,7 @@ func TestAppResponsesCarryBaseHeadersOnly(t *testing.T) {
 func TestHSTSOnlyUnderTLS(t *testing.T) {
 	t.Parallel()
 	s := newTestServer(t)
-	s.config.TLS = controlconf.TLSOff
+	s.config.TLS = config.TLSOff
 	rr := proxyRequest(t, s, "http://apps.example.com/api/health")
 	assert.Empty(t, rr.Header().Get("Strict-Transport-Security"))
 }

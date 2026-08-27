@@ -3,14 +3,14 @@ package control
 import (
 	"errors"
 	"fmt"
-	"heckel.io/hostit/proxyapi"
+	"heckel.io/hostit/proxy/api"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
 	"time"
 
-	"heckel.io/hostit/controlconf"
+	"heckel.io/hostit/control/config"
 	"heckel.io/hostit/store"
 )
 
@@ -166,7 +166,7 @@ func (s *Server) callerFromGrant(r *http.Request, a *store.App) (*caller, bool) 
 // The grant names a reserved principal AND the app, so it opens only that one
 // app; the proxy strips it before the app backend ever sees it.
 func (s *Server) PreviewCookie(appName string) (*http.Cookie, error) {
-	value, err := s.grants.Sign(appName, proxyapi.PreviewPrincipal)
+	value, err := s.grants.Sign(appName, api.PreviewPrincipal)
 	if err != nil {
 		return nil, err
 	}
@@ -295,7 +295,7 @@ func (s *Server) requestURL(r *http.Request) *url.URL {
 }
 
 func (s *Server) scheme() string {
-	if s.config.TLS == controlconf.TLSOff {
+	if s.config.TLS == config.TLSOff {
 		return "http"
 	}
 	return "https"

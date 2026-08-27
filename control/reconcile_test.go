@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"heckel.io/hostit/store"
-	"heckel.io/hostit/unixuser"
+	"heckel.io/hostit/system/unixuser"
 )
 
 // An app deleted while the daemon was down leaves its subvolume behind;

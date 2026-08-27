@@ -12,23 +12,23 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"heckel.io/hostit/cluster"
-	"heckel.io/hostit/proxyapi"
+	"heckel.io/hostit/proxy/api"
 )
 
 // fakeCertSink stands in for control over the proxy's link, counting lookups.
 type fakeCertSink struct {
 	sni      string
-	material *proxyapi.CertMaterial
+	material *api.CertMaterial
 	lookups  atomic.Int64
 	down     atomic.Bool
 }
 
-func (f *fakeCertSink) CertFor(sni string) (*proxyapi.CertMaterial, error) {
+func (f *fakeCertSink) CertFor(sni string) (*api.CertMaterial, error) {
 	if f.down.Load() {
 		return nil, errNotLinked
 	}
 	if sni != f.sni {
-		return nil, proxyapi.ErrNoCert
+		return nil, api.ErrNoCert
 	}
 	f.lookups.Add(1)
 	return f.material, nil
@@ -50,7 +50,7 @@ func newFakeCertSink(t *testing.T, sni string) *fakeCertSink {
 	require.NoError(t, err)
 	var key bytes.Buffer
 	require.NoError(t, pem.Encode(&key, &pem.Block{Type: "PRIVATE KEY", Bytes: keyDER}))
-	return &fakeCertSink{sni: sni, material: &proxyapi.CertMaterial{CertPEM: chain.String(), KeyPEM: key.String()}}
+	return &fakeCertSink{sni: sni, material: &api.CertMaterial{CertPEM: chain.String(), KeyPEM: key.String()}}
 }
 
 func TestCertSourceFetchesCachesAndSurvivesControlDown(t *testing.T) {

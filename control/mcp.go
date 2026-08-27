@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"heckel.io/hostit/connections"
+	"heckel.io/hostit/http/outbound"
 	"heckel.io/hostit/mcp"
-	"heckel.io/hostit/outbound"
 	"heckel.io/hostit/store"
 )
 

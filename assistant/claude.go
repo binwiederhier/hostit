@@ -15,7 +15,7 @@ import (
 // the turn's token usage. systemPrompt is appended to Claude Code's own system
 // prompt so the agent knows it is working on a hostit app. images are the turn's
 // uploaded images, which the prompt text cannot carry. The server implements
-// this over app.AssistantSandbox; the assistant package stays free of podman.
+// this over app.AssistantSandbox; the assistant package stays free of container.
 type ClaudeRunner interface {
 	RunTurn(ctx context.Context, app, prompt, systemPrompt string, images []Attachment, publish func(Event)) (Usage, error)
 	// Answer runs a ONE-SHOT, tool-less answer on the Claude Max backend and

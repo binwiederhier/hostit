@@ -8,7 +8,7 @@ import (
 	"net/http"
 
 	"heckel.io/hostit/cluster"
-	"heckel.io/hostit/proxyapi"
+	"heckel.io/hostit/proxy/api"
 )
 
 // Status is what `hostit proxy status` prints: this proxy's identity, whether
@@ -35,7 +35,7 @@ func (p *Proxy) Connected() bool {
 
 // Status assembles the proxy's own status.
 func (p *Proxy) Status() *Status {
-	table := p.table.Load().(*proxyapi.Table)
+	table := p.table.Load().(*api.Table)
 	p.certMu.Lock()
 	certs := len(p.certs)
 	p.certMu.Unlock()
@@ -52,8 +52,8 @@ func (p *Proxy) Status() *Status {
 }
 
 // Routes returns the routing table the proxy is serving from right now.
-func (p *Proxy) Routes() *proxyapi.Table {
-	return p.table.Load().(*proxyapi.Table)
+func (p *Proxy) Routes() *api.Table {
+	return p.table.Load().(*api.Table)
 }
 
 // ServeStatusSocket serves the proxy's status and routing table on a root-only

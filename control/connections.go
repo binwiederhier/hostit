@@ -13,9 +13,9 @@ import (
 	"time"
 
 	"heckel.io/hostit/connections"
-	"heckel.io/hostit/controlconf"
+	"heckel.io/hostit/control/config"
+	"heckel.io/hostit/http/outbound"
 	"heckel.io/hostit/mcp"
-	"heckel.io/hostit/outbound"
 	"heckel.io/hostit/store"
 )
 
@@ -58,7 +58,7 @@ type connectionManager struct {
 	store  *store.Store
 	key    []byte
 	client *http.Client
-	conf   *controlconf.Config
+	conf   *config.Config
 	// cached holds the last access token minted for a connection, so a page
 	// that makes five requests is not five round trips to the provider for a
 	// token that is good for an hour -- and, on a rotating provider, five
@@ -93,7 +93,7 @@ type cachedToken struct {
 	expires    time.Time
 }
 
-func newConnectionManager(st *store.Store, key []byte, conf *controlconf.Config) *connectionManager {
+func newConnectionManager(st *store.Store, key []byte, conf *config.Config) *connectionManager {
 	return &connectionManager{
 		store: st,
 		key:   key,
@@ -615,7 +615,7 @@ func grantedTo(granted []*store.Connection, id string) bool {
 // A broken entry is an error, not a warning: the operator is looking at the file
 // they just edited, and a provider silently missing from a menu is the hardest
 // possible way to find out it is malformed.
-func (m *connectionManager) loadCustomProviders(conf *controlconf.Config) error {
+func (m *connectionManager) loadCustomProviders(conf *config.Config) error {
 	custom := make(map[string]connections.Provider)
 	for name, client := range conf.ConnectionClients {
 		if !client.DescribesProvider() {

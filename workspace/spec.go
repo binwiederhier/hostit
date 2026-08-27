@@ -64,7 +64,7 @@ const (
 
 	// ContainerRunDir is where the host's app-socket subdir is mounted INSIDE a
 	// container, so the in-container CLI finds the socket at the unchanged path
-	// /run/hostit/hostit.sock (= controlconf.DefaultSocketFile). The host mounts
+	// /run/hostit/hostit.sock (= config.DefaultSocketFile). The host mounts
 	// only its socket subdir here, never the whole run dir -- that is what keeps
 	// apps-raw and the operator sockets out of every container.
 	ContainerRunDir = "/run/hostit"

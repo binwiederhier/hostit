@@ -10,11 +10,11 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"heckel.io/hostit/btrfs"
-	"heckel.io/hostit/container"
 	"heckel.io/hostit/run"
 	"heckel.io/hostit/store"
-	"heckel.io/hostit/systemd"
+	"heckel.io/hostit/system/btrfs"
+	"heckel.io/hostit/system/podman"
+	"heckel.io/hostit/system/systemd"
 )
 
 func TestSnapshotID(t *testing.T) {
@@ -171,7 +171,7 @@ func newTestService(t *testing.T) (*Service, *fakeHost, *fakeRunner, *store.Stor
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = st.Close() })
 	h := &fakeHost{base: t.TempDir()}
-	svc := New(btrfs.New(r), systemd.New(r), container.New(r), st, h)
+	svc := New(btrfs.New(r), systemd.New(r), podman.New(r), st, h)
 	return svc, h, r, st
 }
 

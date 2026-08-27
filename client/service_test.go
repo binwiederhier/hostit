@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"heckel.io/hostit/control"
 	"heckel.io/hostit/control/apptest"
-	"heckel.io/hostit/controlconf"
+	"heckel.io/hostit/control/config"
 	"heckel.io/hostit/node"
 	"heckel.io/hostit/nodeconf"
 	"heckel.io/hostit/store"
@@ -70,7 +70,7 @@ func TestBadToken(t *testing.T) {
 
 func newTestClient(t *testing.T, token string) *Client {
 	t.Helper()
-	conf := controlconf.NewConfig()
+	conf := config.NewConfig()
 	conf.BaseDomain = "apps.example.com"
 	conf.AdminToken = testToken
 	conf.AppsDir = t.TempDir()

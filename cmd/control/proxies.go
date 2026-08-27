@@ -8,11 +8,11 @@ import (
 
 	"github.com/urfave/cli/v2"
 
-	"heckel.io/hostit/clitable"
 	"heckel.io/hostit/cluster"
-	"heckel.io/hostit/controlconf"
+	"heckel.io/hostit/cmd/util"
+	"heckel.io/hostit/control/config"
+	"heckel.io/hostit/node/link"
 	"heckel.io/hostit/nodeapi"
-	"heckel.io/hostit/nodelink"
 	"heckel.io/hostit/store"
 )
 
@@ -24,7 +24,7 @@ var (
 		Name:  "proxy",
 		Usage: "Manage data-plane proxies (enrollment, listing, removal)",
 		Flags: []cli.Flag{
-			&cli.StringFlag{Name: "config", Aliases: []string{"c"}, Value: controlconf.DefaultControlConfigFile, Usage: "control config file"},
+			&cli.StringFlag{Name: "config", Aliases: []string{"c"}, Value: config.DefaultControlConfigFile, Usage: "control config file"},
 		},
 		Subcommands: []*cli.Command{
 			{
@@ -72,7 +72,7 @@ func execProxyAdd(c *cli.Context) error {
 	if conf.ListenCluster == "" {
 		return fmt.Errorf("control accepts no remote members: set listen-cluster (e.g. 10.0.0.1:2930) and restart hostit-control first")
 	}
-	ca, err := nodelink.LoadCA(conf.DataDir)
+	ca, err := link.LoadCA(conf.DataDir)
 	if err != nil {
 		return fmt.Errorf("cannot load the cluster CA (has hostit-control started once?): %w", err)
 	}
@@ -80,7 +80,7 @@ func execProxyAdd(c *cli.Context) error {
 	if err != nil {
 		return err
 	}
-	certPEM, keyPEM, err := nodelink.EncodeCert(cert)
+	certPEM, keyPEM, err := link.EncodeCert(cert)
 	if err != nil {
 		return err
 	}
@@ -119,7 +119,7 @@ func execProxyList(c *cli.Context) error {
 		// the row wrap (see `status` for the same trim).
 		rows = append(rows, []string{p.Name, dashIfEmpty(shortVersion(p.Version)), strconv.Itoa(p.Routes), seen})
 	}
-	fmt.Println(clitable.Render([]string{"NAME", "VERSION", "ROUTES", "LAST SEEN"}, rows))
+	fmt.Println(util.Render([]string{"NAME", "VERSION", "ROUTES", "LAST SEEN"}, rows))
 	return nil
 }
 

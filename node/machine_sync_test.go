@@ -7,15 +7,15 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"heckel.io/hostit/btrfs"
-	"heckel.io/hostit/container"
-	"heckel.io/hostit/firewall"
 	"heckel.io/hostit/nodeapi"
 	"heckel.io/hostit/run"
-	"heckel.io/hostit/ssh"
 	"heckel.io/hostit/store"
-	"heckel.io/hostit/systemd"
-	"heckel.io/hostit/unixuser"
+	"heckel.io/hostit/system/btrfs"
+	"heckel.io/hostit/system/nftables"
+	"heckel.io/hostit/system/podman"
+	"heckel.io/hostit/system/ssh"
+	"heckel.io/hostit/system/systemd"
+	"heckel.io/hostit/system/unixuser"
 )
 
 // Control builds a mirror by reading its registry and sends it afterwards, so
@@ -71,7 +71,7 @@ func newSyncTestMachine(t *testing.T) *Machine {
 	t.Cleanup(func() { _ = s.Close() })
 	return NewMachine(conf, s, &Services{
 		Runner: run.Nop{}, Btrfs: btrfs.New(run.Nop{}), Systemd: systemd.New(run.Nop{}),
-		Container: container.New(run.Nop{}), User: nopUser{}, SSH: ssh.New(), Firewall: nopFirewall{},
+		Container: podman.New(run.Nop{}), User: nopUser{}, SSH: ssh.New(), Firewall: nopFirewall{},
 	})
 }
 
@@ -92,4 +92,4 @@ func (nopUser) WriteSkeleton(string, map[string]string) error { return nil }
 
 type nopFirewall struct{}
 
-func (nopFirewall) Apply([]firewall.Rule) error { return nil }
+func (nopFirewall) Apply([]nftables.Rule) error { return nil }

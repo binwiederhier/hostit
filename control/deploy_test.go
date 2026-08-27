@@ -16,7 +16,7 @@ import (
 
 	"heckel.io/hostit/app"
 	"heckel.io/hostit/appctl"
-	"heckel.io/hostit/controlconf"
+	"heckel.io/hostit/control/config"
 	"heckel.io/hostit/node"
 	"heckel.io/hostit/run"
 	"heckel.io/hostit/store"
@@ -406,7 +406,7 @@ func newFakeRunner() *fakeRunner {
 }
 
 // errImageMissing is what a fake "podman image exists" returns for an image that
-// was never built or seeded, so container.ImageExists reports false.
+// was never built or seeded, so podman.ImageExists reports false.
 var (
 	errImageMissing = errors.New("image not known to the fake store")
 )
@@ -687,7 +687,7 @@ func TestDownRecordsPowerOffAndPowerOnClearsIt(t *testing.T) {
 // newWiredManager is a Manager with an in-process Machine as its node, which is
 // what every test needs: control itself has no machinery, so without a node
 // wired in it can only answer "node is not connected".
-func newWiredManager(t *testing.T, conf *controlconf.Config, s *store.Store, svc *node.Services) *Manager {
+func newWiredManager(t *testing.T, conf *config.Config, s *store.Store, svc *node.Services) *Manager {
 	m := NewManager(conf, s)
 	machine := node.NewMachine(machineConfig(conf), nodeStoreFor(t), svc)
 	machine.SetControlSink(inProcessSink{st: s, apps: m})
@@ -710,7 +710,7 @@ func nodeStoreFor(t *testing.T) *store.Store {
 // inProcessSink is the node's reverse channel, in one process: what a node
 // reports about itself (usage, poweroffs, snapshot records) has to reach the
 // registry, or control never learns it. In the daemon this is a callback over
-// the cluster link (nodelink.CallbackHandler); here it writes straight to
+// the cluster link (link.CallbackHandler); here it writes straight to
 // control's store, which is the same destination.
 type inProcessSink struct {
 	st   *store.Store

@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"heckel.io/hostit/appgrant"
-	"heckel.io/hostit/proxyapi"
+	"heckel.io/hostit/proxy/api"
 )
 
 // Private apps are served from here rather than from control, so they keep
@@ -22,16 +22,16 @@ import (
 // subdomains of the web hostname, so any tenant can set a bare cookie with a
 // Domain that reaches every other app, and only the prefixed name is one a
 // browser refuses to scope that way.
-var grantCookieNames = []string{proxyapi.GrantCookieHost, proxyapi.GrantCookie}
+var grantCookieNames = []string{api.GrantCookieHost, api.GrantCookie}
 
 // hostitPaths are answered by control even on a private app whose visitor is
 // allowed in: signing out of an app cannot be the app's own business.
-var hostitPaths = []string{proxyapi.AuthPath, proxyapi.GrantedPath, proxyapi.LogoutPath}
+var hostitPaths = []string{api.AuthPath, api.GrantedPath, api.LogoutPath}
 
 // mayServePrivately reports whether this request proves, on its own, that its
 // sender may open the app -- and if so, strips the proof before the request is
 // forwarded, so the app never sees the credential that let its visitor in.
-func (p *Proxy) mayServePrivately(r *http.Request, route proxyapi.Route, table *proxyapi.Table) bool {
+func (p *Proxy) mayServePrivately(r *http.Request, route api.Route, table *api.Table) bool {
 	// A bearer token is checked against hashes that are not in the table, so
 	// judging it here would mean guessing. Control still owns that call.
 	if r.Header.Get("Authorization") != "" {
@@ -67,7 +67,7 @@ func (p *Proxy) mayServePrivately(r *http.Request, route proxyapi.Route, table *
 	// A preview grant (control's own screenshot browser) is app-bound and signed
 	// by the same key, so it opens ONLY the app it names and needs no access
 	// entry. Any other principal must be in the app's resolved access set.
-	if userID != proxyapi.PreviewPrincipal && !allowed(userID, route.Access, table.Admins) {
+	if userID != api.PreviewPrincipal && !allowed(userID, route.Access, table.Admins) {
 		return false
 	}
 	stripGrantCookie(r)

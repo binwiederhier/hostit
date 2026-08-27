@@ -14,7 +14,7 @@ import (
 	"regexp"
 	"time"
 
-	"heckel.io/hostit/hoststats"
+	"heckel.io/hostit/system/stats"
 
 	"heckel.io/hostit/archive"
 	"heckel.io/hostit/homefs"
@@ -286,7 +286,7 @@ type Heartbeat struct {
 	BtrfsCapable bool   `json:"btrfs_capable"`
 	// Stats is the machine's own resource state, so the admin page can tell a
 	// healthy box from a full one without anyone SSHing in.
-	Stats hoststats.Stats `json:"stats"`
+	Stats stats.Stats `json:"stats"`
 	// Address is where this node's published app ports are reachable -- what
 	// the proxy dials. The node reports it because the node is what knows it
 	// (it is the address its containers publish on); control records it so

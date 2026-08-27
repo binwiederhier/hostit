@@ -8,8 +8,8 @@ import (
 	"strconv"
 	"strings"
 
-	"heckel.io/hostit/btrfs"
 	"heckel.io/hostit/run"
+	"heckel.io/hostit/system/btrfs"
 )
 
 const (

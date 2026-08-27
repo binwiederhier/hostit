@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"heckel.io/hostit/connections"
-	"heckel.io/hostit/controlconf"
+	"heckel.io/hostit/control/config"
 	"heckel.io/hostit/store"
 )
 
@@ -131,7 +131,7 @@ func TestOnlyConfiguredProvidersAreOffered(t *testing.T) {
 	assert.False(t, byName["slack-bot"], "no Slack client configured in tests")
 
 	// Configure one and it appears, without a restart
-	s.config.ConnectionClients = map[string]controlconf.OAuthClient{"slack-bot": {ClientID: "id", ClientSecret: "sec"}}
+	s.config.ConnectionClients = map[string]config.OAuthClient{"slack-bot": {ClientID: "id", ClientSecret: "sec"}}
 	byName = map[string]bool{}
 	for _, p := range s.connections.offered() {
 		byName[p.Name] = true
@@ -256,7 +256,7 @@ func TestACustomProviderFromConfigIsOfferedAndConnectable(t *testing.T) {
 	t.Parallel()
 	s := newTestServer(t)
 	f := newFakeAuthServer(t)
-	s.config.ConnectionClients = map[string]controlconf.OAuthClient{"acme": {
+	s.config.ConnectionClients = map[string]config.OAuthClient{"acme": {
 		ClientID: "acme-id", ClientSecret: "acme-secret",
 		Label:    "Acme",
 		Scopes:   []string{"read"},
@@ -309,7 +309,7 @@ func TestACustomProviderFromConfigIsOfferedAndConnectable(t *testing.T) {
 func TestABrokenCustomProviderRefusesToLoad(t *testing.T) {
 	t.Parallel()
 	s := newTestServer(t)
-	s.config.ConnectionClients = map[string]controlconf.OAuthClient{"acme": {
+	s.config.ConnectionClients = map[string]config.OAuthClient{"acme": {
 		ClientID: "acme-id", ClientSecret: "acme-secret", Label: "Acme",
 	}}
 	err := s.connections.loadCustomProviders(s.config)
@@ -322,7 +322,7 @@ func TestABrokenCustomProviderRefusesToLoad(t *testing.T) {
 func TestConfiguringABuiltinIsNotACustomProvider(t *testing.T) {
 	t.Parallel()
 	s := newTestServer(t)
-	s.config.ConnectionClients = map[string]controlconf.OAuthClient{"github": {ClientID: "id", ClientSecret: "secret"}}
+	s.config.ConnectionClients = map[string]config.OAuthClient{"github": {ClientID: "id", ClientSecret: "secret"}}
 	require.NoError(t, s.connections.loadCustomProviders(s.config))
 
 	p, ok := s.connections.lookup("github")

@@ -7,7 +7,7 @@ import (
 
 	"github.com/urfave/cli/v2"
 
-	"heckel.io/hostit/clitable"
+	"heckel.io/hostit/cmd/util"
 )
 
 func execSnapshots(c *cli.Context) error {
@@ -34,7 +34,7 @@ func execSnapshots(c *cli.Context) error {
 		}
 		rows = append(rows, []string{s.ID, s.CreatedAt.Format("2006-01-02 15:04"), kind, s.Label})
 	}
-	fmt.Println(clitable.Render([]string{"ID", "CREATED", "KIND", "LABEL"}, rows))
+	fmt.Println(util.Render([]string{"ID", "CREATED", "KIND", "LABEL"}, rows))
 	return nil
 }
 

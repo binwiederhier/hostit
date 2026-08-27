@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"heckel.io/hostit/connections"
-	"heckel.io/hostit/outbound"
+	"heckel.io/hostit/http/outbound"
 	"heckel.io/hostit/store"
 )
 

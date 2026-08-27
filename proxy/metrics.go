@@ -10,7 +10,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	"heckel.io/hostit/proxyapi"
+	"heckel.io/hostit/proxy/api"
 )
 
 // Proxy metrics, exposed on the optional listen-metrics endpoint.
@@ -32,7 +32,7 @@ func (p *Proxy) registerRoutesGauge() {
 	promauto.NewGaugeFunc(prometheus.GaugeOpts{
 		Name: "hostit_proxy_routes", Help: "App routes this proxy is currently serving.",
 	}, func() float64 {
-		if t, ok := p.table.Load().(*proxyapi.Table); ok && t != nil {
+		if t, ok := p.table.Load().(*api.Table); ok && t != nil {
 			return float64(len(t.Routes))
 		}
 		return 0

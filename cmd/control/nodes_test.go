@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"heckel.io/hostit/cluster"
-	"heckel.io/hostit/nodelink"
+	"heckel.io/hostit/node/link"
 	"heckel.io/hostit/store"
 )
 
@@ -29,7 +29,7 @@ func TestNodeAddRegistersTheNode(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	// Control has started once: CA and registry exist.
-	_, _, err := nodelink.EnsureIPCCreds(dir)
+	_, _, err := link.EnsureIPCCreds(dir)
 	require.NoError(t, err)
 	s, err := store.NewStore(filepath.Join(dir, "hostit.db"))
 	require.NoError(t, err)
@@ -37,11 +37,11 @@ func TestNodeAddRegistersTheNode(t *testing.T) {
 
 	// The CLI's mint path: issue the node's certificate from the cluster CA
 	// and register the row; the pair plus the row IS the membership.
-	ca, err := nodelink.LoadCA(dir)
+	ca, err := link.LoadCA(dir)
 	require.NoError(t, err)
 	cert, err := ca.Issue("worker-2", cluster.RoleNode)
 	require.NoError(t, err)
-	certPEM, keyPEM, err := nodelink.EncodeCert(cert)
+	certPEM, keyPEM, err := link.EncodeCert(cert)
 	require.NoError(t, err)
 	assert.Contains(t, certPEM, "BEGIN CERTIFICATE")
 	assert.Contains(t, keyPEM, "BEGIN PRIVATE KEY")

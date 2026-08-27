@@ -6,7 +6,7 @@
 //
 // It knows nothing about what nodes or proxies actually say to each other --
 // those contracts live in nodeapi and proxyapi, and their wire layers in
-// nodelink and proxylink. Keeping this package free of them is what lets
+// nodelink and link. Keeping this package free of them is what lets
 // hostit-proxy speak the cluster protocol without linking the registry (and
 // with it SQLite) into a binary that has no database.
 package cluster

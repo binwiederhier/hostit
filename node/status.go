@@ -8,7 +8,7 @@ import (
 	"net/http"
 
 	"heckel.io/hostit/cluster"
-	"heckel.io/hostit/nodelink"
+	"heckel.io/hostit/node/link"
 	"heckel.io/hostit/store"
 )
 
@@ -32,7 +32,7 @@ type StatusApp struct {
 }
 
 // nodeStatus assembles the Status from the pieces the daemon holds.
-func nodeStatus(conf *Config, st *store.Store, link *nodelink.ControlLink, version string) (*Status, error) {
+func nodeStatus(conf *Config, st *store.Store, link *link.ControlLink, version string) (*Status, error) {
 	apps, err := st.Apps()
 	if err != nil {
 		return nil, err
@@ -53,7 +53,7 @@ func nodeStatus(conf *Config, st *store.Store, link *nodelink.ControlLink, versi
 // ServeStatusSocket serves the node's status on a root-only unix socket, for
 // `hostit node status`. cluster.ListenSocket's 0600 is the whole story: only
 // root may ask, and nothing served here mutates anything.
-func ServeStatusSocket(path string, conf *Config, st *store.Store, link *nodelink.ControlLink, version string) (io.Closer, error) {
+func ServeStatusSocket(path string, conf *Config, st *store.Store, link *link.ControlLink, version string) (io.Closer, error) {
 	listener, err := cluster.ListenSocket(path)
 	if err != nil {
 		return nil, err

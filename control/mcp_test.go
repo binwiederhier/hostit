@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"heckel.io/hostit/outbound"
+	"heckel.io/hostit/http/outbound"
 	"heckel.io/hostit/store"
 )
 

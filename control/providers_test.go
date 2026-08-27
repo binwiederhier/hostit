@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"heckel.io/hostit/controlconf"
+	"heckel.io/hostit/control/config"
 	"heckel.io/hostit/store"
 )
 
@@ -116,7 +116,7 @@ func TestAPersonalProviderIsInvisibleToOtherUsers(t *testing.T) {
 func TestAPersonalProviderCannotShadowABuiltinOrTheOperators(t *testing.T) {
 	t.Parallel()
 	s := newTestServer(t)
-	s.config.ConnectionClients = map[string]controlconf.OAuthClient{"acme": {
+	s.config.ConnectionClients = map[string]config.OAuthClient{"acme": {
 		ClientID: "id", ClientSecret: "secret", Label: "Operator Acme",
 		AuthURL: "https://a/x", TokenURL: "https://a/t",
 	}}
@@ -162,7 +162,7 @@ func TestOnlyAnAdminDefinesAnInstanceProvider(t *testing.T) {
 func TestNamedMCPServersComeFromConfigAndFromAdmins(t *testing.T) {
 	t.Parallel()
 	s := newTestServer(t)
-	s.config.MCPServers = map[string]controlconf.MCPServer{
+	s.config.MCPServers = map[string]config.MCPServer{
 		"deepwiki": {Label: "DeepWiki", URL: "https://mcp.deepwiki.com/mcp", Help: "Ask about a repo"},
 	}
 	admin := newActiveTestUser(t, s, "admin@example.com")

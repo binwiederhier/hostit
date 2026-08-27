@@ -15,7 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"heckel.io/hostit/control/apptest"
-	"heckel.io/hostit/controlconf"
+	"heckel.io/hostit/control/config"
 	"heckel.io/hostit/store"
 	"heckel.io/hostit/user"
 )
@@ -449,7 +449,7 @@ func TestBreakglassLogin(t *testing.T) {
 
 func newTestServer(t *testing.T) *Server {
 	t.Helper()
-	conf := controlconf.NewConfig()
+	conf := config.NewConfig()
 	conf.BaseDomain = "apps.example.com"
 	conf.AdminToken = testToken
 	conf.AppsDir = t.TempDir()
@@ -585,7 +585,7 @@ func TestUnknownAPIPathIsNotAWebPage(t *testing.T) {
 // changes -- seen live on the two-node stage).
 func TestSetNodeRepointsTheAssistantOps(t *testing.T) {
 	t.Parallel()
-	conf := controlconf.NewConfig()
+	conf := config.NewConfig()
 	conf.BaseDomain = "apps.example.com"
 	conf.AdminToken = testToken
 	conf.AppsDir = t.TempDir()

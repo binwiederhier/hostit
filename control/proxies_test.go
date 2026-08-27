@@ -13,31 +13,31 @@ import (
 
 	"heckel.io/hostit/appgrant"
 	"heckel.io/hostit/cluster"
-	"heckel.io/hostit/controlconf"
+	"heckel.io/hostit/control/config"
 	"heckel.io/hostit/node"
-	"heckel.io/hostit/proxyapi"
+	"heckel.io/hostit/proxy/api"
 	"heckel.io/hostit/store"
 	"heckel.io/hostit/user"
 )
 
 // recordingProxy stands in for a connected hostit-proxy.
 type recordingProxy struct {
-	tables chan *proxyapi.Table
+	tables chan *api.Table
 }
 
-func (r *recordingProxy) ApplyRoutes(table *proxyapi.Table) error {
+func (r *recordingProxy) ApplyRoutes(table *api.Table) error {
 	r.tables <- table
 	return nil
 }
 
-func (r *recordingProxy) Heartbeat() *proxyapi.Heartbeat { return &proxyapi.Heartbeat{} }
+func (r *recordingProxy) Heartbeat() *api.Heartbeat { return &api.Heartbeat{} }
 
 // Control states the routing table at its proxies rather than answering polls
 // for it: the same direction of authority a node's desired state travels in.
 // A proxy that connects is handed the table straight away.
 func TestPushRoutesReachesEveryConnectedProxy(t *testing.T) {
 	s := newTestServer(t)
-	a, b := &recordingProxy{tables: make(chan *proxyapi.Table, 4)}, &recordingProxy{tables: make(chan *proxyapi.Table, 4)}
+	a, b := &recordingProxy{tables: make(chan *api.Table, 4)}, &recordingProxy{tables: make(chan *api.Table, 4)}
 	s.Proxies().Register("edge-1", a)
 	s.Proxies().Register("edge-2", b)
 
@@ -161,7 +161,7 @@ func TestCertForServesPEMThroughTheCombinedLookup(t *testing.T) {
 	// proxy can tell "not ours" from "cannot reach control".
 	s.tlsGetCert = func(*tls.ClientHelloInfo) (*tls.Certificate, error) { return nil, errors.New("nope") }
 	_, err = s.CertFor("nobody.example.com")
-	assert.ErrorIs(t, err, proxyapi.ErrNoCert)
+	assert.ErrorIs(t, err, api.ErrNoCert)
 }
 
 // The routing table's version must keep increasing across a control restart.
@@ -192,9 +192,9 @@ func TestRouteTableVersionSurvivesAControlRestart(t *testing.T) {
 	assert.Greater(t, after.Seq, before.Seq, "a restarted control must not reuse a version the proxy already has")
 }
 
-func newProxyTestDeps(t *testing.T) (*controlconf.Config, *store.Store) {
+func newProxyTestDeps(t *testing.T) (*config.Config, *store.Store) {
 	t.Helper()
-	conf := controlconf.NewConfig()
+	conf := config.NewConfig()
 	conf.BaseDomain = "apps.example.com"
 	conf.AdminToken = testToken
 	conf.AppsDir, conf.DataDir = t.TempDir(), t.TempDir()
@@ -210,7 +210,7 @@ func newProxyTestDeps(t *testing.T) (*controlconf.Config, *store.Store) {
 func TestProxyHeartbeatRecordsLiveness(t *testing.T) {
 	s := newTestServer(t)
 	require.NoError(t, s.apps.Store().EnsureProxy("edge-1"))
-	s.Proxies().Register("edge-1", &recordingProxy{tables: make(chan *proxyapi.Table, 1)})
+	s.Proxies().Register("edge-1", &recordingProxy{tables: make(chan *api.Table, 1)})
 
 	before, err := s.apps.Store().Proxy("edge-1")
 	require.NoError(t, err)
@@ -229,7 +229,7 @@ func TestProxyHeartbeatRecordsLiveness(t *testing.T) {
 func TestProxyHeartbeatDropsARemovedProxy(t *testing.T) {
 	s := newTestServer(t)
 	require.NoError(t, s.apps.Store().EnsureProxy("edge-1"))
-	agent := &recordingProxy{tables: make(chan *proxyapi.Table, 1)}
+	agent := &recordingProxy{tables: make(chan *api.Table, 1)}
 	s.Proxies().Register("edge-1", agent)
 	require.NoError(t, s.apps.Store().DeleteProxy("edge-1"))
 
@@ -333,7 +333,7 @@ func TestRoutesCarryTheAccessSet(t *testing.T) {
 
 	table, err := s.Routes()
 	require.NoError(t, err)
-	byHost := make(map[string]proxyapi.Route, len(table.Routes))
+	byHost := make(map[string]api.Route, len(table.Routes))
 	for _, r := range table.Routes {
 		byHost[r.Host] = r
 	}
@@ -416,7 +416,7 @@ func TestACustomDomainCarriesTheSameAccessSet(t *testing.T) {
 
 	table, err := s.Routes()
 	require.NoError(t, err)
-	byHost := make(map[string]proxyapi.Route, len(table.Routes))
+	byHost := make(map[string]api.Route, len(table.Routes))
 	for _, r := range table.Routes {
 		byHost[r.Host] = r
 	}

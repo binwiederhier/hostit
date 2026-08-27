@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 
-	"heckel.io/hostit/controlconf"
+	"heckel.io/hostit/control/config"
 )
 
 // apiProxyHandler forwards every request to the container's unix socket, so the
@@ -41,14 +41,14 @@ func apiProxyHandler(socketPath string) http.Handler {
 // bind failure is logged, not fatal: the app must still come up (and can still
 // use the unix socket) if, say, something already holds the address.
 func (a *Agent) serveContainerAPI() {
-	ln, err := net.Listen("tcp", controlconf.ContainerAPIAddr)
+	ln, err := net.Listen("tcp", config.ContainerAPIAddr)
 	if err != nil {
 		slog.Warn("Container API not served on TCP; the unix socket is unaffected",
-			"addr", controlconf.ContainerAPIAddr, "error", err)
+			"addr", config.ContainerAPIAddr, "error", err)
 		return
 	}
-	slog.Info("Container API on loopback, in addition to the unix socket", "addr", controlconf.ContainerAPIAddr)
-	if err := http.Serve(ln, apiProxyHandler(controlconf.DefaultSocketFile)); err != nil {
+	slog.Info("Container API on loopback, in addition to the unix socket", "addr", config.ContainerAPIAddr)
+	if err := http.Serve(ln, apiProxyHandler(config.DefaultSocketFile)); err != nil {
 		slog.Warn("Container API loopback listener stopped", "error", err)
 	}
 }

@@ -1,0 +1,255 @@
+package link
+
+import (
+	"bytes"
+	"errors"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"heckel.io/hostit/cluster"
+	"heckel.io/hostit/nodeapi"
+	"heckel.io/hostit/store"
+)
+
+// recordingCallbackStore captures what the callbacks write to the registry.
+// hosts maps app name -> hosting node id, so the scoping guard can be exercised.
+type recordingCallbackStore struct {
+	power map[string]bool
+	usage map[string]int
+	snaps map[string]int
+	hosts map[string]string
+}
+
+func (r *recordingCallbackStore) SetAppPoweredOff(name string, off bool) error {
+	r.power[name] = off
+	return nil
+}
+
+func (r *recordingCallbackStore) UpdateAppUsage(name string, usedMB int) error {
+	r.usage[name] = usedMB
+	return nil
+}
+
+func (r *recordingCallbackStore) ReplaceAppSnapshots(name string, snaps []*store.Snapshot) error {
+	r.snaps[name] = len(snaps)
+	return nil
+}
+
+func (r *recordingCallbackStore) AppHost(name string) (string, error) {
+	if h, ok := r.hosts[name]; ok {
+		return h, nil
+	}
+	return "", store.ErrAppNotFound
+}
+
+// TestCallbacksFlowOverTheDuplex is the full reverse path: the node's control
+// sink posts over the same session the RPC rides on, and control's callback
+// handler applies it to the registry.
+func TestCallbacksFlowOverTheDuplex(t *testing.T) {
+	t.Parallel()
+	st := &recordingCallbackStore{power: map[string]bool{}, usage: map[string]int{}, snaps: map[string]int{}, hosts: map[string]string{"blog": "node-b"}}
+	registered := make(chan struct{}, 1)
+	sockPath := filepath.Join(t.TempDir(), "cluster.sock")
+	ln, err := cluster.ListenSocket(sockPath)
+	require.NoError(t, err)
+	defer ln.Close()
+	srv := cluster.SocketServer(cluster.ConnectHandler(map[string]*cluster.Role{
+		cluster.RoleNode: Role(
+			func(string) bool { return true },
+			func(nodeID string) http.Handler { return CallbackHandler(nodeID, st) },
+			func(string, nodeapi.NodeAgent) { registered <- struct{}{} },
+			nil,
+		),
+	}))
+	go func() { _ = srv.Serve(ln) }()
+	defer srv.Close()
+
+	conn, err := cluster.DialSocket(sockPath)
+	require.NoError(t, err)
+	link := NewControlLink()
+	go func() {
+		_ = ServeAgent(conn, "node-b", &fakeAgentFull{written: map[string][]byte{}}, link.SetClient)
+	}()
+	select {
+	case <-registered:
+	case <-time.After(3 * time.Second):
+		t.Fatal("node never registered")
+	}
+	// Control registered first; wait for the node side to finish wiring its
+	// reverse client (a callback posted before that is dropped by design).
+	require.Eventually(t, func() bool {
+		link.mu.Lock()
+		defer link.mu.Unlock()
+		return link.client != nil
+	}, 3*time.Second, 5*time.Millisecond)
+
+	link.PowerChanged("blog", true)
+	link.UsageChanged("blog", 42)
+	link.SnapshotsChanged("blog", []*store.Snapshot{{ID: "s1", AppName: "blog", CreatedAt: time.Now()}})
+
+	assert.True(t, st.power["blog"])
+	assert.Equal(t, 42, st.usage["blog"])
+	assert.Equal(t, 1, st.snaps["blog"])
+}
+
+func TestCallbacksAreScopedToTheCallingNode(t *testing.T) {
+	t.Parallel()
+	// A node may only report control-plane data for apps IT hosts. "blog" is on
+	// node-b (the caller); "victim" is on another node. The victim callbacks
+	// must be rejected and leave the registry untouched -- a compromised node
+	// must not flip another tenant's power, poison its usage, or wipe its
+	// snapshot rows.
+	st := &recordingCallbackStore{
+		power: map[string]bool{}, usage: map[string]int{}, snaps: map[string]int{},
+		hosts: map[string]string{"blog": "node-b", "victim": "node-c"},
+	}
+	h := CallbackHandler("node-b", st)
+
+	post := func(kind, body string) int {
+		req := httptest.NewRequest("POST", callbackPathPrefix+kind, strings.NewReader(body))
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec.Code
+	}
+
+	// Own app: accepted.
+	assert.Equal(t, http.StatusOK, post("power", `{"name":"blog","powered_off":true}`))
+	assert.True(t, st.power["blog"])
+
+	// Another node's app: refused, no write.
+	assert.Equal(t, http.StatusForbidden, post("power", `{"name":"victim","powered_off":true}`))
+	assert.Equal(t, http.StatusForbidden, post("usage", `{"name":"victim","used_mb":9}`))
+	assert.Equal(t, http.StatusForbidden, post("snapshots", `{"name":"victim","snapshots":[]}`))
+	_, touchedPower := st.power["victim"]
+	_, touchedUsage := st.usage["victim"]
+	_, touchedSnaps := st.snaps["victim"]
+	assert.False(t, touchedPower, "victim power untouched")
+	assert.False(t, touchedUsage, "victim usage untouched")
+	assert.False(t, touchedSnaps, "victim snapshots untouched")
+
+	// An unknown app is refused too (no host to match).
+	assert.Equal(t, http.StatusForbidden, post("power", `{"name":"ghost","powered_off":true}`))
+}
+
+// fakeTerminal is an in-memory pty: it echoes writes back upper-cased (so the
+// test can tell an echo from a passthrough) and records resizes.
+type fakeTerminal struct {
+	out     chan []byte
+	resizes chan [2]uint16
+	closed  chan struct{}
+}
+
+func newFakeTerminal() *fakeTerminal {
+	return &fakeTerminal{out: make(chan []byte, 16), resizes: make(chan [2]uint16, 16), closed: make(chan struct{})}
+}
+
+func (f *fakeTerminal) Read(p []byte) (int, error) {
+	select {
+	case b := <-f.out:
+		return copy(p, b), nil
+	case <-f.closed:
+		return 0, io.EOF
+	}
+}
+
+func (f *fakeTerminal) Write(p []byte) (int, error) {
+	f.out <- bytes.ToUpper(p)
+	return len(p), nil
+}
+
+func (f *fakeTerminal) Resize(cols, rows uint16) error {
+	f.resizes <- [2]uint16{cols, rows}
+	return nil
+}
+
+func (f *fakeTerminal) Close() error {
+	select {
+	case <-f.closed:
+	default:
+		close(f.closed)
+	}
+	return nil
+}
+
+type terminalAgent struct {
+	fakeAgentFull
+	term *fakeTerminal
+}
+
+func (a *terminalAgent) Terminal(name string) (nodeapi.TerminalSession, error) {
+	if name != "blog" {
+		return nil, errors.New("unknown app")
+	}
+	return a.term, nil
+}
+
+// A browser terminal for a remote-node app rides the cluster link as a raw
+// stream: hand-rolled upgrade, framed input, raw output. This drives the whole
+// path over a REAL duplex -- the hijack on the node side, the 101 parse and
+// framing on control's -- because every piece of it is hand-written wire code,
+// exactly where a unit test of either half proves nothing about the pair.
+func TestTerminalBridgesOverTheDuplex(t *testing.T) {
+	sockPath := filepath.Join(t.TempDir(), "cluster.sock")
+	ln, err := cluster.ListenSocket(sockPath)
+	require.NoError(t, err)
+	defer ln.Close()
+
+	agents := make(chan nodeapi.NodeAgent, 1)
+	srv := cluster.SocketServer(cluster.ConnectHandler(map[string]*cluster.Role{
+		cluster.RoleNode: Role(
+			func(string) bool { return true },
+			nil,
+			func(_ string, agent nodeapi.NodeAgent) { agents <- agent },
+			nil,
+		),
+	}))
+	go func() { _ = srv.Serve(ln) }()
+	defer srv.Close()
+
+	conn, err := cluster.DialSocket(sockPath)
+	require.NoError(t, err)
+	term := newFakeTerminal()
+	go func() {
+		_ = ServeAgent(conn, "node-b", &terminalAgent{term: term}, func(*http.Client) {})
+	}()
+
+	var remote nodeapi.NodeAgent
+	select {
+	case remote = <-agents:
+	case <-time.After(3 * time.Second):
+		t.Fatal("node never registered")
+	}
+
+	sess, err := remote.Terminal("blog")
+	require.NoError(t, err)
+	defer sess.Close()
+
+	// Keystrokes arrive at the pty; its output comes back raw.
+	_, err = sess.Write([]byte("hello"))
+	require.NoError(t, err)
+	buf := make([]byte, 64)
+	n, err := sess.Read(buf)
+	require.NoError(t, err)
+	assert.Equal(t, "HELLO", string(buf[:n]), "the fake pty echoes upper-cased")
+
+	// A resize travels in-band and lands as a resize, not as input.
+	require.NoError(t, sess.Resize(120, 40))
+	select {
+	case rs := <-term.resizes:
+		assert.Equal(t, [2]uint16{120, 40}, rs)
+	case <-time.After(3 * time.Second):
+		t.Fatal("resize never arrived")
+	}
+
+	// An unknown app is refused during the upgrade, not after it.
+	_, err = remote.Terminal("ghost")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unknown app")
+}

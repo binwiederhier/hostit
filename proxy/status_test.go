@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"heckel.io/hostit/proxyapi"
+	"heckel.io/hostit/proxy/api"
 )
 
 // The status is answered from the proxy's own cache and link state; nothing is
@@ -28,7 +28,7 @@ func TestProxyStatusReflectsTableAndLink(t *testing.T) {
 	assert.Zero(t, s.TableSeq)
 	assert.Zero(t, s.Routes)
 
-	require.NoError(t, p.ApplyRoutes(&proxyapi.Table{Seq: 7, Routes: []proxyapi.Route{
+	require.NoError(t, p.ApplyRoutes(&api.Table{Seq: 7, Routes: []api.Route{
 		{Host: "blog.example.com", Target: "10.0.0.2:10001"},
 	}}))
 	p.setSink(noSink{})
@@ -53,7 +53,7 @@ func TestProxyStatusReflectsTableAndLink(t *testing.T) {
 func TestProxyStatusSocketServes(t *testing.T) {
 	t.Parallel()
 	p := New(&Config{ProxyID: "edge-1", ControlURL: "http://127.0.0.1:2586", ClusterURL: "10.0.0.1:2930", CacheDir: t.TempDir()})
-	require.NoError(t, p.ApplyRoutes(&proxyapi.Table{Seq: 3, Routes: []proxyapi.Route{
+	require.NoError(t, p.ApplyRoutes(&api.Table{Seq: 3, Routes: []api.Route{
 		{Host: "blog.example.com", Target: "10.0.0.2:10001"},
 	}}))
 	path := filepath.Join(t.TempDir(), "proxy.sock")
@@ -83,7 +83,7 @@ func TestProxyStatusSocketServes(t *testing.T) {
 	require.NoError(t, err)
 	defer resp.Body.Close()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
-	var table proxyapi.Table
+	var table api.Table
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&table))
 	require.Len(t, table.Routes, 1)
 	assert.Equal(t, "blog.example.com", table.Routes[0].Host)

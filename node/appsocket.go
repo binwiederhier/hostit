@@ -15,8 +15,8 @@ import (
 	"golang.org/x/sys/unix"
 
 	"heckel.io/hostit/cluster"
+	"heckel.io/hostit/node/link"
 	"heckel.io/hostit/nodeapi"
-	"heckel.io/hostit/nodelink"
 	"heckel.io/hostit/store"
 )
 
@@ -71,7 +71,7 @@ func ListenAppSocket(path string) (net.Listener, error) {
 
 // AppSocketServer builds the http.Server for the app socket: peer uid captured
 // per connection, requests resolved and relayed by appSocketHandler.
-func AppSocketServer(st *store.Store, link *nodelink.ControlLink) *http.Server {
+func AppSocketServer(st *store.Store, link *link.ControlLink) *http.Server {
 	return &http.Server{
 		Handler: appSocketHandler(st, link),
 		ConnContext: func(ctx context.Context, c net.Conn) context.Context {
@@ -88,7 +88,7 @@ func AppSocketServer(st *store.Store, link *nodelink.ControlLink) *http.Server {
 // the control dial loop: the socket must exist the moment a container starts,
 // and a relay before the first connection answers 502 rather than "no such
 // file", which is an error an app can retry.
-func ServeAppSocket(path string, st *store.Store, link *nodelink.ControlLink) (io.Closer, error) {
+func ServeAppSocket(path string, st *store.Store, link *link.ControlLink) (io.Closer, error) {
 	listener, err := ListenAppSocket(path)
 	if err != nil {
 		return nil, err
@@ -123,7 +123,7 @@ func isOperatorPath(path string) bool {
 const containerAliasPrefix = "/api/container"
 
 // appSocketHandler resolves the calling app and relays its request.
-func appSocketHandler(st *store.Store, link *nodelink.ControlLink) http.Handler {
+func appSocketHandler(st *store.Store, link *link.ControlLink) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Operator commands do not live on this socket any more: control's own
 		// socket serves them, where peer uid 0 means admin. Saying so here is
@@ -158,7 +158,7 @@ func appSocketHandler(st *store.Store, link *nodelink.ControlLink) http.Handler 
 
 // relay forwards one request to control over the cluster link, verbatim except
 // for the path prefix and the app header, and streams the response back.
-func relay(w http.ResponseWriter, r *http.Request, link *nodelink.ControlLink, appName string) {
+func relay(w http.ResponseWriter, r *http.Request, link *link.ControlLink, appName string) {
 	client := link.Client()
 	if client == nil {
 		writeSocketError(w, http.StatusBadGateway, errControlUnreachable.Error())

@@ -26,7 +26,7 @@ func TestContainerKeyFromHome(t *testing.T) {
 		// A pre-id app still has a name-keyed home, matching its name-keyed container.
 		{"name-keyed home (pre-id)", "/var/lib/hostit/apps/blog", "hostit-app-blog", true},
 		{"trailing slash", "/var/lib/hostit/apps/abc123/home/app/", "hostit-app-abc123", true},
-		// Guards: nothing argument-shaped may reach podman.
+		// Guards: nothing argument-shaped may reach container.
 		{"empty", "", "", false},
 		{"root", "/", "", false},
 		// A ".." is resolved by Clean to the (safe) parent basename, never traversal.

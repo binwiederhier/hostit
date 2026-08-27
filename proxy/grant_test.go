@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"heckel.io/hostit/appgrant"
-	"heckel.io/hostit/proxyapi"
+	"heckel.io/hostit/proxy/api"
 )
 
 // The point of the whole exercise: a private app is served BY THE PROXY, from
@@ -29,11 +29,11 @@ func TestPrivateAppsAreServedByTheProxy(t *testing.T) {
 	// Control is DOWN for this whole test: nothing may depend on it.
 	p := New(&Config{ControlURL: "http://127.0.0.1:1", CacheDir: t.TempDir()})
 	signer := appgrant.NewSigner("session-key", time.Hour)
-	require.NoError(t, p.ApplyRoutes(&proxyapi.Table{
+	require.NoError(t, p.ApplyRoutes(&api.Table{
 		Seq:            1,
 		GrantPublicKey: signer.PublicKey(),
 		Admins:         []string{"admin1"},
-		Routes: []proxyapi.Route{{
+		Routes: []api.Route{{
 			Host: "dash.example.com", Target: appSrv.Listener.Addr().String(), App: "dash",
 			Private: true, Access: []string{"owner1", "guest1"},
 		}},
@@ -47,7 +47,7 @@ func TestPrivateAppsAreServedByTheProxy(t *testing.T) {
 		if grantFor != "" {
 			value, err := signer.Sign("dash", grantFor)
 			require.NoError(t, err)
-			req.AddCookie(&http.Cookie{Name: proxyapi.GrantCookie, Value: value})
+			req.AddCookie(&http.Cookie{Name: api.GrantCookie, Value: value})
 		}
 		p.ServeHTTP(rr, req)
 		return rr
@@ -75,9 +75,9 @@ func TestTheProxyRefusesGrantsItShouldNot(t *testing.T) {
 	p := New(&Config{ControlURL: "http://127.0.0.1:1", CacheDir: t.TempDir()})
 	signer := appgrant.NewSigner("session-key", time.Hour)
 	impostor := appgrant.NewSigner("some other key", time.Hour)
-	require.NoError(t, p.ApplyRoutes(&proxyapi.Table{
+	require.NoError(t, p.ApplyRoutes(&api.Table{
 		Seq: 1, GrantPublicKey: signer.PublicKey(),
-		Routes: []proxyapi.Route{{Host: "dash.example.com", Target: appSrv.Listener.Addr().String(), App: "dash", Private: true, Access: []string{"owner1"}}},
+		Routes: []api.Route{{Host: "dash.example.com", Target: appSrv.Listener.Addr().String(), App: "dash", Private: true, Access: []string{"owner1"}}},
 	}))
 
 	for _, tc := range []struct {
@@ -95,7 +95,7 @@ func TestTheProxyRefusesGrantsItShouldNot(t *testing.T) {
 		rr := httptest.NewRecorder()
 		req := httptest.NewRequest("GET", "http://ignored/", nil)
 		req.Host = "dash.example.com"
-		req.AddCookie(&http.Cookie{Name: proxyapi.GrantCookie, Value: value})
+		req.AddCookie(&http.Cookie{Name: api.GrantCookie, Value: value})
 		p.ServeHTTP(rr, req)
 		assert.NotEqual(t, "the app itself", rr.Body.String(), tc.name)
 	}
@@ -112,21 +112,21 @@ func TestTheProxyStripsTheGrantBeforeForwarding(t *testing.T) {
 	defer appSrv.Close()
 	p := New(&Config{ControlURL: "http://127.0.0.1:1", CacheDir: t.TempDir()})
 	signer := appgrant.NewSigner("session-key", time.Hour)
-	require.NoError(t, p.ApplyRoutes(&proxyapi.Table{
+	require.NoError(t, p.ApplyRoutes(&api.Table{
 		Seq: 1, GrantPublicKey: signer.PublicKey(),
-		Routes: []proxyapi.Route{{Host: "dash.example.com", Target: appSrv.Listener.Addr().String(), App: "dash", Private: true, Access: []string{"owner1"}}},
+		Routes: []api.Route{{Host: "dash.example.com", Target: appSrv.Listener.Addr().String(), App: "dash", Private: true, Access: []string{"owner1"}}},
 	}))
 
 	value, err := signer.Sign("dash", "owner1")
 	require.NoError(t, err)
 	req := httptest.NewRequest("GET", "http://ignored/", nil)
 	req.Host = "dash.example.com"
-	req.AddCookie(&http.Cookie{Name: proxyapi.GrantCookie, Value: value})
+	req.AddCookie(&http.Cookie{Name: api.GrantCookie, Value: value})
 	req.AddCookie(&http.Cookie{Name: "app_own_cookie", Value: "keep-me"})
 	p.ServeHTTP(httptest.NewRecorder(), req)
 
 	forwarded := <-seen
-	_, err = forwarded.Cookie(proxyapi.GrantCookie)
+	_, err = forwarded.Cookie(api.GrantCookie)
 	assert.Error(t, err, "the grant was stripped")
 	own, err := forwarded.Cookie("app_own_cookie")
 	require.NoError(t, err)
@@ -147,9 +147,9 @@ func TestBearerTokensStillGoToControl(t *testing.T) {
 	defer controlSrv.Close()
 	p := New(&Config{ControlURL: controlSrv.URL, CacheDir: t.TempDir()})
 	signer := appgrant.NewSigner("session-key", time.Hour)
-	require.NoError(t, p.ApplyRoutes(&proxyapi.Table{
+	require.NoError(t, p.ApplyRoutes(&api.Table{
 		Seq: 1, GrantPublicKey: signer.PublicKey(),
-		Routes: []proxyapi.Route{{Host: "dash.example.com", Target: appSrv.Listener.Addr().String(), App: "dash", Private: true, Access: []string{"owner1"}}},
+		Routes: []api.Route{{Host: "dash.example.com", Target: appSrv.Listener.Addr().String(), App: "dash", Private: true, Access: []string{"owner1"}}},
 	}))
 
 	value, err := signer.Sign("dash", "owner1")
@@ -158,7 +158,7 @@ func TestBearerTokensStillGoToControl(t *testing.T) {
 	req := httptest.NewRequest("GET", "http://ignored/", nil)
 	req.Host = "dash.example.com"
 	req.Header.Set("Authorization", "Bearer sometoken")
-	req.AddCookie(&http.Cookie{Name: proxyapi.GrantCookie, Value: value})
+	req.AddCookie(&http.Cookie{Name: api.GrantCookie, Value: value})
 	p.ServeHTTP(rr, req)
 	assert.Equal(t, "control decided", rr.Body.String())
 }
@@ -177,15 +177,15 @@ func TestARenamedAppInvalidatesOldGrants(t *testing.T) {
 	require.NoError(t, err)
 
 	// Control pushes the table again after the rename: same app, new name.
-	require.NoError(t, p.ApplyRoutes(&proxyapi.Table{
+	require.NoError(t, p.ApplyRoutes(&api.Table{
 		Seq: 1, GrantPublicKey: signer.PublicKey(),
-		Routes: []proxyapi.Route{{Host: "board.example.com", Target: appSrv.Listener.Addr().String(), App: "board", Private: true, Access: []string{"owner1"}}},
+		Routes: []api.Route{{Host: "board.example.com", Target: appSrv.Listener.Addr().String(), App: "board", Private: true, Access: []string{"owner1"}}},
 	}))
 
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequest("GET", "http://ignored/", nil)
 	req.Host = "board.example.com"
-	req.AddCookie(&http.Cookie{Name: proxyapi.GrantCookie, Value: oldGrant})
+	req.AddCookie(&http.Cookie{Name: api.GrantCookie, Value: oldGrant})
 	p.ServeHTTP(rr, req)
 	assert.NotEqual(t, "the app itself", rr.Body.String(), "the grant for the old name buys nothing")
 }
@@ -202,15 +202,15 @@ func TestNoGrantKeyMeansNoPrivateServing(t *testing.T) {
 	signer := appgrant.NewSigner("session-key", time.Hour)
 	value, err := signer.Sign("dash", "owner1")
 	require.NoError(t, err)
-	require.NoError(t, p.ApplyRoutes(&proxyapi.Table{
+	require.NoError(t, p.ApplyRoutes(&api.Table{
 		Seq:    1, // no GrantPublicKey
-		Routes: []proxyapi.Route{{Host: "dash.example.com", Target: appSrv.Listener.Addr().String(), App: "dash", Private: true, Access: []string{"owner1"}}},
+		Routes: []api.Route{{Host: "dash.example.com", Target: appSrv.Listener.Addr().String(), App: "dash", Private: true, Access: []string{"owner1"}}},
 	}))
 
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequest("GET", "http://ignored/", nil)
 	req.Host = "dash.example.com"
-	req.AddCookie(&http.Cookie{Name: proxyapi.GrantCookie, Value: value})
+	req.AddCookie(&http.Cookie{Name: api.GrantCookie, Value: value})
 	p.ServeHTTP(rr, req)
 	assert.NotEqual(t, "the app itself", rr.Body.String(), "without a key to check with, nothing is served")
 }
@@ -227,15 +227,15 @@ func TestAnEmptyAccessSetServesNobody(t *testing.T) {
 	signer := appgrant.NewSigner("session-key", time.Hour)
 	value, err := signer.Sign("dash", "owner1")
 	require.NoError(t, err)
-	require.NoError(t, p.ApplyRoutes(&proxyapi.Table{
+	require.NoError(t, p.ApplyRoutes(&api.Table{
 		Seq: 1, GrantPublicKey: signer.PublicKey(),
-		Routes: []proxyapi.Route{{Host: "dash.example.com", Target: appSrv.Listener.Addr().String(), App: "dash", Private: true}},
+		Routes: []api.Route{{Host: "dash.example.com", Target: appSrv.Listener.Addr().String(), App: "dash", Private: true}},
 	}))
 
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequest("GET", "http://ignored/", nil)
 	req.Host = "dash.example.com"
-	req.AddCookie(&http.Cookie{Name: proxyapi.GrantCookie, Value: value})
+	req.AddCookie(&http.Cookie{Name: api.GrantCookie, Value: value})
 	p.ServeHTTP(rr, req)
 	assert.NotEqual(t, "the app itself", rr.Body.String())
 }
@@ -255,8 +255,8 @@ func TestPrivateRoutesAreHandedToControl(t *testing.T) {
 
 	p := New(&Config{ControlURL: controlSrv.URL, CacheDir: t.TempDir()})
 	require.NoError(t, p.ApplyRoutes(table(1,
-		proxyapi.Route{Host: "blog.example.com", Target: appSrv.Listener.Addr().String()},
-		proxyapi.Route{Host: "dash.example.com", Target: appSrv.Listener.Addr().String(), Private: true},
+		api.Route{Host: "blog.example.com", Target: appSrv.Listener.Addr().String()},
+		api.Route{Host: "dash.example.com", Target: appSrv.Listener.Addr().String(), Private: true},
 	)))
 
 	rr := httptest.NewRecorder()
@@ -274,7 +274,7 @@ func TestPrivateRoutesAreHandedToControl(t *testing.T) {
 
 // privateProxy is a proxy serving one private app, with control unreachable --
 // which is the state these tests are actually about.
-func privateProxy(t *testing.T, cacheDir string, routes ...proxyapi.Route) (*Proxy, *appgrant.Signer, string) {
+func privateProxy(t *testing.T, cacheDir string, routes ...api.Route) (*Proxy, *appgrant.Signer, string) {
 	t.Helper()
 	appSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprint(w, "the app itself")
@@ -285,7 +285,7 @@ func privateProxy(t *testing.T, cacheDir string, routes ...proxyapi.Route) (*Pro
 		routes[i].Target = appSrv.Listener.Addr().String()
 	}
 	p := New(&Config{ControlURL: "http://127.0.0.1:1", CacheDir: cacheDir})
-	require.NoError(t, p.ApplyRoutes(&proxyapi.Table{Seq: 1, GrantPublicKey: signer.PublicKey(), Routes: routes}))
+	require.NoError(t, p.ApplyRoutes(&api.Table{Seq: 1, GrantPublicKey: signer.PublicKey(), Routes: routes}))
 	return p, signer, appSrv.Listener.Addr().String()
 }
 
@@ -307,15 +307,15 @@ func getAs(t *testing.T, p *Proxy, host, path, cookieName, grant string) *httpte
 // the case it is used.
 func TestHostitPathsGoToControlEvenWithAValidGrant(t *testing.T) {
 	t.Parallel()
-	p, signer, _ := privateProxy(t, t.TempDir(), proxyapi.Route{Host: "dash.example.com", App: "dash", Private: true, Access: []string{"owner1"}})
+	p, signer, _ := privateProxy(t, t.TempDir(), api.Route{Host: "dash.example.com", App: "dash", Private: true, Access: []string{"owner1"}})
 	grant, err := signer.Sign("dash", "owner1")
 	require.NoError(t, err)
 
-	for _, path := range []string{proxyapi.LogoutPath, proxyapi.AuthPath, proxyapi.GrantedPath} {
-		rr := getAs(t, p, "dash.example.com", path, proxyapi.GrantCookie, grant)
+	for _, path := range []string{api.LogoutPath, api.AuthPath, api.GrantedPath} {
+		rr := getAs(t, p, "dash.example.com", path, api.GrantCookie, grant)
 		assert.NotEqual(t, "the app itself", rr.Body.String(), path+" must not reach the app")
 	}
-	assert.Equal(t, "the app itself", getAs(t, p, "dash.example.com", "/", proxyapi.GrantCookie, grant).Body.String(),
+	assert.Equal(t, "the app itself", getAs(t, p, "dash.example.com", "/", api.GrantCookie, grant).Body.String(),
 		"ordinary paths are unaffected")
 }
 
@@ -325,7 +325,7 @@ func TestHostitPathsGoToControlEvenWithAValidGrant(t *testing.T) {
 func TestAPrivateAppSurvivesAProxyRestartFromDisk(t *testing.T) {
 	t.Parallel()
 	cache := t.TempDir()
-	_, signer, target := privateProxy(t, cache, proxyapi.Route{Host: "dash.example.com", App: "dash", Private: true, Access: []string{"owner1"}})
+	_, signer, target := privateProxy(t, cache, api.Route{Host: "dash.example.com", App: "dash", Private: true, Access: []string{"owner1"}})
 	grant, err := signer.Sign("dash", "owner1")
 	require.NoError(t, err)
 	stranger, err := signer.Sign("dash", "nobody")
@@ -334,25 +334,25 @@ func TestAPrivateAppSurvivesAProxyRestartFromDisk(t *testing.T) {
 	// A brand-new proxy over the same cache, control still unreachable.
 	cold := New(&Config{ControlURL: "http://127.0.0.1:1", CacheDir: cache})
 	require.Equal(t, int64(1), cold.Seq(), "it came back with the persisted table")
-	require.Equal(t, target, cold.table.Load().(*proxyapi.Table).Routes[0].Target)
+	require.Equal(t, target, cold.table.Load().(*api.Table).Routes[0].Target)
 
-	assert.Equal(t, "the app itself", getAs(t, cold, "dash.example.com", "/", proxyapi.GrantCookie, grant).Body.String())
-	assert.NotEqual(t, "the app itself", getAs(t, cold, "dash.example.com", "/", proxyapi.GrantCookie, stranger).Body.String())
+	assert.Equal(t, "the app itself", getAs(t, cold, "dash.example.com", "/", api.GrantCookie, grant).Body.String())
+	assert.NotEqual(t, "the app itself", getAs(t, cold, "dash.example.com", "/", api.GrantCookie, stranger).Body.String())
 }
 
 // Revoking somebody is a new table, and the proxy must act on it.
 func TestANewTableRevokesAccess(t *testing.T) {
 	t.Parallel()
-	p, signer, target := privateProxy(t, t.TempDir(), proxyapi.Route{Host: "dash.example.com", App: "dash", Private: true, Access: []string{"owner1", "guest1"}})
+	p, signer, target := privateProxy(t, t.TempDir(), api.Route{Host: "dash.example.com", App: "dash", Private: true, Access: []string{"owner1", "guest1"}})
 	grant, err := signer.Sign("dash", "guest1")
 	require.NoError(t, err)
-	require.Equal(t, "the app itself", getAs(t, p, "dash.example.com", "/", proxyapi.GrantCookie, grant).Body.String())
+	require.Equal(t, "the app itself", getAs(t, p, "dash.example.com", "/", api.GrantCookie, grant).Body.String())
 
-	require.NoError(t, p.ApplyRoutes(&proxyapi.Table{
+	require.NoError(t, p.ApplyRoutes(&api.Table{
 		Seq: 2, GrantPublicKey: signer.PublicKey(),
-		Routes: []proxyapi.Route{{Host: "dash.example.com", Target: target, App: "dash", Private: true, Access: []string{"owner1"}}},
+		Routes: []api.Route{{Host: "dash.example.com", Target: target, App: "dash", Private: true, Access: []string{"owner1"}}},
 	}))
-	assert.NotEqual(t, "the app itself", getAs(t, p, "dash.example.com", "/", proxyapi.GrantCookie, grant).Body.String(),
+	assert.NotEqual(t, "the app itself", getAs(t, p, "dash.example.com", "/", api.GrantCookie, grant).Body.String(),
 		"the same still-valid grant no longer buys access")
 }
 
@@ -361,13 +361,13 @@ func TestANewTableRevokesAccess(t *testing.T) {
 func TestAPrivateCustomDomainIsServedToo(t *testing.T) {
 	t.Parallel()
 	p, signer, _ := privateProxy(t, t.TempDir(),
-		proxyapi.Route{Host: "dash.example.com", App: "dash", Private: true, Access: []string{"owner1"}},
-		proxyapi.Route{Host: "dash.example.org", App: "dash", Private: true, Access: []string{"owner1"}},
+		api.Route{Host: "dash.example.com", App: "dash", Private: true, Access: []string{"owner1"}},
+		api.Route{Host: "dash.example.org", App: "dash", Private: true, Access: []string{"owner1"}},
 	)
 	grant, err := signer.Sign("dash", "owner1")
 	require.NoError(t, err)
 
-	assert.Equal(t, "the app itself", getAs(t, p, "dash.example.org", "/", proxyapi.GrantCookie, grant).Body.String(),
+	assert.Equal(t, "the app itself", getAs(t, p, "dash.example.org", "/", api.GrantCookie, grant).Body.String(),
 		"the grant names the app, and the custom domain is that app")
 }
 
@@ -375,22 +375,22 @@ func TestAPrivateCustomDomainIsServedToo(t *testing.T) {
 // that is the name most real requests carry.
 func TestTheHostPrefixedCookieNameIsAccepted(t *testing.T) {
 	t.Parallel()
-	p, signer, _ := privateProxy(t, t.TempDir(), proxyapi.Route{Host: "dash.example.com", App: "dash", Private: true, Access: []string{"owner1"}})
+	p, signer, _ := privateProxy(t, t.TempDir(), api.Route{Host: "dash.example.com", App: "dash", Private: true, Access: []string{"owner1"}})
 	grant, err := signer.Sign("dash", "owner1")
 	require.NoError(t, err)
 
-	assert.Equal(t, "the app itself", getAs(t, p, "dash.example.com", "/", proxyapi.GrantCookieHost, grant).Body.String())
+	assert.Equal(t, "the app itself", getAs(t, p, "dash.example.com", "/", api.GrantCookieHost, grant).Body.String())
 }
 
 // An empty user id is what an ownerless app and a token-minted grant both carry.
 // Matching one against the other would be an accident, not a decision.
 func TestAnEmptyUserIdMatchesNothing(t *testing.T) {
 	t.Parallel()
-	p, signer, _ := privateProxy(t, t.TempDir(), proxyapi.Route{Host: "dash.example.com", App: "dash", Private: true, Access: []string{""}})
+	p, signer, _ := privateProxy(t, t.TempDir(), api.Route{Host: "dash.example.com", App: "dash", Private: true, Access: []string{""}})
 	grant, err := signer.Sign("dash", "")
 	require.NoError(t, err)
 
-	assert.NotEqual(t, "the app itself", getAs(t, p, "dash.example.com", "/", proxyapi.GrantCookie, grant).Body.String())
+	assert.NotEqual(t, "the app itself", getAs(t, p, "dash.example.com", "/", api.GrantCookie, grant).Body.String())
 }
 
 // The grant must never reach the app, including on a route that is public NOW.
@@ -405,21 +405,21 @@ func TestTheGrantIsStrippedFromPublicRoutesToo(t *testing.T) {
 	defer appSrv.Close()
 	signer := appgrant.NewSigner("session-key", time.Hour)
 	p := New(&Config{ControlURL: "http://127.0.0.1:1", CacheDir: t.TempDir()})
-	require.NoError(t, p.ApplyRoutes(&proxyapi.Table{
+	require.NoError(t, p.ApplyRoutes(&api.Table{
 		Seq: 1, GrantPublicKey: signer.PublicKey(),
-		Routes: []proxyapi.Route{{Host: "pub.example.com", Target: appSrv.Listener.Addr().String(), App: "pub"}},
+		Routes: []api.Route{{Host: "pub.example.com", Target: appSrv.Listener.Addr().String(), App: "pub"}},
 	}))
 
 	grant, err := signer.Sign("pub", "u1")
 	require.NoError(t, err)
 	req := httptest.NewRequest("GET", "http://ignored/", nil)
 	req.Host = "pub.example.com"
-	req.AddCookie(&http.Cookie{Name: proxyapi.GrantCookieHost, Value: grant})
+	req.AddCookie(&http.Cookie{Name: api.GrantCookieHost, Value: grant})
 	req.AddCookie(&http.Cookie{Name: "app_own_cookie", Value: "keep-me"})
 	p.ServeHTTP(httptest.NewRecorder(), req)
 
 	forwarded := <-seen
-	_, err = forwarded.Cookie(proxyapi.GrantCookieHost)
+	_, err = forwarded.Cookie(api.GrantCookieHost)
 	assert.Error(t, err, "a public app does not get to see grants either")
 	own, err := forwarded.Cookie("app_own_cookie")
 	require.NoError(t, err)
@@ -432,14 +432,14 @@ func TestTheGrantIsStrippedFromPublicRoutesToo(t *testing.T) {
 // prefixed name counts.
 func TestOnlyTheHostPrefixedNameCountsUnderTLS(t *testing.T) {
 	t.Parallel()
-	p, signer, _ := privateProxy(t, t.TempDir(), proxyapi.Route{Host: "dash.example.com", App: "dash", Private: true, Access: []string{"owner1"}})
+	p, signer, _ := privateProxy(t, t.TempDir(), api.Route{Host: "dash.example.com", App: "dash", Private: true, Access: []string{"owner1"}})
 	grant, err := signer.Sign("dash", "owner1")
 	require.NoError(t, err)
 
 	req := httptest.NewRequest("GET", "https://dash.example.com/", nil)
 	req.Host = "dash.example.com"
 	req.TLS = &tls.ConnectionState{}
-	req.AddCookie(&http.Cookie{Name: proxyapi.GrantCookie, Value: grant}) // bare name
+	req.AddCookie(&http.Cookie{Name: api.GrantCookie, Value: grant}) // bare name
 	rr := httptest.NewRecorder()
 	p.ServeHTTP(rr, req)
 	assert.NotEqual(t, "the app itself", rr.Body.String(), "a bare-named cookie is not a grant over TLS")
@@ -447,7 +447,7 @@ func TestOnlyTheHostPrefixedNameCountsUnderTLS(t *testing.T) {
 	req = httptest.NewRequest("GET", "https://dash.example.com/", nil)
 	req.Host = "dash.example.com"
 	req.TLS = &tls.ConnectionState{}
-	req.AddCookie(&http.Cookie{Name: proxyapi.GrantCookieHost, Value: grant})
+	req.AddCookie(&http.Cookie{Name: api.GrantCookieHost, Value: grant})
 	rr = httptest.NewRecorder()
 	p.ServeHTTP(rr, req)
 	assert.Equal(t, "the app itself", rr.Body.String())
@@ -465,10 +465,10 @@ func TestPreviewGrantServesOnlyItsOwnApp(t *testing.T) {
 	defer appSrv.Close()
 	p := New(&Config{ControlURL: "http://127.0.0.1:1", CacheDir: t.TempDir()})
 	signer := appgrant.NewSigner("session-key", time.Hour)
-	require.NoError(t, p.ApplyRoutes(&proxyapi.Table{
+	require.NoError(t, p.ApplyRoutes(&api.Table{
 		Seq:            1,
 		GrantPublicKey: signer.PublicKey(),
-		Routes: []proxyapi.Route{{
+		Routes: []api.Route{{
 			Host: "dash.example.com", Target: appSrv.Listener.Addr().String(), App: "dash",
 			Private: true, Access: []string{"owner1"}, // note: preview principal NOT listed
 		}},
@@ -477,9 +477,9 @@ func TestPreviewGrantServesOnlyItsOwnApp(t *testing.T) {
 		rr := httptest.NewRecorder()
 		req := httptest.NewRequest("GET", "http://ignored/", nil)
 		req.Host = "dash.example.com"
-		value, err := signer.Sign(grantApp, proxyapi.PreviewPrincipal)
+		value, err := signer.Sign(grantApp, api.PreviewPrincipal)
 		require.NoError(t, err)
-		req.AddCookie(&http.Cookie{Name: proxyapi.GrantCookie, Value: value})
+		req.AddCookie(&http.Cookie{Name: api.GrantCookie, Value: value})
 		p.ServeHTTP(rr, req)
 		return rr
 	}

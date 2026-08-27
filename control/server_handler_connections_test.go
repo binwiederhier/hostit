@@ -3,7 +3,7 @@ package control
 import (
 	"encoding/json"
 	"fmt"
-	"heckel.io/hostit/controlconf"
+	"heckel.io/hostit/control/config"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -291,7 +291,7 @@ func TestAFinishedConsentLandsOnTheConnectionsPage(t *testing.T) {
 	t.Parallel()
 	s := newTestServer(t)
 	f := newFakeAuthServer(t)
-	s.config.ConnectionClients = map[string]controlconf.OAuthClient{"acme": {
+	s.config.ConnectionClients = map[string]config.OAuthClient{"acme": {
 		ClientID: "id", ClientSecret: "secret", Label: "Acme",
 		AuthURL: f.URL + "/authorize", TokenURL: f.URL + "/token",
 	}}

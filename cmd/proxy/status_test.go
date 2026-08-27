@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"heckel.io/hostit/proxy"
-	"heckel.io/hostit/proxyapi"
+	"heckel.io/hostit/proxy/api"
 )
 
 func TestRenderProxyStatus(t *testing.T) {
@@ -30,7 +30,7 @@ func TestRenderProxyStatus(t *testing.T) {
 func TestRenderRoutes(t *testing.T) {
 	t.Parallel()
 	var buf bytes.Buffer
-	renderRoutes(&buf, &proxyapi.Table{Seq: 47, Routes: []proxyapi.Route{
+	renderRoutes(&buf, &api.Table{Seq: 47, Routes: []api.Route{
 		{Host: "blog.example.com", Target: "10.0.0.2:10001"},
 	}})
 	out := buf.String()
@@ -39,6 +39,6 @@ func TestRenderRoutes(t *testing.T) {
 	}
 
 	buf.Reset()
-	renderRoutes(&buf, &proxyapi.Table{})
+	renderRoutes(&buf, &api.Table{})
 	assert.Contains(t, buf.String(), "no routes", "an empty table says so instead of drawing nothing")
 }

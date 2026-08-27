@@ -12,16 +12,16 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"heckel.io/hostit/btrfs"
-	"heckel.io/hostit/container"
-	"heckel.io/hostit/controlconf"
-	"heckel.io/hostit/firewall"
+	"heckel.io/hostit/control/config"
 	"heckel.io/hostit/node"
 	"heckel.io/hostit/run"
-	"heckel.io/hostit/ssh"
 	"heckel.io/hostit/store"
-	"heckel.io/hostit/systemd"
-	"heckel.io/hostit/unixuser"
+	"heckel.io/hostit/system/btrfs"
+	"heckel.io/hostit/system/nftables"
+	"heckel.io/hostit/system/podman"
+	"heckel.io/hostit/system/ssh"
+	"heckel.io/hostit/system/systemd"
+	"heckel.io/hostit/system/unixuser"
 	"heckel.io/hostit/workspace"
 )
 
@@ -206,9 +206,9 @@ func TestApps(t *testing.T) {
 // newTestManagerDeps builds the config, store and fake system services a test
 // Manager needs, so callers can construct the Manager via NewManager with their own
 // runner (keeping every runner-backed service -- btrfs, etc. -- on that one runner).
-func newTestManagerDeps(t *testing.T) (*controlconf.Config, *store.Store, *fakeSystem) {
+func newTestManagerDeps(t *testing.T) (*config.Config, *store.Store, *fakeSystem) {
 	t.Helper()
-	conf := controlconf.NewConfig()
+	conf := config.NewConfig()
 	conf.BaseDomain = "apps.example.com"
 	conf.AdminToken = "secr3t"
 	conf.AppsDir = t.TempDir()
@@ -241,7 +241,7 @@ func testServices(ops *fakeSystem, runner run.Runner) *node.Services {
 	return &node.Services{
 		Btrfs:     btrfs.New(runner),
 		Systemd:   systemd.New(runner),
-		Container: container.New(runner),
+		Container: podman.New(runner),
 		User:      ops,
 		SSH:       ops,
 		Firewall:  ops,
@@ -261,7 +261,7 @@ type fakeSystem struct {
 	authorizedKeys map[string][]string
 	skeletons      map[string][]string
 	uids           map[string]int
-	portRules      [][]firewall.Rule
+	portRules      [][]nftables.Rule
 	createUserErr  error
 
 	mu sync.Mutex // Protects everything above: CreateApp starts the app in the background
@@ -270,7 +270,7 @@ type fakeSystem struct {
 var (
 	_ unixuser.Interface = (*fakeSystem)(nil)
 	_ ssh.Interface      = (*fakeSystem)(nil)
-	_ firewall.Interface = (*fakeSystem)(nil)
+	_ nftables.Interface = (*fakeSystem)(nil)
 )
 
 func newFakeSystem() *fakeSystem {
@@ -394,7 +394,7 @@ func (f *fakeSystem) WriteSkeleton(home string, files map[string]string) error {
 	return nil
 }
 
-func (f *fakeSystem) Apply(rules []firewall.Rule) error {
+func (f *fakeSystem) Apply(rules []nftables.Rule) error {
 	f.portRules = append(f.portRules, rules)
 	return nil
 }

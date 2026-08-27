@@ -8,10 +8,10 @@ import (
 
 	"github.com/urfave/cli/v2"
 
-	"heckel.io/hostit/clitable"
+	"heckel.io/hostit/cmd/util"
 	"heckel.io/hostit/control"
-	"heckel.io/hostit/controlconf"
-	"heckel.io/hostit/hoststats"
+	"heckel.io/hostit/control/config"
+	"heckel.io/hostit/system/stats"
 )
 
 // cmdStatus prints the whole cluster: who is in it, whether they are reporting,
@@ -23,7 +23,7 @@ var (
 		Name:  "status",
 		Usage: "Show the cluster: nodes, proxies, apps and totals",
 		Flags: []cli.Flag{
-			&cli.StringFlag{Name: "config", Aliases: []string{"c"}, Value: controlconf.DefaultControlConfigFile, Usage: "control config file"},
+			&cli.StringFlag{Name: "config", Aliases: []string{"c"}, Value: config.DefaultControlConfigFile, Usage: "control config file"},
 			&cli.BoolFlag{Name: "json", Usage: "print the raw status as JSON"},
 		},
 		Action: execStatus,
@@ -60,7 +60,7 @@ func statCell(used, total, pct int) string {
 
 // loadCell puts the load average next to the core count it is spread over,
 // since 4.0 means something different on 1 core than on 8.
-func loadCell(s hoststats.Stats) string {
+func loadCell(s stats.Stats) string {
 	if s.CPUCount == 0 {
 		return "--"
 	}
@@ -70,8 +70,8 @@ func loadCell(s hoststats.Stats) string {
 func printStatus(c *cli.Context, status *control.Status) {
 	w := c.App.Writer
 	if status.Control != nil {
-		fmt.Fprintln(w, clitable.Title("CONTROL"))
-		fmt.Fprintln(w, clitable.Render([]string{"NAME", "VERSION", "RAM", "DISK", "LOAD / CPUS"}, [][]string{{
+		fmt.Fprintln(w, util.Title("CONTROL"))
+		fmt.Fprintln(w, util.Render([]string{"NAME", "VERSION", "RAM", "DISK", "LOAD / CPUS"}, [][]string{{
 			status.Control.Name,
 			dashIfEmpty(shortVersion(status.Control.Version)),
 			statCell(status.Control.Stats.MemoryUsedMB, status.Control.Stats.MemoryTotalMB, status.Control.Stats.MemoryPercent()),
@@ -80,7 +80,7 @@ func printStatus(c *cli.Context, status *control.Status) {
 		}}))
 		fmt.Fprintln(w)
 	}
-	fmt.Fprintln(w, clitable.Title(fmt.Sprintf("NODES (%d)", len(status.Nodes))))
+	fmt.Fprintln(w, util.Title(fmt.Sprintf("NODES (%d)", len(status.Nodes))))
 	if len(status.Nodes) == 0 {
 		fmt.Fprintf(w, "  none registered\n")
 	} else {
@@ -94,11 +94,11 @@ func printStatus(c *cli.Context, status *control.Status) {
 				seenLabel(n.LastSeen, n.Stale, status.Snapshot),
 			})
 		}
-		fmt.Fprintln(w, clitable.Render([]string{"NAME", "ADDRESS", "APPS", "RAM", "DISK", "LOAD / CPUS", "SEEN"}, rows))
+		fmt.Fprintln(w, util.Render([]string{"NAME", "ADDRESS", "APPS", "RAM", "DISK", "LOAD / CPUS", "SEEN"}, rows))
 	}
 
 	fmt.Fprintln(w)
-	fmt.Fprintln(w, clitable.Title(fmt.Sprintf("PROXIES (%d)", len(status.Proxies))))
+	fmt.Fprintln(w, util.Title(fmt.Sprintf("PROXIES (%d)", len(status.Proxies))))
 	if len(status.Proxies) == 0 {
 		fmt.Fprintf(w, "  none registered\n")
 	} else {
@@ -112,11 +112,11 @@ func printStatus(c *cli.Context, status *control.Status) {
 				seenLabel(p.LastSeen, p.Stale, status.Snapshot),
 			})
 		}
-		fmt.Fprintln(w, clitable.Render([]string{"NAME", "VERSION", "ROUTES", "RAM", "DISK", "LOAD / CPUS", "SEEN"}, rows))
+		fmt.Fprintln(w, util.Render([]string{"NAME", "VERSION", "ROUTES", "RAM", "DISK", "LOAD / CPUS", "SEEN"}, rows))
 	}
 
 	fmt.Fprintln(w)
-	fmt.Fprintln(w, clitable.Title("APPS"))
+	fmt.Fprintln(w, util.Title("APPS"))
 	fmt.Fprintf(w, "  %d total, %d powered off, %d snapshots, %s on disk\n",
 		status.Apps.Total, status.Apps.PoweredOff, status.Apps.Snapshots, humanMB(status.Apps.DiskUsedMB))
 	if status.Apps.Unplaced > 0 {
@@ -124,7 +124,7 @@ func printStatus(c *cli.Context, status *control.Status) {
 	}
 
 	fmt.Fprintln(w)
-	fmt.Fprintln(w, clitable.Title("PEOPLE"))
+	fmt.Fprintln(w, util.Title("PEOPLE"))
 	fmt.Fprintf(w, "  %d total, %d admins", status.People.Total, status.People.Admins)
 	if status.People.Pending > 0 {
 		fmt.Fprintf(w, ", %d awaiting approval", status.People.Pending)

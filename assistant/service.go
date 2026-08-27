@@ -14,7 +14,7 @@ import (
 	"sync"
 	"time"
 
-	"heckel.io/hostit/controlconf"
+	"heckel.io/hostit/control/config"
 	"heckel.io/hostit/platformdoc"
 )
 
@@ -602,7 +602,7 @@ credential does not expire). Build this call INTO the app's code so it fetches a
 run: an OAuth token expires within the hour, so anything you save to a file is dead by the
 time it is used. NEVER print a token, echo it, or write it into a file -- read it at the
 moment it is needed and use it. GET %s/api/container/connections lists what this app holds.
-`, controlconf.ContainerAPIURL, credentials[0].Slug, controlconf.ContainerAPIURL)
+`, config.ContainerAPIURL, credentials[0].Slug, config.ContainerAPIURL)
 	}
 	if len(servers) > 0 {
 		fmt.Fprintf(&b, `
@@ -613,7 +613,7 @@ The app itself can do the same on the container API, without any OAuth of its ow
   curl %s/api/container/mcp/%s/tools
   curl %s/api/container/mcp/%s/call \
     -d '{"tool":"...","arguments":{}}'
-`, connectedToolPrefix+servers[0].Slug+connectedToolSep, controlconf.ContainerAPIURL, servers[0].Slug, controlconf.ContainerAPIURL, servers[0].Slug)
+`, connectedToolPrefix+servers[0].Slug+connectedToolSep, config.ContainerAPIURL, servers[0].Slug, config.ContainerAPIURL, servers[0].Slug)
 	}
 	b.WriteString(`
 If the user asks for something one of these connections would provide, use it rather than
@@ -628,7 +628,7 @@ func transportNote() string {
 	return fmt.Sprintf(`
 
 An app reaches hostit's container API at a plain loopback URL, %s -- an ordinary HTTP client, no token needed (e.g. GET %s/api/container/self). The examples below use it.`,
-		controlconf.ContainerAPIURL, controlconf.ContainerAPIURL)
+		config.ContainerAPIURL, config.ContainerAPIURL)
 }
 
 // extraContext is the operator's instance-wide note plus the app owner's own
@@ -689,5 +689,5 @@ per loop iteration. When a user asks for something that needs a model at runtime
 (summarise these logs, answer in a persona, classify this text), build it on this
 rather than telling them to obtain an API key.
 
-Work like a careful engineer: read before you write (list_files, read_file), make the smallest change that works, run_command to build or verify, deploy when the config changed, and read_logs to debug a running app. Explain briefly what you are doing. When the user's request is done, stop and say so. Do not ask permission for each step; just do the work and report what you changed.`, app, controlconf.ContainerAPIURL)
+Work like a careful engineer: read before you write (list_files, read_file), make the smallest change that works, run_command to build or verify, deploy when the config changed, and read_logs to debug a running app. Explain briefly what you are doing. When the user's request is done, stop and say so. Do not ask permission for each step; just do the work and report what you changed.`, app, config.ContainerAPIURL)
 }

@@ -10,11 +10,11 @@ import (
 	"sync/atomic"
 	"time"
 
-	"heckel.io/hostit/controlconf"
+	"heckel.io/hostit/control/config"
 	"heckel.io/hostit/node"
 	"heckel.io/hostit/nodeapi"
-	"heckel.io/hostit/ssh"
 	"heckel.io/hostit/store"
+	"heckel.io/hostit/system/ssh"
 	"heckel.io/hostit/workspace"
 )
 
@@ -109,7 +109,7 @@ type Manager struct {
 	// control methods stop reaching into the machine's internals: the outer
 	// fields shadow the embedded ones for every *Manager method.
 	store  *store.Store
-	config *controlconf.Config
+	config *config.Config
 
 	pmu sync.Mutex // Protects nextPort, reservedPorts (the control side's own lock)
 	// mirrorSeq orders mirror pushes so a node can drop a stale one; see
@@ -130,7 +130,7 @@ type Manager struct {
 
 // NewManager creates a Manager from its config, store and the node-local services
 // (real ones from node.NewSystemServices in production, fakes in tests).
-func NewManager(conf *controlconf.Config, s *store.Store) *Manager {
+func NewManager(conf *config.Config, s *store.Store) *Manager {
 	registry := NewNodeRegistry()
 	m := &Manager{
 		registry:      registry,
@@ -226,7 +226,7 @@ func (m *Manager) DiskLimit(name string) int {
 // and the paths are control's. A split deployment's node reads its own file
 // instead -- the two configs are separate types precisely so control's
 // settings cannot leak into a node.
-func machineConfig(conf *controlconf.Config) *node.Config {
+func machineConfig(conf *config.Config) *node.Config {
 	c := node.NewConfig()
 	c.DataDir, c.AppsDir, c.SocketFile = conf.DataDir, conf.AppsDir, conf.SocketFile
 	return c
@@ -469,7 +469,7 @@ func (m *Manager) Apps() ([]*store.App, error) {
 // URL returns the public URL of an app
 func (m *Manager) URL(app *store.App) string {
 	scheme := "https"
-	if m.config.TLS == controlconf.TLSOff {
+	if m.config.TLS == config.TLSOff {
 		scheme = "http"
 	}
 	return fmt.Sprintf("%s://%s.%s", scheme, app.Name, m.config.BaseDomain)

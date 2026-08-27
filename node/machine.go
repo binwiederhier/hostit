@@ -14,17 +14,17 @@ import (
 	"time"
 
 	"heckel.io/hostit/app"
-	"heckel.io/hostit/btrfs"
-	"heckel.io/hostit/container"
-	"heckel.io/hostit/firewall"
 	"heckel.io/hostit/homefs"
 	"heckel.io/hostit/nodeapi"
 	"heckel.io/hostit/run"
 	"heckel.io/hostit/snapshot"
-	"heckel.io/hostit/ssh"
 	"heckel.io/hostit/store"
-	"heckel.io/hostit/systemd"
-	"heckel.io/hostit/unixuser"
+	"heckel.io/hostit/system/btrfs"
+	"heckel.io/hostit/system/nftables"
+	"heckel.io/hostit/system/podman"
+	"heckel.io/hostit/system/ssh"
+	"heckel.io/hostit/system/systemd"
+	"heckel.io/hostit/system/unixuser"
 	"heckel.io/hostit/workspace"
 )
 
@@ -95,10 +95,10 @@ type Machine struct {
 	runner    run.Runner
 	btrfs     btrfs.Interface
 	systemd   systemd.Interface
-	container container.Interface
+	container podman.Interface
 	user      unixuser.Interface
 	ssh       ssh.Interface
-	firewall  firewall.Interface
+	firewall  nftables.Interface
 	homefs    *homefs.Service
 	snapshots *snapshot.Service
 	workspace *workspace.Service
@@ -222,10 +222,10 @@ func (m *Machine) OnStateChanged(fn func(name string)) {
 type Services struct {
 	Btrfs     btrfs.Interface
 	Systemd   systemd.Interface
-	Container container.Interface
+	Container podman.Interface
 	User      unixuser.Interface
 	SSH       ssh.Interface
-	Firewall  firewall.Interface
+	Firewall  nftables.Interface
 	Runner    run.Runner
 }
 
@@ -236,10 +236,10 @@ func NewSystemServices(runner run.Runner, nodeID, bindAddr string, allowFrom []s
 	return &Services{
 		Btrfs:     btrfs.New(runner),
 		Systemd:   systemd.New(runner),
-		Container: container.New(runner),
+		Container: podman.New(runner),
 		User:      unixuser.New(userShellFile, AppsGroup),
 		SSH:       ssh.New(),
-		Firewall:  firewall.New(FirewallTable(nodeID), bindAddr, allowFrom),
+		Firewall:  nftables.New(FirewallTable(nodeID), bindAddr, allowFrom),
 		Runner:    runner,
 	}
 }
@@ -336,14 +336,14 @@ func (m *Machine) ReconcilePortRules() {
 		slog.Warn("Cannot list apps for port rules", "error", err)
 		return
 	}
-	rules := make([]firewall.Rule, 0, len(apps))
+	rules := make([]nftables.Rule, 0, len(apps))
 	for _, a := range apps {
 		uid, err := m.user.LookupUID(a.Name)
 		if err != nil {
 			slog.Warn("Cannot look up uid for port rule", "app", a.Name, "error", err)
 			continue
 		}
-		rules = append(rules, firewall.Rule{Port: a.Port, UID: uid})
+		rules = append(rules, nftables.Rule{Port: a.Port, UID: uid})
 	}
 	if err := m.firewall.Apply(rules); err != nil {
 		slog.Warn("Cannot apply port rules", "error", err)

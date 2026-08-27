@@ -13,7 +13,7 @@ import (
 
 	"github.com/urfave/cli/v2"
 
-	"heckel.io/hostit/clitable"
+	"heckel.io/hostit/cmd/util"
 	"heckel.io/hostit/node"
 	"heckel.io/hostit/nodeconf"
 )
@@ -54,10 +54,10 @@ func renderNodeStatus(w io.Writer, s *node.Status) {
 	if s.Connected {
 		link = "connected"
 	}
-	fmt.Fprintln(w, clitable.Title("NODE "+s.NodeID))
+	fmt.Fprintln(w, util.Title("NODE "+s.NodeID))
 	fmt.Fprintf(w, "  version  %s\n", s.Version)
 	fmt.Fprintf(w, "  control  %s (%s)\n\n", s.ControlURL, link)
-	fmt.Fprintln(w, clitable.Title(fmt.Sprintf("APPS (%d)", len(s.Apps))))
+	fmt.Fprintln(w, util.Title(fmt.Sprintf("APPS (%d)", len(s.Apps))))
 	if len(s.Apps) == 0 {
 		fmt.Fprintln(w, "  none placed on this node")
 		return
@@ -66,7 +66,7 @@ func renderNodeStatus(w io.Writer, s *node.Status) {
 	for _, a := range s.Apps {
 		rows = append(rows, []string{a.Name, strconv.Itoa(a.UID), strconv.Itoa(a.Port)})
 	}
-	fmt.Fprintln(w, clitable.Render([]string{"NAME", "UID", "PORT"}, rows))
+	fmt.Fprintln(w, util.Render([]string{"NAME", "UID", "PORT"}, rows))
 }
 
 // statusSocketFile resolves the daemon's status socket from its config; an

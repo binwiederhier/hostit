@@ -5,14 +5,14 @@
 package apptest
 
 import (
-	"heckel.io/hostit/btrfs"
-	"heckel.io/hostit/container"
-	"heckel.io/hostit/firewall"
 	"heckel.io/hostit/node"
 	"heckel.io/hostit/run"
-	"heckel.io/hostit/ssh"
-	"heckel.io/hostit/systemd"
-	"heckel.io/hostit/unixuser"
+	"heckel.io/hostit/system/btrfs"
+	"heckel.io/hostit/system/nftables"
+	"heckel.io/hostit/system/podman"
+	"heckel.io/hostit/system/ssh"
+	"heckel.io/hostit/system/systemd"
+	"heckel.io/hostit/system/unixuser"
 )
 
 // NewNopServices returns a node.Services that touches nothing: btrfs, systemd and
@@ -23,7 +23,7 @@ func NewNopServices() *node.Services {
 	return &node.Services{
 		Btrfs:     btrfs.New(runner),
 		Systemd:   systemd.New(runner),
-		Container: container.New(runner),
+		Container: podman.New(runner),
 		User:      nopUser{},
 		SSH:       ssh.New(), // real: post-idmap it only writes plain files, test-safe
 		Firewall:  nopFirewall{},
@@ -53,7 +53,7 @@ func (nopUser) Delete(username string) error { return nil }
 
 func (nopUser) WriteSkeleton(home string, files map[string]string) error { return nil }
 
-// nopFirewall is a firewall.Interface that does nothing
+// nopFirewall is a nftables.Interface that does nothing
 type nopFirewall struct{}
 
-func (nopFirewall) Apply(rules []firewall.Rule) error { return nil }
+func (nopFirewall) Apply(rules []nftables.Rule) error { return nil }

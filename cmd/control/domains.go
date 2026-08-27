@@ -6,7 +6,7 @@ import (
 
 	"github.com/urfave/cli/v2"
 
-	"heckel.io/hostit/clitable"
+	"heckel.io/hostit/cmd/util"
 )
 
 func execDomainList(c *cli.Context) error {
@@ -29,7 +29,7 @@ func execDomainList(c *cli.Context) error {
 	for _, d := range domains {
 		rows = append(rows, []string{d.Domain, d.Status, d.LastError})
 	}
-	fmt.Println(clitable.Render([]string{"DOMAIN", "STATUS", "ERROR"}, rows))
+	fmt.Println(util.Render([]string{"DOMAIN", "STATUS", "ERROR"}, rows))
 	return nil
 }
 

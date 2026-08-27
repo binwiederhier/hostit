@@ -5,7 +5,7 @@ import "sort"
 // Credentials is what the catalog needs to know, and nothing more. It is a type
 // of this package's own rather than control's config, because the sandbox
 // already imports controlconf -- inlining an assistant.Config into
-// controlconf.Config would be an import cycle. controlconf builds one of these
+// config.Config would be an import cycle. controlconf builds one of these
 // from its keys, so the config FILE is unchanged and the assistant still owns
 // what a backend is.
 type Credentials struct {

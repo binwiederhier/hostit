@@ -5,9 +5,9 @@ import (
 	"sort"
 	"time"
 
-	"heckel.io/hostit/hoststats"
 	"heckel.io/hostit/node"
 	"heckel.io/hostit/store"
+	"heckel.io/hostit/system/stats"
 )
 
 // The cluster's status, assembled from the registry alone: `hostit-control
@@ -55,8 +55,8 @@ type MemberStatus struct {
 	// at, and when a member has never reported at all.
 	Stale bool `json:"stale"`
 	// Stats is what the member last reported about its own machine. Zero
-	// throughout when it has never reported (hoststats.Stats.Known()).
-	Stats hoststats.Stats `json:"stats"`
+	// throughout when it has never reported (stats.Stats.Known()).
+	Stats stats.Stats `json:"stats"`
 }
 
 // AppTotals counts the apps and what they are using.
@@ -130,7 +130,7 @@ func ClusterStatus(s *store.Store, dataDir string, now time.Time) (*Status, erro
 		// Measured here and now: control does not heartbeat itself, and both
 		// callers (the API inside control, the CLI on control's host) are
 		// looking at the same machine.
-		Control: &MemberStatus{Name: "control", Version: node.Version, LastSeen: now, Stats: hoststats.Measure(dataDir)},
+		Control: &MemberStatus{Name: "control", Version: node.Version, LastSeen: now, Stats: stats.Measure(dataDir)},
 	}
 	for _, n := range nodes {
 		status.Nodes = append(status.Nodes, &MemberStatus{
@@ -174,13 +174,13 @@ func stale(lastSeen, now time.Time) bool {
 // decodeStats unmarshals a member's reported machine stats. A member that
 // never reported (or reported something this build cannot read) comes back
 // zeroed, which renders as "--" rather than as a machine with no memory.
-func decodeStats(blob string) hoststats.Stats {
-	var s hoststats.Stats
+func decodeStats(blob string) stats.Stats {
+	var s stats.Stats
 	if blob == "" {
 		return s
 	}
 	if err := json.Unmarshal([]byte(blob), &s); err != nil {
-		return hoststats.Stats{}
+		return stats.Stats{}
 	}
 	return s
 }

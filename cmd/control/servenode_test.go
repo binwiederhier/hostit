@@ -9,10 +9,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"heckel.io/hostit/control"
-	"heckel.io/hostit/controlconf"
-	"heckel.io/hostit/hoststats"
+	"heckel.io/hostit/control/config"
 	"heckel.io/hostit/nodeapi"
 	"heckel.io/hostit/store"
+	"heckel.io/hostit/system/stats"
 )
 
 func TestScopeStatesDropsAppsNotAskedAbout(t *testing.T) {
@@ -39,7 +39,7 @@ type fakeNodeAgent struct {
 	control.NodeAgent
 	statesCalls    int
 	heartbeatCalls int
-	stats          hoststats.Stats
+	stats          stats.Stats
 }
 
 func (f *fakeNodeAgent) States(names []string) map[string]nodeapi.State {
@@ -61,7 +61,7 @@ func TestPollStampsLivenessOfAnEmptyNode(t *testing.T) {
 	s, err := store.NewStore(filepath.Join(t.TempDir(), "hostit.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = s.Close() })
-	manager := control.NewManager(controlconf.NewConfig(), s)
+	manager := control.NewManager(config.NewConfig(), s)
 	require.NoError(t, s.EnsureNode("stage-2", "10.0.0.4"))
 
 	agent := &fakeNodeAgent{}
@@ -83,17 +83,17 @@ func TestPollRefreshesMachineStats(t *testing.T) {
 	s, err := store.NewStore(filepath.Join(t.TempDir(), "hostit.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = s.Close() })
-	manager := control.NewManager(controlconf.NewConfig(), s)
+	manager := control.NewManager(config.NewConfig(), s)
 	require.NoError(t, s.EnsureNode("node-1", "10.0.0.4"))
 
-	agent := &fakeNodeAgent{stats: hoststats.Stats{Load1: 15.92, MemoryUsedMB: 641}}
+	agent := &fakeNodeAgent{stats: stats.Stats{Load1: 15.92, MemoryUsedMB: 641}}
 	pollNodeOnce(manager, "node-1", agent, true)
 	n, err := s.Node("node-1")
 	require.NoError(t, err)
 	assert.Contains(t, n.Stats, "15.92", "the first poll records what the node reported")
 
 	// The machine calms down; the next stats poll must say so.
-	agent.stats = hoststats.Stats{Load1: 1.52, MemoryUsedMB: 640}
+	agent.stats = stats.Stats{Load1: 1.52, MemoryUsedMB: 640}
 	pollNodeOnce(manager, "node-1", agent, true)
 	n, err = s.Node("node-1")
 	require.NoError(t, err)
@@ -109,7 +109,7 @@ func TestTheStatePollDoesNotHeartbeatEveryTick(t *testing.T) {
 	s, err := store.NewStore(filepath.Join(t.TempDir(), "hostit.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = s.Close() })
-	manager := control.NewManager(controlconf.NewConfig(), s)
+	manager := control.NewManager(config.NewConfig(), s)
 	require.NoError(t, s.EnsureNode("node-1", "10.0.0.4"))
 	require.NoError(t, s.AddApp(&store.App{ID: "a1", Name: "blog", Port: 10000, Host: "node-1"}))
 

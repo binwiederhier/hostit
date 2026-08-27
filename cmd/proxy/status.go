@@ -12,9 +12,9 @@ import (
 
 	"github.com/urfave/cli/v2"
 
-	"heckel.io/hostit/clitable"
+	"heckel.io/hostit/cmd/util"
 	"heckel.io/hostit/proxy"
-	"heckel.io/hostit/proxyapi"
+	"heckel.io/hostit/proxy/api"
 )
 
 // The status and route commands ask the RUNNING daemon over its root-only
@@ -73,7 +73,7 @@ func execRouteList(c *cli.Context) error {
 		_, err := c.App.Writer.Write(body)
 		return err
 	}
-	var table proxyapi.Table
+	var table api.Table
 	if err := json.Unmarshal(body, &table); err != nil {
 		return err
 	}
@@ -86,15 +86,15 @@ func renderProxyStatus(w io.Writer, s *proxy.Status) {
 	if s.Connected {
 		link = "connected"
 	}
-	fmt.Fprintln(w, clitable.Title("PROXY "+s.ProxyID))
+	fmt.Fprintln(w, util.Title("PROXY "+s.ProxyID))
 	fmt.Fprintf(w, "  version  %s\n", s.Version)
 	fmt.Fprintf(w, "  control  %s\n", s.ControlURL)
 	fmt.Fprintf(w, "  cluster  %s (%s)\n", s.ClusterURL, link)
 	fmt.Fprintf(w, "  serving  %d routes (table seq %d), %d certificates cached\n", s.Routes, s.TableSeq, s.CertsCached)
 }
 
-func renderRoutes(w io.Writer, table *proxyapi.Table) {
-	fmt.Fprintln(w, clitable.Title(fmt.Sprintf("ROUTES (%d), table seq %d", len(table.Routes), table.Seq)))
+func renderRoutes(w io.Writer, table *api.Table) {
+	fmt.Fprintln(w, util.Title(fmt.Sprintf("ROUTES (%d), table seq %d", len(table.Routes), table.Seq)))
 	if len(table.Routes) == 0 {
 		fmt.Fprintln(w, "  no routes cached; has this proxy ever reached control?")
 		return
@@ -103,7 +103,7 @@ func renderRoutes(w io.Writer, table *proxyapi.Table) {
 	for _, route := range table.Routes {
 		rows = append(rows, []string{route.Host, route.Target})
 	}
-	fmt.Fprintln(w, clitable.Render([]string{"HOST", "TARGET"}, rows))
+	fmt.Fprintln(w, util.Render([]string{"HOST", "TARGET"}, rows))
 }
 
 // statusSocketFile resolves the daemon's status socket from its config; an

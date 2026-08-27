@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"heckel.io/hostit/controlconf"
+	"heckel.io/hostit/control/config"
 	"heckel.io/hostit/store"
 )
 
@@ -310,7 +310,7 @@ func TestUpdateActivatesAPendingUser(t *testing.T) {
 
 func newTestManager(t *testing.T) *Manager {
 	t.Helper()
-	conf := controlconf.NewConfig()
+	conf := config.NewConfig()
 	conf.BaseDomain = "apps.example.com"
 	conf.AdminToken = "secr3t"
 	conf.AdminEmails = []string{"phil@example.com"}

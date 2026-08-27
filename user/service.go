@@ -16,7 +16,7 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
-	"heckel.io/hostit/controlconf"
+	"heckel.io/hostit/control/config"
 	"heckel.io/hostit/store"
 )
 
@@ -91,12 +91,12 @@ func EffectiveAppLimits(l *Limits, a *store.App) (memoryMB, diskMB, cpuMilli int
 
 // Manager owns users, tokens, profile keys and limit settings
 type Manager struct {
-	config *controlconf.Config
+	config *config.Config
 	store  *store.Store
 }
 
 // NewManager creates a Manager
-func NewManager(conf *controlconf.Config, s *store.Store) *Manager {
+func NewManager(conf *config.Config, s *store.Store) *Manager {
 	return &Manager{
 		config: conf,
 		store:  s,

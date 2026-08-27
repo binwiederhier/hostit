@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"heckel.io/hostit/controlconf"
+	"heckel.io/hostit/control/config"
 	"heckel.io/hostit/nodeconf"
 	"heckel.io/hostit/workspace"
 )
@@ -19,20 +19,20 @@ func TestScopedSocketMountInvariants(t *testing.T) {
 
 	// 1. Inside a container the socket dir mounts at ContainerRunDir, so the
 	//    in-container CLI's DefaultSocketFile must live directly in it.
-	if got := filepath.Dir(controlconf.DefaultSocketFile); got != workspace.ContainerRunDir {
+	if got := filepath.Dir(config.DefaultSocketFile); got != workspace.ContainerRunDir {
 		t.Fatalf("controlconf.DefaultSocketFile is under %q, but the mount target is %q", got, workspace.ContainerRunDir)
 	}
 
 	// 2. The host login shell dials HostAppSocketFile; the node serves at
 	//    nodeconf's SocketFile. They must be the same host path.
-	if controlconf.HostAppSocketFile != nodeconf.NewConfig().SocketFile {
-		t.Fatalf("login shell dials %q but the node serves %q", controlconf.HostAppSocketFile, nodeconf.NewConfig().SocketFile)
+	if config.HostAppSocketFile != nodeconf.NewConfig().SocketFile {
+		t.Fatalf("login shell dials %q but the node serves %q", config.HostAppSocketFile, nodeconf.NewConfig().SocketFile)
 	}
 
 	// 3. The host socket sits in its OWN subdir -- the mount source -- and the raw
 	//    apps view must NOT be inside that subdir, or every container sees it.
-	mountSource := filepath.Dir(controlconf.HostAppSocketFile)
-	rawView := RawAppsViewDir(controlconf.HostAppSocketFile)
+	mountSource := filepath.Dir(config.HostAppSocketFile)
+	rawView := RawAppsViewDir(config.HostAppSocketFile)
 	if rawView == mountSource || strings.HasPrefix(rawView, mountSource+"/") {
 		t.Fatalf("raw apps view %q is inside the mounted subdir %q -- neighbours' files are exposed", rawView, mountSource)
 	}

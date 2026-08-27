@@ -26,9 +26,9 @@ import (
 	"time"
 
 	"heckel.io/hostit/cluster"
-	"heckel.io/hostit/hoststats"
-	"heckel.io/hostit/proxyapi"
-	"heckel.io/hostit/proxylink"
+	"heckel.io/hostit/proxy/api"
+	"heckel.io/hostit/proxy/link"
+	"heckel.io/hostit/system/stats"
 )
 
 var (
@@ -68,7 +68,7 @@ type Config struct {
 // restart (or a control outage) still comes back serving.
 type Proxy struct {
 	conf    *Config
-	table   atomic.Value // *proxyapi.Table
+	table   atomic.Value // *api.Table
 	control *httputil.ReverseProxy
 	certs   map[string]*tls.Certificate
 	// sink is the link back to control, for certificate lookups; a stand-in
@@ -87,7 +87,7 @@ func New(conf *Config) *Proxy {
 		controlURL = &url.URL{Scheme: "http", Host: "127.0.0.1"}
 	}
 	p := &Proxy{conf: conf, certs: map[string]*tls.Certificate{}}
-	p.table.Store(&proxyapi.Table{})
+	p.table.Store(&api.Table{})
 	p.control = &httputil.ReverseProxy{
 		Rewrite: func(r *httputil.ProxyRequest) {
 			r.Out.URL.Scheme = controlURL.Scheme
@@ -104,16 +104,16 @@ func New(conf *Config) *Proxy {
 
 // Seq is the cached table's sequence; zero until the first load.
 func (p *Proxy) Seq() int64 {
-	return p.table.Load().(*proxyapi.Table).Seq
+	return p.table.Load().(*api.Table).Seq
 }
 
 // ApplyRoutes takes what control says this proxy should be serving. It
-// implements proxyapi.ProxyAgent: control pushes on connect, on change, and on
+// implements api.ProxyAgent: control pushes on connect, on change, and on
 // its reconcile timer.
 //
 // An older table is discarded rather than applied: pushes can overlap, and
 // applying a stale one would un-route apps that already exist.
-func (p *Proxy) ApplyRoutes(table *proxyapi.Table) error {
+func (p *Proxy) ApplyRoutes(table *api.Table) error {
 	if table == nil {
 		return nil
 	}
@@ -131,11 +131,11 @@ func (p *Proxy) ApplyRoutes(table *proxyapi.Table) error {
 }
 
 // Heartbeat reports what this proxy is: its build, and how much it is serving.
-func (p *Proxy) Heartbeat() *proxyapi.Heartbeat {
-	return &proxyapi.Heartbeat{
+func (p *Proxy) Heartbeat() *api.Heartbeat {
+	return &api.Heartbeat{
 		Version: Version,
-		Routes:  len(p.table.Load().(*proxyapi.Table).Routes),
-		Stats:   hoststats.Measure(p.conf.CacheDir),
+		Routes:  len(p.table.Load().(*api.Table).Routes),
+		Stats:   stats.Measure(p.conf.CacheDir),
 	}
 }
 
@@ -152,13 +152,13 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// app served through a proxy -- which is every app in a normal deployment --
 	// silently loses HSTS and nosniff that a single-host deployment gets.
 	h := w.Header()
-	h.Set("X-Content-Type-Options", proxyapi.ContentTypeOptions)
-	h.Set("Referrer-Policy", proxyapi.ReferrerPolicy)
+	h.Set("X-Content-Type-Options", api.ContentTypeOptions)
+	h.Set("Referrer-Policy", api.ReferrerPolicy)
 	if r.TLS != nil {
-		h.Set("Strict-Transport-Security", proxyapi.HSTSValue)
+		h.Set("Strict-Transport-Security", api.HSTSValue)
 	}
 	host := hostOnly(r.Host)
-	table := p.table.Load().(*proxyapi.Table)
+	table := p.table.Load().(*api.Table)
 	for _, route := range table.Routes {
 		if route.Host == host {
 			// A private app is served from here only to a request that proves
@@ -241,8 +241,8 @@ func (p *Proxy) connect() error {
 	}
 	defer conn.Close()
 	slog.Info("Connected to control", "addr", p.conf.ClusterURL, "proxy", p.conf.ProxyID)
-	return proxylink.ServeAgent(conn, p.conf.ProxyID, p, func(client *http.Client) {
-		p.setSink(proxylink.NewControlSink(client))
+	return link.ServeAgent(conn, p.conf.ProxyID, p, func(client *http.Client) {
+		p.setSink(link.NewControlSink(client))
 	})
 }
 
@@ -251,7 +251,7 @@ func (p *Proxy) connect() error {
 // different concrete types, and storing both in a bare atomic.Value panics --
 // which killed the process in exactly the path that exists to survive control
 // going away.
-func (p *Proxy) setSink(sink proxyapi.ControlSink) {
+func (p *Proxy) setSink(sink api.ControlSink) {
 	p.sink.Store(&sinkRef{sink: sink})
 }
 
@@ -262,7 +262,7 @@ func (p *Proxy) dropSink() {
 // controlSink is the link to control, or a stand-in that fails fast while the
 // connection is down (so a handshake falls through to the cache immediately
 // rather than waiting on a dial).
-func (p *Proxy) controlSink() proxyapi.ControlSink {
+func (p *Proxy) controlSink() api.ControlSink {
 	if ref := p.sink.Load(); ref != nil && ref.sink != nil {
 		return ref.sink
 	}
@@ -271,17 +271,17 @@ func (p *Proxy) controlSink() proxyapi.ControlSink {
 
 // sinkRef boxes the link so every store has the same concrete type.
 type sinkRef struct {
-	sink proxyapi.ControlSink
+	sink api.ControlSink
 }
 
 // noSink stands in while control is unreachable.
 type noSink struct{}
 
-func (noSink) CertFor(string) (*proxyapi.CertMaterial, error) {
+func (noSink) CertFor(string) (*api.CertMaterial, error) {
 	return nil, errNotLinked
 }
 
-func (p *Proxy) persist(table *proxyapi.Table) {
+func (p *Proxy) persist(table *api.Table) {
 	b, err := json.Marshal(table)
 	if err != nil {
 		return
@@ -301,7 +301,7 @@ func (p *Proxy) loadPersisted() {
 	if err != nil {
 		return
 	}
-	var table proxyapi.Table
+	var table api.Table
 	if err := json.Unmarshal(b, &table); err != nil {
 		return
 	}

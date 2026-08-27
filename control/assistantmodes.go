@@ -2,7 +2,7 @@ package control
 
 import (
 	"heckel.io/hostit/assistant"
-	"heckel.io/hostit/controlconf"
+	"heckel.io/hostit/control/config"
 )
 
 // The assistant's mode surface. Everything here is derived: which options exist
@@ -14,7 +14,7 @@ import (
 // credentials is what the assistant needs from the config to build its catalog.
 // The config package cannot import the assistant (the sandbox imports the
 // config), so the server bridges the two.
-func credentials(conf *controlconf.Config) assistant.Credentials {
+func credentials(conf *config.Config) assistant.Credentials {
 	return assistant.Credentials{
 		AnthropicAPIKey:      conf.AnthropicAPIKey,
 		ClaudeCodeOAuthToken: conf.ClaudeCodeOAuthToken,

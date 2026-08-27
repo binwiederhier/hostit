@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"heckel.io/hostit/controlconf"
+	"heckel.io/hostit/control/config"
 	"heckel.io/hostit/preview"
 	"heckel.io/hostit/store"
 )
@@ -179,7 +179,7 @@ func TestAppScopedTokenCannotTouchAnotherApp(t *testing.T) {
 func TestAppPreviewScreenshotServed(t *testing.T) {
 	t.Parallel()
 	s := newTestServer(t)
-	s.config.AppPreview = controlconf.AppPreviewScreenshot
+	s.config.AppPreview = config.AppPreviewScreenshot
 	u := newActiveTestUser(t, s, "owner@example.com")
 	token := accountToken(t, s, u)
 	a := &store.App{Name: "blog", Port: 10000, Host: store.HostLocal, OwnerID: u.ID}
@@ -222,7 +222,7 @@ func TestAppPreviewHiddenOutsideScreenshotMode(t *testing.T) {
 func TestAppPreviewRefreshQueuesOrRejects(t *testing.T) {
 	t.Parallel()
 	s := newTestServer(t)
-	s.config.AppPreview = controlconf.AppPreviewScreenshot
+	s.config.AppPreview = config.AppPreviewScreenshot
 	u := newActiveTestUser(t, s, "owner@example.com")
 	token := accountToken(t, s, u)
 	require.NoError(t, s.apps.Store().AddApp(&store.App{Name: "blog", Port: 10000, Host: store.HostLocal, OwnerID: u.ID}))
@@ -243,7 +243,7 @@ func TestAppPreviewRefreshQueuesOrRejects(t *testing.T) {
 func TestAppResponseCarriesPreviewMode(t *testing.T) {
 	t.Parallel()
 	s := newTestServer(t)
-	s.config.AppPreview = controlconf.AppPreviewScreenshot
+	s.config.AppPreview = config.AppPreviewScreenshot
 	u := newActiveTestUser(t, s, "owner@example.com")
 	token := accountToken(t, s, u)
 	require.NoError(t, s.apps.Store().AddApp(&store.App{Name: "blog", Port: 10000, Host: store.HostLocal, OwnerID: u.ID}))

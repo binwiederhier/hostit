@@ -17,7 +17,7 @@ import (
 	"sync"
 	"time"
 
-	"heckel.io/hostit/proxyapi"
+	"heckel.io/hostit/proxy/api"
 	"heckel.io/hostit/store"
 )
 
@@ -51,17 +51,17 @@ const (
 // while its session is alive, so pushing to everything in the map is the same
 // as pushing to every proxy that can be reached.
 type ProxyRegistry struct {
-	agents map[string]proxyapi.ProxyAgent
+	agents map[string]api.ProxyAgent
 	mu     sync.Mutex // Protects agents
 }
 
 func NewProxyRegistry() *ProxyRegistry {
-	return &ProxyRegistry{agents: map[string]proxyapi.ProxyAgent{}}
+	return &ProxyRegistry{agents: map[string]api.ProxyAgent{}}
 }
 
 // Register records a connected proxy, replacing whatever it had under that id
 // (a reconnect supersedes the old session).
-func (r *ProxyRegistry) Register(proxyID string, agent proxyapi.ProxyAgent) {
+func (r *ProxyRegistry) Register(proxyID string, agent api.ProxyAgent) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.agents[proxyID] = agent
@@ -69,7 +69,7 @@ func (r *ProxyRegistry) Register(proxyID string, agent proxyapi.ProxyAgent) {
 
 // Unregister drops a proxy, but only if the agent given is still the one
 // registered: a dying session must not evict the reconnect that replaced it.
-func (r *ProxyRegistry) Unregister(proxyID string, agent proxyapi.ProxyAgent) {
+func (r *ProxyRegistry) Unregister(proxyID string, agent api.ProxyAgent) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if current, ok := r.agents[proxyID]; ok && current == agent {
@@ -79,10 +79,10 @@ func (r *ProxyRegistry) Unregister(proxyID string, agent proxyapi.ProxyAgent) {
 
 // Agents returns a snapshot of the connected proxies, so a fan-out never holds
 // the lock while it talks over the wire.
-func (r *ProxyRegistry) Agents() map[string]proxyapi.ProxyAgent {
+func (r *ProxyRegistry) Agents() map[string]api.ProxyAgent {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	agents := make(map[string]proxyapi.ProxyAgent, len(r.agents))
+	agents := make(map[string]api.ProxyAgent, len(r.agents))
 	for id, agent := range r.agents {
 		agents[id] = agent
 	}
@@ -185,7 +185,7 @@ func (s *Server) proxyHeartbeatPass() {
 // Routes builds the table from the registry and assigns it a sequence number
 // that bumps exactly when the content changes (a hash comparison, so no
 // mutation site needs to notify).
-func (s *Server) Routes() (*proxyapi.Table, error) {
+func (s *Server) Routes() (*api.Table, error) {
 	apps, err := s.apps.Store().Apps()
 	if err != nil {
 		return nil, err
@@ -204,7 +204,7 @@ func (s *Server) Routes() (*proxyapi.Table, error) {
 	if err != nil {
 		return nil, err
 	}
-	routes := make([]proxyapi.Route, 0, len(apps)+len(domains))
+	routes := make([]api.Route, 0, len(apps)+len(domains))
 	targets := make(map[string]string, len(apps))
 	private := make(map[string]bool, len(apps))
 	allowed := make(map[string][]string, len(apps))
@@ -221,7 +221,7 @@ func (s *Server) Routes() (*proxyapi.Table, error) {
 			allowed[a.Name] = append([]string{}, access[a.ID]...)
 			sort.Strings(allowed[a.Name])
 		}
-		routes = append(routes, proxyapi.Route{Host: a.Name + "." + s.config.BaseDomain, Target: target, App: a.Name, Private: a.Private, Access: allowed[a.Name]})
+		routes = append(routes, api.Route{Host: a.Name + "." + s.config.BaseDomain, Target: target, App: a.Name, Private: a.Private, Access: allowed[a.Name]})
 	}
 	for appName, appDomains := range domains {
 		target, ok := targets[appName]
@@ -231,7 +231,7 @@ func (s *Server) Routes() (*proxyapi.Table, error) {
 		for _, domain := range appDomains {
 			// A private app is private on every name it answers to; a custom
 			// domain left public would be the URL its owner actually shared.
-			routes = append(routes, proxyapi.Route{Host: domain, Target: target, App: appName, Private: private[appName], Access: allowed[appName]})
+			routes = append(routes, api.Route{Host: domain, Target: target, App: appName, Private: private[appName], Access: allowed[appName]})
 		}
 	}
 	sort.Slice(routes, func(i, j int) bool { return routes[i].Host < routes[j].Host })
@@ -240,7 +240,7 @@ func (s *Server) Routes() (*proxyapi.Table, error) {
 	sort.Strings(admins)
 	grantKey := s.grants.PublicKey()
 	b, err := json.Marshal(struct {
-		Routes   []proxyapi.Route
+		Routes   []api.Route
 		Admins   []string
 		GrantKey string
 	}{routes, admins, grantKey})
@@ -262,7 +262,7 @@ func (s *Server) Routes() (*proxyapi.Table, error) {
 			slog.Warn("Cannot persist the routing table version", "error", err)
 		}
 	}
-	return &proxyapi.Table{Seq: s.routesSeq, Routes: routes, Admins: admins, GrantPublicKey: grantKey}, nil
+	return &api.Table{Seq: s.routesSeq, Routes: routes, Admins: admins, GrantPublicKey: grantKey}, nil
 }
 
 // nodeAddress resolves an app's hosting node to the address its ports are
@@ -287,15 +287,15 @@ func (s *Server) nodeAddress(host string) string {
 // CertFor hands a proxy the certificate for one SNI name, through the exact
 // combined lookup control's own TLS would use -- including on-demand issuance
 // for a not-yet-seen custom domain. Nodes never see keys; proxies must, since
-// they terminate. It implements proxyapi.ControlSink.
-func (s *Server) CertFor(sni string) (*proxyapi.CertMaterial, error) {
+// they terminate. It implements api.ControlSink.
+func (s *Server) CertFor(sni string) (*api.CertMaterial, error) {
 	if s.tlsGetCert == nil {
 		return nil, errTLSNotManaged
 	}
 	// A non-nil Conn: certmagic inspects the hello's connection addresses.
 	cert, err := s.tlsGetCert(&tls.ClientHelloInfo{ServerName: sni, Conn: internalHelloConn{}})
 	if err != nil {
-		return nil, fmt.Errorf("%w: %s", proxyapi.ErrNoCert, sni)
+		return nil, fmt.Errorf("%w: %s", api.ErrNoCert, sni)
 	}
 	var chain bytes.Buffer
 	for _, der := range cert.Certificate {
@@ -307,7 +307,7 @@ func (s *Server) CertFor(sni string) (*proxyapi.CertMaterial, error) {
 	}
 	var key bytes.Buffer
 	_ = pem.Encode(&key, &pem.Block{Type: "PRIVATE KEY", Bytes: keyDER})
-	return &proxyapi.CertMaterial{CertPEM: chain.String(), KeyPEM: key.String()}, nil
+	return &api.CertMaterial{CertPEM: chain.String(), KeyPEM: key.String()}, nil
 }
 
 // internalHelloConn is the synthetic connection behind a proxy's certificate

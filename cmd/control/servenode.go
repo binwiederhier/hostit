@@ -10,11 +10,11 @@ import (
 
 	"heckel.io/hostit/cluster"
 	"heckel.io/hostit/control"
-	"heckel.io/hostit/controlconf"
+	"heckel.io/hostit/control/config"
+	nodelink "heckel.io/hostit/node/link"
 	"heckel.io/hostit/nodeapi"
-	"heckel.io/hostit/nodelink"
-	"heckel.io/hostit/proxyapi"
-	"heckel.io/hostit/proxylink"
+	"heckel.io/hostit/proxy/api"
+	proxylink "heckel.io/hostit/proxy/link"
 	"heckel.io/hostit/store"
 )
 
@@ -80,7 +80,7 @@ func nodeRole(manager *control.Manager, registry *control.NodeRegistry, srv *con
 // in the node registry (orchestration routes each app's verbs to its hosting
 // node), a per-node poll loop feeds the state cache, and the rejoin handshake
 // pushes the node's registry mirror and re-asserts desired state.
-func listenForMembers(conf *controlconf.Config, manager *control.Manager, srv *control.Server, done <-chan struct{}) error {
+func listenForMembers(conf *config.Config, manager *control.Manager, srv *control.Server, done <-chan struct{}) error {
 	tlsConf, err := nodelink.ListenerCreds(conf.ClusterCertFile, conf.ClusterKeyFile, conf.ClusterCACertFile, conf.DataDir)
 	if err != nil {
 		return err
@@ -118,7 +118,7 @@ func listenForMembers(conf *controlconf.Config, manager *control.Manager, srv *c
 		}
 		_, err := manager.Store().Proxy(proxyID)
 		return err == nil
-	}, srv, func(proxyID string, agent proxyapi.ProxyAgent) {
+	}, srv, func(proxyID string, agent api.ProxyAgent) {
 		slog.Info("Proxy connected", "proxy", proxyID)
 		if err := manager.Store().EnsureProxy(proxyID); err != nil {
 			slog.Warn("Cannot register a connected proxy", "proxy", proxyID, "error", err)
@@ -126,7 +126,7 @@ func listenForMembers(conf *controlconf.Config, manager *control.Manager, srv *c
 		_ = manager.Store().SetProxySeen(proxyID, time.Now())
 		srv.Proxies().Register(proxyID, agent)
 		go srv.PushRoutes()
-	}, func(proxyID string, agent proxyapi.ProxyAgent) {
+	}, func(proxyID string, agent api.ProxyAgent) {
 		slog.Info("Proxy disconnected", "proxy", proxyID)
 		srv.Proxies().Unregister(proxyID, agent)
 	})

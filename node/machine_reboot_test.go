@@ -10,11 +10,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"heckel.io/hostit/btrfs"
-	"heckel.io/hostit/container"
-	"heckel.io/hostit/ssh"
 	"heckel.io/hostit/store"
-	"heckel.io/hostit/systemd"
+	"heckel.io/hostit/system/btrfs"
+	"heckel.io/hostit/system/podman"
+	"heckel.io/hostit/system/ssh"
+	"heckel.io/hostit/system/systemd"
 	"heckel.io/hostit/workspace"
 )
 
@@ -73,7 +73,7 @@ func TestRebootConvergesPendingLimits(t *testing.T) {
 	runner := &scriptedRunner{inspectSays: "some-other-hash"}
 	m := NewMachine(conf, s, &Services{
 		Runner: runner, Btrfs: btrfs.New(runner), Systemd: systemd.New(runner),
-		Container: container.New(runner), User: nopUser{}, SSH: ssh.New(), Firewall: nopFirewall{},
+		Container: podman.New(runner), User: nopUser{}, SSH: ssh.New(), Firewall: nopFirewall{},
 	})
 	require.NoError(t, s.ReplaceNodeMirror([]*store.App{
 		{ID: "a1", Name: "blog", Port: 10000, Host: store.HostLocal, UID: 1001, CreatedAt: time.Now()},

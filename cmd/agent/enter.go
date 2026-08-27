@@ -10,8 +10,8 @@ import (
 	"syscall"
 
 	"github.com/urfave/cli/v2"
-	"heckel.io/hostit/container"
 	"heckel.io/hostit/nodeapi"
+	"heckel.io/hostit/system/podman"
 	"heckel.io/hostit/workspace"
 )
 
@@ -24,7 +24,7 @@ const (
 
 var (
 	// termRegex keeps TERM to boring terminal names. The app-name and container-key
-	// formats are re-validated via nodeapi.ValidName / container.ValidName, which
+	// formats are re-validated via nodeapi.ValidName / podman.ValidName, which
 	// own those patterns.
 	termRegex = regexp.MustCompile(`^[a-zA-Z0-9._-]{1,32}$`)
 
@@ -100,7 +100,7 @@ func execEnter(c *cli.Context) error {
 // inject podman arguments.
 func containerKeyFromHome(home string) (string, bool) {
 	base := workspace.IDFromHomeDir(home)
-	if !container.ValidName(base) {
+	if !podman.ValidName(base) {
 		return "", false
 	}
 	return containerPrefix + base, true

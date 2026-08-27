@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"heckel.io/hostit/controlconf"
+	"heckel.io/hostit/control/config"
 	"heckel.io/hostit/preview"
 	"heckel.io/hostit/store"
 )
@@ -21,7 +21,7 @@ func (s *Server) handleAppsPreview(w http.ResponseWriter, r *http.Request, c *ca
 		writeAppError(w, err)
 		return
 	}
-	if s.config.AppPreview != controlconf.AppPreviewScreenshot {
+	if s.config.AppPreview != config.AppPreviewScreenshot {
 		writeAppError(w, store.ErrAppNotFound)
 		return
 	}

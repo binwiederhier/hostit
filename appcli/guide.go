@@ -8,7 +8,7 @@ import (
 	"github.com/urfave/cli/v2"
 	"heckel.io/hostit/app"
 	"heckel.io/hostit/appctl"
-	"heckel.io/hostit/controlconf"
+	"heckel.io/hostit/control/config"
 	"heckel.io/hostit/workspace"
 )
 
@@ -25,7 +25,7 @@ var (
 )
 
 func execGuide(_ *cli.Context) error {
-	self, err := appctl.NewController(controlconf.DefaultSocketFile).Self()
+	self, err := appctl.NewController(config.DefaultSocketFile).Self()
 	if err != nil {
 		return fmt.Errorf("cannot identify this app: %w", err)
 	}
@@ -83,9 +83,9 @@ func guideText(self *appctl.SelfInfo) string {
 		"\n" +
 		"REACHING HOSTIT FROM YOUR APP\n" +
 		"  Call hostit's own API two ways -- same API, whichever your language likes:\n" +
-		"    " + controlconf.ContainerAPIURL + "  a normal HTTP client/URL, e.g.\n" +
-		"                       GET " + controlconf.ContainerAPIURL + "/api/container/self\n" +
-		"    the unix socket " + controlconf.DefaultSocketFile + "\n" +
+		"    " + config.ContainerAPIURL + "  a normal HTTP client/URL, e.g.\n" +
+		"                       GET " + config.ContainerAPIURL + "/api/container/self\n" +
+		"    the unix socket " + config.DefaultSocketFile + "\n" +
 		"                       (curl --unix-socket ... http://x/...)\n" +
 		"  Useful: /api/container/self, /api/container/connections (a granted\n" +
 		"  credential, per run), /api/container/assistant (ask a model -- GET\n" +

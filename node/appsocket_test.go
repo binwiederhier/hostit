@@ -15,8 +15,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	nodelink "heckel.io/hostit/node/link"
 	"heckel.io/hostit/nodeapi"
-	"heckel.io/hostit/nodelink"
 	"heckel.io/hostit/store"
 )
 

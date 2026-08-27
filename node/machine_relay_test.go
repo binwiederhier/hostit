@@ -6,13 +6,13 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"heckel.io/hostit/btrfs"
-	"heckel.io/hostit/container"
 	"heckel.io/hostit/run"
-	"heckel.io/hostit/ssh"
 	"heckel.io/hostit/store"
-	"heckel.io/hostit/systemd"
-	"heckel.io/hostit/unixuser"
+	"heckel.io/hostit/system/btrfs"
+	"heckel.io/hostit/system/podman"
+	"heckel.io/hostit/system/ssh"
+	"heckel.io/hostit/system/systemd"
+	"heckel.io/hostit/system/unixuser"
 )
 
 // recordingUser tracks stub create/delete and reports the current accounts.
@@ -60,7 +60,7 @@ func newRelayTestMachine(t *testing.T, u unixuser.Interface) *Machine {
 	t.Cleanup(func() { _ = s.Close() })
 	return NewMachine(conf, s, &Services{
 		Runner: run.Nop{}, Btrfs: btrfs.New(run.Nop{}), Systemd: systemd.New(run.Nop{}),
-		Container: container.New(run.Nop{}), User: u, SSH: ssh.New(), Firewall: nopFirewall{},
+		Container: podman.New(run.Nop{}), User: u, SSH: ssh.New(), Firewall: nopFirewall{},
 	})
 }
 
