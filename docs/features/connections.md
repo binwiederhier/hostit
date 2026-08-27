@@ -231,13 +231,22 @@ refuses perfectly good connections:
 |---|---|---|
 | Google Calendar, Gmail | refresh token | per request, ~1h access token |
 | Discord, Jira | refresh token | per request |
-| Slack (`xoxb-`), GitHub OAuth App | the access token itself | none -- handed back as-is |
+| GitHub, Linear | a refresh token **when the app issues one**, else the access token itself | refreshed when refreshable, otherwise probed and handed back |
+| Slack bot (`xoxb-`) | the access token itself | none -- handed back as-is |
 | Slack personal (`xoxp-`) | the user access token itself | none -- handed back as-is |
 | Discord | refresh token, **rotated every use** | per request, and the new one is stored |
 | IMAP, generic | the pasted secret | none |
 
-`Provider.LongLivedToken` marks the third row. Both paths return the same
-`Token`, so the app socket behaves identically.
+`Provider.LongLivedToken` marks the Slack rows. GitHub and Linear are
+`Provider.HybridToken`: the same provider issues an expiring token WITH a
+refresh token (a GitHub App, or a workspace with token expiration enabled) or a
+permanent access token with none (a classic OAuth App), depending on how the
+operator registered their app. Which one a given connection got is decided at
+`Exchange` from what the token endpoint returns and remembered per connection --
+a refreshable one is refreshed, a permanent one is probed. Treating them as
+long-lived was why a GitHub or Linear token could die overnight and need
+reconnecting every morning. Every path returns the same `Token`, so the app
+socket behaves identically.
 
 **Rotation is the trap.** Some providers issue a NEW refresh token on every
 refresh and invalidate the old one -- Discord does. `Provider.Refresh` therefore

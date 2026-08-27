@@ -7,6 +7,58 @@ changed rather than what an operator had to do about it; from v0.15.0 on, each
 release is written down as it is cut. Anything that changes a config file, a
 default, or on-disk state is called out as **Breaking** or **Upgrade note**.
 
+## v0.29.0 (2026-08-27)
+
+- **GitHub and Linear connections refresh their tokens now.** Both were treated
+  as long-lived (a non-expiring token, no refresh), but a GitHub App -- or a
+  Linear workspace with token expiration enabled -- hands back an expiring
+  access token AND a refresh token that hostit discarded, so the token died in
+  hours and the connection needed reconnecting every morning while the status
+  dot still read green. Both are hybrid now: at connect hostit records whether
+  the credential is refreshable and refreshes the refreshable ones, while a
+  classic OAuth App (permanent token, no refresh) is still probed. A probe that
+  rejects a token now logs the provider's status and error, which was silent
+  before. **Upgrade note:** reconnect existing GitHub/Linear connections once
+  after upgrading so a refresh token is stored.
+
+- **First-run onboarding.** A new account gets a welcome modal explaining what
+  hostit is and asking one question -- how technical are you -- whose answer
+  pre-fills the assistant prompt and which tabs an app opens with. Both are
+  editable later from a new Preferences section on the profile.
+
+- **Per-app tabs and a View menu.** Each app's header carries a View control
+  that chooses which panes it opens with (assistant or files, plus logs,
+  terminal, connections), overriding the profile default per app.
+
+- **Invite viewers who have no account yet.** A restricted app can be shared
+  with someone by email before they sign in; the grant activates on their first
+  login.
+
+- **Private apps get preview screenshots.** A private app's preview is captured
+  through an app-bound, single-use grant, so its dashboard tile is no longer
+  blank (screenshot preview mode only).
+
+- **Admin: logs and an instance prompt.** Admins can read the control and node
+  journals from the UI, and set an instance-wide system prompt that every app's
+  assistant and the `/info` guide carry.
+
+- **Assistant: an interrupted tool call no longer wedges a conversation.** The
+  API loop persists the assistant's tool calls before their results, so a Stop,
+  a timeout, or a restart in between left a tool_use with no tool_result on
+  disk, which the Messages API rejected on every following turn. Such a
+  transcript now self-heals on its next turn.
+
+- **`/info` guide rewritten:** clearer apps-API vs container-API sections, the
+  `data/` directory, expanded `hostit.yml` examples, and separate admin/user
+  prompt notes.
+
+- Assorted UI polish: colourful onboarding avatars, a dark-mode fix for the
+  granted-connection chip, a steadier assistant typing hint, and the Apps
+  switcher refreshing when opened.
+
+- **Internal:** service packages are grouped under `system/`, `node/link`,
+  `proxy/`, `control/config`, `http/outbound`, and `cmd/util` as the tree grew.
+
 ## v0.28.1 (2026-08-26)
 
 - **Long-lived-token connections are now health-checked.** A long-lived-token
