@@ -97,7 +97,7 @@ func TestCaptureNavigatesWaitsAndShoots(t *testing.T) {
 	t.Parallel()
 	f := newFakeChrome(t, true)
 	start := time.Now()
-	png, err := capture(context.Background(), f.server.URL, "https://blog.example.com/", 200*time.Millisecond)
+	png, err := capture(context.Background(), f.server.URL, "https://blog.example.com/", 200*time.Millisecond, nil)
 	require.NoError(t, err)
 	assert.Equal(t, f.pngBytes, png)
 	assert.Equal(t, "https://blog.example.com/", <-f.navigated)
@@ -110,7 +110,7 @@ func TestCaptureNavigatesWaitsAndShoots(t *testing.T) {
 func TestCaptureShootsEvenWithoutTheLoadEvent(t *testing.T) {
 	t.Parallel()
 	f := newFakeChrome(t, false)
-	png, err := capture(context.Background(), f.server.URL, "https://slow.example.com/", 150*time.Millisecond)
+	png, err := capture(context.Background(), f.server.URL, "https://slow.example.com/", 150*time.Millisecond, nil)
 	require.NoError(t, err)
 	assert.Equal(t, f.pngBytes, png)
 }
@@ -119,6 +119,6 @@ func TestCaptureFailsWhenChromeNeverAnswers(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
 	defer cancel()
-	_, err := capture(ctx, "http://127.0.0.1:1", "https://blog.example.com/", time.Second)
+	_, err := capture(ctx, "http://127.0.0.1:1", "https://blog.example.com/", time.Second, nil)
 	require.Error(t, err)
 }

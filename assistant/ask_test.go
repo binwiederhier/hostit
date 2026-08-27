@@ -150,7 +150,7 @@ func TestAnAppInALoopIsRateLimited(t *testing.T) {
 // API key for something the platform already does.
 func TestThePromptTellsTheModelTheAppCanAskAModel(t *testing.T) {
 	t.Parallel()
-	p := systemPrompt("blog", false, nil)
+	p := systemPrompt("blog", false, nil, "")
 	// Whitespace-insensitive: the prompt is hard-wrapped, so a phrase that
 	// reads as one thing can straddle a line break.
 	flat := strings.Join(strings.Fields(p), " ")
@@ -170,7 +170,7 @@ func TestThePromptTeachesTheCurrentContainerAPI(t *testing.T) {
 		{Slug: "work-cal", Provider: "google-calendar", ProviderLabel: "Google Calendar"},
 		{Slug: "issues", Provider: "mcp", ProviderLabel: "MCP server", MCP: true},
 	}
-	p := systemPrompt("blog", false, conns)
+	p := systemPrompt("blog", false, conns, "")
 
 	assert.NotContains(t, p, "/v1/",
 		"the prompt is where an app's URLs come from; /v1 keeps working but is not what to teach")

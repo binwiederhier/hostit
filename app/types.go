@@ -16,6 +16,7 @@ const (
 	LogDir    = "log"    // The app's output, written by the hostit agent
 	SrcDir    = "src"    // Source, if the app keeps its source on the host
 	DocsDir   = "docs"   // The app's own documentation, for whoever works on it next
+	DataDir   = "data"   // Persistent app data by convention: sqlite databases, state files
 
 	// ConfigFile is the app's hostit.yml, the one file that describes how it runs
 	ConfigFile = "hostit.yml"

@@ -91,7 +91,7 @@ func TestThePromptDoesNotOfferATokenForAnMCPConnection(t *testing.T) {
 	t.Parallel()
 	p := systemPrompt("blog", false, []Connection{
 		{Slug: "issues", Provider: "mcp", ProviderLabel: "MCP server", MCP: true},
-	})
+	}, "")
 	assert.NotContains(t, p, "/api/container/connections/issues/token",
 		"there is no credential to fetch; hostit makes the calls")
 	assert.Contains(t, p, "mcp__conn__issues__", "the model is pointed at the tools instead")
@@ -100,7 +100,7 @@ func TestThePromptDoesNotOfferATokenForAnMCPConnection(t *testing.T) {
 	mixed := systemPrompt("blog", false, []Connection{
 		{Slug: "issues", Provider: "mcp", ProviderLabel: "MCP server", MCP: true},
 		{Slug: "work-cal", Provider: "google-calendar", ProviderLabel: "Google Calendar"},
-	})
+	}, "")
 	assert.Contains(t, mixed, "/api/container/connections/work-cal/token")
 	assert.NotContains(t, mixed, "/api/container/connections/issues/token")
 }

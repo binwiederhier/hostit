@@ -41,6 +41,11 @@ type AppOps interface {
 	// it shapes the system prompt, so the model knows before it plans rather
 	// than after a refusal.
 	Archived(app string) bool
+	// InstancePrompt is the operator's instance-wide note (house rules), and
+	// OwnerPrompt the app owner's own profile note. Both shape the system prompt
+	// rather than being tools, appended after the base instructions.
+	InstancePrompt() string
+	OwnerPrompt(app string) string
 	// Connections are the accounts and credentials this app has been granted.
 	// Like Archived, this shapes the prompt rather than being a tool: the model
 	// has to know a calendar is reachable BEFORE it plans, or it confidently

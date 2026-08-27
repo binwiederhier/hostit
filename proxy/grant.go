@@ -61,7 +61,13 @@ func (p *Proxy) mayServePrivately(r *http.Request, route proxyapi.Route, table *
 	// An empty id is not an identity: an ownerless app and a token-authenticated
 	// grant both carry one, and matching them against each other would be an
 	// accident rather than a decision.
-	if userID == "" || app != route.App || !allowed(userID, route.Access, table.Admins) {
+	if userID == "" || app != route.App {
+		return false
+	}
+	// A preview grant (control's own screenshot browser) is app-bound and signed
+	// by the same key, so it opens ONLY the app it names and needs no access
+	// entry. Any other principal must be in the app's resolved access set.
+	if userID != proxyapi.PreviewPrincipal && !allowed(userID, route.Access, table.Admins) {
 		return false
 	}
 	stripGrantCookie(r)

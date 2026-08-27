@@ -132,7 +132,7 @@ func fetchPageTarget(ctx context.Context, debugBase string) (string, error) {
 // for the given REAL duration, and returns the PNG bytes. A page that never
 // fires load is still captured after the settle window: a stuck subresource
 // must not cost the shot, and what is painted by then is what a visitor sees.
-func capture(ctx context.Context, debugBase, pageURL string, settle time.Duration) ([]byte, error) {
+func capture(ctx context.Context, debugBase, pageURL string, settle time.Duration, cookie *http.Cookie) ([]byte, error) {
 	wsURL, err := pageWebSocketURL(ctx, debugBase)
 	if err != nil {
 		return nil, err
@@ -150,6 +150,19 @@ func capture(ctx context.Context, debugBase, pageURL string, settle time.Duratio
 
 	if _, err := c.call(ctx, "Page.enable", nil); err != nil {
 		return nil, err
+	}
+	// For a private app, seed the app-bound grant cookie before navigating, so
+	// the very first request carries it and the proxy serves the app.
+	if cookie != nil {
+		if _, err := c.call(ctx, "Network.enable", nil); err != nil {
+			return nil, err
+		}
+		if _, err := c.call(ctx, "Network.setCookie", map[string]any{
+			"name": cookie.Name, "value": cookie.Value, "url": pageURL,
+			"path": "/", "secure": cookie.Secure, "httpOnly": true, "sameSite": "Lax",
+		}); err != nil {
+			return nil, err
+		}
 	}
 	navID, err := c.send(ctx, "Page.navigate", map[string]any{"url": pageURL})
 	if err != nil {

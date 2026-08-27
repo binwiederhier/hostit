@@ -121,6 +121,7 @@ type Config struct {
 	ControlSocketFile      string  `yaml:"control-socket-file"`        // Control's own socket: operator CLI + assistant sandbox
 	DataDir                string  `yaml:"data-dir"`                   // SQLite registry + ACME certs
 	ListenMetrics          string  `yaml:"listen-metrics"`             // optional Prometheus /metrics listener, e.g. "10.0.0.1:9110" (empty = off)
+	LogUnit                string  `yaml:"log-unit"`                   // systemd unit whose journal the admin "control logs" view reads; default hostit-control
 	AppsDir                string  `yaml:"apps-dir"`                   // Home directories of app users
 	APIHost                string  `yaml:"api-host"`                   // Hostname routed to the admin API; defaults to <base-domain>
 	SSHHost                string  `yaml:"ssh-host"`                   // Hostname reported for SSH access; defaults to base-domain
@@ -145,6 +146,11 @@ type Config struct {
 	// Web app and user accounts
 	GoogleClientID     string `yaml:"google-client-id"`     // Google OAuth client ID; empty disables the web login
 	GoogleClientSecret string `yaml:"google-client-secret"` // Google OAuth client secret
+
+	// InfoPrompt is an instance-wide note appended to every /info response and
+	// the assistant's system prompt (house rules, deployment specifics). The
+	// admin page's live value (DB setting info_prompt) overrides this default.
+	InfoPrompt string `yaml:"info-prompt"`
 
 	// ConnectionClients are the OAuth clients this instance holds for each
 	// connectable provider, keyed by provider name (slack, discord, github,
@@ -459,4 +465,13 @@ func (c *Config) SSHHostname() string {
 		return c.SSHHost
 	}
 	return c.BaseDomain
+}
+
+// LogUnitName is the systemd unit whose journal the admin "control logs" view
+// reads, defaulting to the conventional unit name when unset.
+func (c *Config) LogUnitName() string {
+	if c.LogUnit != "" {
+		return c.LogUnit
+	}
+	return "hostit-control"
 }

@@ -3,6 +3,7 @@ package control
 import (
 	"errors"
 	"fmt"
+	"heckel.io/hostit/proxyapi"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -160,6 +161,18 @@ func (s *Server) callerFromGrant(r *http.Request, a *store.App) (*caller, bool) 
 // the web app, stores it as a cookie scoped to this host, and sends the visitor
 // on to what they originally asked for -- with nothing left in the URL to show
 // for it.
+// PreviewCookie mints the app-bound grant that control's screenshot browser
+// presents so the proxy serves it a PRIVATE app instead of the sign-in page.
+// The grant names a reserved principal AND the app, so it opens only that one
+// app; the proxy strips it before the app backend ever sees it.
+func (s *Server) PreviewCookie(appName string) (*http.Cookie, error) {
+	value, err := s.grants.Sign(appName, proxyapi.PreviewPrincipal)
+	if err != nil {
+		return nil, err
+	}
+	return s.cookie(s.cookieName(appGrantCookieName), value, int(appGrantTTL.Seconds())), nil
+}
+
 func (s *Server) handleAppGranted(w http.ResponseWriter, r *http.Request, a *store.App) {
 	// This hop is a redirect from our own web host, which is same-site with
 	// every app hostname. Anything else is somebody pushing a grant of their

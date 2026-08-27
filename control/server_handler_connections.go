@@ -44,6 +44,9 @@ type apiConnectionResponse struct {
 	Meta          string    `json:"meta,omitempty"`
 	CreatedAt     time.Time `json:"created_at"`
 	GrantedApps   int       `json:"granted_apps"`
+	// GrantedAppNames names those apps (sorted), so the UI can list and link
+	// them rather than showing only the count.
+	GrantedAppNames []string `json:"granted_app_names"`
 	// Status is the connection's health: "ok" or "needs_reconnect".
 	Status string `json:"status"`
 	// URL and Tools are set for an MCP connection only. They come out of the
@@ -151,10 +154,11 @@ func (s *Server) connectionView(c *store.Connection) *apiConnectionResponse {
 		label = p.Label
 	}
 	n, _ := s.apps.Store().CountGrants(c.ID)
+	names, _ := s.apps.Store().GrantedAppNames(c.ID)
 	out := &apiConnectionResponse{
 		Slug: c.Slug, Label: c.Label, Provider: c.Provider, ProviderLabel: label,
 		Kind: c.Kind, Meta: c.Meta, CreatedAt: c.CreatedAt, GrantedApps: n,
-		Status: c.Status,
+		GrantedAppNames: names, Status: c.Status,
 	}
 	if c.Kind == store.ConnectionMCP {
 		out.Meta = "" // it is a JSON document, not something to show as-is

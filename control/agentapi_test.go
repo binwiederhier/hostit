@@ -31,7 +31,8 @@ func TestAgentInfoIsSelfExplanatory(t *testing.T) {
 	// An agent lands here first, so it must learn what this is and what to call
 	assert.NotEmpty(t, resp.WhatIsThis)
 	assert.NotEmpty(t, resp.Workflow)
-	assert.NotEmpty(t, resp.Endpoints)
+	assert.NotEmpty(t, resp.AppsAPI.Endpoints)
+	assert.NotEmpty(t, resp.ContainerAPI.Endpoints)
 	assert.NotEmpty(t, resp.HostitYml)
 	// An agent must learn what it can build with, and what we recommend
 	assert.Contains(t, resp.Runtimes, "python3")
@@ -41,8 +42,8 @@ func TestAgentInfoIsSelfExplanatory(t *testing.T) {
 	assert.Contains(t, resp.SuggestedStack, "Go binary")
 	assert.Contains(t, resp.HostitYml, "mode: static")
 	assert.Equal(t, "https://apps.example.com/api", resp.BaseURL) // The base domain is the front door
-	paths := make([]string, 0, len(resp.Endpoints))
-	for _, e := range resp.Endpoints {
+	paths := make([]string, 0, len(allAgentEndpoints(resp)))
+	for _, e := range allAgentEndpoints(resp) {
 		paths = append(paths, e.Method+" "+e.Path)
 	}
 	for _, want := range []string{
@@ -161,8 +162,8 @@ func TestAgentInfoAdvertisesTheAssistantTranscript(t *testing.T) {
 	require.Equal(t, http.StatusOK, rr.Code)
 	var resp apiAgentInfoResponse
 	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &resp))
-	paths := make([]string, 0, len(resp.Endpoints))
-	for _, e := range resp.Endpoints {
+	paths := make([]string, 0, len(allAgentEndpoints(resp)))
+	for _, e := range allAgentEndpoints(resp) {
 		paths = append(paths, e.Method+" "+e.Path)
 	}
 	assert.Contains(t, paths, "GET /api/apps/{app}/assistant/transcript")
@@ -181,8 +182,8 @@ func TestAgentInfoInstructsPeriodicLabelledSnapshots(t *testing.T) {
 	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &resp))
 
 	// The snapshot endpoints are documented, so an agent knows how to take one.
-	paths := make([]string, 0, len(resp.Endpoints))
-	for _, e := range resp.Endpoints {
+	paths := make([]string, 0, len(allAgentEndpoints(resp)))
+	for _, e := range allAgentEndpoints(resp) {
 		paths = append(paths, e.Method+" "+e.Path)
 	}
 	assert.Contains(t, paths, "POST /api/apps/{app}/snapshots")
@@ -717,4 +718,11 @@ func TestAgentAppInfoCarriesLimits(t *testing.T) {
 	assert.EqualValues(t, 256, limits["memory_mb"])
 	assert.EqualValues(t, 500, limits["cpu_milli"])
 	assert.NotZero(t, limits["disk_mb"])
+}
+
+// allAgentEndpoints flattens the guide's two API sections, so a test that only
+// cares an endpoint is documented does not need to know which side it is on.
+func allAgentEndpoints(r apiAgentInfoResponse) []apiAgentEndpoint {
+	out := append([]apiAgentEndpoint{}, r.AppsAPI.Endpoints...)
+	return append(out, r.ContainerAPI.Endpoints...)
 }

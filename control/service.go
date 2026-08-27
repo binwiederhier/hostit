@@ -578,6 +578,7 @@ func (s *Server) appResponse(a *store.App, customDomain string) *apiAppResponse 
 		Snapshot:       s.snapshotConfigFor(a.Name),
 		Archived:       a.Archived,
 		Private:        a.Private,
+		Tabs:           a.Tabs,
 		CreatedAt:      a.CreatedAt,
 		LimitOverrides: apiLimitOverrides{MemoryMB: a.MemoryLimitMB, DiskMB: a.DiskLimitMB, CPUMilli: a.CPUMilli},
 		SSH:            sshInfoFor(a.Name, s.sshHostFor(a.Host)),

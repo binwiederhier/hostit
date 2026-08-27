@@ -28,6 +28,9 @@ type apiCollaboratorResponse struct {
 	ID    string `json:"id"`
 	Email string `json:"email"`
 	Name  string `json:"name"`
+	// Pending marks a viewer invited by email who has not signed in yet: they get
+	// the grant on first sign-in. Only ever set for viewers, never collaborators.
+	Pending bool `json:"pending,omitempty"`
 }
 
 // apiAddCollaboratorRequest is the body of POST /api/apps/{name}/collaborators.
@@ -50,6 +53,12 @@ type apiSnapshotConfig struct {
 	Pre             string `json:"pre"`
 	Post            string `json:"post"`
 	DefaultInterval string `json:"default_interval,omitempty"`
+}
+
+// apiSetTabsRequest is the body of PUT /apps/{name}/tabs: the owner's per-app
+// override of which app-detail tabs show (CSV of tab keys; "" clears it).
+type apiSetTabsRequest struct {
+	Tabs string `json:"tabs"`
 }
 
 // apiSetDescriptionRequest is the body of PUT /api/apps/{name}/description
@@ -125,6 +134,9 @@ type apiAppResponse struct {
 	// ViewerCount is how many people have been given view-only access. With
 	// Private it is what the UI calls "Restricted" -- private, plus somebody.
 	ViewerCount int `json:"viewer_count"`
+	// Tabs is the owner's per-app override of which app-detail tabs show (CSV of
+	// tab keys); "" means each viewer's own profile default applies.
+	Tabs string `json:"tabs"`
 	// CustomDomain is the first verified (active) custom domain, empty if none; the
 	// web app prefers it over the default subdomain for links and previews.
 	CustomDomain string `json:"custom_domain,omitempty"`
@@ -189,6 +201,17 @@ type apiAccountResponse struct {
 	// ConnectionsNeedReconnect is how many of this account's connections are
 	// unhealthy (a rejected credential), so the UI can raise a bell.
 	ConnectionsNeedReconnect int `json:"connections_need_reconnect,omitempty"`
+	// AssistantEnabled mirrors apiAppResponse: true when an Anthropic key is
+	// configured for the instance, so the profile page can hide assistant-only
+	// controls (the user prompt, the Assistant tab toggle) when there is none.
+	AssistantEnabled bool `json:"assistant_enabled"`
+	// Self-service profile fields (see store.User). TechLevel drives the welcome
+	// modal + presets; AssistantPrompt is appended to the assistant; DefaultTabs
+	// is the per-user default app-detail tab set; Onboarded gates the modal.
+	TechLevel       string `json:"tech_level"`
+	AssistantPrompt string `json:"assistant_prompt"`
+	DefaultTabs     string `json:"default_tabs"`
+	Onboarded       bool   `json:"onboarded"`
 	// Version is what this server is running, for the About box. It rides here
 	// rather than on /api/health, which is public: a version number tells
 	// whoever asks exactly which advisories apply, and there is no reason to
@@ -304,6 +327,23 @@ func (r *apiUpdateUserRequest) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
+// apiUpdateAccountRequest is the body of PATCH /api/account: the caller editing
+// their own profile. Every field is a pointer so "absent" differs from "clear".
+type apiUpdateAccountRequest struct {
+	TechLevel       *string `json:"tech_level"`
+	AssistantPrompt *string `json:"assistant_prompt"`
+	DefaultTabs     *string `json:"default_tabs"`
+	Onboarded       *bool   `json:"onboarded"`
+}
+
+// apiLogsResponse carries one journal read for the admin logs view.
+type apiLogsResponse struct {
+	Source string `json:"source"` // "control" or "node"
+	Unit   string `json:"unit,omitempty"`
+	Node   string `json:"node,omitempty"`
+	Text   string `json:"text"`
+}
+
 // apiSettingsResponse is the global default limits
 type apiSettingsResponse struct {
 	DefaultAppLimit int `json:"default_app_limit"`
@@ -312,6 +352,10 @@ type apiSettingsResponse struct {
 	// The default POOLS a user gets; 0 = derive app_limit x per-app default.
 	DefaultMemoryPoolMB int `json:"default_memory_pool_mb"`
 	DefaultDiskPoolMB   int `json:"default_disk_pool_mb"`
+	// InfoPrompt is the instance-wide prompt added to every /info response and
+	// the assistant system prompt. Empty here means the control.yml default (if
+	// any) is in effect; the field always reflects the effective value.
+	InfoPrompt string `json:"info_prompt"`
 }
 
 // apiUpdateSettingsRequest is the body of PATCH /api/settings
@@ -321,6 +365,9 @@ type apiUpdateSettingsRequest struct {
 	DefaultDiskMB       *int `json:"default_disk_mb"`
 	DefaultMemoryPoolMB *int `json:"default_memory_pool_mb"`
 	DefaultDiskPoolMB   *int `json:"default_disk_pool_mb"`
+	// InfoPrompt, when non-nil, replaces the stored instance prompt ("" clears it
+	// back to the control.yml default).
+	InfoPrompt *string `json:"info_prompt"`
 }
 
 // apiAgentEndpoint documents one endpoint in the agent-facing API index
@@ -333,18 +380,35 @@ type apiAgentEndpoint struct {
 // apiAgentInfoResponse is GET /api/info: everything an agent needs to work with
 // hostit without any prior knowledge
 type apiAgentInfoResponse struct {
-	Platform       string             `json:"platform"`
-	BaseURL        string             `json:"base_url"`
-	WhatIsThis     string             `json:"what_is_this"`
-	Auth           string             `json:"auth"`
-	Workflow       []string           `json:"workflow"`
-	Layout         string             `json:"layout"`
-	HostitYml      string             `json:"hostit_yml"`
-	Runtimes       string             `json:"runtimes"`
-	SuggestedStack string             `json:"suggested_stack"`
-	Preview        string             `json:"preview"`
-	Endpoints      []apiAgentEndpoint `json:"endpoints"`
-	Notes          []string           `json:"notes"`
+	Platform       string   `json:"platform"`
+	BaseURL        string   `json:"base_url"`
+	WhatIsThis     string   `json:"what_is_this"`
+	Auth           string   `json:"auth"`
+	Workflow       []string `json:"workflow"`
+	Layout         string   `json:"layout"`
+	HostitYml      string   `json:"hostit_yml"`
+	Runtimes       string   `json:"runtimes"`
+	SuggestedStack string   `json:"suggested_stack"`
+	Preview        string   `json:"preview"`
+	// AppsAPI is what YOU, the external coding agent, call over HTTPS to build
+	// and manage the app; ContainerAPI is what the running app calls from inside
+	// its own container. Split so it is never ambiguous which side a call is for.
+	AppsAPI      apiAgentAPISection `json:"apps_api"`
+	ContainerAPI apiAgentAPISection `json:"container_api"`
+	Notes        []string           `json:"notes"`
+	// AdditionalAdminPrompt is extra context the instance ADMIN set (house rules,
+	// what this instance is for); AdditionalUserPrompt is extra context the app's
+	// OWNER set. Their own fields, not folded into notes, so an agent can tell
+	// hostit's own instructions from a human's added guidance, and which human.
+	AdditionalAdminPrompt string `json:"additional_admin_prompt,omitempty"`
+	AdditionalUserPrompt  string `json:"additional_user_prompt,omitempty"`
+}
+
+// apiAgentAPISection is one side of the API surface: a line on who calls it and
+// how, plus the endpoints on that side.
+type apiAgentAPISection struct {
+	Description string             `json:"description"`
+	Endpoints   []apiAgentEndpoint `json:"endpoints"`
 }
 
 // apiAgentAppResponse is GET /api/apps/{app}/info

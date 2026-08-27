@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"heckel.io/hostit/assistant"
@@ -269,7 +270,18 @@ func (s *Server) handleSettingsGet(w http.ResponseWriter, _ *http.Request, _ *ca
 		DefaultDiskMB:       defaults.DiskMB,
 		DefaultMemoryPoolMB: defaults.MemoryPoolMB,
 		DefaultDiskPoolMB:   defaults.DiskPoolMB,
+		InfoPrompt:          s.infoPrompt(),
 	})
+}
+
+// infoPrompt is the effective instance-wide prompt: the admin-set DB value if
+// present, else the control.yml default. Injected into every /info response and
+// the assistant system prompt.
+func (s *Server) infoPrompt() string {
+	if v, err := s.apps.Store().Setting(store.SettingInfoPrompt); err == nil && v != "" {
+		return v
+	}
+	return s.config.InfoPrompt
 }
 
 func (s *Server) handleSettingsUpdate(w http.ResponseWriter, r *http.Request, c *caller) {
@@ -302,7 +314,15 @@ func (s *Server) handleSettingsUpdate(w http.ResponseWriter, r *http.Request, c 
 		writeAppError(w, err)
 		return
 	}
-	// Echo the merged settings (limits + assistant) back, so one round-trip writes and reads.
+	// The instance-wide /info prompt: stored in the setting table, editable live.
+	// An empty string clears the override back to the control.yml default.
+	if req.InfoPrompt != nil {
+		if err := s.apps.Store().SetSetting(store.SettingInfoPrompt, strings.TrimSpace(*req.InfoPrompt)); err != nil {
+			writeAppError(w, err)
+			return
+		}
+	}
+	// Echo the merged settings (limits + info prompt) back, so one round-trip writes and reads.
 	s.handleSettingsGet(w, r, c)
 }
 

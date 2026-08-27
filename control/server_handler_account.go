@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 
 	"heckel.io/hostit/node"
 	"heckel.io/hostit/store"
@@ -141,11 +142,14 @@ func (s *Server) handleTokensDelete(w http.ResponseWriter, r *http.Request, c *c
 func (s *Server) accountResponse(c *caller) (*apiAccountResponse, error) {
 	if c.globalAdmin {
 		return &apiAccountResponse{
-			Email:   "admin-token",
-			Name:    "Global admin token",
-			Role:    store.RoleAdmin,
-			Status:  store.StatusActive,
-			Version: node.Version,
+			Email:  "admin-token",
+			Name:   "Global admin token",
+			Role:   store.RoleAdmin,
+			Status: store.StatusActive,
+			// It has no user row to save a profile against, so mark it onboarded:
+			// the welcome modal (and any profile write) would 400 on it.
+			Onboarded: true,
+			Version:   node.Version,
 		}, nil
 	}
 	if c.user == nil {
@@ -181,10 +185,54 @@ func (s *Server) accountResponse(c *caller) (*apiAccountResponse, error) {
 		Role:                     c.user.Role,
 		Status:                   c.user.Status,
 		ConnectionsNeedReconnect: attention,
+		AssistantEnabled:         s.assistant != nil,
+		TechLevel:                c.user.TechLevel,
+		AssistantPrompt:          c.user.AssistantPrompt,
+		DefaultTabs:              c.user.DefaultTabs,
+		Onboarded:                c.user.Onboarded,
 		Limits:                   limits,
 		Usage:                    &apiUsage{Apps: len(apps), DiskMB: diskMB, PoolMemoryMB: poolMemory, PoolDiskMB: poolDisk},
 		Version:                  node.Version,
 	}, nil
+}
+
+// handleAccountUpdate lets the caller edit their own profile: technical level,
+// the assistant prompt appended to their apps' assistant, their default tab set,
+// and the onboarded flag. Admin-owned fields (role, status, limits) are not
+// reachable here -- those live behind requireAdmin.
+func (s *Server) handleAccountUpdate(w http.ResponseWriter, r *http.Request, c *caller) {
+	if c.user == nil {
+		writeError(w, http.StatusBadRequest, errors.New("this token has no account behind it"))
+		return
+	}
+	var req apiUpdateAccountRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8192)).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	u := c.user
+	if req.TechLevel != nil {
+		u.TechLevel = strings.TrimSpace(*req.TechLevel)
+	}
+	if req.AssistantPrompt != nil {
+		u.AssistantPrompt = strings.TrimSpace(*req.AssistantPrompt)
+	}
+	if req.DefaultTabs != nil {
+		u.DefaultTabs = normalizeTabs(*req.DefaultTabs, s.assistant != nil)
+	}
+	if req.Onboarded != nil {
+		u.Onboarded = *req.Onboarded
+	}
+	if err := s.apps.Store().UpdateUserProfile(u); err != nil {
+		writeAppError(w, err)
+		return
+	}
+	resp, err := s.accountResponse(c)
+	if err != nil {
+		writeAppError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // syncUserAppKeys rewrites authorized_keys for every app a user has standing

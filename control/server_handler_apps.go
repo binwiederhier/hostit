@@ -127,6 +127,30 @@ func (s *Server) handleAppsSetDescription(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, s.appResponseFor(c, a, s.firstActiveDomain(a.Name))) // appResponse re-reads the description from the file
 }
 
+// handleAppsSetTabs stores the owner's per-app override of which app-detail tabs
+// show. Owner-only: it changes what every collaborator on the app sees. The set
+// is normalized (canonical order, always a primary pane) before it is stored.
+func (s *Server) handleAppsSetTabs(w http.ResponseWriter, r *http.Request, c *caller) {
+	a, err := s.ownerApp(c, r.PathValue("name"))
+	if err != nil {
+		writeAppError(w, err)
+		return
+	}
+	var req apiSetTabsRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	tabs := normalizeTabs(req.Tabs, s.assistant != nil)
+	if err := s.apps.Store().SetAppTabs(a.Name, tabs); err != nil {
+		writeAppError(w, err)
+		return
+	}
+	a.Tabs = tabs
+	s.logAction(c, a.Name, "tabs", "Changed which tabs are shown")
+	writeJSON(w, http.StatusOK, s.appResponseFor(c, a, s.firstActiveDomain(a.Name)))
+}
+
 // handleAppsRename changes an app's name. Everything durable keys on the app id,
 // so this is cheap: the Unix login is renamed and the store row updated, and
 // nothing (home, snapshots, container) moves. The custom-domain routing cache is

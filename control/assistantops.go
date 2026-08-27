@@ -213,6 +213,26 @@ func (o *appOps) Archived(name string) bool {
 	return o.apps.archived(name)
 }
 
+// InstancePrompt is the operator's instance-wide note (DB setting, else the
+// control.yml default), appended to every app's assistant system prompt.
+func (o *appOps) InstancePrompt() string {
+	return o.server.infoPrompt()
+}
+
+// OwnerPrompt is the app owner's own profile note, so the assistant reflects the
+// owner's stated preferences regardless of which collaborator is driving it.
+func (o *appOps) OwnerPrompt(name string) string {
+	a, err := o.apps.App(name)
+	if err != nil || a.OwnerID == "" {
+		return ""
+	}
+	u, err := o.server.users.User(a.OwnerID)
+	if err != nil {
+		return ""
+	}
+	return u.AssistantPrompt
+}
+
 // Connections lists what this app has been granted, so the assistant's prompt
 // can name them. It carries no secret -- the model is told the name to ask for,
 // and the app reads the credential from its own socket at runtime.

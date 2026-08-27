@@ -116,8 +116,9 @@ type App struct {
 	Name    string
 	URL     string
 	Running bool // Only running apps are shot; stopped ones keep their last shot
-	// Private apps are never shot: the shot container browses the public URL
-	// with no credentials, so it would photograph the refusal page.
+	// Private restricts the app's URL. It is shot only when the Manager has a
+	// preview-cookie minter (SetPreviewCookie): the shot browser then presents an
+	// app-bound grant so the proxy serves the app instead of the refusal page.
 	Private bool
 }
 
@@ -145,8 +146,13 @@ type Manager struct {
 	// capture drives the started chrome. Both are fields so the tests can run
 	// the whole scheduling path without a network or a browser.
 	ready   func(url string) error
-	capture func(ctx context.Context, debugBase, pageURL string, settle time.Duration) ([]byte, error)
-	mu      sync.Mutex // Protects timers, buckets
+	capture func(ctx context.Context, debugBase, pageURL string, settle time.Duration, cookie *http.Cookie) ([]byte, error)
+	// cookie mints the auth cookie the shot browser presents so a PRIVATE app is
+	// served to it rather than the sign-in page. nil (the default) means private
+	// apps are not shot at all -- an unauthenticated shot would photograph the
+	// refusal page, so it is dropped instead.
+	cookie func(a App) *http.Cookie
+	mu     sync.Mutex // Protects timers, buckets
 }
 
 // Dir returns where shots live for a given daemon data dir.
@@ -176,6 +182,13 @@ func New(runner run.Runner, dir string, apps func() ([]App, error)) *Manager {
 func (m *Manager) SetIsolation(on bool, allowCIDRs []string) {
 	m.isolate = on
 	m.allowCIDRs = allowCIDRs
+}
+
+// SetPreviewCookie supplies the minter for the per-app auth cookie the shot
+// browser presents, which is what lets a PRIVATE app be screenshotted. Without
+// it, private apps are skipped.
+func (m *Manager) SetPreviewCookie(fn func(a App) *http.Cookie) {
+	m.cookie = fn
 }
 
 // File returns the screenshot path for an app id; the file may not exist yet.
@@ -326,9 +339,11 @@ func (m *Manager) Sweep() {
 // request (the next sweep catches up).
 func (m *Manager) enqueue(a App) {
 	// The one place every shot passes through -- the sweep, a debounced change
-	// and a manual refresh all land here -- so a private app is dropped once
-	// rather than in three places that could drift apart.
-	if a.Private {
+	// and a manual refresh all land here. A private app is shot only when a
+	// preview-cookie minter is configured (so the browser can authenticate);
+	// without one it is dropped, since an unauthenticated shot photographs the
+	// refusal page.
+	if a.Private && m.cookie == nil {
 		return
 	}
 	select {
@@ -408,7 +423,11 @@ func (m *Manager) shoot(a App) error {
 
 	ctx, cancel := context.WithTimeout(context.Background(), screenshotTimeout)
 	defer cancel()
-	png, err := m.capture(ctx, fmt.Sprintf("http://127.0.0.1:%d", port), a.URL, settleDelay)
+	var cookie *http.Cookie
+	if a.Private && m.cookie != nil {
+		cookie = m.cookie(a) // app-bound auth so the proxy serves the app, not the sign-in page
+	}
+	png, err := m.capture(ctx, fmt.Sprintf("http://127.0.0.1:%d", port), a.URL, settleDelay, cookie)
 	if err != nil {
 		return err
 	}

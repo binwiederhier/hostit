@@ -25,7 +25,18 @@ const (
 // container if its configuration changed, and (re)starts or reloads the service
 func (m *Machine) Up(name string) (string, error) {
 	defer m.LockApp(name)()
-	return m.up(name, true)
+	msg, err := m.up(name, true)
+	// A fresh start binds $PORT a moment after systemd reports the unit active,
+	// so a caller that acts on "deployed" (the assistant, and the owner's live
+	// preview reload it triggers) would otherwise race a 404. Wait for the port
+	// to actually answer before returning success. Best effort: a broken app
+	// that never binds gives up after the deadline rather than wedging the deploy.
+	if err == nil && strings.HasPrefix(msg, "deployed") {
+		if a, appErr := m.store.App(name); appErr == nil {
+			m.waitForApp(a.Port)
+		}
+	}
+	return msg, err
 }
 
 // up is Up without the per-app lock, for callers that already hold it (rollback).

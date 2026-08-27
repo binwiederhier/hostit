@@ -92,6 +92,15 @@ func (a *remoteAgent) Logs(name string, lines int) (string, error) {
 	return resp.Output, nil
 }
 
+// SystemLogs fetches the remote node's own journal (not an app's log).
+func (a *remoteAgent) SystemLogs(lines int) (string, error) {
+	resp, err := a.call("system-logs", &rpcReq{Lines: lines})
+	if err != nil {
+		return "", err
+	}
+	return resp.Output, nil
+}
+
 func (a *remoteAgent) Exec(name, command string, timeout time.Duration) (*nodeapi.ExecResult, error) {
 	resp, err := a.call("exec", &rpcReq{Name: name, Command: command, TimeoutSec: int(timeout / time.Second)})
 	if err != nil {

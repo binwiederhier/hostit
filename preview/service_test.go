@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -137,7 +138,7 @@ func newTestManager(t *testing.T, runner *fakeRunner, apps []App) *Manager {
 	// No network and no browser in unit tests: the app is "serving" and chrome
 	// hands back a byte. The scheduling path is what these tests are about.
 	m.ready = func(string) error { return nil }
-	m.capture = func(_ context.Context, _, pageURL string, _ time.Duration) ([]byte, error) {
+	m.capture = func(_ context.Context, _, pageURL string, _ time.Duration, _ *http.Cookie) ([]byte, error) {
 		runner.recordCaptured(pageURL)
 		return []byte("\x89PNG\r\n\x1a\nshot"), nil
 	}
@@ -403,13 +404,20 @@ func TestShotSkipsAnAppThatIsNotServing(t *testing.T) {
 // page and publish that as the app's card -- and any bypass built to avoid
 // that would be a screenshot path that ignores the gate, which is precisely
 // what private apps exist to prevent.
-func TestPrivateAppsAreNeverShot(t *testing.T) {
+func TestPrivateAppsAreShotOnlyWithACookieMinter(t *testing.T) {
 	t.Parallel()
+
+	// No minter configured: a private app is dropped (an unauthenticated shot
+	// would photograph the refusal page), a public app still goes through.
 	m := newTestManager(t, &fakeRunner{}, nil)
-
 	m.enqueue(App{ID: "a1", Name: "dash", URL: "https://dash.example.com", Running: true, Private: true})
-	assert.Empty(t, m.queue, "a private app is dropped before it reaches the worker")
-
+	assert.Empty(t, m.queue, "a private app is dropped when nothing can authenticate the shot")
 	m.enqueue(App{ID: "a2", Name: "blog", URL: "https://blog.example.com", Running: true})
 	assert.Len(t, m.queue, 1, "a public app still gets shot")
+
+	// With a minter, the private app is enqueued like any other.
+	m2 := newTestManager(t, &fakeRunner{}, nil)
+	m2.SetPreviewCookie(func(App) *http.Cookie { return &http.Cookie{Name: "x", Value: "y"} })
+	m2.enqueue(App{ID: "a3", Name: "secret", URL: "https://secret.example.com", Running: true, Private: true})
+	assert.Len(t, m2.queue, 1, "a private app is shot once the browser can authenticate")
 }

@@ -29,11 +29,13 @@ func (f *fakeCompleter) complete(_ context.Context, req request) (*response, err
 
 // fakeOps is an in-memory stand-in for the app's REST operations
 type fakeOps struct {
-	files    map[string]string
-	writes   []string
-	execFn   func(command string) ExecResult
-	archived bool
-	conns    []Connection
+	instancePrompt string
+	ownerPrompt    string
+	files          map[string]string
+	writes         []string
+	execFn         func(command string) ExecResult
+	archived       bool
+	conns          []Connection
 	// The MCP half: what this app was granted, what a call returns, and what
 	// was actually asked for.
 	mcpTools  []MCPTool
@@ -60,7 +62,9 @@ func (f *fakeOps) CallMCPTool(_, connection, tool string, args map[string]any) (
 
 func newFakeOps() *fakeOps { return &fakeOps{files: map[string]string{}} }
 
-func (f *fakeOps) Archived(_ string) bool { return f.archived }
+func (f *fakeOps) Archived(_ string) bool      { return f.archived }
+func (f *fakeOps) InstancePrompt() string      { return f.instancePrompt }
+func (f *fakeOps) OwnerPrompt(_ string) string { return f.ownerPrompt }
 
 func (f *fakeOps) Connections(_ string) []Connection { return f.conns }
 
@@ -667,10 +671,10 @@ func TestReplyIsTaggedWithTheOptionThatRanIt(t *testing.T) {
 // keep suggesting "power it on", which archiving is precisely what refuses.
 func TestSystemPromptSaysWhenTheAppIsArchived(t *testing.T) {
 	t.Parallel()
-	live := systemPrompt("blog", false, nil)
+	live := systemPrompt("blog", false, nil, "")
 	assert.NotContains(t, strings.ToLower(live), "archived", "a normal app's prompt says nothing about archiving")
 
-	shelved := systemPrompt("blog", true, nil)
+	shelved := systemPrompt("blog", true, nil, "")
 	assert.Contains(t, strings.ToLower(shelved), "archived")
 	// It must name the way out, since every running verb is refused until then.
 	assert.Contains(t, strings.ToLower(shelved), "unarchive")
@@ -681,19 +685,19 @@ func TestSystemPromptSaysWhenTheAppIsArchived(t *testing.T) {
 // calendar integration configured", which was true only of its own knowledge.
 func TestSystemPromptNamesTheAppsConnections(t *testing.T) {
 	t.Parallel()
-	quiet := systemPrompt("blog", false, nil)
+	quiet := systemPrompt("blog", false, nil, "")
 	assert.NotContains(t, quiet, "connection", "an app with none gets no noise about them")
 
 	withConns := systemPrompt("blog", false, []Connection{
 		{Slug: "work-cal", Provider: "google-calendar", ProviderLabel: "Google Calendar"},
 		{Slug: "openai", Provider: "generic", ProviderLabel: "API key or token"},
-	})
+	}, "")
 	assert.Contains(t, withConns, "work-cal")
 	assert.Contains(t, withConns, "Google Calendar")
 	assert.Contains(t, withConns, "openai")
 	// And how to actually reach one, or naming them achieves nothing
 	assert.Contains(t, withConns, "/api/container/connections/work-cal/token")
-	assert.Contains(t, withConns, "/run/hostit/hostit.sock")
+	assert.Contains(t, withConns, "127.0.0.1:2586")
 }
 
 // The credential must be read by the APP at runtime, not fetched into the
@@ -701,7 +705,7 @@ func TestSystemPromptNamesTheAppsConnections(t *testing.T) {
 // stored forever.
 func TestSystemPromptTellsTheModelNotToPrintTokens(t *testing.T) {
 	t.Parallel()
-	p := systemPrompt("blog", false, []Connection{{Slug: "work-cal", Provider: "google-calendar", ProviderLabel: "Google Calendar"}})
+	p := systemPrompt("blog", false, []Connection{{Slug: "work-cal", Provider: "google-calendar", ProviderLabel: "Google Calendar"}}, "")
 	lower := strings.ToLower(p)
 	assert.Contains(t, lower, "never print")
 	assert.Contains(t, lower, "expire")
@@ -744,4 +748,21 @@ func TestATokenInToolOutputNeverReachesTheTranscript(t *testing.T) {
 	add(saved)
 	assert.NotContains(t, whole.String(), "ya29.LEAKED", "a credential must not be kept in the transcript")
 	assert.Contains(t, whole.String(), "[redacted]", "and the shape of it is visibly taken out")
+}
+
+// The instance-wide note and the app owner's own note are appended to the
+// system prompt (items: admin /info prompt + per-user assistant prompt).
+func TestSystemPromptCarriesExtraContext(t *testing.T) {
+	t.Parallel()
+	p := systemPrompt("blog", false, nil, "House rules: ship small.")
+	assert.Contains(t, p, "House rules: ship small.")
+
+	ops := newFakeOps()
+	ops.instancePrompt = "Operator note."
+	ops.ownerPrompt = "Owner note."
+	m := &Manager{ops: ops}
+	assert.Equal(t, "Operator note.\n\nOwner note.", m.extraContext("blog"))
+
+	ops.ownerPrompt = ""
+	assert.Equal(t, "Operator note.", m.extraContext("blog"), "only what is set, no stray separators")
 }

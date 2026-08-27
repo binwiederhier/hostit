@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -149,6 +150,16 @@ func execServe(c *cli.Context) error {
 		// Strict egress isolation by default: the shot container reaches only the
 		// app's resolved IP and the public internet, not the host/LAN/metadata.
 		previews.SetIsolation(conf.AppPreviewIsolation != controlconf.AppPreviewIsolationOff, conf.AppPreviewAllowCIDRs)
+		// Let private apps be shot: the browser presents an app-bound grant so the
+		// proxy serves the app instead of the sign-in page. nil on failure (no
+		// grant signer) just means that app is skipped, as before.
+		previews.SetPreviewCookie(func(a preview.App) *http.Cookie {
+			c, err := srv.PreviewCookie(a.Name)
+			if err != nil {
+				return nil
+			}
+			return c
+		})
 	}
 	if previews != nil {
 		srv.SetPreviews(previews)

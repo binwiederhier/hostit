@@ -176,8 +176,9 @@ func TestGrantingAccessExplainsWhoCannotReceiveIt(t *testing.T) {
 	suspended.Status = store.StatusDenied
 	require.NoError(t, s.users.Update(suspended))
 
+	// An existing account that still cannot receive a grant fails the same way on
+	// BOTH surfaces.
 	for _, tc := range []struct{ email, expect string }{
-		{"stranger@example.com", "has not signed in to hostit yet"},
 		{"waiting@example.com", "waiting for an administrator"},
 		{"gone@example.com", "suspended"},
 	} {
@@ -187,4 +188,13 @@ func TestGrantingAccessExplainsWhoCannotReceiveIt(t *testing.T) {
 			assert.Contains(t, rr.Body.String(), tc.expect, path+" for "+tc.email)
 		}
 	}
+	// A stranger with no account at all: a COLLABORATOR grant still refuses
+	// (working access needs a real account), but a VIEWER grant now INVITES them
+	// -- they get access the first time they sign in.
+	rr := request(t, s.API(), "POST", "/api/apps/dash/collaborators", `{"email":"stranger@example.com"}`, token)
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+	assert.Contains(t, rr.Body.String(), "has not signed in to hostit yet")
+	rr = request(t, s.API(), "POST", "/api/apps/dash/viewers", `{"email":"stranger@example.com"}`, token)
+	assert.Equal(t, http.StatusOK, rr.Code)
+	assert.Contains(t, rr.Body.String(), "invited")
 }

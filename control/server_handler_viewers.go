@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"heckel.io/hostit/store"
 )
@@ -13,6 +14,18 @@ import (
 // Deliberately thinner than the collaborator surface next door -- no SSH keys
 // ride along, no working access -- because that difference is the entire
 // reason the grant exists.
+
+// handleKnownViewers lists the distinct emails the caller has granted view
+// access to across their own apps, so the new-app dialog can offer them as
+// picks rather than making the owner retype an address they have used before.
+func (s *Server) handleKnownViewers(w http.ResponseWriter, r *http.Request, c *caller) {
+	emails, err := s.apps.Store().ViewerEmailsForOwner(c.userID())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string][]string{"emails": emails})
+}
 
 func (s *Server) handleViewersList(w http.ResponseWriter, r *http.Request, c *caller) {
 	a, err := s.ownedApp(c, r.PathValue("name"))
@@ -29,6 +42,17 @@ func (s *Server) handleViewersList(w http.ResponseWriter, r *http.Request, c *ca
 	for _, u := range users {
 		resp = append(resp, &apiCollaboratorResponse{ID: u.ID, Email: u.Email, Name: u.Name})
 	}
+	// Pending invites (emails without an account yet) ride in the same list,
+	// marked pending. Their "id" is the email, so removing one round-trips through
+	// the same DELETE .../viewers/{id} the real viewers use.
+	pending, err := s.apps.Store().PendingViewers(a.ID)
+	if err != nil {
+		writeAppError(w, err)
+		return
+	}
+	for _, email := range pending {
+		resp = append(resp, &apiCollaboratorResponse{ID: email, Email: email, Pending: true})
+	}
 	writeJSON(w, http.StatusOK, resp)
 }
 
@@ -43,7 +67,24 @@ func (s *Server) handleViewersAdd(w http.ResponseWriter, r *http.Request, c *cal
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	u, err := s.grantableUser(req.Email)
+	email := strings.ToLower(strings.TrimSpace(req.Email))
+	if !strings.Contains(email, "@") {
+		writeError(w, http.StatusBadRequest, errors.New("that does not look like an email address"))
+		return
+	}
+	// No account yet: record a pending invite that becomes a real grant when they
+	// first sign in, rather than refusing. This is the only way to share with
+	// someone before they have logged in once.
+	if _, err := s.users.UserByEmail(email); err != nil {
+		if err := s.apps.Store().AddPendingViewer(a.ID, email); err != nil {
+			writeAppError(w, err)
+			return
+		}
+		s.logAction(c, a.Name, "viewer-invited", "Invited "+email+" (gets access when they sign in)")
+		writeJSON(w, http.StatusOK, &apiMessageResponse{Message: "invited " + email + " -- they get access the first time they sign in"})
+		return
+	}
+	u, err := s.grantableUser(email)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
@@ -77,7 +118,16 @@ func (s *Server) handleViewersRemove(w http.ResponseWriter, r *http.Request, c *
 		writeAppError(w, err)
 		return
 	}
-	if err := s.apps.Store().RemoveAppViewer(a.ID, r.PathValue("id")); err != nil {
+	// A pending invite carries its email as its id (see handleViewersList); a real
+	// viewer carries a user id, which never contains "@". So the "@" tells them
+	// apart without a second endpoint.
+	id := r.PathValue("id")
+	if strings.Contains(id, "@") {
+		if err := s.apps.Store().RemovePendingViewer(a.ID, id); err != nil {
+			writeAppError(w, err)
+			return
+		}
+	} else if err := s.apps.Store().RemoveAppViewer(a.ID, id); err != nil {
 		writeAppError(w, err)
 		return
 	}

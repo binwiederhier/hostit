@@ -55,6 +55,7 @@ func (s *Server) newAPIHandler() http.Handler {
 
 	// Account: readable while pending, so the web app can explain the wait
 	route(mux, "GET", "/account", s.authenticated(s.handleAccount))
+	route(mux, "PATCH", "/account", s.requirePerson(s.handleAccountUpdate))
 	// Connections: the owner's connected accounts, and the per-app grants.
 	route(mux, "GET", "/connections", s.requirePerson(s.handleConnectionsList))
 	route(mux, "POST", "/connections", s.requirePerson(s.handleConnectionAdd))
@@ -90,6 +91,8 @@ func (s *Server) newAPIHandler() http.Handler {
 	route(mux, "POST", "/apps/{name}/token", s.requireAccount(s.handleAppsRotateToken))
 	route(mux, "PUT", "/apps/{name}/description", s.requireAccount(s.handleAppsSetDescription))
 	route(mux, "PUT", "/apps/{name}/visibility", s.requireAccount(s.handleAppsSetVisibility))
+	route(mux, "PUT", "/apps/{name}/tabs", s.requireAccount(s.handleAppsSetTabs))
+	route(mux, "GET", "/viewers/known", s.requirePerson(s.handleKnownViewers))
 	route(mux, "GET", "/apps/{name}/viewers", s.requireAccount(s.handleViewersList))
 	route(mux, "POST", "/apps/{name}/viewers", s.requireAccount(s.handleViewersAdd))
 	route(mux, "DELETE", "/apps/{name}/viewers/{id}", s.requireAccount(s.handleViewersRemove))
@@ -126,6 +129,8 @@ func (s *Server) newAPIHandler() http.Handler {
 	route(mux, "POST", "/domains", s.requireAdmin(s.handleDomainsAdd))
 	route(mux, "DELETE", "/domains/{domain}", s.requireAdmin(s.handleDomainsDelete))
 	route(mux, "GET", "/cluster", s.requireAdmin(s.handleClusterStatus))
+	route(mux, "GET", "/admin/logs/control", s.requireAdmin(s.handleControlLogs))
+	route(mux, "GET", "/admin/logs/node/{node}", s.requireAdmin(s.handleNodeLogs))
 	route(mux, "GET", "/settings", s.requireAdmin(s.handleSettingsGet))
 	route(mux, "PATCH", "/settings", s.requireAdmin(s.handleSettingsUpdate))
 

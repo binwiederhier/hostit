@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"heckel.io/hostit/controlconf"
+	"heckel.io/hostit/platformdoc"
 )
 
 const (
@@ -347,7 +348,7 @@ func (m *Manager) runAPILoop(ctx context.Context, s *session, app string, option
 		resp, err := m.client.complete(ctx, request{
 			Model:        model,
 			MaxTokens:    maxTokens,
-			System:       cachedSystem(systemPrompt(app, m.ops.Archived(app), m.ops.Connections(app))),
+			System:       cachedSystem(systemPrompt(app, m.ops.Archived(app), m.ops.Connections(app), m.extraContext(app))),
 			Messages:     apiRequestMessages(history),
 			Tools:        cachedToolDefs(m.ops.MCPTools(app)),
 			Thinking:     thinkingFor(model),
@@ -591,29 +592,28 @@ func connectionsNote(conns []Connection) string {
 		fmt.Fprintf(&b, "- %s (%s)\n", c.Slug, c.ProviderLabel)
 	}
 	if len(credentials) > 0 {
-		b.WriteString(`
-The app reads a usable credential from its own unix socket, by the name above:
+		fmt.Fprintf(&b, `
+The app reads a usable credential from the container API, by the name above:
 
-  curl --unix-socket /run/hostit/hostit.sock http://x/api/container/connections/` + credentials[0].Slug + `/token
+  curl %s/api/container/connections/%s/token
 
 That answers {"access_token": "...", "expires_at": "..."} (expires_at is absent when the
 credential does not expire). Build this call INTO the app's code so it fetches a token per
 run: an OAuth token expires within the hour, so anything you save to a file is dead by the
 time it is used. NEVER print a token, echo it, or write it into a file -- read it at the
-moment it is needed and use it. GET /api/container/connections over the same socket lists what this app
-holds.
-`)
+moment it is needed and use it. GET %s/api/container/connections lists what this app holds.
+`, controlconf.ContainerAPIURL, credentials[0].Slug, controlconf.ContainerAPIURL)
 	}
 	if len(servers) > 0 {
 		fmt.Fprintf(&b, `
 The MCP servers above have NO credential to fetch -- hostit holds the token and makes the
 calls. Their tools are already in your tool list, named %s<tool>; call them directly.
-The app itself can do the same over its socket, without any OAuth of its own:
+The app itself can do the same on the container API, without any OAuth of its own:
 
-  curl --unix-socket /run/hostit/hostit.sock http://x/api/container/mcp/%s/tools
-  curl --unix-socket /run/hostit/hostit.sock http://x/api/container/mcp/%s/call \
+  curl %s/api/container/mcp/%s/tools
+  curl %s/api/container/mcp/%s/call \
     -d '{"tool":"...","arguments":{}}'
-`, connectedToolPrefix+servers[0].Slug+connectedToolSep, servers[0].Slug, servers[0].Slug)
+`, connectedToolPrefix+servers[0].Slug+connectedToolSep, controlconf.ContainerAPIURL, servers[0].Slug, controlconf.ContainerAPIURL, servers[0].Slug)
 	}
 	b.WriteString(`
 If the user asks for something one of these connections would provide, use it rather than
@@ -627,29 +627,53 @@ saying no integration is configured.`)
 func transportNote() string {
 	return fmt.Sprintf(`
 
-An app reaches hostit's container API two ways -- SAME API either way, use whichever your language makes easy:
-- a plain loopback URL %s (e.g. GET %s/api/container/self) -- an ordinary HTTP client, no unix-socket support needed
-- the unix socket %s (e.g. curl --unix-socket %s http://x/api/container/self)
-The examples below use the socket; swap in %s for the same call from a normal HTTP client.`,
-		controlconf.ContainerAPIURL, controlconf.ContainerAPIURL,
-		controlconf.DefaultSocketFile, controlconf.DefaultSocketFile,
-		controlconf.ContainerAPIURL)
+An app reaches hostit's container API at a plain loopback URL, %s -- an ordinary HTTP client, no token needed (e.g. GET %s/api/container/self). The examples below use it.`,
+		controlconf.ContainerAPIURL, controlconf.ContainerAPIURL)
 }
 
-func systemPrompt(app string, archived bool, conns []Connection) string {
-	return archivedNote(archived) + transportNote() + connectionsNote(conns) + fmt.Sprintf(`You are hostit's built-in coding assistant, working on a single app named %q.
+// extraContext is the operator's instance-wide note plus the app owner's own
+// profile note, joined for appending to the system prompt (empty if neither set).
+func (m *Manager) extraContext(app string) string {
+	parts := make([]string, 0, 2)
+	if p := m.ops.InstancePrompt(); p != "" {
+		parts = append(parts, p)
+	}
+	if p := m.ops.OwnerPrompt(app); p != "" {
+		parts = append(parts, p)
+	}
+	return strings.Join(parts, "\n\n")
+}
+
+// previewNote is the shared platform preview guidance (platformdoc), the same
+// facts the external /info guide gives -- so the web assistant knows about the
+// live preview, the ?hostit_preview cache-buster and the private-app caveat too.
+func previewNote() string {
+	return "\n\n" + platformdoc.PreviewNote()
+}
+
+// extraNote renders the extra context as a leading block, or nothing when empty.
+func extraNote(extra string) string {
+	if extra == "" {
+		return ""
+	}
+	return extra + "\n\n"
+}
+
+func systemPrompt(app string, archived bool, conns []Connection, extra string) string {
+	return extraNote(extra) + archivedNote(archived) + transportNote() + previewNote() + connectionsNote(conns) + fmt.Sprintf(`You are hostit's built-in coding assistant, working on a single app named %q.
 
 hostit is a mini-app platform. Each app has a home directory you act on with your tools:
 - public/     files served on the web (a "static" app serves exactly this)
-- hostit.yml  how the app runs: "mode: static" to serve public/, or a "run:" command that must listen on $PORT
-- src/, bin/, docs/  source, binaries and docs, by convention
+- hostit.yml  how the app runs: "mode: static" to serve public/, or "mode: app" with a "run:" command that binds 0.0.0.0:$PORT ($PORT is always 80)
+- data/       persistent data you keep between deploys: sqlite databases, state files
+- src/, bin/, docs/  source, binaries, docs, by convention
 
 The app is live at its subdomain. A static app serves public/ immediately, so editing files there is enough. But whenever you change hostit.yml (for example switching mode, or setting a run: command) or a run: app's code, you MUST call deploy to make it live -- writing files alone does not apply a configuration change. The container has common runtimes (python3, go, sqlite3).
 
-The app can ask a MODEL a question itself, over the same socket, with no API key
+The app can ask a MODEL a question itself, on the container API, with no API key
 of its own -- this is how you build an app that thinks:
 
-  curl --unix-socket /run/hostit/hostit.sock http://x/api/container/assistant \
+  curl %s/api/container/assistant \
     -d '{"prompt":"...","system":"...","max_tokens":500}'
 
 That answers {"text":"...","model":"...","usage":{...}}. Send "messages":
@@ -665,5 +689,5 @@ per loop iteration. When a user asks for something that needs a model at runtime
 (summarise these logs, answer in a persona, classify this text), build it on this
 rather than telling them to obtain an API key.
 
-Work like a careful engineer: read before you write (list_files, read_file), make the smallest change that works, run_command to build or verify, deploy when the config changed, and read_logs to debug a running app. Explain briefly what you are doing. When the user's request is done, stop and say so. Do not ask permission for each step; just do the work and report what you changed.`, app)
+Work like a careful engineer: read before you write (list_files, read_file), make the smallest change that works, run_command to build or verify, deploy when the config changed, and read_logs to debug a running app. Explain briefly what you are doing. When the user's request is done, stop and say so. Do not ask permission for each step; just do the work and report what you changed.`, app, controlconf.ContainerAPIURL)
 }

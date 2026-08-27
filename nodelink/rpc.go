@@ -200,6 +200,15 @@ func RPCHandler(agent nodeapi.NodeAgent) http.Handler {
 	verb("stopapp", func(q *rpcReq) *rpcResp { return okErr(agent.StopApp(q.Name)) })
 	verb("restartapp", func(q *rpcReq) *rpcResp { return okErr(agent.RestartApp(q.Name)) })
 	verb("logs", func(q *rpcReq) *rpcResp { return okOut(agent.Logs(q.Name, q.Lines)) })
+	verb("system-logs", func(q *rpcReq) *rpcResp {
+		sl, ok := agent.(interface {
+			SystemLogs(lines int) (string, error)
+		})
+		if !ok {
+			return fail(fmt.Errorf("this node does not support system logs"))
+		}
+		return okOut(sl.SystemLogs(q.Lines))
+	})
 	verb("exec", func(q *rpcReq) *rpcResp {
 		res, err := agent.Exec(q.Name, q.Command, time.Duration(q.TimeoutSec)*time.Second)
 		if err != nil {

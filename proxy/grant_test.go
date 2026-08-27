@@ -452,3 +452,37 @@ func TestOnlyTheHostPrefixedNameCountsUnderTLS(t *testing.T) {
 	p.ServeHTTP(rr, req)
 	assert.Equal(t, "the app itself", rr.Body.String())
 }
+
+// A preview grant (control's screenshot browser) is app-bound and signed by the
+// grant key, so the proxy serves the named app to it WITHOUT the preview
+// principal being in the app's access set -- but a preview grant for one app
+// must not open another.
+func TestPreviewGrantServesOnlyItsOwnApp(t *testing.T) {
+	t.Parallel()
+	appSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, "the app itself")
+	}))
+	defer appSrv.Close()
+	p := New(&Config{ControlURL: "http://127.0.0.1:1", CacheDir: t.TempDir()})
+	signer := appgrant.NewSigner("session-key", time.Hour)
+	require.NoError(t, p.ApplyRoutes(&proxyapi.Table{
+		Seq:            1,
+		GrantPublicKey: signer.PublicKey(),
+		Routes: []proxyapi.Route{{
+			Host: "dash.example.com", Target: appSrv.Listener.Addr().String(), App: "dash",
+			Private: true, Access: []string{"owner1"}, // note: preview principal NOT listed
+		}},
+	}))
+	serve := func(grantApp string) *httptest.ResponseRecorder {
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest("GET", "http://ignored/", nil)
+		req.Host = "dash.example.com"
+		value, err := signer.Sign(grantApp, proxyapi.PreviewPrincipal)
+		require.NoError(t, err)
+		req.AddCookie(&http.Cookie{Name: proxyapi.GrantCookie, Value: value})
+		p.ServeHTTP(rr, req)
+		return rr
+	}
+	assert.Equal(t, "the app itself", serve("dash").Body.String(), "a preview grant for this app opens it")
+	assert.NotEqual(t, "the app itself", serve("other").Body.String(), "a preview grant for another app does not")
+}

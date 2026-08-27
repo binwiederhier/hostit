@@ -3,6 +3,9 @@ package control
 import (
 	"errors"
 	"fmt"
+	"log/slog"
+
+	"heckel.io/hostit/store"
 	"net/http"
 	"net/url"
 )
@@ -80,6 +83,7 @@ func (s *Server) handleGoogleCallback(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
+	s.resolvePendingViewers(u)
 	value, err := s.sessions.encode(u.ID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
@@ -122,6 +126,7 @@ func (s *Server) handleBreakglass(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	s.resolvePendingViewers(u)
 	value, err := s.sessions.encode(u.ID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
@@ -145,4 +150,18 @@ func (s *Server) afterLogin(r *http.Request) string {
 		return "/"
 	}
 	return localPath(cookie.Value)
+}
+
+// resolvePendingViewers turns any pending view invites for this person's email
+// into real grants, now that they have an account. Best effort: a failure here
+// must not block their sign-in.
+func (s *Server) resolvePendingViewers(u *store.User) {
+	if u == nil {
+		return
+	}
+	if n, err := s.apps.Store().ResolvePendingViewers(u.Email, u.ID); err != nil {
+		slog.Warn("Cannot resolve pending viewer invites", "email", u.Email, "error", err)
+	} else if n > 0 {
+		slog.Info("Resolved pending viewer invites on sign-in", "email", u.Email, "apps", n)
+	}
 }

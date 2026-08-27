@@ -11,6 +11,7 @@ import (
 	"heckel.io/hostit/app"
 	"heckel.io/hostit/assistant"
 	"heckel.io/hostit/controlconf"
+	"heckel.io/hostit/platformdoc"
 	"heckel.io/hostit/store"
 	"heckel.io/hostit/workspace"
 )
@@ -78,7 +79,7 @@ func methodNotAllowed(action string) http.HandlerFunc {
 
 // handleAgentInfo explains the platform to an agent that has never seen it
 func (s *Server) handleAgentInfo(w http.ResponseWriter, _ *http.Request, c *caller) {
-	writeJSON(w, http.StatusOK, s.agentGuide("", ""))
+	writeJSON(w, http.StatusOK, s.agentGuide("", "", c.userID()))
 }
 
 // appsPath is where one app's endpoints live, which is also exactly what its
@@ -112,7 +113,7 @@ func (s *Server) handleAgentAppInfo(w http.ResponseWriter, _ *http.Request, c *c
 		Files:     files,
 		SSH:       sshInfoFor(a.Name, s.sshHostFor(a.Host)),
 		Hint:      "Upload files, write hostit.yml, then POST " + appsPath(a.Name) + "/deploy. Everything you need is in this response.",
-		Guide:     s.agentGuide(a.Name, s.apps.Description(a.Name)),
+		Guide:     s.agentGuide(a.Name, s.apps.Description(a.Name), a.OwnerID),
 	})
 }
 
@@ -272,7 +273,7 @@ func logLines(raw string) int {
 // /api/info and inline by /api/apps/{app}/info, because the prompt a user pastes
 // points only at their app: whatever an agent needs must be reachable from
 // that single URL.
-func (s *Server) agentGuide(appName, description string) *apiAgentInfoResponse {
+func (s *Server) agentGuide(appName, description, ownerID string) *apiAgentInfoResponse {
 	base := "https://" + s.config.APIHostname()
 	if s.config.TLS == controlconf.TLSOff {
 		base = "http://" + s.config.APIHostname()
@@ -306,7 +307,7 @@ func (s *Server) agentGuide(appName, description string) *apiAgentInfoResponse {
 		"/assistant/transcript. If the owner already worked on this app with hostit's assistant, that transcript " +
 		"is the history of what was asked, tried and decided -- pick up from it rather than starting cold. It is " +
 		"empty (or {\"enabled\":false}) if there is nothing to read; then rely on README.md and the files."
-	return &apiAgentInfoResponse{
+	guide := &apiAgentInfoResponse{
 		Platform: "hostit",
 		BaseURL:  base + apiPrefix,
 		WhatIsThis: "hostit hosts small web apps. Each app is an isolated container with its own " +
@@ -324,7 +325,7 @@ func (s *Server) agentGuide(appName, description string) *apiAgentInfoResponse {
 			"Keep the app's own documentation in " + app.DocsDir + "/ -- how it works, why it is built the way it is, anything the next session would otherwise have to re-derive. Read it before you change anything, and update it after every change that matters. README.md is the summary and worklog; " + app.DocsDir + "/ is the detail.",
 			"Compiling or installing dependencies: POST " + appsPath(name) + "/run with a shell command. It runs in the app's container, where the toolchains are, and returns the output and exit code -- so you can iterate on a build error without SSH. It is bounded (a minute by default, five at most): make the build a \"prepare:\" step in hostit.yml once it works, so it also runs on every deploy.",
 			"Keep a one-line \"description:\" in hostit.yml saying what this app is. The owner's web page shows it, and the next session (or a different agent) starts from it instead of from a blank page.",
-			"Connected accounts: if the owner has connected Google, GitHub or an IMAP mailbox and granted it to this app, GET /api/container/connections over the app's unix socket lists them and GET /api/container/connections/{provider}/token returns a usable, short-lived credential. hostit refreshes the access token automatically before it expires and hands you a fresh one, so ask for it per request and do not cache it. Each connection also carries a \"status\": \"ok\" means usable, \"needs_reconnect\" means the owner must re-authorize it (the token call will fail until they do). The app acts as its owner.",
+			"Connected accounts: if the owner has connected Google, GitHub or an IMAP mailbox and granted it to this app, GET /api/container/connections on the container API (" + controlconf.ContainerAPIURL + ") lists them and GET /api/container/connections/{provider}/token returns a usable, short-lived credential. hostit refreshes the access token automatically before it expires and hands you a fresh one, so ask for it per request and do not cache it. Each connection also carries a \"status\": \"ok\" means usable, \"needs_reconnect\" means the owner must re-authorize it (the token call will fail until they do). The app acts as its owner.",
 			"Snapshot as you go: POST " + appsPath(name) + "/snapshots at regular intervals -- before any risky change and after each chunk of working progress -- so there is always a recent point to roll back to. A snapshot captures the container's whole filesystem, your files AND anything you installed, so a broken apt-get or system change rolls back too. Always include a short one-line description of why, e.g. {\"label\": \"before rewriting the router\"}. (hostit also snapshots automatically before every deploy and every few hours, but those are coarse; your own labelled snapshots are what make a mistake easy to undo.)",
 		},
 		Layout: "The app's home directory has a place for each kind of thing:\n\n" +
@@ -332,19 +333,35 @@ func (s *Server) agentGuide(appName, description string) *apiAgentInfoResponse {
 			"  " + app.BinDir + "/      binaries and scripts the app runs (run: ./" + app.BinDir + "/myapp)\n" +
 			"  " + app.LogDir + "/      the app's output, written by hostit; read it with GET /logs\n" +
 			"  " + app.SrcDir + "/      source, if you keep the app's source here\n" +
-			"  " + app.DocsDir + "/     the app's own documentation -- how it works, why it is built that way\n\n" +
+			"  " + app.DocsDir + "/     the app's own documentation -- how it works, why it is built that way\n" +
+			"  " + app.DataDir + "/     persistent data you keep between deploys: sqlite databases, state files\n\n" +
 			"hostit.yml and README.md live at the top. Directories are created as you write into them.\n\n" +
 			"If your app serves files itself, point it at " + app.PublicDir + "/ and never at the home directory: " +
 			"the home also holds hostit.yml (which may carry env values) and .ssh/, and serving it puts them on the " +
 			"open internet. For example: python3 -m http.server $PORT --bind 0.0.0.0 --directory " + app.PublicDir + "",
-		HostitYml: "\"mode:\" says what this app is. Two answers.\n\n" +
-			"  mode: static     hostit serves " + app.PublicDir + "/ -- nothing to run, nothing else to set\n\n" +
-			"  mode: app        your command serves it:\n" +
-			"    prepare: cd " + app.SrcDir + " && go build -o ../" + app.BinDir + "/myapp .   # optional build step\n" +
-			"    run: ./" + app.BinDir + "/myapp   # MUST listen on 0.0.0.0:$PORT; $PORT is provided\n" +
-			"    (upload binaries with ?mode=755 so they are executable)\n\n" +
-			"Optional in both: env: {KEY: value}, and description: a one-liner about the app. " +
-			"Unknown keys are an error, so a typo is reported rather than ignored.",
+		HostitYml: "hostit.yml is the app's manifest, at the home root. \"mode:\" is the one required key; it says what this app is.\n\n" +
+			"STATIC -- hostit serves " + app.PublicDir + "/ over HTTPS, you run nothing:\n\n" +
+			"    mode: static\n" +
+			"    description: my landing page       # optional one-liner, shown on the owner's page\n\n" +
+			"APP -- your own command serves it, and MUST bind 0.0.0.0:$PORT. $PORT is ALWAYS 80 (hostit maps the " +
+			"public URL to port 80 in your container); it is set in the environment so frameworks that read $PORT " +
+			"just work, and you may hardcode 80 instead:\n\n" +
+			"    mode: app\n" +
+			"    prepare: cd " + app.SrcDir + " && go build -o ../" + app.BinDir + "/myapp .   # optional; runs on every deploy before run:\n" +
+			"    run: ./" + app.BinDir + "/myapp\n" +
+			"    env:                               # optional; injected into prepare: and run:\n" +
+			"      DATABASE_PATH: " + app.DataDir + "/app.db\n" +
+			"    description: my api\n\n" +
+			"More examples of run: (any language; each must bind $PORT on 0.0.0.0):\n\n" +
+			"    run: python3 " + app.SrcDir + "/server.py                 # python\n" +
+			"    run: node " + app.SrcDir + "/server.js                    # node\n" +
+			"    run: python3 -m http.server $PORT --bind 0.0.0.0 --directory " + app.PublicDir + "   # a quick static server, the long way\n\n" +
+			"Notes:\n" +
+			"- prepare: is where builds and one-time setup go (compile, npm ci, migrations). It is bounded like /run, so keep it to the build; it re-runs on each deploy.\n" +
+			"- env: values become environment variables. Changing env: recreates the container; changing only run:/prepare:/mode: just restarts the app in place.\n" +
+			"- Persist data under " + app.DataDir + "/ (e.g. a sqlite file). Everything in the home survives deploys and restarts; only a rollback rewinds it.\n" +
+			"- Upload a compiled binary with ?mode=755 so it is executable.\n" +
+			"- Unknown keys are an ERROR, so a typo is reported rather than silently ignored. After any change to this file, POST /deploy to apply it.",
 		Runtimes: workspace.Runtimes + ". Install anything else inside the container with apt-get; " +
 			"installed packages persist across restarts and redeploys (the container's filesystem is the app's " +
 			"own durable disk) and count against the app's disk budget. A new app starts as a stub serving a placeholder page.",
@@ -358,35 +375,45 @@ func (s *Server) agentGuide(appName, description string) *apiAgentInfoResponse {
 			"and the next session can still change the app. Uploading a prebuilt binary to " + app.BinDir + "/ also works and is " +
 			"faster -- build it with CGO_ENABLED=0 GOOS=linux GOARCH=amd64 -- but then only the binary is here, and whoever " +
 			"comes next has nothing to edit.",
-		Auth: "Send the token as: Authorization: Bearer <token>",
-		Preview: "The owner's dashboard shows a LIVE PREVIEW of your app inside an iframe. Two things make it render:\n\n" +
-			"1. Let hostit embed you. Do NOT send X-Frame-Options: DENY (or SAMEORIGIN), and if you set a Content-Security-Policy, its frame-ancestors must include the hostit dashboard -- the top-level domain your app's subdomain sits under -- not just 'self'. The default of blocking all framing shows a blank preview.\n" +
-			"2. hostit refreshes the cached preview by requesting your app with a ?hostit_preview=<number> query parameter. Serve a request that carries a query string as UNCACHEABLE -- render it fresh and do not store it -- so the refresh returns the current page instead of a stale one.",
-		Endpoints: []apiAgentEndpoint{
-			{Method: "GET", Path: "" + appsPath(name) + "/info", What: "This document plus the app's URL, state, README, file list and hostit.yml"},
-			{Method: "GET", Path: "" + appsPath(name) + "/assistant/transcript", What: "The built-in assistant's chat history for this app, rendered as markdown. Read it to continue prior work with full context; enabled:false if the server has no assistant"},
-			{Method: "GET", Path: "" + appsPath(name) + "/logs", What: "Recent output; ?lines=N"},
-			{Method: "GET", Path: "" + appsPath(name) + "/files", What: "List the app's files"},
-			{Method: "GET", Path: "" + appsPath(name) + "/files/{path}", What: "Read one file"},
-			{Method: "PUT", Path: "" + appsPath(name) + "/files/{path}", What: "Write one file (raw body); add ?mode=755 for something executable"},
-			{Method: "DELETE", Path: "" + appsPath(name) + "/files/{path}", What: "Delete one file"},
-			{Method: "POST", Path: "" + appsPath(name) + "/move", What: `Rename or move a file or directory: {"from": "src/old.go", "to": "src/new.go"}`},
-			{Method: "POST", Path: "" + appsPath(name) + "/mkdir", What: `Create an empty directory: {"path": "src/handlers"}`},
-			{Method: "POST", Path: "" + appsPath(name) + "/files", What: "Upload a tar archive (Content-Type: application/x-tar)"},
-			{Method: "PUT", Path: "" + appsPath(name) + "/readme", What: `Replace README.md: {"readme": "..."}`},
-			{Method: "POST", Path: "" + appsPath(name) + "/run", What: `Run one shell command in the app's container: {"command": "cd src && go build ./..."} -- returns its output and exit code`},
-			{Method: "POST", Path: "" + appsPath(name) + "/deploy", What: "Apply hostit.yml and (re)start"},
-			{Method: "GET", Path: "" + appsPath(name) + "/snapshots", What: "List restorable snapshots (id, time, label, auto), newest first"},
-			{Method: "POST", Path: "" + appsPath(name) + "/snapshots", What: `Take a snapshot now: {"label": "short reason"}. Take them at regular intervals with a one-line description of why`},
-			{Method: "POST", Path: "" + appsPath(name) + "/snapshots/{id}/restore", What: "Roll back to a snapshot -- files and installed packages together (a safety snapshot of the current state is taken first)"},
-			{Method: "DELETE", Path: "" + appsPath(name) + "/snapshots/{id}", What: "Delete one snapshot"},
-			{Method: "POST", Path: "" + appsPath(name) + "/start|stop|restart", What: "The run: command: start, stop, or restart it (fast; container stays up)"},
-			{Method: "POST", Path: "" + appsPath(name) + "/poweron|poweroff|reboot", What: "The container: power it on, off, or reboot it"},
-			{Method: "POST", Path: "" + appsPath(name) + "/archive|unarchive", What: "Shelve the app (powered off, refuses to run, takes no new snapshots) or bring it back"},
-			{Method: "PUT", Path: "" + appsPath(name) + "/visibility", What: `Who may open the app's URL: {"private": true} restricts it to the owner, its collaborators and admins; {"private": false} publishes it. Owner only`},
-			{Method: "GET|POST|DELETE", Path: "" + appsPath(name) + "/viewers", What: `Who else may OPEN a private app (and nothing more -- no files, no terminal, no deploys): POST {"email": "..."} to add an existing active user, DELETE .../viewers/{id} to remove one. Owner only`},
-			{Method: "GET", Path: "/api/container/connections", What: "Over the app's unix socket: the connections and credentials this app was granted, each with the slug its owner named it"},
-			{Method: "GET", Path: "/api/container/connections/{slug}/token", What: "Over the app's unix socket: a usable, short-lived credential for one of them, e.g. curl --unix-socket $HOSTIT_SOCKET http://x/api/container/connections/work-cal/token"},
+		Auth:    "Send the token as: Authorization: Bearer <token>",
+		Preview: platformdoc.PreviewNote(),
+		AppsAPI: apiAgentAPISection{
+			Description: "Called by YOU, the coding agent, from OUTSIDE the app -- over HTTPS at " + base + apiPrefix + ", with your Authorization: Bearer token. This is the whole surface for building, deploying and managing the app. Paths below are under " + appsPath(name) + ".",
+			Endpoints: []apiAgentEndpoint{
+				{Method: "GET", Path: "" + appsPath(name) + "/info", What: "This document plus the app's URL, state, README, file list and hostit.yml"},
+				{Method: "GET", Path: "" + appsPath(name) + "/assistant/transcript", What: "The built-in assistant's chat history for this app, rendered as markdown. Read it to continue prior work with full context; enabled:false if the server has no assistant"},
+				{Method: "GET", Path: "" + appsPath(name) + "/logs", What: "Recent output; ?lines=N"},
+				{Method: "GET", Path: "" + appsPath(name) + "/files", What: "List the app's files"},
+				{Method: "GET", Path: "" + appsPath(name) + "/files/{path}", What: "Read one file"},
+				{Method: "PUT", Path: "" + appsPath(name) + "/files/{path}", What: "Write one file (raw body); add ?mode=755 for something executable"},
+				{Method: "DELETE", Path: "" + appsPath(name) + "/files/{path}", What: "Delete one file"},
+				{Method: "POST", Path: "" + appsPath(name) + "/move", What: `Rename or move a file or directory: {"from": "src/old.go", "to": "src/new.go"}`},
+				{Method: "POST", Path: "" + appsPath(name) + "/mkdir", What: `Create an empty directory: {"path": "src/handlers"}`},
+				{Method: "POST", Path: "" + appsPath(name) + "/files", What: "Upload a tar archive (Content-Type: application/x-tar)"},
+				{Method: "PUT", Path: "" + appsPath(name) + "/readme", What: `Replace README.md: {"readme": "..."}`},
+				{Method: "POST", Path: "" + appsPath(name) + "/run", What: `Run one shell command in the app's container: {"command": "cd src && go build ./..."} -- returns its output and exit code`},
+				{Method: "POST", Path: "" + appsPath(name) + "/deploy", What: "Apply hostit.yml and (re)start"},
+				{Method: "GET", Path: "" + appsPath(name) + "/snapshots", What: "List restorable snapshots (id, time, label, auto), newest first"},
+				{Method: "POST", Path: "" + appsPath(name) + "/snapshots", What: `Take a snapshot now: {"label": "short reason"}. Take them at regular intervals with a one-line description of why`},
+				{Method: "POST", Path: "" + appsPath(name) + "/snapshots/{id}/restore", What: "Roll back to a snapshot -- files and installed packages together (a safety snapshot of the current state is taken first)"},
+				{Method: "DELETE", Path: "" + appsPath(name) + "/snapshots/{id}", What: "Delete one snapshot"},
+				{Method: "POST", Path: "" + appsPath(name) + "/start|stop|restart", What: "The run: command: start, stop, or restart it (fast; container stays up)"},
+				{Method: "POST", Path: "" + appsPath(name) + "/poweron|poweroff|reboot", What: "The container: power it on, off, or reboot it"},
+				{Method: "POST", Path: "" + appsPath(name) + "/archive|unarchive", What: "Shelve the app (powered off, refuses to run, takes no new snapshots) or bring it back"},
+				{Method: "PUT", Path: "" + appsPath(name) + "/visibility", What: `Who may open the app's URL: {"private": true} restricts it to the owner, its collaborators and admins; {"private": false} publishes it. Owner only`},
+				{Method: "GET|POST|DELETE", Path: "" + appsPath(name) + "/viewers", What: `Who else may OPEN a private app (and nothing more -- no files, no terminal, no deploys): POST {"email": "..."} to add an existing active user, DELETE .../viewers/{id} to remove one. Owner only`},
+			},
+		},
+		ContainerAPI: apiAgentAPISection{
+			Description: "Called by the APP ITSELF, from INSIDE its container, at " + controlconf.ContainerAPIURL + " -- a plain loopback URL, ordinary HTTP client, no token (the app is identified by where the call comes from). This is how the RUNNING app reaches its granted accounts, MCP tools and the built-in model. You do not call this yourself; you build code into the app that does. Not reachable from outside the container.",
+			Endpoints: []apiAgentEndpoint{
+				{Method: "GET", Path: "/api/container/connections", What: "The accounts and credentials this app was granted, each by the slug its owner named it"},
+				{Method: "GET", Path: "/api/container/connections/{slug}/token", What: `A usable, short-lived credential for one of them -> {"access_token":"...","expires_at":"..."}. hostit refreshes it, so fetch per request and never cache, print, or write it to a file`},
+				{Method: "POST", Path: "/api/container/assistant", What: `Ask a model, with no API key of the app's own: {"prompt":"...","system":"...","max_tokens":500} -> {"text":...}. Send "messages":[...] instead of "prompt" to carry a conversation. This is how you build an app that itself thinks`},
+				{Method: "GET", Path: "/api/container/assistant/models", What: "The model ids this server offers -- read them rather than guessing"},
+				{Method: "GET", Path: "/api/container/mcp/{slug}/tools", What: "The tools a granted MCP server exposes"},
+				{Method: "POST", Path: "/api/container/mcp/{slug}/call", What: `Call one MCP tool by name -- hostit holds the token and makes the call: {"tool":"...","arguments":{}}`},
+			},
 		},
 		Notes: []string{
 			"Apps also accept SSH: the owner's SSH keys work, and you can scp/rsync into the app's home directory.",
@@ -395,9 +422,18 @@ func (s *Server) agentGuide(appName, description string) *apiAgentInfoResponse {
 			"The app runs inside enforced resource caps (see \"limits\" in the per-app info): allocating past the RAM cap gets the process OOM-killed, writing past the disk budget fails with \"Disk quota exceeded\" (the quota covers everything in the app, installed packages included), and a CPU cap throttles rather than kills. Plus a 512-process ceiling. Size builds accordingly -- a compile that fans out past the caps fails rather than taking the host with it.",
 			"The caps are not yours to change: the app's owner edits them in the web app (Settings -> Resources), within a per-user resource pool. This API refuses limit changes on an app token by design.",
 			"Deleting an app, renaming it, and attaching a custom domain are done by the owner in the web app, not through this API. A rename keeps the app running and changes none of its files, so nothing you build here is affected.",
-			"The owner's live preview always shows your latest deploy: hostit tags preview requests with a ?hostit_preview=<n> query parameter and serves them with caching disabled, so you do not need to do anything special. Just do not 404 or error on an unknown query string.",
 		},
 	}
+	// Extra human-provided context, each in its own labelled field so the agent
+	// knows a person wrote it and which person: the instance ADMIN's note, and
+	// the app OWNER's note. Empty ones are omitted from the JSON.
+	guide.AdditionalAdminPrompt = s.infoPrompt()
+	if ownerID != "" {
+		if u, err := s.users.User(ownerID); err == nil {
+			guide.AdditionalUserPrompt = u.AssistantPrompt
+		}
+	}
+	return guide
 }
 
 // handleAgentArchive shelves the app: powered off, refusing to run, and taking

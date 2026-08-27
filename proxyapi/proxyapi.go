@@ -31,6 +31,11 @@ const (
 	// live in the contract rather than being spelled out twice.
 	GrantCookie     = "hostit_app"
 	GrantCookieHost = "__Host-" + GrantCookie
+	// PreviewPrincipal is the reserved "user" named by the app-bound grant that
+	// control's screenshot browser presents to reach a PRIVATE app. Because the
+	// grant names the app, it opens ONLY that app -- so the proxy honours it
+	// without the principal appearing in any app's access set.
+	PreviewPrincipal = "__hostit_preview__"
 )
 
 // The paths hostit answers for ON a private app's own hostname, ahead of the
