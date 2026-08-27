@@ -20,7 +20,8 @@ Shipped to prod (connections + MCP servers), twenty providers. Live OAuth
 clients: GitHub, Discord, Slack (both `slack-bot` and `slack-user`), plus
 Google's two on the login client. MCP servers are added by URL with no client to
 register (see `docs/features/mcp-servers.md`). Docs both ways; e2e covers the
-whole flow. Health + proactive token refresh shipped in v0.26.0.
+whole flow. Health + proactive token refresh shipped in v0.26.0; long-lived-token connections
+(GitHub, Linear) are now actively probed too (v0.28.1) so a revoked token is caught.
 `plans/260819-connections.md` is the original design, superseded in places.
 
 Still open:
@@ -72,50 +73,20 @@ holds the credential", a secret is "the tenant holds it and hostit stores it
 carefully"; both need per-app custody and encryption at rest, and inventing
 that twice would be a mistake.
 
-### 2b. Multi-node app SSH lands on the wrong node (pre-existing)
+### 2b. Multi-node app SSH -- SHIPPED (v0.28.0)
 
-Surfaced 2026-08-24 while closing the apps-raw exposure, but NOT caused by it:
-an app on a node-only host advertises `ssh <app>@<base-domain>`, and the base
-domain is the CONTROL node. The app's Unix user and its `authorized_keys` exist
-only on the node that RUNS the container, so the control node's sshd has no such
-user and answers `Permission denied (publickey)` before any shell runs. An app
-on a worker node advertises `ssh <app>@<base-domain>`, which lands on the control
-node where that app's user does not exist. Single-node deploys are unaffected --
-the base domain IS the node.
+Direct-to-node SSH shipped to prod: each node advertises its own reachable
+`ssh-host` (heartbeat -> `store.node.ssh_host` -> `Server.sshHostFor`), the node's
+own sshd terminates, and control is never in the SSH path (so app SSH survives a
+control-process crash). The optional single-hostname relay gateway is built and
+adversarially tested on stage (OFF by default; not on prod, which is single-host).
+See Done (recent) and `plans/260825-multinode-ssh.md`, `plans/260826-ssh-relay-*.md`.
 
-What already works: SSH straight to the app's own node succeeds -- verified by
-dialing the worker node directly (and by the login shell as the app user).
-Isolation, keys, and the login shell are all correct on the node; only the
-ADVERTISED host is wrong.
-
-Direction (decided + code built 2026-08-26): DIRECT-TO-NODE. Each node advertises
-its OWN reachable SSH hostname; control is control-plane only (records what the
-node reports, advertises `ssh <app>@<node-host>`); the node's own sshd terminates.
-Control is never in the SSH path, hostit owns no sshd, and app SSH survives a
-control outage. ProxyJump / gateway / master-key were all rejected (control-in-path
-or hostit-owns-sshd); a username-mux is impossible (username is encrypted post-KEX).
-Full design + what shipped in `~/Code/plans/260825-multinode-ssh.md`.
-
-Built (code, tests green): node reports `ssh-host` via the heartbeat ->
-`store.node.ssh_host` -> `Server.sshHostFor(app.Host)` at both advertise sites,
-falling back to the base domain when unset (so single-node needs no config).
-
-Optional follow-up (NOT default): a single stable `ssh <app>@apps.heckel.io`
-endpoint via a relay login shell in the SYSTEM sshd (routes by username to the
-app's node, resolves from a local file so a control-app crash does not break SSH,
-no forwarding, no extra port). Design: `~/Code/plans/260826-ssh-relay-gateway.md`.
-The per-node hostnames stay primary.
-
-Remaining (deploy config, NOT code): give each remote node a reachable `ssh-host`.
-A remote node's heartbeat address is its internal/VPC address, so set the node var
-`hostit_ssh_host` (emitted as `ssh-host:` in the node.yml template) to a publicly
-reachable hostname or IP for that node; leave the colocated node unset. Then
-validate a real shell + `rsync` to an app on a remote node.
-
-Related invariant to keep: app homes are root-owned (daemon-created) and sshd
-reads `authorized_keys` AS the app user, so the home MUST stay world-traversable
-(`filesDirMode = 0755`). A 0700 home breaks SSH even on the correct node -- this
-is what the reverted home-lockdown approach got wrong.
+Remaining, only when prod gains remote nodes: set `hostit_ssh_host` per remote
+node (leave the colocated node unset), and decide whether to turn the relay on in
+prod (recommend more stage soak first). Invariant to keep: app homes stay
+world-traversable (`filesDirMode = 0755`) so sshd reads `authorized_keys` as the
+app user.
 
 ## Next (decide, then build)
 
@@ -512,6 +483,19 @@ Kept briefly so they are not re-proposed; delete after a few weeks.
 
 Kept briefly for context; prune when stale. Everything older is in CHANGELOG.md.
 
+- **Multi-node SSH + Prometheus metrics (2026-08-26, v0.28.0).** Direct-to-node
+  SSH (each node reports its own reachable ssh-host; control advertises it; the
+  node's sshd terminates -- control never in the SSH path) shipped to prod. Plus
+  an OPTIONAL single-hostname relay gateway through the system sshd (off by
+  default; built + adversarially tested on stage; not on prod, single-host). Plus
+  optional per-component Prometheus `/metrics` (`listen-metrics`) for
+  control/node/proxy. Closes TODO 2b. Plans: `260825-multinode-ssh.md`,
+  `260826-ssh-relay-*.md`.
+- **Long-lived connection health probe (2026-08-26, v0.28.1).** `Verify()` and
+  the proactive sweep now actively probe long-lived-token connections (GitHub,
+  Linear) via an authenticated ProbeURL -- a revoked/rotated token flips to
+  needs_reconnect on its own instead of sitting green forever. Slack has no probe
+  yet (it reports auth failure in the body, not the status code).
 - **Security + connection health + DoS hardening (2026-08-25, v0.26.0).** From a
   full per-file security audit and an adversarial pass: closed a CRITICAL MCP
   read-SSRF (a user-supplied server URL could rebind DNS past the outbound guard
