@@ -458,6 +458,16 @@ var (
 		`
 		ALTER TABLE node ADD COLUMN host_key TEXT NOT NULL DEFAULT '';
 	`,
+		// Self-service user profile + per-app tab override (260827 batch).
+		`ALTER TABLE user ADD COLUMN tech_level TEXT NOT NULL DEFAULT '';`,
+		`ALTER TABLE user ADD COLUMN assistant_prompt TEXT NOT NULL DEFAULT '';`,
+		`ALTER TABLE user ADD COLUMN default_tabs TEXT NOT NULL DEFAULT '';`,
+		`ALTER TABLE user ADD COLUMN onboarded INTEGER NOT NULL DEFAULT 0;`,
+		`ALTER TABLE app ADD COLUMN tabs TEXT NOT NULL DEFAULT '';`,
+		// Pending viewer invites: an app owner can grant view access to an email
+		// that has no account yet; it becomes a real app_viewer grant when they
+		// first sign in (260827).
+		`CREATE TABLE pending_viewer (app_id TEXT NOT NULL, email TEXT NOT NULL, created_at INTEGER NOT NULL, PRIMARY KEY (app_id, email));`,
 	}
 )
 

@@ -1,5 +1,7 @@
 package store
 
+import "strings"
+
 // Viewers are the weaker of the two per-app grants. A COLLABORATOR can deploy,
 // edit files, use the terminal and SSH in; a VIEWER can only open the app's
 // URL. The split exists so that sharing a private dashboard with somebody does
@@ -16,7 +18,7 @@ const (
 	selectViewerQuery = `SELECT COUNT(*) FROM app_viewer WHERE app_id = ? AND user_id = ?`
 	// The list joins the user table: callers show emails, never raw ids.
 	selectViewersQuery = `
-		SELECT u.id, u.email, u.name, u.role, u.status, u.app_limit, u.memory_mb, u.disk_mb, u.memory_pool_mb, u.disk_pool_mb, u.created_at
+		SELECT u.id, u.email, u.name, u.role, u.status, u.app_limit, u.memory_mb, u.disk_mb, u.memory_pool_mb, u.disk_pool_mb, u.created_at, u.tech_level, u.assistant_prompt, u.default_tabs, u.onboarded
 		FROM app_viewer v JOIN user u ON u.id = v.user_id
 		WHERE v.app_id = ? ORDER BY u.email
 	`
@@ -38,8 +40,23 @@ const (
 	selectActiveOwnersQuery = `
 		SELECT a.id, a.owner_id FROM app a JOIN user u ON u.id = a.owner_id WHERE u.status = ?
 	`
-	deleteViewersByAppQuery  = `DELETE FROM app_viewer WHERE app_id = ?`
-	deleteViewersByUserQuery = `DELETE FROM app_viewer WHERE user_id = ?`
+	deleteViewersByAppQuery = `DELETE FROM app_viewer WHERE app_id = ?`
+	// Pending viewer invites, keyed by email until the person has an account.
+	insertPendingViewerQuery       = `INSERT OR IGNORE INTO pending_viewer (app_id, email, created_at) VALUES (?, ?, strftime('%s','now'))`
+	deletePendingViewerQuery       = `DELETE FROM pending_viewer WHERE app_id = ? AND email = ?`
+	selectPendingViewersQuery      = `SELECT email FROM pending_viewer WHERE app_id = ? ORDER BY email`
+	deletePendingViewersByAppQuery = `DELETE FROM pending_viewer WHERE app_id = ?`
+	selectPendingViewerAppsQuery   = `SELECT app_id FROM pending_viewer WHERE email = ?`
+	deleteViewersByUserQuery       = `DELETE FROM app_viewer WHERE user_id = ?`
+	// Distinct emails of everyone the owner has ever granted view access to, on
+	// any of their apps, so a new app can offer them as picks rather than making
+	// the owner retype an address they have used before.
+	selectViewerEmailsForOwnerQuery = `
+		SELECT DISTINCT u.email FROM app_viewer v
+		JOIN user u ON u.id = v.user_id
+		JOIN app a ON a.id = v.app_id
+		WHERE a.owner_id = ? ORDER BY u.email
+	`
 )
 
 // AddAppViewer lets a user open the app's URL; granting twice is a no-op (the
@@ -53,6 +70,91 @@ func (s *Store) AddAppViewer(appID, userID string) error {
 func (s *Store) RemoveAppViewer(appID, userID string) error {
 	_, err := s.db.Exec(deleteViewerQuery, appID, userID)
 	return err
+}
+
+// AddPendingViewer records a view invite for an email that has no account yet;
+// it becomes a real grant when they first sign in (ResolvePendingViewers).
+func (s *Store) AddPendingViewer(appID, email string) error {
+	_, err := s.db.Exec(insertPendingViewerQuery, appID, strings.ToLower(strings.TrimSpace(email)))
+	return err
+}
+
+// RemovePendingViewer withdraws a pending invite.
+func (s *Store) RemovePendingViewer(appID, email string) error {
+	_, err := s.db.Exec(deletePendingViewerQuery, appID, strings.ToLower(strings.TrimSpace(email)))
+	return err
+}
+
+// PendingViewers lists the emails invited to view an app who have not signed in
+// yet, sorted.
+func (s *Store) PendingViewers(appID string) ([]string, error) {
+	rows, err := s.db.Query(selectPendingViewersQuery, appID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]string, 0)
+	for rows.Next() {
+		var email string
+		if err := rows.Scan(&email); err != nil {
+			return nil, err
+		}
+		out = append(out, email)
+	}
+	return out, rows.Err()
+}
+
+// ResolvePendingViewers turns every pending invite for this email into a real
+// view grant for the user and clears the invites. Called when a person signs in,
+// so an owner can invite someone before they have an account. Returns how many
+// apps were resolved.
+func (s *Store) ResolvePendingViewers(email, userID string) (int, error) {
+	email = strings.ToLower(strings.TrimSpace(email))
+	rows, err := s.db.Query(selectPendingViewerAppsQuery, email)
+	if err != nil {
+		return 0, err
+	}
+	var appIDs []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return 0, err
+		}
+		appIDs = append(appIDs, id)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+	for _, appID := range appIDs {
+		if _, err := s.db.Exec(insertViewerQuery, appID, userID); err != nil {
+			return 0, err
+		}
+		if _, err := s.db.Exec(deletePendingViewerQuery, appID, email); err != nil {
+			return 0, err
+		}
+	}
+	return len(appIDs), nil
+}
+
+// ViewerEmailsForOwner lists the distinct emails the owner has granted view
+// access to across their apps, sorted, for the new-app dialog to offer as picks.
+func (s *Store) ViewerEmailsForOwner(ownerID string) ([]string, error) {
+	rows, err := s.db.Query(selectViewerEmailsForOwnerQuery, ownerID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	emails := make([]string, 0)
+	for rows.Next() {
+		var email string
+		if err := rows.Scan(&email); err != nil {
+			return nil, err
+		}
+		emails = append(emails, email)
+	}
+	return emails, rows.Err()
 }
 
 // IsAppViewer reports whether the user holds a view grant on the app. It does

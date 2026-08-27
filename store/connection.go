@@ -57,6 +57,7 @@ const (
 	deleteGrantsByConnection  = `DELETE FROM app_connection WHERE connection_id = ?`
 	deleteGrantsByAppIDQuery  = `DELETE FROM app_connection WHERE app_id = ?`
 	countGrantsQuery          = `SELECT COUNT(*) FROM app_connection WHERE connection_id = ?`
+	grantedAppNamesQuery      = `SELECT a.name FROM app_connection g JOIN app a ON a.id = g.app_id WHERE g.connection_id = ? ORDER BY a.name`
 	selectAppConnectionsQuery = `
 		SELECT ` + connectionCols + ` FROM connection
 		WHERE id IN (SELECT connection_id FROM app_connection WHERE app_id = ?)
@@ -218,6 +219,25 @@ func (s *Store) CountGrants(connectionID string) (int, error) {
 	var n int
 	err := s.db.QueryRow(countGrantsQuery, connectionID).Scan(&n)
 	return n, err
+}
+
+// GrantedAppNames lists the names of the apps that hold a connection, sorted,
+// so the UI can name them and link to each rather than showing a bare count.
+func (s *Store) GrantedAppNames(connectionID string) ([]string, error) {
+	rows, err := s.db.Query(grantedAppNamesQuery, connectionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	names := make([]string, 0)
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		names = append(names, name)
+	}
+	return names, rows.Err()
 }
 
 func (s *Store) queryConnections(query string, args ...any) ([]*Connection, error) {

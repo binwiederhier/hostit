@@ -6,12 +6,12 @@ const (
 	selectCollaboratorQuery = `SELECT COUNT(*) FROM app_collaborator WHERE app_id = ? AND user_id = ?`
 	// The list joins the user table: callers show emails, never raw ids.
 	selectCollaboratorsQuery = `
-		SELECT u.id, u.email, u.name, u.role, u.status, u.app_limit, u.memory_mb, u.disk_mb, u.memory_pool_mb, u.disk_pool_mb, u.created_at
+		SELECT u.id, u.email, u.name, u.role, u.status, u.app_limit, u.memory_mb, u.disk_mb, u.memory_pool_mb, u.disk_pool_mb, u.created_at, u.tech_level, u.assistant_prompt, u.default_tabs, u.onboarded
 		FROM app_collaborator c JOIN user u ON u.id = c.user_id
 		WHERE c.app_id = ? ORDER BY u.email
 	`
 	selectAppsByCollaboratorQuery = `
-		SELECT a.id, a.name, a.port, a.host, a.owner_id, a.disk_mb, a.created_at, a.image_tag, a.powered_off, a.uid, a.archived, a.private, a.memory_limit_mb, a.disk_limit_mb, a.cpu_milli
+		SELECT a.id, a.name, a.port, a.host, a.owner_id, a.disk_mb, a.created_at, a.image_tag, a.powered_off, a.uid, a.archived, a.private, a.memory_limit_mb, a.disk_limit_mb, a.cpu_milli, a.tabs
 		FROM app_collaborator c JOIN app a ON a.id = c.app_id
 		WHERE c.user_id = ? ORDER BY a.name
 	`

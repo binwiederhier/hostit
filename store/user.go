@@ -12,19 +12,25 @@ const (
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
 	selectUserQuery = `
-		SELECT id, email, name, role, status, app_limit, memory_mb, disk_mb, memory_pool_mb, disk_pool_mb, created_at
+		SELECT id, email, name, role, status, app_limit, memory_mb, disk_mb, memory_pool_mb, disk_pool_mb, created_at, tech_level, assistant_prompt, default_tabs, onboarded
 		FROM user WHERE id = ?
 	`
 	selectUserByEmailQuery = `
-		SELECT id, email, name, role, status, app_limit, memory_mb, disk_mb, memory_pool_mb, disk_pool_mb, created_at
+		SELECT id, email, name, role, status, app_limit, memory_mb, disk_mb, memory_pool_mb, disk_pool_mb, created_at, tech_level, assistant_prompt, default_tabs, onboarded
 		FROM user WHERE email = ?
 	`
 	selectUsersQuery = `
-		SELECT id, email, name, role, status, app_limit, memory_mb, disk_mb, memory_pool_mb, disk_pool_mb, created_at
+		SELECT id, email, name, role, status, app_limit, memory_mb, disk_mb, memory_pool_mb, disk_pool_mb, created_at, tech_level, assistant_prompt, default_tabs, onboarded
 		FROM user ORDER BY email
 	`
 	updateUserQuery = `
 		UPDATE user SET name = ?, role = ?, status = ?, app_limit = ?, memory_mb = ?, disk_mb = ?, memory_pool_mb = ?, disk_pool_mb = ?
+		WHERE id = ?
+	`
+	// The self-service profile fields, written by the user's own profile page
+	// (kept separate from updateUserQuery, which is the admin's limit/role edit).
+	updateUserProfileQuery = `
+		UPDATE user SET tech_level = ?, assistant_prompt = ?, default_tabs = ?, onboarded = ?
 		WHERE id = ?
 	`
 	deleteUserQuery = `DELETE FROM user WHERE id = ?`
@@ -87,6 +93,17 @@ func (s *Store) Users() ([]*User, error) {
 func (s *Store) UpdateUser(u *User) error {
 	result, err := s.db.Exec(updateUserQuery, u.Name, u.Role, u.Status,
 		nullableInt(u.AppLimit), nullableInt(u.MemoryMB), nullableInt(u.DiskMB), nullableInt(u.MemoryPoolMB), nullableInt(u.DiskPoolMB), u.ID)
+	if err != nil {
+		return err
+	}
+	return checkAffected(result, ErrUserNotFound)
+}
+
+// UpdateUserProfile persists the self-service profile fields (tech level,
+// assistant prompt, default tabs, onboarded), leaving the admin-owned columns
+// (role, status, limits) untouched.
+func (s *Store) UpdateUserProfile(u *User) error {
+	result, err := s.db.Exec(updateUserProfileQuery, u.TechLevel, u.AssistantPrompt, u.DefaultTabs, u.Onboarded, u.ID)
 	if err != nil {
 		return err
 	}
@@ -158,7 +175,8 @@ func scanUserValues(scan func(dest ...any) error) (*User, error) {
 	var u User
 	var appLimit, memoryMB, diskMB, memoryPoolMB, diskPoolMB sql.NullInt64
 	var createdAt int64
-	err := scan(&u.ID, &u.Email, &u.Name, &u.Role, &u.Status, &appLimit, &memoryMB, &diskMB, &memoryPoolMB, &diskPoolMB, &createdAt)
+	err := scan(&u.ID, &u.Email, &u.Name, &u.Role, &u.Status, &appLimit, &memoryMB, &diskMB, &memoryPoolMB, &diskPoolMB, &createdAt,
+		&u.TechLevel, &u.AssistantPrompt, &u.DefaultTabs, &u.Onboarded)
 	if err != nil {
 		return nil, err
 	}

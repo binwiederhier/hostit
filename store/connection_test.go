@@ -164,3 +164,27 @@ func TestRenameConnection(t *testing.T) {
 
 	assert.ErrorIs(t, s.RenameConnection(c.ID, "personal-cal", "x"), ErrConnectionSlugExists)
 }
+
+func TestGrantedAppNames(t *testing.T) {
+	t.Parallel()
+	s := newTestStore(t)
+	require.NoError(t, s.AddApp(&App{ID: "a1", Name: "zeta", Port: 10000, Host: HostLocal, OwnerID: "u1"}))
+	require.NoError(t, s.AddApp(&App{ID: "a2", Name: "alpha", Port: 10001, Host: HostLocal, OwnerID: "u1"}))
+	require.NoError(t, s.AddApp(&App{ID: "a3", Name: "mid", Port: 10002, Host: HostLocal, OwnerID: "u1"}))
+	c := testConn("u1", "work-cal", "google-calendar")
+	require.NoError(t, s.AddConnection(c))
+	require.NoError(t, s.GrantConnection("a1", c.ID))
+	require.NoError(t, s.GrantConnection("a2", c.ID))
+
+	names, err := s.GrantedAppNames(c.ID)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"alpha", "zeta"}, names, "only granted apps, sorted by name")
+
+	// A connection nobody holds lists nothing (never nil, so the JSON is [] not null).
+	other := testConn("u1", "spare", "google-calendar")
+	require.NoError(t, s.AddConnection(other))
+	names, err = s.GrantedAppNames(other.ID)
+	require.NoError(t, err)
+	assert.Empty(t, names)
+	assert.NotNil(t, names)
+}

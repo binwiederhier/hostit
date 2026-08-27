@@ -10,19 +10,19 @@ import (
 const (
 	insertAppQuery = `INSERT INTO app (id, name, port, host, owner_id, created_at, image_tag, uid, private) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	selectAppQuery = `
-		SELECT id, name, port, host, owner_id, disk_mb, created_at, image_tag, powered_off, uid, archived, private, memory_limit_mb, disk_limit_mb, cpu_milli
+		SELECT id, name, port, host, owner_id, disk_mb, created_at, image_tag, powered_off, uid, archived, private, memory_limit_mb, disk_limit_mb, cpu_milli, tabs
 		FROM app WHERE name = ?
 	`
 	selectAppByUIDQuery = `
-		SELECT id, name, port, host, owner_id, disk_mb, created_at, image_tag, powered_off, uid, archived, private, memory_limit_mb, disk_limit_mb, cpu_milli
+		SELECT id, name, port, host, owner_id, disk_mb, created_at, image_tag, powered_off, uid, archived, private, memory_limit_mb, disk_limit_mb, cpu_milli, tabs
 		FROM app WHERE uid = ?
 	`
 	selectAppsQuery = `
-		SELECT id, name, port, host, owner_id, disk_mb, created_at, image_tag, powered_off, uid, archived, private, memory_limit_mb, disk_limit_mb, cpu_milli
+		SELECT id, name, port, host, owner_id, disk_mb, created_at, image_tag, powered_off, uid, archived, private, memory_limit_mb, disk_limit_mb, cpu_milli, tabs
 		FROM app ORDER BY name
 	`
 	selectAppsByOwnerQuery = `
-		SELECT id, name, port, host, owner_id, disk_mb, created_at, image_tag, powered_off, uid, archived, private, memory_limit_mb, disk_limit_mb, cpu_milli
+		SELECT id, name, port, host, owner_id, disk_mb, created_at, image_tag, powered_off, uid, archived, private, memory_limit_mb, disk_limit_mb, cpu_milli, tabs
 		FROM app WHERE owner_id = ? ORDER BY name
 	`
 	selectAppHostQuery         = `SELECT host FROM app WHERE name = ?`
@@ -32,6 +32,7 @@ const (
 	updateAppPoweredOffQuery   = `UPDATE app SET powered_off = ? WHERE name = ?`
 	updateAppArchivedQuery     = `UPDATE app SET archived = ? WHERE name = ?`
 	updateAppPrivateQuery      = `UPDATE app SET private = ? WHERE name = ?`
+	updateAppTabsQuery         = `UPDATE app SET tabs = ? WHERE name = ?`
 	updateAppUIDQuery          = `UPDATE app SET uid = ? WHERE name = ?`
 	deleteAppQuery             = `DELETE FROM app WHERE name = ?`
 	renameAppQuery             = `UPDATE app SET name = ? WHERE name = ?`
@@ -73,7 +74,7 @@ func (s *Store) AddApp(app *App) error {
 func (s *Store) AppByUID(uid int) (*App, error) {
 	app := &App{}
 	var createdAt int64
-	err := s.db.QueryRow(selectAppByUIDQuery, uid).Scan(&app.ID, &app.Name, &app.Port, &app.Host, &app.OwnerID, &app.DiskMB, &createdAt, &app.ImageTag, &app.PoweredOff, &app.UID, &app.Archived, &app.Private, &app.MemoryLimitMB, &app.DiskLimitMB, &app.CPUMilli)
+	err := s.db.QueryRow(selectAppByUIDQuery, uid).Scan(&app.ID, &app.Name, &app.Port, &app.Host, &app.OwnerID, &app.DiskMB, &createdAt, &app.ImageTag, &app.PoweredOff, &app.UID, &app.Archived, &app.Private, &app.MemoryLimitMB, &app.DiskLimitMB, &app.CPUMilli, &app.Tabs)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrAppNotFound
 	}
@@ -106,6 +107,16 @@ func (s *Store) SetAppArchived(name string, archived bool) error {
 }
 
 // SetAppPrivate records (or clears) an app's private visibility.
+// SetAppTabs stores the owner's per-app tab override (CSV of tab keys); empty
+// clears the override so each viewer's profile default applies again.
+func (s *Store) SetAppTabs(name, tabs string) error {
+	res, err := s.db.Exec(updateAppTabsQuery, tabs, name)
+	if err != nil {
+		return err
+	}
+	return checkAffected(res, ErrAppNotFound)
+}
+
 func (s *Store) SetAppPrivate(name string, private bool) error {
 	_, err := s.db.Exec(updateAppPrivateQuery, private, name)
 	return err
@@ -166,7 +177,7 @@ func (s *Store) ImageTagsInUse() (map[string]bool, error) {
 func (s *Store) App(name string) (*App, error) {
 	var app App
 	var createdAt int64
-	err := s.db.QueryRow(selectAppQuery, name).Scan(&app.ID, &app.Name, &app.Port, &app.Host, &app.OwnerID, &app.DiskMB, &createdAt, &app.ImageTag, &app.PoweredOff, &app.UID, &app.Archived, &app.Private, &app.MemoryLimitMB, &app.DiskLimitMB, &app.CPUMilli)
+	err := s.db.QueryRow(selectAppQuery, name).Scan(&app.ID, &app.Name, &app.Port, &app.Host, &app.OwnerID, &app.DiskMB, &createdAt, &app.ImageTag, &app.PoweredOff, &app.UID, &app.Archived, &app.Private, &app.MemoryLimitMB, &app.DiskLimitMB, &app.CPUMilli, &app.Tabs)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrAppNotFound
 	} else if err != nil {
@@ -274,6 +285,9 @@ func (s *Store) RemoveApp(name string) error {
 	if _, err := s.db.Exec(deleteCollaboratorsByAppQuery, app.ID); err != nil {
 		return err
 	}
+	if _, err := s.db.Exec(deletePendingViewersByAppQuery, app.ID); err != nil {
+		return err
+	}
 	if _, err := s.db.Exec(deleteViewersByAppQuery, app.ID); err != nil {
 		return err
 	}
@@ -296,7 +310,7 @@ func (s *Store) queryApps(query string, args ...any) ([]*App, error) {
 	for rows.Next() {
 		var app App
 		var createdAt int64
-		if err := rows.Scan(&app.ID, &app.Name, &app.Port, &app.Host, &app.OwnerID, &app.DiskMB, &createdAt, &app.ImageTag, &app.PoweredOff, &app.UID, &app.Archived, &app.Private, &app.MemoryLimitMB, &app.DiskLimitMB, &app.CPUMilli); err != nil {
+		if err := rows.Scan(&app.ID, &app.Name, &app.Port, &app.Host, &app.OwnerID, &app.DiskMB, &createdAt, &app.ImageTag, &app.PoweredOff, &app.UID, &app.Archived, &app.Private, &app.MemoryLimitMB, &app.DiskLimitMB, &app.CPUMilli, &app.Tabs); err != nil {
 			return nil, err
 		}
 		app.CreatedAt = time.Unix(createdAt, 0)

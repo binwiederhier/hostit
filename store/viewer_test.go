@@ -126,3 +126,66 @@ func TestActiveAdmins(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, []string{"a1"}, admins, "only admins, and only active ones")
 }
+
+func TestViewerEmailsForOwner(t *testing.T) {
+	t.Parallel()
+	s := newTestStore(t)
+	// u1 owns two apps; u9 owns a third. u2 and u4 view u1's apps; u5 views u9's.
+	require.NoError(t, s.AddApp(&App{ID: "a1", Name: "dash", Port: 10000, Host: HostLocal, OwnerID: "u1", CreatedAt: time.Now()}))
+	require.NoError(t, s.AddApp(&App{ID: "a2", Name: "wiki", Port: 10001, Host: HostLocal, OwnerID: "u1", CreatedAt: time.Now()}))
+	require.NoError(t, s.AddApp(&App{ID: "a3", Name: "other", Port: 10002, Host: HostLocal, OwnerID: "u9", CreatedAt: time.Now()}))
+	for _, u := range []struct{ id, email string }{{"u2", "bob@example.com"}, {"u4", "ann@example.com"}, {"u5", "zoe@example.com"}} {
+		require.NoError(t, s.AddUser(&User{ID: u.id, Email: u.email, Status: StatusActive, CreatedAt: time.Now()}))
+	}
+	require.NoError(t, s.AddAppViewer("a1", "u2"))
+	require.NoError(t, s.AddAppViewer("a2", "u2")) // same person on two apps -> one email
+	require.NoError(t, s.AddAppViewer("a2", "u4"))
+	require.NoError(t, s.AddAppViewer("a3", "u5")) // another owner's app -> excluded
+
+	emails, err := s.ViewerEmailsForOwner("u1")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"ann@example.com", "bob@example.com"}, emails, "distinct, sorted, this owner only")
+
+	emails, err = s.ViewerEmailsForOwner("u-nobody")
+	require.NoError(t, err)
+	assert.Empty(t, emails)
+	assert.NotNil(t, emails)
+}
+
+// A viewer invited by email before they have an account becomes a real viewer
+// when they sign in, and the pending invite is cleared. Cleaned up on app delete.
+func TestPendingViewersResolveOnSignIn(t *testing.T) {
+	t.Parallel()
+	s := newTestStore(t)
+	require.NoError(t, s.AddApp(&App{ID: "a1", Name: "dash", Port: 10000, Host: HostLocal, OwnerID: "u1"}))
+	require.NoError(t, s.AddApp(&App{ID: "a2", Name: "wiki", Port: 10001, Host: HostLocal, OwnerID: "u1"}))
+
+	// Invite someone who has no account yet, on two apps (case-insensitive).
+	require.NoError(t, s.AddPendingViewer("a1", "Newbie@Example.com"))
+	require.NoError(t, s.AddPendingViewer("a2", "newbie@example.com"))
+	pend, err := s.PendingViewers("a1")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"newbie@example.com"}, pend)
+
+	// They sign up and sign in: the invites become real grants and clear.
+	require.NoError(t, s.AddUser(&User{ID: "u9", Email: "newbie@example.com", Status: StatusActive, CreatedAt: time.Now()}))
+	n, err := s.ResolvePendingViewers("newbie@example.com", "u9")
+	require.NoError(t, err)
+	assert.Equal(t, 2, n)
+	assert.True(t, s.IsAppViewer("a1", "u9"))
+	assert.True(t, s.IsAppViewer("a2", "u9"))
+	empty, _ := s.PendingViewers("a1")
+	assert.Empty(t, empty)
+
+	// A second sign-in is a no-op (nothing pending left).
+	n, err = s.ResolvePendingViewers("newbie@example.com", "u9")
+	require.NoError(t, err)
+	assert.Equal(t, 0, n)
+
+	// Deleting an app clears its pending invites too.
+	require.NoError(t, s.AddPendingViewer("a1", "later@example.com"))
+	require.NoError(t, s.RemoveApp("dash"))
+	// a1 is gone; PendingViewers on it returns nothing.
+	gone, _ := s.PendingViewers("a1")
+	assert.Empty(t, gone)
+}

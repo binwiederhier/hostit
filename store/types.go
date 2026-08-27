@@ -114,6 +114,10 @@ type App struct {
 	MemoryLimitMB int `json:"memory_limit_mb"`
 	DiskLimitMB   int `json:"disk_limit_mb"`
 	CPUMilli      int `json:"cpu_milli"`
+	// Tabs is the owner's per-app override of which app-detail tabs show, as a
+	// CSV of tab keys (assistant,files,terminal,logs). Empty means no override:
+	// each viewer's own profile default applies.
+	Tabs string `json:"tabs"`
 }
 
 // Snapshot is one point-in-time btrfs snapshot of an app's home. Auto records how
@@ -143,6 +147,15 @@ type User struct {
 	MemoryPoolMB *int      `json:"memory_pool_mb"`
 	DiskPoolMB   *int      `json:"disk_pool_mb"`
 	CreatedAt    time.Time `json:"created_at"`
+	// Self-service profile fields, set by the user (not the admin). TechLevel is
+	// "" until the welcome modal is answered ("novice"|"intermediate"|"expert");
+	// AssistantPrompt is appended to the assistant's system prompt; DefaultTabs
+	// is the CSV of app-detail tabs they want shown by default (empty = built-in
+	// default); Onboarded records that they have seen the welcome modal.
+	TechLevel       string `json:"tech_level"`
+	AssistantPrompt string `json:"assistant_prompt"`
+	DefaultTabs     string `json:"default_tabs"`
+	Onboarded       bool   `json:"onboarded"`
 }
 
 // Token is a per-user API credential; only its hash is stored
