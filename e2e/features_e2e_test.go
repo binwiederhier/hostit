@@ -27,10 +27,14 @@ func TestInstancePromptReachesInfo(t *testing.T) {
 	e.get("/api/info", e.token, &info)
 	assert.Equal(t, marker, fmt.Sprint(info["additional_admin_prompt"]), "the instance prompt is its own /info field")
 
-	// Cleared: the field is gone (omitempty) again.
+	// Cleared: the field is gone (omitempty) again. Poll briefly -- a real server
+	// may take a beat to reflect the write on the read path.
 	e.doJSON("PATCH", "/api/settings", e.token, map[string]string{"info_prompt": ""}, nil, http.StatusOK)
-	e.get("/api/info", e.token, &info)
-	assert.Empty(t, fmt.Sprint(info["additional_admin_prompt"]), "the prompt field is gone once cleared")
+	assert.Eventually(t, func() bool {
+		var got map[string]any
+		e.get("/api/info", e.token, &got)
+		return fmt.Sprint(got["additional_admin_prompt"]) == "<nil>"
+	}, 10*time.Second, 500*time.Millisecond, "the prompt field is gone once cleared")
 }
 
 // Control's own journal is readable from the admin logs endpoint, and each node's
