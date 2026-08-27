@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
@@ -64,10 +65,12 @@ func (p Provider) keptToken(res tokenResponse) string {
 	return res.AccessToken
 }
 
-// Exchange trades the consent code for tokens. The refresh token is what hostit
-// keeps; the access token is discarded here because the first request will mint
-// a fresh one anyway.
-func (p Provider) Exchange(ctx context.Context, client *http.Client, clientID, clientSecret, redirectURL, code string) (refreshToken string, err error) {
+// Exchange trades the consent code for tokens. It returns the credential to
+// store and whether that credential is REFRESHABLE (a refresh token, exchanged
+// for access tokens over time) rather than a long-lived access token kept and
+// handed back as-is. The mode is decided here, from what the token endpoint
+// returns, and the caller remembers it per connection.
+func (p Provider) Exchange(ctx context.Context, client *http.Client, clientID, clientSecret, redirectURL, code string) (credential string, refreshable bool, err error) {
 	res, err := p.postToken(ctx, client, url.Values{
 		"client_id":     {clientID},
 		"client_secret": {clientSecret},
@@ -76,23 +79,48 @@ func (p Provider) Exchange(ctx context.Context, client *http.Client, clientID, c
 		"redirect_uri":  {redirectURL},
 	})
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
 	// A provider whose token does not expire hands back nothing to refresh, so
 	// the access token IS the thing worth keeping.
 	if p.LongLivedToken {
+		// Invariant check: a genuinely long-lived provider returns neither a
+		// refresh token nor an expiry. If it does, the provider is MISclassified
+		// -- the stored access token will die and, with refresh skipped, only a
+		// manual reconnect brings it back. Log it (no credential is exposed) so
+		// the cause is visible instead of surfacing as a mystery needs-reconnect.
+		// (GitHub, which does exactly this, is a HybridToken provider now.)
+		if res.RefreshToken != "" || res.ExpiresIn != 0 {
+			slog.Warn("Long-lived provider returned refreshable-token fields; it is misclassified and its token will expire",
+				"provider", p.Name, "has_refresh_token", res.RefreshToken != "", "expires_in", res.ExpiresIn)
+		}
 		tok := p.keptToken(res)
 		if tok == "" {
-			return "", fmt.Errorf("%s returned no access token", p.Label)
+			return "", false, fmt.Errorf("%s returned no access token", p.Label)
 		}
-		return tok, nil
+		return tok, false, nil
+	}
+	// A hybrid provider issues a refresh token only when the operator's app is
+	// configured for expiring tokens. With one, keep it and refresh. Without
+	// one, the app issues a permanent token, so keep that and probe instead --
+	// refusing (as a pure refreshing provider does) would lock out a valid
+	// classic OAuth App.
+	if p.HybridToken {
+		if res.RefreshToken != "" {
+			return res.RefreshToken, true, nil
+		}
+		tok := p.keptToken(res)
+		if tok == "" {
+			return "", false, fmt.Errorf("%s returned neither a refresh token nor an access token", p.Label)
+		}
+		return tok, false, nil
 	}
 	if res.RefreshToken == "" {
 		// Without one, the connection would work for an hour and then die in a
 		// way that looks like a hostit bug. Better to refuse the connection.
-		return "", fmt.Errorf("%s returned no refresh token; disconnect it at the provider and connect again", p.Label)
+		return "", false, fmt.Errorf("%s returned no refresh token; disconnect it at the provider and connect again", p.Label)
 	}
-	return res.RefreshToken, nil
+	return res.RefreshToken, true, nil
 }
 
 // Refresh exchanges the stored refresh token for an access token. For a

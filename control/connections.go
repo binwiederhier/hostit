@@ -46,6 +46,10 @@ const (
 	// token is renewed comfortably before it lapses.
 	connectionRefreshInterval = 10 * time.Minute
 	connectionRefreshHorizon  = 15 * time.Minute
+	// metaOAuthLongLived marks a HybridToken OAuth connection whose provider
+	// issued a permanent access token and no refresh token (a classic OAuth
+	// App): it is probed, not refreshed. An empty meta means refreshable.
+	metaOAuthLongLived = "long-lived"
 	// discoveryTimeout bounds asking a custom provider's issuer where its
 	// endpoints are. Short: it is on the path of rendering the Add menu.
 	discoveryTimeout = 10 * time.Second
@@ -144,7 +148,7 @@ func (m *connectionManager) offered() []connections.Provider {
 // either way it is sealed before it reaches the database.
 func (m *connectionManager) saveOAuth(ctx context.Context, userID, slug, label string, p connections.Provider, code, redirectURL, scopes string) (*store.Connection, error) {
 	id, secret := m.clientForUser(userID, p.Name)
-	credential, err := p.Exchange(ctx, m.client, id, secret, redirectURL, code)
+	credential, refreshable, err := p.Exchange(ctx, m.client, id, secret, redirectURL, code)
 	if err != nil {
 		return nil, err
 	}
@@ -157,7 +161,7 @@ func (m *connectionManager) saveOAuth(ctx context.Context, userID, slug, label s
 	c := &store.Connection{
 		ID: store.NewConnectionID(), UserID: userID, Slug: slug, Label: label,
 		Provider: p.Name, Kind: store.ConnectionOAuth,
-		Scopes: scopes, CreatedAt: time.Now(),
+		Scopes: scopes, Meta: oauthTokenMeta(p, refreshable), CreatedAt: time.Now(),
 	}
 	if c.Secret, err = connections.Seal(m.key, credential, connections.Binding(c.UserID, c.ID)); err != nil {
 		return nil, err
@@ -169,7 +173,7 @@ func (m *connectionManager) saveOAuth(ctx context.Context, userID, slug, label s
 // re-consent is: same slug, same grants, fresh secret. Apps keep working.
 func (m *connectionManager) reconnect(ctx context.Context, c *store.Connection, p connections.Provider, code, redirectURL string) error {
 	id, secret := m.clientForUser(c.UserID, p.Name)
-	credential, err := p.Exchange(ctx, m.client, id, secret, redirectURL, code)
+	credential, refreshable, err := p.Exchange(ctx, m.client, id, secret, redirectURL, code)
 	if err != nil {
 		return err
 	}
@@ -179,9 +183,14 @@ func (m *connectionManager) reconnect(ctx context.Context, c *store.Connection, 
 	}
 	m.expireCachedFor(c.ID)
 	_ = m.store.SetConnectionStatus(c.ID, store.ConnectionStatusOK) // a fresh consent clears needs-reconnect
-	// A re-consent keeps the same grants; store what the connection already had,
-	// not the provider baseline (which would wipe the options the owner chose).
-	return m.store.UpdateConnectionSecret(c.ID, sealed, c.Scopes, c.Meta)
+	// A re-consent keeps the same grants (not the provider baseline, which would
+	// wipe the options the owner chose), but the token kind can change if the
+	// operator toggled their app's expiry setting, so refresh the meta marker.
+	meta := c.Meta
+	if p.HybridToken {
+		meta = oauthTokenMeta(p, refreshable)
+	}
+	return m.store.UpdateConnectionSecret(c.ID, sealed, c.Scopes, meta)
 }
 
 // saveStatic stores a pasted credential. Only the field the provider names as
@@ -255,6 +264,12 @@ func (m *connectionManager) tokenFor(ctx context.Context, a *store.App, slug str
 	if conn.Kind == store.ConnectionStatic {
 		return connections.Token{Provider: p.Name, AccessToken: secret, Meta: conn.Meta}, nil
 	}
+	// A non-refreshable OAuth credential (a Slack bot token, or a HybridToken
+	// connection whose app issues permanent tokens) IS the usable token; there
+	// is nothing to refresh, so hand it straight back.
+	if !m.refreshable(conn, p) {
+		return connections.Token{Provider: p.Name, AccessToken: secret}, nil
+	}
 	// Served from cache only when it came from the credential the database
 	// still holds and has real life left. The grant was already checked above,
 	// so revoking one takes effect immediately no matter how warm this is.
@@ -301,6 +316,31 @@ func (m *connectionManager) refreshAndStore(ctx context.Context, conn *store.Con
 	return tok, nil
 }
 
+// oauthTokenMeta records, for an OAuth connection, whether its stored credential
+// is a long-lived access token (probe-only) rather than a refresh token. Only a
+// HybridToken provider can be either; every other OAuth provider's kind is fixed
+// by the provider itself, so nothing is stored for them (meta stays empty).
+func oauthTokenMeta(p connections.Provider, refreshable bool) string {
+	if p.HybridToken && !refreshable {
+		return metaOAuthLongLived
+	}
+	return ""
+}
+
+// refreshable reports whether an OAuth connection's stored credential should be
+// refreshed (a refresh token) rather than probed and handed back as-is (a
+// long-lived access token). A LongLivedToken provider is never refreshable; a
+// HybridToken one is per connection (see oauthTokenMeta); everything else is.
+func (m *connectionManager) refreshable(conn *store.Connection, p connections.Provider) bool {
+	if p.LongLivedToken {
+		return false
+	}
+	if p.HybridToken {
+		return conn.Meta != metaOAuthLongLived
+	}
+	return true
+}
+
 // setStatus persists a connection's health, in-place, only when it changed.
 func (m *connectionManager) setStatus(conn *store.Connection, status string) {
 	if conn.Status == status {
@@ -340,7 +380,7 @@ func (m *connectionManager) refreshDue(ctx context.Context) {
 		if !ok {
 			continue
 		}
-		if p.LongLivedToken {
+		if !m.refreshable(conn, p) {
 			// Nothing to refresh, but a long-lived token can be revoked or
 			// invalidated at the provider with no signal, so the sweep is the
 			// only thing that would notice: probe it and let its health follow.
@@ -404,7 +444,7 @@ func (m *connectionManager) Verify(ctx context.Context, userID, slug string) (st
 	if conn.Kind != store.ConnectionOAuth {
 		return conn.Status, nil
 	}
-	if p.LongLivedToken {
+	if !m.refreshable(conn, p) {
 		return m.verifyLongLived(ctx, conn, p)
 	}
 	secret, err := m.open(conn)
@@ -455,6 +495,16 @@ func (m *connectionManager) verifyLongLived(ctx context.Context, conn *store.Con
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		// Log the transition -- otherwise a connection silently goes
+		// needs-reconnect with nothing in the journal to say why or when. The
+		// provider's short error body (e.g. GitHub's "Bad credentials") is a
+		// message, not a secret, and tells revoked/expired (401) apart from
+		// rate-limit or missing-scope (403).
+		snippet, _ := io.ReadAll(io.LimitReader(resp.Body, 200))
+		if conn.Status != store.ConnectionStatusNeedsReconnect {
+			slog.Warn("Connection probe rejected; marking needs-reconnect",
+				"slug", conn.Slug, "provider", conn.Provider, "status", resp.StatusCode, "body", strings.TrimSpace(string(snippet)))
+		}
 		m.setStatus(conn, store.ConnectionStatusNeedsReconnect)
 		return store.ConnectionStatusNeedsReconnect, nil
 	}

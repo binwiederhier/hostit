@@ -36,7 +36,7 @@ func TestExchangeAndRefreshForARefreshingProvider(t *testing.T) {
 	srv := tokenServer(t, map[string]any{"access_token": "at-1", "refresh_token": "rt-1", "expires_in": 3600}, nil)
 	p := Provider{Name: "google-calendar", Label: "Google Calendar", Kind: KindOAuth, TokenURL: srv.URL}
 
-	secret, err := p.Exchange(context.Background(), srv.Client(), "cid", "sec", "https://cb", "code")
+	secret, _, err := p.Exchange(context.Background(), srv.Client(), "cid", "sec", "https://cb", "code")
 	require.NoError(t, err)
 	assert.Equal(t, "rt-1", secret, "the refresh token is what gets stored")
 
@@ -54,7 +54,7 @@ func TestARefreshingProviderWithoutARefreshTokenIsRefused(t *testing.T) {
 	srv := tokenServer(t, map[string]any{"access_token": "at-1", "expires_in": 3600}, nil)
 	p := Provider{Name: "google-calendar", Label: "Google Calendar", Kind: KindOAuth, TokenURL: srv.URL}
 
-	_, err := p.Exchange(context.Background(), srv.Client(), "cid", "sec", "https://cb", "code")
+	_, _, err := p.Exchange(context.Background(), srv.Client(), "cid", "sec", "https://cb", "code")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "refresh token")
 }
@@ -67,7 +67,7 @@ func TestALongLivedProviderStoresTheAccessTokenItself(t *testing.T) {
 	srv := tokenServer(t, map[string]any{"access_token": "xoxb-abc", "ok": true}, nil)
 	p := Provider{Name: "slack", Label: "Slack", Kind: KindOAuth, TokenURL: srv.URL, LongLivedToken: true}
 
-	secret, err := p.Exchange(context.Background(), srv.Client(), "cid", "sec", "https://cb", "code")
+	secret, _, err := p.Exchange(context.Background(), srv.Client(), "cid", "sec", "https://cb", "code")
 	require.NoError(t, err)
 	assert.Equal(t, "xoxb-abc", secret, "the access token is the thing worth keeping")
 
@@ -79,6 +79,37 @@ func TestALongLivedProviderStoresTheAccessTokenItself(t *testing.T) {
 	assert.Nil(t, tok.ExpiresAt, "nothing to expire, so nothing is promised")
 }
 
+// GitHub can be registered two ways, and the same provider must handle both. A
+// GitHub App (or an OAuth App with token expiration enabled) issues an EXPIRING
+// access token AND a refresh token: a HybridToken provider keeps the refresh
+// token and reports the connection as refreshable, so it is refreshed like any
+// OAuth provider instead of dying when the access token expires.
+func TestExchangeHybridKeepsRefreshTokenWhenIssued(t *testing.T) {
+	t.Parallel()
+	srv := tokenServer(t, map[string]any{"access_token": "at-1", "refresh_token": "rt-1", "expires_in": 28800}, nil)
+	p := Provider{Name: "github", Label: "GitHub", Kind: KindOAuth, TokenURL: srv.URL, HybridToken: true}
+
+	secret, refreshable, err := p.Exchange(context.Background(), srv.Client(), "cid", "sec", "https://cb", "code")
+	require.NoError(t, err)
+	assert.True(t, refreshable, "an expiring-token registration is refreshable")
+	assert.Equal(t, "rt-1", secret, "the refresh token is what gets stored")
+}
+
+// The other way: a classic OAuth App issues a PERMANENT access token and no
+// refresh token. A HybridToken provider must NOT refuse this (a pure refreshing
+// provider would) -- it stores the access token and reports the connection as
+// not refreshable, so it is probed rather than refreshed.
+func TestExchangeHybridFallsBackToAccessTokenWhenNoRefresh(t *testing.T) {
+	t.Parallel()
+	srv := tokenServer(t, map[string]any{"access_token": "gho-permanent"}, nil)
+	p := Provider{Name: "github", Label: "GitHub", Kind: KindOAuth, TokenURL: srv.URL, HybridToken: true}
+
+	secret, refreshable, err := p.Exchange(context.Background(), srv.Client(), "cid", "sec", "https://cb", "code")
+	require.NoError(t, err)
+	assert.False(t, refreshable, "a permanent-token registration is not refreshable")
+	assert.Equal(t, "gho-permanent", secret, "the access token is stored directly")
+}
+
 // GitHub answers form-encoded unless asked otherwise, which would otherwise
 // parse as "not a token response".
 func TestTheTokenRequestAsksForJSON(t *testing.T) {
@@ -87,7 +118,7 @@ func TestTheTokenRequestAsksForJSON(t *testing.T) {
 	srv := tokenServer(t, map[string]any{"access_token": "gho_x"}, &seen)
 	p := Provider{Name: "github", Label: "GitHub", Kind: KindOAuth, TokenURL: srv.URL, LongLivedToken: true}
 
-	_, err := p.Exchange(context.Background(), srv.Client(), "cid", "sec", "https://cb", "code")
+	_, _, err := p.Exchange(context.Background(), srv.Client(), "cid", "sec", "https://cb", "code")
 	require.NoError(t, err)
 	assert.Equal(t, "application/json", seen.Header.Get("Accept"))
 }

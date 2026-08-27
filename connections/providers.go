@@ -116,20 +116,24 @@ func init() {
 		Help:     "Read channels and messages. Create a bot under your Discord application's Bot tab, then invite it to the server. Send the header as \"Authorization: Bot <token>\".",
 	})
 
-	// -- GitHub. An OAuth App's token does not expire (only a GitHub App with
-	// expiring user tokens refreshes), so it is stored as-is. A fine-grained
-	// personal access token via the generic credential is the other route.
+	// -- GitHub. Hybrid: a classic OAuth App's token never expires and is stored
+	// as-is, but a GitHub App (or an OAuth App with expiring user tokens) hands
+	// back an 8h access token AND a refresh token, which hostit must actually
+	// refresh -- treating that kind as long-lived was why a github connection
+	// died overnight and needed reconnecting every morning. Which one a given
+	// connection got is decided at Exchange. A fine-grained personal access token
+	// via the generic credential is the other route.
 	Register(Provider{
-		Name:           "github",
-		Label:          "GitHub",
-		Kind:           KindOAuth,
-		Scopes:         []string{"repo", "read:user"},
-		AuthURL:        "https://github.com/login/oauth/authorize",
-		TokenURL:       "https://github.com/login/oauth/access_token",
-		LongLivedToken: true,
-		ProbeURL:       "https://api.github.com/user",
-		NameHint:       "GitHub",
-		Help:           "Repositories and your profile, as you.",
+		Name:        "github",
+		Label:       "GitHub",
+		Kind:        KindOAuth,
+		Scopes:      []string{"repo", "read:user"},
+		AuthURL:     "https://github.com/login/oauth/authorize",
+		TokenURL:    "https://github.com/login/oauth/access_token",
+		HybridToken: true,
+		ProbeURL:    "https://api.github.com/user",
+		NameHint:    "GitHub",
+		Help:        "Repositories and your profile, as you.",
 	})
 
 	// -- Jira / Atlassian 3LO. Needs its audience named, and offline_access is
@@ -161,20 +165,24 @@ func init() {
 		Help:     "Read contacts, companies and deals from one HubSpot portal.",
 	})
 
-	// -- Linear. Its tokens are effectively permanent and it issues no refresh
-	// token, so the access token is what gets stored.
+	// -- Linear. Hybrid, like GitHub: a classic Linear token is effectively
+	// permanent with no refresh token, but a workspace with token expiration
+	// enabled issues an expiring token AND a refresh token, which hostit must
+	// refresh rather than serve forever. Which one a connection got is decided at
+	// Exchange; either way the GraphQL probe catches a token revoked at Linear
+	// (an app reinstall or a permission change) and flags it for reconnect.
 	Register(Provider{
-		Name:           "linear",
-		Label:          "Linear",
-		Kind:           KindOAuth,
-		Scopes:         []string{"read"},
-		AuthURL:        "https://linear.app/oauth/authorize",
-		TokenURL:       "https://api.linear.app/oauth/token",
-		LongLivedToken: true,
-		ProbeURL:       "https://api.linear.app/graphql",
-		ProbeBody:      `{"query":"{ viewer { id } }"}`,
-		NameHint:       "Linear",
-		Help:           "Read issues, projects and teams from your Linear workspace.",
+		Name:        "linear",
+		Label:       "Linear",
+		Kind:        KindOAuth,
+		Scopes:      []string{"read"},
+		AuthURL:     "https://linear.app/oauth/authorize",
+		TokenURL:    "https://api.linear.app/oauth/token",
+		HybridToken: true,
+		ProbeURL:    "https://api.linear.app/graphql",
+		ProbeBody:   `{"query":"{ viewer { id } }"}`,
+		NameHint:    "Linear",
+		Help:        "Read issues, projects and teams from your Linear workspace.",
 	})
 
 	// -- Pasted credentials. No OAuth client, no review, no expiry, and no

@@ -166,6 +166,9 @@ func (s *Server) connectionView(c *store.Connection) *apiConnectionResponse {
 			out.URL, out.Tools = meta.URL, mcpToolViews(meta.Tools)
 		}
 	}
+	if c.Kind == store.ConnectionOAuth {
+		out.Meta = "" // an internal token-kind marker, not something to show
+	}
 	return out
 }
 
@@ -718,9 +721,13 @@ func (s *Server) handleSelfConnectionsList(w http.ResponseWriter, r *http.Reques
 		if p, ok := s.lookupProvider(c.Provider); ok {
 			label = p.Label
 		}
+		meta := c.Meta
+		if c.Kind == store.ConnectionOAuth {
+			meta = "" // an internal token-kind marker, not something to show
+		}
 		out = append(out, &apiSelfConnectionResponse{
 			Slug: c.Slug, Label: c.Label, Provider: c.Provider,
-			ProviderLabel: label, Kind: c.Kind, Meta: c.Meta, Status: c.Status,
+			ProviderLabel: label, Kind: c.Kind, Meta: meta, Status: c.Status,
 		})
 	}
 	writeJSON(w, http.StatusOK, out)

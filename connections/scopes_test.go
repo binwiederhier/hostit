@@ -83,7 +83,7 @@ func TestExchangeReadsUserToken(t *testing.T) {
 	}, nil)
 	p := userScopeProvider(srv.URL)
 
-	secret, err := p.Exchange(context.Background(), srv.Client(), "cid", "sec", "https://cb", "code")
+	secret, _, err := p.Exchange(context.Background(), srv.Client(), "cid", "sec", "https://cb", "code")
 	require.NoError(t, err)
 	assert.Equal(t, "xoxp-user-1", secret)
 }

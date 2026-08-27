@@ -172,6 +172,95 @@ func registerFakeProvider(t *testing.T, s *Server, f *fakeAuthServer, name strin
 	s.config.ConnectionClients[name] = config.OAuthClient{ClientID: "test-client", ClientSecret: "test-secret"}
 }
 
+// registerFakeHybridProvider registers a HybridToken provider (the GitHub
+// class): whether it issues a refresh token depends on f.longLived, so a test
+// can exercise both the refreshable (GitHub App) and the probe-only (classic
+// OAuth App) variants of the same provider.
+func registerFakeHybridProvider(t *testing.T, s *Server, f *fakeAuthServer, name string) {
+	t.Helper()
+	connections.Register(connections.Provider{
+		Name: name, Label: "Fake " + name, Kind: connections.KindOAuth,
+		Scopes:      []string{"read"},
+		AuthURL:     f.URL + "/authorize",
+		TokenURL:    f.URL + "/token",
+		AuthParams:  map[string]string{"access_type": "offline"},
+		HybridToken: true,
+		ProbeURL:    f.URL + "/probe",
+		Help:        "a test hybrid provider",
+	})
+	if s.config.ConnectionClients == nil {
+		s.config.ConnectionClients = map[string]config.OAuthClient{}
+	}
+	s.config.ConnectionClients[name] = config.OAuthClient{ClientID: "test-client", ClientSecret: "test-secret"}
+}
+
+// GitHub is a HybridToken provider. When the operator's app issues a refresh
+// token (a GitHub App, or an OAuth App with token expiration on), the connection
+// must be REFRESHED like any OAuth provider. Treating every github connection as
+// long-lived was the bug: the expiring access token was never refreshed and died
+// overnight, needing a manual reconnect every morning.
+func TestHybridConnectionWithRefreshTokenIsRefreshed(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	f := newFakeAuthServer(t)
+	registerFakeHybridProvider(t, s, f, "fake-hybrid")
+	f.longLived = false // issues a refresh token (GitHub App style)
+	u := newActiveTestUser(t, s, "owner@example.com")
+	token := accountToken(t, s, u)
+	session := signIn(t, s, u)
+
+	rr := request(t, s.API(), "POST", "/api/connections", `{"provider":"fake-hybrid","slug":"ghc"}`, token)
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+	var started apiConnectStartedResponse
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &started))
+	require.Equal(t, http.StatusFound, browse(t, s, started.RedirectURL, append(rr.Result().Cookies(), session)).Code)
+
+	// It is refreshed, not probed: denying the refresh flips it to needs-reconnect.
+	f.denyRefresh = true
+	status, err := s.connections.Verify(context.Background(), u.ID, "ghc")
+	require.NoError(t, err)
+	assert.Equal(t, store.ConnectionStatusNeedsReconnect, status, "a refreshable hybrid connection is refreshed")
+
+	// And it recovers when the refresh works again.
+	f.denyRefresh = false
+	status, err = s.connections.Verify(context.Background(), u.ID, "ghc")
+	require.NoError(t, err)
+	assert.Equal(t, store.ConnectionStatusOK, status)
+}
+
+// The other variant of the same provider: a classic OAuth App issues a permanent
+// access token and no refresh token. That connection must be PROBED (like Slack),
+// not refreshed -- refreshing a permanent token would fail, and refusing the
+// connect (as a pure refreshing provider does) would lock out a valid app.
+func TestHybridConnectionWithoutRefreshTokenIsProbed(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	f := newFakeAuthServer(t)
+	registerFakeHybridProvider(t, s, f, "fake-hybrid-perm")
+	f.longLived = true // no refresh token (classic OAuth App style)
+	u := newActiveTestUser(t, s, "owner@example.com")
+	token := accountToken(t, s, u)
+	session := signIn(t, s, u)
+
+	rr := request(t, s.API(), "POST", "/api/connections", `{"provider":"fake-hybrid-perm","slug":"gh2"}`, token)
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+	var started apiConnectStartedResponse
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &started))
+	require.Equal(t, http.StatusFound, browse(t, s, started.RedirectURL, append(rr.Result().Cookies(), session)).Code)
+
+	// It is probed, not refreshed: denying the probe flips it to needs-reconnect.
+	f.denyProbe = true
+	status, err := s.connections.Verify(context.Background(), u.ID, "gh2")
+	require.NoError(t, err)
+	assert.Equal(t, store.ConnectionStatusNeedsReconnect, status, "a permanent-token hybrid connection is probed")
+
+	// And it recovers when the probe answers 200 again.
+	f.denyProbe = false
+	status, err = s.connections.Verify(context.Background(), u.ID, "gh2")
+	require.NoError(t, err)
+	assert.Equal(t, store.ConnectionStatusOK, status)
+}
+
 // signIn gives the test a browser-shaped session cookie, which is what the
 // OAuth callback authenticates with.
 func signIn(t *testing.T, s *Server, u *store.User) *http.Cookie {

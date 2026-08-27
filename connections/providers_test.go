@@ -44,18 +44,31 @@ func TestCalendarAndMailAreSeparateProviders(t *testing.T) {
 	}
 }
 
-// Not every provider issues a refresh token. Slack's bot token and a GitHub
-// OAuth App's token do not expire and there is nothing to refresh -- treating
-// them like Google would refuse the connection outright.
+// Not every provider issues a refresh token. Slack's bot token does not expire
+// and there is nothing to refresh -- treating it like Google would refuse the
+// connection outright. GitHub is HYBRID: a classic OAuth App's token never
+// expires, but a GitHub App (or an OAuth App with expiring tokens) issues an
+// 8h token AND a refresh token, so github must be able to refresh -- treating
+// every github connection as long-lived was why one died overnight.
 func TestProvidersThatIssueLongLivedTokens(t *testing.T) {
 	t.Parallel()
-	for _, name := range []string{"slack-bot", "github"} {
+	slack, _ := Lookup("slack-bot")
+	assert.True(t, slack.LongLivedToken, "slack-bot returns a token that does not expire")
+	assert.False(t, slack.HybridToken)
+
+	// GitHub and Linear are both hybrid: refreshable when the app issues a refresh
+	// token, permanent (probe-only) when it does not.
+	for _, name := range []string{"github", "linear"} {
 		p, _ := Lookup(name)
-		assert.True(t, p.LongLivedToken, "%s returns a token that does not expire", name)
+		assert.False(t, p.LongLivedToken, "%s is not fixed long-lived", name)
+		assert.True(t, p.HybridToken, "%s is hybrid: refreshable or permanent by registration", name)
+		assert.NotEmpty(t, p.ProbeURL, "%s: the permanent variant still needs a probe", name)
 	}
+
 	for _, name := range []string{"google-calendar", "gmail", "discord", "jira"} {
 		p, _ := Lookup(name)
 		assert.False(t, p.LongLivedToken, "%s issues a refresh token", name)
+		assert.False(t, p.HybridToken, "%s is not hybrid", name)
 	}
 }
 

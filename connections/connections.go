@@ -86,11 +86,20 @@ type Provider struct {
 	// sending meaningless parameters to Slack.
 	AuthParams map[string]string
 	// LongLivedToken means the provider issues an access token that does not
-	// expire and no refresh token (a Slack bot token, a GitHub OAuth App
-	// token). hostit stores that token and hands it back as-is; there is
-	// nothing to refresh, and demanding a refresh token would refuse a
-	// perfectly good connection.
+	// expire and no refresh token (a Slack bot token). hostit stores that token
+	// and hands it back as-is; there is nothing to refresh, and demanding a
+	// refresh token would refuse a perfectly good connection.
 	LongLivedToken bool
+	// HybridToken means the SAME provider issues either an expiring access token
+	// with a refresh token (a GitHub App, or an OAuth App with token expiration
+	// enabled) or a permanent access token with none (a classic OAuth App),
+	// depending on how the operator registered their app. Which one a given
+	// connection got is decided at Exchange from what the token endpoint returns
+	// and remembered per connection: a refreshable one is refreshed like any
+	// OAuth provider, a permanent one is probed like a LongLivedToken one. GitHub
+	// is the case this exists for. A ProbeURL is still required (the permanent
+	// variant needs it). Mutually exclusive with LongLivedToken.
+	HybridToken bool
 	// ProbeURL, if set, is a cheap authenticated request Verify uses to actually
 	// test a LongLivedToken connection -- nothing else ever re-checks one (the
 	// refresh loop skips it, there being nothing to refresh, and an app that
