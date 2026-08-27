@@ -14,6 +14,24 @@ before either is built.
 
 ## Now (next few sessions)
 
+### Viewer-only accounts (no apps of their own)
+
+Support people who exist only to VIEW apps others shared with them -- they should
+not be able to create or manage their own apps, and ideally not land on the app
+dashboard at all, but they CAN sign in to reach a private app an owner granted
+them (as a viewer). Two ways to model it, decide which:
+
+- a new role (e.g. `viewer`) distinct from `user`/`admin`, or
+- reuse the existing limit machinery with `app_limit = 0`: no way to create apps,
+  and the web app could route them straight past the dashboard to "you have
+  access to N apps" rather than "create your first app".
+
+Either way: login works, the app-viewer grant still authorizes them on the
+owner's app, and the "create app" surface is hidden/refused. Pairs with the
+pending-viewer work below (inviting someone by email before they have an account).
+
+
+
 ### 0. Connections: shipped -- remaining follow-ups
 
 Shipped to prod (connections + MCP servers), twenty providers. Live OAuth

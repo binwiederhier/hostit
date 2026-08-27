@@ -129,7 +129,8 @@ func TestAgentCanBuildAnAppFromNothing(t *testing.T) {
 	guide, ok := info["guide"].(map[string]any)
 	require.True(t, ok, "per-app info must inline the guide")
 	assert.NotEmpty(t, guide["hostit_yml"])
-	assert.NotEmpty(t, guide["endpoints"])
+	assert.NotEmpty(t, guide["apps_api"])
+	assert.NotEmpty(t, guide["container_api"])
 	assert.NotEmpty(t, guide["runtimes"])
 	assert.Contains(t, strings.ToLower(fmt.Sprint(info["readme"])), "stub")
 
