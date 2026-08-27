@@ -58,18 +58,24 @@ const AppsMenu = () => {
   const [apps, setApps] = useState(null); // null = not loaded yet
   const [failed, setFailed] = useState(false);
   const closeTimer = useRef(null);
-  useEffect(() => {
-    // Prefetch on mount so the switcher is populated the moment it opens, rather
-    // than showing "Loading..." on the first hover.
+  const load = useCallback(() => {
+    setFailed(false);
     api
       .get("/api/apps")
       .then(setApps)
       .catch(() => setFailed(true));
   }, []);
+  useEffect(() => {
+    // Prefetch on mount so the switcher is populated the moment it opens, rather
+    // than showing "Loading..." on the first hover.
+    load();
+  }, [load]);
   // Hover opens it (a small close delay bridges the gap to the popup); clicking
-  // "Apps" still navigates to the list.
+  // "Apps" still navigates to the list. Reload on every open so an app created
+  // since the last fetch shows up without a full page refresh.
   const openNow = () => {
     clearTimeout(closeTimer.current);
+    load();
     setOpen(true);
   };
   const closeSoon = () => {
@@ -420,6 +426,9 @@ const App = () => {
   const [account, setAccount] = useState(undefined); // undefined = loading, null = not logged in
   const [error, setError] = useState("");
   const [appHeader, setAppHeader] = useState(null); // the app page's identity, for the mobile nav
+  // ?welcome=1 forces the first-run modal for testing, without resetting the
+  // onboarded flag in the backend. Dismissing it just closes the overlay.
+  const [forceWelcome, setForceWelcome] = useState(() => new URLSearchParams(window.location.search).get("welcome") === "1");
   // The docs describe the instance, not the account, so they open without one:
   // they are a link people share, and a tab they leave open next to the app
   const docsOnly = window.location.pathname === "/docs" || window.location.pathname.startsWith("/docs/");
@@ -503,7 +512,9 @@ const App = () => {
     <BrowserRouter>
       <AppHeaderContext.Provider value={setAppHeader}>
         <Nav account={account} appHeader={appHeader} />
-        {!account.onboarded && <WelcomeModal account={account} refreshAccount={refreshAccount} />}
+        {(!account.onboarded || forceWelcome) && (
+          <WelcomeModal account={account} refreshAccount={refreshAccount} onDone={() => setForceWelcome(false)} />
+        )}
         <RoutedMain>
           <Routes>
             <Route path="/" element={<Dashboard account={account} refreshAccount={refreshAccount} />} />

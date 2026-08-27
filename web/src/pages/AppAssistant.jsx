@@ -579,42 +579,46 @@ const ASSISTANT_EXAMPLES = [
 ];
 
 // Types an example out, holds it, backspaces it, and moves to the next -- a hint
-// that the box takes plain-English asks. Honours reduced-motion (shows one, still).
+// that the box takes plain-English asks. A single self-scheduling timer drives a
+// ref-held state machine, so it never stalls on a re-render. Deliberately NOT
+// gated on prefers-reduced-motion: on Linux, Firefox reports it from the GTK
+// "reduce animations" setting while Chrome does not, so gating froze the hint in
+// Firefox only. It is a tiny typing hint, kept consistent across browsers.
 const TypingExamples = () => {
   const [text, setText] = useState("");
-  const [idx, setIdx] = useState(0);
-  const [phase, setPhase] = useState("typing"); // typing | holding | deleting
-  const reduce = useRef(
-    typeof window !== "undefined" && window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches,
-  ).current;
+  const st = useRef({ idx: 0, phase: "typing", len: 0 });
   useEffect(() => {
-    if (reduce) {
-      setText(ASSISTANT_EXAMPLES[0]);
-      return undefined;
-    }
-    const cur = ASSISTANT_EXAMPLES[idx];
-    let t;
-    if (phase === "typing") {
-      t =
-        text.length < cur.length
-          ? setTimeout(() => setText(cur.slice(0, text.length + 1)), 55)
-          : setTimeout(() => setPhase("holding"), 1600);
-    } else if (phase === "holding") {
-      t = setTimeout(() => setPhase("deleting"), 700);
-    } else if (text.length > 0) {
-      t = setTimeout(() => setText(cur.slice(0, text.length - 1)), 28);
-    } else {
-      setPhase("typing");
-      setIdx((idx + 1) % ASSISTANT_EXAMPLES.length);
-    }
-    return () => clearTimeout(t);
-  }, [text, phase, idx, reduce]);
-  return (
-    <span className="asst-typing">
-      {text}
-      <span className="asst-caret" aria-hidden="true" />
-    </span>
-  );
+    let timer;
+    const tick = () => {
+      const s = st.current;
+      const cur = ASSISTANT_EXAMPLES[s.idx];
+      let delay = 55;
+      if (s.phase === "typing") {
+        s.len += 1;
+        setText(cur.slice(0, s.len));
+        if (s.len >= cur.length) {
+          s.phase = "holding";
+          delay = 1500;
+        }
+      } else if (s.phase === "holding") {
+        s.phase = "deleting";
+        delay = 60;
+      } else {
+        s.len -= 1;
+        setText(cur.slice(0, Math.max(0, s.len)));
+        delay = 30;
+        if (s.len <= 0) {
+          s.phase = "typing";
+          s.idx = (s.idx + 1) % ASSISTANT_EXAMPLES.length;
+          delay = 400;
+        }
+      }
+      timer = setTimeout(tick, delay);
+    };
+    timer = setTimeout(tick, 300);
+    return () => clearTimeout(timer);
+  }, []);
+  return <span className="asst-typing">{text}</span>;
 };
 
 const AppAssistant = ({

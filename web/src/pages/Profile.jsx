@@ -566,7 +566,7 @@ const ProfilePrefs = ({ account, refreshAccount }) => {
       </div>
 
       <label className="newapp-label">Default app tabs</label>
-      <p className="hint">Which tabs an app opens with. Each app can override this from its own View menu.</p>
+      <p className="hint profile-tabs-hint">Which tabs an app opens with. Each app can override this from its own View menu.</p>
       <div className="tab-toggle-row">
         {tabKeys.map((key) => {
           const on = tabs.size === 0 ? true : tabs.has(key);

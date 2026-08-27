@@ -60,6 +60,8 @@ const GrantNoneIcon = () => grantSvg(<><circle cx="12" cy="12" r="8.5" /><path d
 const NewAppViewers = ({ known, emails, setEmails, disabled }) => {
   const [adding, setAdding] = useState(false);
   const [value, setValue] = useState("");
+  const toggle = (email) =>
+    setEmails(emails.includes(email) ? emails.filter((x) => x !== email) : [...emails, email]);
   const add = (raw) => {
     const email = (raw || "").trim().toLowerCase();
     if (email && !emails.includes(email)) {
@@ -68,33 +70,30 @@ const NewAppViewers = ({ known, emails, setEmails, disabled }) => {
     setValue("");
     setAdding(false);
   };
-  const suggestions = (known || []).filter((e) => !emails.includes(e));
+  // Every known viewer, plus any ad-hoc email already added that is not among
+  // them -- each a checkmark toggle, the same menu as the connections picker.
+  const rows = Array.from(new Set([...(known || []), ...emails]));
   return (
     <div className="newapp-viewers">
-      <span className="newapp-viewers-lab">People with access</span>
-      {emails.length > 0 && (
-        <div className="newapp-viewer-chips">
-          {emails.map((e) => (
-            <span className="newapp-viewer-chip" key={e}>
-              {e}
-              <button type="button" onClick={() => setEmails(emails.filter((x) => x !== e))} disabled={disabled} aria-label={`Remove ${e}`}>
-                &times;
-              </button>
-            </span>
-          ))}
-        </div>
-      )}
-      {suggestions.length > 0 && (
-        <div className="newapp-viewer-suggest">
-          {suggestions.map((e) => (
-            <button type="button" key={e} className="newapp-viewer-suggestion" onClick={() => add(e)} disabled={disabled}>
-              + {e}
-            </button>
-          ))}
-        </div>
-      )}
+      {rows.map((e) => {
+        const on = emails.includes(e);
+        return (
+          <button
+            type="button"
+            key={e}
+            role="menuitemcheckbox"
+            aria-checked={on}
+            className={on ? "newapp-grant-popitem on" : "newapp-grant-popitem"}
+            onClick={() => toggle(e)}
+            disabled={disabled}
+          >
+            <span className="newapp-grant-check" aria-hidden="true">{on ? "✓" : ""}</span>
+            <span className="newapp-grant-name">{e}</span>
+          </button>
+        );
+      })}
       {adding ? (
-        <div className="domain-add">
+        <div className="domain-add newapp-viewer-addrow">
           <input
             type="email"
             autoFocus
@@ -110,8 +109,9 @@ const NewAppViewers = ({ known, emails, setEmails, disabled }) => {
           </button>
         </div>
       ) : (
-        <button type="button" className="newapp-viewer-add" onClick={() => setAdding(true)} disabled={disabled}>
-          <span className="newapp-viewer-plus" aria-hidden="true">+</span> Add viewer
+        <button type="button" className="newapp-grant-popitem newapp-viewer-additem" onClick={() => setAdding(true)} disabled={disabled}>
+          <span className="newapp-grant-check" aria-hidden="true">+</span>
+          <span className="newapp-grant-name">Add someone by email</span>
         </button>
       )}
     </div>

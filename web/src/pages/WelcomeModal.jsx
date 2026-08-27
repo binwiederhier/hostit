@@ -7,7 +7,7 @@ import { presetTabs, presetPrompt, tabsToCsv } from "../tabs";
 // you -- whose answer pre-fills the assistant prompt and the default tabs
 // (tabs.js presets). Shown once, gated on account.onboarded, and changeable
 // later from the profile. "Skip" just marks onboarded so it never nags.
-const WelcomeModal = ({ account, refreshAccount }) => {
+const WelcomeModal = ({ account, refreshAccount, onDone }) => {
   const [level, setLevel] = useState("");
   const [busy, setBusy] = useState(false);
   const assistantEnabled = !!account.assistant_enabled;
@@ -25,6 +25,7 @@ const WelcomeModal = ({ account, refreshAccount }) => {
     try {
       await api.patch("/api/account", patch);
       await refreshAccount(); // clears account.onboarded=false -> this modal unmounts
+      if (onDone) onDone(); // and close it when forced open via ?welcome=1
     } catch {
       setBusy(false); // leave it open so they can retry
     }
@@ -34,8 +35,7 @@ const WelcomeModal = ({ account, refreshAccount }) => {
     <div className="modal-backdrop welcome-backdrop" role="dialog" aria-modal="true">
       <div className="card modal welcome-modal">
         <div className="welcome-hero">
-          <div className="welcome-mark" aria-hidden="true">{"\u{1F680}"}</div>
-          <h1>Welcome to hostit</h1>
+          <h1>Welcome to hostit <span aria-hidden="true">{"\u{1F680}"}</span></h1>
           <p>
             hostit runs small web apps &mdash; each gets its own container, subdomain and HTTPS
             certificate. Describe what you want and the built-in assistant builds it, or bring your

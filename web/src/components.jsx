@@ -277,6 +277,68 @@ export const VisibilityChoice = ({ value, onChange, disabled }) => (
 // welcome modal and the profile page. Least-technical first, as the design asks:
 // picking "not technical" by reflex is the safe landing, and the order puts it
 // under the reader's eye first. `value` is the level key; onChange(key).
+// Colorful people, not pictograms: a friendly non-technical person, a
+// headphones-wearing tinkerer, and a bespectacled coder -- so the reader picks
+// the one that looks like them at a glance. Each is a self-coloured SVG (its own
+// fills, not currentColor), clipped to a round avatar.
+const TechAvatarNovice = () => (
+  <svg viewBox="0 0 48 48" fill="none" aria-hidden="true" className="tech-avatar">
+    <defs><clipPath id="tc-novice"><circle cx="24" cy="24" r="24" /></clipPath></defs>
+    <g clipPath="url(#tc-novice)">
+      <rect width="48" height="48" fill="#FFE1BE" />
+      <path d="M6 48v-4c0-8 8-12 18-12s18 4 18 12v4Z" fill="#F4915C" />
+      <g transform="translate(24 19) scale(1.16) translate(-24 -19)">
+        <circle cx="24" cy="19" r="9" fill="#F7C9A3" />
+        <path d="M15 19A9 9 0 0 1 33 19Z" fill="#8B5A2B" />
+        <circle cx="20.5" cy="20" r="1.1" fill="#4A3728" />
+        <circle cx="27.5" cy="20" r="1.1" fill="#4A3728" />
+        <path d="M20.5 23q3.5 3 7 0" stroke="#4A3728" strokeWidth="1.3" strokeLinecap="round" />
+        <circle cx="17.6" cy="23" r="1.3" fill="#F4A9A0" opacity="0.6" />
+        <circle cx="30.4" cy="23" r="1.3" fill="#F4A9A0" opacity="0.6" />
+      </g>
+    </g>
+  </svg>
+);
+const TechAvatarIntermediate = () => (
+  <svg viewBox="0 0 48 48" fill="none" aria-hidden="true" className="tech-avatar">
+    <defs><clipPath id="tc-inter"><circle cx="24" cy="24" r="24" /></clipPath></defs>
+    <g clipPath="url(#tc-inter)">
+      <rect width="48" height="48" fill="#BFE7DE" />
+      <path d="M6 48v-4c0-8 8-12 18-12s18 4 18 12v4Z" fill="#2FA392" />
+      <g transform="translate(24 19) scale(1.16) translate(-24 -19)">
+        <circle cx="24" cy="19" r="9" fill="#F1C29B" />
+        <path d="M15 19A9 9 0 0 1 33 19Z" fill="#4E342E" />
+        <circle cx="20.5" cy="20" r="1.1" fill="#3B2A22" />
+        <circle cx="27.5" cy="20" r="1.1" fill="#3B2A22" />
+        <path d="M21 23.5q3 2 6 0" stroke="#3B2A22" strokeWidth="1.3" strokeLinecap="round" />
+        <path d="M13 20a11 11 0 0 1 22 0" stroke="#37474F" strokeWidth="2.4" strokeLinecap="round" />
+        <rect x="11.4" y="19" width="4" height="7.5" rx="2" fill="#37474F" />
+        <rect x="32.6" y="19" width="4" height="7.5" rx="2" fill="#37474F" />
+      </g>
+    </g>
+  </svg>
+);
+const TechAvatarExpert = () => (
+  <svg viewBox="0 0 48 48" fill="none" aria-hidden="true" className="tech-avatar">
+    <defs><clipPath id="tc-expert"><circle cx="24" cy="24" r="24" /></clipPath></defs>
+    <g clipPath="url(#tc-expert)">
+      <rect width="48" height="48" fill="#D6CBF2" />
+      <path d="M6 48v-4c0-8 8-12 18-12s18 4 18 12v4Z" fill="#7C5CD6" />
+      <path d="M18 33c0 3 2.6 5 6 5s6-2 6-5" stroke="#5E44B0" strokeWidth="1.6" />
+      <g transform="translate(24 19) scale(1.16) translate(-24 -19)">
+        <circle cx="24" cy="19" r="9" fill="#EEBF98" />
+        <path d="M14.6 19A9 9 0 0 1 33.4 19q-4-3.4-9.4-3.4T14.6 19Z" fill="#3E2723" />
+        <path d="M23.3 20.2h1.4M31.3 19.2 34.4 18M16.7 19.2 13.6 18" stroke="#2B2B3A" strokeWidth="1.4" strokeLinecap="round" />
+        <circle cx="20" cy="20.2" r="3.3" fill="#F4ECFF" stroke="#2B2B3A" strokeWidth="1.4" />
+        <circle cx="28" cy="20.2" r="3.3" fill="#F4ECFF" stroke="#2B2B3A" strokeWidth="1.4" />
+        <circle cx="20" cy="20.2" r="0.9" fill="#2B2B3A" />
+        <circle cx="28" cy="20.2" r="0.9" fill="#2B2B3A" />
+        <path d="M21 24.6q3 1.6 6 0" stroke="#7A5540" strokeWidth="1.2" strokeLinecap="round" />
+      </g>
+    </g>
+  </svg>
+);
+
 export const TechLevelCards = ({ value, onChange, disabled }) => (
   <div className="tech-cards" role="radiogroup" aria-label="How technical are you?">
     {[
@@ -284,19 +346,19 @@ export const TechLevelCards = ({ value, onChange, disabled }) => (
         key: "novice",
         title: "Not technical at all",
         detail: "Describe what you want in plain words and let the assistant build it.",
-        icon: <><path d="M12 3v2M12 19v2M5 12H3M21 12h-2M6 6l1.5 1.5M16.5 16.5 18 18M18 6l-1.5 1.5M7.5 16.5 6 18" /><circle cx="12" cy="12" r="3.5" /></>,
+        avatar: <TechAvatarNovice />,
       },
       {
         key: "intermediate",
         title: "Somewhat technical",
         detail: "You can follow along, tweak files, and read the logs when needed.",
-        icon: <path d="M14.5 5.5a3.5 3.5 0 0 1-4.6 4.6L4 16l1.5 1.5 1-1 1 1 1.5-1.5-1-1 1-1 5.9-5.9a3.5 3.5 0 0 1 4.6-4.6l-2.8 2.8 1.4 1.4 2.9-2.7Z" />,
+        avatar: <TechAvatarIntermediate />,
       },
       {
         key: "expert",
         title: "Very technical",
         detail: "You write code and want the terminal, files, and logs at hand.",
-        icon: <path d="m8 8-4 4 4 4M16 8l4 4-4 4M13 5l-2 14" />,
+        avatar: <TechAvatarExpert />,
       },
     ].map((option) => (
       <button
@@ -308,9 +370,7 @@ export const TechLevelCards = ({ value, onChange, disabled }) => (
         onClick={() => onChange(option.key)}
         disabled={disabled}
       >
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-          {option.icon}
-        </svg>
+        {option.avatar}
         <span className="tech-card-title">{option.title}</span>
         <span className="tech-card-detail">{option.detail}</span>
       </button>

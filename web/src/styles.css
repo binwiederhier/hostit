@@ -28,6 +28,9 @@
   --status-pending: #2f6fed;
   --warn-border: #e4c65b;
   --warn-bg: #fdf6dd;
+  --good-strong: #1f7a46;
+  --good-bg: #e5f5ec;
+  --good-border: #9cd8b4;
   --term-bg: #14181d;
   --term-border: #14181d;
   --term-text: #d7dfe6;
@@ -58,6 +61,9 @@
   --status-pending: #5b8def;
   --warn-border: #8a7327;
   --warn-bg: #2c2612;
+  --good-strong: #5cc98a;
+  --good-bg: #173123;
+  --good-border: #2f5e43;
   --term-bg: #10141a;
   --term-border: #2b333c;
   --focus: #159cb066;
@@ -83,6 +89,9 @@
     --status-pending: #5b8def;
     --warn-border: #8a7327;
     --warn-bg: #2c2612;
+    --good-strong: #5cc98a;
+    --good-bg: #173123;
+    --good-border: #2f5e43;
     --term-bg: #10141a;
     --term-border: #2b333c;
     --focus: #159cb066;
@@ -2330,28 +2339,12 @@ th:last-child {
 }
 .asst-empty-try {
   color: var(--muted);
+  /* The examples differ in length and the longest wraps to two lines; reserve
+     that height so the vertically-centred empty state never jumps as they cycle. */
+  min-height: 3em;
 }
 .asst-typing {
   color: var(--text);
-}
-.asst-caret {
-  display: inline-block;
-  width: 2px;
-  height: 1.05em;
-  margin-left: 1px;
-  vertical-align: text-bottom;
-  background: var(--accent);
-  animation: asst-caret-blink 1s step-end infinite;
-}
-@keyframes asst-caret-blink {
-  50% {
-    opacity: 0;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .asst-caret {
-    animation: none;
-  }
 }
 
 .asst-turn {
@@ -6639,80 +6632,28 @@ input[type="number"]::-webkit-inner-spin-button {
 /* The "restricted" people editor in the new-app dialog: chips for who is in,
    one-click suggestions for people shared with before, and a field for anyone
    new. Sits just under the visibility cards, so it is quiet and compact. */
+/* Inside the "Restricted" popover the people read as the same checkmark menu as
+   the connections picker: each known viewer (and any ad-hoc email added) is a
+   newapp-grant-popitem toggle, so this container just stacks them. */
 .newapp-viewers {
-  margin-top: 10px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 2px;
 }
-.newapp-viewers-lab {
-  font-size: 12px;
+/* The "Add someone by email" row keeps the menu-item look; its "+" sits in the
+   same slot a checkmark would. */
+.newapp-viewer-additem .newapp-grant-check {
   color: var(--muted);
 }
-.newapp-viewer-chips {
+/* The inline email input, shown after choosing "Add someone by email". */
+.newapp-viewer-addrow {
   display: flex;
-  flex-wrap: wrap;
   gap: 6px;
+  padding: 4px;
 }
-.newapp-viewer-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 2px 4px 2px 10px;
-  border-radius: 999px;
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  font-size: 13px;
-}
-.newapp-viewer-chip button {
-  border: 0;
-  background: none;
-  cursor: pointer;
-  color: var(--muted);
-  font-size: 15px;
-  line-height: 1;
-  padding: 0 4px;
-  border-radius: 999px;
-}
-.newapp-viewer-chip button:hover {
-  color: var(--text);
-}
-/* Inside the "Restricted" popover the suggestions and "+ Add viewer" read as a
-   menu: full-width rows with a hover background, not link/chips. */
-.newapp-viewer-suggest {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-}
-.newapp-viewer-suggestion,
-.newapp-viewer-add {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  padding: 7px 9px;
-  border: 0;
-  border-radius: 7px;
-  background: none;
-  color: var(--text);
-  font: inherit;
-  font-size: 13px;
-  text-align: left;
-  cursor: pointer;
-}
-.newapp-viewer-suggestion {
-  color: var(--muted);
-}
-.newapp-viewer-suggestion:hover:not(:disabled),
-.newapp-viewer-add:hover:not(:disabled) {
-  background: var(--surface-2, rgba(127, 127, 127, 0.1));
-  color: var(--text);
-}
-.newapp-viewer-plus {
-  width: 14px;
-  text-align: center;
-  color: var(--muted);
-  font-weight: 700;
+.newapp-viewer-addrow input {
+  flex: 1;
+  min-width: 0;
 }
 
 /* Icons on the new-app visibility + connections cards: stack them (icon on top,
@@ -6736,7 +6677,7 @@ input[type="number"]::-webkit-inner-spin-button {
 
 /* The new-app dialog is a touch wider now that both card rows carry icons. */
 .newapp.modal-wide {
-  max-width: 50rem;
+  max-width: 38rem;
 }
 
 /* The owner's "View" dropdown in the app tab strip (which tabs this app shows). */
@@ -6813,31 +6754,29 @@ input[type="number"]::-webkit-inner-spin-button {
 .tech-card {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
+  align-items: center;
   gap: 6px;
   padding: 16px 14px;
   border: 1px solid var(--border);
   border-radius: 12px;
   background: var(--surface);
   color: var(--text);
-  text-align: left;
+  text-align: center;
   cursor: pointer;
 }
 .tech-card:hover:not(:disabled) {
   border-color: var(--accent);
 }
-.tech-card svg {
-  width: 26px;
-  height: 26px;
-  color: var(--muted);
+.tech-card .tech-avatar {
+  align-self: center;
+  width: 46px;
+  height: 46px;
+  margin-bottom: 2px;
 }
 .tech-card-on {
   border-color: var(--accent);
   background: var(--surface-2);
   box-shadow: inset 0 0 0 1px var(--accent);
-}
-.tech-card-on svg {
-  color: var(--accent);
 }
 .tech-card-title {
   font-weight: 600;
@@ -6859,6 +6798,10 @@ input[type="number"]::-webkit-inner-spin-button {
 .profile-saved {
   font-size: 13px;
   color: var(--good, #2f9e5e);
+}
+/* A touch more breathing room between the tabs hint and the toggles below it. */
+.profile-tabs-hint {
+  margin-bottom: 16px;
 }
 .tab-toggle-row {
   display: flex;
@@ -6903,6 +6846,9 @@ input[type="number"]::-webkit-inner-spin-button {
 /* The first-run welcome modal. */
 .welcome-backdrop {
   z-index: 60;
+  /* Opaque: the first-run modal stands on its own, not over a half-seen Apps
+     page the user has no context for yet. */
+  background: var(--bg);
 }
 .welcome-modal {
   max-width: 640px;
@@ -6913,10 +6859,6 @@ input[type="number"]::-webkit-inner-spin-button {
   flex-direction: column;
   gap: 8px;
   margin-bottom: 16px;
-}
-.welcome-mark {
-  font-size: 34px;
-  line-height: 1;
 }
 .welcome-hero h1 {
   margin: 4px 0 0;
@@ -7017,11 +6959,8 @@ input[type="number"]::-webkit-inner-spin-button {
    people editor rather than a checkbox list, so it wants a little more padding
    and no standalone top margin on the editor inside it. */
 .newapp-vis-popup {
-  padding: 12px;
+  padding: 4px;
   max-height: 320px;
-}
-.newapp-vis-popup .newapp-viewers {
-  margin-top: 0;
 }
 @media (max-width: 440px) {
   /* On a narrow screen the fixed popover could run past the edge; keep it in. */
