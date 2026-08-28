@@ -61,6 +61,10 @@ const (
 	RoleAdmin = Role("admin")
 	// RoleUser may manage only their own apps, keys and tokens
 	RoleUser = Role("user")
+	// RoleViewer may only OPEN apps shared with them; they cannot create or
+	// manage apps of their own (their effective app limit is 0). Meant for people
+	// invited purely to view a private app.
+	RoleViewer = Role("viewer")
 )
 
 // Status is where a user stands in the approval workflow

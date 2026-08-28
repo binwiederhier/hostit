@@ -159,9 +159,23 @@ func (s *Server) resolvePendingViewers(u *store.User) {
 	if u == nil {
 		return
 	}
-	if n, err := s.apps.Store().ResolvePendingViewers(u.Email, u.ID); err != nil {
+	n, err := s.apps.Store().ResolvePendingViewers(u.Email, u.ID)
+	if err != nil {
 		slog.Warn("Cannot resolve pending viewer invites", "email", u.Email, "error", err)
-	} else if n > 0 {
-		slog.Info("Resolved pending viewer invites on sign-in", "email", u.Email, "apps", n)
+		return
+	}
+	if n == 0 {
+		return
+	}
+	slog.Info("Resolved pending viewer invites on sign-in", "email", u.Email, "apps", n)
+	// Someone invited only to view: their account exists purely for that grant,
+	// so activate them as a viewer rather than leaving them pending for approval.
+	// Only a fresh, unprivileged, still-pending account is converted -- an
+	// allowed-domain user (already active) or an admin is left exactly as it is.
+	if u.Status == store.StatusPending && u.Role == store.RoleUser {
+		u.Role, u.Status = store.RoleViewer, store.StatusActive
+		if err := s.users.Update(u); err != nil {
+			slog.Warn("Cannot activate invited viewer", "email", u.Email, "error", err)
+		}
 	}
 }

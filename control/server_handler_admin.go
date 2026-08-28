@@ -118,7 +118,7 @@ func (s *Server) handleUsersUpdate(w http.ResponseWriter, r *http.Request, c *ca
 		return
 	}
 	if req.Role != nil {
-		if *req.Role != store.RoleAdmin && *req.Role != store.RoleUser {
+		if *req.Role != store.RoleAdmin && *req.Role != store.RoleUser && *req.Role != store.RoleViewer {
 			writeError(w, http.StatusBadRequest, fmt.Errorf("invalid role %q", *req.Role))
 			return
 		}

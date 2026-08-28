@@ -34,6 +34,32 @@ func TestViewersRoundTrip(t *testing.T) {
 	assert.False(t, s.IsAppViewer(a.ID, "u2"))
 }
 
+// AppsByViewer is the "shared with you" list: every app a user can open as a
+// viewer, and nothing they only own or collaborate on.
+func TestAppsByViewer(t *testing.T) {
+	t.Parallel()
+	s := newTestStore(t)
+	a := addViewerTestApp(t, s) // app a1 "dash", owner u1, viewer candidate u2
+	b := &App{ID: "a2", Name: "blog", Port: 10001, Host: HostLocal, OwnerID: "u1", CreatedAt: time.Now(), Private: true}
+	require.NoError(t, s.AddApp(b))
+
+	apps, err := s.AppsByViewer("u2")
+	require.NoError(t, err)
+	assert.Empty(t, apps, "no grants yet")
+
+	require.NoError(t, s.AddAppViewer(a.ID, "u2"))
+	require.NoError(t, s.AddAppViewer(b.ID, "u2"))
+	apps, err = s.AppsByViewer("u2")
+	require.NoError(t, err)
+	require.Len(t, apps, 2)
+	assert.Equal(t, []string{"blog", "dash"}, []string{apps[0].Name, apps[1].Name}, "name-sorted")
+
+	// The owner is not a viewer of their own app.
+	owned, err := s.AppsByViewer("u1")
+	require.NoError(t, err)
+	assert.Empty(t, owned)
+}
+
 // Granting twice is the same as granting once: the UI adds by email, and
 // re-adding somebody who already has access should not be an error.
 func TestAddingAViewerTwiceIsANoOp(t *testing.T) {

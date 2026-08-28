@@ -7,6 +7,7 @@ import { getTheme, setTheme, THEMES } from "./theme";
 import { clearChunkReload, retryChunk } from "./chunkreload";
 import { AppHeaderContext } from "./appHeader";
 import Dashboard from "./pages/Dashboard";
+import SharedApps from "./pages/SharedApps";
 import AppDetail from "./pages/AppDetail";
 import Profile from "./pages/Profile";
 import WelcomeModal from "./pages/WelcomeModal";
@@ -53,7 +54,7 @@ const useNavDropdown = () => {
 // The "Apps" nav item: clicking goes to the app list, hovering opens a switcher
 // that lists the owner's apps so you can jump straight to any one (handy from an
 // app detail page). The list is fetched the first time it opens.
-const AppsMenu = () => {
+const AppsMenu = ({ canCreate = true }) => {
   const { open, setOpen, ref } = useNavDropdown();
   const [apps, setApps] = useState(null); // null = not loaded yet
   const [failed, setFailed] = useState(false);
@@ -108,10 +109,14 @@ const AppsMenu = () => {
                 <span>{a.name}</span>
               </Link>
             ))}
-          {apps && apps.filter((a) => !a.archived).length > 0 && <div className="nav-apps-div" />}
-          <Link to="/?new=1" role="menuitem" className="nav-apps-all nav-apps-new" onClick={() => setOpen(false)}>
-            + New app
-          </Link>
+          {canCreate && (
+            <>
+              {apps && apps.filter((a) => !a.archived).length > 0 && <div className="nav-apps-div" />}
+              <Link to="/?new=1" role="menuitem" className="nav-apps-all nav-apps-new" onClick={() => setOpen(false)}>
+                + New app
+              </Link>
+            </>
+          )}
         </div>
       )}
     </div>
@@ -227,7 +232,7 @@ const Nav = ({ account, appHeader }) => {
           so there is a single menu (the avatar), not also a burger. */}
       <div className="nav-menu">
         <nav className="nav-links">
-          <AppsMenu />
+          <AppsMenu canCreate={account.role !== "viewer"} />
           <NavLink to="/connections">Connections</NavLink>
           <NavLink to="/profile">Profile</NavLink>
           {account.role === "admin" && <NavLink to="/admin">Admin</NavLink>}
@@ -517,7 +522,7 @@ const App = () => {
         )}
         <RoutedMain>
           <Routes>
-            <Route path="/" element={<Dashboard account={account} refreshAccount={refreshAccount} />} />
+            <Route path="/" element={account.role === "viewer" ? <SharedApps /> : <Dashboard account={account} refreshAccount={refreshAccount} />} />
             <Route path="/app/:name" element={<AppDetail account={account} refreshAccount={refreshAccount} />} />
             <Route path="/app/:name/:viewSlug" element={<AppDetail account={account} refreshAccount={refreshAccount} />} />
             <Route path="/profile" element={<Profile account={account} refreshAccount={refreshAccount} />} />

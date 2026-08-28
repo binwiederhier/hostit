@@ -276,6 +276,11 @@ func (m *Manager) Limits(u *store.User) (*Limits, error) {
 	if u.DiskPoolMB != nil {
 		limits.DiskPoolMB = *u.DiskPoolMB
 	}
+	// A viewer never owns apps, whatever app_limit happens to be stored: force it
+	// to zero so nothing downstream can be talked into letting one create.
+	if u.Role == store.RoleViewer {
+		limits.AppLimit = 0
+	}
 	return &limits, nil
 }
 

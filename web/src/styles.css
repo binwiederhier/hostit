@@ -7011,3 +7011,44 @@ input[type="number"]::-webkit-inner-spin-button {
   background: var(--good-bg, #e5f5ec);
   border: 1px solid var(--good-border, #9cd8b4);
 }
+
+/* Viewer-only home: the "shared with you" list of apps others granted them. */
+.shared-apps {
+  max-width: 40rem;
+  margin: 0 auto;
+  padding: 8px 0;
+}
+.shared-apps h1 {
+  margin: 0 0 4px;
+}
+.shared-apps-note {
+  color: var(--muted);
+  margin-top: 16px;
+}
+.shared-apps-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 16px;
+}
+.shared-app-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  text-decoration: none;
+  font-weight: 500;
+}
+.shared-app-row:hover {
+  border-color: var(--accent);
+}
+.shared-app-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

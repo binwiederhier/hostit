@@ -2,6 +2,7 @@ package control
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -18,6 +19,11 @@ import (
 // The app's authorized_keys start as the caller's profile keys plus any keys in
 // the request; with neither, the app is reachable through the API only.
 func (s *Server) handleAppsCreate(w http.ResponseWriter, r *http.Request, c *caller) {
+	// Viewers exist only to open apps shared with them; they never own apps.
+	if c.user != nil && c.user.Role == store.RoleViewer {
+		writeError(w, http.StatusForbidden, errors.New("viewer accounts cannot create apps"))
+		return
+	}
 	var req apiCreateAppRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, err)
@@ -302,6 +308,10 @@ func (s *Server) listedApps(c *caller, all bool) ([]*store.App, error) {
 	if !all {
 		if c.user == nil {
 			return s.apps.Apps() // The global admin token owns nothing, so "own" means all
+		}
+		// A viewer owns nothing: their list is exactly the apps shared with them.
+		if c.user.Role == store.RoleViewer {
+			return s.apps.Store().AppsByViewer(c.user.ID)
 		}
 		owned, err := s.apps.Store().AppsByOwner(c.user.ID)
 		if err != nil {

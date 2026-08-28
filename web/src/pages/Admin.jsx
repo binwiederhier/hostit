@@ -211,13 +211,19 @@ const UserRow = ({ user, defaults, onPatch, onDelete }) => {
             <button type="button" onClick={() => setEditing(true)} disabled={busy}>
               Edit limits...
             </button>
-            {user.role === "admin" ? (
+            {user.role !== "admin" && (
+              <button type="button" onClick={() => setConfirmAdmin(true)} disabled={busy}>
+                Make admin
+              </button>
+            )}
+            {user.role !== "user" && (
               <button type="button" onClick={() => run({ role: "user" })} disabled={busy}>
                 Make user
               </button>
-            ) : (
-              <button type="button" onClick={() => setConfirmAdmin(true)} disabled={busy}>
-                Make admin
+            )}
+            {user.role !== "viewer" && (
+              <button type="button" onClick={() => run({ role: "viewer" })} disabled={busy}>
+                Make viewer
               </button>
             )}
             <button type="button" className="kebab-danger" onClick={() => onDelete(user)} disabled={busy}>

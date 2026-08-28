@@ -159,6 +159,22 @@ func TestLoginDeniedStaysDenied(t *testing.T) {
 	assert.Equal(t, store.StatusDenied, u2.Status)
 }
 
+func TestLimitsAreZeroForAViewer(t *testing.T) {
+	t.Parallel()
+	m := newTestManager(t)
+	u, err := m.Login("viewer@example.com", "Viewer")
+	require.NoError(t, err)
+	// A viewer never owns apps: even a positive stored app_limit is forced to 0,
+	// the backstop behind the handler's explicit refusal.
+	appLimit := 5
+	u.AppLimit = &appLimit
+	u.Role = store.RoleViewer
+	require.NoError(t, m.Update(u))
+	limits, err := m.Limits(u)
+	require.NoError(t, err)
+	assert.Equal(t, 0, limits.AppLimit, "a viewer's effective app limit is 0")
+}
+
 func TestLimitsFallBackToDefaults(t *testing.T) {
 	t.Parallel()
 	m := newTestManager(t)

@@ -359,3 +359,56 @@ func TestAgentTokenCanArchiveAndUnarchiveItsOwnApp(t *testing.T) {
 	require.Equal(t, http.StatusOK, request(t, s.API(), "POST", "/api/apps/blog/unarchive", "", appToken).Code)
 	assert.NotEqual(t, http.StatusConflict, request(t, s.API(), "POST", "/api/apps/blog/deploy", "", appToken).Code)
 }
+
+// A viewer account is refused when it tries to create an app, and its app list
+// is exactly the apps shared with it -- not an empty "create your first app".
+func TestViewerCannotCreateAndSeesOnlySharedApps(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+
+	// An owner with an app, and a viewer granted access to it.
+	owner := newActiveTestUser(t, s, "owner@example.com")
+	require.NoError(t, s.apps.Store().AddApp(&store.App{ID: "sa1", Name: "shared", Port: 20001, Host: store.HostLocal, OwnerID: owner.ID}))
+	viewer := newActiveTestUser(t, s, "viewer@example.com")
+	viewer.Role = store.RoleViewer
+	require.NoError(t, s.users.Update(viewer))
+	require.NoError(t, s.apps.Store().AddAppViewer("sa1", viewer.ID))
+	token := accountToken(t, s, viewer)
+
+	// Creating an app is forbidden.
+	rr := request(t, s.API(), "POST", "/api/apps", `{"name":"mine"}`, token)
+	assert.Equal(t, http.StatusForbidden, rr.Code, rr.Body.String())
+
+	// The list is the shared app, not the viewer's own (they have none).
+	rr = request(t, s.API(), "GET", "/api/apps", "", token)
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+	var apps []map[string]any
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &apps))
+	require.Len(t, apps, 1)
+	assert.Equal(t, "shared", apps[0]["name"])
+}
+
+// Someone invited only to view an app becomes an active viewer the moment they
+// first sign in -- no admin approval, since the owner already vouched for them.
+func TestInvitedViewerIsActivatedOnFirstSignIn(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	owner := newActiveTestUser(t, s, "owner@example.com")
+	require.NoError(t, s.apps.Store().AddApp(&store.App{ID: "iv1", Name: "invited", Port: 20009, Host: store.HostLocal, OwnerID: owner.ID}))
+	require.NoError(t, s.apps.Store().AddPendingViewer("iv1", "invitee@example.com"))
+
+	// First sign-in: Login creates a fresh, unapproved account...
+	u, err := s.users.Login("invitee@example.com", "Invitee")
+	require.NoError(t, err)
+	require.Equal(t, store.StatusPending, u.Status, "a plain new account starts pending")
+	require.Equal(t, store.RoleUser, u.Role)
+
+	// ...and resolving their invite activates them AS A VIEWER.
+	s.resolvePendingViewers(u)
+
+	got, err := s.users.User(u.ID)
+	require.NoError(t, err)
+	assert.Equal(t, store.RoleViewer, got.Role, "invited person becomes a viewer")
+	assert.Equal(t, store.StatusActive, got.Status, "and is active without admin approval")
+	assert.True(t, s.apps.Store().IsAppViewer("iv1", u.ID), "and holds the view grant")
+}
