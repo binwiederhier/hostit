@@ -7,6 +7,30 @@ changed rather than what an operator had to do about it; from v0.15.0 on, each
 release is written down as it is cut. Anything that changes a config file, a
 default, or on-disk state is called out as **Breaking** or **Upgrade note**.
 
+## v0.30.0 (2026-08-28)
+
+- **Viewer-only accounts.** A new `viewer` role for people who should only OPEN
+  apps shared with them: they cannot create or manage apps of their own (the
+  create endpoint refuses them, and their effective app limit is 0). Someone
+  invited by email to view a private app becomes an active viewer on first
+  sign-in, with no admin approval; their home is a "Shared with you" list. Admins
+  assign or clear the role from the user list.
+
+- **`outbound-allow-private-cidrs` replaces `outbound-allow-private`.** The SSRF
+  guard on user-supplied URLs (MCP servers, custom OAuth issuers) was all-or-
+  nothing -- a boolean that either blocked every private address or opened all of
+  them, the cloud metadata service included. It is now a list of CIDRs, so a
+  self-hoster can exempt just their LAN (e.g. `["192.168.1.0/24"]`) without
+  exposing 169.254.169.254. **Breaking:** rename the key in `control.yml`; the old
+  boolean is ignored. An empty list (the default) is the strict, block-everything
+  mode. **Upgrade note:** if you relied on `outbound-allow-private: true`, list
+  the specific ranges your MCP servers live on instead.
+
+- **Internal: the login-shell binaries moved off `$PATH`.** `hostit-shell` and
+  `hostit-enter` now live only under `/usr/lib/hostit/bin/`; the old `/usr/bin`
+  copies and the one-time passwd-migration sweep are gone, every app user having
+  been migrated in an earlier release. No operator action.
+
 ## v0.29.0 (2026-08-27)
 
 - **GitHub and Linear connections refresh their tokens now.** Both were treated

@@ -14,33 +14,14 @@ before either is built.
 
 ## Now (next few sessions)
 
-### Viewer-only accounts (no apps of their own)
-
-Support people who exist only to VIEW apps others shared with them -- they should
-not be able to create or manage their own apps, and ideally not land on the app
-dashboard at all, but they CAN sign in to reach a private app an owner granted
-them (as a viewer). Two ways to model it, decide which:
-
-- a new role (e.g. `viewer`) distinct from `user`/`admin`, or
-- reuse the existing limit machinery with `app_limit = 0`: no way to create apps,
-  and the web app could route them straight past the dashboard to "you have
-  access to N apps" rather than "create your first app".
-
-Either way: login works, the app-viewer grant still authorizes them on the
-owner's app, and the "create app" surface is hidden/refused. Pairs with the
-pending-viewer work below (inviting someone by email before they have an account).
-
-
-
 ### 0. Connections: shipped -- remaining follow-ups
 
 Shipped to prod (connections + MCP servers), twenty providers. Live OAuth
 clients: GitHub, Discord, Slack (both `slack-bot` and `slack-user`), plus
-Google's two on the login client. MCP servers are added by URL with no client to
-register (see `docs/features/mcp-servers.md`). Docs both ways; e2e covers the
-whole flow. Health + proactive token refresh shipped in v0.26.0; long-lived-token connections
-(GitHub, Linear) are now actively probed too (v0.28.1) so a revoked token is caught.
-`plans/260819-connections.md` is the original design, superseded in places.
+Google's two on the login client. GitHub and Linear refresh per connection since
+v0.29.0 (hybrid tokens). MCP servers are added by URL (see
+`docs/features/mcp-servers.md`). `plans/260819-connections.md` is the original
+design, superseded in places.
 
 Still open:
 
@@ -64,19 +45,6 @@ the key sits beside the database so this protects a copied database and not root
 can run code in that app, collaborators included; and the assistant is told not
 to print tokens rather than prevented, with redaction as a backstop.
 
-### 1. Finish the shell-path move (a release-sized cleanup, now safe)
-
-VERIFIED SAFE 2026-08-21: **zero** passwd entries still name the old path on
-prod, stage-1 or stage-2, and two releases (v0.17.0, v0.18.0) have shipped
-since the usermod sweep landed. The bridge has done its job.
-
-Drop the legacy `/usr/bin/hostit-shell` and `/usr/bin/hostit-enter` copies from
-the packages -- and in the SAME commit move the sudoers grant
-(`hostit.sudoers` still names `/usr/bin/hostit-enter`) and hostit-shell's sudo
-target to `/usr/lib/hostit/bin`, or app entry breaks. Also drop the sweep
-itself (`unixuser.SweepShellPaths`, called from node startup) once the paths
-are gone. (ARCH-5 in `plans/260820-hostit-review-findings.md`.)
-
 ### 2. Secrets that are not in the app's web root
 
 `env:` values live in `hostit.yml`, which sits in the app's home and is served
@@ -90,21 +58,6 @@ Worth designing alongside the capability work below -- a capability is "hostit
 holds the credential", a secret is "the tenant holds it and hostit stores it
 carefully"; both need per-app custody and encryption at rest, and inventing
 that twice would be a mistake.
-
-### 2b. Multi-node app SSH -- SHIPPED (v0.28.0)
-
-Direct-to-node SSH shipped to prod: each node advertises its own reachable
-`ssh-host` (heartbeat -> `store.node.ssh_host` -> `Server.sshHostFor`), the node's
-own sshd terminates, and control is never in the SSH path (so app SSH survives a
-control-process crash). The optional single-hostname relay gateway is built and
-adversarially tested on stage (OFF by default; not on prod, which is single-host).
-See Done (recent) and `plans/260825-multinode-ssh.md`, `plans/260826-ssh-relay-*.md`.
-
-Remaining, only when prod gains remote nodes: set `hostit_ssh_host` per remote
-node (leave the colocated node unset), and decide whether to turn the relay on in
-prod (recommend more stage soak first). Invariant to keep: app homes stay
-world-traversable (`filesDirMode = 0755`) so sshd reads `authorized_keys` as the
-app user.
 
 ## Next (decide, then build)
 
@@ -397,15 +350,6 @@ months.
   real: professornoodle.com's bare apex has no native way to reach www, and is
   handled in yayagram's own handler today.
 
-- **API path harmonization (/v1/self vs /api). DONE 2026-08-23**, and the reason
-  it was parked turned out to be wrong: hostit-app is a read-only BIND MOUNT from
-  the host (verified on a live container), so it upgrades the instant the deb
-  lands rather than late. The surface now answers at BOTH /v1 and /api/container.
-  Kept here rather than deleted for the trap it hid: the node's app socket
-  rejects everything under /api/ as "operator commands, wrong socket", and only a
-  REMOTE node shows it -- control's own socket never passes through that guard,
-  so the unit test was green while every app on stage-2 got a 501.
-
 - **Can htop inside the container show only the container's resources?**
   EXPLORED 2026-08-19 on stage (podman 4.9.3, crun 1.14.1, Ubuntu 24.04).
 
@@ -484,105 +428,30 @@ months.
   page already shows accurate memory and disk, and `/sys/fs/cgroup/memory.max`
   is correct inside the container today.
 
-## Closed by measurement (2026-08-21)
-
-Kept briefly so they are not re-proposed; delete after a few weeks.
-
-- **"The slow prod snapshot"** -- was >2min; the squota migration (2026-08-16)
-  was the fix. Re-measured on prod after v0.18.0: a bare
-  `btrfs subvolume snapshot -r` takes **0.036s** and the full API call
-  (`POST /api/apps/draw/snapshots`, network included) **0.21s**. Closed.
-- **"There are a lot of zombie processes"** -- re-checked on prod and stage-1
-  after v0.18.0: **zero** zombies on both (`ps -eo stat | grep ^Z`). Whatever
-  it was, the agent/exec/terminal reaping changes since have covered it.
-  Closed; reopen with a fresh count if it returns.
-
 ## Done (recent)
 
 Kept briefly for context; prune when stale. Everything older is in CHANGELOG.md.
 
-- **Multi-node SSH + Prometheus metrics (2026-08-26, v0.28.0).** Direct-to-node
-  SSH (each node reports its own reachable ssh-host; control advertises it; the
-  node's sshd terminates -- control never in the SSH path) shipped to prod. Plus
-  an OPTIONAL single-hostname relay gateway through the system sshd (off by
-  default; built + adversarially tested on stage; not on prod, single-host). Plus
-  optional per-component Prometheus `/metrics` (`listen-metrics`) for
-  control/node/proxy. Closes TODO 2b. Plans: `260825-multinode-ssh.md`,
-  `260826-ssh-relay-*.md`.
-- **Long-lived connection health probe (2026-08-26, v0.28.1).** `Verify()` and
-  the proactive sweep now actively probe long-lived-token connections (GitHub,
-  Linear) via an authenticated ProbeURL -- a revoked/rotated token flips to
-  needs_reconnect on its own instead of sitting green forever. Slack has no probe
-  yet (it reports auth failure in the body, not the status code).
-- **Security + connection health + DoS hardening (2026-08-25, v0.26.0).** From a
-  full per-file security audit and an adversarial pass: closed a CRITICAL MCP
-  read-SSRF (a user-supplied server URL could rebind DNS past the outbound guard
-  to cloud metadata / internal services) and an app-token privilege escalation
-  (an app-scoped token could reach its app's OWNER routes -- new `requireAccount`
-  refuses them), plus SSH-key-newline, OAuth-cache-poisoning, collaborator-token
-  read, cross-tenant-snapshot, SNI-traversal and IPv6-SSRF fixes. Connections now
-  refresh PROACTIVELY (a background loop) and carry a health status shown as a
-  per-connection badge, a nav bell, `POST /connections/{slug}/verify`, and
-  `status` in the container list. DoS hardening: bounded reads/bodies,
-  per-app/instance caps, an atomic pool check. Merged from `security-hardening` +
-  `connections-health`. Migration trap logged: the status column was first
-  INSERTED mid-slice, so a v34 database skipped it ("no such column: status") --
-  fixed by appending it plus a tolerant heal migration. Never insert a migration.
-
-- **Workspace/snapshot export + Slack personal (2026-08-25, v0.25.0).** Owners
-  download an app's whole workspace, or any one snapshot, as `.zip`/`.tar.gz`
-  (`GET /api/apps/{app}/export` and `.../snapshots/{id}/export`) -- this is what
-  the old "download an app's data" item asked for. The live export snapshots
-  first then archives; a per-snapshot download archives the existing subvolume.
-  Also added `slack-user` (a personal, user-token Slack connection) alongside the
-  shared bot, renamed `slack` -> `slack-bot` (store migration + operator config-
-  key rename).
-
-- **Cross-tenant apps-raw exposure closed (2026-08-24).** Every container mounted
-  the node's whole `/run/hostit`, which also held `apps-raw` -- the daemon's
-  idmap-free view of EVERY app's files -- plus the operator sockets. Any tenant
-  could read every other tenant's source, `hostit.yml` env secrets and
-  `authorized_keys`. Fixed by construction, not by permission: the node now
-  serves the app socket from its own subdir (`/run/hostit/app/hostit.sock`) and
-  mounts ONLY that subdir at the container's `/run/hostit`, so the socket lands
-  at the unchanged in-container path while apps-raw and the operator sockets, a
-  level up, are outside the mount entirely. apps-raw moved to the run root
-  (`RawAppsViewDir`, a sibling of the socket subdir); the login shell dials the
-  host path; home lockdown (the first, wrong attempt -- 0700 homes broke SSH,
-  see 2b) was reverted to 0755. A cross-package invariant test
-  (`node/isolation_invariants_test.go`) pins the three constants that must
-  agree. Verified on both stage nodes: container sees only `hostit.sock`,
-  cross-tenant path gone, SSH/terminal intact. Shipped as v0.21.0 and live on
-  prod (verified: real SSH into draw, container sees only hostit.sock). The
-  version had to bump (tag v0.21.0 so the snapshot template `{{.Tag}}-next`
-  produced 0.21.0~next > the running 0.20.0~next) -- dpkg skips a same-version
-  reinstall, so without the bump the binary and containers do not update. One
-  stage-only gotcha: a leftover `/run/hostit/app/apps-raw` bind from an earlier
-  experiment had to be unmounted so it did not sit inside the new mount source;
-  prod never had it.
-
-- **Private apps (2026-08-21).** An app can be reachable only by its owner, its
-  collaborators and admins, chosen at creation or flipped in Settings, and it
-  holds on every hostname the app answers to (custom domains included). The
-  design in `plans/260821-private-apps.md` had to change during the build: it
-  assumed the proxy could ask control about the visitor's SESSION, but the
-  session cookie is `__Host-` prefixed and a browser never sends it to an app
-  subdomain, so there was nothing to ask about. Instead the visitor bounces once
-  through the web app, where the session does apply, and comes back with a
-  signed per-app grant; the grant asserts identity only, so every request
-  re-checks live access and revocation is immediate. The grant is stripped
-  before the request reaches the app. `proxyapi.Route` gained `Private` and the
-  proxy hands those requests to control (the same fallthrough an unknown
-  hostname takes), so no session handling entered the data plane. Previews are
-  skipped for private apps rather than given a bypass.
-
-- **Per-app resources and per-user pools (2026-08-21, v0.18.0).** Owners edit
-  their apps' RAM and disk within a per-user pool (admins set pools, the pool
-  binds admins too); CPU is a new admin-set cap via `--cpus`; new apps default
-  to 128 MB / 256 MB / 0.5 cores while every pre-existing app and owner was
-  pinned at their old budget by migration. One `user.EffectiveAppLimits`
-  resolves override-else-default for every consumer. The UI grew one resource
-  language (icon + used/total pairs, yellow at 75%, red at 90%) across the
-  dashboard, app page and admin views, and `/info` now tells an agent its own
-  budget. Plan: `plans/260820-per-app-resources.md`.
+- **Shell-path move finished (2026-08-27, next release).** Dropped the legacy
+  `/usr/bin/hostit-shell` and `/usr/bin/hostit-enter` package copies (now only
+  under `/usr/lib/hostit/bin/`), moved the sudoers grant and the `enterFile`
+  const to match, cleaned the old `/etc/shells` entry in postinst, and removed
+  the now-done `unixuser.SweepShellPaths` login-shell sweep. Every app user was
+  already migrated (verified), so nothing to migrate remained. Was ARCH-5.
+- **Viewer-only accounts (2026-08-27, next release).** A new `viewer` role: they
+  can only OPEN apps shared with them, never create/manage their own (effective
+  app_limit forced to 0; the create endpoint refuses them). Someone invited by
+  email to view an app becomes an active viewer on first sign-in (no admin
+  approval). Their home is a "Shared with you" list (`SharedApps`), and the Apps
+  menu hides "New app". Admins assign/clear the role from the user list. Store:
+  `RoleViewer`, `AppsByViewer`.
+- **v0.29.0 (2026-08-27).** Onboarding + profile prefs, per-app tabs + View menu,
+  pending viewers (invite by email), private-app screenshots, admin logs +
+  instance prompt, GitHub/Linear hybrid token refresh, the assistant
+  dangling-tool_use self-heal, and the `/info` rewrite. See CHANGELOG.md.
+- **Multi-node SSH + long-lived connection probe (v0.28.0/v0.28.1).** Direct-to-
+  node SSH (control never in the SSH path) plus optional relay gateway and
+  per-component Prometheus metrics; long-lived-token connections are actively
+  probed so a revoked token flips to needs_reconnect. Closed TODO 2b. See
+  CHANGELOG.md and `plans/260825-multinode-ssh.md`.
 
