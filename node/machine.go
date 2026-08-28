@@ -39,11 +39,8 @@ var (
 const (
 	// userShellFile is the login shell for app users; it execs the SSH session
 	// into the app container (see cmd/shell.go). Also used by exec.go's terminal.
-	// It lives off $PATH with the rest of the container-facing pieces; the old
-	// /usr/bin path is what existing passwd entries still name until the sweep
-	// on node start rewrites them (see SweepShellPaths).
-	userShellFile       = "/usr/lib/hostit/bin/hostit-shell"
-	legacyUserShellFile = "/usr/bin/hostit-shell"
+	// It lives off $PATH with the rest of the container-facing pieces.
+	userShellFile = "/usr/lib/hostit/bin/hostit-shell"
 	// AppsGroup owns the sudoers grant that lets app users enter their own
 	// container (and nothing else); see /etc/sudoers.d/hostit
 	AppsGroup = "hostit-apps"

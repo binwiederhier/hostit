@@ -52,7 +52,7 @@ Each app is four things created together: a Unix user, a btrfs subvolume that is
 the container's entire filesystem (the app's files live at `/home/app` inside
 it), a podman container whose root is mapped to that user's unprivileged uid, and
 a loopback port that nftables restricts to that uid. SSH logins are handed to
-`/usr/bin/hostit-shell`, which execs the session into the app's container, so
+`/usr/lib/hostit/bin/hostit-shell`, which execs the session into the app's container, so
 users never get a host shell, and an escape inside the container lands on the
 app's own uid rather than on root.
 
@@ -120,7 +120,7 @@ make web && make build && sudo make install
 sudo mkdir -p /etc/hostit
 sudo cp control.yml.example /etc/hostit/control/control.yml
 sudo $EDITOR /etc/hostit/control/control.yml
-sudo cp hostit-control.service /etc/systemd/system/ && sudo cp hostit-shell /usr/bin/
+sudo cp hostit-control.service /etc/systemd/system/ && sudo mkdir -p /usr/lib/hostit/bin && sudo cp hostit-shell /usr/lib/hostit/bin/
 sudo systemctl daemon-reload && sudo systemctl enable --now hostit
 ```
 
@@ -603,8 +603,8 @@ keeps meaning GitHub for everybody.
 
 Because users supply URLs hostit then fetches, outbound requests are restricted
 to publicly routable addresses -- checked at connection time, so DNS rebinding
-does not get past it. `outbound-allow-private: true` lifts that for a self-hoster
-whose MCP servers really are on their LAN.
+does not get past it. `outbound-allow-private-cidrs: ["192.168.1.0/24"]` exempts
+specific ranges for a self-hoster whose MCP servers really are on their LAN.
 
 See the administration guide at `/docs/admin/connections`.
 

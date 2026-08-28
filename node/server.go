@@ -19,7 +19,6 @@ import (
 	"heckel.io/hostit/preflight"
 	"heckel.io/hostit/run"
 	"heckel.io/hostit/store"
-	"heckel.io/hostit/system/unixuser"
 	"heckel.io/hostit/workspace"
 )
 
@@ -120,18 +119,6 @@ func Serve(configPath, version string) error {
 		}
 		go machine.MetricsLoop(done)
 	}
-	// Migrate app users still on the old login-shell path. Best effort and
-	// loud: the old path stays shipped this release, so a failed sweep strands
-	// nobody -- it just postpones dropping the old file.
-	go func() {
-		changed, err := unixuser.New(userShellFile, AppsGroup).SweepShellPaths(legacyUserShellFile)
-		if err != nil {
-			slog.Warn("Login-shell migration incomplete; the old path keeps working", "error", err)
-		}
-		if len(changed) > 0 {
-			slog.Info("Migrated app users to the new login shell", "users", changed, "shell", userShellFile)
-		}
-	}()
 	go func() {
 		if err := machine.EnsureWorkspaceBase(); err != nil {
 			slog.Warn("Cannot prepare workspace base rootfs; the first app deploy will retry", "error", err)

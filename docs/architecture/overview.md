@@ -81,7 +81,7 @@ link (`CertFor`).
 | Cluster mTLS | `ListenNode` (optional, e.g. `10.0.0.1:2930`) | Members on OTHER machines, authenticated by a CA-signed certificate. Absent on a single-box install. |
 | Admin API | `ListenAPI` (optional, e.g. `127.0.0.1:2900`) | The same REST/web handler over plain HTTP, for local admin use behind the firewall. |
 | Unix socket | `SocketFile` (`/run/hostit/hostit.sock`) | The app-side CLI (`hostit deploy/status/logs`, the login shell's `Self`/`Ensure`, and the sandboxed Claude Max tool calls), authorized by `SO_PEERCRED` (`control/socket.go`). World-connectable on purpose; the uid, not the caller, names the app. |
-| sshd | `:22` (system service) | App logins. sshd runs the app user's login shell, `/usr/bin/hostit-shell`, which execs into the container; see [`isolation.md`](isolation.md) and [`flows.md`](flows.md). |
+| sshd | `:22` (system service) | App logins. sshd runs the app user's login shell, `/usr/lib/hostit/bin/hostit-shell`, which execs into the container; see [`isolation.md`](isolation.md) and [`flows.md`](flows.md). |
 
 The single web/REST handler (`control/service.go:New`, built by `newAPIHandler`) is
 one origin for all of these:

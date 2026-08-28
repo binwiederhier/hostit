@@ -7,14 +7,14 @@ set -e
 # refuses to start without a configured /etc/hostit/node/node.yml anyway.
 
 if [ "$1" = "configure" ] || [ "$1" -ge 1 ] 2>/dev/null; then
-  # Register the app-user login shell so chsh/sshd accept it
-  if [ -f /etc/shells ] && ! grep -qxF /usr/bin/hostit-shell /etc/shells; then
-    echo /usr/bin/hostit-shell >> /etc/shells
-  fi
-  # The shell's new home; the old path above stays registered while passwd
-  # entries migrate (see the node's login-shell sweep).
-  if [ -f /etc/shells ] && ! grep -qxF /usr/lib/hostit/bin/hostit-shell /etc/shells; then
-    echo /usr/lib/hostit/bin/hostit-shell >> /etc/shells
+  # Register the app-user login shell so chsh/sshd accept it, and drop the old
+  # /usr/bin entry a previous release registered -- the shell moved off $PATH and
+  # that binary no longer exists, so a stale /etc/shells line just misleads.
+  if [ -f /etc/shells ]; then
+    sed -i '\|^/usr/bin/hostit-shell$|d' /etc/shells || true
+    if ! grep -qxF /usr/lib/hostit/bin/hostit-shell /etc/shells; then
+      echo /usr/lib/hostit/bin/hostit-shell >> /etc/shells
+    fi
   fi
   # The sudoers grant is scoped to this group; app users are added to it
   if ! getent group hostit-apps >/dev/null 2>&1; then

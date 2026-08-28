@@ -6,10 +6,8 @@
 package unixuser
 
 import (
-	"bufio"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"os/user"
@@ -328,53 +326,4 @@ func run(command string, args ...string) error {
 		return fmt.Errorf("%s %s failed: %w: %s", command, strings.Join(args, " "), err, strings.TrimSpace(string(out)))
 	}
 	return nil
-}
-
-// SweepShellPaths migrates app users whose login shell is still oldShell to
-// this service's (new) shell path, and returns who was changed. The shell is
-// what sshd execs on login, so the ordering here is load-bearing: the new file
-// must exist BEFORE any passwd entry names it -- a wrong path is not an error
-// message, it is every owner locked out of SSH. Users on any other shell
-// (humans, already-migrated apps) are never touched.
-func (s *Service) SweepShellPaths(oldShell string) ([]string, error) {
-	if _, err := os.Stat(s.shell); err != nil {
-		return nil, fmt.Errorf("refusing shell migration: %s is not installed: %w", s.shell, err)
-	}
-	f, err := os.Open("/etc/passwd")
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-	targets, err := sweepTargets(f, oldShell)
-	if err != nil {
-		return nil, err
-	}
-	changed := make([]string, 0, len(targets))
-	for _, name := range targets {
-		if out, err := exec.Command("usermod", "--shell", s.shell, name).CombinedOutput(); err != nil {
-			// Keep going: the user stays on the old path, which this release
-			// still ships, so nothing is locked out by a partial sweep.
-			return changed, fmt.Errorf("usermod %s: %w: %s", name, err, strings.TrimSpace(string(out)))
-		}
-		changed = append(changed, name)
-	}
-	return changed, nil
-}
-
-// sweepTargets picks the users to migrate from a passwd stream: exactly those
-// whose shell field equals the old path. Malformed lines are skipped, not
-// fatal -- refusing the whole sweep over one bad line would strand everyone.
-func sweepTargets(passwd io.Reader, oldShell string) ([]string, error) {
-	var targets []string
-	scanner := bufio.NewScanner(passwd)
-	for scanner.Scan() {
-		fields := strings.Split(scanner.Text(), ":")
-		if len(fields) < 7 {
-			continue
-		}
-		if fields[6] == oldShell {
-			targets = append(targets, fields[0])
-		}
-	}
-	return targets, scanner.Err()
 }

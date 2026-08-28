@@ -33,7 +33,7 @@ Package **dependencies** are the host tools the daemon shells out to: `podman`,
 `nftables`, `dbus-user-session`, `openssh-server`, with `passt` recommended.
 
 The **postinstall** script (`scripts/postinst.sh`) does only what is safe on every
-install/upgrade: registers `/usr/bin/hostit-shell` in `/etc/shells` (so sshd
+install/upgrade: registers `/usr/lib/hostit/bin/hostit-shell` in `/etc/shells` (so sshd
 accepts it as a login shell), creates the `hostit-apps` system group (the sudoers
 grant is scoped to it), validates the sudoers file with `visudo -cf` and removes
 it if broken (never leave a broken sudoers behind), reloads systemd, and restarts

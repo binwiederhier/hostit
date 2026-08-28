@@ -499,7 +499,7 @@ reach is the app socket.
 It is every app user's login shell, recorded in `/etc/passwd`.
 
 ```
-useradd --shell /usr/bin/hostit-shell ...      # today
+useradd --shell /usr/lib/hostit/bin/hostit-shell ...      # today
 ```
 
 <v-clicks>

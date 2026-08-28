@@ -16,8 +16,10 @@ import (
 )
 
 const (
-	// enterFile is the sudo-able wrapper that enters the caller's container
-	enterFile = "/usr/bin/hostit-enter"
+	// enterFile is the sudo-able wrapper that enters the caller's container. It
+	// must match the path granted in hostit.sudoers exactly, or the sudo hop
+	// below finds nothing to run.
+	enterFile = "/usr/lib/hostit/bin/hostit-enter"
 	// cursor is the wordmark's block, a space on a 24-bit background set to the web
 	// app's accent (#159cb0), so the login banner's cursor matches the logo cursor
 	// in the dashboard rather than a plain terminal green.
@@ -25,7 +27,7 @@ const (
 )
 
 var (
-	// cmdShell is the login-shell entrypoint (via /usr/bin/hostit-shell): it
+	// cmdShell is the login-shell entrypoint (via /usr/lib/hostit/bin/hostit-shell): it
 	// ensures the app container runs and hands the SSH session to the privileged
 	// "hostit enter" helper. It never falls back to a host shell; the container
 	// IS the user's environment.

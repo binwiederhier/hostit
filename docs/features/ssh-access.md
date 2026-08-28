@@ -177,7 +177,7 @@ The login path (what happens on connect):
   `-c <command>` is passed through untouched, ensures the container is up via
   `appctl` (`ctl.Self()` / `ctl.Ensure()`), prints `loginBanner` only when
   `isTerminal(os.Stdin)` and there is no forced command, then `exec`s
-  `sudo -n /usr/bin/hostit-enter <TERM> [args...]`.
+  `sudo -n /usr/lib/hostit/bin/hostit-enter <TERM> [args...]`.
 - `hostit-enter` (`cmd/agent/enter.go:cmdEnter` / `execEnter`) is the privileged half.
   It must run as root, derives the caller from `SUDO_UID` (never from
   arguments), and resolves the target container from the caller's *home
@@ -188,7 +188,7 @@ The login path (what happens on connect):
   validated `TERM` and an optional single `-c` command, and runs with
   `minimalEnv()` (the caller's environment is not inherited).
 - The sudo grant is `hostit.sudoers`: `%hostit-apps ALL=(root) NOPASSWD:
-  /usr/bin/hostit-enter` -- one root-owned helper that ignores its args when
+  /usr/lib/hostit/bin/hostit-enter` -- one root-owned helper that ignores its args when
   choosing the target, so a member of the group can only ever reach their own
   app.
 

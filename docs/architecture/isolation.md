@@ -10,7 +10,7 @@ hostit identifies it by that uid.
 ```mermaid
 flowchart TB
     subgraph one["One app: blog"]
-        user["Unix user 'blog' (base uid 1000000)<br/>shell: /usr/bin/hostit-shell<br/>group: hostit-apps"]
+        user["Unix user 'blog' (base uid 1000000)<br/>shell: /usr/lib/hostit/bin/hostit-shell<br/>group: hostit-apps"]
         subvol["/var/lib/hostit/apps/&lt;id&gt;<br/>the app's one subvolume, root-owned, idmap-mounted<br/>files at home/app inside (= /home/app in the container)"]
 
         subgraph container["podman container hostit-app-&lt;id&gt;"]
@@ -105,7 +105,7 @@ out ownership, wherever the link pointed.
 
 ### The `hostit-shell` login shell
 
-App users' login shell is `/usr/bin/hostit-shell` (set at user creation,
+App users' login shell is `/usr/lib/hostit/bin/hostit-shell` (set at user creation,
 `node/machine.go:userShellFile`), not a host shell. On login it identifies the app over the unix
 socket, ensures the container is up, prints the banner, then hands off to a narrow
 sudoers grant, `sudo -n hostit-enter` (`cmd/agent/shell.go:execShell`). The privileged

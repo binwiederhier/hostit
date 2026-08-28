@@ -244,11 +244,11 @@ sequenceDiagram
 - `hostit-shell` is a one-line wrapper that execs `hostit shell`
   (`cmd/agent/shell.go:execShell`). It identifies the app via the peercred socket,
   ensures the container is up, greets only an interactive human (scp/rsync see
-  nothing but their protocol), then execs `sudo -n /usr/bin/hostit-enter`. It
+  nothing but their protocol), then execs `sudo -n /usr/lib/hostit/bin/hostit-enter`. It
   **never falls back to a host shell** -- the container is the user's environment.
 - `hostit-enter` is the privileged half (`cmd/agent/enter.go:execEnter`), reachable
   only through a narrow sudoers grant (`hostit.sudoers`:
-  `%hostit-apps ALL=(root) NOPASSWD: /usr/bin/hostit-enter`). It **ignores its
+  `%hostit-apps ALL=(root) NOPASSWD: /usr/lib/hostit/bin/hostit-enter`). It **ignores its
   arguments when choosing a target**: it derives the caller from `SUDO_UID`,
   resolves that user's home, and digs the app id out of the home path
   (its `<id>/home/app` tail, `cmd/agent/enter.go:containerKeyFromHome` ->

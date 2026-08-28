@@ -184,7 +184,7 @@ One user + one group at the block base, straight from the journal:
 groupadd[1240470]: new group: name=blog, GID=1262144
 useradd[1240476]:  new user: name=blog, UID=1262144, GID=1262144,
                    home=/run/hostit/apps-raw/d94773c9b2c3/home/app,
-                   shell=/usr/bin/hostit-shell
+                   shell=/usr/lib/hostit/bin/hostit-shell
 useradd[1240476]:  add 'blog' to group 'hostit-apps'
 ```
 

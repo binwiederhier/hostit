@@ -119,25 +119,16 @@ nfpms:
         dst: /usr/lib/hostit/bin/hostit-app
         file_info:
           mode: 0755
-      # The login shell and its privileged half, at their new home -- and at the
-      # old one for ONE release: existing app users' passwd entries name
-      # /usr/bin/hostit-shell until the node's usermod sweep rewrites them, and
-      # dropping the old path before that sweep runs would lock everyone out of
-      # SSH between dpkg and the node restart.
+      # The login shell and its privileged half, off $PATH like everything else
+      # an operator does not type. Existing app users were moved to this path by
+      # the node's usermod sweep in an earlier release; the old /usr/bin copies
+      # (and the sweep) are gone now that every passwd entry names the new path.
       - src: hostit-shell
         dst: /usr/lib/hostit/bin/hostit-shell
         file_info:
           mode: 0755
       - src: hostit-enter
         dst: /usr/lib/hostit/bin/hostit-enter
-        file_info:
-          mode: 0755
-      - src: hostit-shell
-        dst: /usr/bin/hostit-shell
-        file_info:
-          mode: 0755
-      - src: hostit-enter
-        dst: /usr/bin/hostit-enter
         file_info:
           mode: 0755
       - src: hostit-relay
