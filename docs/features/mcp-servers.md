@@ -214,9 +214,11 @@ An MCP connection is a `store.Connection` with `Kind = store.ConnectionMCP`.
   The `outbound` package is the answer: an http.Client whose dialer refuses any
   address that is not publicly routable. The check is at DIAL time, on the
   resolved address, because a hostname check is defeated by DNS rebinding.
-  `outbound-allow-private: true` turns it off for a self-hoster whose MCP servers
-  really are on their LAN; it is off by default and tests that are not about the
-  guard set it on (they talk to httptest servers on loopback).
+  `outbound-allow-private-cidrs: ["192.168.1.0/24"]` exempts specific ranges for
+  a self-hoster whose MCP servers really are on their LAN; it is empty by default
+  and tests that are not about the guard list loopback (they talk to httptest
+  servers on 127.0.0.1). Listing a range, not an all-or-nothing switch, keeps the
+  exemption from quietly covering the cloud metadata service.
 
   This shipped to stage before it was caught. It never reached prod --
   `connections-v2` is unmerged.

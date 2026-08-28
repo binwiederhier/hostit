@@ -261,7 +261,7 @@ func (s *Server) providerRowFrom(name, ownerID string, req apiProviderRequest) (
 			// Plaintext OAuth would exchange the client secret and code in the
 			// clear; require https unless this instance has opted into private
 			// outbound (the self-hosted-dev case that also allows loopback).
-			if strings.HasPrefix(u, "http://") && !s.config.OutboundAllowPrivate {
+			if strings.HasPrefix(u, "http://") && len(s.config.OutboundAllowPrivateCIDRs) == 0 {
 				return nil, fmt.Errorf("%s must use https://; plain http is only accepted where private outbound is enabled", u)
 			}
 		}

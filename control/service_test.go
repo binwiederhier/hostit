@@ -455,7 +455,7 @@ func newTestServer(t *testing.T) *Server {
 	conf.AppsDir = t.TempDir()
 	// Tests reach fake providers on loopback, which the outbound guard exists
 	// to refuse. Tests ABOUT the guard turn it back off explicitly.
-	conf.OutboundAllowPrivate = true
+	conf.OutboundAllowPrivateCIDRs = []string{"127.0.0.0/8", "::1/128"}
 	conf.DataDir = t.TempDir()
 	s, err := store.NewStore(filepath.Join(t.TempDir(), "hostit.db"))
 	require.NoError(t, err)
@@ -591,7 +591,7 @@ func TestSetNodeRepointsTheAssistantOps(t *testing.T) {
 	conf.AppsDir = t.TempDir()
 	// Tests reach fake providers on loopback, which the outbound guard exists
 	// to refuse. Tests ABOUT the guard turn it back off explicitly.
-	conf.OutboundAllowPrivate = true
+	conf.OutboundAllowPrivateCIDRs = []string{"127.0.0.0/8", "::1/128"}
 	conf.DataDir = t.TempDir()
 	conf.AnthropicAPIKey = "sk-test" // makes New wire the assistant + its appOps
 	st, err := store.NewStore(filepath.Join(t.TempDir(), "hostit.db"))

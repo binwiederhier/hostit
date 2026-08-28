@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"sort"
 	"strings"
@@ -104,13 +105,26 @@ func newConnectionManager(st *store.Store, key []byte, conf *config.Config) *con
 		// GUARDED: this client fetches URLs users supply -- an MCP server's
 		// endpoint, a custom provider's issuer -- so it must refuse to connect
 		// anywhere that is not publicly routable. See the outbound package.
-		client:      outbound.NewClient(20*time.Second, conf.OutboundAllowPrivate),
+		client:      outbound.NewClient(20*time.Second, outboundAllowed(conf)),
 		conf:        conf,
 		cached:      map[string]cachedToken{},
 		refreshStop: make(chan struct{}),
 		custom:      map[string]connections.Provider{},
 		discovered:  map[string]oauthEndpoints{},
 	}
+}
+
+// outboundAllowed parses the operator's outbound-allow-private-cidrs into the
+// exemption list the outbound guard takes. Config.Validate already checked the
+// entries at load, so a parse error here is not expected; on the off chance of
+// one, fall back to the strict default (nil) rather than silently opening more.
+func outboundAllowed(conf *config.Config) []*net.IPNet {
+	nets, err := outbound.ParseCIDRs(conf.OutboundAllowPrivateCIDRs)
+	if err != nil {
+		slog.Warn("Ignoring outbound-allow-private-cidrs; it did not parse", "error", err)
+		return nil
+	}
+	return nets
 }
 
 // clientFor is the OAuth client this instance holds for a provider. Read per

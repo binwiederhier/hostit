@@ -35,12 +35,13 @@ var (
 // NewClient returns an HTTP client that refuses to connect to any address that
 // is not publicly routable. Pass 0 for the default timeout.
 //
-// allowPrivate turns the guard OFF. That exists for one legitimate case: a
-// self-hoster whose MCP server really is on their own LAN, or a Home Assistant
-// at 192.168.1.50. It is off by default because the same setting is what stands
-// between an ordinary user and the cloud metadata service, and an operator who
-// turns it on should have decided to.
-func NewClient(timeout time.Duration, allowPrivate bool) *http.Client {
+// allowPrivateNets is a list of CIDRs that are exempted from the guard: an address
+// inside one of them is allowed even though it is private. Empty (nil) is the
+// strict default and the right choice for a shared instance. A self-hoster whose
+// MCP server is on their own LAN lists only that range, e.g. 192.168.1.0/24 --
+// not everything -- so the exemption never quietly covers the cloud metadata
+// service. See ParseCIDRs for turning the operator's config into this list.
+func NewClient(timeout time.Duration, allowPrivateNets []*net.IPNet) *http.Client {
 	if timeout == 0 {
 		timeout = defaultTimeout
 	}
@@ -50,10 +51,7 @@ func NewClient(timeout time.Duration, allowPrivate bool) *http.Client {
 		// Control runs after the address is resolved and before the socket is
 		// connected, which is the only place the check is honest.
 		Control: func(network, address string, _ syscall.RawConn) error {
-			if allowPrivate {
-				return nil
-			}
-			return checkDialAddress(address)
+			return checkDialAddress(address, allowPrivateNets)
 		},
 	}
 	return &http.Client{
@@ -70,7 +68,26 @@ func NewClient(timeout time.Duration, allowPrivate bool) *http.Client {
 	}
 }
 
-func checkDialAddress(address string) error {
+// ParseCIDRs turns the operator's outbound-allow-private-cidrs list into parsed
+// networks, naming the first bad entry rather than dropping it silently. Blank
+// entries are skipped so a trailing comma or empty list item is not an error.
+func ParseCIDRs(cidrs []string) ([]*net.IPNet, error) {
+	out := make([]*net.IPNet, 0, len(cidrs))
+	for _, c := range cidrs {
+		c = strings.TrimSpace(c)
+		if c == "" {
+			continue
+		}
+		_, n, err := net.ParseCIDR(c)
+		if err != nil {
+			return nil, fmt.Errorf("invalid outbound-allow-private-cidrs entry %q: %w", c, err)
+		}
+		out = append(out, n)
+	}
+	return out, nil
+}
+
+func checkDialAddress(address string, allowPrivateNets []*net.IPNet) error {
 	host, _, err := net.SplitHostPort(address)
 	if err != nil {
 		host = address
@@ -81,10 +98,17 @@ func checkDialAddress(address string) error {
 		// something to guess about.
 		return fmt.Errorf("%w: %s", ErrBlockedAddress, address)
 	}
-	if !publiclyRoutable(ip) {
-		return fmt.Errorf("%w: %s", ErrBlockedAddress, ip)
+	if publiclyRoutable(ip) {
+		return nil
 	}
-	return nil
+	// A private address is allowed only when the operator explicitly listed a
+	// range that contains it.
+	for _, n := range allowPrivateNets {
+		if n.Contains(ip) {
+			return nil
+		}
+	}
+	return fmt.Errorf("%w: %s", ErrBlockedAddress, ip)
 }
 
 // publiclyRoutable reports whether an address is one hostit will connect to.

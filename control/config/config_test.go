@@ -63,6 +63,8 @@ func TestValidate(t *testing.T) {
 		{"preview isolation off", func(c *Config) { c.AppPreviewIsolation = AppPreviewIsolationOff }, ""},
 		{"bad preview allow cidr", func(c *Config) { c.AppPreviewAllowCIDRs = []string{"nope"} }, "app-preview-allow-cidrs"},
 		{"good preview allow cidr", func(c *Config) { c.AppPreviewAllowCIDRs = []string{"192.0.2.0/24"} }, ""},
+		{"bad outbound cidr", func(c *Config) { c.OutboundAllowPrivateCIDRs = []string{"nope"} }, "outbound-allow-private-cidrs"},
+		{"good outbound cidr", func(c *Config) { c.OutboundAllowPrivateCIDRs = []string{"192.168.0.0/16"} }, ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

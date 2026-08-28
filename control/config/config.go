@@ -14,6 +14,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 	"heckel.io/hostit/cluster"
+	"heckel.io/hostit/http/outbound"
 )
 
 // AppPreviewMode selects how the dashboard's app cards are previewed: a live
@@ -158,13 +159,15 @@ type Config struct {
 	// no shared hostit client to inherit, because registering one and getting
 	// it reviewed is the operator's own relationship with the provider.
 	ConnectionClients map[string]OAuthClient `yaml:"connections"`
-	// OutboundAllowPrivate lets hostit fetch URLs that resolve to private,
-	// loopback or link-local addresses. OFF by default, and it should stay off
-	// unless you mean it: users supply the URLs hostit fetches (an MCP server,
-	// a custom provider's issuer), so this is what stands between an ordinary
-	// account and the cloud metadata service. Turn it on only for a self-hosted
-	// instance whose MCP servers really are on its own LAN.
-	OutboundAllowPrivate bool `yaml:"outbound-allow-private"`
+	// OutboundAllowPrivateCIDRs lets hostit fetch URLs that resolve into these
+	// otherwise-blocked ranges (private, loopback, link-local). EMPTY by default,
+	// and it should stay empty unless you mean it: users supply the URLs hostit
+	// fetches (an MCP server, a custom provider's issuer), so the block is what
+	// stands between an ordinary account and the cloud metadata service. List
+	// only the specific ranges a self-hosted instance's own services live on,
+	// e.g. ["192.168.1.0/24"] -- never 0.0.0.0/0, and never 169.254.169.254/32
+	// unless you have thought hard about it. A public address is always allowed.
+	OutboundAllowPrivateCIDRs []string `yaml:"outbound-allow-private-cidrs"`
 	// MCPServers are named MCP servers offered to everyone, so a user picks a
 	// name rather than remembering a URL. Purely a shortcut: anyone can still
 	// paste any URL. Keyed by a short name.
@@ -406,6 +409,9 @@ func (c *Config) Validate() error {
 		if _, _, err := net.ParseCIDR(cidr); err != nil {
 			return fmt.Errorf("invalid app-preview-allow-cidrs entry %q: %w", cidr, err)
 		}
+	}
+	if _, err := outbound.ParseCIDRs(c.OutboundAllowPrivateCIDRs); err != nil {
+		return err
 	}
 	if c.DNSProvider != "" && c.DNSProvider != DNSProviderRoute53 {
 		return fmt.Errorf("invalid dns-provider %q, only %q is supported", c.DNSProvider, DNSProviderRoute53)

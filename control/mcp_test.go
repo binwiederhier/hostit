@@ -340,7 +340,7 @@ func TestAskingForToolsOnACredentialIsAlsoANotFound(t *testing.T) {
 func TestAnMCPServerOnAnInternalAddressIsRefused(t *testing.T) {
 	t.Parallel()
 	s := newTestServer(t)
-	s.connections.client = outbound.NewClient(5*time.Second, false) // the guard, as shipped
+	s.connections.client = outbound.NewClient(5*time.Second, nil) // the guard, as shipped
 	u := newActiveTestUser(t, s, "owner@example.com")
 	token, _, err := s.users.CreateToken(u.ID, "laptop")
 	require.NoError(t, err)
