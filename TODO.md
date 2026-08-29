@@ -2,21 +2,19 @@
 
 Things worth doing, with enough context to pick up cold. Not a backlog of
 everything imaginable -- if it is not written down here it is not planned.
-Shipped work lives in CHANGELOG.md and the git history; "Done (recent)" below
-keeps only the last few days for context.
+Shipped work lives in CHANGELOG.md and the git history, not here.
 
-**Ordered by priority** (top of each tier first), reassessed 2026-08-21 after
-v0.18.0. The ordering is a judgement call about what this platform needs next,
-given that it now runs real internet-facing projects: security gaps that expose
-tenant data outrank features, cheap well-specified work outranks expensive
-open-ended work, and a decision that unblocks two other items is worth making
-before either is built.
+**Ordered by priority** (top of each tier first). The ordering is a judgement
+call about what this platform needs next, given that it now runs real
+internet-facing projects: security gaps that expose tenant data outrank
+features, cheap well-specified work outranks expensive open-ended work, and a
+decision that unblocks two other items is worth making before either is built.
 
 ## Now (next few sessions)
 
-### 0. Connections: shipped -- remaining follow-ups
+### Connections: shipped -- remaining follow-ups
 
-Shipped to prod (connections + MCP servers), twenty providers. Live OAuth
+Shipped to prod (connections + MCP servers), twenty-three providers. Live OAuth
 clients: GitHub, Discord, Slack (both `slack-bot` and `slack-user`), plus
 Google's two on the login client. GitHub and Linear refresh per connection since
 v0.29.0 (hybrid tokens). MCP servers are added by URL (see
@@ -25,19 +23,12 @@ design, superseded in places.
 
 Still open:
 
-- **OAuth clients for Linear, Jira and HubSpot.** The providers are built; each
-  needs a client registered and dropped in `secrets/<env>.yml`. Nothing else.
-  (Slack's two are already configured on stage and prod.)
-- **Google verification for Calendar.** Free (sensitive scope, no CASA), and it
-  is what removes the 7-day refresh-token expiry that otherwise means
-  reconnecting every account weekly. Gmail is the expensive one and is dominated
-  by the IMAP credential for a personal instance.
-- **The `examples/caldav-agenda` app has never been run.** It needs a CalDAV
-  credential nobody has attached yet. Until then it is untested code.
 - **`/.well-known/oauth-client` must be publicly reachable** wherever MCP is used:
   an authorization server fetches it to identify hostit, so a deploy that hides it
-  behind auth breaks every MCP consent. Untested against a real third-party MCP
-  server -- only against the fakes in `mcp/` and `control/mcp_test.go`.
+  behind auth breaks every MCP consent. An e2e test now guards that it stays
+  reachable and unauthenticated; still untested against a real third-party MCP
+  server's authorization flow (only against the fakes in `mcp/` and
+  `control/mcp_test.go`).
 
 Known limits, deliberately accepted (see docs/features/connections.md):
 the key sits beside the database so this protects a copied database and not root;
@@ -45,7 +36,7 @@ the key sits beside the database so this protects a copied database and not root
 can run code in that app, collaborators included; and the assistant is told not
 to print tokens rather than prevented, with redaction as a backstop.
 
-### 2. Secrets that are not in the app's web root
+### Secrets that are not in the app's web root
 
 `env:` values live in `hostit.yml`, which sits in the app's home and is served
 if someone points a web server at the wrong directory. A real secret store (or
@@ -61,7 +52,7 @@ that twice would be a mistake.
 
 ## Next (decide, then build)
 
-### 3. DECIDED: the credential-brokering shape (both, deliberately)
+### DECIDED: the credential-brokering shape (both, deliberately)
 
 Resolved by building it. The two plans were not actually alternatives, and the
 answer is that the RIGHT shape depends on what is on the other end:
@@ -93,11 +84,12 @@ Also settled since: providers are no longer operator-only. A user can bring
 their own OAuth client (see docs/features/connections.md, "Three tiers of
 provider"), which was the last thing making the catalog feel closed.
 
-### 4. App capabilities: credentials an app uses but never holds
+### App capabilities: credentials an app uses but never holds
 
-Blocked on #3. People want to build apps that use AI. Putting an API key in the
-app's environment makes the tenant pay, makes the key a thing that leaks into a
-repo or a log, and leaves hostit with no idea what was spent.
+Unblocked now that the credential-brokering shape is decided (above). People want
+to build apps that use AI. Putting an API key in the app's environment makes the
+tenant pay, makes the key a thing that leaks into a repo or a log, and leaves
+hostit with no idea what was spent.
 
 What is already solved, whichever shape wins:
 
@@ -126,7 +118,7 @@ operator-provided AI only.
 
 ## Soon (small, self-contained)
 
-### 6. MCP bridge: return images as image content
+### MCP bridge: return images as image content
 
 `read_file` returns text, so an image read through it is byte salad -- which is
 why attached images ride the sandbox's stdin as blocks (the 2026-08-21 fix)
@@ -138,23 +130,23 @@ current message. Composes with the stdin path, does not replace it: an attached
 image should be unconditionally visible, not contingent on a tool call.
 Touches appcli's mcp server and the sandbox's tool-result parsing.
 
-### 7. Log following
+### Log following
 
 `GET /api/apps/{app}/logs?lines=N` is a snapshot. An agent watching a slow
 start has to poll. SSE or a websocket tail would fix it; note the node relay
 (control does not hold the logs) is the interesting part, and the terminal's
 existing duplex stream over the cluster link is the precedent.
 
-### 8. An MCP server people can actually point an agent at
+### An MCP server people can actually point an agent at
 
-Check against #5 first -- this is an agent calling IN where the capability work
-is an app calling OUT, and they must not invent two auth stories. The broker
-design carries this as its item #6 and expects it to be cheap once the broker
-exists: the same "call an approved tool as owner X" function, wrapped in a
-server adapter instead of an HTTP relay.
+Check against the app-capability work first -- this is an agent calling IN where
+the capability work is an app calling OUT, and they must not invent two auth
+stories. The broker design (`plans/260818-hostit-broker-design.md`) expects it to
+be cheap once the broker exists: the same "call an approved tool as owner X"
+function, wrapped in a server adapter instead of an HTTP relay.
 
-Note the direction is now asymmetric: hostit is a good MCP **client** (`mcp/`,
-item #3) and still not a **server** anyone can point at from outside. The client
+Note the direction is now asymmetric: hostit is a good MCP **client** (`mcp/`)
+and still not a **server** anyone can point at from outside. The client
 work does not do this for you, but it does settle the auth story -- if hostit
 serves MCP over HTTP it should be the same specs it already speaks as a client
 (RFC 9728 metadata, PKCE, resource indicators) rather than a bearer token stapled
@@ -174,7 +166,7 @@ tool argument); stdio for a local binary vs streamable HTTP so there is nothing
 to install; and whether the tool set is literally `assistant/tools.go:ToolDefs`
 reused, which would keep the two surfaces from drifting.
 
-### 9. Long jobs
+### Long jobs
 
 `POST /api/apps/{app}/run` is bounded at five minutes, so a first `npm install`
 on a small box can outlast it. Anything longer has to become a `prepare:` step,
@@ -183,7 +175,7 @@ the honest fix.
 
 ## Later (real, but not now)
 
-### 10. Move the screenshot and assistant containers to the nodes
+### Move the screenshot and assistant containers to the nodes
 
 Both of control's remaining podman users are machine-shaped work sitting in
 the wrong process: the **screenshot previews** run a chrome container (plus an
@@ -219,7 +211,7 @@ Shape, once decided:
 Real hardening, but it buys defense-in-depth rather than closing an open hole,
 which is why it sits here rather than in the Now tier.
 
-### 11. Review follow-ups (2026-08-20)
+### Review follow-ups (2026-08-20)
 
 From `plans/260820-hostit-review-findings.md`, all LOW/accepted:
 
@@ -227,7 +219,7 @@ From `plans/260820-hostit-review-findings.md`, all LOW/accepted:
   (apps keep serving through a control outage; SSH, the terminal, deploys and
   the dashboard do not).
 - Keep raising the node package's unit coverage by extracting pure decision
-  logic (14% at the review, 21.5% after v0.18.0; the machine stack needs
+  logic (14% at the review, ~25% now; the machine stack needs
   root/podman/btrfs, so e2e carries the rest).
 - A one-place `/run/hostit` socket inventory in the docs (five sockets now:
   hostit.sock 0666 app-facing, cluster.sock, control.sock, node.sock,
@@ -242,22 +234,8 @@ self-corrects on the next edit and cannot run away -- but an owner-scoped lock
 is the fix if it ever matters. (v0.26.0 put a lock around the limit-EDIT pool
 check, closing that race; the CREATE path is still check-then-act.)
 
-### 12. Could a static app skip the container entirely?
 
-Today every app gets a container, a unix user, a subvolume and a systemd unit,
-even one that is just files on disk. `mode: static` is already served by hostit
-itself, so for that mode the container may be buying nothing but startup cost,
-memory and a quota's worth of bookkeeping. Worth asking what a container-less
-static app would still need (the app's own uid for file ownership, snapshots,
-disk accounting, the assistant's run_command and SSH -- which is where it
-probably gets interesting, since both assume a container to enter). If the
-answer is "only SSH and run_command", a static app could stay container-less
-until something asks for one.
-
-Speculative: measure the actual cost of an idle static app's container before
-designing anything.
-
-### 13. hostit-node hangs on stop -- REPRODUCE BEFORE CHASING
+### hostit-node hangs on stop -- REPRODUCE BEFORE CHASING
 
 Seen once (2026-08-16); has not recurred through many deploys since, and the
 shutdown path changed (the signal handler closes the live connection). If it
@@ -338,12 +316,11 @@ months.
   rather than app-owned rules so a redirect for a hostname with no app can exist
   at all.
 
-  **Operational note.** Stage ran both versions, so its database reached schema
-  version 31 while released code stops at 29. That is harmless -- `migrate`
-  loops `for i := version; i < len(migrations)`, so a database ahead of the code
-  simply skips the loop, and the orphan `app_domain.redirect_to` column and
-  `app_redirect` table are never referenced. Any future migration must be
-  appended after those two, since stage has already recorded them.
+  **Operational note.** Stage ran both versions, so its database recorded orphan
+  migrations (an `app_domain.redirect_to` column and an `app_redirect` table) the
+  released code never adds. Harmless -- `migrate` only ever appends, and the
+  orphans are never referenced -- but a rebuild of this feature must not reuse
+  those migration slots on stage.
 
   **If it comes back**, start from the rules shape and the plan doc; do not
   re-derive the field shape. The live pain point that started this is still
@@ -427,31 +404,3 @@ months.
   Set that against the payoff, which is htop drawing a nicer number: the app
   page already shows accurate memory and disk, and `/sys/fs/cgroup/memory.max`
   is correct inside the container today.
-
-## Done (recent)
-
-Kept briefly for context; prune when stale. Everything older is in CHANGELOG.md.
-
-- **Shell-path move finished (2026-08-27, next release).** Dropped the legacy
-  `/usr/bin/hostit-shell` and `/usr/bin/hostit-enter` package copies (now only
-  under `/usr/lib/hostit/bin/`), moved the sudoers grant and the `enterFile`
-  const to match, cleaned the old `/etc/shells` entry in postinst, and removed
-  the now-done `unixuser.SweepShellPaths` login-shell sweep. Every app user was
-  already migrated (verified), so nothing to migrate remained. Was ARCH-5.
-- **Viewer-only accounts (2026-08-27, next release).** A new `viewer` role: they
-  can only OPEN apps shared with them, never create/manage their own (effective
-  app_limit forced to 0; the create endpoint refuses them). Someone invited by
-  email to view an app becomes an active viewer on first sign-in (no admin
-  approval). Their home is a "Shared with you" list (`SharedApps`), and the Apps
-  menu hides "New app". Admins assign/clear the role from the user list. Store:
-  `RoleViewer`, `AppsByViewer`.
-- **v0.29.0 (2026-08-27).** Onboarding + profile prefs, per-app tabs + View menu,
-  pending viewers (invite by email), private-app screenshots, admin logs +
-  instance prompt, GitHub/Linear hybrid token refresh, the assistant
-  dangling-tool_use self-heal, and the `/info` rewrite. See CHANGELOG.md.
-- **Multi-node SSH + long-lived connection probe (v0.28.0/v0.28.1).** Direct-to-
-  node SSH (control never in the SSH path) plus optional relay gateway and
-  per-component Prometheus metrics; long-lived-token connections are actively
-  probed so a revoked token flips to needs_reconnect. Closed TODO 2b. See
-  CHANGELOG.md and `plans/260825-multinode-ssh.md`.
-

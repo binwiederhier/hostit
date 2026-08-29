@@ -3,6 +3,7 @@
 package e2e
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -12,6 +13,32 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// The Client ID Metadata Document an MCP authorization server fetches to
+// identify hostit MUST be reachable publicly and WITHOUT auth: an authorization
+// server has no hostit credentials, so a deploy that puts /.well-known/oauth-client
+// behind the login wall silently breaks every MCP consent. This guards the whole
+// path (proxy + control), which a handler unit test cannot see.
+func TestMCPClientMetadataIsPubliclyReachable(t *testing.T) {
+	t.Parallel()
+	e := newEnv(t)
+
+	// No Authorization header, on purpose.
+	resp, err := http.Get(e.host + "/.well-known/oauth-client")
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode, "the metadata document must be reachable without auth")
+	assert.Contains(t, resp.Header.Get("Content-Type"), "json")
+
+	var doc map[string]any
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&doc))
+	assert.NotEmpty(t, doc["client_id"], "it identifies hostit by its client_id")
+	assert.Equal(t, "hostit", doc["client_name"])
+	assert.Equal(t, "none", doc["token_endpoint_auth_method"])
+	uris, ok := doc["redirect_uris"].([]any)
+	require.True(t, ok, "redirect_uris is present")
+	assert.NotEmpty(t, uris, "and names at least one callback")
+}
 
 // The instance-wide prompt an admin sets shows up in the /info guide's notes,
 // and clearing it removes it. Requires an admin token (settings are admin-only).

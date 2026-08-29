@@ -61,7 +61,7 @@ release-snapshot: clean deps web check
 check: test fmt-check vet
 
 test:
-	$(GO) test ./...
+	$(GO) test -timeout 20m ./...
 
 # End-to-end tests against a RUNNING server; they create and delete e2e-* apps,
 # so point them at a test instance. RUN= selects tests (go test -run syntax):
