@@ -25,7 +25,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"heckel.io/hostit/appgrant"
+	"heckel.io/hostit/proxy/grant"
 
 	"github.com/caddyserver/certmagic"
 	"golang.org/x/sync/errgroup"
@@ -63,7 +63,7 @@ type Server struct {
 	sessions      *sessionManager
 	// grants signs the per-app credential a private app's visitor carries on the
 	// app's own hostname, where the session cookie does not reach (appaccess.go).
-	grants *appgrant.Signer
+	grants *grant.Signer
 	// connections is credential custody for the accounts and secrets an owner
 	// connects; nil only if its key could not be loaded.
 	connections *connectionManager
@@ -130,7 +130,7 @@ func New(conf *config.Config, apps *Manager, users *user.Manager) *Server {
 		node:           apps.NodeAgent(),
 		users:          users,
 		sessions:       newSessionManager(conf.SessionKey),
-		grants:         appgrant.NewSigner(conf.SessionKey, appGrantTTL),
+		grants:         grant.NewSigner(conf.SessionKey, appGrantTTL),
 		usernameForUID: usernameForUID,
 		proxies:        NewProxyRegistry(),
 		mcp:            newMCPBroker(),

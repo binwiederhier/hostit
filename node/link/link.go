@@ -9,7 +9,7 @@ import (
 	"sync"
 
 	"heckel.io/hostit/cluster"
-	"heckel.io/hostit/nodeapi"
+	"heckel.io/hostit/node/api"
 	"heckel.io/hostit/store"
 )
 
@@ -19,7 +19,7 @@ const (
 )
 
 // ControlLink is the node's reverse channel to control: it implements
-// nodeapi.ControlSink by POSTing callbacks over the same duplex connection the
+// api.ControlSink by POSTing callbacks over the same duplex connection the
 // RPC rides on. The client is swapped on every (re)dial; between connections
 // callbacks are dropped with a warning. Usage recovers on its own (re-measured
 // on a cadence) and a power transition on the next lifecycle change. Snapshot
@@ -32,7 +32,7 @@ type ControlLink struct {
 }
 
 var (
-	_ nodeapi.ControlSink = (*ControlLink)(nil)
+	_ api.ControlSink = (*ControlLink)(nil)
 )
 
 // NewControlLink creates the (initially disconnected) link.

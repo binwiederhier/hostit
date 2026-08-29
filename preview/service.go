@@ -36,7 +36,7 @@ import (
 	"sync"
 	"time"
 
-	"heckel.io/hostit/run"
+	"heckel.io/hostit/system/run"
 )
 
 const (

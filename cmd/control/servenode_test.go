@@ -10,7 +10,7 @@ import (
 
 	"heckel.io/hostit/control"
 	"heckel.io/hostit/control/config"
-	"heckel.io/hostit/nodeapi"
+	"heckel.io/hostit/node/api"
 	"heckel.io/hostit/store"
 	"heckel.io/hostit/system/stats"
 )
@@ -42,14 +42,14 @@ type fakeNodeAgent struct {
 	stats          stats.Stats
 }
 
-func (f *fakeNodeAgent) States(names []string) map[string]nodeapi.State {
+func (f *fakeNodeAgent) States(names []string) map[string]api.State {
 	f.statesCalls++
-	return map[string]nodeapi.State{}
+	return map[string]api.State{}
 }
 
-func (f *fakeNodeAgent) Heartbeat() *nodeapi.Heartbeat {
+func (f *fakeNodeAgent) Heartbeat() *api.Heartbeat {
 	f.heartbeatCalls++
-	return &nodeapi.Heartbeat{Address: "10.0.0.4", Stats: f.stats}
+	return &api.Heartbeat{Address: "10.0.0.4", Stats: f.stats}
 }
 
 // A node hosting nothing must still register a pulse: this poll doubles as

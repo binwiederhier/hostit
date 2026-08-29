@@ -1,4 +1,4 @@
-package nodeapi
+package api
 
 import "testing"
 

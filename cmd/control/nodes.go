@@ -11,8 +11,8 @@ import (
 	"heckel.io/hostit/cluster"
 	"heckel.io/hostit/cmd/util"
 	"heckel.io/hostit/control/config"
+	"heckel.io/hostit/node/api"
 	"heckel.io/hostit/node/link"
-	"heckel.io/hostit/nodeapi"
 	"heckel.io/hostit/store"
 )
 
@@ -60,7 +60,7 @@ func execNodeAdd(c *cli.Context) error {
 	if name == store.HostLocal {
 		return fmt.Errorf("%q is the colocated node; its certificate is minted automatically", name)
 	}
-	if !nodeapi.ValidName(name) {
+	if !api.ValidName(name) {
 		return fmt.Errorf("invalid node name %q", name)
 	}
 	conf, s, err := nodeStore(c)

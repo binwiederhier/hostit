@@ -14,13 +14,13 @@ import (
 
 	"heckel.io/hostit/appctl"
 	"heckel.io/hostit/archive"
-	"heckel.io/hostit/nodeapi"
+	"heckel.io/hostit/node/api"
 	"heckel.io/hostit/store"
 )
 
 // The NodeAgent RPC: hostit-node serves its in-process NodeAgent (the Manager)
 // behind RPCHandler; hostit-control talks to it through NewRemoteAgent, which
-// implements nodeapi.NodeAgent over the duplex client. Small verbs are one JSON
+// implements api.NodeAgent over the duplex client. Small verbs are one JSON
 // envelope per call; file bodies, tars and reads stream raw.
 
 const (
@@ -54,20 +54,20 @@ type rpcReq struct {
 // rpcResp is the result envelope; Err/ErrCode carry failures (ErrCode maps
 // back to the sentinel errors the control plane matches with errors.Is).
 type rpcResp struct {
-	Output    string                   `json:"output,omitempty"`
-	OK        bool                     `json:"ok,omitempty"`
-	Cmd       string                   `json:"cmd,omitempty"`
-	Args      []string                 `json:"args,omitempty"`
-	Paths     []string                 `json:"paths,omitempty"`
-	Exec      *nodeapi.ExecResult      `json:"exec,omitempty"`
-	Snapshot  *store.Snapshot          `json:"snapshot,omitempty"`
-	Snapshots []*store.Snapshot        `json:"snapshots,omitempty"`
-	States    map[string]nodeapi.State `json:"states,omitempty"`
-	Heartbeat *nodeapi.Heartbeat       `json:"heartbeat,omitempty"`
-	Listing   *nodeapi.Listing         `json:"listing,omitempty"`
-	Stat      *nodeapi.FileInfo        `json:"stat,omitempty"`
-	Err       string                   `json:"err,omitempty"`
-	ErrCode   string                   `json:"err_code,omitempty"`
+	Output    string               `json:"output,omitempty"`
+	OK        bool                 `json:"ok,omitempty"`
+	Cmd       string               `json:"cmd,omitempty"`
+	Args      []string             `json:"args,omitempty"`
+	Paths     []string             `json:"paths,omitempty"`
+	Exec      *api.ExecResult      `json:"exec,omitempty"`
+	Snapshot  *store.Snapshot      `json:"snapshot,omitempty"`
+	Snapshots []*store.Snapshot    `json:"snapshots,omitempty"`
+	States    map[string]api.State `json:"states,omitempty"`
+	Heartbeat *api.Heartbeat       `json:"heartbeat,omitempty"`
+	Listing   *api.Listing         `json:"listing,omitempty"`
+	Stat      *api.FileInfo        `json:"stat,omitempty"`
+	Err       string               `json:"err,omitempty"`
+	ErrCode   string               `json:"err_code,omitempty"`
 }
 
 // The sentinels that must survive the wire: the control plane's error-to-HTTP
@@ -77,10 +77,10 @@ var (
 		"powered_off":   appctl.ErrPoweredOff,
 		"app_notfound":  store.ErrAppNotFound,
 		"snap_notfound": store.ErrSnapshotNotFound,
-		"app_exists":    nodeapi.ErrAppExists,
+		"app_exists":    api.ErrAppExists,
 		"file_notfound": fs.ErrNotExist,
-		"invalid":       nodeapi.ErrInvalid,
-		"limit":         nodeapi.ErrLimitReached,
+		"invalid":       api.ErrInvalid,
+		"limit":         api.ErrLimitReached,
 	}
 )
 
@@ -126,7 +126,7 @@ const (
 	terminalFrameResize = 'r'
 )
 
-func RPCHandler(agent nodeapi.NodeAgent) http.Handler {
+func RPCHandler(agent api.NodeAgent) http.Handler {
 	mux := http.NewServeMux()
 	verb := func(name string, fn func(*rpcReq) *rpcResp) {
 		mux.HandleFunc("POST /v1/"+name, func(w http.ResponseWriter, r *http.Request) {
@@ -153,7 +153,7 @@ func RPCHandler(agent nodeapi.NodeAgent) http.Handler {
 	}
 
 	mux.HandleFunc("POST /v1/sync", func(w http.ResponseWriter, r *http.Request) {
-		var state nodeapi.SyncState
+		var state api.SyncState
 		if err := json.NewDecoder(r.Body).Decode(&state); err != nil {
 			writeRPC(w, &rpcResp{Err: "bad request: " + err.Error()})
 			return
@@ -163,7 +163,7 @@ func RPCHandler(agent nodeapi.NodeAgent) http.Handler {
 	mux.HandleFunc("POST /v1/reconcile", func(w http.ResponseWriter, r *http.Request) {
 		// The desired document rides the body; an empty body means "converge
 		// against your mirror" (an older control).
-		var desired nodeapi.DesiredState
+		var desired api.DesiredState
 		if err := json.NewDecoder(r.Body).Decode(&desired); err != nil {
 			agent.Reconcile(nil)
 			writeRPC(w, &rpcResp{OK: true})
@@ -173,7 +173,7 @@ func RPCHandler(agent nodeapi.NodeAgent) http.Handler {
 		writeRPC(w, &rpcResp{OK: true})
 	})
 	mux.HandleFunc("POST /v1/provision", func(w http.ResponseWriter, r *http.Request) {
-		var spec nodeapi.ProvisionSpec
+		var spec api.ProvisionSpec
 		if err := json.NewDecoder(r.Body).Decode(&spec); err != nil {
 			writeRPC(w, &rpcResp{Err: "bad request: " + err.Error()})
 			return
@@ -182,7 +182,7 @@ func RPCHandler(agent nodeapi.NodeAgent) http.Handler {
 		writeRPC(w, &rpcResp{OK: err == nil, Err: errString(err), ErrCode: errCode(err)})
 	})
 	mux.HandleFunc("POST /v1/deprovision", func(w http.ResponseWriter, r *http.Request) {
-		var spec nodeapi.DeprovisionSpec
+		var spec api.DeprovisionSpec
 		if err := json.NewDecoder(r.Body).Decode(&spec); err != nil {
 			writeRPC(w, &rpcResp{Err: "bad request: " + err.Error()})
 			return
@@ -331,7 +331,7 @@ func writeRPC(w http.ResponseWriter, resp *rpcResp) {
 // shell on a local pty (agent.Terminal -- the only machine where the app's
 // user exists), hijacks the duplex stream, and bridges the two until either
 // side hangs up. Input arrives framed (data vs resize); output leaves raw.
-func serveTerminal(w http.ResponseWriter, r *http.Request, agent nodeapi.NodeAgent) {
+func serveTerminal(w http.ResponseWriter, r *http.Request, agent api.NodeAgent) {
 	session, err := agent.Terminal(r.PathValue("name"))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)

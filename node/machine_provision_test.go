@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"heckel.io/hostit/nodeapi"
+	"heckel.io/hostit/node/api"
 )
 
 // A delete-then-recreate of the same name must not race the teardown. The
@@ -42,7 +42,7 @@ func TestProvisionDoesNotWaitWhenNothingIsTearingDown(t *testing.T) {
 	start := time.Now()
 	m.awaitTeardown("blog")
 	assert.Less(t, time.Since(start), 50*time.Millisecond)
-	_ = nodeapi.ProvisionSpec{}
+	_ = api.ProvisionSpec{}
 }
 
 // Deprovision marks the name for the whole teardown: that flag is what a
@@ -57,7 +57,7 @@ func TestDeprovisionMarksTheNameWhileItTearsDown(t *testing.T) {
 	spy := &tearingSpy{m: m}
 	m.user = spy
 
-	m.Deprovision(&nodeapi.DeprovisionSpec{Name: "blog", ID: "id1", Unit: "u", Container: "c"})
+	m.Deprovision(&api.DeprovisionSpec{Name: "blog", ID: "id1", Unit: "u", Container: "c"})
 
 	assert.True(t, spy.markedDuringDelete, "the name is marked while the account is being removed")
 	assert.False(t, m.IsTearingDown("blog"), "and released when the teardown finishes")

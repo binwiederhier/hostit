@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"heckel.io/hostit/retention"
+	"heckel.io/hostit/control/retention"
 	"heckel.io/hostit/snapshot"
 	"heckel.io/hostit/store"
 )

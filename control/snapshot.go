@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"heckel.io/hostit/app"
-	"heckel.io/hostit/retention"
+	"heckel.io/hostit/control/retention"
 	"heckel.io/hostit/snapshot"
 	"heckel.io/hostit/store"
 )

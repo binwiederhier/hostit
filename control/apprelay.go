@@ -5,7 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 
-	"heckel.io/hostit/nodeapi"
+	"heckel.io/hostit/node/api"
 	"heckel.io/hostit/store"
 )
 
@@ -31,7 +31,7 @@ import (
 func (s *Server) AppRelayHandler(nodeID string) http.Handler {
 	mux := s.selfMux(func(next func(http.ResponseWriter, *http.Request, *store.App)) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
-			name := r.Header.Get(nodeapi.AppRelayHeader)
+			name := r.Header.Get(api.AppRelayHeader)
 			if name == "" {
 				writeError(w, http.StatusBadRequest, errors.New("relay request names no app"))
 				return
@@ -55,5 +55,5 @@ func (s *Server) AppRelayHandler(nodeID string) http.Handler {
 			next(w, r, a)
 		}
 	})
-	return http.StripPrefix(nodeapi.AppRelayPrefix, mux)
+	return http.StripPrefix(api.AppRelayPrefix, mux)
 }

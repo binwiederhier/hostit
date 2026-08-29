@@ -12,7 +12,7 @@ import (
 
 	"heckel.io/hostit/control/config"
 	"heckel.io/hostit/node"
-	"heckel.io/hostit/nodeapi"
+	"heckel.io/hostit/node/api"
 	"heckel.io/hostit/store"
 	"heckel.io/hostit/system/ssh"
 	"heckel.io/hostit/workspace"
@@ -491,8 +491,8 @@ func validateKeys(keys []string) error {
 }
 
 func (m *Manager) validateName(name string) error {
-	if !nodeapi.ValidName(name) {
-		return fmt.Errorf("%w: invalid app name %q, must match %s", ErrInvalid, name, nodeapi.AppNamePattern)
+	if !api.ValidName(name) {
+		return fmt.Errorf("%w: invalid app name %q, must match %s", ErrInvalid, name, api.AppNamePattern)
 	}
 	if slices.Contains(reservedNames, name) {
 		return fmt.Errorf("%w: app name %q is reserved", ErrInvalid, name)

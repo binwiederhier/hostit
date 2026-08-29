@@ -11,7 +11,7 @@ import (
 	"heckel.io/hostit/app"
 	"heckel.io/hostit/appctl"
 	"heckel.io/hostit/homefs"
-	"heckel.io/hostit/nodeapi"
+	"heckel.io/hostit/node/api"
 	"heckel.io/hostit/store"
 	"heckel.io/hostit/workspace"
 )
@@ -50,7 +50,7 @@ func (m *Machine) up(name string, snapshot bool) (string, error) {
 	}
 	conf, err := m.LoadAppConfig(name)
 	if err != nil {
-		return "", fmt.Errorf("%w: %s", nodeapi.ErrInvalid, err.Error())
+		return "", fmt.Errorf("%w: %s", api.ErrInvalid, err.Error())
 	}
 	// Snapshot the current state before applying the new config, so a bad deploy is
 	// undoable. Best effort: a snapshot failure must not block the deploy.
@@ -142,7 +142,7 @@ func (m *Machine) signalAgent(name, signal string) error {
 		return appctl.ErrPoweredOff
 	}
 	if err := m.container.Kill(m.ContainerName(name), signal); err != nil {
-		return fmt.Errorf("%w: the container is not running (power it on first)", nodeapi.ErrInvalid)
+		return fmt.Errorf("%w: the container is not running (power it on first)", api.ErrInvalid)
 	}
 	return nil
 }

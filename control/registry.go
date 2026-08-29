@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"heckel.io/hostit/archive"
-	"heckel.io/hostit/nodeapi"
+	"heckel.io/hostit/node/api"
 	"heckel.io/hostit/store"
 )
 
@@ -76,7 +76,7 @@ func (r *NodeRegistry) IDs() []string {
 // runs, and the fact that it just answered. The address comes from the node
 // rather than an operator flag, so a node cannot be registered with the wrong
 // one -- and routing simply waits until a node has said where it is.
-func (m *Manager) RecordNodeStatus(nodeID string, hb *nodeapi.Heartbeat) error {
+func (m *Manager) RecordNodeStatus(nodeID string, hb *api.Heartbeat) error {
 	if hb.Address != "" {
 		if err := m.store.EnsureNode(nodeID, hb.Address); err != nil {
 			return err
@@ -332,7 +332,7 @@ func (ra *routingAgent) Exec(name, command string, timeout time.Duration) (*Exec
 	return agent.Exec(name, command, timeout)
 }
 
-func (ra *routingAgent) Terminal(name string) (nodeapi.TerminalSession, error) {
+func (ra *routingAgent) Terminal(name string) (api.TerminalSession, error) {
 	agent, err := ra.routeRunnable(name)
 	if err != nil {
 		return nil, err
@@ -458,7 +458,7 @@ func (ra *routingAgent) SetKeys(name string, appKeys, profileKeys []string) erro
 // a SPECIFIC node's agent directly on rejoin (IngestNodeSnapshots), never
 // through the router. Routing it would have to pick a node arbitrarily.
 func (ra *routingAgent) Snapshots() ([]*store.Snapshot, error) {
-	return nil, fmt.Errorf("%w: snapshots must be read from a specific node's agent", nodeapi.ErrInvalid)
+	return nil, fmt.Errorf("%w: snapshots must be read from a specific node's agent", api.ErrInvalid)
 }
 
 func (ra *routingAgent) Rename(oldName, newName, id string) error {
@@ -555,7 +555,7 @@ func (ra *routingAgent) Sync(state *SyncState) error {
 // have each one try to build and configure apps that live elsewhere -- and on
 // a colocated pair, where /etc/passwd is shared, it would look like the app
 // already exists and quietly apply another node's limits to it.
-func (ra *routingAgent) Reconcile(desired *nodeapi.DesiredState) []string {
+func (ra *routingAgent) Reconcile(desired *api.DesiredState) []string {
 	for _, id := range ra.reg.IDs() {
 		agent := ra.reg.Agent(id)
 		if agent == nil {
@@ -567,11 +567,11 @@ func (ra *routingAgent) Reconcile(desired *nodeapi.DesiredState) []string {
 }
 
 // sliceDesired narrows a fleet-wide desired state to one node's apps.
-func sliceDesired(desired *nodeapi.DesiredState, nodeID string) *nodeapi.DesiredState {
+func sliceDesired(desired *api.DesiredState, nodeID string) *api.DesiredState {
 	if desired == nil {
 		return nil
 	}
-	out := &nodeapi.DesiredState{Seq: desired.Seq, Apps: make([]*nodeapi.AppDesired, 0, len(desired.Apps))}
+	out := &api.DesiredState{Seq: desired.Seq, Apps: make([]*api.AppDesired, 0, len(desired.Apps))}
 	for _, app := range desired.Apps {
 		if hostOrLocal(app.Host) == nodeID {
 			out.Apps = append(out.Apps, app)

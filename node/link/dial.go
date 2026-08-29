@@ -5,7 +5,7 @@ import (
 	"net/http"
 
 	"heckel.io/hostit/cluster"
-	"heckel.io/hostit/nodeapi"
+	"heckel.io/hostit/node/api"
 )
 
 // The node's half of the cluster transport: what a node serves once its
@@ -17,7 +17,7 @@ import (
 // `hostit-control node add` flips on and `node remove` off, checked on top of
 // the certificate the transport already verified. An unregistered node's
 // still-valid certificate is refused, which is what makes removal effective.
-func Role(authorize func(nodeID string) bool, callbacks func(nodeID string) http.Handler, register func(nodeID string, agent nodeapi.NodeAgent), disconnect func(nodeID string, agent nodeapi.NodeAgent)) *cluster.Role {
+func Role(authorize func(nodeID string) bool, callbacks func(nodeID string) http.Handler, register func(nodeID string, agent api.NodeAgent), disconnect func(nodeID string, agent api.NodeAgent)) *cluster.Role {
 	return &cluster.Role{
 		Authorize: func(peer cluster.Peer) bool { return authorize(peer.ID) },
 		Callbacks: func(peer cluster.Peer) http.Handler {
@@ -44,7 +44,7 @@ func Role(authorize func(nodeID string) bool, callbacks func(nodeID string) http
 // the duplex and blocks until the connection dies. onLink receives the client
 // for the node's own callbacks to control -- and nil when this connection
 // ends, so nothing keeps posting into a dead session between redials.
-func ServeAgent(conn net.Conn, nodeID string, agent nodeapi.NodeAgent, onLink func(client *http.Client)) error {
+func ServeAgent(conn net.Conn, nodeID string, agent api.NodeAgent, onLink func(client *http.Client)) error {
 	defer onLink(nil)
 	peer := cluster.Peer{ID: nodeID, Role: cluster.RoleNode}
 	return cluster.Serve(conn, peer, RPCHandler(agent), onLink)

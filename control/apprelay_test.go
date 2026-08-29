@@ -8,15 +8,15 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"heckel.io/hostit/nodeapi"
+	"heckel.io/hostit/node/api"
 )
 
 // relayRequest sends one request through a node's relay handler, the way the
 // node's app socket does: prefixed path, app named in the header.
 func relayRequest(handler http.Handler, method, path, app string) *httptest.ResponseRecorder {
-	req := httptest.NewRequest(method, nodeapi.AppRelayPrefix+path, nil)
+	req := httptest.NewRequest(method, api.AppRelayPrefix+path, nil)
 	if app != "" {
-		req.Header.Set(nodeapi.AppRelayHeader, app)
+		req.Header.Set(api.AppRelayHeader, app)
 	}
 	rr := httptest.NewRecorder()
 	handler.ServeHTTP(rr, req)
@@ -75,7 +75,7 @@ func TestRelayHeaderIsInertOffTheClusterLink(t *testing.T) {
 	s.apps.WaitBackground()
 
 	req := httptest.NewRequest("POST", "/api/apps/blog/deploy", nil)
-	req.Header.Set(nodeapi.AppRelayHeader, "blog")
+	req.Header.Set(api.AppRelayHeader, "blog")
 	rr := httptest.NewRecorder()
 	s.API().ServeHTTP(rr, req)
 	assert.Equal(t, http.StatusUnauthorized, rr.Code, "the header grants nothing on the REST API")
@@ -83,7 +83,7 @@ func TestRelayHeaderIsInertOffTheClusterLink(t *testing.T) {
 	// And control's own socket still resolves by peer uid, never by header: a
 	// header naming an app while the peer uid is unknown resolves nothing.
 	req = httptest.NewRequest("GET", "/v1/self", nil)
-	req.Header.Set(nodeapi.AppRelayHeader, "blog")
+	req.Header.Set(api.AppRelayHeader, "blog")
 	rr = httptest.NewRecorder()
 	s.socketHandler().ServeHTTP(rr, req)
 	assert.Equal(t, http.StatusForbidden, rr.Code, "no peer creds means no app, whatever the header says")

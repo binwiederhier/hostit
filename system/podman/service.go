@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"heckel.io/hostit/run"
+	"heckel.io/hostit/system/run"
 )
 
 // podman is the container runtime binary; centralized so the wrappers don't each

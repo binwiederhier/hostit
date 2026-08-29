@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"heckel.io/hostit/cluster"
-	"heckel.io/hostit/nodeconf"
+	"heckel.io/hostit/node/config"
 )
 
 // Cluster identity comes from configuration: a node (or control) points at its
@@ -31,7 +31,7 @@ func TestCredsFromConfiguredFiles(t *testing.T) {
 	require.NoError(t, os.WriteFile(certFile, []byte(certPEM), 0o600))
 	require.NoError(t, os.WriteFile(keyFile, []byte(keyPEM), 0o600))
 
-	conf := nodeconf.NewConfig()
+	conf := config.NewConfig()
 	conf.NodeID = "worker-9"
 	conf.NodeCertFile = certFile
 	conf.NodeKeyFile = keyFile
@@ -59,7 +59,7 @@ func TestCredsFromConfiguredFiles(t *testing.T) {
 // for a member to wait for.
 func TestControlMintsItsOwnIdentityButNotTheMembers(t *testing.T) {
 	t.Parallel()
-	conf := nodeconf.NewConfig()
+	conf := config.NewConfig()
 	conf.DataDir = t.TempDir()
 
 	listen, err := ListenerCreds("", "", "", conf.DataDir)

@@ -11,7 +11,7 @@ import (
 
 	"github.com/creack/pty"
 
-	"heckel.io/hostit/nodeapi"
+	"heckel.io/hostit/node/api"
 	"heckel.io/hostit/workspace"
 )
 
@@ -43,7 +43,7 @@ const (
 //
 // The command runs as the container's root, which is the app's own unprivileged
 // uid on the host, in the app's home directory.
-func (m *Machine) Exec(name, command string, timeout time.Duration) (*nodeapi.ExecResult, error) {
+func (m *Machine) Exec(name, command string, timeout time.Duration) (*api.ExecResult, error) {
 	nodeExecs.Inc()
 	// Exec needs a running container, so it enters like a login does: a fresh
 	// fork or crashed app is brought up first (instead of racing the background
@@ -54,7 +54,7 @@ func (m *Machine) Exec(name, command string, timeout time.Duration) (*nodeapi.Ex
 	}
 	command = strings.TrimSpace(command)
 	if command == "" {
-		return nil, fmt.Errorf("%w: no command given", nodeapi.ErrInvalid)
+		return nil, fmt.Errorf("%w: no command given", api.ErrInvalid)
 	}
 	// One at a time per host: these are builds, and the box has one core
 	m.execMu.Lock()
@@ -69,7 +69,7 @@ func (m *Machine) Exec(name, command string, timeout time.Duration) (*nodeapi.Ex
 	out, err := m.container.Exec(limit+ExecGraceTimeout, m.ContainerName(name), workspace.ContainerHome,
 		"timeout", "--kill-after", "5s", strconv.Itoa(int(limit.Seconds())),
 		"/bin/sh", "-lc", command)
-	res := &nodeapi.ExecResult{ExitCode: exitCode(err)}
+	res := &api.ExecResult{ExitCode: exitCode(err)}
 	res.Output, res.Truncated = capOutput(out)
 	// timeout(1) exits 124 when it had to stop the command; a kill from the outer
 	// bound has no status at all, and only the clock tells us
@@ -97,7 +97,7 @@ func (m *Machine) terminalCommand(name string) (string, []string, error) {
 // else. Its predecessor returned the command for the caller to exec, which was
 // wrong the moment the caller stopped being on the app's machine: control ran
 // "runuser watchme" on its own host and got "user does not exist".
-func (m *Machine) Terminal(name string) (nodeapi.TerminalSession, error) {
+func (m *Machine) Terminal(name string) (api.TerminalSession, error) {
 	prog, args, err := m.terminalCommand(name)
 	if err != nil {
 		return nil, err

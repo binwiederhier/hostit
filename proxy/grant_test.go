@@ -11,8 +11,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"heckel.io/hostit/appgrant"
 	"heckel.io/hostit/proxy/api"
+	"heckel.io/hostit/proxy/grant"
 )
 
 // The point of the whole exercise: a private app is served BY THE PROXY, from
@@ -28,7 +28,7 @@ func TestPrivateAppsAreServedByTheProxy(t *testing.T) {
 	defer appSrv.Close()
 	// Control is DOWN for this whole test: nothing may depend on it.
 	p := New(&Config{ControlURL: "http://127.0.0.1:1", CacheDir: t.TempDir()})
-	signer := appgrant.NewSigner("session-key", time.Hour)
+	signer := grant.NewSigner("session-key", time.Hour)
 	require.NoError(t, p.ApplyRoutes(&api.Table{
 		Seq:            1,
 		GrantPublicKey: signer.PublicKey(),
@@ -73,8 +73,8 @@ func TestTheProxyRefusesGrantsItShouldNot(t *testing.T) {
 	}))
 	defer appSrv.Close()
 	p := New(&Config{ControlURL: "http://127.0.0.1:1", CacheDir: t.TempDir()})
-	signer := appgrant.NewSigner("session-key", time.Hour)
-	impostor := appgrant.NewSigner("some other key", time.Hour)
+	signer := grant.NewSigner("session-key", time.Hour)
+	impostor := grant.NewSigner("some other key", time.Hour)
 	require.NoError(t, p.ApplyRoutes(&api.Table{
 		Seq: 1, GrantPublicKey: signer.PublicKey(),
 		Routes: []api.Route{{Host: "dash.example.com", Target: appSrv.Listener.Addr().String(), App: "dash", Private: true, Access: []string{"owner1"}}},
@@ -87,7 +87,7 @@ func TestTheProxyRefusesGrantsItShouldNot(t *testing.T) {
 		{"a grant for another app", func() (string, error) { return signer.Sign("otherapp", "owner1") }},
 		{"a grant signed by someone else", func() (string, error) { return impostor.Sign("dash", "owner1") }},
 		{"an expired grant", func() (string, error) {
-			return appgrant.NewSigner("session-key", -time.Minute).Sign("dash", "owner1")
+			return grant.NewSigner("session-key", -time.Minute).Sign("dash", "owner1")
 		}},
 	} {
 		value, err := tc.grant()
@@ -111,7 +111,7 @@ func TestTheProxyStripsTheGrantBeforeForwarding(t *testing.T) {
 	}))
 	defer appSrv.Close()
 	p := New(&Config{ControlURL: "http://127.0.0.1:1", CacheDir: t.TempDir()})
-	signer := appgrant.NewSigner("session-key", time.Hour)
+	signer := grant.NewSigner("session-key", time.Hour)
 	require.NoError(t, p.ApplyRoutes(&api.Table{
 		Seq: 1, GrantPublicKey: signer.PublicKey(),
 		Routes: []api.Route{{Host: "dash.example.com", Target: appSrv.Listener.Addr().String(), App: "dash", Private: true, Access: []string{"owner1"}}},
@@ -146,7 +146,7 @@ func TestBearerTokensStillGoToControl(t *testing.T) {
 	}))
 	defer controlSrv.Close()
 	p := New(&Config{ControlURL: controlSrv.URL, CacheDir: t.TempDir()})
-	signer := appgrant.NewSigner("session-key", time.Hour)
+	signer := grant.NewSigner("session-key", time.Hour)
 	require.NoError(t, p.ApplyRoutes(&api.Table{
 		Seq: 1, GrantPublicKey: signer.PublicKey(),
 		Routes: []api.Route{{Host: "dash.example.com", Target: appSrv.Listener.Addr().String(), App: "dash", Private: true, Access: []string{"owner1"}}},
@@ -172,7 +172,7 @@ func TestARenamedAppInvalidatesOldGrants(t *testing.T) {
 	}))
 	defer appSrv.Close()
 	p := New(&Config{ControlURL: "http://127.0.0.1:1", CacheDir: t.TempDir()})
-	signer := appgrant.NewSigner("session-key", time.Hour)
+	signer := grant.NewSigner("session-key", time.Hour)
 	oldGrant, err := signer.Sign("dash", "owner1")
 	require.NoError(t, err)
 
@@ -199,7 +199,7 @@ func TestNoGrantKeyMeansNoPrivateServing(t *testing.T) {
 	}))
 	defer appSrv.Close()
 	p := New(&Config{ControlURL: "http://127.0.0.1:1", CacheDir: t.TempDir()})
-	signer := appgrant.NewSigner("session-key", time.Hour)
+	signer := grant.NewSigner("session-key", time.Hour)
 	value, err := signer.Sign("dash", "owner1")
 	require.NoError(t, err)
 	require.NoError(t, p.ApplyRoutes(&api.Table{
@@ -224,7 +224,7 @@ func TestAnEmptyAccessSetServesNobody(t *testing.T) {
 	}))
 	defer appSrv.Close()
 	p := New(&Config{ControlURL: "http://127.0.0.1:1", CacheDir: t.TempDir()})
-	signer := appgrant.NewSigner("session-key", time.Hour)
+	signer := grant.NewSigner("session-key", time.Hour)
 	value, err := signer.Sign("dash", "owner1")
 	require.NoError(t, err)
 	require.NoError(t, p.ApplyRoutes(&api.Table{
@@ -274,13 +274,13 @@ func TestPrivateRoutesAreHandedToControl(t *testing.T) {
 
 // privateProxy is a proxy serving one private app, with control unreachable --
 // which is the state these tests are actually about.
-func privateProxy(t *testing.T, cacheDir string, routes ...api.Route) (*Proxy, *appgrant.Signer, string) {
+func privateProxy(t *testing.T, cacheDir string, routes ...api.Route) (*Proxy, *grant.Signer, string) {
 	t.Helper()
 	appSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprint(w, "the app itself")
 	}))
 	t.Cleanup(appSrv.Close)
-	signer := appgrant.NewSigner("session-key", time.Hour)
+	signer := grant.NewSigner("session-key", time.Hour)
 	for i := range routes {
 		routes[i].Target = appSrv.Listener.Addr().String()
 	}
@@ -403,7 +403,7 @@ func TestTheGrantIsStrippedFromPublicRoutesToo(t *testing.T) {
 		seen <- r.Clone(r.Context())
 	}))
 	defer appSrv.Close()
-	signer := appgrant.NewSigner("session-key", time.Hour)
+	signer := grant.NewSigner("session-key", time.Hour)
 	p := New(&Config{ControlURL: "http://127.0.0.1:1", CacheDir: t.TempDir()})
 	require.NoError(t, p.ApplyRoutes(&api.Table{
 		Seq: 1, GrantPublicKey: signer.PublicKey(),
@@ -464,7 +464,7 @@ func TestPreviewGrantServesOnlyItsOwnApp(t *testing.T) {
 	}))
 	defer appSrv.Close()
 	p := New(&Config{ControlURL: "http://127.0.0.1:1", CacheDir: t.TempDir()})
-	signer := appgrant.NewSigner("session-key", time.Hour)
+	signer := grant.NewSigner("session-key", time.Hour)
 	require.NoError(t, p.ApplyRoutes(&api.Table{
 		Seq:            1,
 		GrantPublicKey: signer.PublicKey(),

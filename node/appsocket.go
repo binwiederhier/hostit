@@ -15,8 +15,8 @@ import (
 	"golang.org/x/sys/unix"
 
 	"heckel.io/hostit/cluster"
+	"heckel.io/hostit/node/api"
 	"heckel.io/hostit/node/link"
-	"heckel.io/hostit/nodeapi"
 	"heckel.io/hostit/store"
 )
 
@@ -164,7 +164,7 @@ func relay(w http.ResponseWriter, r *http.Request, link *link.ControlLink, appNa
 		writeSocketError(w, http.StatusBadGateway, errControlUnreachable.Error())
 		return
 	}
-	url := "http://" + cluster.ControlID + nodeapi.AppRelayPrefix + r.URL.Path
+	url := "http://" + cluster.ControlID + api.AppRelayPrefix + r.URL.Path
 	if r.URL.RawQuery != "" {
 		url += "?" + r.URL.RawQuery
 	}
@@ -174,7 +174,7 @@ func relay(w http.ResponseWriter, r *http.Request, link *link.ControlLink, appNa
 		return
 	}
 	req.Header = r.Header.Clone()
-	req.Header.Set(nodeapi.AppRelayHeader, appName)
+	req.Header.Set(api.AppRelayHeader, appName)
 	resp, err := client.Do(req)
 	if err != nil {
 		writeSocketError(w, http.StatusBadGateway, errControlUnreachable.Error())

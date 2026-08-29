@@ -15,8 +15,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"heckel.io/hostit/node/api"
 	nodelink "heckel.io/hostit/node/link"
-	"heckel.io/hostit/nodeapi"
 	"heckel.io/hostit/store"
 )
 
@@ -105,7 +105,7 @@ func TestNodeMapsPeerUIDToItsApp(t *testing.T) {
 		hit       bool
 	}
 	link := linkTo(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		seen.hit, seen.path, seen.app = true, r.URL.Path, r.Header.Get(nodeapi.AppRelayHeader)
+		seen.hit, seen.path, seen.app = true, r.URL.Path, r.Header.Get(api.AppRelayHeader)
 		w.WriteHeader(http.StatusOK)
 	}))
 	handler := appSocketHandler(mirrorWith(t, "blog", 4242), link)
@@ -113,7 +113,7 @@ func TestNodeMapsPeerUIDToItsApp(t *testing.T) {
 	rr := asUID(handler, 4242, "GET", "/v1/self/logs?lines=7")
 	assert.Equal(t, http.StatusOK, rr.Code)
 	assert.True(t, seen.hit)
-	assert.Equal(t, nodeapi.AppRelayPrefix+"/v1/self/logs", seen.path, "the path is prefixed, otherwise verbatim")
+	assert.Equal(t, api.AppRelayPrefix+"/v1/self/logs", seen.path, "the path is prefixed, otherwise verbatim")
 	assert.Equal(t, "blog", seen.app, "the node names the app it resolved")
 
 	seen.hit = false

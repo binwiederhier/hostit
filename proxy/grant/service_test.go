@@ -1,4 +1,4 @@
-package appgrant
+package grant
 
 import (
 	"testing"

@@ -18,8 +18,8 @@ import (
 	"heckel.io/hostit/appctl"
 	"heckel.io/hostit/control/config"
 	"heckel.io/hostit/node"
-	"heckel.io/hostit/run"
 	"heckel.io/hostit/store"
+	"heckel.io/hostit/system/run"
 	"heckel.io/hostit/workspace"
 )
 

@@ -7,12 +7,12 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"heckel.io/hostit/nodeapi"
-	"heckel.io/hostit/run"
+	"heckel.io/hostit/node/api"
 	"heckel.io/hostit/store"
 	"heckel.io/hostit/system/btrfs"
 	"heckel.io/hostit/system/nftables"
 	"heckel.io/hostit/system/podman"
+	"heckel.io/hostit/system/run"
 	"heckel.io/hostit/system/ssh"
 	"heckel.io/hostit/system/systemd"
 	"heckel.io/hostit/system/unixuser"
@@ -29,15 +29,15 @@ func TestSyncIgnoresAStaleMirror(t *testing.T) {
 	two := []*store.App{{ID: "id1", Name: "one", Port: 10000}, {ID: "id2", Name: "two", Port: 10001}}
 	one := two[:1]
 
-	require.NoError(t, m.Sync(&nodeapi.SyncState{Seq: 5, Apps: two}))
-	require.NoError(t, m.Sync(&nodeapi.SyncState{Seq: 4, Apps: one})) // the racing, older push
+	require.NoError(t, m.Sync(&api.SyncState{Seq: 5, Apps: two}))
+	require.NoError(t, m.Sync(&api.SyncState{Seq: 4, Apps: one})) // the racing, older push
 
 	apps, err := m.store.Apps()
 	require.NoError(t, err)
 	assert.Len(t, apps, 2, "the stale mirror must not drop the newer app")
 
 	// A genuinely newer payload still applies.
-	require.NoError(t, m.Sync(&nodeapi.SyncState{Seq: 6, Apps: one}))
+	require.NoError(t, m.Sync(&api.SyncState{Seq: 6, Apps: one}))
 	apps, err = m.store.Apps()
 	require.NoError(t, err)
 	assert.Len(t, apps, 1)
@@ -48,10 +48,10 @@ func TestSyncIgnoresAStaleMirror(t *testing.T) {
 func TestSyncAcceptsALowerSequenceAfterReconnect(t *testing.T) {
 	t.Parallel()
 	m := newSyncTestMachine(t)
-	require.NoError(t, m.Sync(&nodeapi.SyncState{Seq: 99, Apps: []*store.App{{ID: "id1", Name: "one", Port: 10000}}}))
+	require.NoError(t, m.Sync(&api.SyncState{Seq: 99, Apps: []*store.App{{ID: "id1", Name: "one", Port: 10000}}}))
 
 	m.ResetSyncSeq()
-	require.NoError(t, m.Sync(&nodeapi.SyncState{Seq: 1, Apps: []*store.App{
+	require.NoError(t, m.Sync(&api.SyncState{Seq: 1, Apps: []*store.App{
 		{ID: "id1", Name: "one", Port: 10000}, {ID: "id2", Name: "two", Port: 10001},
 	}}))
 

@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"heckel.io/hostit/cluster"
-	"heckel.io/hostit/nodeapi"
+	"heckel.io/hostit/node/api"
 	"heckel.io/hostit/store"
 )
 
@@ -64,7 +64,7 @@ func TestCallbacksFlowOverTheDuplex(t *testing.T) {
 		cluster.RoleNode: Role(
 			func(string) bool { return true },
 			func(nodeID string) http.Handler { return CallbackHandler(nodeID, st) },
-			func(string, nodeapi.NodeAgent) { registered <- struct{}{} },
+			func(string, api.NodeAgent) { registered <- struct{}{} },
 			nil,
 		),
 	}))
@@ -183,7 +183,7 @@ type terminalAgent struct {
 	term *fakeTerminal
 }
 
-func (a *terminalAgent) Terminal(name string) (nodeapi.TerminalSession, error) {
+func (a *terminalAgent) Terminal(name string) (api.TerminalSession, error) {
 	if name != "blog" {
 		return nil, errors.New("unknown app")
 	}
@@ -201,12 +201,12 @@ func TestTerminalBridgesOverTheDuplex(t *testing.T) {
 	require.NoError(t, err)
 	defer ln.Close()
 
-	agents := make(chan nodeapi.NodeAgent, 1)
+	agents := make(chan api.NodeAgent, 1)
 	srv := cluster.SocketServer(cluster.ConnectHandler(map[string]*cluster.Role{
 		cluster.RoleNode: Role(
 			func(string) bool { return true },
 			nil,
-			func(_ string, agent nodeapi.NodeAgent) { agents <- agent },
+			func(_ string, agent api.NodeAgent) { agents <- agent },
 			nil,
 		),
 	}))
@@ -220,7 +220,7 @@ func TestTerminalBridgesOverTheDuplex(t *testing.T) {
 		_ = ServeAgent(conn, "node-b", &terminalAgent{term: term}, func(*http.Client) {})
 	}()
 
-	var remote nodeapi.NodeAgent
+	var remote api.NodeAgent
 	select {
 	case remote = <-agents:
 	case <-time.After(3 * time.Second):

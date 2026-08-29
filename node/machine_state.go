@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"heckel.io/hostit/app"
-	"heckel.io/hostit/nodeapi"
+	"heckel.io/hostit/node/api"
 	"heckel.io/hostit/system/podman"
 	"heckel.io/hostit/system/stats"
 	"heckel.io/hostit/workspace"
@@ -60,9 +60,9 @@ func (m *Machine) SeedStates() {
 		if _, ok := m.stateCache[a.Name]; ok {
 			continue
 		}
-		state := nodeapi.State{}
+		state := api.State{}
 		if !a.PoweredOff {
-			state = nodeapi.State{Running: true, AppRunning: true, AppState: app.StateRunning}
+			state = api.State{Running: true, AppRunning: true, AppState: app.StateRunning}
 		}
 		m.stateCache[a.Name] = state
 	}
@@ -158,8 +158,8 @@ func (m *Machine) StateLoop(done <-chan struct{}) {
 // States measures the given apps. Both podman and systemd are asked once for
 // all of them rather than once per app, so the cost does not grow with the
 // number of apps.
-func (m *Machine) States(names []string) map[string]nodeapi.State {
-	states := make(map[string]nodeapi.State, len(names))
+func (m *Machine) States(names []string) map[string]api.State {
+	states := make(map[string]api.State, len(names))
 	if len(names) == 0 {
 		return states
 	}
@@ -168,7 +168,7 @@ func (m *Machine) States(names []string) map[string]nodeapi.State {
 		// The app can only be up if its container is; a stopped or crashed app
 		// leaves the container running but reports something other than "running".
 		appState, appStartedAt := m.AppProcessState(name)
-		states[name] = nodeapi.State{
+		states[name] = api.State{
 			Running:      running,
 			AppRunning:   running && appState == app.StateRunning,
 			AppState:     appStateFor(running, appState),
@@ -301,11 +301,11 @@ func (m *Machine) nameByID() map[string]string {
 	return byID
 }
 
-// nodeapi.Heartbeat reports this node's build and capabilities: the placement and
+// api.Heartbeat reports this node's build and capabilities: the placement and
 // health inputs of the multi-node design. Grown in later phases (free
 // memory/disk, app count).
-func (m *Machine) Heartbeat() *nodeapi.Heartbeat {
-	return &nodeapi.Heartbeat{
+func (m *Machine) Heartbeat() *api.Heartbeat {
+	return &api.Heartbeat{
 		Version:      Version,
 		BtrfsCapable: m.btrfs.IsBtrfs(m.config.AppsDir),
 		Address:      m.config.AppsBindAddress,

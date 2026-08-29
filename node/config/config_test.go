@@ -1,4 +1,4 @@
-package nodeconf
+package config
 
 import (
 	"os"

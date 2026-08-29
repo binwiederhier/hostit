@@ -10,7 +10,7 @@ import (
 	"syscall"
 
 	"github.com/urfave/cli/v2"
-	"heckel.io/hostit/nodeapi"
+	"heckel.io/hostit/node/api"
 	"heckel.io/hostit/system/podman"
 	"heckel.io/hostit/workspace"
 )
@@ -24,7 +24,7 @@ const (
 
 var (
 	// termRegex keeps TERM to boring terminal names. The app-name and container-key
-	// formats are re-validated via nodeapi.ValidName / podman.ValidName, which
+	// formats are re-validated via api.ValidName / podman.ValidName, which
 	// own those patterns.
 	termRegex = regexp.MustCompile(`^[a-zA-Z0-9._-]{1,32}$`)
 
@@ -55,7 +55,7 @@ func execEnter(c *cli.Context) error {
 	if err != nil {
 		return cli.Exit("cannot resolve the calling user", 1)
 	}
-	if !nodeapi.ValidName(u.Username) {
+	if !api.ValidName(u.Username) {
 		return cli.Exit("not an app user", 1)
 	}
 	// Resolve the app's container from the caller's home directory, not its name.

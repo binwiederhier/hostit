@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 
 	"heckel.io/hostit/cluster"
-	"heckel.io/hostit/nodeconf"
+	"heckel.io/hostit/node/config"
 	"heckel.io/hostit/store"
 )
 
@@ -46,7 +46,7 @@ func ListenerCreds(certFile, keyFile, caFile, dataDir string) (*tls.Config, erro
 // DialCreds resolves a node's client TLS config for dialing control: its
 // configured cluster files when set, else the colocated pair under
 // <DataDir>/ipc that control minted for this node id.
-func DialCreds(conf *nodeconf.Config) (*tls.Config, error) {
+func DialCreds(conf *config.Config) (*tls.Config, error) {
 	if conf.NodeCertFile != "" {
 		cert, pool, err := cluster.LoadCreds(conf.NodeCertFile, conf.NodeKeyFile, conf.ClusterCACertFile)
 		if err != nil {

@@ -10,7 +10,7 @@
 //
 // The keypair is derived from the session key, so every control that shares
 // that key agrees on grants with no extra material to distribute or rotate.
-package appgrant
+package grant
 
 import (
 	"crypto/ed25519"

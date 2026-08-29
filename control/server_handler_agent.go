@@ -10,8 +10,8 @@ import (
 
 	"heckel.io/hostit/app"
 	"heckel.io/hostit/assistant"
+	"heckel.io/hostit/assistant/platformdoc"
 	"heckel.io/hostit/control/config"
-	"heckel.io/hostit/platformdoc"
 	"heckel.io/hostit/store"
 	"heckel.io/hostit/workspace"
 )

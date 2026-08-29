@@ -3,7 +3,7 @@ package control
 import (
 	"log/slog"
 
-	"heckel.io/hostit/nodeapi"
+	"heckel.io/hostit/node/api"
 	"heckel.io/hostit/store"
 )
 
@@ -73,12 +73,12 @@ func (m *Manager) SetPolicy(p AppPolicy) {
 // registry projected outward -- the node holds no authority of its own, so a
 // node that crashed, was rebuilt or missed a mutation converges by replaying
 // this.
-func (m *Manager) DesiredState(nodeID string) (*nodeapi.DesiredState, error) {
+func (m *Manager) DesiredState(nodeID string) (*api.DesiredState, error) {
 	apps, err := m.store.Apps()
 	if err != nil {
 		return nil, err
 	}
-	desired := &nodeapi.DesiredState{Apps: make([]*nodeapi.AppDesired, 0, len(apps))}
+	desired := &api.DesiredState{Apps: make([]*api.AppDesired, 0, len(apps))}
 	for _, a := range apps {
 		if nodeID != "" && hostOrLocal(a.Host) != nodeID {
 			continue
@@ -88,8 +88,8 @@ func (m *Manager) DesiredState(nodeID string) (*nodeapi.DesiredState, error) {
 		// the app user for the relay gateway (no-op unless the relay is on). Key
 		// on the APP's host, not nodeID: the full-fleet build passes nodeID="".
 		keys = m.appendRelayKey(hostOrLocal(a.Host), keys)
-		desired.Apps = append(desired.Apps, &nodeapi.AppDesired{
-			ProvisionSpec: nodeapi.ProvisionSpec{
+		desired.Apps = append(desired.Apps, &api.AppDesired{
+			ProvisionSpec: api.ProvisionSpec{
 				Host:    hostOrLocal(a.Host),
 				ID:      a.ID,
 				Name:    a.Name,
@@ -123,7 +123,7 @@ func (m *Manager) appPolicy(a *store.App) (keys []string, memoryMB, diskMB int) 
 
 // ReconcileNodes hands every connected node the desired state and lets each
 // converge. A no-op in a single process, where control IS the machine.
-func (m *Manager) ReconcileNodes(desired *nodeapi.DesiredState) {
+func (m *Manager) ReconcileNodes(desired *api.DesiredState) {
 	m.node.Reconcile(desired)
 }
 

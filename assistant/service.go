@@ -14,8 +14,8 @@ import (
 	"sync"
 	"time"
 
+	"heckel.io/hostit/assistant/platformdoc"
 	"heckel.io/hostit/control/config"
-	"heckel.io/hostit/platformdoc"
 )
 
 const (

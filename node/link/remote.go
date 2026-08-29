@@ -17,11 +17,11 @@ import (
 
 	"heckel.io/hostit/archive"
 	"heckel.io/hostit/cluster"
-	"heckel.io/hostit/nodeapi"
+	"heckel.io/hostit/node/api"
 	"heckel.io/hostit/store"
 )
 
-// remoteAgent implements nodeapi.NodeAgent over the duplex client: what
+// remoteAgent implements api.NodeAgent over the duplex client: what
 // hostit-control holds for every remote node. The URL host is cosmetic --
 // routing is the underlying session.
 type remoteAgent struct {
@@ -32,11 +32,11 @@ type remoteAgent struct {
 	dial func() (net.Conn, error)
 }
 
-var _ nodeapi.NodeAgent = (*remoteAgent)(nil)
+var _ api.NodeAgent = (*remoteAgent)(nil)
 
 // NewRemoteAgent wraps a duplex client into a NodeAgent. dial opens raw
 // streams on the same connection, for the terminal.
-func NewRemoteAgent(c *http.Client, dial func() (net.Conn, error)) nodeapi.NodeAgent {
+func NewRemoteAgent(c *http.Client, dial func() (net.Conn, error)) api.NodeAgent {
 	return &remoteAgent{c: c, dial: dial}
 }
 
@@ -101,7 +101,7 @@ func (a *remoteAgent) SystemLogs(lines int) (string, error) {
 	return resp.Output, nil
 }
 
-func (a *remoteAgent) Exec(name, command string, timeout time.Duration) (*nodeapi.ExecResult, error) {
+func (a *remoteAgent) Exec(name, command string, timeout time.Duration) (*api.ExecResult, error) {
 	resp, err := a.call("exec", &rpcReq{Name: name, Command: command, TimeoutSec: int(timeout / time.Second)})
 	if err != nil {
 		return nil, err
@@ -109,7 +109,7 @@ func (a *remoteAgent) Exec(name, command string, timeout time.Duration) (*nodeap
 	return resp.Exec, nil
 }
 
-func (a *remoteAgent) Terminal(name string) (nodeapi.TerminalSession, error) {
+func (a *remoteAgent) Terminal(name string) (api.TerminalSession, error) {
 	if a.dial == nil {
 		return nil, errors.New("terminal: no stream dialer on this connection")
 	}
@@ -175,7 +175,7 @@ func (t *remoteTerminal) writeFrame(kind byte, payload []byte) error {
 	return err
 }
 
-func (a *remoteAgent) ListFiles(name, dir string) (*nodeapi.Listing, error) {
+func (a *remoteAgent) ListFiles(name, dir string) (*api.Listing, error) {
 	resp, err := a.call("listfiles", &rpcReq{Name: name, Path: dir})
 	if err != nil {
 		return nil, err
@@ -195,7 +195,7 @@ func (a *remoteAgent) MakeDir(name, relPath string) error {
 	return a.do("makedir", &rpcReq{Name: name, Path: relPath})
 }
 
-func (a *remoteAgent) StatFile(name, relPath string) (*nodeapi.FileInfo, error) {
+func (a *remoteAgent) StatFile(name, relPath string) (*api.FileInfo, error) {
 	resp, err := a.call("statfile", &rpcReq{Name: name, Path: relPath})
 	if err != nil {
 		return nil, err
@@ -318,7 +318,7 @@ func (a *remoteAgent) Rollback(name, id string) error {
 	return a.do("rollback", &rpcReq{Name: name, ID: id})
 }
 
-func (a *remoteAgent) States(names []string) map[string]nodeapi.State {
+func (a *remoteAgent) States(names []string) map[string]api.State {
 	resp, err := a.call("states", &rpcReq{Names: names})
 	if err != nil {
 		return nil // nil = "could not measure"; callers must not ingest it
@@ -326,7 +326,7 @@ func (a *remoteAgent) States(names []string) map[string]nodeapi.State {
 	return resp.States
 }
 
-func (a *remoteAgent) Heartbeat() *nodeapi.Heartbeat {
+func (a *remoteAgent) Heartbeat() *api.Heartbeat {
 	resp, err := a.call("heartbeat", &rpcReq{})
 	if err != nil {
 		return nil
@@ -335,24 +335,24 @@ func (a *remoteAgent) Heartbeat() *nodeapi.Heartbeat {
 }
 
 // Provision/Deprovision cross the wire as their full spec envelopes.
-func (a *remoteAgent) Provision(spec *nodeapi.ProvisionSpec) error {
+func (a *remoteAgent) Provision(spec *api.ProvisionSpec) error {
 	return a.postJSON("provision", spec)
 }
 
-func (a *remoteAgent) Deprovision(spec *nodeapi.DeprovisionSpec) {
+func (a *remoteAgent) Deprovision(spec *api.DeprovisionSpec) {
 	_ = a.postJSON("deprovision", spec)
 }
 
 // Sync pushes the registry mirror; a plain JSON verb.
-func (a *remoteAgent) Sync(state *nodeapi.SyncState) error {
+func (a *remoteAgent) Sync(state *api.SyncState) error {
 	return a.postJSON("sync", state)
 }
 
 // Reconcile hands the node its desired state; the removed ids are not
 // needed by the caller (rejoin and the sweep loop), so they are dropped.
-func (a *remoteAgent) Reconcile(desired *nodeapi.DesiredState) []string {
+func (a *remoteAgent) Reconcile(desired *api.DesiredState) []string {
 	if desired == nil {
-		desired = &nodeapi.DesiredState{}
+		desired = &api.DesiredState{}
 	}
 	_ = a.postJSON("reconcile", desired)
 	return nil

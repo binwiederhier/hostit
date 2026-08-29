@@ -11,8 +11,8 @@ import (
 
 	"github.com/urfave/cli/v2"
 
-	"heckel.io/hostit/client"
 	"heckel.io/hostit/cmd/util"
+	"heckel.io/hostit/control/client"
 	"heckel.io/hostit/control/config"
 )
 

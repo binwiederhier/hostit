@@ -16,10 +16,10 @@ import (
 	"heckel.io/hostit/control"
 	"heckel.io/hostit/control/config"
 	"heckel.io/hostit/node"
-	"heckel.io/hostit/preflight"
 	"heckel.io/hostit/preview"
-	"heckel.io/hostit/run"
 	"heckel.io/hostit/store"
+	"heckel.io/hostit/system/preflight"
+	"heckel.io/hostit/system/run"
 	"heckel.io/hostit/user"
 )
 

@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"heckel.io/hostit/nodeapi"
+	"heckel.io/hostit/node/api"
 	"heckel.io/hostit/store"
 )
 
@@ -121,9 +121,9 @@ func TestReconcileSlicesTheDocumentPerNode(t *testing.T) {
 	reg.Register(store.HostLocal, local)
 	reg.Register("worker-2", worker)
 
-	NewRoutingAgent(m.Store(), reg).Reconcile(&nodeapi.DesiredState{Apps: []*nodeapi.AppDesired{
-		{ProvisionSpec: nodeapi.ProvisionSpec{Name: "here", Host: store.HostLocal}},
-		{ProvisionSpec: nodeapi.ProvisionSpec{Name: "there", Host: "worker-2"}},
+	NewRoutingAgent(m.Store(), reg).Reconcile(&api.DesiredState{Apps: []*api.AppDesired{
+		{ProvisionSpec: api.ProvisionSpec{Name: "here", Host: store.HostLocal}},
+		{ProvisionSpec: api.ProvisionSpec{Name: "there", Host: "worker-2"}},
 	}})
 
 	assert.Equal(t, []string{"here"}, local.names())
@@ -132,10 +132,10 @@ func TestReconcileSlicesTheDocumentPerNode(t *testing.T) {
 
 type desiredRecorder struct {
 	NodeAgent
-	got *nodeapi.DesiredState
+	got *api.DesiredState
 }
 
-func (r *desiredRecorder) Reconcile(desired *nodeapi.DesiredState) []string {
+func (r *desiredRecorder) Reconcile(desired *api.DesiredState) []string {
 	r.got = desired
 	return nil
 }

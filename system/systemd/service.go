@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"heckel.io/hostit/run"
+	"heckel.io/hostit/system/run"
 )
 
 // systemctl is the control binary; centralized so the verb wrappers don't each

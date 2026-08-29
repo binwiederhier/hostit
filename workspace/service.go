@@ -12,10 +12,10 @@ import (
 	"sync"
 	"time"
 
-	"heckel.io/hostit/run"
 	"heckel.io/hostit/store"
 	"heckel.io/hostit/system/btrfs"
 	"heckel.io/hostit/system/podman"
+	"heckel.io/hostit/system/run"
 )
 
 // containerfile builds the default workspace image: small, but with

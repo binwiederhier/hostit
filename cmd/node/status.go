@@ -15,7 +15,7 @@ import (
 
 	"heckel.io/hostit/cmd/util"
 	"heckel.io/hostit/node"
-	"heckel.io/hostit/nodeconf"
+	"heckel.io/hostit/node/config"
 )
 
 // cmdStatus asks the RUNNING daemon over its root-only status socket: the
@@ -72,10 +72,10 @@ func renderNodeStatus(w io.Writer, s *node.Status) {
 // statusSocketFile resolves the daemon's status socket from its config; an
 // unreadable config falls back to the packaged default rather than erroring.
 func statusSocketFile(configPath string) string {
-	if conf, err := nodeconf.LoadConfig(configPath); err == nil && conf.NodeSocketFile != "" {
+	if conf, err := config.LoadConfig(configPath); err == nil && conf.NodeSocketFile != "" {
 		return conf.NodeSocketFile
 	}
-	return nodeconf.DefaultNodeSocketFile
+	return config.DefaultNodeSocketFile
 }
 
 // getSocket does one GET against the daemon's unix socket, with an error that

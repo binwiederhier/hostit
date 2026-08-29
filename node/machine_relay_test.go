@@ -6,10 +6,10 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"heckel.io/hostit/run"
 	"heckel.io/hostit/store"
 	"heckel.io/hostit/system/btrfs"
 	"heckel.io/hostit/system/podman"
+	"heckel.io/hostit/system/run"
 	"heckel.io/hostit/system/ssh"
 	"heckel.io/hostit/system/systemd"
 	"heckel.io/hostit/system/unixuser"

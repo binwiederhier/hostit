@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"heckel.io/hostit/nodeapi"
+	"heckel.io/hostit/node/api"
 	"heckel.io/hostit/store"
 	"heckel.io/hostit/workspace"
 )
@@ -15,7 +15,7 @@ import (
 // Provision builds the app on this Machine: subvolume (fresh or fork seed),
 // unix user, authorized keys, and -- for a fresh app -- the demo skeleton. On
 // failure it rolls back its own partial work and the Machine is clean again.
-func (m *Machine) Provision(spec *nodeapi.ProvisionSpec) error {
+func (m *Machine) Provision(spec *api.ProvisionSpec) error {
 	// Serialize with anything else acting on this app: a reconcile that finds
 	// the account missing would otherwise provision the app a SECOND time
 	// while the original create is still running, and the two builds corrupt
@@ -31,7 +31,7 @@ func (m *Machine) Provision(spec *nodeapi.ProvisionSpec) error {
 	// Only the node can see its own passwd file -- control used to check this
 	// and could only ever get it right while it shared the machine's host.
 	if m.UserExists(spec.Name) {
-		return fmt.Errorf("%w: a unix account named %q already exists on this node", nodeapi.ErrAppExists, spec.Name)
+		return fmt.Errorf("%w: a unix account named %q already exists on this node", api.ErrAppExists, spec.Name)
 	}
 	forking := spec.SeedAppID != ""
 	// The budget qgroup exists and is capped BEFORE the subvolume, which is then
@@ -92,14 +92,14 @@ func (m *Machine) Provision(spec *nodeapi.ProvisionSpec) error {
 // the id-keyed subvolume go away. The app is not in the store on these early
 // failures, so this deletes the concrete path rather than resolving it by
 // name; a brand-new app has no snapshots to clean up.
-func (m *Machine) provisionRollback(spec *nodeapi.ProvisionSpec) {
+func (m *Machine) provisionRollback(spec *api.ProvisionSpec) {
 	_ = m.user.Delete(spec.Name)
 	_ = m.btrfs.DeleteSubvolume(m.appSubvolumeByID(spec.ID))
 }
 
 // Deprovision tears the app down on this Machine; it runs in the background
 // (the caller holds the app lock and the port/name reservations until done).
-func (m *Machine) Deprovision(spec *nodeapi.DeprovisionSpec) {
+func (m *Machine) Deprovision(spec *api.DeprovisionSpec) {
 	// Mark the name for the whole teardown, so a same-name provision arriving
 	// meanwhile waits for it (awaitTeardown) instead of colliding with the
 	// dying account. Control marks its OWN machine as well, which covers the

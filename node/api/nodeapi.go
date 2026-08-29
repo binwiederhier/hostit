@@ -5,7 +5,7 @@
 // registry types (store) and the file-layer types (homefs), never the app
 // orchestrator -- so the transport (package node) can speak the contract
 // without depending on the implementation, and app implements it.
-package nodeapi
+package api
 
 import (
 	"errors"

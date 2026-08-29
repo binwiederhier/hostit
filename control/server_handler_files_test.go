@@ -10,14 +10,14 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"heckel.io/hostit/archive"
-	"heckel.io/hostit/nodeapi"
+	"heckel.io/hostit/node/api"
 	"heckel.io/hostit/store"
 )
 
 // archiveNode is a NodeAgent whose only real method is ArchiveWorkspace, so the
 // export handler is testable without a node or btrfs.
 type archiveNode struct {
-	nodeapi.NodeAgent
+	api.NodeAgent
 	gotFormat archive.Format
 	gotSnapID string
 	body      string
@@ -40,7 +40,7 @@ func (n *archiveNode) ArchiveSnapshot(_, snapshotID string, format archive.Forma
 	return io.NopCloser(strings.NewReader(n.body)), nil
 }
 
-func exportServer(t *testing.T, node nodeapi.NodeAgent) *Server {
+func exportServer(t *testing.T, node api.NodeAgent) *Server {
 	t.Helper()
 	s := newTestServer(t)
 	require.NoError(t, s.apps.Store().AddApp(&store.App{Name: "expapp", Port: 10000, Host: store.HostLocal}))

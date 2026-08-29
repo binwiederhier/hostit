@@ -11,11 +11,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"heckel.io/hostit/appgrant"
 	"heckel.io/hostit/cluster"
 	"heckel.io/hostit/control/config"
 	"heckel.io/hostit/node"
 	"heckel.io/hostit/proxy/api"
+	"heckel.io/hostit/proxy/grant"
 	"heckel.io/hostit/store"
 	"heckel.io/hostit/user"
 )
@@ -436,7 +436,7 @@ func TestThePublishedKeyVerifiesControlsOwnGrants(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, table.GrantPublicKey)
 
-	verifier, err := appgrant.NewVerifier(table.GrantPublicKey)
+	verifier, err := grant.NewVerifier(table.GrantPublicKey)
 	require.NoError(t, err)
 	grant, err := s.grants.Sign("dash", "u1")
 	require.NoError(t, err)

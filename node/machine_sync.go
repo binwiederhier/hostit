@@ -3,26 +3,26 @@ package node
 import (
 	"log/slog"
 
-	"heckel.io/hostit/nodeapi"
+	"heckel.io/hostit/node/api"
 )
 
 // SetControlSink wires the node's reverse channel; nil (the default) means
 // single-process, where the store writes land in the registry directly.
-func (m *Machine) SetControlSink(sink nodeapi.ControlSink) {
+func (m *Machine) SetControlSink(sink api.ControlSink) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.sink = sink
 }
 
-// Sync is the nodeapi.NodeAgent verb's node side: swap the mirror for the pushed
+// Sync is the api.NodeAgent verb's node side: swap the mirror for the pushed
 // state. The first sync also opens the gate for destructive startup work
 // (ReconcileOrphans must never run against an unsynced, possibly empty
 // mirror -- it would tear down every app on the Machine).
-func (m *Machine) Sync(state *nodeapi.SyncState) error {
+func (m *Machine) Sync(state *api.SyncState) error {
 	// Drop a payload older than the last one applied: control builds a mirror
 	// by reading its registry and sends it afterwards, so two concurrent
 	// mutations can arrive out of order, and the older one would delete a
-	// just-created app from this mirror (see nodeapi.SyncState.Seq).
+	// just-created app from this mirror (see api.SyncState.Seq).
 	m.syncMu.Lock()
 	if state.Seq != 0 && state.Seq <= m.syncSeq {
 		applied := m.syncSeq
@@ -84,7 +84,7 @@ func (m *Machine) SnapshotsChanged(name string) {
 	sink.SnapshotsChanged(name, snaps)
 }
 
-func (m *Machine) controlSink() nodeapi.ControlSink {
+func (m *Machine) controlSink() api.ControlSink {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.sink

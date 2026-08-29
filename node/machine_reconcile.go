@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"heckel.io/hostit/nodeapi"
+	"heckel.io/hostit/node/api"
 	"heckel.io/hostit/store"
 	"heckel.io/hostit/workspace"
 )
@@ -22,7 +22,7 @@ import (
 //
 // A nil desired state falls back to converging against the pushed mirror, which is
 // what an older control sends.
-func (m *Machine) Reconcile(desired *nodeapi.DesiredState) []string {
+func (m *Machine) Reconcile(desired *api.DesiredState) []string {
 	if desired != nil {
 		m.applyDesired(desired)
 	}
@@ -34,7 +34,7 @@ func (m *Machine) Reconcile(desired *nodeapi.DesiredState) []string {
 // applyDesired makes each app in the desired state true on this machine. Failures
 // are logged per app rather than aborting: one broken app must not stop the
 // rest of the node from converging.
-func (m *Machine) applyDesired(desired *nodeapi.DesiredState) {
+func (m *Machine) applyDesired(desired *api.DesiredState) {
 	for _, app := range desired.Apps {
 		// Under the app's lock, so an in-flight create finishes first and this
 		// pass then sees the account it made rather than racing it.
@@ -82,7 +82,7 @@ func (m *Machine) applyDesired(desired *nodeapi.DesiredState) {
 
 // desiredIDs is the id set the desired state lists, or nil when there is
 // none (the caller then falls back to the mirror).
-func desiredIDs(desired *nodeapi.DesiredState) map[string]bool {
+func desiredIDs(desired *api.DesiredState) map[string]bool {
 	if desired == nil {
 		return nil
 	}

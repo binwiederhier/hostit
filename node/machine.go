@@ -1,6 +1,6 @@
 // Package node is hostit's Machine half: the Machine type that owns THIS
 // host's app containers, unix users, btrfs subvolumes, firewall rules and
-// state measurement (implementing nodeapi.NodeAgent), the serve loop that
+// state measurement (implementing api.NodeAgent), the serve loop that
 // dials control and answers its RPC, and the mTLS/yamux transport underneath.
 // The control plane lives in package app/server; this package cannot import
 // it -- a node only does what control tells it to.
@@ -15,13 +15,13 @@ import (
 
 	"heckel.io/hostit/app"
 	"heckel.io/hostit/homefs"
-	"heckel.io/hostit/nodeapi"
-	"heckel.io/hostit/run"
+	"heckel.io/hostit/node/api"
 	"heckel.io/hostit/snapshot"
 	"heckel.io/hostit/store"
 	"heckel.io/hostit/system/btrfs"
 	"heckel.io/hostit/system/nftables"
 	"heckel.io/hostit/system/podman"
+	"heckel.io/hostit/system/run"
 	"heckel.io/hostit/system/ssh"
 	"heckel.io/hostit/system/systemd"
 	"heckel.io/hostit/system/unixuser"
@@ -79,7 +79,7 @@ const (
 
 // Machine is the machine half of the platform: the services and state that act
 // on THIS host's apps (subvolumes, unix users, containers, port rules, files,
-// state measurement). It implements the nodeapi.NodeAgent verbs and does only
+// state measurement). It implements the api.NodeAgent verbs and does only
 // what control tells it to. In a split deployment Serve runs a bare Machine;
 // in the fused daemon the control.Manager embeds one, so the control half's
 // orchestration calls the same code through promotion.
@@ -110,12 +110,12 @@ type Machine struct {
 	// sink is the node's reverse channel to control for control-plane data the
 	// node originates (usage, poweroffs, snapshot records); nil in a single
 	// process (SetControlSink).
-	sink nodeapi.ControlSink
+	sink api.ControlSink
 	// synced closes when the first registry mirror arrives (Sync); gates the
 	// node's destructive startup work.
 	synced     chan struct{}
 	syncedOnce sync.Once
-	// syncSeq is the last mirror sequence applied (see nodeapi.SyncState.Seq);
+	// syncSeq is the last mirror sequence applied (see api.SyncState.Seq);
 	// reset per control connection by ResetSyncSeq.
 	syncSeq int64
 	// onStateChanged, when set, tells the OTHER half that an app's state just
@@ -139,7 +139,7 @@ type Machine struct {
 
 	// stateCache holds the last measured state of every app, so listing apps
 	// answers from memory instead of waiting on podman
-	stateCache      map[string]nodeapi.State
+	stateCache      map[string]api.State
 	stateFresh      time.Time
 	stateRefreshing bool
 
@@ -184,13 +184,13 @@ func NewMachine(conf *Config, s *store.Store, svc *Services) *Machine {
 		user:            svc.User,
 		ssh:             svc.SSH,
 		firewall:        svc.Firewall,
-		homefs:          homefs.New(nodeapi.ErrInvalid),
+		homefs:          homefs.New(api.ErrInvalid),
 		memoryMB:        make(map[string]int),
 		cpuMilli:        make(map[string]int),
 		synced:          make(chan struct{}),
 		diskMB:          make(map[string]int),
 		tearingDown:     make(map[string]bool),
-		stateCache:      make(map[string]nodeapi.State),
+		stateCache:      make(map[string]api.State),
 		appLocks:        make(map[string]*sync.Mutex),
 		orphansLastPass: make(map[string]bool),
 		orphansThisPass: make(map[string]bool),
@@ -318,7 +318,7 @@ func (m *Machine) Runner() run.Runner            { return m.runner }
 
 // MeasuredState peeks this Machine's own measurement cache; the control
 // plane's cache is CachedStates, a different thing.
-func (m *Machine) MeasuredState(name string) (nodeapi.State, bool) {
+func (m *Machine) MeasuredState(name string) (api.State, bool) {
 	m.stateMu.Lock()
 	defer m.stateMu.Unlock()
 	s, ok := m.stateCache[name]
@@ -366,10 +366,10 @@ func (m *Machine) writeKeys(name string, appKeys, profileKeys []string) error {
 }
 
 // validateKeys ensures every entry is a parseable authorized_keys line, wrapping
-// the ssh package's check in nodeapi.ErrInvalid so the server reports it as a bad request.
+// the ssh package's check in api.ErrInvalid so the server reports it as a bad request.
 func validateKeys(keys []string) error {
 	if err := ssh.ValidateKeys(keys); err != nil {
-		return fmt.Errorf("%w: %s", nodeapi.ErrInvalid, err.Error())
+		return fmt.Errorf("%w: %s", api.ErrInvalid, err.Error())
 	}
 	return nil
 }

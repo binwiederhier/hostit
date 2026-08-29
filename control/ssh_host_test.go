@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"heckel.io/hostit/nodeapi"
+	"heckel.io/hostit/node/api"
 	"heckel.io/hostit/store"
 )
 
@@ -28,7 +28,7 @@ func TestSSHHostForUsesNodeReportedHost(t *testing.T) {
 // node so the advertise path can find it.
 func TestRecordNodeStatusStoresSSHHost(t *testing.T) {
 	m, _ := newTestManager(t)
-	err := m.RecordNodeStatus("worker", &nodeapi.Heartbeat{
+	err := m.RecordNodeStatus("worker", &api.Heartbeat{
 		Address: "10.0.0.4",
 		SSHHost: "node2.ssh.example.com",
 	})
@@ -44,7 +44,7 @@ func TestRecordNodeStatusStoresSSHHost(t *testing.T) {
 func TestRecordNodeStatusStoresHostKey(t *testing.T) {
 	m, _ := newTestManager(t)
 	key := "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHOSTKEY node2"
-	err := m.RecordNodeStatus("worker", &nodeapi.Heartbeat{Address: "10.0.0.4", SSHHostKey: key})
+	err := m.RecordNodeStatus("worker", &api.Heartbeat{Address: "10.0.0.4", SSHHostKey: key})
 	require.NoError(t, err)
 	n, err := m.store.Node("worker")
 	require.NoError(t, err)

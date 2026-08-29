@@ -14,28 +14,28 @@ import (
 
 	"heckel.io/hostit/cluster"
 	"heckel.io/hostit/metrics"
+	"heckel.io/hostit/node/config"
 	"heckel.io/hostit/node/link"
-	"heckel.io/hostit/nodeconf"
-	"heckel.io/hostit/preflight"
-	"heckel.io/hostit/run"
 	"heckel.io/hostit/store"
+	"heckel.io/hostit/system/preflight"
+	"heckel.io/hostit/system/run"
 	"heckel.io/hostit/workspace"
 )
 
 // The node's configuration lives in its own leaf package (nodeconf) so that
 // reading it does not drag in this package's machine stack; these aliases keep
 // it spelled node.Config everywhere the node itself uses it.
-type Config = nodeconf.Config
+type Config = config.Config
 
 const (
 	// DefaultConfigFile is where a node's config lives on a package install.
-	DefaultConfigFile = nodeconf.DefaultConfigFile
-	legacyConfigFile  = nodeconf.LegacyConfigFile
+	DefaultConfigFile = config.DefaultConfigFile
+	legacyConfigFile  = config.LegacyConfigFile
 )
 
 var (
-	NewConfig  = nodeconf.NewConfig
-	LoadConfig = nodeconf.LoadConfig
+	NewConfig  = config.NewConfig
+	LoadConfig = config.LoadConfig
 )
 
 const (

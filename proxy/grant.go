@@ -6,8 +6,8 @@ import (
 	"slices"
 	"strings"
 
-	"heckel.io/hostit/appgrant"
 	"heckel.io/hostit/proxy/api"
+	"heckel.io/hostit/proxy/grant"
 )
 
 // Private apps are served from here rather than from control, so they keep
@@ -47,7 +47,7 @@ func (p *Proxy) mayServePrivately(r *http.Request, route api.Route, table *api.T
 	if value == "" || table.GrantPublicKey == "" {
 		return false
 	}
-	verifier, err := appgrant.NewVerifier(table.GrantPublicKey)
+	verifier, err := grant.NewVerifier(table.GrantPublicKey)
 	if err != nil {
 		slog.Warn("Cannot use the grant key control pushed", "error", err)
 		return false
