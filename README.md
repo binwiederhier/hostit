@@ -8,7 +8,7 @@
 > cannot afford to lose or rebuild, and keep backups that live outside the box.
 
 **hostit** is a tiny self-hosted mini-app platform, built to be driven by AI agents
-(or humans) over SSH and a REST API. One binary. Each app gets:
+(or humans) over SSH and a REST API. Each app gets:
 
 - its own **container**: SSH sessions land INSIDE it (root in there, `apt install`
   away), the app runs in it, and other apps are invisible -- processes, files,
@@ -19,71 +19,63 @@
 - two ways to run: `mode: static` (hostit serves `public/`) or `mode: app` (your
   command, supervised by the hostit agent) -- deployed with a single `hostit deploy`
 - a workspace with **python3, go, Node.js (with npm), PHP and sqlite3**
-  preinstalled (and root, so `apt-get install` anything else you need)
+  preinstalled (and root, so `apt-get install` anything else)
 - **connections** it can be granted -- an OAuth account, a pasted credential or an
-  MCP tool server -- which it reads from its own socket instead of holding a
-  secret ([Connections](#connections-accounts-credentials-and-mcp-servers))
+  MCP tool server -- read from its own socket instead of holding a secret
 
-Apps can be shared: the owner adds **collaborators** (existing users, by email)
-in the app's Settings, who get full working access -- deploy, files, terminal,
-assistant, SSH with their own keys -- while delete/rename and the collaborator
-list stay owner-only.
+Apps can be shared (the owner adds **collaborators** by email, who get full working
+access while delete/rename stay owner-only). Multi-user: people sign in with Google,
+an admin approves them, and each user gets their own apps within admin-adjustable
+limits, plus per-user API tokens for their agent -- which is the point:
+`hostit control app add myapp` with a user token is all an AI agent needs.
 
-Multi-user: people sign in with Google, an admin approves them from a small web
-app, and each user gets their own apps within admin-adjustable limits (app count,
-container memory, hard disk cap). Per-user API tokens make the same REST API and
-CLI available to their agent, which is the point: `hostit apps add myapp` with a
-user token is all an AI agent needs.
-
-The intended workflow: tell your agent "create an app on my host and deploy this"
--- it calls the REST API to get an SSH login, pushes the code, writes `hostit.yml`,
-runs `hostit deploy`, and the app is live with a cert. The same thing can happen
-entirely in the browser: each app's page is a workspace with tabbed views -- a
-built-in AI assistant, a file editor with a live preview, a terminal, snapshots,
-an activity/output log, and settings (see [Building in the browser](#building-in-the-browser)).
+The intended workflow: tell your agent "create an app on my host and deploy this" --
+it calls the REST API to get an SSH login, pushes the code, writes `hostit.yml`, runs
+`hostit deploy`, and the app is live with a cert. The same thing can happen entirely
+in the browser: each app's page is a workspace with a built-in AI assistant, a file
+editor with live preview, a terminal, snapshots, an activity/output log, and settings.
 
 ## How it works
 
-One binary, running as root, is the whole control plane: it terminates TLS,
-proxies each subdomain to its app, serves the web app and REST API, and creates
-the Unix users and containers behind them.
+hostit runs as three cooperating processes (even on one machine): **hostit-control**
+(the registry, web app, REST API, placement and certificates), **hostit-node** (this
+machine's app work -- containers, Unix users, btrfs subvolumes, port rules), and
+**hostit-proxy** (terminates TLS on `:443` and routes each subdomain to its app from
+a cached table). Each member dials control over mTLS; control never dials back, so a
+control restart does not stop apps serving.
 
-Each app is four things created together: a Unix user, a btrfs subvolume that is
-the container's entire filesystem (the app's files live at `/home/app` inside
-it), a podman container whose root is mapped to that user's unprivileged uid, and
-a loopback port that nftables restricts to that uid. SSH logins are handed to
-`/usr/lib/hostit/bin/hostit-shell`, which execs the session into the app's container, so
-users never get a host shell, and an escape inside the container lands on the
+Each app is four things created together: a Unix user, a btrfs subvolume that is the
+container's entire filesystem (the app's files live at `/home/app` inside it), a
+podman container whose root is mapped to that user's unprivileged uid, and a loopback
+port that nftables restricts to that uid. SSH logins are handed to
+`/usr/lib/hostit/bin/hostit-shell`, which execs the session into the app's container,
+so users never get a host shell, and an escape inside the container lands on the
 app's own uid rather than on root.
 
 **[docs/architecture/](docs/architecture/)** has the diagrams: the
-components ([overview](docs/architecture/overview.md)), what
-[isolates what](docs/architecture/isolation.md), and
-[sequence diagrams](docs/architecture/flows.md) for creating an app, serving
-a request, logging in over SSH, and an agent deploying.
+[components](docs/architecture/overview.md), what
+[isolates what](docs/architecture/isolation.md), and the
+[sequence diagrams](docs/architecture/flows.md).
 
 ## Install (server)
 
 Requirements: a Linux host with systemd, sshd, `podman` **>= 4.3** (plus `uidmap`,
 `passt` or `slirp4netns`, `dbus-user-session`), `crun` **>= 1.29**, `nftables`, and
 `btrfs-progs`. hostit must run as **root**, and its apps directory must be on
-**btrfs** (all of this is mandatory). Optional: `app-preview: screenshot`
-replaces the dashboard cards' live iframes with headless-chrome screenshots,
-taken in a sandboxed podman container (the image is pulled on first use; no
-host browser needed). Each running app is re-shot every 6 hours, plus about a
-minute after the assistant last changes it (capped at 5/hour per app), plus on
-demand from the refresh button on the card; shots run one at a time. By default
-the shot container's egress is confined to the target app's resolved IP and the
-public internet (`app-preview-isolation: strict`), so a malicious app page
-cannot reach the host, the LAN/VPC or the cloud metadata endpoint. On start it preflights everything: it refuses
-to run if it is not root, if a required command is missing, if podman or crun are
-too old, or if the apps path is not btrfs, naming exactly what to fix.
+**btrfs** (all of this is mandatory). On start it preflights everything and refuses
+to run -- naming exactly what to fix -- if it is not root, a required command is
+missing, podman or crun are too old, or the apps path is not btrfs.
+
+Optional: `app-preview: screenshot` replaces the dashboard cards' live iframes with
+sandboxed headless-chrome screenshots (see `control.yml.example`).
+
+### crun drop-in
 
 App containers run their root-owned subvolume via an **idmapped rootfs mount**
 (`--rootfs <subvolume>:idmap`), which needs a newer crun than most distributions
-ship (Ubuntu 24.04 has 1.14.1, which hard-fails). The fix is a two-minute drop-in
-of the official static binary; podman is pointed at it via `containers.conf`, so
-the distribution package stays untouched:
+ship (Ubuntu 24.04 has 1.14.1, which hard-fails). The fix is a two-minute drop-in of
+the official static binary; podman is pointed at it via `containers.conf`, so the
+distribution package stays untouched:
 
 ```sh
 curl -L -o /usr/local/lib/hostit-crun \
@@ -98,63 +90,50 @@ crun = ["/usr/local/lib/hostit-crun", "/usr/bin/crun"]
 EOF
 ```
 
-Upgrading from a release older than **v0.11**: install a v0.11.x release first
-(it carries the one-time storage migrations, since removed) and start it once,
-then upgrade onward.
+### Packages
 
-Via the .deb (ships the binary, `hostit-shell`, a systemd unit and an example
-config):
+hostit ships **three packages**, one per component (there is no combined `hostit`
+package). Build them with goreleaser, then install all three plus podman:
 
 ```sh
-make release-snapshot                         # goreleaser; or: make deb (plain dpkg-deb)
-sudo apt install ./dist/hostit_*linux_amd64.deb podman
+make release-snapshot                          # goreleaser; produces dist/*.deb
+sudo apt install ./dist/hostit-control_*_linux_amd64.deb \
+                 ./dist/hostit-node_*_linux_amd64.deb \
+                 ./dist/hostit-proxy_*_linux_amd64.deb podman
+
+# Each package installs an /etc/hostit/<component>/<component>.yml.example:
 sudo cp /etc/hostit/control/control.yml.example /etc/hostit/control/control.yml
-sudo $EDITOR /etc/hostit/control/control.yml           # set base-domain + admin-token
-sudo systemctl enable --now hostit
+sudo cp /etc/hostit/node/node.yml.example       /etc/hostit/node/node.yml
+sudo cp /etc/hostit/proxy/proxy.yml.example     /etc/hostit/proxy/proxy.yml
+sudo $EDITOR /etc/hostit/control/control.yml     # set base-domain + admin-token
+
+# node.yml and proxy.yml work as-is on a single colocated host (control mints
+# their mTLS credentials on first start). Start control first, then node, proxy:
+sudo systemctl enable --now hostit-control hostit-node hostit-proxy
 ```
 
-Or manually:
+An update is just installing the newer packages (`dpkg -i --force-confold ...` to
+keep your configs) and restarting the three services. Upgrading from a release older
+than **v0.11**: install a v0.11.x release first (it
+carries the one-time storage migrations, since removed) and start it once, then
+upgrade onward.
 
-```sh
-make web && make build && sudo make install
-sudo mkdir -p /etc/hostit
-sudo cp control.yml.example /etc/hostit/control/control.yml
-sudo $EDITOR /etc/hostit/control/control.yml
-sudo cp hostit-control.service /etc/systemd/system/ && sudo mkdir -p /usr/lib/hostit/bin && sudo cp hostit-shell /usr/lib/hostit/bin/
-sudo systemctl daemon-reload && sudo systemctl enable --now hostit
-```
+### DNS
 
-DNS: point a wildcard at the host (both records are required):
+Point a wildcard at the host (both records are required):
 
 ```
 apps.example.com.    A  <host-ip>
 *.apps.example.com.  A  <host-ip>
 ```
 
-Releases are built with goreleaser (`.goreleaser.yml`).
+### Harden sshd (the one thing the package cannot do for you)
 
-### Deploying and updating
-
-Everything the daemon needs is one config file plus the package, so a deploy is
-"install the `.deb`, drop `/etc/hostit/control/control.yml`, harden sshd, enable the
-service", and an update is just installing the newer package:
-
-```sh
-sudo dpkg -i hostit_<version>_linux_amd64.deb   # --force-confold to keep your config
-sudo systemctl restart hostit
-```
-
-Because that is all it takes, an Ansible role (or any config-management tool) is
-a natural fit, and the recommended way to run this for real: it makes the config,
-the sshd drop-in, and the btrfs setup reproducible. A small, self-contained
-example role lives in [`deploy/ansible/`](deploy/ansible/) -- copy the inventory
-and vars, set `hostit_domain` and `hostit_admin_token`, and run it. Keep
-`admin-token` and any OAuth/AI secrets in an Ansible Vault, not in plain vars.
-
-### One thing the package cannot do for you
-
-Add this to `sshd_config` (a drop-in in `/etc/ssh/sshd_config.d/` works) and
-restart sshd:
+Add this to `sshd_config` (a drop-in in `/etc/ssh/sshd_config.d/` works) and restart
+sshd. App users log in for one reason -- to reach their own container -- and
+forwarding is the one thing sshd offers that reaches past it (a tenant could
+otherwise tunnel to the cloud metadata service or probe host-local services). scp,
+sftp and rsync are unaffected.
 
 ```
 Match Group hostit-apps
@@ -170,596 +149,191 @@ Match Group hostit-apps
 Match all
 ```
 
-App users log in for one reason: to reach their own container. Forwarding is the
-one thing sshd offers that reaches past it -- a tenant can otherwise tunnel to
-the cloud metadata service (on DigitalOcean that includes `user-data`, which
-often carries secrets) or probe host-local services. scp, sftp and rsync are
-unaffected.
+### Ansible (recommended for real deployments)
 
-## Security model
+A small, self-contained example role lives in
+[`deploy/ansible/`](deploy/ansible/): copy the inventory and vars, set
+`hostit_domain` and `hostit_admin_token`, and run it. It installs the packages,
+writes the configs, hardens sshd, sets up the btrfs loopback (`hostit_btrfs: true`)
+and enables the services. Keep secrets in an Ansible Vault.
 
-What each boundary is, so it is clear what hostit does and does not promise:
+## Quickstart
 
-- **Between apps.** Separate Unix users, separate containers, separate network
-  stacks. Ports are published on loopback and nftables restricts each to root and
-  the owning uid, so one app cannot reach another's port even over an SSH tunnel.
-- **Between an app and the host.** SSH sessions exec straight into the container;
-  there is no host shell. The workload runs as the app's own unprivileged uid
-  (container root is mapped to it), so an escape lands on that uid, not on root.
-  `/var/lib/hostit` is root-only: it holds every app's agent token in the clear
-  (deliberately, so the app's page can show it again) and the session signing key.
-- **Between an app's files and the daemon.** The app owns its whole subvolume
-  (its files live at `/home/app` inside it), so every file operation hostit
-  performs there as root goes through chained `os.OpenRoot`s -- the subvolume
-  root first, then `/home/app` resolved inside it: a symlink out of the subvolume
-  is refused by the kernel rather than followed. That includes reading
-  `hostit.yml` itself, which the tenant controls -- so pointing it at a symlink
-  cannot walk the daemon out of the app.
-- **Between tenants and the web app.** Apps are subdomains of the web app, which
-  `SameSite=Lax` does not separate, so cookie-authenticated writes require a
-  same-origin signal and the session cookie carries the `__Host-` prefix. Files
-  read back through the API are always downloads, never rendered.
-
-An **app-scoped token** can only reach `/api/<its app>/`. An **account token**
-can do anything its owner can. The **admin token** in `control.yml` is unlimited
-and belongs to the operator -- treat it like a root password.
-
-> **Self-hosting disclaimer.** hostit runs as root, terminates TLS, and hands
-> tenants root inside their own container. It is provided as-is, with no warranty
-> (see [LICENSE](LICENSE)); operators are responsible for their own hardening --
-> the `sshd_config` drop-in below, keeping podman/nftables current, and their host
-> baseline. The boundaries above are the model's promises, not a guarantee against
-> every container escape or misconfiguration.
-
-## Users, roles and limits
-
-- First Google login creates a **pending** account; an admin approves it (or the
-  email is in `admin-emails`, which auto-creates an active admin).
-- **Dashboard**: create/delete your apps, see usage vs limits, and copy the
-  "use with your AI agent" snippet.
-- **Profile**: SSH keys (they grant access to *all* your apps) and API tokens.
-- **Admin**: approve/deny users, change roles, per-user limits, global defaults,
-  and the two ways to skip the approval queue below.
-
-### Letting people in without approving each one
-
-Approving every sign-up by hand does not scale past a handful of people, so
-admins have two shortcuts:
-
-- **Add a user** (Admin -> Users): creates an approved account for an email
-  address before its owner has ever signed in. Their first Google login finds it
-  and fills in the name.
-- **Allow a domain** (Admin -> Sign-up without approval): anyone signing in with
-  a Google address in that domain is approved on the spot, so a whole company can
-  onboard itself. Write it as `company.com` or `*@company.com`.
-
-An allowed domain approves, it never promotes: those accounts are ordinary users
-with the usual limits. Someone an admin has explicitly denied stays denied even
-if their domain is allowed later, and removing a domain does not touch the
-accounts already approved under it -- revoking access stays a per-user decision.
-
-Every app runs inside three enforced caps: RAM (podman `--memory`,
-cgroup-enforced -- allocating past it OOM-kills the process), disk (a **hard**
-btrfs qgroup per app covering its subvolume and snapshots combined; a write
-past the budget fails with "Disk quota exceeded" wherever the app writes,
-`/home/app` and `/usr` alike), and CPU (`--cpus`; new apps start capped at
-0.5 cores). New apps default to 128 MB RAM and 256 MB disk.
-
-Owners edit their own apps' RAM and disk (app Settings -> Resources, or
-`PATCH /api/apps/{name}/limits`) within a per-user **pool**: the sum of all
-their apps' limits must fit it. Admins set pools per user (Admin -> Users) and
-the defaults for new users and apps (Admin -> Global defaults); an unset pool
-derives `app limit x per-app default`. The pool binds admins too -- to grant
-more, raise the pool. CPU caps are admin-set. Disk changes apply live; RAM and
-CPU at the next reboot or deploy. An app's own agent token can read the budget
-(`GET .../info` -> `limits`) but never change it.
-
-Without Google credentials configured, the web login returns 501 and the REST API
-plus CLI keep working with the admin token.
-
-### Setting up Google login
-
-1. Go to <https://console.cloud.google.com/apis/credentials> and pick or create a
-   project.
-2. Configure the OAuth consent screen if prompted: External (or Internal for a
-   Workspace org), an app name, your support/developer email. The default scopes
-   (`openid`, `email`, `profile`) are all hostit needs, so no verification is
-   required; "Testing" works if you add testers.
-3. **Create credentials -> OAuth client ID -> Web application**:
-   - Authorized JavaScript origin: `https://hostit.<base-domain>`
-   - Authorized redirect URI: `https://hostit.<base-domain>/auth/callback`
-4. Put the client ID and secret in `/etc/hostit/control/control.yml`, together with the
-   emails that should be admins, and restart hostit:
-
-   ```yaml
-   google-client-id: "1234567890-abc123.apps.googleusercontent.com"
-   google-client-secret: "GOCSPX-..."
-   admin-emails:
-     - you@example.com
-   ```
-
-Those admin emails become active admins on their first login; everyone else
-lands in "pending" until an admin approves them under Admin -> Users.
-
-### Wildcard TLS (optional, recommended)
-
-By default hostit obtains one Let's Encrypt certificate **per app**, on that
-app's first HTTPS request. Configure a DNS provider instead and it obtains a
-single wildcard certificate for `*.<base-domain>`:
-
-- new apps serve HTTPS instantly, with no ACME round-trip on the first request
-- unknown subdomains reach the proxy (and its 404 page) instead of failing the
-  TLS handshake
-- the "50 certificates per registered domain per week" rate limit stops mattering
-
-Wildcards require DNS-01 validation, so hostit needs permission to write TXT
-records in your zone. AWS Route 53 is supported today:
-
-```yaml
-dns-provider: route53
-aws-region: us-east-1
-aws-access-key-id: "AKIA..."
-aws-secret-key: "..."
-aws-hosted-zone-id: "Z0123456789ABCDEFGHIJ"   # optional, saves a lookup
-```
-
-Credentials may also come from the usual AWS environment variables or an
-instance role; leave the fields empty in that case. A minimal IAM policy, with
-`<ZONE>` being your hosted zone ID:
-
-```json
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    { "Effect": "Allow",
-      "Action": ["route53:ListHostedZones", "route53:ListHostedZonesByName"],
-      "Resource": "*" },
-    { "Effect": "Allow",
-      "Action": "route53:GetChange",
-      "Resource": "arn:aws:route53:::change/*" },
-    { "Effect": "Allow",
-      "Action": ["route53:ChangeResourceRecordSets", "route53:ListResourceRecordSets"],
-      "Resource": "arn:aws:route53:::hostedzone/<ZONE>" }
-  ]
-}
-```
-
-AWS cannot restrict `ChangeResourceRecordSets` to `_acme-challenge` names, so
-this key can write any record in that zone. If that is too broad, delegate the
-app subdomain to its own hosted zone and scope the policy to that one. Verify
-with:
-
-```sh
-echo | openssl s_client -connect anything.apps.example.com:443 \
-  -servername anything.apps.example.com 2>/dev/null | openssl x509 -noout -subject
-# subject=CN = *.apps.example.com
-```
-
-Blanking the DNS settings returns hostit to per-app certificates; certificates
-already in `<data-dir>/certs` keep working either way.
-
-### Built-in assistant (optional)
-
-The in-browser chat that builds and changes an app is off until the server has an
-AI key. Two ways to power it, both configured in `control.yml`. Which models the
-picker offers follows from which of these keys is set -- there is no model list
-to maintain:
-
-```yaml
-# Metered Anthropic API (pay per token):
-anthropic-api-key: sk-ant-...
-
-# Additionally offer the operator's Claude subscription (Pro/Max), run per turn
-# as `claude -p` in a locked-down podman sandbox. Setting the token is the whole
-# switch; there is no backend selector. Get the token with: claude setup-token
-claude-code-oauth-token: ...
-```
-
-Either way the assistant's only tools are one app's own REST surface, mediated by
-the daemon's peercred socket, so a turn can never touch another app or the host.
-Which models people may pick, the default, and who may use the assistant are set
-per user on the Admin page. Leave all of this unset and the chat UI hides itself;
-SSH and your own agent still work.
-
-## Where things go in an app
-
-Every app's home has a place for each kind of thing, so neither a person nor an
-agent has to guess:
-
-```
-public/      files served on the web -- static mode serves exactly this
-bin/         binaries and scripts the app runs (run: ./bin/myapp)
-log/         the app's output, written by hostit ("hostit logs" reads it)
-src/         source, if the app keeps its source on the host
-docs/        the app's own documentation, kept current by whoever changes it
-hostit.yml   how the app runs
-README.md    what the app is, and its worklog
-```
-
-Directories appear as you write into them. `mode: static` serves `public/`, and
-only `public/`.
-
-**Keep the source here.** Put it in `src/` and give `hostit.yml` a build step:
-
-```yaml
-mode: app
-prepare: cd src && go build -o ../bin/myapp .
-run: ./bin/myapp
-```
-
-`prepare:` runs before the app starts, on every deploy; a failed build leaves the
-running app alone and puts the error in the logs. It builds on the machine that
-runs it, so nobody needs a cross-compiler or a toolchain of their own -- which is
-the point when the person deploying is talking to an assistant rather than a
-terminal. It also keeps the app editable: the next session has source to work
-with, not just a binary. Uploading a prebuilt binary to `bin/` still works and is
-faster. The agent guide at `/api/apps/{app}/info` says all of this too.
-
-## Create an app
-
-Via the REST API (`https://hostit.<base-domain>`, Bearer token: the global admin
-token or a user's own token) or the bundled client. On the server itself, the
-CLI needs no configuration: run as root, it talks to the daemon's unix socket
-and acts as the global admin, no token required. For a remote daemon, point it
-at the REST API instead:
+On the server itself the CLI needs no configuration: run as root, it talks to the
+daemon's unix socket and acts as the global admin. For a remote daemon, point it at
+the REST API (`HOSTIT_HOST` + `HOSTIT_TOKEN`, an account or admin token):
 
 ```sh
 # Only for a REMOTE daemon; locally (as root) the unix socket just works
 export HOSTIT_HOST=https://hostit.apps.example.com
 export HOSTIT_TOKEN=...
 
-hostit apps add blog                            # reachable through the API only
-hostit apps add blog -k ~/.ssh/id_ed25519.pub   # ...plus SSH with your key
-hostit apps list
-hostit apps deploy blog                         # apply its hostit.yml and start it
-hostit apps start|stop|restart blog
-hostit apps logs -n 50 blog
-hostit apps run blog "cd src && go build -o ../bin/blog ."
-hostit apps remove blog                         # deletes user + ALL app data
+hostit control app add blog                            # reachable through the API only
+hostit control app add blog -k ~/.ssh/id_ed25519.pub   # ...plus SSH with your key
+hostit control app list
+hostit control app deploy blog                         # apply its hostit.yml and start it
+hostit control app logs -n 50 blog
+hostit control app run blog "cd src && go build -o ../bin/blog ."
+hostit control app remove blog                         # deletes user + ALL app data
 ```
 
-Or with curl:
+New apps start from a skeleton with a demo page and are started right away, so the
+URL serves something immediately. hostit never generates a key pair: an app with no
+keys is managed through the API, and SSH starts working as soon as a key is added.
 
-```sh
-curl -s -H "Authorization: Bearer $HOSTIT_TOKEN" \
-  -d '{"name": "blog", "ssh_keys": ["ssh-ed25519 AAAA... me@laptop"]}' \
-  "$HOSTIT_HOST/api/apps"
+**Let an AI agent build it.** A user creates an app, copies the prompt from its page,
+and pastes it into their own Claude Code (or any agent). The token in that prompt is
+**scoped to that one app**, and the agent needs no prior knowledge of hostit: `GET
+/api/apps/<app>/info` returns the app's state *and* the full instruction set (every
+endpoint, the `hostit.yml` format, what is installed). The same verbs run inside the
+app's container without the `control app` prefix and without a token (`hostit
+deploy`, `hostit status`, `hostit logs -f`, `hostit guide`), where the daemon knows
+which app you are from the uid asking. See
+[apps-that-think.md](docs/features/apps-that-think.md),
+[bring-your-own-agent.md](docs/features/bring-your-own-agent.md) and
+[rest-api.md](docs/features/rest-api.md).
+
+## Configuration essentials
+
+All server config is `control.yml` (see the annotated
+[`control.yml.example`](control.yml.example)). Only `base-domain` and `admin-token`
+are required. Without Google credentials the web login returns 501 and the REST API
+plus CLI keep working with the admin token.
+
+**Google login.** Create an OAuth client (Web application) at
+<https://console.cloud.google.com/apis/credentials> with JavaScript origin
+`https://hostit.<base-domain>` and redirect URI
+`https://hostit.<base-domain>/auth/callback`, then:
+
+```yaml
+google-client-id: "1234567890-abc123.apps.googleusercontent.com"
+google-client-secret: "GOCSPX-..."
+admin-emails: [you@example.com]   # become active admins on first login
 ```
 
-The response contains the URL and the SSH login. hostit never generates a key
-pair: an app with no keys is managed through the API, and SSH starts working as
-soon as a key is added to the owner's profile. New apps start from a skeleton with a
-demo page and are started right away, so the URL serves something immediately.
+Full details -- roles, per-user limits, the approval queue, "Add a user" and "Allow a
+domain" shortcuts -- are in
+[docs/features/accounts-roles.md](docs/features/accounts-roles.md).
 
-Everything lives under `/api`. One app's own endpoints are under
-`/api/apps/{app}/` -- which is exactly what an app-scoped token may reach, so
-the shape of the URL is the shape of the permission. Account and admin endpoints
-are `/api/account` (+ `/keys`, `/tokens`), `/api/apps`, `/api/users`,
-`/api/domains`, `/api/settings`, and `/api/health`.
+**Built-in assistant.** The in-browser chat that builds apps is off until the server
+has an AI key. Setting either key is the whole switch; the model picker follows from
+which keys are set:
 
-## Let an AI agent run an app
-
-This is what hostit is for: a user creates an app in the web app, copies the
-prompt from its page, and pastes it into their own Claude Code (or any agent).
-An account token drives every app you own through these commands; an app token
-drives only its own app. The same commands run inside an app's container without
-`apps` and without a token (`hostit deploy`, `hostit logs -f`, `hostit guide`), where
-the daemon knows which app you are from the uid asking.
-
-The token in that prompt is **scoped to that one app**, so it cannot touch the
-user's other apps, their account, or anything admin.
-
-The agent needs no prior knowledge of hostit, and the prompt is three lines:
-`GET /api/apps/<app>/info` returns the app's state *and* the full instruction set
-(every endpoint, the `hostit.yml` format, what is installed), so one URL plus
-one token is the whole briefing. `GET /api/info` returns the same guide
-without an app, for account-wide tokens. In shell terms:
-
-```sh
-export H=https://hostit.apps.example.com/api
-export T=hostit_...        # created with the app, shown on the app's page
-
-curl -H "Authorization: Bearer $T" $H/info              # how this all works
-curl -H "Authorization: Bearer $T" $H/apps/myapp/info    # README, files, config, state
-curl -H "Authorization: Bearer $T" "$H/apps/myapp/files?path=public"  # one directory
-curl -H "Authorization: Bearer $T" "$H/apps/myapp/files/README.md?stat=1"  # size/mtime/MIME, no body
-
-curl -X PUT -H "Authorization: Bearer $T" --data-binary @index.html \
-     $H/apps/myapp/files/public/index.html                    # upload one file
-curl -X PUT -H "Authorization: Bearer $T" --data-binary @myapp \
-     "$H/apps/myapp/files/myapp?mode=755"                    # ...executable, for run: mode
-tar cf - . | curl -X POST -H "Authorization: Bearer $T" \
-     -H "Content-Type: application/x-tar" --data-binary @- $H/apps/myapp/files  # upload a tree
-curl -X POST -H "Authorization: Bearer $T" -H "Content-Type: application/json" \
-     -d '{"path":"assets"}' $H/apps/myapp/mkdir                # make a directory
-curl -X POST -H "Authorization: Bearer $T" -H "Content-Type: application/json" \
-     -d '{"from":"a.txt","to":"public/a.txt"}' $H/apps/myapp/move   # move/rename
-
-curl -H "Authorization: Bearer $T" $H/apps/myapp/events   # activity log (create, deploy, snapshot, ...)
-curl -H "Authorization: Bearer $T" $H/apps/myapp/export -o myapp.zip           # download the whole workspace
-curl -H "Authorization: Bearer $T" "$H/apps/myapp/export?format=tar" -o myapp.tar.gz  # ...as a gzipped tar
-
-curl -X POST -H "Authorization: Bearer $T" -H "Content-Type: application/json" \
-     -d '{"command":"cd src && go build -o ../bin/myapp ."}' $H/apps/myapp/run
-curl -X POST -H "Authorization: Bearer $T" $H/apps/myapp/deploy    # apply hostit.yml, (re)start
-curl -H "Authorization: Bearer $T" "$H/apps/myapp/logs?lines=50"   # why is it not up?
-curl -X PUT -H "Authorization: Bearer $T" -H "Content-Type: application/json" \
-     -d '{"readme":"# myapp\n\nWhat this is."}' $H/apps/myapp/readme
+```yaml
+anthropic-api-key: sk-ant-...       # metered Anthropic API (pay per token)
+claude-code-oauth-token: ...        # additionally offer the operator's Claude
+                                    # subscription, run per turn as `claude -p`
+                                    # in a locked-down sandbox (claude setup-token)
 ```
 
-New apps start as a **stub**: a placeholder page served in `mode: static`, whose
-README says so and lists what is installed. Each app's `README.md` is its
-description and worklog: the agent reads it first
-and writes back what it changed, so the next session (or a different agent)
-knows what the app is. hostit's own instructions are not a file in the app --
-they are the SSH login banner, `hostit guide`, and `/docs` -- so nothing in the
-app directory competes with the app's own README. Agents are also asked to keep a one-line `description:` in
-`hostit.yml`; the app's page puts it into the prompt, so the next agent starts
-from what the app already is instead of from "this is a placeholder".
+Either way the assistant's only tools are one app's own REST surface. Which models
+people may pick and who may use it are set per user on the Admin page. See
+[docs/features/builtin-assistant.md](docs/features/builtin-assistant.md).
 
-Actions are POST-only (app verbs `start`, `stop`, `restart`; container verbs
-`poweron`, `poweroff`, `reboot`; and `deploy`); a GET answers 405 rather than
-doing anything. SSH still works for anyone who prefers scp/rsync:
-profile keys are written into a `# BEGIN hostit-managed keys` block in each
-app's `authorized_keys`, so keys added there by hand are never clobbered.
+**Wildcard TLS (optional, recommended).** By default hostit obtains one certificate
+per app on first request; set `dns-provider: route53` plus the `aws-*` keys (see
+`control.yml.example`) and it obtains a single `*.<base-domain>` certificate instead,
+so new apps serve HTTPS instantly. The IAM policy, the scoping caveat, and how this
+ties into per-app custom domains are in
+[docs/features/custom-domains.md](docs/features/custom-domains.md).
 
-Tokens come in two shapes. An **account token** (Profile -> API tokens) manages
-everything you own, including creating apps. An **app token** is created with
-each app, shown on its page, and can only touch that one app -- that is the one
-that goes into a chat window.
+## Deploying an app
 
-## Building in the browser
+SSH in as the app user, upload files, describe the app in `hostit.yml` -- either
+`mode: static` (hostit serves `public/`) or `mode: app` with a `run:` command (and an
+optional `prepare:` build step, which runs on every deploy on the machine that runs
+it, so no cross-compiler is needed):
 
-You do not need to leave the browser. Each app's page is a workspace with tabs:
-
-- **Assistant** -- a built-in AI chat that reads and writes the app's files, runs
-  commands in its container, and deploys, beside a **live preview** on a draggable
-  split. It is the same REST surface an external agent drives, but hosted: the turn
-  runs server-side and streams back, so it survives a reload and shows up on every
-  device viewing the app; the conversation is persisted per app. It needs an
-  Anthropic API key in the server config; without one, the tab is hidden and apps
-  run over SSH/CLI as usual.
-- **Files** -- an in-browser editor with a file tree (upload, rename, move, delete,
-  new file/folder), syntax highlighting, and an optional live preview pane. It
-  reuses the file REST endpoints, so no SSH is needed for a quick change.
-- **Terminal** -- the same login shell an SSH session gets, over a WebSocket, inline
-  (with pop-out and fullscreen). "Connect via SSH" shows the `ssh`/`scp` command.
-- **Snapshots** -- a timeline of point-in-time snapshots with rollback, fork,
-  download and delete, and a "Take snapshot" action.
-- **Logs** -- an activity log of who did what to the app (create, snapshot,
-  rollback, domain, lifecycle) above a live tail of the app's own output.
-- **Settings** -- the app's URLs (including any verified custom domain), SSH, API
-  token, description and custom domains.
-
-The top bar shows **live CPU / RAM / disk**, the app's address, and the lifecycle
-actions (start/stop/restart, power on/off, reboot, fork, delete). A download
-button next to fork grabs the whole workspace as a `.zip` or `.tar.gz` (a
-consistent point-in-time snapshot is taken first), and each snapshot row can be
-downloaded the same way.
-
-The sparkle button on the page hands you the same paste-into-your-own-agent
-prompt, so the browser assistant and an external Claude Code are interchangeable.
-
-## Connections: accounts, credentials and MCP servers
-
-Apps often need to act as *you* somewhere else -- read your calendar, post to a
-Slack channel, query a database. hostit holds the secret so the app does not:
-attach it **once** on the **Connections** page, grant it to whichever apps should
-use it, and revoke it whenever. Nothing is baked into a file you would have to
-redeploy to change, and a revoked grant stops working on the next request rather
-than the next deploy.
-
-Three kinds, because they are three different things:
-
-- **Accounts** are services you sign in to: Google Calendar, Gmail, Slack,
-  Discord, GitHub, Jira, Linear, HubSpot. You approve them at the provider,
-  hostit keeps the refresh token, and apps get a short-lived access token on
-  request. Each provider needs an OAuth client the **operator** registers; one
-  with no client is hidden rather than shown broken.
-- **Credentials** are secrets you paste: Fastmail, IMAP, SMTP, CalDAV, CardDAV,
-  Postgres, MySQL, OpenSearch, S3, ntfy, Home Assistant, an SSH key, a Discord
-  bot token, or any API key at all. **No OAuth client, no review, nothing to
-  register** -- and often the better option even where the vendor also does
-  OAuth: a Gmail app password over IMAP needs no Google verification and never
-  expires.
-- **MCP servers** are tool servers added by URL. hostit works out whether the
-  server wants authorization, walks the sign-in if so, and then **calls the tools
-  itself** -- an MCP token opens the whole server, so handing it to an app would
-  make the grant decorative. Users add these entirely by themselves; there is
-  nothing for an operator to register.
-
-An app reads what it holds over its own unix socket -- no token, no hostname:
-
-```bash
-curl --unix-socket /run/hostit/hostit.sock http://x/api/container/connections
-curl --unix-socket /run/hostit/hostit.sock \
-  http://x/api/container/connections/work-calendar/token
-curl --unix-socket /run/hostit/hostit.sock \
-  http://x/api/container/mcp/issues/call -d '{"tool":"list_issues","arguments":{}}'
+```yaml
+mode: app             # your command in the container; MUST listen on 0.0.0.0:$PORT
+prepare: cd src && go build -o ../bin/myapp .
+run: ./bin/myapp
+env: { FOO: bar }
 ```
 
-The built-in assistant is told which connections an app holds, so you can ask it
-to build something that uses one without explaining any of this; granted MCP
-tools become tools it can call directly.
+Then `hostit deploy` (apply and (re)start; survives reboots), `hostit status`,
+`hostit logs -f`, `hostit start|stop|restart` (the `run:` command) and `hostit
+poweron|poweroff|reboot` (the container). Changing `env:` recreates the container
+(keeps all files and installed packages); other changes only restart the app. Every
+app's home has a place for each kind of thing (`public/`, `bin/`, `log/`, `src/`,
+`docs/`, `hostit.yml`, `README.md`). Full reference:
+[docs/features/deploy.md](docs/features/deploy.md) and
+[apps-lifecycle.md](docs/features/apps-lifecycle.md).
 
-Secrets are sealed with AES-256-GCM under a key beside the database, bound to the
-row they belong to so ciphertext moved between rows will not decrypt.
+## Features
+
+Each links to its full page under [docs/features/](docs/features/):
+
+- [apps-lifecycle.md](docs/features/apps-lifecycle.md) -- create, list, rename, delete, and where files live in an app
+- [deploy.md](docs/features/deploy.md) -- `hostit.yml`, the `static` and `app` modes, deploying
+- [ssh-access.md](docs/features/ssh-access.md) -- ssh / scp / sftp / rsync into an app's container
+- [private-apps.md](docs/features/private-apps.md) -- public vs private apps, viewers and collaborators
+- [connections.md](docs/features/connections.md) / [connections-catalog.md](docs/features/connections-catalog.md) -- OAuth accounts and pasted credentials, granted per app and read from the app's own socket
+- [mcp-servers.md](docs/features/mcp-servers.md) -- MCP tool servers added by URL; hostit holds the token and makes the calls
+- [custom-domains.md](docs/features/custom-domains.md) -- serve an app on your own hostname (DNS-01 certs) plus wildcard TLS setup
+- [snapshots-rollback.md](docs/features/snapshots-rollback.md) -- automatic and manual btrfs snapshots, rollback (auto before every deploy and assistant turn)
+- [fork.md](docs/features/fork.md) -- duplicate an app from its current state or a snapshot
+- [export-download.md](docs/features/export-download.md) -- download a workspace or one snapshot as a .zip / .tar.gz
+- [archiving.md](docs/features/archiving.md) -- shelve an app instead of deleting it
+- [quotas-limits.md](docs/features/quotas-limits.md) -- hard disk (btrfs qgroup), memory and CPU caps, per-user pools
+- [logs.md](docs/features/logs.md) -- the activity feed and live app output
+- [builtin-assistant.md](docs/features/builtin-assistant.md) -- the in-browser AI chat that builds apps
+- [apps-that-think.md](docs/features/apps-that-think.md) -- an app asking a model a question at runtime, with no key of its own
+- [bring-your-own-agent.md](docs/features/bring-your-own-agent.md) -- drive an app with your own agent via a scoped token
+- [browser-workspace.md](docs/features/browser-workspace.md) / [terminal.md](docs/features/terminal.md) / [web-dashboard.md](docs/features/web-dashboard.md) -- the in-browser file editor, terminal and dashboard
+- [accounts-roles.md](docs/features/accounts-roles.md) -- accounts, roles, invites, approval, admin controls
+- [rest-api.md](docs/features/rest-api.md) -- the REST API and account/app tokens
+
+**Connections in one paragraph:** apps often need to act as *you* elsewhere (read
+your calendar, post to Slack, query a database). hostit holds the secret so the app
+does not: attach it once on the **Connections** page, grant it to apps, revoke it
+anytime. An app reads what it holds over its own container API (no token or hostname
+needed), e.g. `curl http://127.0.0.1:2586/api/container/connections/work-calendar/token`.
+Secrets are sealed with AES-256-GCM under a key beside the database;
 `hostit control connections rotate-key` re-seals everything under a fresh key.
 
-Any OAuth 2.0 service hostit does not ship can be added, at three tiers:
+## Security model
 
-- **hostit's catalog** ships in the binary.
-- **The operator's** go in `control.yml` or the Admin page: a label, a client,
-  scopes, and either the two OAuth URLs or an `issuer` to discover them from.
-  Everyone on the instance can then connect them. Named **MCP servers** live in
-  the same two places, so users pick a name rather than remembering a URL.
-- **A user's own** are added by that user with no admin involved: register an
-  OAuth app with the service, paste the client in, and it is visible only to
-  them. Nothing about OAuth requires the client to belong to the server -- only
-  the callback URL is hostit's, which is why the dialog hands it to you.
+The boundaries, so it is clear what hostit does and does not promise:
 
-A user can never redefine a name hostit or the operator already uses, so `github`
-keeps meaning GitHub for everybody.
+- **Between apps.** Separate Unix users, containers and network stacks. Ports are
+  published on loopback and nftables restricts each to root and the owning uid, so
+  one app cannot reach another's port even over an SSH tunnel.
+- **Between an app and the host.** SSH sessions exec straight into the container;
+  there is no host shell. The workload runs as the app's own unprivileged uid
+  (container root is mapped to it), so an escape lands on that uid, not on root.
+- **Between an app's files and the daemon.** The app owns its whole subvolume; every
+  file operation hostit performs there as root goes through chained `os.OpenRoot`s,
+  so a symlink out of the subvolume is refused by the kernel rather than followed.
+- **Tokens.** An **app-scoped token** can only reach `/api/<its app>/`. An **account
+  token** can do anything its owner can. The **admin token** in `control.yml` is
+  unlimited -- treat it like a root password.
 
-Because users supply URLs hostit then fetches, outbound requests are restricted
-to publicly routable addresses -- checked at connection time, so DNS rebinding
-does not get past it. `outbound-allow-private-cidrs: ["192.168.1.0/24"]` exempts
-specific ranges for a self-hoster whose MCP servers really are on their LAN.
+Full write-up (the web-app/tenant same-origin boundary, `/var/lib/hostit`, the threat
+model) is in
+[docs/subsystems/security-isolation.md](docs/subsystems/security-isolation.md).
 
-See the administration guide at `/docs/admin/connections`.
-
-## Snapshots, rollback and quotas
-
-Each app is one copy-on-write **btrfs** subvolume (the filesystem is mandatory),
-which unlocks two things:
-
-- **Snapshots and rollback.** A snapshot is an instant, space-shared copy of the
-  whole app: its files AND everything it installed. hostit takes one automatically
-  before every deploy, before every assistant turn, and every few hours; you (or an agent)
-  can also take a labelled one on purpose. Rolling back restores the app to a
-  snapshot -- data and installed software together, so a broken `apt` run or a
-  deleted system file is undone the same way as a bad edit -- and takes a safety
-  snapshot of the current state first, so a rollback is itself undoable. All
-  snapshots are thinned by a grandfather-father-son policy (the last 50, plus daily
-  for a week, weekly for a month, monthly for a quarter) -- none is kept forever.
-
-  ```sh
-  hostit apps snapshot create myapp "before the rewrite"  # save a restorable point
-  hostit apps snapshot list myapp                          # list them, newest first
-  hostit apps rollback myapp <snapshot-id>                 # restore (safety-snapshotted)
-  hostit apps snapshot delete myapp <snapshot-id>          # delete one by hand
-  ```
-
-  The built-in assistant has the same abilities (it snapshots before risky work and
-  can roll back -- reversible, so it runs without a confirmation step), and so does
-  the REST API (`GET`/`POST /api/apps/{app}/snapshots`,
-  `POST .../snapshots/{id}/restore`, `DELETE .../snapshots/{id}`).
-
-  Optionally quiesce a database around a snapshot with hooks in `hostit.yml`:
-
-  ```yaml
-  snapshot:
-    pre:  "sqlite3 data/app.db \".backup data/app.snap.db\""   # flush before
-    post: "rm -f data/app.snap.db"                              # clean up after
-  ```
-
-- **Fork.** Duplicate an app into a new one, seeding it from a copy of the
-  source's entire filesystem -- files, data and installed packages, either its
-  current state or a specific snapshot. The fork gets its
-  own subdomain, Unix user and container, and the two run independently from there.
-  Reached from the snapshot menu on the app page (including a per-snapshot "Fork"),
-  the CLI, or the REST API:
-
-  ```sh
-  hostit apps fork myapp myapp-copy                  # seed from myapp's current files
-  hostit apps fork myapp myapp-copy <snapshot-id>    # seed from a specific snapshot
-  ```
-
-  (`POST /api/apps/{app}/fork` with `{"new_name": "...", "snapshot_id": "..."}`; the
-  snapshot id is optional.)
-
-- **Hard disk quotas.** The app's `disk_mb` limit is enforced by one btrfs qgroup
-  per app spanning its subvolume and its snapshots, capped on the
-  bytes the app itself pins (data shared with the base image is free). A write past
-  the cap fails immediately (EDQUOT) -- in the home or anywhere else in the
-  container -- instead of the app being stopped later by a periodic sweep. A
-  `disk_mb` of 0 falls back to the platform default (2 GB); nothing is unlimited.
-
-Setting this up is a one-off: a btrfs image on a loopback file, mounted at the
-app-homes path -- see [Development](#development). It needs no extra block device.
-
-## Custom domains
-
-An app answers on its `<app>.<base-domain>` subdomain out of the box; attach the
-owner's own hostname on top of it. Reached from the app page's Actions menu, the
-CLI, or the REST API:
-
-```sh
-hostit apps domain add myapp blog.example.com   # prints the two DNS records to create
-hostit apps domain list myapp                    # status: pending / active / error
-hostit apps domain verify myapp blog.example.com # re-check DNS and (re)issue the cert
-hostit apps domain rm myapp blog.example.com
-```
-
-The owner creates two DNS records at **their** provider (both plain CNAMEs, so any
-provider works):
-
-1. **Traffic** -- `blog.example.com` -> `myapp.<base-domain>` (or an A record to the
-   server at a zone apex, where CNAME is not allowed).
-2. **TLS challenge delegation** -- `_acme-challenge.blog.example.com` ->
-   `_acme-challenge.acme.<base-domain>` (the same fixed target for every domain).
-
-hostit then obtains a Let's Encrypt certificate over **DNS-01**, writing the
-challenge TXT into the operator's own zone (the same Route53 setup that issues the
-wildcard). Because validation is via public DNS, **this works even when the server
-is not reachable from the internet** -- the CA never connects to the box. The owner
-never shares DNS credentials; the delegation CNAME is also the proof of control.
-(`GET`/`POST /api/apps/{app}/domains`, `POST .../domains/{domain}/verify`,
-`DELETE .../domains/{domain}`.)
-
-## Deploy an app
-
-SSH in as the app user, upload files, describe the app in `hostit.yml`:
-
-```yaml
-# mode: static -- hostit serves public/. Nothing to install, nothing to run.
-mode: static
-```
-
-```yaml
-# mode: app -- your command in the workspace container;
-# it MUST listen on 0.0.0.0:$PORT
-mode: app
-run: ./server --debug
-env:
-  FOO: bar
-```
-
-Then:
-
-```sh
-hostit deploy      # apply hostit.yml and (re)start; survives reboots
-hostit status      # is it running?
-hostit logs -f     # follow logs
-
-# App verbs act on the run: command; the container keeps running:
-hostit start       # start the run: command
-hostit stop        # stop it (container stays up, SSH still works)
-hostit restart     # restart it (fast; no container recreate)
-
-# Power verbs act on the container itself:
-hostit poweroff    # stop the container (stays off across reboots)
-hostit poweron     # start it again
-hostit reboot      # recreate/restart the container
-
-hostit info        # name, URL, port
-```
-
-Changing `env:` recreates the container (which kicks active SSH sessions, like
-docker, but keeps all files and installed packages -- the container's filesystem
-is persistent); changing `mode:`, `prepare:` or `run:` only restarts the app
-inside it. Keys hostit does not know are an error, so a typo is reported rather
-than quietly ignored.
+> **Self-hosting disclaimer.** hostit runs as root, terminates TLS, and hands tenants
+> root inside their own container. It is provided as-is, with no warranty (see
+> [LICENSE](LICENSE)); operators are responsible for their own hardening. The
+> boundaries above are the model's promises, not a guarantee against every container
+> escape or misconfiguration.
 
 ## Notes
 
-- App names are `[a-z][a-z0-9-]*` (max 32 chars), doubling as Unix usernames and
-  DNS labels; a reserved-name list blocks `root`, `api`, `www`, etc.
-- `tls: off` runs the proxy on plain HTTP (`listen-http`), for development or
-  behind an existing TLS-terminating proxy.
-- The app CLI talks to the daemon via `/run/hostit/hostit.sock`, authenticated by
-  the kernel (SO_PEERCRED); app users can only ever act on their own app.
-- The workspace image is built once for the whole host, then exported once per
-  image tag into a read-only base subvolume; each app's container runs its own
-  persistent root filesystem, an instant snapshot of that base. Recreating the
-  container (config change, daemon upgrade) keeps the filesystem, so `apt-get`
-  installs survive redeploys. The earlier rootless model forced a per-app image
-  copy (~40s and ~230 MB each), which is why the build is shared.
-- On small hosts, give the machine swap: an `apt`-based image build inside a
-  container gets OOM-killed on a 512 MB box.
-- Scale-out to multiple runner hosts behind one proxy is on the roadmap (the
-  registry already has a `host` column for it; see [TODO.md](TODO.md)), but only
-  single-host is implemented today.
+- App names are `[a-z][a-z0-9-]*` (max 32 chars), doubling as Unix usernames and DNS
+  labels; a reserved-name list blocks `root`, `api`, `www`, etc.
+- `tls: off` runs the proxy on plain HTTP (`listen-http`), for development or behind
+  an existing TLS-terminating proxy.
+- The app CLI talks to the daemon via `/run/hostit/hostit.sock`, authenticated by the
+  kernel (SO_PEERCRED); app users can only ever act on their own app.
+- The workspace image is built once for the whole host, then exported into a
+  read-only base subvolume; each app's container runs its own persistent root
+  filesystem, an instant snapshot of that base, so `apt-get` installs survive
+  redeploys. On small hosts, give the machine swap: an `apt`-based image build inside
+  a container gets OOM-killed on a 512 MB box.
+- Scale-out to multiple runner nodes behind one proxy is partly built (control,
+  node and proxy are already separate processes); see [TODO.md](TODO.md).
 
 ## Development
 
@@ -772,53 +346,35 @@ HOSTIT_HOST=https://hostit.apps.example.com HOSTIT_TOKEN=... make e2e
 ```
 
 Layout follows the ntfy conventions: one thin `main` per binary under `cmd/`
-(`control`, `node`, `proxy`, `agent`), component packages at the root
-(`control/` is the control plane incl. the REST API and web app, `node/` the
-machine half, `nodeapi/` the wire contract between them, `proxy/` the data
-plane) plus service packages (`agent/`, `assistant/`, `store/`, `user/`,
-`appctl/`, `client/`, `config/`, ...), and the web app in `web/` (Vite +
-React, no UI framework). The `assistant/` package is the in-browser AI agent: a loop over the
-Anthropic Messages API whose tools are scoped to one app.
+(`control`, `node`, `proxy`, `agent`, `app`), component packages at the root
+(`control/`, `node/`, `nodeapi/`, `proxy/`) plus service packages (`agent/`,
+`assistant/`, `store/`, `user/`, `client/`, `config/`, ...), and the web app in
+`web/` (Vite + React, no UI framework). Internals are documented under
+[docs/subsystems/](docs/subsystems/).
 
-### Releasing and environments
+### Releasing
 
-The web assets are embedded at compile time (`go:embed control/site`), so a release
-is a single self-contained binary/`.deb`.
+The web assets are embedded at compile time (`go:embed control/site`), so a release is
+a set of self-contained binaries/`.deb`s.
 
 ```sh
-make release-snapshot   # local .deb in dist/ (for staging / a dev box)
+make release-snapshot   # local .debs in dist/ (for staging / a dev box)
 git tag vX.Y.Z && GITHUB_TOKEN=$(gh auth token) make release   # tag + publish a GitHub release
 ```
 
-**btrfs is required**: hostit refuses to start unless the app-homes path is on a
-btrfs filesystem, because snapshots, rollback, fork and hard disk quotas are core.
-The Ansible role sets it up behind `hostit_btrfs: true`: it creates a btrfs image
-on a loopback file (75% of free space), mounts it at `/var/lib/hostit/apps` via a
-systemd unit, and migrates existing homes into subvolumes once. No extra block
-device is needed.
-
 The reference deployment is driven by Ansible with two environments -- a **staging**
-host and a **prod** host, each its own machine and base domain. Staging installs a
-locally built snapshot `.deb`; prod pins a released version and pulls the `.deb`
-from the GitHub release. The usual flow is snapshot -> deploy to staging -> verify
--> tag a release -> bump the prod version -> deploy to prod. (Per-app dev/stage
-environments -- building a change on a staging copy of one app and promoting it to
-that app's prod -- are on the roadmap; see [TODO.md](TODO.md).)
+host (installs a locally built snapshot) and a **prod** host (pins a released version,
+pulls the `.deb`s from the GitHub release). The usual flow is snapshot -> deploy to
+staging -> verify -> tag a release -> bump the prod version -> deploy to prod. See
+[docs/subsystems/release-and-preflight.md](docs/subsystems/release-and-preflight.md).
 
 ## Contributing
 
-Contributions are welcome. To build and check locally:
-
-```sh
-make web            # build the React app into control/site (embedded at compile time)
-make test vet fmt   # Go tests, go vet, and gofmt
-cd web && npm test  # frontend unit tests (vitest)
-```
-
-Please run `make web` before committing any change under `web/`, since the built
-assets in `control/site` are tracked and embedded at compile time. Keep to the
-existing style (see the Go conventions in the package layout above; ASCII only,
-comments explain *why*). Open an issue to discuss larger changes before a PR.
+Contributions are welcome. Run `make web` before committing any change under `web/`
+(the built assets in `control/site` are tracked and embedded at compile time),
+`cd web && npm test` for the frontend unit tests, keep to the existing style (ASCII
+only; comments explain *why*), and open an issue to discuss larger changes before a
+PR. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 

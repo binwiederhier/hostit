@@ -13,7 +13,7 @@ for, answer a visitor in a particular voice, classify some text.
 
 ```
 GET  http://127.0.0.1:2586/api/container/assistant/models   # the ids this server offers
-POST http://127.0.0.1:2586/api/container/assistant          # or --unix-socket /run/hostit/hostit.sock
+POST http://127.0.0.1:2586/api/container/assistant
   {"prompt": "...", "system": "...", "max_tokens": 500}
   {"messages": [{"role":"user","content":"..."}], "model": "claude-opus-5"}
 ->{"text": "...", "model": "...", "usage": {...}}

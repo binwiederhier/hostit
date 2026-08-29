@@ -142,6 +142,62 @@ rename; `domainName` resolves the app's current name. `DomainPending` /
 `DomainActive` / `DomainError` are the states; `ActiveDomains` returns each app's
 first active domain in one query for the app list.
 
+## Wildcard TLS for the base domain (operator setup)
+
+Custom-domain certs share the operator's DNS-01 setup with the base-domain
+wildcard. By default hostit obtains one Let's Encrypt certificate **per app**, on
+that app's first HTTPS request. Configure a DNS provider instead and it obtains a
+single wildcard certificate for `*.<base-domain>`, which means new apps serve
+HTTPS instantly (no ACME round-trip on the first request), unknown subdomains
+reach the proxy's 404 page instead of failing the TLS handshake, and the "50
+certificates per registered domain per week" rate limit stops mattering.
+
+Wildcards require DNS-01 validation, so hostit needs permission to write TXT
+records in your zone. AWS Route 53 is supported today (`control.yml`):
+
+```yaml
+dns-provider: route53
+aws-region: us-east-1
+aws-access-key-id: "AKIA..."
+aws-secret-key: "..."
+aws-hosted-zone-id: "Z0123456789ABCDEFGHIJ"   # optional, saves a lookup
+```
+
+Credentials may also come from the usual AWS environment variables or an
+instance role; leave the fields empty in that case. A minimal IAM policy, with
+`<ZONE>` being your hosted zone ID:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    { "Effect": "Allow",
+      "Action": ["route53:ListHostedZones", "route53:ListHostedZonesByName"],
+      "Resource": "*" },
+    { "Effect": "Allow",
+      "Action": "route53:GetChange",
+      "Resource": "arn:aws:route53:::change/*" },
+    { "Effect": "Allow",
+      "Action": ["route53:ChangeResourceRecordSets", "route53:ListResourceRecordSets"],
+      "Resource": "arn:aws:route53:::hostedzone/<ZONE>" }
+  ]
+}
+```
+
+AWS cannot restrict `ChangeResourceRecordSets` to `_acme-challenge` names, so
+this key can write any record in that zone. If that is too broad, delegate the
+app subdomain to its own hosted zone and scope the policy to that one. Verify
+with:
+
+```sh
+echo | openssl s_client -connect anything.apps.example.com:443 \
+  -servername anything.apps.example.com 2>/dev/null | openssl x509 -noout -subject
+# subject=CN = *.apps.example.com
+```
+
+Blanking the DNS settings returns hostit to per-app certificates; certificates
+already in `<data-dir>/certs` keep working either way.
+
 ## Other notes
 
 - Removing a domain (`removeAppDomain`) stops routing immediately but leaves the

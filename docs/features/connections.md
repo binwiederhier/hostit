@@ -336,7 +336,9 @@ sequenceDiagram
   `OpenLegacyTolerant`, and are re-sealed bound the first time they are used --
   so an existing instance converges without re-authorising every account.
 - **The key** is 32 random bytes, base64 in `connections.key` (0600) beside the
-  database, root-owned like the database itself.
+  database, root-owned like the database itself. `hostit control connections
+  rotate-key` re-seals every stored credential under a fresh key -- run it if the
+  key is ever exposed, or to rotate on a schedule.
 - **The `meta` column is NOT encrypted.** It holds the non-secret half of a
   pasted credential -- an IMAP host and username, a CalDAV URL, an S3 access key
   id and bucket. That is deliberate (the UI and the app both need to read it) and
