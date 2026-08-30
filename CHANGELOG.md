@@ -7,6 +7,30 @@ changed rather than what an operator had to do about it; from v0.15.0 on, each
 release is written down as it is cut. Anything that changes a config file, a
 default, or on-disk state is called out as **Breaking** or **Upgrade note**.
 
+## v0.31.0 (2026-08-30)
+
+- **The control plane runs no containers, and can run unprivileged.** App-preview
+  screenshots and the Claude Max assistant sandbox both moved off hostit-control
+  onto the node the app lives on (behind new NodeAgent verbs), so the container
+  work -- the headless-chrome shot with its per-shot egress firewall, and the
+  `claude -p` sandbox -- now runs where the app is, reaching its tools through the
+  node's own app socket. The dashboard preview and the assistant behave exactly as
+  before; a multi-node app is now shot and assisted on its own node rather than
+  from control reaching across. With both podman users gone, **hostit-control needs
+  no root** (it binds no privileged port -- hostit-proxy owns :443/:80 -- and does
+  no machine work), and **hostit-proxy needs only `CAP_NET_BIND_SERVICE`**. Root
+  concentrates in hostit-node, which is the only component that manipulates the
+  host. **Upgrade note:** running unprivileged is opt-in and unchanged installs
+  stay on root; to switch, run the two daemons as a dedicated user (systemd
+  `User=`, plus `AmbientCapabilities=CAP_NET_BIND_SERVICE` for the proxy) and own
+  their config and data dirs.
+
+- **New `local-proxy-uid` node setting.** Each app's published port is reachable
+  over loopback only by root and the app's own uid, so one app cannot reach
+  another's port. A colocated hostit-proxy dials those ports too; when it runs
+  unprivileged, set `local-proxy-uid` to its uid so the per-app firewall admits it.
+  Default `0` (the proxy is root) leaves the rule unchanged.
+
 ## v0.30.0 (2026-08-28)
 
 - **Viewer-only accounts.** A new `viewer` role for people who should only OPEN
