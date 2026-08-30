@@ -122,7 +122,7 @@ func (m *Manager) appPolicy(a *store.App) (keys []string, memoryMB, diskMB int) 
 }
 
 // ReconcileNodes hands every connected node the desired state and lets each
-// converge. A no-op in a single process, where control IS the machine.
+// converge.
 func (m *Manager) ReconcileNodes(desired *api.DesiredState) {
 	m.node.Reconcile(desired)
 }

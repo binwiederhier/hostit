@@ -85,7 +85,8 @@ func TestTheColocatedNodeRegistersItself(t *testing.T) {
 	st := s.apps.Store()
 	require.NoError(t, st.AddApp(&store.App{ID: "a1", Name: "blog", Port: 10000, Host: store.HostLocal}))
 
-	require.NoError(t, s.apps.EnsureLocalNode())
+	require.NoError(t, st.EnsureNode(store.HostLocal, "127.0.0.1"))
+	require.NoError(t, st.SetNodeSeen(store.HostLocal, time.Now()))
 
 	status, err := ClusterStatus(st, t.TempDir(), time.Now())
 	require.NoError(t, err)
@@ -102,7 +103,8 @@ func TestClusterStatusStillFlagsATrulyUnplacedApp(t *testing.T) {
 	t.Parallel()
 	s := newTestServer(t)
 	st := s.apps.Store()
-	require.NoError(t, s.apps.EnsureLocalNode())
+	require.NoError(t, st.EnsureNode(store.HostLocal, "127.0.0.1"))
+	require.NoError(t, st.SetNodeSeen(store.HostLocal, time.Now()))
 	require.NoError(t, st.AddApp(&store.App{ID: "a1", Name: "orphan", Port: 10000, Host: "retired-node"}))
 
 	status, err := ClusterStatus(st, t.TempDir(), time.Now())

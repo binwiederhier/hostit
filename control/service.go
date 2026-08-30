@@ -4,9 +4,9 @@
 // loopback port, and the Manager that orchestrates app lifecycles -- creation
 // and deletion, placement, port allocation, ownership and the registry of
 // record. Machine work (subvolumes, unix users, containers, firewall, files,
-// state) lives in package node: the Manager embeds a node.Machine and drives
-// it through the nodeapi verbs, locally in the fused daemon or over the node
-// RPC in a split deployment.
+// state) lives in package node: the Manager holds no machine of its own and
+// drives the app's node through the nodeapi verbs over the cluster link -- even
+// a colocated node is a separate hostit-node process, never in-process.
 package control
 
 import (
@@ -284,10 +284,6 @@ func (s *Server) Stop() {
 	}
 }
 
-// runTLSServers starts the HTTPS proxy with Let's Encrypt certificates, plus the
-// HTTP listener that answers ACME challenges and redirects to HTTPS. With a DNS
-// provider configured, one wildcard certificate covers every app; otherwise each
-// app's certificate is issued on demand on its first request.
 // setupCertmagic wires certificate management (wildcard and/or on-demand,
 // custom domains, the combined lookup the internal cert endpoint hands to
 // hostit-proxy) WITHOUT starting any public listener -- shared by the

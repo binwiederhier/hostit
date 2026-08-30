@@ -72,9 +72,9 @@ func nodeRole(manager *control.Manager, registry *control.NodeRegistry, srv *con
 // always running, even on a single-box install: the colocated proxy is a
 // cluster member like any other, and this is the only way in.
 //
-// Nodes are admitted only in split mode (withNodes). When control runs the
-// machine half in-process there is nothing for a node to register as, and
-// admitting one would swap this process's own machine for a routing agent.
+// A node dials in and registers here; the colocated node does so too, over the
+// member socket, as its own hostit-node process. Control keeps no machine of its
+// own to be swapped -- it always routes verbs to a registered node.
 //
 // Each node registration wires into the control plane: connected agents live
 // in the node registry (orchestration routes each app's verbs to its hosting

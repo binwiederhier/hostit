@@ -103,10 +103,9 @@ func (m *Manager) RefreshStates() {
 	for _, a := range apps {
 		names = append(names, a.Name)
 	}
-	// Measure through the node agent: in a single process it is this Manager
-	// (local podman/systemd), but in split control mode it is the routing agent,
-	// which fans out to the nodes -- control has no app containers of its own to
-	// measure, and doing so would clobber the per-node poll data with empties.
+	// Measure through the node agent (the routing agent), which fans out to each
+	// node -- control has no app containers of its own to measure, and doing so
+	// would clobber the per-node poll data with empties.
 	states := m.node.States(names)
 	m.ctlStatesMu.Lock()
 	m.ctlStates = states

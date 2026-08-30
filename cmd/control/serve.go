@@ -87,8 +87,9 @@ func execServe(c *cli.Context) error {
 	// c.App.Version is what main stamped from the ldflags; keep the machine
 	// half on the same string (it is part of each container's identity).
 	node.Version = c.App.Version
-	// The fused daemon IS the local node, so its machine services are the local
-	// node's (the firewall table is named after it).
+	// The Manager orchestrates only: it holds the registry and routes machine
+	// work to each app's node over the cluster link (the colocated node included,
+	// as its own hostit-node process). It builds no machine services here.
 	manager := control.NewManager(conf, s)
 	users := user.NewManager(conf, s)
 	if err := ensureSessionKey(conf, s); err != nil {

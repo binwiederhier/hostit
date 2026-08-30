@@ -402,9 +402,9 @@ func (m *Manager) create(name string, opts *CreateOptions, seed *seedRef) (*stor
 	return app, nil
 }
 
-// SetNodeAgent points this manager's orchestration at a (remote) node agent:
-// what control calls once a hostit-node dials in. Default is the manager
-// itself (single process).
+// SetNodeAgent repoints this manager's orchestration at a given node agent. The
+// default (from NewManager) is the routing agent that fans out to nodes; only
+// tests call this, to inject a fake.
 func (m *Manager) SetNodeAgent(node NodeAgent) {
 	m.node = node
 }
