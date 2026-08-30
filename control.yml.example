@@ -122,7 +122,6 @@ admin-token: CHANGE-ME
 
 # Listeners (defaults shown)
 # listen-http: ":80"
-# listen-api: "127.0.0.1:2900"   # optional extra plain-HTTP admin API listener
 # socket-file: /run/hostit/hostit.sock
 
 # Directories (defaults shown)

@@ -188,25 +188,8 @@ func TestResolveConfigFileKeepsTheIntendedPathWhenNeitherExists(t *testing.T) {
 // The per-component defaults are part of the packaging contract (the .deb ships
 // examples there, the units read them, ansible writes them).
 
-// listen-node became listen-cluster when proxies started dialing the same
-// listener; an existing config must keep working, the way a node's retired
-// listen-node key does.
-func TestListenClusterHonoursTheRetiredListenNodeKey(t *testing.T) {
+func TestClusterSocketDefault(t *testing.T) {
 	t.Parallel()
-	path := filepath.Join(t.TempDir(), "control.yml")
-	require.NoError(t, os.WriteFile(path, []byte("base-domain: apps.example.com\nadmin-token: t\nlisten-node: 10.0.0.1:2930\n"), 0o600))
-
-	c, err := LoadConfig(path)
-	require.NoError(t, err)
-	assert.Equal(t, "10.0.0.1:2930", c.ListenCluster, "the old key still names the remote listener")
-
-	// The new name wins when both are present.
-	require.NoError(t, os.WriteFile(path, []byte("listen-node: 10.0.0.1:2930\nlisten-cluster: 10.0.0.2:2930\n"), 0o600))
-	c, err = LoadConfig(path)
-	require.NoError(t, err)
-	assert.Equal(t, "10.0.0.2:2930", c.ListenCluster)
-
-	// And the same-host socket has a name of its own.
 	assert.Equal(t, "/run/hostit/cluster.sock", NewConfig().ClusterSocket)
 }
 

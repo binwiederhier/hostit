@@ -117,7 +117,6 @@ type Config struct {
 	// ListenHTTP is where hostit-proxy forwards; a local address, since the
 	// proxy owns :443 in every deployment and control never binds it.
 	ListenHTTP             string  `yaml:"listen-http"`                // HTTP listener (ACME challenges + redirect, or plain proxy if TLS off)
-	ListenAPI              string  `yaml:"listen-api"`                 // Optional extra plain-HTTP admin API listener, e.g. 127.0.0.1:2900
 	SocketFile             string  `yaml:"socket-file"`                // The app socket (served by hostit-node; control only names it)
 	ControlSocketFile      string  `yaml:"control-socket-file"`        // Control's own socket: operator CLI + assistant sandbox
 	DataDir                string  `yaml:"data-dir"`                   // SQLite registry + ACME certs
@@ -179,13 +178,8 @@ type Config struct {
 	// per-member certificates from the cluster CA. Empty on a single-box
 	// install, which admits no remote members at all.
 	//
-	// It admits nodes AND proxies, which is why it is not called listen-node
-	// any more; that name is still read (see ListenNode) so an existing config
-	// keeps working.
+	// It admits nodes AND proxies.
 	ListenCluster string `yaml:"listen-cluster"`
-	// ListenNode is the retired name for ListenCluster, from when only nodes
-	// dialed in. Honored so an existing deployment keeps connecting.
-	ListenNode string `yaml:"listen-node"`
 
 	// ClusterSocket is where members sharing this host dial in. Always present,
 	// and needing no credentials: the socket is root-only and the kernel
@@ -358,9 +352,6 @@ func LoadConfig(filename string) (*Config, error) {
 	c := NewConfig()
 	if err := yaml.Unmarshal(b, c); err != nil {
 		return nil, fmt.Errorf("cannot parse config %s: %w", filename, err)
-	}
-	if c.ListenCluster == "" {
-		c.ListenCluster = c.ListenNode // the retired key
 	}
 	return c, nil
 }

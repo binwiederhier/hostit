@@ -58,17 +58,6 @@ func TestLoadConfigAcceptsAControlURLWithAScheme(t *testing.T) {
 	assert.Equal(t, "10.0.0.1:2930", conf.ControlURL, "the dial target is host:port; a scheme is tolerated")
 }
 
-// Pre-split configs said listen-node (control's key, reused for the node's
-// dial target). Honor it so an existing node keeps connecting.
-func TestLoadConfigHonorsTheRetiredListenNodeKey(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "node.yml")
-	require.NoError(t, os.WriteFile(path, []byte("node-id: stage-node-2\nlisten-node: 127.0.0.1:2930\n"), 0o600))
-
-	conf, err := LoadConfig(path)
-	require.NoError(t, err)
-	assert.Equal(t, "127.0.0.1:2930", conf.ControlURL)
-}
-
 func TestValidateRequiresSomewhereToDialAndAWholeCertTriple(t *testing.T) {
 	conf := NewConfig()
 	require.ErrorContains(t, conf.Validate(), "control-url")

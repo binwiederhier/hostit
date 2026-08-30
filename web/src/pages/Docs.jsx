@@ -1505,12 +1505,8 @@ const ConfigPage = () => (
             </td>
           </tr>
           <tr>
-            <td className="mono">listen-http / -https / -api</td>
-            <td>
-              Listener addresses. <span className="mono">listen-api</span> is an
-              optional extra plain-HTTP admin listener, e.g.{" "}
-              <span className="mono">127.0.0.1:2900</span>.
-            </td>
+            <td className="mono">listen-http / -https</td>
+            <td>Listener addresses.</td>
           </tr>
           <tr>
             <td className="mono">port-min / port-max</td>

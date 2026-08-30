@@ -38,9 +38,6 @@ type Config struct {
 	// like the proxy's key because it is the same thing: a node DIALS control
 	// and never listens itself. A URL is accepted and reduced to host:port.
 	ControlURL string `yaml:"control-url"`
-	// ListenNode is the retired name for ControlURL, from when both halves
-	// shared control's struct. Honored so an existing node keeps connecting.
-	ListenNode string `yaml:"listen-node"`
 
 	// Cluster credentials: this node's certificate and the CA both sides
 	// trust, minted by `hostit-control node add`. Empty on a colocated node,
@@ -121,9 +118,6 @@ func LoadConfig(path string) (*Config, error) {
 	}
 	if err := yaml.Unmarshal(b, conf); err != nil {
 		return nil, err
-	}
-	if conf.ControlURL == "" {
-		conf.ControlURL = conf.ListenNode // the retired key
 	}
 	conf.ControlURL = dialTarget(conf.ControlURL)
 	return conf, nil

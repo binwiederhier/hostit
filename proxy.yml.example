@@ -12,7 +12,7 @@ control-url: http://127.0.0.1:2910
 # name and credentials from `hostit-control proxy add <name>`.
 # proxy-id: local
 
-# Control's cluster listener (its listen-node), where this proxy dials in for
+# Control's cluster listener (its listen-cluster), where this proxy dials in for
 # its configuration. Defaults to control-url's host on port 2930, which is
 # right when the proxy shares control's machine.
 # cluster-url: 127.0.0.1:2930

@@ -93,9 +93,8 @@ type Server struct {
 
 	servers []*http.Server // Running HTTP servers, for Stop
 
-	// node is the NodeAgent the per-app machine operations go through: today
-	// always the in-process Manager ("local"); the multi-node split resolves an
-	// app's host to a remote agent here instead.
+	// node is the NodeAgent the per-app machine operations go through: the
+	// routing agent that resolves each app's host to its connected node.
 	node NodeAgent
 
 	// previews schedules dashboard screenshots after assistant changes; nil
@@ -232,15 +231,6 @@ func (s *Server) Run() error {
 		slog.Info("Listening on unix socket", "socket", s.config.ControlSocketFile)
 		return ignoreServerClosed(socketServer.Serve(socketListener))
 	})
-
-	if s.config.ListenAPI != "" {
-		apiServer := &http.Server{Addr: s.config.ListenAPI, Handler: s.api, ReadHeaderTimeout: readHeaderTimeout}
-		s.servers = append(s.servers, apiServer)
-		g.Go(func() error {
-			slog.Info("Listening for admin API", "addr", s.config.ListenAPI)
-			return ignoreServerClosed(apiServer.ListenAndServe())
-		})
-	}
 
 	// hostit-proxy terminates TLS and forwards here, always: it is a component
 	// of every deployment, so control serves plain HTTP on a local address and
