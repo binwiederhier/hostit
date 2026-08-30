@@ -27,6 +27,12 @@ import (
 const (
 	// SweepInterval is how often every running app is re-shot
 	SweepInterval = 6 * time.Hour
+	// initialSweepDelay holds the first sweep back after startup. The shot now
+	// runs on the app's node, reached over the cluster link; on a colocated box
+	// control restarts and would sweep before the node has re-dialed in, so an
+	// immediate sweep fails ("node not connected") and every preview stays stale
+	// until the next interval. Waiting gives the node time to connect first.
+	initialSweepDelay = 3 * time.Minute
 	// debounceDelay is how long after the LAST assistant change a shot fires
 	debounceDelay = time.Minute
 	// bucketCapacity caps assistant-triggered shots per app per hour
@@ -71,8 +77,9 @@ type Manager struct {
 	queue      chan App
 	timers     map[string]*time.Timer // Pending debounce per app name
 	buckets    map[string]*bucket     // Rate limit per app id
-	now        func() time.Time       // Injectable clock for the bucket tests
-	isolate    bool                   // Strict egress isolation (default off; on in screenshot mode)
+	now          func() time.Time     // Injectable clock for the bucket tests
+	initialDelay time.Duration        // How long the first sweep waits for the node to connect
+	isolate      bool                 // Strict egress isolation (default off; on in screenshot mode)
 	allowCIDRs []string               // Extra destinations allowed in strict mode
 	// cookie mints the auth cookie the shot browser presents so a PRIVATE app is
 	// served to it rather than the sign-in page. nil (the default) means private
@@ -96,9 +103,10 @@ func New(shoot Shooter, dir string, apps func() ([]App, error)) *Manager {
 		apps:     apps,
 		debounce: debounceDelay,
 		queue:    make(chan App, queueSize),
-		timers:   make(map[string]*time.Timer),
-		buckets:  make(map[string]*bucket),
-		now:      time.Now,
+		timers:       make(map[string]*time.Timer),
+		buckets:      make(map[string]*bucket),
+		now:          time.Now,
+		initialDelay: initialSweepDelay,
 	}
 }
 
@@ -125,9 +133,19 @@ func (m *Manager) File(id string) string {
 // starts is the only thing that shoots. The chrome image pull and the isolated
 // network are the node's to prepare, on its first shot.
 func (m *Manager) Loop(interval time.Duration, done <-chan struct{}) {
-	slog.Info("Starting app preview screenshot loop", "interval", interval)
+	slog.Info("Starting app preview screenshot loop", "interval", interval, "initial_delay", m.initialDelay)
 	defer slog.Info("Stopping app preview screenshot loop")
 	go m.worker(done)
+	// Hold the first sweep back: the shot runs on the app's node over the cluster
+	// link, and on a colocated box control restarts and sweeps before the node
+	// has re-dialed in. An immediate sweep would fail every shot with "node not
+	// connected" and leave previews stale until the next interval; waiting lets
+	// the node connect first.
+	select {
+	case <-time.After(m.initialDelay):
+	case <-done:
+		return
+	}
 	m.Sweep()
 	for {
 		select {

@@ -228,3 +228,44 @@ func TestShotSpecCarriesIsolationAndGrant(t *testing.T) {
 	assert.Equal(t, "signed-secret", spec.CookieValue)
 	assert.True(t, spec.CookieSecure)
 }
+
+// The first sweep after startup waits for the node to connect: the shot runs on
+// the node over the cluster link, and on a colocated box control restarts and
+// would otherwise sweep before the node has re-dialed in, failing every shot
+// with "node not connected" and leaving previews stale until the next interval.
+func TestLoopDelaysTheFirstSweep(t *testing.T) {
+	t.Parallel()
+	shooter := &fakeShooter{}
+	m := New(shooter.shoot, filepath.Join(t.TempDir(), "previews"), func() ([]App, error) {
+		return []App{{ID: "aaa", Name: "up", URL: "https://up.example.com", Running: true}}, nil
+	})
+	m.initialDelay = 500 * time.Millisecond
+	done := make(chan struct{})
+	defer close(done)
+	go m.Loop(time.Hour, done) // long interval: only the initial sweep is in play
+
+	// Well inside the delay (a 5x margin, so a slow scheduler under -race does not
+	// let the sweep fire early and flake the test).
+	time.Sleep(100 * time.Millisecond)
+	assert.Zero(t, shooter.count(), "the first sweep must wait for the node to connect")
+	require.Eventually(t, func() bool { return shooter.count() >= 1 }, 2*time.Second, 5*time.Millisecond,
+		"the first sweep runs once the initial delay elapses")
+}
+
+// Stopping during the initial delay exits the loop promptly and shoots nothing.
+func TestLoopStopsDuringTheInitialDelay(t *testing.T) {
+	t.Parallel()
+	shooter := &fakeShooter{}
+	m := New(shooter.shoot, filepath.Join(t.TempDir(), "previews"), func() ([]App, error) { return nil, nil })
+	m.initialDelay = time.Hour // long enough that we are certainly still waiting
+	done := make(chan struct{})
+	stopped := make(chan struct{})
+	go func() { m.Loop(time.Hour, done); close(stopped) }()
+	close(done)
+	select {
+	case <-stopped:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Loop did not exit during the initial delay")
+	}
+	assert.Zero(t, shooter.count())
+}
