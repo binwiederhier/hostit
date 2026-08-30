@@ -116,7 +116,6 @@ type Config struct {
 	ControlSocketFile      string  `yaml:"control-socket-file"`        // Control's own socket: operator CLI + assistant sandbox
 	DataDir                string  `yaml:"data-dir"`                   // SQLite registry + ACME certs
 	ListenMetrics          string  `yaml:"listen-metrics"`             // optional Prometheus /metrics listener, e.g. "10.0.0.1:9110" (empty = off)
-	LogUnit                string  `yaml:"log-unit"`                   // systemd unit whose journal the admin "control logs" view reads; default hostit-control
 	AppsDir                string  `yaml:"apps-dir"`                   // Home directories of app users
 	APIHost                string  `yaml:"api-host"`                   // Hostname routed to the admin API; defaults to <base-domain>
 	SSHHost                string  `yaml:"ssh-host"`                   // Hostname reported for SSH access; defaults to base-domain
@@ -446,10 +445,7 @@ func (c *Config) SSHHostname() string {
 }
 
 // LogUnitName is the systemd unit whose journal the admin "control logs" view
-// reads, defaulting to the conventional unit name when unset.
+// reads. Fixed by the package: the unit is always hostit-control.
 func (c *Config) LogUnitName() string {
-	if c.LogUnit != "" {
-		return c.LogUnit
-	}
 	return "hostit-control"
 }

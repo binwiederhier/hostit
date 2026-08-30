@@ -59,7 +59,6 @@ type Config struct {
 	SSHHostKeyFile string `yaml:"ssh-host-key-file"`
 	// ListenMetrics is an optional Prometheus /metrics listener (empty = off).
 	ListenMetrics string `yaml:"listen-metrics"`
-	LogUnit       string `yaml:"log-unit"` // systemd unit whose journal the admin logs view reads; default hostit-node
 	// Relay gateway (frontend) paths -- where control writes routes/keys and
 	// where the frontend stub accounts live. Empty disables the stub reconcile.
 	SSHRoutesFile string `yaml:"ssh-routes-file"`
@@ -160,10 +159,7 @@ func (c *Config) Validate() error {
 }
 
 // LogUnitName is the systemd unit whose journal the admin "node logs" view
-// reads, defaulting to the conventional unit name when unset.
+// reads. Fixed by the package: the unit is always hostit-node.
 func (c *Config) LogUnitName() string {
-	if c.LogUnit != "" {
-		return c.LogUnit
-	}
 	return "hostit-node"
 }
