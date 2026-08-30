@@ -52,6 +52,16 @@ func CheckHost() error {
 // --rootfs :idmap syntax, and the OCI runtime must be a new enough crun --
 // resolved through podman itself, so a containers.conf override (the documented
 // way to ship a newer static crun) is what gets checked.
+// CheckControlHost is the control plane's preflight. Control does no machine
+// work -- it creates no Unix users, drives no podman/nft/btrfs, and binds no
+// privileged port (hostit-proxy owns :443/:80 and forwards to it) -- so unlike
+// CheckHost it neither requires root nor checks for the machine binaries. This
+// is what lets hostit-control run as an unprivileged user. It is kept as a named
+// hook so a genuine future host requirement has an obvious home.
+func CheckControlHost() error {
+	return nil
+}
+
 func checkRuntimeVersions() error {
 	out, err := exec.Command("podman", "--version").Output()
 	if err != nil {

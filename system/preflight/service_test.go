@@ -66,3 +66,12 @@ func TestVersionAtLeast(t *testing.T) {
 	assert.False(t, versionAtLeast("4.2.1", 4, 3))
 	assert.False(t, versionAtLeast("x.y", 1, 29), "unparseable fails closed")
 }
+
+// Control does no machine work, so its preflight must never gate on root or the
+// machine binaries -- that gate is what lets hostit-control run unprivileged.
+// The test process is unprivileged, so a passing result proves the no-root path.
+func TestCheckControlHostNeedsNoRoot(t *testing.T) {
+	if err := CheckControlHost(); err != nil {
+		t.Fatalf("control preflight must not require root or machine tools, got: %v", err)
+	}
+}

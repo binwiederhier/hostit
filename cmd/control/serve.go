@@ -55,32 +55,30 @@ func execServe(c *cli.Context) error {
 	if err := conf.Validate(); err != nil {
 		return err
 	}
-	// Refuse to start on a host that cannot support the daemon (not root, a missing
-	// command), rather than failing lazily on the first app operation.
-	if err := preflight.CheckHost(); err != nil {
+	// Control does no machine work (no unix users, no podman/nft/btrfs, no
+	// privileged port -- the proxy owns those), so its preflight neither requires
+	// root nor checks the machine binaries. This is what lets hostit-control run
+	// as an unprivileged user.
+	if err := preflight.CheckControlHost(); err != nil {
 		return err
 	}
 	// 0711: app users must traverse this to reach their own home below it, but
 	// must not be able to list it. What lives here is the registry -- every app's
-	// agent token and the session signing key -- which is 0600 besides.
+	// agent token and the session signing key -- which is 0600 besides. On a
+	// shared-host install the node maintains this dir too, so the chmod is
+	// best-effort: an unprivileged control that does not own the dir must not
+	// fail to start over a mode it is not the one responsible for.
 	if err := os.MkdirAll(conf.DataDir, dataDirMode); err != nil {
 		return err
 	}
 	if err := os.Chmod(conf.DataDir, dataDirMode); err != nil {
-		return err
+		slog.Warn("Cannot set the data dir mode; leaving it as it is", "dir", conf.DataDir, "error", err)
 	}
-	if err := os.MkdirAll(conf.AppsDir, appsDirMode); err != nil {
-		return err
-	}
-	if err := os.Chmod(conf.AppsDir, appsDirMode); err != nil {
-		return err
-	}
-	// btrfs is mandatory: snapshots, rollback, fork and hard disk quotas are core.
-	// Check it here, once the apps directory exists, and refuse to start
-	// otherwise rather than silently running without those features.
-	if err := preflight.RequireBtrfs(conf.AppsDir); err != nil {
-		return err
-	}
+	// The apps directory and its btrfs requirement belong to hostit-node, which
+	// owns every app's subvolume and does no work here through control. Control
+	// neither creates app homes nor writes into them (a control-only host has no
+	// apps dir at all), so it must not create, chmod or btrfs-check it -- doing so
+	// was the last thing tying the control plane to root.
 	s, err := store.NewStore(filepath.Join(conf.DataDir, "hostit.db"))
 	if err != nil {
 		return err
