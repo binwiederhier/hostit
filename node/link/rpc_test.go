@@ -92,6 +92,15 @@ type fakeAgentFull struct {
 	calls   []string
 	written map[string][]byte
 	readErr error // when set, ReadFile fails with this
+	shotErr error // when set, Screenshot fails with this
+}
+
+func (f *fakeAgentFull) Screenshot(spec *api.ScreenshotSpec) ([]byte, error) {
+	f.calls = append(f.calls, "screenshot:"+spec.Name+":"+spec.URL)
+	if f.shotErr != nil {
+		return nil, f.shotErr
+	}
+	return []byte("\x89PNG\r\n\x1a\nfake"), nil
 }
 
 func (f *fakeAgentFull) Rename(oldName, newName, id string) error {
@@ -150,6 +159,25 @@ func TestRPCProvisionRoundTrips(t *testing.T) {
 	assert.Contains(t, agent.calls, "provision:blog:10000")
 	remote.Deprovision(&api.DeprovisionSpec{Name: "blog", ID: "aaa"})
 	assert.Contains(t, agent.calls, "deprovision:blog")
+}
+
+func TestRPCScreenshotRoundTripsBytes(t *testing.T) {
+	t.Parallel()
+	agent := &fakeAgentFull{written: map[string][]byte{}}
+	remote := startRPC(t, agent)
+	png, err := remote.Screenshot(&api.ScreenshotSpec{Name: "blog", URL: "https://blog.example.com", Isolate: true})
+	require.NoError(t, err)
+	assert.Equal(t, []byte("\x89PNG\r\n\x1a\nfake"), png, "the PNG bytes survive the wire intact")
+	assert.Contains(t, agent.calls, "screenshot:blog:https://blog.example.com", "the spec reaches the node")
+}
+
+func TestRPCScreenshotPropagatesFailure(t *testing.T) {
+	t.Parallel()
+	agent := &fakeAgentFull{written: map[string][]byte{}, shotErr: errors.New("chrome exploded")}
+	remote := startRPC(t, agent)
+	_, err := remote.Screenshot(&api.ScreenshotSpec{Name: "blog", URL: "https://blog.example.com"})
+	require.Error(t, err, "a node-side shot failure reaches control")
+	assert.Contains(t, err.Error(), "chrome exploded")
 }
 
 func (f *fakeAgentFull) Provision(spec *api.ProvisionSpec) error {

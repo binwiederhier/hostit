@@ -9,6 +9,7 @@ package node
 import (
 	"fmt"
 	"log/slog"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -16,6 +17,7 @@ import (
 	"heckel.io/hostit/app"
 	"heckel.io/hostit/homefs"
 	"heckel.io/hostit/node/api"
+	"heckel.io/hostit/node/screenshot"
 	"heckel.io/hostit/snapshot"
 	"heckel.io/hostit/store"
 	"heckel.io/hostit/system/btrfs"
@@ -99,6 +101,9 @@ type Machine struct {
 	homefs    *homefs.Service
 	snapshots *snapshot.Service
 	workspace *workspace.Service
+	// shots renders dashboard previews: it runs the chrome container and the
+	// per-shot egress firewall on this machine, behind the Screenshot verb.
+	shots *screenshot.Engine
 	// rawAppsDir, when set, is a non-recursive bind of AppsDir the daemon's file
 	// I/O goes through. A running container's idmapped rootfs mount covers the
 	// subvolume path in the host namespace, and root writing through that mapped
@@ -204,6 +209,11 @@ func NewMachine(conf *Config, s *store.Store, svc *Services) *Machine {
 	// per-app pinned tags, prune) and the base and app subvolumes the containers
 	// run; it needs no callbacks into the Machine.
 	m.workspace = workspace.New(m.container, s, m.btrfs, m.runner, conf.DataDir, conf.AppsDir)
+	// The screenshot Engine renders dashboard previews on this machine: it runs
+	// the sandboxed chrome container and the per-shot egress firewall, and keeps
+	// its per-shot scratch under the data dir. It pulls the chrome image lazily
+	// on the first shot, so a node that is never asked for a preview never does.
+	m.shots = screenshot.NewEngine(m.runner, filepath.Join(conf.DataDir, "previews"))
 	return m
 }
 

@@ -173,6 +173,13 @@ func (s *Server) PreviewCookie(appName string) (*http.Cookie, error) {
 	return s.cookie(s.cookieName(appGrantCookieName), value, int(appGrantTTL.Seconds())), nil
 }
 
+// Screenshot renders one app preview on the app's node and returns the PNG
+// bytes; the preview scheduler calls it. Routing to the right node is the node
+// agent's job (it resolves the app in the spec to its machine).
+func (s *Server) Screenshot(spec *ScreenshotSpec) ([]byte, error) {
+	return s.node.Screenshot(spec)
+}
+
 func (s *Server) handleAppGranted(w http.ResponseWriter, r *http.Request, a *store.App) {
 	// This hop is a redirect from our own web host, which is same-site with
 	// every app hostname. Anything else is somebody pushing a grant of their

@@ -19,7 +19,6 @@ import (
 	"heckel.io/hostit/preview"
 	"heckel.io/hostit/store"
 	"heckel.io/hostit/system/preflight"
-	"heckel.io/hostit/system/run"
 	"heckel.io/hostit/user"
 )
 
@@ -127,11 +126,11 @@ func execServe(c *cli.Context) error {
 		return err
 	}
 	// Dashboard screenshot previews (app-preview: screenshot): a slow sweep
-	// plus debounced shots after assistant changes, one at a time, each in a
-	// locked-down podman container (the page content is untrusted).
+	// plus debounced shots after assistant changes, one at a time. The shot itself
+	// runs on the app's node (its chrome container and egress firewall), not here.
 	var previews *preview.Manager
 	if conf.AppPreview == config.AppPreviewScreenshot {
-		previews = preview.New(run.New(), preview.Dir(conf.DataDir), func() ([]preview.App, error) {
+		previews = preview.New(srv.Screenshot, preview.Dir(conf.DataDir), func() ([]preview.App, error) {
 			apps, err := s.Apps()
 			if err != nil {
 				return nil, err

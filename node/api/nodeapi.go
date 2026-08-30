@@ -84,6 +84,12 @@ type NodeAgent interface {
 	Status(name string) (string, error)
 	Logs(name string, lines int) (string, error)
 	Exec(name, command string, timeout time.Duration) (*ExecResult, error)
+	// Screenshot renders one dashboard preview of the app and returns the PNG
+	// bytes. The node runs the sandboxed chrome container and the per-shot egress
+	// firewall (both machine work); control schedules, rate-limits, stores and
+	// serves the result. The spec carries the public URL to browse and, for a
+	// private app, the app-bound grant cookie.
+	Screenshot(spec *ScreenshotSpec) ([]byte, error)
 	// Terminal opens an interactive shell in the app's container, as a byte
 	// stream with out-of-band resize. It replaces the old TerminalCommand,
 	// which returned a command for the CALLER to exec -- correct only when the
@@ -242,6 +248,25 @@ type DeprovisionSpec struct {
 	UIDKnown  bool   `json:"uid_known"`
 	Unit      string `json:"unit"`
 	Container string `json:"container"`
+}
+
+// ScreenshotSpec is everything the node needs to render one app preview: the
+// public URL to browse (through the proxy, exactly as a visitor would), the
+// optional app-bound grant cookie for a private app, and the egress isolation
+// policy control decides. The node runs the sandboxed chrome container and the
+// per-shot firewall (machine work); control keeps the scheduling, the rate
+// limiting, the storage and the serving.
+type ScreenshotSpec struct {
+	Name       string   `json:"name"`                  // App name, for routing and logs
+	URL        string   `json:"url"`                   // Public URL the shot browses
+	Isolate    bool     `json:"isolate,omitempty"`     // Strict per-shot egress firewall
+	AllowCIDRs []string `json:"allow_cidrs,omitempty"` // Extra allowed destinations in strict mode
+	// Cookie is the app-bound preview grant for a PRIVATE app, so the proxy
+	// serves the app instead of the sign-in page. An empty CookieName means a
+	// public app (no cookie is seeded).
+	CookieName   string `json:"cookie_name,omitempty"`
+	CookieValue  string `json:"cookie_value,omitempty"`
+	CookieSecure bool   `json:"cookie_secure,omitempty"`
 }
 
 // SyncState is the registry slice a node mirrors.

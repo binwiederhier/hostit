@@ -11,6 +11,7 @@ type (
 	ControlSink     = api.ControlSink
 	ProvisionSpec   = api.ProvisionSpec
 	DeprovisionSpec = api.DeprovisionSpec
+	ScreenshotSpec  = api.ScreenshotSpec
 	SyncState       = api.SyncState
 	State           = api.State
 	ExecResult      = api.ExecResult

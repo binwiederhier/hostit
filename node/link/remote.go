@@ -109,6 +109,25 @@ func (a *remoteAgent) Exec(name, command string, timeout time.Duration) (*api.Ex
 	return resp.Exec, nil
 }
 
+// Screenshot posts the spec and reads the PNG bytes back raw off the node (a
+// full-page PNG is too big to want base64-in-JSON). A pre-shot failure arrives
+// as a non-200 with the error headers, mapped the same way the file reads are.
+func (a *remoteAgent) Screenshot(spec *api.ScreenshotSpec) ([]byte, error) {
+	body, err := json.Marshal(spec)
+	if err != nil {
+		return nil, err
+	}
+	httpResp, err := a.c.Post("http://node/v1/screenshot", "application/json", bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("node rpc screenshot: %w", err)
+	}
+	defer httpResp.Body.Close()
+	if httpResp.StatusCode != http.StatusOK {
+		return nil, streamError(httpResp)
+	}
+	return io.ReadAll(httpResp.Body)
+}
+
 func (a *remoteAgent) Terminal(name string) (api.TerminalSession, error) {
 	if a.dial == nil {
 		return nil, errors.New("terminal: no stream dialer on this connection")

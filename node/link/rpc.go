@@ -264,6 +264,23 @@ func RPCHandler(agent api.NodeAgent) http.Handler {
 	verb("states", func(q *rpcReq) *rpcResp { return &rpcResp{States: agent.States(q.Names)} })
 	verb("heartbeat", func(q *rpcReq) *rpcResp { return &rpcResp{Heartbeat: agent.Heartbeat()} })
 
+	// Screenshot takes its spec as a JSON body and streams the PNG back raw: a
+	// full-page PNG is too big to want base64-in-JSON, and a pre-shot failure
+	// rides the same error headers the file reads use.
+	mux.HandleFunc("POST /v1/screenshot", func(w http.ResponseWriter, r *http.Request) {
+		var spec api.ScreenshotSpec
+		if err := json.NewDecoder(r.Body).Decode(&spec); err != nil {
+			writeStreamError(w, fmt.Errorf("bad request: %w", err))
+			return
+		}
+		png, err := agent.Screenshot(&spec)
+		if err != nil {
+			writeStreamError(w, err)
+			return
+		}
+		_, _ = w.Write(png)
+	})
+
 	// File content streams raw: the body IS the file, args ride the query.
 	mux.HandleFunc("PUT /v1/file", func(w http.ResponseWriter, r *http.Request) {
 		mode, _ := strconv.ParseUint(r.URL.Query().Get("mode"), 8, 32)

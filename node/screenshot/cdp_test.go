@@ -1,4 +1,4 @@
-package preview
+package screenshot
 
 import (
 	"context"

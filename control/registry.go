@@ -332,6 +332,14 @@ func (ra *routingAgent) Exec(name, command string, timeout time.Duration) (*Exec
 	return agent.Exec(name, command, timeout)
 }
 
+func (ra *routingAgent) Screenshot(spec *api.ScreenshotSpec) ([]byte, error) {
+	agent, err := ra.routeRunnable(spec.Name)
+	if err != nil {
+		return nil, err
+	}
+	return agent.Screenshot(spec)
+}
+
 func (ra *routingAgent) Terminal(name string) (api.TerminalSession, error) {
 	agent, err := ra.routeRunnable(name)
 	if err != nil {
