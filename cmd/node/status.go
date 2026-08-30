@@ -72,9 +72,6 @@ func renderNodeStatus(w io.Writer, s *node.Status) {
 // statusSocketFile resolves the daemon's status socket from its config; an
 // unreadable config falls back to the packaged default rather than erroring.
 func statusSocketFile(configPath string) string {
-	if conf, err := config.LoadConfig(configPath); err == nil && conf.NodeSocketFile != "" {
-		return conf.NodeSocketFile
-	}
 	return config.DefaultNodeSocketFile
 }
 

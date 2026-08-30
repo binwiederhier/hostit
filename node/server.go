@@ -159,7 +159,7 @@ func Serve(configPath, version string) error {
 	}
 	defer appSocket.Close()
 	// The node's own status socket, root-only: what `hostit node status` reads.
-	statusSocket, err := ServeStatusSocket(conf.NodeSocketFile, conf, s, ctl, version)
+	statusSocket, err := ServeStatusSocket(config.DefaultNodeSocketFile, conf, s, ctl, version)
 	if err != nil {
 		return err
 	}

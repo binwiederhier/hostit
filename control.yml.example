@@ -14,10 +14,6 @@ admin-token: CHANGE-ME
 # host use the socket below, which needs no certificate at all.
 # listen-cluster: 10.0.0.1:2930
 
-# Where members sharing this host dial in. Root-only, and the kernel identifies
-# the caller. Default shown.
-# cluster-socket: /run/hostit/cluster.sock
-
 # TLS: "letsencrypt" (default, on-demand per-subdomain certs) or "off" (plain
 # HTTP on listen-http; for development or behind another TLS-terminating proxy).
 # tls: letsencrypt

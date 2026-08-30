@@ -83,10 +83,6 @@ type Config struct {
 	DataDir    string `yaml:"data-dir"`
 	AppsDir    string `yaml:"apps-dir"`
 	SocketFile string `yaml:"socket-file"`
-	// NodeSocketFile is the node's own root-only status socket, which is what
-	// `hostit node status` reads. Named like control's control-socket-file: the
-	// unprefixed socket-file already means the app socket.
-	NodeSocketFile string `yaml:"node-socket-file"`
 }
 
 // NewConfig returns a node config with the packaged defaults; only where to
@@ -97,7 +93,6 @@ func NewConfig() *Config {
 		DataDir:        "/var/lib/hostit",
 		AppsDir:        "/var/lib/hostit/apps",
 		SocketFile:     "/run/hostit/app/hostit.sock",
-		NodeSocketFile: DefaultNodeSocketFile,
 		SSHHostKeyFile: "/etc/ssh/ssh_host_ed25519_key.pub",
 		SSHRoutesFile:  "/var/lib/hostit/ssh-routes",
 		RelayKeysDir:   "/var/lib/hostit/relay-keys",

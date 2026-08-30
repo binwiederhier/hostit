@@ -109,9 +109,6 @@ func renderRoutes(w io.Writer, table *api.Table) {
 // statusSocketFile resolves the daemon's status socket from its config; an
 // unreadable config falls back to the packaged default rather than erroring.
 func statusSocketFile(configPath string) string {
-	if conf, err := proxy.LoadFileConfig(configPath); err == nil && conf.SocketFile != "" {
-		return conf.SocketFile
-	}
 	return proxy.DefaultSocketFile
 }
 

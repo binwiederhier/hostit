@@ -422,9 +422,6 @@ func resolveTransport(host, token, socketFile string, socketExists bool) (transp
 // operator may not be able to read that file, so failures fall back to the
 // built-in default rather than erroring.
 func localSocketFile() string {
-	if conf, err := config.LoadConfig(config.DefaultControlConfigFile); err == nil && conf.ControlSocketFile != "" {
-		return conf.ControlSocketFile
-	}
 	return config.DefaultControlSocketFile
 }
 

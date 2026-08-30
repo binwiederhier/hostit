@@ -157,11 +157,6 @@ func TestSSHHostname(t *testing.T) {
 // The per-component defaults are part of the packaging contract (the .deb ships
 // examples there, the units read them, ansible writes them).
 
-func TestClusterSocketDefault(t *testing.T) {
-	t.Parallel()
-	assert.Equal(t, "/run/hostit/cluster.sock", NewConfig().ClusterSocket)
-}
-
 // A short admin token is brute-forceable over HTTPS at line rate; the config
 // suggests `openssl rand -hex 24` and this enforces a floor. 16 characters is
 // deliberately below any generated token, so only hand-typed weak secrets fail.

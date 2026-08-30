@@ -59,9 +59,6 @@ type FileConfig struct {
 	ListenHTTP    string `yaml:"listen-http"`    // default :80
 	ListenMetrics string `yaml:"listen-metrics"` // optional Prometheus /metrics listener (empty = off)
 	CacheDir      string `yaml:"cache-dir"`      // routes + cert cache; default /var/lib/hostit-proxy
-	// SocketFile is the proxy's own root-only status socket, which is what
-	// `hostit proxy status` and `hostit proxy route list` read.
-	SocketFile string `yaml:"proxy-socket-file"`
 }
 
 // LoadFileConfig reads the YAML config on top of defaults.
@@ -69,8 +66,7 @@ func LoadFileConfig(path string) (*FileConfig, error) {
 	conf := &FileConfig{ProxyID: DefaultProxyID, ListenHTTPS: ":443", ListenHTTP: ":80", CacheDir: "/var/lib/hostit-proxy",
 		CertFile:   DefaultLocalCertFile,
 		KeyFile:    DefaultLocalKeyFile,
-		CACertFile: DefaultLocalCACertFile,
-		SocketFile: DefaultSocketFile}
+		CACertFile: DefaultLocalCACertFile}
 	b, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
@@ -114,7 +110,7 @@ func Serve(configPath string) error {
 	}
 	// The proxy's own status socket, root-only: what `hostit proxy status` and
 	// `hostit proxy route list` read.
-	statusSocket, err := ServeStatusSocket(conf.SocketFile, p)
+	statusSocket, err := ServeStatusSocket(DefaultSocketFile, p)
 	if err != nil {
 		return err
 	}

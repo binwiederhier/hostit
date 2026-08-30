@@ -134,14 +134,14 @@ func listenForMembers(conf *config.Config, manager *control.Manager, srv *contro
 	// The same-host socket is always there: a node and a proxy sharing this
 	// machine need no certificate, no CA and nothing minted in advance -- the
 	// socket's existence is the only precondition, and the kernel says who is
-	// calling. A single-box install needs no listen-node at all.
-	ln, err := cluster.ListenSocket(cluster.SocketPath(conf.ClusterSocket))
+	// calling. A single-box install needs no listen-cluster at all.
+	ln, err := cluster.ListenSocket(cluster.SocketPath(cluster.DefaultSocketFile))
 	if err != nil {
 		return fmt.Errorf("cluster socket: %w", err)
 	}
 	sockSrv := cluster.SocketServer(mux)
 	go func() {
-		slog.Info("Listening for same-host members", "socket", cluster.SocketPath(conf.ClusterSocket))
+		slog.Info("Listening for same-host members", "socket", cluster.SocketPath(cluster.DefaultSocketFile))
 		if err := sockSrv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			slog.Error("Member socket failed", "error", err)
 		}

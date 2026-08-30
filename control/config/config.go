@@ -12,7 +12,6 @@ import (
 	"strings"
 
 	"gopkg.in/yaml.v3"
-	"heckel.io/hostit/cluster"
 	"heckel.io/hostit/http/outbound"
 )
 
@@ -113,7 +112,6 @@ type Config struct {
 	// proxy owns :443 in every deployment and control never binds it.
 	ListenHTTP             string  `yaml:"listen-http"`                // HTTP listener (ACME challenges + redirect, or plain proxy if TLS off)
 	SocketFile             string  `yaml:"socket-file"`                // The app socket (served by hostit-node; control only names it)
-	ControlSocketFile      string  `yaml:"control-socket-file"`        // Control's own socket: operator CLI + assistant sandbox
 	DataDir                string  `yaml:"data-dir"`                   // SQLite registry + ACME certs
 	ListenMetrics          string  `yaml:"listen-metrics"`             // optional Prometheus /metrics listener, e.g. "10.0.0.1:9110" (empty = off)
 	AppsDir                string  `yaml:"apps-dir"`                   // Home directories of app users
@@ -175,11 +173,6 @@ type Config struct {
 	// It admits nodes AND proxies.
 	ListenCluster string `yaml:"listen-cluster"`
 
-	// ClusterSocket is where members sharing this host dial in. Always present,
-	// and needing no credentials: the socket is root-only and the kernel
-	// identifies the caller.
-	ClusterSocket string `yaml:"cluster-socket"`
-
 	// ClusterCertFile/ClusterKeyFile are CONTROL's cluster identity: the mTLS
 	// certificate its node listener presents (CN "control"), and
 	// ClusterCACertFile is the CA every node certificate must chain to. Unset,
@@ -236,10 +229,8 @@ func (c *Config) IsAdminEmail(email string) bool {
 // NewConfig returns a Config with all defaults set; BaseDomain and AdminToken must be filled in
 func NewConfig() *Config {
 	return &Config{
-		ClusterSocket:          cluster.DefaultSocketFile,
 		ListenHTTP:             ":80",
 		SocketFile:             HostAppSocketFile, // control names the HOST-served socket
-		ControlSocketFile:      DefaultControlSocketFile,
 		DataDir:                "/var/lib/hostit",
 		SSHRelayRoutesFile:     "/var/lib/hostit/ssh-routes",
 		SSHRelayKnownHostsFile: "/etc/hostit/relay_known_hosts",
