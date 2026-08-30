@@ -184,16 +184,21 @@ func TestRefreshEnqueuesEvenWhenTheCacheSaysStopped(t *testing.T) {
 // private app is dropped unless a cookie minter can authenticate the shot.
 func TestPrivateAppsAreShotOnlyWithACookieMinter(t *testing.T) {
 	t.Parallel()
+	// This tests enqueue's synchronous gating, so the managers run NO worker --
+	// a draining worker would race the queue-length assertions.
+	newMgr := func() *Manager {
+		return New((&fakeShooter{}).shoot, filepath.Join(t.TempDir(), "previews"), func() ([]App, error) { return nil, nil })
+	}
 
 	// No minter configured: a private app is dropped, a public app still goes through.
-	m := newTestManager(t, &fakeShooter{}, nil)
+	m := newMgr()
 	m.enqueue(App{ID: "a1", Name: "dash", URL: "https://dash.example.com", Running: true, Private: true})
 	assert.Empty(t, m.queue, "a private app is dropped when nothing can authenticate the shot")
 	m.enqueue(App{ID: "a2", Name: "blog", URL: "https://blog.example.com", Running: true})
 	assert.Len(t, m.queue, 1, "a public app still gets shot")
 
 	// With a minter, the private app is enqueued like any other.
-	m2 := newTestManager(t, &fakeShooter{}, nil)
+	m2 := newMgr()
 	m2.SetPreviewCookie(func(App) *http.Cookie { return &http.Cookie{Name: "x", Value: "y"} })
 	m2.enqueue(App{ID: "a3", Name: "secret", URL: "https://secret.example.com", Running: true, Private: true})
 	assert.Len(t, m2.queue, 1, "a private app is shot once the browser can authenticate")
