@@ -70,17 +70,17 @@ type bucket struct {
 
 // Manager shoots apps through a single worker queue.
 type Manager struct {
-	shoot      Shooter
-	dir        string
-	apps       func() ([]App, error) // Current apps, running or not
-	debounce   time.Duration
-	queue      chan App
-	timers     map[string]*time.Timer // Pending debounce per app name
-	buckets    map[string]*bucket     // Rate limit per app id
-	now          func() time.Time     // Injectable clock for the bucket tests
-	initialDelay time.Duration        // How long the first sweep waits for the node to connect
-	isolate      bool                 // Strict egress isolation (default off; on in screenshot mode)
-	allowCIDRs []string               // Extra destinations allowed in strict mode
+	shoot        Shooter
+	dir          string
+	apps         func() ([]App, error) // Current apps, running or not
+	debounce     time.Duration
+	queue        chan App
+	timers       map[string]*time.Timer // Pending debounce per app name
+	buckets      map[string]*bucket     // Rate limit per app id
+	now          func() time.Time       // Injectable clock for the bucket tests
+	initialDelay time.Duration          // How long the first sweep waits for the node to connect
+	isolate      bool                   // Strict egress isolation (default off; on in screenshot mode)
+	allowCIDRs   []string               // Extra destinations allowed in strict mode
 	// cookie mints the auth cookie the shot browser presents so a PRIVATE app is
 	// served to it rather than the sign-in page. nil (the default) means private
 	// apps are not shot at all -- an unauthenticated shot would photograph the
@@ -98,11 +98,11 @@ func Dir(dataDir string) string {
 // apps lists the current apps.
 func New(shoot Shooter, dir string, apps func() ([]App, error)) *Manager {
 	return &Manager{
-		shoot:    shoot,
-		dir:      dir,
-		apps:     apps,
-		debounce: debounceDelay,
-		queue:    make(chan App, queueSize),
+		shoot:        shoot,
+		dir:          dir,
+		apps:         apps,
+		debounce:     debounceDelay,
+		queue:        make(chan App, queueSize),
 		timers:       make(map[string]*time.Timer),
 		buckets:      make(map[string]*bucket),
 		now:          time.Now,

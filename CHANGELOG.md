@@ -7,7 +7,7 @@ changed rather than what an operator had to do about it; from v0.15.0 on, each
 release is written down as it is cut. Anything that changes a config file, a
 default, or on-disk state is called out as **Breaking** or **Upgrade note**.
 
-## v0.31.1 (2026-08-30)
+## v0.31.2 (2026-08-30)
 
 - **Fix: dashboard previews no longer go stale after a restart.** Now that a
   preview screenshot runs on the app's node over the cluster link, control's very
