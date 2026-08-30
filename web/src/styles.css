@@ -307,9 +307,50 @@ p {
 .newapp-grant-choice.newapp-grant-three {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
-@media (max-width: 440px) {
+/* The hint under the segmented control (mobile only): names the chosen option,
+   whose segment shows just an icon there. */
+.newapp-choice-hint {
+  display: none;
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* On a phone both choosers (visibility and connections) collapse from full cards
+   to one compact segmented control: icon-only segments joined into a single pill,
+   with the hint line below naming the selection. Keeps all three options one tap
+   away without the six stacked cards. This wins over the two-class 440px stack
+   above and the one-class .visibility-choice stack later in the file. */
+@media (max-width: 560px) {
   .newapp-grant-choice.newapp-grant-three {
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  .newapp-grant-choice.newapp-grant-three > *:not(:first-child) {
+    border-left: 1px solid var(--border);
+  }
+  .newapp-grant-choice.newapp-grant-three .vis-option {
+    grid-template-columns: 1fr;
+    grid-template-areas: "icon";
+    justify-items: center;
+    width: 100%;
+    padding: 9px 6px;
+    border: 0;
+    border-radius: 0;
+  }
+  .newapp-grant-choice.newapp-grant-three .vis-title,
+  .newapp-grant-choice.newapp-grant-three .vis-detail {
+    display: none;
+  }
+  /* The inset accent ring reads wrong inside a joined pill; the fill is enough. */
+  .newapp-grant-choice.newapp-grant-three .vis-option-on {
+    box-shadow: none;
+  }
+  .newapp-choice-hint {
+    display: block;
   }
 }
 

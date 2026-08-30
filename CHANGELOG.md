@@ -7,6 +7,14 @@ changed rather than what an operator had to do about it; from v0.15.0 on, each
 release is written down as it is cut. Anything that changes a config file, a
 default, or on-disk state is called out as **Breaking** or **Upgrade note**.
 
+## v0.31.3 (2026-08-30)
+
+- **New-app dialog: tidier connection and visibility choosers on mobile.** The
+  connection grant order now reads No connections, Select, All connections. On a
+  phone both the visibility and the connection choosers collapse from stacked
+  cards into a single compact icon-only segmented control with a hint line naming
+  the current choice, instead of six tall cards. Desktop is unchanged.
+
 ## v0.31.2 (2026-08-30)
 
 - **Fix: dashboard previews no longer go stale after a restart.** Now that a

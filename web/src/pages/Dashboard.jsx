@@ -150,7 +150,12 @@ const NewAppVisibility = ({ visibility, setVisibility, viewerEmails, setViewerEm
     setOpen(false);
   };
   const restrictedDetail = viewerEmails.length > 0 ? `${viewerEmails.length} added` : "Pick who";
+  // The one-line hint under the segmented control on mobile: it names the chosen
+  // option, since the compact segments show only an icon there.
+  const visLabels = { private: "Private", restricted: "Restricted", public: "Public" };
+  const visDetails = { private: "Only you & admins", restricted: restrictedDetail, public: "Anyone with the link" };
   return (
+    <>
     <div className="visibility-choice newapp-grant-choice newapp-grant-three" role="radiogroup" aria-label="App visibility">
       <button
         type="button"
@@ -203,6 +208,8 @@ const NewAppVisibility = ({ visibility, setVisibility, viewerEmails, setViewerEm
         <span className="vis-detail">Anyone with the link</span>
       </button>
     </div>
+    <div className="newapp-choice-hint"><b>{visLabels[visibility]}</b> {visDetails[visibility]}</div>
+    </>
   );
 };
 
@@ -237,6 +244,14 @@ const NewAppDialog = ({ name, setName, onSubmit, creating, atLimit, onCancel, vi
   const valid = isValidAppName(name);
   const host = window.location.host;
   const sub = (name || "").replace(/[^a-z0-9-]/g, "") || "app";
+  // The mobile segmented control's hint line: names the chosen grant mode, whose
+  // segment shows only an icon there.
+  const grantLabels = { none: "No connections", selected: "Select connections", all: "All connections" };
+  const grantDetails = {
+    none: "Grant them later",
+    selected: grantSelected.length > 0 ? `${grantSelected.length} chosen` : "Pick which",
+    all: `${connections.length} attached`,
+  };
   return (
     <div className="modal-backdrop" role="dialog" aria-modal="true" onMouseDown={onCancel}>
       <form className="card modal newapp modal-wide modal-sheet" onSubmit={onSubmit} onMouseDown={(e) => e.stopPropagation()}>
@@ -291,15 +306,14 @@ const NewAppDialog = ({ name, setName, onSubmit, creating, atLimit, onCancel, vi
               <button
                 type="button"
                 role="radio"
-                aria-checked={grantMode === "all"}
-                className={grantMode === "all" ? "vis-option vis-option-on" : "vis-option"}
-                onClick={() => { setGrantMode("all"); setPickerOpen(false); }}
+                aria-checked={grantMode === "none"}
+                className={grantMode === "none" ? "vis-option vis-option-on" : "vis-option"}
+                onClick={() => { setGrantMode("none"); setPickerOpen(false); }}
                 disabled={creating}
-                title={connections.map(connName).join(", ")}
               >
-                <GrantAllIcon />
-                <span className="vis-title">All connections</span>
-                <span className="vis-detail">{connections.length} attached</span>
+                <GrantNoneIcon />
+                <span className="vis-title">No connections</span>
+                <span className="vis-detail">Grant them later</span>
               </button>
               <div className="newapp-grant-selwrap" ref={selRef}>
                 <button
@@ -345,16 +359,18 @@ const NewAppDialog = ({ name, setName, onSubmit, creating, atLimit, onCancel, vi
               <button
                 type="button"
                 role="radio"
-                aria-checked={grantMode === "none"}
-                className={grantMode === "none" ? "vis-option vis-option-on" : "vis-option"}
-                onClick={() => { setGrantMode("none"); setPickerOpen(false); }}
+                aria-checked={grantMode === "all"}
+                className={grantMode === "all" ? "vis-option vis-option-on" : "vis-option"}
+                onClick={() => { setGrantMode("all"); setPickerOpen(false); }}
                 disabled={creating}
+                title={connections.map(connName).join(", ")}
               >
-                <GrantNoneIcon />
-                <span className="vis-title">No connections</span>
-                <span className="vis-detail">Grant them later</span>
+                <GrantAllIcon />
+                <span className="vis-title">All connections</span>
+                <span className="vis-detail">{connections.length} attached</span>
               </button>
             </div>
+            <div className="newapp-choice-hint"><b>{grantLabels[grantMode]}</b> {grantDetails[grantMode]}</div>
           </div>
         )}
         <div className="btn-row">
