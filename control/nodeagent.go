@@ -7,15 +7,20 @@ import "heckel.io/hostit/node/api"
 // as aliases, so app internals (and server/assistant/cmd) keep referring to
 // NodeAgent, ProvisionSpec, ErrInvalid, ... unchanged.
 type (
-	NodeAgent       = api.NodeAgent
-	ControlSink     = api.ControlSink
-	ProvisionSpec   = api.ProvisionSpec
-	DeprovisionSpec = api.DeprovisionSpec
-	ScreenshotSpec  = api.ScreenshotSpec
-	SyncState       = api.SyncState
-	State           = api.State
-	ExecResult      = api.ExecResult
-	Heartbeat       = api.Heartbeat
+	NodeAgent           = api.NodeAgent
+	ControlSink         = api.ControlSink
+	ProvisionSpec       = api.ProvisionSpec
+	DeprovisionSpec     = api.DeprovisionSpec
+	ScreenshotSpec      = api.ScreenshotSpec
+	AssistantTurnSpec   = api.AssistantTurnSpec
+	AssistantAnswerSpec = api.AssistantAnswerSpec
+	AssistantImage      = api.AssistantImage
+	AssistantEvent      = api.AssistantEvent
+	AssistantUsage      = api.AssistantUsage
+	SyncState           = api.SyncState
+	State               = api.State
+	ExecResult          = api.ExecResult
+	Heartbeat           = api.Heartbeat
 )
 
 var (

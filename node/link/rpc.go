@@ -66,6 +66,8 @@ type rpcResp struct {
 	Heartbeat *api.Heartbeat       `json:"heartbeat,omitempty"`
 	Listing   *api.Listing         `json:"listing,omitempty"`
 	Stat      *api.FileInfo        `json:"stat,omitempty"`
+	Answer    string               `json:"answer,omitempty"`
+	Usage     *api.AssistantUsage  `json:"usage,omitempty"`
 	Err       string               `json:"err,omitempty"`
 	ErrCode   string               `json:"err_code,omitempty"`
 }
@@ -279,6 +281,47 @@ func RPCHandler(agent api.NodeAgent) http.Handler {
 			return
 		}
 		_, _ = w.Write(png)
+	})
+
+	// RunAssistantTurn streams the turn's events back as newline-delimited JSON
+	// (an assistant turn is a live sequence, not one blob). The spec rides the
+	// body; each api.AssistantEvent is one flushed line, so control shows them as
+	// they happen. Cancelling the request (the owner pressed Stop) cancels
+	// r.Context(), which the engine turns into a killed container.
+	mux.HandleFunc("POST /v1/assistant-turn", func(w http.ResponseWriter, r *http.Request) {
+		var spec api.AssistantTurnSpec
+		if err := json.NewDecoder(r.Body).Decode(&spec); err != nil {
+			writeStreamError(w, fmt.Errorf("bad request: %w", err))
+			return
+		}
+		w.Header().Set("Content-Type", "application/x-ndjson")
+		flusher, _ := w.(http.Flusher)
+		enc := json.NewEncoder(w)
+		onEvent := func(ev *api.AssistantEvent) {
+			_ = enc.Encode(ev) // Encode writes the JSON object plus a newline
+			if flusher != nil {
+				flusher.Flush()
+			}
+		}
+		// A setup failure (no such app, image build failed) happens before any
+		// event, so surface it as a terminal error event -- the stream is already
+		// a 200 by the time we know, and the turn's own failures arrive this way too.
+		if err := agent.RunAssistantTurn(r.Context(), &spec, onEvent); err != nil {
+			onEvent(&api.AssistantEvent{Type: "error", ErrorMsg: err.Error()})
+		}
+	})
+	mux.HandleFunc("POST /v1/assistant-answer", func(w http.ResponseWriter, r *http.Request) {
+		var spec api.AssistantAnswerSpec
+		if err := json.NewDecoder(r.Body).Decode(&spec); err != nil {
+			writeRPC(w, &rpcResp{Err: "bad request: " + err.Error()})
+			return
+		}
+		text, usage, err := agent.AnswerAssistant(r.Context(), &spec)
+		if err != nil {
+			writeRPC(w, fail(err))
+			return
+		}
+		writeRPC(w, &rpcResp{Answer: text, Usage: usage})
 	})
 
 	// File content streams raw: the body IS the file, args ride the query.

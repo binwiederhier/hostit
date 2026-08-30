@@ -57,10 +57,7 @@ type Server struct {
 	// assistantOps is the assistant's tool surface, kept so SetNode can repoint
 	// its node agent along with the handlers'; nil when no assistant is configured
 	assistantOps *appOps
-	// claudeSandbox is the subscription backend's sandbox; kept so its app
-	// identity resolver can be verified.
-	claudeSandbox *assistant.Sandbox
-	sessions      *sessionManager
+	sessions     *sessionManager
 	// grants signs the per-app credential a private app's visitor carries on the
 	// app's own hostname, where the session cookie does not reach (appaccess.go).
 	grants *grant.Signer
@@ -178,30 +175,12 @@ func New(conf *config.Config, apps *Manager, users *user.Manager) *Server {
 		// could be offered while the backend was unwired, silently running the API
 		// model and badging replies as Sonnet with no explanation.)
 		if conf.ClaudeBackendEnabled() {
-			sandbox, err := assistant.NewSandbox(conf)
-			if err != nil {
-				// A missing sandbox disables only the subscription option; the API
-				// backend still serves, so never take the whole assistant down here.
-				slog.Error("Cannot start the Claude Max assistant backend; using the API only", "error", err)
-			} else {
-				// Resolve an app's identity from the registry, not this host's
-				// passwd file: an app on another node has no account here, and
-				// the sandbox would refuse to start for it ("cannot resolve
-				// app user ... is the app deployed on this host?").
-				sandbox.SetIdentity(func(appName string) (int, int, string, error) {
-					a, err := apps.Store().App(appName)
-					if err != nil {
-						return 0, 0, "", err
-					}
-					if a.UID == 0 {
-						return 0, 0, "", fmt.Errorf("app %q has no recorded uid yet", appName)
-					}
-					return a.UID, a.UID, a.ID, nil
-				})
-				s.claudeSandbox = sandbox
-				s.assistant.SetClaudeRunner(&claudeBackend{sandbox: sandbox})
-				slog.Info("Claude Max (subscription) backend available for the assistant")
-			}
+			// The sandbox runs on the app's node now (it has podman, the app's unix
+			// user, and the app socket); control holds only the subscription token
+			// and passes it down per turn. Routing to the right node -- including an
+			// app on another node -- is the node agent's job.
+			s.assistant.SetClaudeRunner(&claudeBackend{node: apps.NodeAgent(), token: conf.ClaudeCodeOAuthToken})
+			slog.Info("Claude Max (subscription) backend available for the assistant")
 		}
 	}
 	// The web app and REST API get the full header set (CSP, framing denial) plus

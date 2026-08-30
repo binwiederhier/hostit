@@ -7,8 +7,9 @@ import (
 	"strings"
 
 	"github.com/urfave/cli/v2"
-	"heckel.io/hostit/assistant"
 	"heckel.io/hostit/control/config"
+	"heckel.io/hostit/node/api"
+	"heckel.io/hostit/node/sandbox"
 )
 
 // cmdInternal groups host-side debug/plumbing commands that app owners never run.
@@ -57,22 +58,20 @@ func execInternalAssistant(c *cli.Context) error {
 	if prompt == "" && !c.Bool("shell") {
 		return fmt.Errorf("usage: hostit internal assistant <app> <prompt>  (or --shell for a debug shell)")
 	}
-	sandbox, err := assistant.NewSandbox(conf)
-	if err != nil {
-		return err
-	}
+	engine := sandbox.NewEngine(config.HostAppSocketFile, conf.DataDir)
 	if c.Bool("shell") {
-		return sandbox.Shell(appName)
+		return engine.Shell(appName, conf.ClaudeCodeOAuthToken)
 	}
 	fmt.Fprintf(os.Stderr, "==> assistant turn for app=%s\n", appName)
-	return sandbox.RunTurn(context.Background(), appName, prompt, "", nil, printAssistantEvent(c.Bool("raw")))
+	spec := &api.AssistantTurnSpec{Name: appName, Prompt: prompt, OAuthToken: conf.ClaudeCodeOAuthToken}
+	return engine.RunTurn(context.Background(), spec, printAssistantEvent(c.Bool("raw")))
 }
 
 // printAssistantEvent renders one sandbox event as a compact human summary (or
 // the raw fields with --raw): the model's text, each tool it calls, each result,
 // and the final result with token usage.
-func printAssistantEvent(raw bool) func(assistant.StreamEvent) {
-	return func(ev assistant.StreamEvent) {
+func printAssistantEvent(raw bool) func(*api.AssistantEvent) {
+	return func(ev *api.AssistantEvent) {
 		if raw {
 			fmt.Printf("%+v\n", ev)
 			return

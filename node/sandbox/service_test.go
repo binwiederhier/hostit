@@ -1,4 +1,4 @@
-package assistant
+package sandbox
 
 import (
 	"encoding/json"
@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"heckel.io/hostit/control/config"
+	"heckel.io/hostit/node/api"
 	"heckel.io/hostit/workspace"
 )
 
@@ -23,14 +23,15 @@ import (
 // only in this container -- so a refactor (or a claude version bump that reopens a
 // tool) breaks a test loudly instead of silently widening the attack surface.
 
-func testSandbox() *Sandbox {
-	return &Sandbox{
-		conf: &config.Config{
-			ControlSocketFile:    "/run/hostit/hostit.sock",
-			DataDir:              "/var/lib/hostit",
-			ClaudeCodeOAuthToken: "sk-test-subscription-token",
-		},
-		hostitBin: "/usr/local/bin/hostit",
+const testToken = "sk-test-subscription-token"
+
+func testEngine() *Engine {
+	// The node's app socket lives under /run/hostit/app; its dir is mounted at
+	// the container's /run/hostit so the sandbox sees /run/hostit/hostit.sock.
+	return &Engine{
+		hostitBin:  "/usr/local/bin/hostit",
+		socketFile: "/run/hostit/app/hostit.sock",
+		dataDir:    "/var/lib/hostit",
 	}
 }
 
@@ -63,7 +64,7 @@ func contains(args []string, want string) bool {
 }
 
 func TestSandboxClaudeArgsAreMCPOnly(t *testing.T) {
-	args := testSandbox().claudeArgs("", false)
+	args := testEngine().claudeArgs("", false)
 
 	// Non-interactive, streaming.
 	if !hasFlagValue(args, "--output-format", "stream-json") {
@@ -93,7 +94,7 @@ func TestSandboxClaudeArgsAreMCPOnly(t *testing.T) {
 		t.Errorf("expected --disallowedTools to be the full pinned built-in set, got %v", args)
 	}
 
-	// The MCP config names the hostit binary + the daemon socket (peercred-scoped).
+	// The MCP config names the hostit binary + the app socket (peercred-scoped).
 	mcpConfig, ok := flagValue(args, "--mcp-config")
 	if !ok {
 		t.Fatalf("expected --mcp-config, got %v", args)
@@ -102,14 +103,14 @@ func TestSandboxClaudeArgsAreMCPOnly(t *testing.T) {
 		t.Errorf("mcp-config should invoke the binary at its in-sandbox path, got %q", mcpConfig)
 	}
 	if !strings.Contains(mcpConfig, "/run/hostit/hostit.sock") {
-		t.Errorf("mcp-config should point at the daemon socket, got %q", mcpConfig)
+		t.Errorf("mcp-config should point at the app socket, got %q", mcpConfig)
 	}
 
 	// A system prompt is appended only when non-empty.
 	if contains(args, "--append-system-prompt") {
 		t.Error("empty system prompt must not add --append-system-prompt")
 	}
-	withPrompt := testSandbox().claudeArgs("You are working on a hostit app.", false)
+	withPrompt := testEngine().claudeArgs("You are working on a hostit app.", false)
 	if v, ok := flagValue(withPrompt, "--append-system-prompt"); !ok || v != "You are working on a hostit app." {
 		t.Errorf("expected the system prompt appended, got %v", withPrompt)
 	}
@@ -151,10 +152,10 @@ func TestSandboxBaseArgsLockdown(t *testing.T) {
 		uid = 200000
 		gid = 200000
 	)
-	args := testSandbox().baseArgs("hostit-assistant-demo6-abcd", uid, gid)
+	args := testEngine().baseArgs("hostit-assistant-demo6-abcd", uid, gid, testToken)
 
-	// uid/gid mapped to the app's block, so the daemon's peercred socket scopes
-	// every tool call to exactly this app.
+	// uid/gid mapped to the app's block, so the node's app socket scopes every
+	// tool call to exactly this app.
 	if !hasFlagValue(args, "--uidmap", "0:200000:65536") {
 		t.Errorf("expected --uidmap 0:200000:65536, got %v", args)
 	}
@@ -185,14 +186,14 @@ func TestSandboxBaseArgsLockdown(t *testing.T) {
 		t.Errorf("expected DISABLE_AUTOUPDATER=1, got %v", args)
 	}
 
-	// Only the hostit binary and the daemon socket dir are mounted, both read-only.
-	// The host source is wherever the binary lives (hostit-app, off $PATH); in
-	// the sandbox it appears at the container path, same as in an app container.
+	// Only the hostit binary and the node's app-socket dir are mounted, both
+	// read-only; in the sandbox the socket appears at the same in-container path
+	// an app sees, so the MCP bridge reaches /run/hostit/hostit.sock.
 	if !hasFlagValue(args, "--volume", "/usr/local/bin/hostit:"+workspace.ContainerBinFile+":ro") {
 		t.Errorf("expected the hostit binary mounted read-only at %s, got %v", workspace.ContainerBinFile, args)
 	}
-	if !hasFlagValue(args, "--volume", "/run/hostit:/run/hostit:ro") {
-		t.Errorf("expected the socket dir mounted read-only, got %v", args)
+	if !hasFlagValue(args, "--volume", "/run/hostit/app:"+workspace.ContainerRunDir+":ro") {
+		t.Errorf("expected the node app-socket dir mounted read-only at %s, got %v", workspace.ContainerRunDir, args)
 	}
 }
 
@@ -211,10 +212,10 @@ func TestSandboxContainerNameKeysOnAppID(t *testing.T) {
 
 func TestSandboxSessionLogKeysOnAppID(t *testing.T) {
 	dir := t.TempDir()
-	s := testSandbox()
-	s.conf.DataDir = dir
+	e := testEngine()
+	e.dataDir = dir
 
-	f := s.openSessionLog("demo6")
+	f := e.openSessionLog("demo6")
 	if f == nil {
 		t.Fatal("openSessionLog returned nil")
 	}
@@ -247,13 +248,10 @@ func TestSandboxSessionLogKeysOnAppID(t *testing.T) {
 // mounted into every app container), never this daemon's own executable: since
 // the cmd split the daemon is hostit-control, which has no "mcp" command, and
 // mounting it silently broke the sandbox's only tool surface.
-func TestNewSandboxMountsTheAgentBinary(t *testing.T) {
-	s, err := NewSandbox(&config.Config{ClaudeCodeOAuthToken: "sk-test"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if s.hostitBin != workspace.HostBinFile {
-		t.Fatalf("sandbox mounts %q as the MCP bridge, want the agent binary %q", s.hostitBin, workspace.HostBinFile)
+func TestNewEngineMountsTheAgentBinary(t *testing.T) {
+	e := NewEngine("/run/hostit/app/hostit.sock", "/var/lib/hostit")
+	if e.hostitBin != workspace.HostBinFile {
+		t.Fatalf("sandbox mounts %q as the MCP bridge, want the agent binary %q", e.hostitBin, workspace.HostBinFile)
 	}
 }
 
@@ -266,7 +264,7 @@ func TestClaudeStdinCarriesImages(t *testing.T) {
 	assert.False(t, streamJSON, "no images: plain -p stdin, unchanged behavior")
 	assert.Equal(t, "describe this", stdin)
 
-	stdin, streamJSON = claudeStdin("describe this", []Attachment{{Path: "uploads/a.png", MediaType: "image/png", Data: "aGVsbG8="}})
+	stdin, streamJSON = claudeStdin("describe this", []api.AssistantImage{{MediaType: "image/png", Data: "aGVsbG8="}})
 	require.True(t, streamJSON)
 	require.True(t, strings.HasSuffix(stdin, "\n"), "stream-json input is line-delimited")
 	var line struct {
@@ -274,9 +272,13 @@ func TestClaudeStdinCarriesImages(t *testing.T) {
 		Message struct {
 			Role    string `json:"role"`
 			Content []struct {
-				Type   string       `json:"type"`
-				Text   string       `json:"text"`
-				Source *ImageSource `json:"source"`
+				Type   string `json:"type"`
+				Text   string `json:"text"`
+				Source *struct {
+					Type      string `json:"type"`
+					MediaType string `json:"media_type"`
+					Data      string `json:"data"`
+				} `json:"source"`
 			} `json:"content"`
 		} `json:"message"`
 	}
@@ -295,8 +297,8 @@ func TestClaudeStdinCarriesImages(t *testing.T) {
 
 func TestClaudeArgsInputFormat(t *testing.T) {
 	t.Parallel()
-	assert.NotContains(t, testSandbox().claudeArgs("", false), "--input-format")
-	args := testSandbox().claudeArgs("", true)
+	assert.NotContains(t, testEngine().claudeArgs("", false), "--input-format")
+	args := testEngine().claudeArgs("", true)
 	i := slices.Index(args, "--input-format")
 	require.GreaterOrEqual(t, i, 0, "stream-json input must be switched on for an image turn")
 	require.Less(t, i+1, len(args))
@@ -313,7 +315,8 @@ func TestParseAnswer(t *testing.T) {
 			`"usage":{"input_tokens":10,"output_tokens":5,"cache_creation_input_tokens":2,"cache_read_input_tokens":3}}`))
 		require.NoError(t, err)
 		assert.Equal(t, "ahoy", text)
-		assert.Equal(t, Usage{InputTokens: 10, OutputTokens: 5, CacheWriteTokens: 2, CacheReadTokens: 3}, u)
+		require.NotNil(t, u)
+		assert.Equal(t, api.AssistantUsage{InputTokens: 10, OutputTokens: 5, CacheWriteTokens: 2, CacheReadTokens: 3}, *u)
 	})
 	t.Run("is_error carries detail and no text", func(t *testing.T) {
 		text, _, err := parseAnswer([]byte(`{"result":"quota exceeded","is_error":true}`))
@@ -325,11 +328,11 @@ func TestParseAnswer(t *testing.T) {
 		_, _, err := parseAnswer([]byte("claude: command not found"))
 		require.Error(t, err)
 	})
-	t.Run("missing usage is zero, not an error", func(t *testing.T) {
+	t.Run("missing usage is nil, not an error", func(t *testing.T) {
 		text, u, err := parseAnswer([]byte(`{"result":"hi","is_error":false}`))
 		require.NoError(t, err)
 		assert.Equal(t, "hi", text)
-		assert.Equal(t, Usage{}, u)
+		assert.Nil(t, u)
 	})
 }
 

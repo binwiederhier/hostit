@@ -17,6 +17,7 @@ import (
 	"heckel.io/hostit/app"
 	"heckel.io/hostit/homefs"
 	"heckel.io/hostit/node/api"
+	"heckel.io/hostit/node/sandbox"
 	"heckel.io/hostit/node/screenshot"
 	"heckel.io/hostit/snapshot"
 	"heckel.io/hostit/store"
@@ -104,6 +105,9 @@ type Machine struct {
 	// shots renders dashboard previews: it runs the chrome container and the
 	// per-shot egress firewall on this machine, behind the Screenshot verb.
 	shots *screenshot.Engine
+	// sandbox runs one Claude Max assistant turn as a sandboxed claude -p on
+	// this machine, behind the RunAssistantTurn/AnswerAssistant verbs.
+	sandbox *sandbox.Engine
 	// rawAppsDir, when set, is a non-recursive bind of AppsDir the daemon's file
 	// I/O goes through. A running container's idmapped rootfs mount covers the
 	// subvolume path in the host namespace, and root writing through that mapped
@@ -214,6 +218,9 @@ func NewMachine(conf *Config, s *store.Store, svc *Services) *Machine {
 	// its per-shot scratch under the data dir. It pulls the chrome image lazily
 	// on the first shot, so a node that is never asked for a preview never does.
 	m.shots = screenshot.NewEngine(m.runner, filepath.Join(conf.DataDir, "previews"))
+	// The assistant sandbox reaches control through this node's app socket (the
+	// same socket app containers use); it logs raw sessions under the data dir.
+	m.sandbox = sandbox.NewEngine(conf.SocketFile, conf.DataDir)
 	return m
 }
 

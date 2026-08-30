@@ -5,13 +5,18 @@ import (
 	"errors"
 
 	"heckel.io/hostit/assistant"
+	"heckel.io/hostit/node/api"
 )
 
-// claudeBackend adapts assistant.Sandbox to assistant.ClaudeRunner: it drives
-// one sandboxed `claude -p` turn and maps its stream to the assistant's own
-// events, so the web UI streams a Claude Max turn exactly as it does an API turn.
+// claudeBackend adapts the node's assistant verbs to assistant.ClaudeRunner: it
+// asks the app's node to run one sandboxed `claude -p` turn and maps the node's
+// streamed events to the assistant's own events, so the web UI streams a Claude
+// Max turn exactly as it does an API turn. The container runs on the node the
+// app lives on; control holds only the subscription token, which it passes down
+// per turn (never stored on a node).
 type claudeBackend struct {
-	sandbox *assistant.Sandbox
+	node  NodeAgent
+	token string
 }
 
 var _ assistant.ClaudeRunner = (*claudeBackend)(nil)
@@ -24,7 +29,14 @@ func (c *claudeBackend) RunTurn(ctx context.Context, appName, prompt, systemProm
 	var runErr error
 	lastTool := "" // tool_result events do not name their tool; pair by order
 
-	err := c.sandbox.RunTurn(ctx, appName, prompt, systemPrompt, images, func(ev assistant.StreamEvent) {
+	spec := &api.AssistantTurnSpec{
+		Name:         appName,
+		Prompt:       prompt,
+		SystemPrompt: systemPrompt,
+		Images:       toAPIImages(images),
+		OAuthToken:   c.token,
+	}
+	err := c.node.RunAssistantTurn(ctx, spec, func(ev *api.AssistantEvent) {
 		switch ev.Type {
 		case "text":
 			publish(assistant.Event{Type: "text", Text: ev.Text})
@@ -43,7 +55,7 @@ func (c *claudeBackend) RunTurn(ctx context.Context, appName, prompt, systemProm
 					CacheWriteTokens: int(ev.Usage.CacheWriteTokens),
 					CacheReadTokens:  int(ev.Usage.CacheReadTokens),
 				}
-				// Surface the turn's tokens to the UI (the sandbox reports them once, at
+				// Surface the turn's tokens to the UI (the node reports them once, at
 				// the end) so the chat can show a per-turn token count.
 				u := usage
 				publish(assistant.Event{Type: "usage", Usage: &u})
@@ -63,8 +75,40 @@ func (c *claudeBackend) RunTurn(ctx context.Context, appName, prompt, systemProm
 
 // Answer runs a one-shot, tool-less answer on the subscription -- what the
 // app-facing /api/container/assistant endpoint needs from the Claude Max
-// backend. It is a plain pass-through to the sandbox; the sandbox runs `claude
-// -p --output-format json` with no tools and returns just the answer and usage.
+// backend. It runs on the app's node: `claude -p --output-format json` with no
+// tools, returning just the answer and usage.
 func (c *claudeBackend) Answer(ctx context.Context, appName, model, system, prompt string) (string, assistant.Usage, error) {
-	return c.sandbox.Answer(ctx, appName, model, system, prompt)
+	text, usage, err := c.node.AnswerAssistant(ctx, &api.AssistantAnswerSpec{
+		Name:       appName,
+		Model:      model,
+		System:     system,
+		Prompt:     prompt,
+		OAuthToken: c.token,
+	})
+	if err != nil {
+		return "", assistant.Usage{}, err
+	}
+	var u assistant.Usage
+	if usage != nil {
+		u = assistant.Usage{
+			InputTokens:      int(usage.InputTokens),
+			OutputTokens:     int(usage.OutputTokens),
+			CacheWriteTokens: int(usage.CacheWriteTokens),
+			CacheReadTokens:  int(usage.CacheReadTokens),
+		}
+	}
+	return text, u, nil
+}
+
+// toAPIImages converts the assistant's uploaded attachments to the wire image
+// blocks the node feeds claude; only the media type and base64 bytes cross.
+func toAPIImages(images []assistant.Attachment) []api.AssistantImage {
+	if len(images) == 0 {
+		return nil
+	}
+	out := make([]api.AssistantImage, 0, len(images))
+	for _, a := range images {
+		out = append(out, api.AssistantImage{MediaType: a.MediaType, Data: a.Data})
+	}
+	return out
 }

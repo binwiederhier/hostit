@@ -2,6 +2,7 @@ package link
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -103,6 +104,22 @@ func (f *fakeAgentFull) Screenshot(spec *api.ScreenshotSpec) ([]byte, error) {
 	return []byte("\x89PNG\r\n\x1a\nfake"), nil
 }
 
+func (f *fakeAgentFull) RunAssistantTurn(_ context.Context, spec *api.AssistantTurnSpec, onEvent func(*api.AssistantEvent)) error {
+	f.calls = append(f.calls, "assistant-turn:"+spec.Name)
+	// A turn's shape: some text, a tool call and its result, then a terminal
+	// result carrying usage -- exactly the sequence control maps to SSE events.
+	onEvent(&api.AssistantEvent{Type: "text", Text: "hello " + spec.Prompt})
+	onEvent(&api.AssistantEvent{Type: "tool_use", Tool: "write_file", Input: `{"path":"x"}`})
+	onEvent(&api.AssistantEvent{Type: "tool_result", Output: "ok"})
+	onEvent(&api.AssistantEvent{Type: "result", Result: "done", Usage: &api.AssistantUsage{InputTokens: 10, OutputTokens: 5}})
+	return nil
+}
+
+func (f *fakeAgentFull) AnswerAssistant(_ context.Context, spec *api.AssistantAnswerSpec) (string, *api.AssistantUsage, error) {
+	f.calls = append(f.calls, "assistant-answer:"+spec.Name)
+	return "the answer to " + spec.Prompt, &api.AssistantUsage{InputTokens: 3, OutputTokens: 7}, nil
+}
+
 func (f *fakeAgentFull) Rename(oldName, newName, id string) error {
 	f.calls = append(f.calls, "rename:"+oldName+"->"+newName+":"+id)
 	return nil
@@ -169,6 +186,42 @@ func TestRPCScreenshotRoundTripsBytes(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, []byte("\x89PNG\r\n\x1a\nfake"), png, "the PNG bytes survive the wire intact")
 	assert.Contains(t, agent.calls, "screenshot:blog:https://blog.example.com", "the spec reaches the node")
+}
+
+func TestRPCAssistantTurnStreamsEventsInOrder(t *testing.T) {
+	t.Parallel()
+	agent := &fakeAgentFull{written: map[string][]byte{}}
+	remote := startRPC(t, agent)
+	var types []string
+	var lastUsage *api.AssistantUsage
+	var firstText string
+	err := remote.RunAssistantTurn(context.Background(), &api.AssistantTurnSpec{Name: "blog", Prompt: "hi"}, func(ev *api.AssistantEvent) {
+		types = append(types, ev.Type)
+		if ev.Type == "text" && firstText == "" {
+			firstText = ev.Text
+		}
+		if ev.Usage != nil {
+			lastUsage = ev.Usage
+		}
+	})
+	require.NoError(t, err)
+	assert.Equal(t, []string{"text", "tool_use", "tool_result", "result"}, types, "every event crosses the wire, in order")
+	assert.Equal(t, "hello hi", firstText, "event fields survive the wire")
+	require.NotNil(t, lastUsage, "the terminal result carries usage back")
+	assert.Equal(t, int64(10), lastUsage.InputTokens)
+	assert.Contains(t, agent.calls, "assistant-turn:blog", "the spec reaches the node")
+}
+
+func TestRPCAssistantAnswerRoundTrips(t *testing.T) {
+	t.Parallel()
+	agent := &fakeAgentFull{written: map[string][]byte{}}
+	remote := startRPC(t, agent)
+	text, usage, err := remote.AnswerAssistant(context.Background(), &api.AssistantAnswerSpec{Name: "blog", Prompt: "q"})
+	require.NoError(t, err)
+	assert.Equal(t, "the answer to q", text)
+	require.NotNil(t, usage)
+	assert.Equal(t, int64(3), usage.InputTokens)
+	assert.Equal(t, int64(7), usage.OutputTokens)
 }
 
 func TestRPCScreenshotPropagatesFailure(t *testing.T) {

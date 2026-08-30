@@ -8,6 +8,7 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"io"
 	"os"
@@ -90,6 +91,15 @@ type NodeAgent interface {
 	// serves the result. The spec carries the public URL to browse and, for a
 	// private app, the app-bound grant cookie.
 	Screenshot(spec *ScreenshotSpec) ([]byte, error)
+	// RunAssistantTurn runs one Claude Max assistant turn as a sandboxed
+	// `claude -p` on this machine and streams its events through onEvent. The
+	// node runs the container (its tools reaching control through the node's app
+	// socket); control keeps the transcript, the SSE fan-out and the accounting.
+	// Cancelling ctx (the owner pressed Stop) kills the container.
+	RunAssistantTurn(ctx context.Context, spec *AssistantTurnSpec, onEvent func(*AssistantEvent)) error
+	// AnswerAssistant runs a one-shot, tool-less answer on the subscription and
+	// returns the answer text and usage (the app-facing assistant-ask path).
+	AnswerAssistant(ctx context.Context, spec *AssistantAnswerSpec) (string, *AssistantUsage, error)
 	// Terminal opens an interactive shell in the app's container, as a byte
 	// stream with out-of-band resize. It replaces the old TerminalCommand,
 	// which returned a command for the CALLER to exec -- correct only when the
@@ -248,6 +258,63 @@ type DeprovisionSpec struct {
 	UIDKnown  bool   `json:"uid_known"`
 	Unit      string `json:"unit"`
 	Container string `json:"container"`
+}
+
+// AssistantTurnSpec is one Claude Max assistant turn for the node to run: the
+// prompt and system prompt, any uploaded images, and the operator's
+// subscription token. The node runs the sandboxed `claude -p` container (uid-
+// mapped to the app, its tools reaching control through the node's app socket)
+// and streams the turn's events back; control keeps the transcript, the SSE fan-
+// out and the accounting. The token travels per turn so control stays its only
+// holder -- it never lands on a node's disk.
+type AssistantTurnSpec struct {
+	Name         string           `json:"name"` // App name, for routing and logs
+	Prompt       string           `json:"prompt"`
+	SystemPrompt string           `json:"system_prompt,omitempty"`
+	Images       []AssistantImage `json:"images,omitempty"`
+	OAuthToken   string           `json:"oauth_token"` // Claude Max subscription token, per turn
+}
+
+// AssistantAnswerSpec is a one-shot, tool-less answer on the subscription (the
+// app-facing /api/container/assistant path): no tools, no transcript, no stream.
+type AssistantAnswerSpec struct {
+	Name       string `json:"name"`
+	Model      string `json:"model,omitempty"`
+	System     string `json:"system,omitempty"`
+	Prompt     string `json:"prompt"`
+	OAuthToken string `json:"oauth_token"`
+}
+
+// AssistantImage is one uploaded image for a turn, which the plain-text prompt
+// cannot carry.
+type AssistantImage struct {
+	MediaType string `json:"media_type"`
+	Data      string `json:"data"` // base64
+}
+
+// AssistantEvent is one normalized event from the sandbox's claude stream,
+// already stripped of the MCP tool-name prefix. It crosses the cluster link so
+// control can map it to the assistant's own SSE events and store the transcript.
+type AssistantEvent struct {
+	Type     string          `json:"type"` // init | text | thinking | tool_use | tool_result | result | error
+	Text     string          `json:"text,omitempty"`
+	Tool     string          `json:"tool,omitempty"`
+	Input    string          `json:"input,omitempty"`
+	Output   string          `json:"output,omitempty"`
+	IsError  bool            `json:"is_error,omitempty"`
+	Model    string          `json:"model,omitempty"`
+	Tools    []string        `json:"tools,omitempty"`
+	Usage    *AssistantUsage `json:"usage,omitempty"`
+	Result   string          `json:"result,omitempty"`
+	ErrorMsg string          `json:"error_msg,omitempty"`
+}
+
+// AssistantUsage is one turn's token usage as claude reports it.
+type AssistantUsage struct {
+	InputTokens      int64 `json:"input_tokens"`
+	OutputTokens     int64 `json:"output_tokens"`
+	CacheWriteTokens int64 `json:"cache_write_tokens"`
+	CacheReadTokens  int64 `json:"cache_read_tokens"`
 }
 
 // ScreenshotSpec is everything the node needs to render one app preview: the

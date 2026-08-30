@@ -1,6 +1,7 @@
 package control
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -338,6 +339,22 @@ func (ra *routingAgent) Screenshot(spec *api.ScreenshotSpec) ([]byte, error) {
 		return nil, err
 	}
 	return agent.Screenshot(spec)
+}
+
+func (ra *routingAgent) RunAssistantTurn(ctx context.Context, spec *api.AssistantTurnSpec, onEvent func(*api.AssistantEvent)) error {
+	agent, err := ra.routeRunnable(spec.Name)
+	if err != nil {
+		return err
+	}
+	return agent.RunAssistantTurn(ctx, spec, onEvent)
+}
+
+func (ra *routingAgent) AnswerAssistant(ctx context.Context, spec *api.AssistantAnswerSpec) (string, *api.AssistantUsage, error) {
+	agent, err := ra.routeRunnable(spec.Name)
+	if err != nil {
+		return "", nil, err
+	}
+	return agent.AnswerAssistant(ctx, spec)
 }
 
 func (ra *routingAgent) Terminal(name string) (api.TerminalSession, error) {

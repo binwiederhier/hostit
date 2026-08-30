@@ -3,6 +3,7 @@ package link
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -126,6 +127,72 @@ func (a *remoteAgent) Screenshot(spec *api.ScreenshotSpec) ([]byte, error) {
 		return nil, streamError(httpResp)
 	}
 	return io.ReadAll(httpResp.Body)
+}
+
+// RunAssistantTurn posts the turn spec and reads the node's event stream back
+// as newline-delimited JSON, invoking onEvent for each event until the stream
+// ends. Cancelling ctx aborts the request, which the node turns into a killed
+// container.
+func (a *remoteAgent) RunAssistantTurn(ctx context.Context, spec *api.AssistantTurnSpec, onEvent func(*api.AssistantEvent)) error {
+	body, err := json.Marshal(spec)
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(ctx, "POST", "http://node/v1/assistant-turn", bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := a.c.Do(req)
+	if err != nil {
+		return fmt.Errorf("node rpc assistant-turn: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return streamError(resp)
+	}
+	dec := json.NewDecoder(resp.Body)
+	for {
+		var ev api.AssistantEvent
+		if err := dec.Decode(&ev); err != nil {
+			if errors.Is(err, io.EOF) {
+				return nil
+			}
+			// A cancelled turn (the owner pressed Stop) closes the stream mid-read;
+			// that is a clean end, not a turn failure.
+			if ctx.Err() != nil {
+				return nil
+			}
+			return err
+		}
+		onEvent(&ev)
+	}
+}
+
+// AnswerAssistant posts the one-shot spec and returns the answer text and usage.
+func (a *remoteAgent) AnswerAssistant(ctx context.Context, spec *api.AssistantAnswerSpec) (string, *api.AssistantUsage, error) {
+	body, err := json.Marshal(spec)
+	if err != nil {
+		return "", nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, "POST", "http://node/v1/assistant-answer", bytes.NewReader(body))
+	if err != nil {
+		return "", nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := a.c.Do(req)
+	if err != nil {
+		return "", nil, fmt.Errorf("node rpc assistant-answer: %w", err)
+	}
+	defer resp.Body.Close()
+	var out rpcResp
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return "", nil, fmt.Errorf("node rpc assistant-answer: %w", err)
+	}
+	if err := decodeErr(&out); err != nil {
+		return "", nil, err
+	}
+	return out.Answer, out.Usage, nil
 }
 
 func (a *remoteAgent) Terminal(name string) (api.TerminalSession, error) {
