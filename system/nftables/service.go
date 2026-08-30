@@ -33,21 +33,27 @@ type Service struct {
 	// published port -- the control plane's, since the proxy dials the apps.
 	bindAddr  string
 	allowFrom []string
+	// localProxyUID is the uid a colocated non-root hostit-proxy runs as. The
+	// per-app loopback rule allows root and the app's own uid; the proxy dials
+	// those ports too, so its uid is allowed alongside. 0 means the proxy is
+	// root (the default), which the { 0, ... } set already covers.
+	localProxyUID int
 }
 
 var _ Interface = (*Service)(nil)
 
 // New builds a firewall Service owning the named table ("hostit" for the
 // default local node), publishing on bindAddr (empty for loopback) and
-// admitting connections to published ports only from allowFrom.
-func New(table string, bindAddr string, allowFrom []string) *Service {
-	return &Service{table: table, bindAddr: bindAddr, allowFrom: allowFrom}
+// admitting connections to published ports only from allowFrom. localProxyUID
+// is the uid a colocated unprivileged proxy runs as (0 = the proxy is root).
+func New(table string, bindAddr string, allowFrom []string, localProxyUID int) *Service {
+	return &Service{table: table, bindAddr: bindAddr, allowFrom: allowFrom, localProxyUID: localProxyUID}
 }
 
 // Apply atomically replaces this node's nftables table: for each app port,
 // loopback connects are only allowed for root and the app's own uid.
 func (s *Service) Apply(rules []Rule) error {
-	ruleset := renderRuleset(s.table, rules, s.bindAddr, s.allowFrom)
+	ruleset := renderRuleset(s.table, rules, s.bindAddr, s.allowFrom, s.localProxyUID)
 	f, err := os.CreateTemp("", "hostit-nft-*.conf")
 	if err != nil {
 		return err
@@ -68,14 +74,20 @@ func (s *Service) Apply(rules []Rule) error {
 
 // renderRuleset builds the nft ruleset that replaces the node's table, split
 // out so the generated rules can be tested without invoking nft.
-func renderRuleset(table string, rules []Rule, bindAddr string, allowFrom []string) string {
+func renderRuleset(table string, rules []Rule, bindAddr string, allowFrom []string, localProxyUID int) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "add table inet %s\n", table)
 	fmt.Fprintf(&b, "flush table inet %s\n", table)
 	fmt.Fprintf(&b, "add chain inet %s output { type filter hook output priority filter ; policy accept ; }\n", table)
 	for _, rule := range rules {
-		fmt.Fprintf(&b, "add rule inet %s output ip daddr 127.0.0.0/8 tcp dport %d meta skuid != { 0, %d } counter drop\n", table, rule.Port, rule.UID)
-		fmt.Fprintf(&b, "add rule inet %s output ip6 daddr ::1 tcp dport %d meta skuid != { 0, %d } counter drop\n", table, rule.Port, rule.UID)
+		// Allowed to reach the app port over loopback: root, the app's own uid,
+		// and (when the colocated proxy is unprivileged) the proxy's uid.
+		allowed := fmt.Sprintf("{ 0, %d }", rule.UID)
+		if localProxyUID != 0 {
+			allowed = fmt.Sprintf("{ 0, %d, %d }", rule.UID, localProxyUID)
+		}
+		fmt.Fprintf(&b, "add rule inet %s output ip daddr 127.0.0.0/8 tcp dport %d meta skuid != %s counter drop\n", table, rule.Port, allowed)
+		fmt.Fprintf(&b, "add rule inet %s output ip6 daddr ::1 tcp dport %d meta skuid != %s counter drop\n", table, rule.Port, allowed)
 	}
 	if bindAddr == "" {
 		return b.String() // loopback only: the output rules are the whole story

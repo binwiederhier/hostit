@@ -76,6 +76,10 @@ type Config struct {
 	// never does. Ignored on a loopback node; required on a remote one, or its
 	// apps would be reachable from anything that can route to it.
 	AppsAllowedAddresses []string `yaml:"apps-allowed-addresses"`
+	// LocalProxyUID is the uid a colocated unprivileged hostit-proxy runs as, so
+	// the per-app loopback firewall admits it alongside root and the app itself.
+	// 0 (the default) means the proxy is root.
+	LocalProxyUID int `yaml:"local-proxy-uid"`
 
 	// DataDir holds the registry mirror control pushes (and the colocated
 	// credentials); AppsDir is the btrfs pool the app subvolumes live in;

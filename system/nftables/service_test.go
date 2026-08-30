@@ -9,7 +9,7 @@ import (
 
 func TestRenderRuleset(t *testing.T) {
 	t.Parallel()
-	out := renderRuleset("hostit", []Rule{{Port: 10000, UID: 200000}, {Port: 10001, UID: 265536}}, "", nil)
+	out := renderRuleset("hostit", []Rule{{Port: 10000, UID: 200000}, {Port: 10001, UID: 265536}}, "", nil, 0)
 
 	// The table is replaced atomically (create + flush) with an accept-by-default
 	// output chain.
@@ -27,7 +27,7 @@ func TestRenderRuleset(t *testing.T) {
 func TestRenderRulesetEmpty(t *testing.T) {
 	t.Parallel()
 	// No apps: still replaces the table (so stale rules are flushed), with no drops.
-	out := renderRuleset("hostit", nil, "", nil)
+	out := renderRuleset("hostit", nil, "", nil, 0)
 	assert.Contains(t, out, "flush table inet hostit")
 	assert.NotContains(t, out, "drop")
 	// One line each for table/flush/chain.
@@ -38,7 +38,7 @@ func TestRulesetUsesTheNodeTable(t *testing.T) {
 	t.Parallel()
 	// Two colocated nodes must own separate tables, or each reconcile wipes
 	// the other node's rules.
-	out := renderRuleset("hostit_stage_node_2", []Rule{{Port: 10000, UID: 200000}}, "", nil)
+	out := renderRuleset("hostit_stage_node_2", []Rule{{Port: 10000, UID: 200000}}, "", nil, 0)
 	assert.Contains(t, out, "add table inet hostit_stage_node_2")
 	assert.NotContains(t, out, "inet hostit ")
 }
@@ -51,7 +51,7 @@ func TestRulesetUsesTheNodeTable(t *testing.T) {
 // interface.
 func TestRenderRulesetGuardsPortsPublishedOffLoopback(t *testing.T) {
 	rules := []Rule{{Port: 10000, UID: 1000000}}
-	out := renderRuleset("hostit_worker", rules, "10.0.0.2", []string{"10.0.0.1"})
+	out := renderRuleset("hostit_worker", rules, "10.0.0.2", []string{"10.0.0.1"}, 0)
 
 	assert.Contains(t, out, "add chain inet hostit_worker input", "an input chain exists once ports leave loopback")
 	assert.Contains(t, out, "ip saddr 10.0.0.1 tcp dport 10000 counter accept", "an allowed address may reach the app")
@@ -63,7 +63,18 @@ func TestRenderRulesetGuardsPortsPublishedOffLoopback(t *testing.T) {
 // A colocated node publishes on loopback, so there is nothing to guard and no
 // input chain is added.
 func TestRenderRulesetLeavesLoopbackOnlyNodesAlone(t *testing.T) {
-	out := renderRuleset("hostit", []Rule{{Port: 10000, UID: 1000000}}, "", nil)
+	out := renderRuleset("hostit", []Rule{{Port: 10000, UID: 1000000}}, "", nil, 0)
 	assert.NotContains(t, out, "input")
 	assert.Contains(t, out, "ip daddr 127.0.0.0/8 tcp dport 10000")
+}
+
+// A non-root colocated proxy reaches app ports over loopback too, so its uid
+// must be allowed alongside root and the app's own -- otherwise the per-app
+// skuid drop (which exists so one app cannot reach another's port) also blocks
+// the proxy, and every locally-hosted app goes unreachable.
+func TestRenderRulesetAllowsTheLocalProxyUID(t *testing.T) {
+	out := renderRuleset("hostit", []Rule{{Port: 10001, UID: 1065536}}, "", nil, 1002)
+	if !strings.Contains(out, "meta skuid != { 0, 1065536, 1002 } counter drop") {
+		t.Errorf("the loopback rule must allow the local proxy uid (1002) too, got:\n%s", out)
+	}
 }

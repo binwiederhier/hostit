@@ -97,7 +97,7 @@ func Serve(configPath, version string) error {
 	}
 	defer s.Close()
 	Version = version
-	machine := NewMachine(conf, s, NewSystemServices(run.New(), conf.NodeID, conf.AppsBindAddress, conf.AppsAllowedAddresses))
+	machine := NewMachine(conf, s, NewSystemServices(run.New(), conf.NodeID, conf.AppsBindAddress, conf.AppsAllowedAddresses, conf.LocalProxyUID))
 
 	// The node-local startup, same order as the fused daemon's. Limits are
 	// not applied here: control re-asserts every app's memory and disk limit
