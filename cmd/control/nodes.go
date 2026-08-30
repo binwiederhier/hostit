@@ -140,7 +140,7 @@ func execNodeRemove(c *cli.Context) error {
 
 // nodeStore opens the config and registry the node commands act on.
 func nodeStore(c *cli.Context) (*config.Config, *store.Store, error) {
-	conf, err := config.LoadConfig(config.ResolveConfigFile(c.String("config"), config.LegacyServerConfigFile))
+	conf, err := config.LoadConfig(c.String("config"))
 	if err != nil {
 		return nil, nil, err
 	}

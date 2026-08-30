@@ -7,7 +7,6 @@ package config
 import (
 	"errors"
 	"fmt"
-	"log/slog"
 	"net"
 	"os"
 	"strings"
@@ -64,10 +63,6 @@ const (
 	// nothing in common, and a remote node must not carry control's config at
 	// all. hostit-proxy's default lives in the proxy package, in the same shape.
 	DefaultControlConfigFile = "/etc/hostit/control/control.yml"
-	// LegacyServerConfigFile is the pre-split shared file. Installs that still
-	// have it keep working (see ResolveConfigFile), so upgrading the package
-	// does not strand a running daemon.
-	LegacyServerConfigFile = "/etc/hostit/server.yml"
 	// DefaultSocketFile is the APP socket as seen INSIDE a container: the
 	// in-container CLI dials this path. The host serves the socket from a subdir
 	// (HostAppSocketFile) that gets mounted at the container's run dir, so this
@@ -357,20 +352,6 @@ func LoadConfig(filename string) (*Config, error) {
 }
 
 // Validate checks that the config is complete enough to run the server
-// ResolveConfigFile picks the config a component should read: its own file
-// when it exists, else the legacy shared one when THAT exists (a pre-split
-// install), else its own path -- so a missing-file error names the location
-// the operator is meant to create, not the retired one.
-func ResolveConfigFile(own, legacy string) string {
-	if _, err := os.Stat(own); err == nil {
-		return own
-	}
-	if _, err := os.Stat(legacy); err == nil {
-		slog.Warn("Reading the pre-split shared config; move it to the component's own file", "file", legacy, "expected", own)
-		return legacy
-	}
-	return own
-}
 
 // Validate checks a CONTROL config: the web app, certificates and registry
 // settings the control plane cannot run without.

@@ -15,9 +15,6 @@ const (
 	// DefaultConfigFile is where a node's config lives on a package install;
 	// like every component, it owns a directory under /etc/hostit.
 	DefaultConfigFile = "/etc/hostit/node/node.yml"
-	// LegacyConfigFile is the pre-split shared file, still read when a node has
-	// no config of its own yet (see node.Serve).
-	LegacyConfigFile = "/etc/hostit/server.yml"
 	// localNodeID is the colocated node: control mints its credentials itself.
 	localNodeID = "local"
 	// DefaultNodeSocketFile is the node's root-only status socket, next to the

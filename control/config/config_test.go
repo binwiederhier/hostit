@@ -154,37 +154,6 @@ func TestSSHHostname(t *testing.T) {
 	assert.Equal(t, "box1.example.com", c.SSHHostname())
 }
 
-// A node's config is not control's: it holds no admin token, no base domain,
-// no OAuth, no TLS settings -- it dials control and does what it is told. The
-// node therefore validates its OWN fields; requiring control's would make a
-// legitimate remote-node config refuse to start.
-func TestResolveConfigFilePrefersTheComponentFile(t *testing.T) {
-	dir := t.TempDir()
-	own := filepath.Join(dir, "control.yml")
-	legacy := filepath.Join(dir, "server.yml")
-	require.NoError(t, os.WriteFile(own, []byte("base-domain: a.example.com\n"), 0o600))
-	require.NoError(t, os.WriteFile(legacy, []byte("base-domain: legacy.example.com\n"), 0o600))
-
-	assert.Equal(t, own, ResolveConfigFile(own, legacy), "the component's own file wins")
-}
-
-func TestResolveConfigFileFallsBackToTheLegacySharedFile(t *testing.T) {
-	dir := t.TempDir()
-	own := filepath.Join(dir, "node.yml") // never created
-	legacy := filepath.Join(dir, "server.yml")
-	require.NoError(t, os.WriteFile(legacy, []byte("node-id: local\n"), 0o600))
-
-	assert.Equal(t, legacy, ResolveConfigFile(own, legacy), "a pre-split install keeps running")
-}
-
-func TestResolveConfigFileKeepsTheIntendedPathWhenNeitherExists(t *testing.T) {
-	dir := t.TempDir()
-	own := filepath.Join(dir, "control.yml")
-	// Neither file exists: report the path the operator is meant to create, so
-	// the error names the new location rather than the retired one.
-	assert.Equal(t, own, ResolveConfigFile(own, filepath.Join(dir, "server.yml")))
-}
-
 // The per-component defaults are part of the packaging contract (the .deb ships
 // examples there, the units read them, ansible writes them).
 

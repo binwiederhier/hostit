@@ -48,7 +48,7 @@ var (
 )
 
 func execServe(c *cli.Context) error {
-	conf, err := config.LoadConfig(config.ResolveConfigFile(c.String("config"), config.LegacyServerConfigFile))
+	conf, err := config.LoadConfig(c.String("config"))
 	if err != nil {
 		return err
 	}
