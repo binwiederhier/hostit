@@ -364,6 +364,10 @@ func (a *remoteAgent) SetKeys(name string, appKeys, profileKeys []string) error 
 	return a.do("setkeys", &rpcReq{Name: name, AppKeys: appKeys, ProfileKeys: profileKeys})
 }
 
+func (a *remoteAgent) ApplyRelay(spec *api.RelaySpec) error {
+	return a.do("applyrelay", &rpcReq{Relay: spec})
+}
+
 func (a *remoteAgent) Rename(oldName, newName, id string) error {
 	return a.do("rename", &rpcReq{Name: oldName, To: newName, ID: id})
 }

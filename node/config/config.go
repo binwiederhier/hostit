@@ -59,11 +59,6 @@ type Config struct {
 	SSHHostKeyFile string `yaml:"ssh-host-key-file"`
 	// ListenMetrics is an optional Prometheus /metrics listener (empty = off).
 	ListenMetrics string `yaml:"listen-metrics"`
-	// Relay gateway (frontend) paths -- where control writes routes/keys and
-	// where the frontend stub accounts live. Empty disables the stub reconcile.
-	SSHRoutesFile string `yaml:"ssh-routes-file"`
-	RelayKeysDir  string `yaml:"relay-keys-dir"`
-	RelayStubsDir string `yaml:"relay-stubs-dir"`
 	// AppsAllowedAddresses are the addresses allowed to reach a published app
 	// port -- in practice the proxies, which are what dials an app; control
 	// never does. Ignored on a loopback node; required on a remote one, or its
@@ -90,9 +85,6 @@ func NewConfig() *Config {
 		AppsDir:        "/var/lib/hostit/apps",
 		SocketFile:     "/run/hostit/node/app/hostit.sock",
 		SSHHostKeyFile: "/etc/ssh/ssh_host_ed25519_key.pub",
-		SSHRoutesFile:  "/var/lib/hostit/ssh-routes",
-		RelayKeysDir:   "/var/lib/hostit/relay-keys",
-		RelayStubsDir:  "/var/lib/hostit/relay-stubs",
 	}
 }
 

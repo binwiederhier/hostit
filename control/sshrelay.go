@@ -2,11 +2,10 @@ package control
 
 import (
 	"log/slog"
-	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 
+	"heckel.io/hostit/node/api"
 	"heckel.io/hostit/store"
 )
 
@@ -53,49 +52,26 @@ func joinLines(lines []string) string {
 	return strings.Join(lines, "\n") + "\n"
 }
 
-// WriteSSHRelayFiles regenerates the relay gateway's routing and known_hosts
-// files from the store. A no-op unless the relay is enabled. Called on every
-// placement change and node report, so a crashed control leaves correct files
-// on disk for the relay shell to read.
-func (m *Manager) WriteSSHRelayFiles() error {
-	if !m.config.SSHRelayEnabled {
-		return nil
-	}
+// buildRelaySpec computes what control pushes to a relay-frontend node: the
+// routing table, known_hosts, and each routed (remote) app's authorized_keys
+// (the real users -- the relay key is added on the node hop, not here). The
+// frontend's own mirror is filtered to its apps, so it cannot compute this
+// itself; control does and pushes it over the link.
+func (m *Manager) buildRelaySpec() (*api.RelaySpec, error) {
 	apps, err := m.store.Apps()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	nodes, err := m.store.Nodes()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	byID := make(map[string]*store.Node, len(nodes))
 	for _, n := range nodes {
 		byID[n.Name] = n
 	}
 	routes, knownHosts := sshRelayFiles(apps, byID)
-	if err := atomicWriteFile(m.config.SSHRelayRoutesFile, routes, 0644); err != nil {
-		return err
-	}
-	if err := atomicWriteFile(m.config.SSHRelayKnownHostsFile, knownHosts, 0644); err != nil {
-		return err
-	}
-	return m.writeRelayKeyFiles(apps, byID)
-}
-
-// writeRelayKeyFiles writes each remote app's user authorized_keys to a per-app
-// file the frontend stub accounts serve (the frontend authenticates the real
-// user; the relay key is added only on the node hop, not here). Keys files for
-// apps that are no longer remote are removed.
-func (m *Manager) writeRelayKeyFiles(apps []*store.App, byID map[string]*store.Node) error {
-	dir := m.config.SSHRelayKeysDir
-	if dir == "" {
-		return nil
-	}
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return err
-	}
-	wanted := make(map[string]bool)
+	appKeys := make(map[string]string)
 	for _, a := range apps {
 		if a.Host == "" || a.Host == store.HostLocal {
 			continue
@@ -104,76 +80,106 @@ func (m *Manager) writeRelayKeyFiles(apps []*store.App, byID map[string]*store.N
 			continue
 		}
 		keys, _, _ := m.appPolicy(a)
-		content := ""
 		if len(keys) > 0 {
-			content = strings.Join(keys, "\n") + "\n"
+			appKeys[a.Name] = strings.Join(keys, "\n") + "\n"
+		} else {
+			appKeys[a.Name] = ""
 		}
-		if err := atomicWriteFile(filepath.Join(dir, a.Name), content, 0644); err != nil {
-			slog.Warn("Cannot write a relay keys file", "app", a.Name, "error", err)
+	}
+	return &api.RelaySpec{Routes: routes, KnownHosts: knownHosts, AppKeys: appKeys}, nil
+}
+
+// refreshSSHRelay recomputes the relay spec and pushes it to every connected
+// frontend node, best-effort: a failure logs but never fails the placement
+// operation that triggered it. A no-op unless the relay is enabled.
+func (m *Manager) refreshSSHRelay() {
+	if !m.config.SSHRelayEnabled {
+		return
+	}
+	ids := m.relayFrontendIDs()
+	if len(ids) == 0 {
+		return // no frontend has connected yet; it gets the spec on connect
+	}
+	spec, err := m.buildRelaySpec()
+	if err != nil {
+		slog.Warn("Cannot build SSH relay spec", "error", err)
+		return
+	}
+	for _, id := range ids {
+		agent := m.registry.Agent(id)
+		if agent == nil {
 			continue
 		}
-		wanted[a.Name] = true
-	}
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return nil
-	}
-	for _, e := range entries {
-		if !wanted[e.Name()] && !strings.HasSuffix(e.Name(), ".tmp") {
-			_ = os.Remove(filepath.Join(dir, e.Name()))
+		if err := agent.ApplyRelay(spec); err != nil {
+			slog.Warn("Cannot push SSH relay spec", "node", id, "error", err)
 		}
 	}
-	return nil
 }
 
-// refreshSSHRelay rewrites the relay files best-effort; a failure logs but never
-// fails the placement operation that triggered it.
-func (m *Manager) refreshSSHRelay() {
-	if err := m.WriteSSHRelayFiles(); err != nil {
-		slog.Warn("Cannot write SSH relay files", "error", err)
+// recordRelayFrontend notes that a node is a relay frontend and caches the
+// authorized_keys line for its relay key, added to remote apps' keys so the
+// frontend can ssh in as the app user. Reporting the key replaces control
+// reading it off a shared filesystem. Returns whether the line changed, so the
+// caller can re-reconcile remote nodes that synced before the key was known.
+func (m *Manager) recordRelayFrontend(nodeID, pubKey string) bool {
+	m.relayLineMu.Lock()
+	defer m.relayLineMu.Unlock()
+	if m.relayFrontends == nil {
+		m.relayFrontends = make(map[string]bool)
+	}
+	m.relayFrontends[nodeID] = true
+	line := "restrict,pty " + strings.TrimSpace(pubKey)
+	changed := line != m.relayLine
+	m.relayLine = line
+	return changed
+}
+
+// resyncRelayKeyToNodes re-pushes desired state to every connected non-frontend
+// node, so a remote app whose keys were synced before the frontend reported its
+// relay key gets the key added. Called only when the relay line first appears or
+// changes -- rare -- not on every refresh.
+func (m *Manager) resyncRelayKeyToNodes() {
+	nodes, err := m.store.Nodes()
+	if err != nil {
+		return
+	}
+	m.relayLineMu.Lock()
+	frontends := m.relayFrontends
+	m.relayLineMu.Unlock()
+	for _, n := range nodes {
+		if frontends[n.Name] {
+			continue // a frontend's own apps are colocated; they get no relay key
+		}
+		agent := m.registry.Agent(n.Name)
+		if agent == nil {
+			continue
+		}
+		if desired, err := m.DesiredState(n.Name); err == nil {
+			agent.Reconcile(desired)
+		}
 	}
 }
 
-// atomicWriteFile writes content to path via a temp file and rename, creating
-// the parent directory. An empty path is a no-op.
-func atomicWriteFile(path, content string, mode os.FileMode) error {
-	if path == "" {
-		return nil
+// relayFrontendIDs returns the node ids that have reported being relay frontends.
+func (m *Manager) relayFrontendIDs() []string {
+	m.relayLineMu.Lock()
+	defer m.relayLineMu.Unlock()
+	ids := make([]string, 0, len(m.relayFrontends))
+	for id := range m.relayFrontends {
+		ids = append(ids, id)
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
-		return err
-	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, []byte(content), mode); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
+	return ids
 }
 
 // relayKeyLine is the authorized_keys line for the relay key, added to REMOTE
-// apps' authorized_keys so the frontend can ssh in as the app user. Empty if the
-// relay is off or the public key cannot be read. Read once and cached.
+// apps' authorized_keys so the frontend can ssh in as the app user. Empty when
+// the relay is off, or until a frontend node has reported its relay public key.
 func (m *Manager) relayKeyLine() string {
-	if !m.config.SSHRelayEnabled || m.config.SSHRelayPublicKeyFile == "" {
+	if !m.config.SSHRelayEnabled {
 		return ""
 	}
 	m.relayLineMu.Lock()
 	defer m.relayLineMu.Unlock()
-	if m.relayLine != "" {
-		return m.relayLine // read once, successfully -- the key does not change under us
-	}
-	// Deliberately do NOT cache a failure: control can start before the deploy
-	// has generated the key, and a permanent empty cache would drop the relay
-	// key from every node's authorized_keys until the next restart.
-	data, err := os.ReadFile(m.config.SSHRelayPublicKeyFile)
-	if err != nil {
-		return ""
-	}
-	pub := strings.TrimSpace(string(data))
-	if pub == "" {
-		return ""
-	}
-	m.relayLine = "restrict,pty " + pub
 	return m.relayLine
 }
 

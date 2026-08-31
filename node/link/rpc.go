@@ -33,22 +33,23 @@ const (
 // rpcReq is the argument envelope for the JSON verbs. One struct for all of
 // them keeps the wire boring; every verb reads only its own fields.
 type rpcReq struct {
-	Name        string   `json:"name,omitempty"`
-	Path        string   `json:"path,omitempty"`
-	To          string   `json:"to,omitempty"`
-	Command     string   `json:"command,omitempty"`
-	Label       string   `json:"label,omitempty"`
-	ID          string   `json:"id,omitempty"`
-	Lines       int      `json:"lines,omitempty"`
-	Max         int64    `json:"max,omitempty"`
-	TimeoutSec  int      `json:"timeout_sec,omitempty"`
-	MemoryMB    int      `json:"memory_mb,omitempty"`
-	CPUMilli    int      `json:"cpu_milli,omitempty"`
-	DiskMB      int      `json:"disk_mb,omitempty"`
-	Auto        bool     `json:"auto,omitempty"`
-	AppKeys     []string `json:"app_keys,omitempty"`
-	ProfileKeys []string `json:"profile_keys,omitempty"`
-	Names       []string `json:"names,omitempty"`
+	Name        string         `json:"name,omitempty"`
+	Path        string         `json:"path,omitempty"`
+	To          string         `json:"to,omitempty"`
+	Command     string         `json:"command,omitempty"`
+	Label       string         `json:"label,omitempty"`
+	ID          string         `json:"id,omitempty"`
+	Lines       int            `json:"lines,omitempty"`
+	Max         int64          `json:"max,omitempty"`
+	TimeoutSec  int            `json:"timeout_sec,omitempty"`
+	MemoryMB    int            `json:"memory_mb,omitempty"`
+	CPUMilli    int            `json:"cpu_milli,omitempty"`
+	DiskMB      int            `json:"disk_mb,omitempty"`
+	Auto        bool           `json:"auto,omitempty"`
+	AppKeys     []string       `json:"app_keys,omitempty"`
+	ProfileKeys []string       `json:"profile_keys,omitempty"`
+	Names       []string       `json:"names,omitempty"`
+	Relay       *api.RelaySpec `json:"relay,omitempty"`
 }
 
 // rpcResp is the result envelope; Err/ErrCode carry failures (ErrCode maps
@@ -242,6 +243,7 @@ func RPCHandler(agent api.NodeAgent) http.Handler {
 	})
 	verb("fileexists", func(q *rpcReq) *rpcResp { return &rpcResp{OK: agent.FileExists(q.Name, q.Path)} })
 	verb("setkeys", func(q *rpcReq) *rpcResp { return okErr(agent.SetKeys(q.Name, q.AppKeys, q.ProfileKeys)) })
+	verb("applyrelay", func(q *rpcReq) *rpcResp { return okErr(agent.ApplyRelay(q.Relay)) })
 	// Rename rides Name (old), To (new) and ID; To is the same field movefile uses.
 	verb("rename", func(q *rpcReq) *rpcResp { return okErr(agent.Rename(q.Name, q.To, q.ID)) })
 	verb("setmemorylimit", func(q *rpcReq) *rpcResp { agent.SetMemoryLimit(q.Name, q.MemoryMB); return &rpcResp{OK: true} })

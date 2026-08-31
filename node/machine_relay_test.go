@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"heckel.io/hostit/node/api"
 	"heckel.io/hostit/store"
 	"heckel.io/hostit/system/btrfs"
 	"heckel.io/hostit/system/podman"
@@ -47,14 +48,33 @@ func (u *recordingUser) Delete(name string) error {
 }
 func (u *recordingUser) WriteSkeleton(string, map[string]string) error { return nil }
 
+// relayTestPaths points the frontend relay paths at a temp dir and marks the
+// node a frontend (writes the relay pubkey), restoring the package vars after.
+func relayTestPaths(t *testing.T) {
+	t.Helper()
+	base := t.TempDir()
+	saved := []*string{&relayRoutesPath, &relayKnownHostsPath, &relayKeysPath, &relayStubsPath, &relayPubKeyPath}
+	orig := make([]string, len(saved))
+	for i, p := range saved {
+		orig[i] = *p
+	}
+	t.Cleanup(func() {
+		for i, p := range saved {
+			*p = orig[i]
+		}
+	})
+	relayRoutesPath = filepath.Join(base, "ssh-routes")
+	relayKnownHostsPath = filepath.Join(base, "relay_known_hosts")
+	relayKeysPath = filepath.Join(base, "relay-keys")
+	relayStubsPath = filepath.Join(base, "relay-stubs")
+	relayPubKeyPath = filepath.Join(base, "relay_key.pub")
+	require.NoError(t, os.WriteFile(relayPubKeyPath, []byte("ssh-ed25519 FRONTEND relay\n"), 0644))
+}
+
 func newRelayTestMachine(t *testing.T, u unixuser.Interface) *Machine {
 	t.Helper()
 	conf := NewConfig()
 	conf.DataDir, conf.AppsDir = t.TempDir(), t.TempDir()
-	base := t.TempDir()
-	conf.SSHRoutesFile = filepath.Join(base, "ssh-routes")
-	conf.RelayKeysDir = filepath.Join(base, "relay-keys")
-	conf.RelayStubsDir = filepath.Join(base, "relay-stubs")
 	s, err := store.NewStore(filepath.Join(t.TempDir(), "node.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = s.Close() })
@@ -64,33 +84,60 @@ func newRelayTestMachine(t *testing.T, u unixuser.Interface) *Machine {
 	})
 }
 
-func TestReconcileRelayStubs(t *testing.T) {
+// TestApplyRelay drives the push path control now uses instead of shared files:
+// the spec arrives over the link, the node writes the local artifacts the relay
+// helper reads and reconciles the frontend stubs.
+func TestApplyRelay(t *testing.T) {
+	relayTestPaths(t)
 	u := &recordingUser{stubs: map[string]string{}}
 	m := newRelayTestMachine(t, u)
-	require.NoError(t, os.MkdirAll(m.config.RelayKeysDir, 0755))
-	write := func(p, c string) { require.NoError(t, os.WriteFile(p, []byte(c), 0644)) }
 
-	// Two routed apps, each with a keys file.
-	write(m.config.SSHRoutesFile, "shop\tnode2.ssh.example.com\nwiki\tnode2.ssh.example.com\n")
-	write(filepath.Join(m.config.RelayKeysDir, "shop"), "ssh-ed25519 AAAA shopper\n")
-	write(filepath.Join(m.config.RelayKeysDir, "wiki"), "ssh-ed25519 BBBB wikier\n")
+	// Two routed apps pushed with their keys.
+	spec := &api.RelaySpec{
+		Routes:     "shop\tnode2.ssh.example.com\nwiki\tnode2.ssh.example.com\n",
+		KnownHosts: "node2.ssh.example.com ssh-ed25519 HOSTKEY\n",
+		AppKeys: map[string]string{
+			"shop": "ssh-ed25519 AAAA shopper\n",
+			"wiki": "ssh-ed25519 BBBB wikier\n",
+		},
+	}
+	require.NoError(t, m.ApplyRelay(spec))
 
-	m.ReconcileRelayStubs()
+	// The helper's files were written locally.
+	routes, _ := os.ReadFile(relayRoutesPath)
+	require.Equal(t, spec.Routes, string(routes))
+	kh, _ := os.ReadFile(relayKnownHostsPath)
+	require.Equal(t, spec.KnownHosts, string(kh))
+
+	// A stub per routed app, serving that app's user keys.
 	require.ElementsMatch(t, []string{"shop", "wiki"}, u.created, "a stub per routed app")
-	ak, err := os.ReadFile(filepath.Join(m.config.RelayStubsDir, "shop", ".ssh", "authorized_keys"))
+	ak, err := os.ReadFile(filepath.Join(relayStubsPath, "shop", ".ssh", "authorized_keys"))
 	require.NoError(t, err)
-	require.Equal(t, "ssh-ed25519 AAAA shopper\n", string(ak), "stub serves the app's user keys")
+	require.Equal(t, "ssh-ed25519 AAAA shopper\n", string(ak))
 
-	// Revoke: shop's key file emptied -> stub authorized_keys emptied within a reconcile.
-	write(filepath.Join(m.config.RelayKeysDir, "shop"), "")
-	m.ReconcileRelayStubs()
-	ak, err = os.ReadFile(filepath.Join(m.config.RelayStubsDir, "shop", ".ssh", "authorized_keys"))
+	// Revoke: shop's keys emptied -> stub authorized_keys emptied.
+	spec.AppKeys["shop"] = ""
+	require.NoError(t, m.ApplyRelay(spec))
+	ak, err = os.ReadFile(filepath.Join(relayStubsPath, "shop", ".ssh", "authorized_keys"))
 	require.NoError(t, err)
 	require.Equal(t, "", string(ak), "revoked keys disappear from the frontend gate")
 
-	// wiki removed from routes -> its stub is deleted.
-	write(m.config.SSHRoutesFile, "shop\tnode2.ssh.example.com\n")
-	m.ReconcileRelayStubs()
+	// wiki dropped from the spec -> its stub and keys file are removed.
+	spec.Routes = "shop\tnode2.ssh.example.com\n"
+	delete(spec.AppKeys, "wiki")
+	require.NoError(t, m.ApplyRelay(spec))
 	require.Contains(t, u.deleted, "wiki")
 	require.NotContains(t, u.deleted, "shop")
+	_, err = os.Stat(filepath.Join(relayKeysPath, "wiki"))
+	require.True(t, os.IsNotExist(err), "the dropped app's keys file is pruned")
+}
+
+// TestApplyRelayNonFrontend confirms a node without a relay key ignores a push.
+func TestApplyRelayNonFrontend(t *testing.T) {
+	relayTestPaths(t)
+	require.NoError(t, os.Remove(relayPubKeyPath)) // not a frontend
+	u := &recordingUser{stubs: map[string]string{}}
+	m := newRelayTestMachine(t, u)
+	require.NoError(t, m.ApplyRelay(&api.RelaySpec{Routes: "shop\tn\n", AppKeys: map[string]string{"shop": "k\n"}}))
+	require.Empty(t, u.created, "a non-frontend node applies nothing")
 }

@@ -1,7 +1,6 @@
 package control
 
 import (
-	"os"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -30,13 +29,11 @@ func TestSSHRelayFiles(t *testing.T) {
 		kh, "one known_hosts line per distinct remote node that has a host key")
 }
 
-func TestWriteSSHRelayFilesRoundTrip(t *testing.T) {
+// buildRelaySpec is what control pushes to a frontend node over the link: the
+// routes, known_hosts and each remote app's authorized_keys.
+func TestBuildRelaySpec(t *testing.T) {
 	s := newTestServer(t)
-	dir := t.TempDir()
 	s.config.SSHRelayEnabled = true
-	s.config.SSHRelayRoutesFile = dir + "/ssh-routes"
-	s.config.SSHRelayKnownHostsFile = dir + "/relay_known_hosts"
-	s.config.SSHRelayKeysDir = dir + "/relay-keys"
 
 	st := s.apps.Store()
 	require.NoError(t, st.EnsureNode("node2", "10.0.0.2"))
@@ -46,34 +43,22 @@ func TestWriteSSHRelayFilesRoundTrip(t *testing.T) {
 	require.NoError(t, st.SetAppKeys("shop", []string{"ssh-ed25519 AAAA shopper-key"}))
 	require.NoError(t, st.AddApp(&store.App{Name: "blog", Port: 12002, Host: store.HostLocal}))
 
-	require.NoError(t, s.apps.WriteSSHRelayFiles())
-
-	routes, err := os.ReadFile(dir + "/ssh-routes")
+	spec, err := s.apps.buildRelaySpec()
 	require.NoError(t, err)
-	require.Equal(t, "shop\tnode2.ssh.example.com\n", string(routes))
-	kh, err := os.ReadFile(dir + "/relay_known_hosts")
-	require.NoError(t, err)
-	require.Equal(t, "node2.ssh.example.com ssh-ed25519 AAA node2\n", string(kh))
-	// The remote app's per-app keys file is written for its frontend stub; the
-	// colocated app gets none.
-	shopKeys, err := os.ReadFile(dir + "/relay-keys/shop")
-	require.NoError(t, err)
-	require.Contains(t, string(shopKeys), "shopper-key")
-	_, err = os.Stat(dir + "/relay-keys/blog")
-	require.True(t, os.IsNotExist(err), "colocated app has no relay keys file")
-
-	// Disabled -> no write (stale/removed handled by ansible, not here).
-	s.config.SSHRelayEnabled = false
-	require.NoError(t, s.apps.WriteSSHRelayFiles())
+	require.Equal(t, "shop\tnode2.ssh.example.com\n", spec.Routes)
+	require.Equal(t, "node2.ssh.example.com ssh-ed25519 AAA node2\n", spec.KnownHosts)
+	// The remote app's keys are in the spec for its frontend stub; the colocated
+	// app is not in the spec at all.
+	require.Contains(t, spec.AppKeys["shop"], "shopper-key")
+	_, ok := spec.AppKeys["blog"]
+	require.False(t, ok, "colocated app is not relayed")
 }
 
 func TestDesiredStateInjectsRelayKeyForRemoteNodesOnly(t *testing.T) {
 	s := newTestServer(t)
-	dir := t.TempDir()
 	pub := "ssh-ed25519 AAAARELAYPUBKEY hostit-relay"
-	require.NoError(t, os.WriteFile(dir+"/relay_key.pub", []byte(pub+"\n"), 0644))
 	s.config.SSHRelayEnabled = true
-	s.config.SSHRelayPublicKeyFile = dir + "/relay_key.pub"
+	s.apps.recordRelayFrontend("local", pub) // frontend reported its relay key
 
 	st := s.apps.Store()
 	require.NoError(t, st.AddApp(&store.App{Name: "shop", Port: 13001, Host: "node2"}))
@@ -97,20 +82,19 @@ func TestDesiredStateInjectsRelayKeyForRemoteNodesOnly(t *testing.T) {
 	require.NotContains(t, local.Apps[0].SSHKeys, relayLine, "colocated node does not get the relay key")
 }
 
-// Regression: relayKeyLine must not permanently cache an empty result. Control
-// can start before the deploy generates relay_key.pub; caching empty would drop
-// the relay key from every node until a restart (found live on stage).
-func TestRelayKeyLineDoesNotCacheEmpty(t *testing.T) {
+// relayKeyLine is empty until a frontend reports its pubkey, and gated by the
+// relay being enabled (a stale line must not leak when the relay is off).
+func TestRelayKeyLine(t *testing.T) {
 	s := newTestServer(t)
-	dir := t.TempDir()
 	s.config.SSHRelayEnabled = true
-	s.config.SSHRelayPublicKeyFile = dir + "/relay_key.pub" // absent for now
+	require.Equal(t, "", s.apps.relayKeyLine(), "no frontend has reported yet -> empty")
 
-	require.Equal(t, "", s.apps.relayKeyLine(), "no key file yet -> empty")
-
-	require.NoError(t, os.WriteFile(dir+"/relay_key.pub", []byte("ssh-ed25519 AAAAKEY hostit-relay\n"), 0644))
+	s.apps.recordRelayFrontend("local", "ssh-ed25519 AAAAKEY hostit-relay")
 	require.Equal(t, `restrict,pty ssh-ed25519 AAAAKEY hostit-relay`,
-		s.apps.relayKeyLine(), "key appears -> picked up without a restart")
+		s.apps.relayKeyLine(), "reported key is used")
+
+	s.config.SSHRelayEnabled = false
+	require.Equal(t, "", s.apps.relayKeyLine(), "off -> empty even with a reported key")
 }
 
 // The relay key must ride BOTH the mirror and the explicit SetKeys path (a key
@@ -118,10 +102,8 @@ func TestRelayKeyLineDoesNotCacheEmpty(t *testing.T) {
 // point; it adds the line for remote apps only, and only when the relay is on.
 func TestAppendRelayKey(t *testing.T) {
 	s := newTestServer(t)
-	dir := t.TempDir()
-	require.NoError(t, os.WriteFile(dir+"/relay_key.pub", []byte("ssh-ed25519 AAAAK hostit-relay\n"), 0644))
 	s.config.SSHRelayEnabled = true
-	s.config.SSHRelayPublicKeyFile = dir + "/relay_key.pub"
+	s.apps.recordRelayFrontend("local", "ssh-ed25519 AAAAK hostit-relay")
 
 	user := []string{"ssh-ed25519 AAAAUSER u"}
 	line := "restrict,pty ssh-ed25519 AAAAK hostit-relay"

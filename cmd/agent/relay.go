@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"heckel.io/hostit/system/relaypaths"
 	"os"
 	"os/exec"
 	"os/user"
@@ -14,12 +15,12 @@ import (
 
 const (
 	// relayRoutesFile maps a routed (remote) app to its node's SSH host. Written
-	// by control, world-readable (it holds no secret), read to decide local vs
+	// by the node (from control's pushed spec), world-readable, read to decide local vs
 	// relay. relayKeyFile is the credential and stays root-only.
-	relayRoutesFile     = "/var/lib/hostit/ssh-routes"
+	relayRoutesFile     = relaypaths.Routes
 	relayHelperFile     = "/usr/bin/hostit-relay"
 	relayKeyFile        = "/etc/hostit/relay_key"
-	relayKnownHostsFile = "/etc/hostit/relay_known_hosts"
+	relayKnownHostsFile = relaypaths.KnownHosts
 )
 
 // cmdRelay is the privileged inner hop of the relay gateway. It is reached only
