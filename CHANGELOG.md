@@ -7,6 +7,35 @@ changed rather than what an operator had to do about it; from v0.15.0 on, each
 release is written down as it is cut. Anything that changes a config file, a
 default, or on-disk state is called out as **Breaking** or **Upgrade note**.
 
+## v0.32.1 (2026-08-31)
+
+A security follow-up to v0.32.0: app containers can no longer reach the cloud
+metadata service or other apps' backends, and there is one operator flag to
+whitelist the internal destinations that apps legitimately need.
+
+- **App containers are cut off from internal networks by default.** A compromised
+  app could previously read the node's cloud metadata endpoint
+  (`169.254.169.254`) and dial another app's backend directly on the node IP,
+  bypassing the proxy's auth. Each node's firewall now drops app-container egress
+  (matched by the app's own uid) to link-local, all RFC1918 space, and CGNAT --
+  IPv4 (`169.254.0.0/16, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16,
+  100.64.0.0/10`) and IPv6 (`fc00::/7`, which covers AWS IMDS-over-IPv6, and
+  `fe80::/10`). Public egress and DNS via a loopback resolver are unaffected.
+- **One outbound allow-list.** The existing `outbound-allow-private-cidrs`
+  control flag (which governs hostit's own user-supplied fetches) now also drives
+  the node firewall and the preview screenshot container. Set it once, in ansible
+  via `hostit_outbound_allow_private_cidrs`, to the internal CIDRs your apps must
+  reach (a corporate service, a private DNS resolver); accepts are applied before
+  the drop, and both IPv4 and IPv6 CIDRs are honored. Whitelist NARROWLY -- a
+  whole node network re-exposes apps to each other.
+
+**Upgrade note.** No on-disk change and no manual step: deploy the new build and
+each node re-renders its firewall. If your apps rely on reaching an internal
+service or a private-IP DNS resolver, add its CIDR to
+`outbound-allow-private-cidrs` (ansible: `hostit_outbound_allow_private_cidrs`)
+BEFORE upgrading, or they will lose access to it. Installs whose resolver is a
+loopback stub (systemd-resolved `127.0.0.53`) or a public IP need nothing.
+
 ## v0.32.0 (2026-08-31)
 
 The role-partition release: every service runs as its own user and owns a
