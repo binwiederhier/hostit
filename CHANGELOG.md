@@ -31,14 +31,57 @@ shared file any more.
   non-blank frame instead of shooting once after a fixed delay, so a slow SPA or
   a canvas game no longer comes out blank or half-rendered.
 
-**Breaking / Upgrade note.** The node's app pool, `node.db` and workspace move
-from the bare `/var/lib/hostit` into `/var/lib/hostit/node` (the btrfs pool now
-mounts at `/var/lib/hostit/node/apps`). The upgrade migrates this in place --
-unmounting the pool, moving the loopback image, repointing every app-user home,
-and recreating each container at the new path -- which is a brief FULL app
-outage while it runs. The proxy's data dir moves to `/var/lib/hostit/proxy`, and
-the cluster member socket is now `0666` (its auth is the kernel-attested
-peer-cred gate, not the file mode). Idempotent and safe to re-run.
+**Breaking / Upgrade note.** On-disk layout changes: the node's app pool,
+`node.db` and workspace move from the bare `/var/lib/hostit` into
+`/var/lib/hostit/node` (the btrfs pool now mounts at `/var/lib/hostit/node/apps`),
+control's data dir is `/var/lib/hostit/control`, the proxy's is
+`/var/lib/hostit/proxy`, and each service's sockets live under
+`/run/hostit/<service>/`. The cluster member socket is `0666` (its auth is the
+kernel-attested peer-cred gate, not the file mode).
+
+**Upgrading an existing installation.** The Ansible role in `deploy/ansible`
+performs the whole migration for you -- deploy it and it runs automatically,
+idempotent and a no-op once migrated:
+
+    cd deploy/ansible
+    ./play <env> hostit -t hostit          # or your usual invocation
+
+What the migration does, in one pre-serve pass BEFORE the new services start
+(`roles/hostit/files/move-node-storage.sh`, run on each node host):
+
+  1. Creates the per-service users `hostit-control` and `hostit-proxy` and moves
+     control's/proxy's data + config + sockets under their own subdirs.
+  2. Stops the node and every `hostit-app@*` unit, so nothing races the move.
+  3. Unmounts the btrfs pool, moves the loopback image to
+     `/var/lib/hostit/node/apps.btrfs`, swaps in the
+     `var-lib-hostit-node-apps.mount` unit, and remounts at the new path.
+  4. Repoints every app user's home (`usermod -d`) to `/var/lib/hostit/node/apps`.
+  5. Starts the node, which recreates each app container at the new rootfs.
+
+This is a **brief FULL app outage** while the pool is unmounted (seconds to ~a
+minute, apps come back automatically). The script is SAFE BY CONSTRUCTION: it
+only ever MOVES the pool image (never deletes it), and it bails out before any
+destructive step if it cannot cleanly unmount -- leaving your data untouched for
+a manual retry. It is a no-op on a fresh install and idempotent on re-run. Take a
+snapshot/backup of `/var/lib/hostit` first if you want a safety net.
+
+**How to upgrade an existing install.** The ansible role does the whole
+migration; run it against each host: `./play <env> hostit -t hostit` (from the
+hostit ansible directory). In order it: creates the `hostit-control` and
+`hostit-proxy` users and re-owns control's data into `/var/lib/hostit/control`;
+runs the one-off storage move (`roles/hostit/files/move-node-storage.sh`, which
+stops the node, the per-app `hostit-app@*` units and the containers, unmounts the
+btrfs pool, moves the loopback image + `node.db` + `workspace` into
+`/var/lib/hostit/node`, remounts at `/var/lib/hostit/node/apps`, repoints every
+app-user home, and drops the old relay stubs); then renders the new per-service
+configs and restarts. Expect a brief FULL app outage during the storage move.
+The migration is idempotent and safe to re-run: it no-ops once the pool is at the
+new path, and it bails BEFORE any destructive step if it cannot cleanly unmount
+(so the data is never at risk). After it finishes, verify: `systemctl is-active
+hostit-control hostit-node hostit-proxy`; `findmnt /var/lib/hostit/node/apps`
+shows btrfs; the proxy logs `Connected to control`; and apps serve. For a manual
+(non-ansible) install, run the equivalent of `move-node-storage.sh` by hand and
+create the two service users; the script is self-contained and commented.
 
 ## v0.31.3 (2026-08-30)
 
