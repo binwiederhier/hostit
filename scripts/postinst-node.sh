@@ -7,6 +7,15 @@ set -e
 # refuses to start without a configured /etc/hostit/node/node.yml anyway.
 
 if [ "$1" = "configure" ] || [ "$1" -ge 1 ] 2>/dev/null; then
+  # Create the hostit-node system user and its /run dir from the shipped
+  # sysusers.d/tmpfiles.d, so a bare "dpkg -i" is self-contained (no Ansible).
+  # sysusers first: tmpfiles below chowns the dir to the user it creates.
+  if command -v systemd-sysusers >/dev/null 2>&1; then
+    systemd-sysusers /usr/lib/sysusers.d/hostit-node.conf || true
+  fi
+  if command -v systemd-tmpfiles >/dev/null 2>&1; then
+    systemd-tmpfiles --create /usr/lib/tmpfiles.d/hostit-node.conf || true
+  fi
   # Register the app-user login shell so chsh/sshd accept it, and drop the old
   # /usr/bin entry a previous release registered -- the shell moved off $PATH and
   # that binary no longer exists, so a stale /etc/shells line just misleads.

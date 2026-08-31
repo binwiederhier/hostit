@@ -108,6 +108,10 @@ nfpms:
         dst: /etc/hostit/node/node.yml.example
       - src: hostit-node.service
         dst: /lib/systemd/system/hostit-node.service
+      - src: scripts/sysusers/hostit-node.conf
+        dst: /usr/lib/sysusers.d/hostit-node.conf
+      - src: scripts/tmpfiles/hostit-node.conf
+        dst: /usr/lib/tmpfiles.d/hostit-node.conf
       - src: hostit-app@.service
         dst: /lib/systemd/system/hostit-app@.service
       # The container binary, deliberately OFF $PATH: it is bind-mounted into
@@ -176,6 +180,10 @@ nfpms:
         dst: /etc/hostit/control/control.yml.example
       - src: hostit-control.service
         dst: /lib/systemd/system/hostit-control.service
+      - src: scripts/sysusers/hostit-control.conf
+        dst: /usr/lib/sysusers.d/hostit-control.conf
+      - src: scripts/tmpfiles/hostit-control.conf
+        dst: /usr/lib/tmpfiles.d/hostit-control.conf
       - src: scripts/completion/hostit-control.bash
         dst: /usr/share/bash-completion/completions/hostit-control
       - src: scripts/completion/_hostit-control
@@ -202,6 +210,10 @@ nfpms:
         dst: /etc/hostit/proxy/proxy.yml.example
       - src: hostit-proxy.service
         dst: /lib/systemd/system/hostit-proxy.service
+      - src: scripts/sysusers/hostit-proxy.conf
+        dst: /usr/lib/sysusers.d/hostit-proxy.conf
+      - src: scripts/tmpfiles/hostit-proxy.conf
+        dst: /usr/lib/tmpfiles.d/hostit-proxy.conf
       - src: scripts/completion/hostit-proxy.bash
         dst: /usr/share/bash-completion/completions/hostit-proxy
       - src: scripts/completion/_hostit-proxy
