@@ -62,6 +62,10 @@ type Service struct {
 	// those ports too, so its uid is allowed alongside. 0 means the proxy is
 	// root (the default), which the { 0, ... } set already covers.
 	localProxyUID int
+	// allowCIDRs are internal destinations an app MAY reach despite the egress
+	// drop -- the operator's outbound allow-list (apps-egress-allow-cidrs), e.g. a
+	// corporate internal service or a private DNS resolver.
+	allowCIDRs []string
 }
 
 var _ Interface = (*Service)(nil)
@@ -70,14 +74,14 @@ var _ Interface = (*Service)(nil)
 // default local node), publishing on bindAddr (empty for loopback) and
 // admitting connections to published ports only from allowFrom. localProxyUID
 // is the uid a colocated unprivileged proxy runs as (0 = the proxy is root).
-func New(table string, bindAddr string, allowFrom []string, localProxyUID int) *Service {
-	return &Service{table: table, bindAddr: bindAddr, allowFrom: allowFrom, localProxyUID: localProxyUID}
+func New(table string, bindAddr string, allowFrom []string, localProxyUID int, allowCIDRs []string) *Service {
+	return &Service{table: table, bindAddr: bindAddr, allowFrom: allowFrom, localProxyUID: localProxyUID, allowCIDRs: allowCIDRs}
 }
 
 // Apply atomically replaces this node's nftables table: for each app port,
 // loopback connects are only allowed for root and the app's own uid.
 func (s *Service) Apply(rules []Rule) error {
-	ruleset := renderRuleset(s.table, rules, s.bindAddr, s.allowFrom, s.localProxyUID)
+	ruleset := renderRuleset(s.table, rules, s.bindAddr, s.allowFrom, s.localProxyUID, s.allowCIDRs)
 	f, err := os.CreateTemp("", "hostit-nft-*.conf")
 	if err != nil {
 		return err
@@ -98,7 +102,7 @@ func (s *Service) Apply(rules []Rule) error {
 
 // renderRuleset builds the nft ruleset that replaces the node's table, split
 // out so the generated rules can be tested without invoking nft.
-func renderRuleset(table string, rules []Rule, bindAddr string, allowFrom []string, localProxyUID int) string {
+func renderRuleset(table string, rules []Rule, bindAddr string, allowFrom []string, localProxyUID int, allowCIDRs []string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "add table inet %s\n", table)
 	fmt.Fprintf(&b, "flush table inet %s\n", table)
@@ -118,6 +122,12 @@ func renderRuleset(table string, rules []Rule, bindAddr string, allowFrom []stri
 	// traffic to the internal ranges (public egress is unaffected). Applies on a
 	// single-box install too, where the loopback rules above do not cover this.
 	if uids := appUIDs(rules); uids != "" {
+		// The operator's outbound allow-list punches holes for whitelisted internal
+		// destinations (corporate services, a private resolver). Whitelist NARROWLY:
+		// whitelisting a whole node network re-exposes apps to each other.
+		if len(allowCIDRs) > 0 {
+			fmt.Fprintf(&b, "add rule inet %s output meta skuid { %s } ip daddr { %s } counter accept\n", table, uids, strings.Join(allowCIDRs, ", "))
+		}
 		fmt.Fprintf(&b, "add rule inet %s output meta skuid { %s } ip daddr { %s } counter drop\n", table, uids, internalDropCIDRs)
 	}
 
