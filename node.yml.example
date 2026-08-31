@@ -34,3 +34,14 @@ control-url: "127.0.0.1:2930"
 data-dir: /var/lib/hostit/node
 apps-dir: /var/lib/hostit/node/apps
 socket-file: /run/hostit/node/app/hostit.sock
+
+# App-container egress allow-list. By default an app container cannot reach the
+# cloud metadata endpoint or any private network (link-local, RFC1918, CGNAT,
+# and their IPv6 equivalents) -- so it cannot read node credentials or dial
+# another app's backend. List the internal CIDRs your apps legitimately need
+# (a private API, a private-IP DNS resolver); accepts are applied before the
+# drop, both IPv4 and IPv6. Whitelist NARROWLY -- a whole node network re-exposes
+# apps to each other. Loopback-stub (127.0.0.53) or public DNS needs nothing here.
+# Set this to the SAME list as control's outbound-allow-private-cidrs.
+# outbound-allow-private-cidrs:
+#   - 10.20.0.0/24

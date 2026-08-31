@@ -52,3 +52,11 @@ hostit_btrfs: true
 # Optional single-hostname SSH relay so `ssh <app>@apps.example.com` reaches an
 # app on any node (EXPERIMENTAL; see docs/features/ssh-access.md):
 # hostit_ssh_relay: true
+
+# One outbound allow-list for everything hostit reaches on an account's behalf:
+# the app-container firewall, the preview container, and control's own fetches.
+# By default apps and fetches cannot reach the cloud metadata endpoint or any
+# private network. List internal CIDRs your apps/services legitimately need
+# (a private API, a private-IP DNS resolver). Whitelist NARROWLY.
+# hostit_outbound_allow_private_cidrs:
+#   - 10.20.0.0/24

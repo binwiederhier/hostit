@@ -23,3 +23,12 @@ ssh-host: "{{ hostit_ssh_host }}"
 # Prometheus metrics on a separate interface (unauthenticated -- keep it internal).
 listen-metrics: "{{ hostit_node_listen_metrics }}"
 {% endif %}
+
+{% if hostit_outbound_allow_private_cidrs | default([]) %}
+# Internal CIDRs an app container may reach despite the default egress block
+# (metadata + all private space). Same list as control's; see node.yml.example.
+outbound-allow-private-cidrs:
+{% for cidr in hostit_outbound_allow_private_cidrs %}
+  - {{ cidr }}
+{% endfor %}
+{% endif %}

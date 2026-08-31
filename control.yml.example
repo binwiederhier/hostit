@@ -108,6 +108,17 @@ admin-token: CHANGE-ME
 # app-preview-allow-cidrs:
 #   - 10.20.0.0/24
 
+# Outbound allow-list for URLs hostit fetches on a user's behalf (MCP servers,
+# a custom provider's OAuth issuer): by default a fetch that resolves into
+# private/loopback/link-local space is blocked -- that block is what stands
+# between an ordinary account and the cloud metadata service. List only the
+# internal ranges your own services live on. This is the one outbound allow-list:
+# set the node's outbound-allow-private-cidrs (app-container firewall) and, if you
+# use it, app-preview-allow-cidrs to the SAME value. A public address is always
+# allowed. Never 0.0.0.0/0, and never 169.254.169.254/32 without thinking hard.
+# outbound-allow-private-cidrs:
+#   - 192.168.1.0/24
+
 # Let the admin token mint a session cookie for an admin email without Google
 # (for end-to-end testing and recovery). Off by default.
 # breakglass: false

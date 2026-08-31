@@ -116,9 +116,10 @@ Two deliberate non-hardenings, both commented in the code:
 Each app's container port is published on host loopback only
 (`--publish 127.0.0.1:<port>:80`). Loopback is shared across the host, so without
 more, app A could connect to app B's published port at `127.0.0.1:<B-port>`. The
-firewall closes that (`firewall/service.go:renderRuleset`): one nftables table,
-`inet hostit`, atomically replaced on every change, with an output-hook rule per
-app port:
+firewall closes that (`system/nftables/service.go:renderRuleset`): each node
+owns its own nftables table (`inet hostit` on the default node, `inet
+hostit_<nodeid>` on a named one), atomically replaced on every change, with an
+output-hook rule per app port:
 
 ```
 add rule inet hostit output ip  daddr 127.0.0.0/8 tcp dport <port> meta skuid != { 0, <uid> } counter drop
@@ -131,11 +132,41 @@ published ports) or the **app's own base uid**. Both IPv4 (`127.0.0.0/8`) and
 IPv6 (`::1`) loopback are covered.
 
 The ruleset is rebuilt from the registry, not patched incrementally
-(`control/manager.go:ReconcilePortRules`): it lists every app, looks up each uid, and
+(`node/machine.go:ReconcilePortRules`): it lists every app, looks up each uid, and
 applies the full set. This runs on create, delete, and startup reconcile, so the
 rules always match the registry, and a failure (nft absent in a dev setup) is
 logged, not fatal. The rule is keyed to the uid, which is why the uid block and
 the port rule are two halves of the same boundary.
+
+## App egress: no metadata, no reaching internal networks
+
+The same per-node table (`system/nftables/service.go:renderRuleset`) also bounds
+where an app container may connect **out to**. A container's egress is NAT'd by
+slirp4netns and leaves the host sourced by the app's own base uid, so one rule
+per node -- keyed on that uid set -- drops it before it can reach anything
+internal:
+
+```
+add rule inet hostit output meta skuid { <app-uids> } ip  daddr { 169.254.0.0/16, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 100.64.0.0/10 } counter drop
+add rule inet hostit output meta skuid { <app-uids> } ip6 daddr { fc00::/7, fe80::/10 } counter drop
+```
+
+That closes two paths a compromised app would otherwise have: the **cloud
+metadata service** (`169.254.169.254` -- IAM/droplet credentials) and **every
+other app's backend on the node IP**. The cross-app reach is subtle: an app's
+egress SNATs to the node IP, which sits in a peer node's `allowFrom`, so the peer
+would admit it -- but since every node IP and app backend lives in private space,
+dropping app-uid egress to all of it cuts the reach *at the source*, before the
+packet leaves. Public egress and DNS via a loopback-stub resolver
+(`127.0.0.53`) are untouched; the drop set is link-local + RFC1918 + CGNAT (v4)
+and ULA + link-local (v6, so AWS IMDS-over-IPv6 at `fd00:ec2::254` is covered).
+
+An operator whose apps legitimately need an internal service (a private API, a
+private-IP DNS resolver) whitelists its CIDR with **`outbound-allow-private-cidrs`**
+-- the same flag that gates the daemon's own user-supplied fetches (MCP servers,
+custom OAuth issuers), reused here so there is one outbound allow-list. Accepts
+render before the drop, and v4/v6 entries go in their own sets. Whitelist
+NARROWLY: a whole node network re-exposes apps to each other.
 
 ## File operations: os.OpenRoot containment
 
@@ -285,7 +316,9 @@ The concrete threats this stops, called out in the template and the role's
 comment (`deploy/ansible/roles/hostit/tasks/main.yml`, "Harden sshd for app
 users"): with TCP forwarding a tenant could tunnel to the **cloud metadata
 service** (169.254.169.254, IAM credentials) or probe **host-local services** on
-loopback. `scp`/`sftp`/`rsync` are unaffected -- they are not forwarding. The
+loopback. (The node firewall now also drops app-container egress to the metadata
+endpoint and private space directly -- see "App egress" above -- so this is
+defense in depth, not the only guard.) `scp`/`sftp`/`rsync` are unaffected -- they are not forwarding. The
 trailing `Match all` resets the match context so the block does not swallow every
 global setting that follows it.
 

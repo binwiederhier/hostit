@@ -73,3 +73,17 @@ ssh-relay: true
 # Prometheus metrics on a separate interface (unauthenticated -- keep it internal).
 listen-metrics: "{{ hostit_control_listen_metrics }}"
 {% endif %}
+
+{% if hostit_outbound_allow_private_cidrs | default([]) %}
+# The one outbound allow-list, applied everywhere hostit reaches out on an
+# account's behalf: control's own user-supplied fetches (MCP/OAuth issuers), the
+# preview container, and each node's app-container firewall (node.yml, same key).
+outbound-allow-private-cidrs:
+{% for cidr in hostit_outbound_allow_private_cidrs %}
+  - {{ cidr }}
+{% endfor %}
+app-preview-allow-cidrs:
+{% for cidr in hostit_outbound_allow_private_cidrs %}
+  - {{ cidr }}
+{% endfor %}
+{% endif %}
