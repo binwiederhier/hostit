@@ -31,7 +31,7 @@ func testEngine() *Engine {
 	return &Engine{
 		hostitBin:  "/usr/local/bin/hostit",
 		socketFile: "/run/hostit/node/app/hostit.sock",
-		dataDir:    "/var/lib/hostit",
+		dataDir:    "/var/lib/hostit/node",
 	}
 }
 
@@ -249,7 +249,7 @@ func TestSandboxSessionLogKeysOnAppID(t *testing.T) {
 // the cmd split the daemon is hostit-control, which has no "mcp" command, and
 // mounting it silently broke the sandbox's only tool surface.
 func TestNewEngineMountsTheAgentBinary(t *testing.T) {
-	e := NewEngine("/run/hostit/node/app/hostit.sock", "/var/lib/hostit")
+	e := NewEngine("/run/hostit/node/app/hostit.sock", "/var/lib/hostit/node")
 	if e.hostitBin != workspace.HostBinFile {
 		t.Fatalf("sandbox mounts %q as the MCP bridge, want the agent binary %q", e.hostitBin, workspace.HostBinFile)
 	}

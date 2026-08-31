@@ -81,8 +81,8 @@ type Config struct {
 func NewConfig() *Config {
 	return &Config{
 		NodeID:         localNodeID,
-		DataDir:        "/var/lib/hostit",
-		AppsDir:        "/var/lib/hostit/apps",
+		DataDir:        "/var/lib/hostit/node",
+		AppsDir:        "/var/lib/hostit/node/apps",
 		SocketFile:     "/run/hostit/node/app/hostit.sock",
 		SSHHostKeyFile: "/etc/ssh/ssh_host_ed25519_key.pub",
 	}

@@ -30,7 +30,7 @@ apps-dir: /srv/apps
 	assert.Equal(t, "10.0.0.1:2930", conf.ControlURL)
 	assert.Equal(t, "/srv/apps", conf.AppsDir)
 	// Unset keys default rather than failing.
-	assert.Equal(t, "/var/lib/hostit", conf.DataDir)
+	assert.Equal(t, "/var/lib/hostit/node", conf.DataDir)
 	assert.Equal(t, "/run/hostit/node/app/hostit.sock", conf.SocketFile) // host path; scoped-mount subdir
 }
 
