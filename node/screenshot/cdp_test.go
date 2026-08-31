@@ -1,9 +1,14 @@
 package screenshot
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	stdimage "image"
+	"image/color"
+	"image/draw"
+	"image/png"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -121,4 +126,26 @@ func TestCaptureFailsWhenChromeNeverAnswers(t *testing.T) {
 	defer cancel()
 	_, err := capture(ctx, "http://127.0.0.1:1", "https://blog.example.com/", time.Second, nil)
 	require.Error(t, err)
+}
+
+func TestIsMostlyBlank(t *testing.T) {
+	// A helper to PNG-encode an image.
+	enc := func(img stdimage.Image) []byte {
+		var buf bytes.Buffer
+		require.NoError(t, png.Encode(&buf, img))
+		return buf.Bytes()
+	}
+	// All-white frame -> blank.
+	white := stdimage.NewRGBA(stdimage.Rect(0, 0, 100, 100))
+	draw.Draw(white, white.Bounds(), stdimage.NewUniform(color.White), stdimage.Point{}, draw.Src)
+	assert.True(t, isMostlyBlank(enc(white)), "an all-white frame is blank")
+
+	// White with a real content block -> not blank.
+	withContent := stdimage.NewRGBA(stdimage.Rect(0, 0, 100, 100))
+	draw.Draw(withContent, withContent.Bounds(), stdimage.NewUniform(color.White), stdimage.Point{}, draw.Src)
+	draw.Draw(withContent, stdimage.Rect(10, 10, 60, 60), stdimage.NewUniform(color.RGBA{20, 40, 80, 255}), stdimage.Point{}, draw.Src)
+	assert.False(t, isMostlyBlank(enc(withContent)), "a frame with a content block is not blank")
+
+	// Undecodable bytes -> treated as NOT blank (never waits out the budget on a quirk).
+	assert.False(t, isMostlyBlank([]byte("not a png")), "undecodable is treated as non-blank")
 }

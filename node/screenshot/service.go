@@ -49,14 +49,17 @@ const (
 	// screenshotTimeout bounds one whole shot -- chrome starting, the page
 	// loading, the settle, the capture -- so a hung page never stalls the queue.
 	screenshotTimeout = 120 * time.Second
-	// settleDelay is how long the page gets AFTER its load event before the
-	// capture, in real seconds. This is the fix for intermittent white cards:
-	// the old --virtual-time-budget was virtual, so chrome fast-forwarded
-	// timers and an animated page (a canvas, a game, a spinner) could exhaust a
-	// 60-second budget almost instantly and be shot before its images, fonts or
-	// first data arrived. Ten real seconds covers a framework's first render,
-	// fonts swapping in and an SPA's initial fetch.
-	settleDelay = 10 * time.Second
+	// settleDelay is the CEILING on the settle after the load event: the capture
+	// polls (see settlePoll) and returns as soon as two consecutive frames match
+	// and are non-blank -- the page has finished painting and stopped changing.
+	// A fixed delay could not do this; it shot whatever was on screen at one
+	// instant, so a still-painting page came out blank or half-rendered. Only a
+	// page that never settles (an animating game) waits the whole ceiling.
+	settleDelay = 20 * time.Second
+	// settlePoll is how often the settle re-captures to check the frame stopped
+	// changing; the shot returns as soon as two consecutive frames match, so a
+	// static page is quick and settleDelay is only the ceiling for a busy one.
+	settlePoll = 1500 * time.Millisecond
 	// readyTimeout bounds the preflight that checks the app is actually
 	// serving. An app whose container is up but whose server has not bound yet
 	// would otherwise be photographed as a connection error -- a white card

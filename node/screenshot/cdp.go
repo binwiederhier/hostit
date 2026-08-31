@@ -1,10 +1,12 @@
 package screenshot
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"image/png"
 	"net/http"
 	"time"
 
@@ -174,15 +176,45 @@ func capture(ctx context.Context, debugBase, pageURL string, settle time.Duratio
 		return nil, ctx.Err() // the whole shot was cancelled, not just the wait
 	}
 
-	// The settle: real seconds for the app to finish painting what the load
-	// event does not cover -- fonts swapping in, a framework's first render,
-	// images decoding, the data an SPA fetches after mount.
-	select {
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	case <-time.After(settle):
+	// The settle: poll for a STABLE frame instead of shooting once after a fixed
+	// delay. Capture every settlePoll and return the first frame identical to the
+	// one before it -- the page has stopped changing (finished its first render,
+	// fonts, images, the data an SPA fetches after mount). This is what a fixed
+	// delay could not do: it photographed whatever was on screen at one instant,
+	// so a still-painting page came out blank or HALF-rendered. A page that never
+	// settles (an animating game) yields its latest frame when the budget runs
+	// out. The poll never waits past the budget, so a short settle still returns
+	// a single quick shot.
+	deadline := time.Now().Add(settle)
+	var prev, cur []byte
+	for {
+		wait := settlePoll
+		if remaining := time.Until(deadline); remaining < wait {
+			wait = remaining
+		}
+		if wait > 0 {
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(wait):
+			}
+		}
+		cur, err = c.captureOnce(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if prev != nil && bytes.Equal(prev, cur) && !isMostlyBlank(cur) {
+			return cur, nil // two identical, non-blank frames: the page is painted and still
+		}
+		if !time.Now().Before(deadline) {
+			return cur, nil // budget spent; the latest frame is the best we have
+		}
+		prev = cur
 	}
+}
 
+// captureOnce takes one screenshot and returns the decoded PNG bytes.
+func (c *cdpConn) captureOnce(ctx context.Context) ([]byte, error) {
 	res, err := c.call(ctx, "Page.captureScreenshot", map[string]any{"format": "png"})
 	if err != nil {
 		return nil, err
@@ -201,6 +233,37 @@ func capture(ctx context.Context, debugBase, pageURL string, settle time.Duratio
 		return nil, fmt.Errorf("chrome returned an empty screenshot")
 	}
 	return png, nil
+}
+
+// isMostlyBlank reports whether a PNG is effectively a blank white frame -- what
+// chrome hands back before an app has painted, or when the shot could not reach
+// it. Used so the settle does not accept a stable-but-blank frame and stop early;
+// it keeps polling until the app paints or the budget runs out. An undecodable
+// image is treated as NOT blank, so a decode quirk never makes a shot wait out
+// the whole budget.
+func isMostlyBlank(pngBytes []byte) bool {
+	img, err := png.Decode(bytes.NewReader(pngBytes))
+	if err != nil {
+		return false
+	}
+	b := img.Bounds()
+	if b.Dx() == 0 || b.Dy() == 0 {
+		return true
+	}
+	// Sample a grid rather than every pixel -- enough to tell a blank frame from
+	// one with any content, at a fraction of the work.
+	const step = 8
+	var sampled, white int
+	for y := b.Min.Y; y < b.Max.Y; y += step {
+		for x := b.Min.X; x < b.Max.X; x += step {
+			r, g, bl, _ := img.At(x, y).RGBA() // 16-bit per channel
+			sampled++
+			if r >= 0xf800 && g >= 0xf800 && bl >= 0xf800 { // ~>= 248/255
+				white++
+			}
+		}
+	}
+	return sampled > 0 && white*1000/sampled >= 995 // >= 99.5% near-white
 }
 
 // send writes one command and returns its id, without waiting for the reply.
