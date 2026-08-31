@@ -12,10 +12,15 @@ docs/
   architecture/   # the system: components, isolation, request/lifecycle flows, code map
   features/       # feature catalog: one file per user-facing feature, fixed structure
   subsystems/     # deep dives into non-obvious internals (assistant, identity, security, ...)
+  testing/        # manual test plans (the human pass over the real browser + backend)
   slides/         # sli.dev presentations (tech overview + intro)
   development.md  # standing up an instance to develop against
   README.md       # this file
 ```
+
+The manual, feature-by-feature test plan we run against a live deployment is
+[`testing/feature-test-plan.md`](testing/feature-test-plan.md); the automated
+suite is in [`e2e/`](../e2e/).
 
 ## Releasing
 
