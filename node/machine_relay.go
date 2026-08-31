@@ -75,6 +75,9 @@ func (m *Machine) writeRelayKeys(appKeys map[string]string) error {
 		return err
 	}
 	for app, keys := range appKeys {
+		if !api.ValidName(app) {
+			continue // never let an unexpected name reach a root-level path/user op
+		}
 		if err := writeFileAtomic(filepath.Join(relayKeysPath, app), keys, 0644); err != nil {
 			slog.Warn("Cannot write a relay keys file", "app", app, "error", err)
 		}
@@ -118,6 +121,9 @@ func (m *Machine) ReconcileRelayStubs() {
 
 	// Ensure a stub + current keys for each routed app.
 	for app := range routed {
+		if !api.ValidName(app) {
+			continue // a stub is a real Unix user; never create one from an unexpected name
+		}
 		if err := m.ensureRelayStub(app); err != nil {
 			slog.Warn("Cannot ensure relay stub", "app", app, "error", err)
 		}

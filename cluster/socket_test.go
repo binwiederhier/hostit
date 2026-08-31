@@ -7,6 +7,8 @@ import (
 )
 
 func TestTrustedPeerUID(t *testing.T) {
+	saved := extraTrustedUIDs
+	t.Cleanup(func() { extraTrustedUIDs = saved })
 	// Control's own uid and root are always admitted.
 	if !trustedPeerUID(os.Getuid()) {
 		t.Error("control's own uid must be trusted")

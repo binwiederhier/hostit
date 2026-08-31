@@ -115,3 +115,13 @@ func TestAppendRelayKey(t *testing.T) {
 	s.config.SSHRelayEnabled = false
 	require.Equal(t, user, s.apps.appendRelayKey("node2", user), "off -> never")
 }
+
+// recordRelayFrontend returns whether the relay line changed -- the signal that
+// gates the one-time resync of remote nodes' keys. A regression here would drop
+// the resync (or run it every heartbeat).
+func TestRecordRelayFrontendChanged(t *testing.T) {
+	s := newTestServer(t)
+	require.True(t, s.apps.recordRelayFrontend("local", "ssh-ed25519 AAAA k"), "first report is a change")
+	require.False(t, s.apps.recordRelayFrontend("local", "ssh-ed25519 AAAA k"), "same key is not a change")
+	require.True(t, s.apps.recordRelayFrontend("local", "ssh-ed25519 BBBB k2"), "a new key is a change")
+}

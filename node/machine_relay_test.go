@@ -141,3 +141,49 @@ func TestApplyRelayNonFrontend(t *testing.T) {
 	require.NoError(t, m.ApplyRelay(&api.RelaySpec{Routes: "shop\tn\n", AppKeys: map[string]string{"shop": "k\n"}}))
 	require.Empty(t, u.created, "a non-frontend node applies nothing")
 }
+
+// A relay spec carrying a name that is not a valid app name must never reach a
+// root-level path/user op on the node (defense-in-depth behind control's own
+// create-time validation).
+func TestApplyRelayRejectsInvalidNames(t *testing.T) {
+	relayTestPaths(t)
+	u := &recordingUser{stubs: map[string]string{}}
+	m := newRelayTestMachine(t, u)
+	spec := &api.RelaySpec{
+		Routes: "../evil\tnode2\ngood\tnode2\n",
+		AppKeys: map[string]string{
+			"../evil": "ssh-ed25519 AAAA evil\n",
+			"good":    "ssh-ed25519 BBBB good\n",
+		},
+	}
+	require.NoError(t, m.ApplyRelay(spec))
+	require.Contains(t, u.created, "good", "the valid app gets a stub")
+	require.NotContains(t, u.created, "../evil", "an invalid name never becomes a stub user")
+	// No keys file escaped the relay-keys dir into its parent.
+	_, err := os.Stat(filepath.Join(filepath.Dir(relayKeysPath), "evil"))
+	require.True(t, os.IsNotExist(err), "an invalid name never writes outside the relay-keys dir")
+}
+
+// Security (F1): the node writes relay keys files and creates stub USERS as root,
+// so it must never act on an app name that is not a valid, safe login name -- a
+// bad name (e.g. path traversal) from a compromised control must be dropped here.
+func TestApplyRelayRejectsUnsafeNames(t *testing.T) {
+	relayTestPaths(t)
+	u := &recordingUser{stubs: map[string]string{}}
+	m := newRelayTestMachine(t, u)
+	spec := &api.RelaySpec{
+		Routes: "good\tnode2\n../evil\tnode2\n",
+		AppKeys: map[string]string{
+			"good":     "ssh-ed25519 AAAA ok\n",
+			"../evil":  "ssh-ed25519 BBBB traversal\n",
+			"bad name": "ssh-ed25519 CCCC space\n",
+		},
+	}
+	require.NoError(t, m.ApplyRelay(spec))
+	// The valid app got a keys file and a stub; the unsafe names did not.
+	_, err := os.Stat(filepath.Join(relayKeysPath, "good"))
+	require.NoError(t, err, "valid app keys file written")
+	_, err = os.Stat(filepath.Join(relayKeysPath, "../evil"))
+	require.True(t, os.IsNotExist(err), "traversal name must not write a keys file")
+	require.Equal(t, []string{"good"}, u.created, "only the valid app becomes a stub user")
+}

@@ -31,6 +31,10 @@ type fakeChrome struct {
 	// navigated records the URL the client asked for.
 	navigated chan string
 	pngBytes  []byte
+	// frames, when set, is returned one-per-capture (holding the last), so a test
+	// can exercise the settle's poll-until-stable-and-non-blank behavior.
+	frames   [][]byte
+	frameIdx int
 }
 
 func newFakeChrome(t *testing.T, fireLoad bool) *fakeChrome {
@@ -85,6 +89,15 @@ func newFakeChrome(t *testing.T, fireLoad bool) *fakeChrome {
 					reply(map[string]any{"method": "Page.loadEventFired", "params": map[string]any{}})
 				}
 			case "Page.captureScreenshot":
+				if len(f.frames) > 0 {
+					i := f.frameIdx
+					if i >= len(f.frames) {
+						i = len(f.frames) - 1
+					}
+					f.frameIdx++
+					reply(map[string]any{"id": msg.ID, "result": map[string]any{"data": base64.StdEncoding.EncodeToString(f.frames[i])}})
+					continue
+				}
 				reply(map[string]any{"id": msg.ID, "result": map[string]any{
 					"data": base64.StdEncoding.EncodeToString(f.pngBytes),
 				}})
@@ -148,4 +161,35 @@ func TestIsMostlyBlank(t *testing.T) {
 
 	// Undecodable bytes -> treated as NOT blank (never waits out the budget on a quirk).
 	assert.False(t, isMostlyBlank([]byte("not a png")), "undecodable is treated as non-blank")
+}
+
+// TestCaptureWaitsForStableNonBlankFrame is the core of the settle change: the
+// shot must skip blank frames and return the first frame that both matches the
+// prior one (page stopped changing) and is non-blank.
+func TestCaptureWaitsForStableNonBlankFrame(t *testing.T) {
+	enc := func(img stdimage.Image) []byte {
+		var buf bytes.Buffer
+		require.NoError(t, png.Encode(&buf, img))
+		return buf.Bytes()
+	}
+	white := stdimage.NewRGBA(stdimage.Rect(0, 0, 60, 60))
+	draw.Draw(white, white.Bounds(), stdimage.NewUniform(color.White), stdimage.Point{}, draw.Src)
+	content := stdimage.NewRGBA(stdimage.Rect(0, 0, 60, 60))
+	draw.Draw(content, content.Bounds(), stdimage.NewUniform(color.White), stdimage.Point{}, draw.Src)
+	draw.Draw(content, stdimage.Rect(5, 5, 40, 40), stdimage.NewUniform(color.RGBA{10, 20, 30, 255}), stdimage.Point{}, draw.Src)
+	W, C := enc(white), enc(content)
+
+	// blank, then painting, then stable-and-painted: must return the content frame.
+	f := newFakeChrome(t, true)
+	f.frames = [][]byte{W, W, C, C}
+	got, err := capture(context.Background(), f.server.URL, "https://x/", 5*time.Second, nil)
+	require.NoError(t, err)
+	require.Equal(t, C, got, "returns the stable non-blank frame, not a blank one")
+
+	// A page that keeps changing yields its latest frame at the budget.
+	f2 := newFakeChrome(t, true)
+	f2.frames = [][]byte{C, W, C, W, C} // never two-in-a-row equal
+	got2, err := capture(context.Background(), f2.server.URL, "https://x/", 400*time.Millisecond, nil)
+	require.NoError(t, err)
+	require.NotEmpty(t, got2, "a never-stable page still returns its latest frame")
 }
