@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	xssh "golang.org/x/crypto/ssh"
 	"heckel.io/hostit/node/api"
 	"heckel.io/hostit/store"
 	"heckel.io/hostit/system/btrfs"
@@ -18,9 +19,10 @@ import (
 
 // recordingUser tracks stub create/delete and reports the current accounts.
 type recordingUser struct {
-	stubs   map[string]string // name -> home
-	created []string
-	deleted []string
+	stubs    map[string]string // name -> home
+	created  []string
+	deleted  []string
+	setHomes map[string]string // name -> new home, from SetHome
 }
 
 func (u *recordingUser) Exists(name string) bool { _, ok := u.stubs[name]; return ok }
@@ -40,7 +42,14 @@ func (u *recordingUser) CreateStub(name, home string) error {
 	return nil
 }
 func (u *recordingUser) Rename(string, string) error { return nil }
-func (u *recordingUser) KillProcesses(string) error  { return nil }
+func (u *recordingUser) SetHome(name, home string) error {
+	if u.setHomes == nil {
+		u.setHomes = map[string]string{}
+	}
+	u.setHomes[name] = home
+	return nil
+}
+func (u *recordingUser) KillProcesses(string) error { return nil }
 func (u *recordingUser) Delete(name string) error {
 	delete(u.stubs, name)
 	u.deleted = append(u.deleted, name)
@@ -53,7 +62,7 @@ func (u *recordingUser) WriteSkeleton(string, map[string]string) error { return 
 func relayTestPaths(t *testing.T) {
 	t.Helper()
 	base := t.TempDir()
-	saved := []*string{&relayRoutesPath, &relayKnownHostsPath, &relayKeysPath, &relayStubsPath, &relayPubKeyPath}
+	saved := []*string{&relayRoutesPath, &relayKnownHostsPath, &relayKeysPath, &relayStubsPath, &relayKeyPath, &relayPubKeyPath}
 	orig := make([]string, len(saved))
 	for i, p := range saved {
 		orig[i] = *p
@@ -67,6 +76,7 @@ func relayTestPaths(t *testing.T) {
 	relayKnownHostsPath = filepath.Join(base, "relay_known_hosts")
 	relayKeysPath = filepath.Join(base, "relay-keys")
 	relayStubsPath = filepath.Join(base, "relay-stubs")
+	relayKeyPath = filepath.Join(base, "relay_key")
 	relayPubKeyPath = filepath.Join(base, "relay_key.pub")
 	require.NoError(t, os.WriteFile(relayPubKeyPath, []byte("ssh-ed25519 FRONTEND relay\n"), 0644))
 }
@@ -186,4 +196,62 @@ func TestApplyRelayRejectsUnsafeNames(t *testing.T) {
 	_, err = os.Stat(filepath.Join(relayKeysPath, "../evil"))
 	require.True(t, os.IsNotExist(err), "traversal name must not write a keys file")
 	require.Equal(t, []string{"good"}, u.created, "only the valid app becomes a stub user")
+}
+
+// TestEnsureRelayKey verifies the node generates its relay keypair on disk (so
+// the deploy no longer runs ssh-keygen): a valid, root-only OpenSSH private key
+// plus a matching public key, and idempotent on a second call.
+func TestEnsureRelayKey(t *testing.T) {
+	base := t.TempDir()
+	origKey, origPub := relayKeyPath, relayPubKeyPath
+	t.Cleanup(func() { relayKeyPath, relayPubKeyPath = origKey, origPub })
+	relayKeyPath = filepath.Join(base, "relay_key")
+	relayPubKeyPath = filepath.Join(base, "relay_key.pub")
+
+	m := &Machine{}
+	require.NoError(t, m.EnsureRelayKey())
+
+	// Private key: exists, root-only, parses as an OpenSSH key.
+	info, err := os.Stat(relayKeyPath)
+	require.NoError(t, err)
+	require.Equal(t, os.FileMode(0600), info.Mode().Perm())
+	keyPEM, err := os.ReadFile(relayKeyPath)
+	require.NoError(t, err)
+	signer, err := xssh.ParsePrivateKey(keyPEM)
+	require.NoError(t, err)
+
+	// Public key file matches the private key's public half.
+	pubData, err := os.ReadFile(relayPubKeyPath)
+	require.NoError(t, err)
+	parsedPub, _, _, _, err := xssh.ParseAuthorizedKey(pubData)
+	require.NoError(t, err)
+	require.Equal(t, signer.PublicKey().Marshal(), parsedPub.Marshal())
+
+	// Idempotent: a second call does not replace the existing key.
+	require.NoError(t, m.EnsureRelayKey())
+	keyPEM2, err := os.ReadFile(relayKeyPath)
+	require.NoError(t, err)
+	require.Equal(t, keyPEM, keyPEM2)
+}
+
+// TestHealAppHome verifies the node repoints an app account whose /etc/passwd
+// home is stale (the raw-view path moved under the run dir), so sshd finds its
+// authorized_keys again -- and leaves an already-correct home alone.
+func TestHealAppHome(t *testing.T) {
+	u := &recordingUser{stubs: map[string]string{}}
+	m := newRelayTestMachine(t, u)
+	m.rawAppsDir = "/run/hostit/node/apps-raw"
+
+	// A home from before the raw view moved under /node/ gets corrected.
+	changed, err := m.healAppHome("shop", "abc123", "/run/hostit/apps-raw/abc123/home/app")
+	require.NoError(t, err)
+	require.True(t, changed)
+	require.Equal(t, "/run/hostit/node/apps-raw/abc123/home/app", u.setHomes["shop"])
+
+	// A home already at the current path is left untouched.
+	u.setHomes = nil
+	changed, err = m.healAppHome("wiki", "def456", "/run/hostit/node/apps-raw/def456/home/app")
+	require.NoError(t, err)
+	require.False(t, changed)
+	require.Empty(t, u.setHomes)
 }

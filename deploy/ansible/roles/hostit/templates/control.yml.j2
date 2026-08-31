@@ -2,6 +2,11 @@
 # All options and their defaults: see control.yml.example in the hostit source.
 
 base-domain: {{ hostit_domain }}
+
+# Control's own data dir (registry, per-app certs, cluster CA). The unprivileged
+# hostit-control user owns it via the unit's StateDirectory; leaving it unset
+# would default to /var/lib/hostit, which control cannot write to as non-root.
+data-dir: /var/lib/hostit/control
 admin-token: {{ hostit_admin_token }}
 tls: letsencrypt
 {% if hostit_letsencrypt_email %}

@@ -120,9 +120,11 @@ colocated app is entered locally exactly as before. `ssh`, `scp`, `rsync` and
 hostit_ssh_relay: true
 ```
 
-That generates a relay key (`/etc/hostit/relay_key`, root-only), grants the
-`hostit-apps` group sudo to the relay helper, and makes control write the routing
-files. No extra port and no SSH daemon of hostit's own -- it rides the system
+That grants the `hostit-apps` group sudo to the relay helper and makes control
+write the routing files. The frontend node (the colocated one, which is where the
+base domain resolves) generates its own relay key (`/var/lib/hostit/node/relay_key`,
+root-only) on startup and reports the public half to control -- no ssh-keygen in
+the deploy. No extra port and no SSH daemon of hostit's own -- it rides the system
 `sshd`.
 
 Trade-offs, deliberately accepted: the control host terminates the outer SSH and

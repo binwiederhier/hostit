@@ -46,6 +46,7 @@ func (nopUser) Create(username, home string, uid int) error { return nil }
 func (nopUser) CreateStub(username, home string) error      { return nil }
 
 func (nopUser) Rename(oldName, newName string) error { return nil }
+func (nopUser) SetHome(username, home string) error  { return nil }
 
 func (nopUser) KillProcesses(username string) error { return nil }
 

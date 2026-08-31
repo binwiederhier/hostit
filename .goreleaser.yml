@@ -139,10 +139,6 @@ nfpms:
         dst: /usr/lib/hostit/bin/hostit-relay
         file_info:
           mode: 0755
-      - src: hostit-relay
-        dst: /usr/bin/hostit-relay
-        file_info:
-          mode: 0755
       - src: hostit.sudoers
         dst: /etc/sudoers.d/hostit
         type: "config|noreplace"

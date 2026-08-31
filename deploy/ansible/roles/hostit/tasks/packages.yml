@@ -1,0 +1,44 @@
+---
+
+# What every hostit host needs regardless of role: its component .deb packages,
+# staged to /tmp. The dpkg install itself lives in each component's task file,
+# because the node package depends on the container runtime that only node.yml
+# installs (control and proxy have none). hostit ships one .deb per component,
+# all cut from one release so their versions match; this single-box role stages
+# all three (control, node, proxy) and each component installs its own below.
+
+# One name for each package's file, used by the download, the copy and the
+# per-component install, so they can never disagree about what they are handling.
+- name: Name the package files
+  ansible.builtin.set_fact:
+    hostit_deb_release: "{{ hostit_deb_dir | length > 0 and hostit_deb_version or 'v' + hostit_version }}"
+
+- name: Stage the package paths
+  ansible.builtin.set_fact:
+    hostit_deb_files: >-
+      {{ hostit_packages | map('regex_replace', '$', '_' + hostit_deb_release + '_linux_' + hostit_arch + '.deb') | list }}
+
+- name: Download the hostit {{ hostit_version }} release packages
+  ansible.builtin.get_url:
+    url: "https://github.com/binwiederhier/hostit/releases/download/v{{ hostit_version }}/{{ item }}"
+    dest: "/tmp/{{ item }}"
+    mode: "0644"
+  loop: "{{ hostit_deb_files }}"
+  register: hostit_deb_remote
+  when: hostit_deb_dir | length == 0
+
+- name: Copy locally built hostit packages (development override)
+  ansible.builtin.copy:
+    src: "{{ hostit_deb_dir }}/{{ item }}"
+    dest: "/tmp/{{ item }}"
+    mode: "0644"
+  loop: "{{ hostit_deb_files }}"
+  register: hostit_deb_copy
+  when: hostit_deb_dir | length > 0
+
+# Whether any component .deb changed this run. They are cut and versioned
+# together, so a release bump restages them all at once; each component gates its
+# own dpkg install on this and reinstalls only when the .deb actually changed.
+- name: Note whether the staged packages changed
+  ansible.builtin.set_fact:
+    hostit_debs_changed: "{{ (hostit_deb_remote is changed) or (hostit_deb_copy is changed) }}"

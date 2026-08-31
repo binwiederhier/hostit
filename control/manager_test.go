@@ -337,6 +337,7 @@ func (f *fakeSystem) KillProcesses(username string) error {
 
 // Rename moves all the fake's per-user state from the old login name to the
 // new one, so lookups keep working after a rename just as the real usermod -l does.
+func (f *fakeSystem) SetHome(string, string) error { return nil }
 func (f *fakeSystem) Rename(oldName, newName string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()

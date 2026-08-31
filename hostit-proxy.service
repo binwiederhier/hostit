@@ -13,6 +13,16 @@ ExecStart=/usr/bin/hostit-proxy serve
 Restart=on-failure
 RestartSec=2
 
+# Run unprivileged. Its only privilege is binding :443/:80 -- a single
+# capability, not a reason to be root. StateDirectory creates + owns
+# /var/lib/hostit/proxy (0700; it caches TLS key material) as this user.
+User=hostit-proxy
+Group=hostit-proxy
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+StateDirectory=hostit/proxy
+StateDirectoryMode=0700
+
 # The data plane must never lose the CPU to a runaway app; same rationale as
 # the hostit daemon's weights.
 CPUWeight=10000

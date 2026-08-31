@@ -18,8 +18,8 @@ const (
 	// by the node (from control's pushed spec), world-readable, read to decide local vs
 	// relay. relayKeyFile is the credential and stays root-only.
 	relayRoutesFile     = relaypaths.Routes
-	relayHelperFile     = "/usr/bin/hostit-relay"
-	relayKeyFile        = "/etc/hostit/relay_key"
+	relayHelperFile     = "/usr/lib/hostit/bin/hostit-relay"
+	relayKeyFile        = relaypaths.Key
 	relayKnownHostsFile = relaypaths.KnownHosts
 )
 

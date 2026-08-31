@@ -13,6 +13,17 @@ ExecStart=/usr/bin/hostit-control serve
 Restart=on-failure
 RestartSec=2
 
+# Run unprivileged. Control does no machine work and binds no privileged port
+# (hostit-proxy owns :443/:80). systemd-journal lets the admin "logs" view read
+# control's journal. StateDirectory creates + owns /var/lib/hostit/control (the
+# default data-dir) as this user -- no Ansible step needed. (If you point
+# data-dir elsewhere, own that path yourself and drop StateDirectory.)
+User=hostit-control
+Group=hostit-control
+SupplementaryGroups=systemd-journal
+StateDirectory=hostit/control
+StateDirectoryMode=0700
+
 # An app can saturate the box -- a build, a busy loop, a fork bomb inside its own
 # process cap. Containers compete fairly with each other by default, but the
 # control plane must not be one of the competitors: without this, the dashboard

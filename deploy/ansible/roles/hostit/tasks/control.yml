@@ -1,0 +1,54 @@
+---
+
+# The control plane: the registry, web app and REST API. On this single-box
+# install it orchestrates the colocated node and proxy, which reach it over the
+# /run/hostit socket. It runs as the unprivileged hostit-control user, baked into
+# the shipped unit, which also owns /var/lib/hostit/control via StateDirectory --
+# so there is no user or ownership step here.
+
+# hostit itself uses a pure-Go SQLite driver, but the off-box backup shells out
+# to sqlite3 to take a consistent hot copy of hostit.db, which lives in control's
+# data dir. Only the control host has the DB, so the tool belongs with control.
+- name: Install sqlite3 (off-box hot-backup of hostit.db)
+  ansible.builtin.apt:
+    name: sqlite3
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+# dpkg -i (not the apt module): same-version rebuilds are common while iterating,
+# and apt would treat them as already installed. --force-confold keeps managed
+# configs instead of prompting on upgrade. The control package has no
+# dependencies of its own; its postinst creates the hostit-control user that
+# owns the config file written below.
+- name: Install the hostit-control package
+  ansible.builtin.command: "dpkg -i --force-confold /tmp/hostit-control_{{ hostit_deb_release }}_linux_{{ hostit_arch }}.deb"
+  when: hostit_debs_changed | default(false)
+  notify: restart hostit-control
+
+# Owned by hostit-control (mode 0600) so the unprivileged daemon can read its own
+# config. The user exists by now -- the deb's sysusers.d created it on install.
+- name: Install /etc/hostit/control/control.yml
+  ansible.builtin.template:
+    src: control.yml.j2
+    dest: /etc/hostit/control/control.yml
+    owner: hostit-control
+    group: hostit-control
+    mode: "0600"
+  notify: restart hostit-control
+
+# The single-hostname SSH relay gateway lives on the control host (the colocated
+# node is always the frontend, since the base domain resolves here). Grants
+# hostit-apps sudo to the relay helper; the node auto-generates the relay key.
+- name: Set up the SSH relay gateway
+  ansible.builtin.import_tasks: relay.yml
+  when: hostit_ssh_relay | default(false)
+
+# Control starts first: it holds the registry, decides, and mints the colocated
+# members' credentials. The node and proxy that follow dial the socket it opens.
+- name: Enable and start hostit-control
+  ansible.builtin.systemd:
+    name: hostit-control
+    enabled: true
+    state: started
+    daemon_reload: true

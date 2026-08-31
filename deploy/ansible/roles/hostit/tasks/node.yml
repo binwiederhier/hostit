@@ -1,0 +1,73 @@
+---
+
+# The machine half: this host runs app containers, their unix users, btrfs
+# subvolumes and port rules. It runs as ROOT (it does the privileged machine
+# work) and dials the colocated control over the /run/hostit socket. Everything
+# a node needs -- and nothing a control-only or proxy-only host would -- lives
+# here: the container runtime, crun, the app-homes btrfs and the sshd hardening.
+
+# hostit drives podman as root, giving each app container its own uid map
+# (container root is an unprivileged host uid), its own network namespace
+# (passt/slirp4netns) and nftables rules pinning its port to its uid. uidmap is
+# needed for the id-mapped container filesystems.
+- name: Install podman and container dependencies
+  ansible.builtin.apt:
+    name:
+      - podman
+      - uidmap
+      - passt
+      - slirp4netns
+      - dbus-user-session
+      - nftables
+      - openssh-server
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+# dpkg -i (not the apt module): same-version rebuilds are common while iterating,
+# and apt would treat them as already installed. --force-confold keeps managed
+# configs instead of prompting on upgrade. The node package Depends on the
+# container runtime above, so it installs only after that; its postinst creates
+# the hostit-node user and the app login shell/sudoers.
+- name: Install the hostit-node package
+  ansible.builtin.command: "dpkg -i --force-confold /tmp/hostit-node_{{ hostit_deb_release }}_linux_{{ hostit_arch }}.deb"
+  when: hostit_debs_changed | default(false)
+  notify: restart hostit-node
+
+# Static crun for idmapped --rootfs (the distro crun is too old for hostit).
+- name: Set up crun for idmapped rootfs
+  ansible.builtin.import_tasks: node_crun.yml
+
+# Put app homes on a btrfs loopback (snapshots and hard quotas are core, so the
+# node's preflight refuses to start unless apps-dir is btrfs).
+- name: Set up the app-homes btrfs
+  ansible.builtin.import_tasks: node_btrfs.yml
+  tags: [btrfs]
+
+# An app login must not become a tunnel into the host: without this, a tenant can
+# forward to the cloud metadata service or probe host-local services.
+- name: Harden sshd for app users
+  ansible.builtin.template:
+    src: sshd-hostit-apps.conf.j2
+    dest: /etc/ssh/sshd_config.d/10-hostit-apps.conf
+    owner: root
+    group: root
+    mode: "0644"
+    validate: "sshd -t -f %s"
+  notify: restart ssh
+
+- name: Install /etc/hostit/node/node.yml
+  ansible.builtin.template:
+    src: node.yml.j2
+    dest: /etc/hostit/node/node.yml
+    owner: root
+    group: root
+    mode: "0600"
+  notify: restart hostit-node
+
+- name: Enable and start hostit-node
+  ansible.builtin.systemd:
+    name: hostit-node
+    enabled: true
+    state: started
+    daemon_reload: true

@@ -56,9 +56,6 @@ type Config struct {
 	// remote node must set its own reachable address or its apps' SSH lands on
 	// control, where the app user does not exist.
 	SSHHost string `yaml:"ssh-host"`
-	// SSHHostKeyFile is this node's sshd public host key, reported to control for
-	// the relay gateway's known_hosts. Defaults to the standard ed25519 host key.
-	SSHHostKeyFile string `yaml:"ssh-host-key-file"`
 	// ListenMetrics is an optional Prometheus /metrics listener (empty = off).
 	ListenMetrics string `yaml:"listen-metrics"`
 	// AppsAllowedAddresses are the addresses allowed to reach a published app
@@ -90,11 +87,10 @@ type Config struct {
 // dial has none.
 func NewConfig() *Config {
 	return &Config{
-		NodeID:         localNodeID,
-		DataDir:        "/var/lib/hostit/node",
-		AppsDir:        "/var/lib/hostit/node/apps",
-		SocketFile:     "/run/hostit/node/app/hostit.sock",
-		SSHHostKeyFile: "/etc/ssh/ssh_host_ed25519_key.pub",
+		NodeID:     localNodeID,
+		DataDir:    "/var/lib/hostit/node",
+		AppsDir:    "/var/lib/hostit/node/apps",
+		SocketFile: "/run/hostit/node/app/hostit.sock",
 	}
 }
 

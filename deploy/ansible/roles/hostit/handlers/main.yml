@@ -6,6 +6,12 @@
     state: restarted
     daemon_reload: true
 
+- name: restart hostit-node
+  ansible.builtin.systemd:
+    name: hostit-node
+    state: restarted
+    daemon_reload: true
+
 - name: restart hostit-proxy
   ansible.builtin.systemd:
     name: hostit-proxy

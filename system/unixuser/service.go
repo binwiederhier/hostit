@@ -48,6 +48,10 @@ type Interface interface {
 	// block): a relay-gateway frontend stub that owns nothing but its keys.
 	CreateStub(username, home string) error
 	Rename(oldName, newName string) error
+	// SetHome updates a user's home in /etc/passwd WITHOUT moving files: an app's
+	// home is the raw-view path, which can move under the run dir between releases,
+	// so an existing account can end up pointing at a path sshd cannot read.
+	SetHome(username, home string) error
 	KillProcesses(username string) error
 	Delete(username string) error
 	WriteSkeleton(home string, files map[string]string) error
@@ -169,6 +173,13 @@ func createUserArgs(username, home string, uid int, shell, group string) []strin
 // is cheap and safe to do while the app keeps running. It also renames the user's
 // primary group to match, so a later delete (which removes the group by the user's
 // name) does not leave an orphan gid behind that would block reusing the freed port.
+// SetHome repoints an app user's home (usermod --home, no --move-home: the files
+// live at a bind mount, not the literal path, so nothing is moved). Cheap and
+// safe while the app runs; used to heal a home stranded by a raw-view path move.
+func (s *Service) SetHome(username, home string) error {
+	return run("usermod", "--home", home, username)
+}
+
 func (s *Service) Rename(oldName, newName string) error {
 	if err := run("usermod", "--login", newName, oldName); err != nil {
 		return err

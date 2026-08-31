@@ -2,7 +2,7 @@
 
 # Which hostit release to install, from the public GitHub releases:
 #   https://github.com/binwiederhier/hostit/releases
-hostit_version: "0.24.0"
+hostit_version: "0.33.0"
 
 # hostit ships one package per component. All three go on a single-box install:
 # the node package is what carries the `hostit` CLI, the per-app systemd unit,

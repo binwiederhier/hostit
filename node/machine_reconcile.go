@@ -31,10 +31,35 @@ func (m *Machine) Reconcile(desired *api.DesiredState) []string {
 	return removed
 }
 
+// healAppHome corrects an app account whose /etc/passwd home no longer matches
+// where its files are served from -- a home stranded when the raw-view path moved
+// under the run dir between releases, which leaves sshd reading authorized_keys
+// from a path that no longer exists. Reports whether it changed anything.
+func (m *Machine) healAppHome(name, id, currentHome string) (bool, error) {
+	want := m.appFilesByID(id).Path()
+	if currentHome == "" || currentHome == want {
+		return false, nil
+	}
+	if err := m.user.SetHome(name, want); err != nil {
+		return false, err
+	}
+	slog.Info("Healed a stale app home", "app", name, "from", currentHome, "to", want)
+	return true, nil
+}
+
 // applyDesired makes each app in the desired state true on this machine. Failures
 // are logged per app rather than aborting: one broken app must not stop the
 // rest of the node from converging.
 func (m *Machine) applyDesired(desired *api.DesiredState) {
+	// Current app-account homes, to detect any stranded by a raw-view path move
+	// between releases (their /etc/passwd home no longer matches where their
+	// files are served, so sshd cannot find their authorized_keys).
+	homes := map[string]string{}
+	if accts, err := m.user.List(); err == nil {
+		for _, a := range accts {
+			homes[a.Name] = a.Home
+		}
+	}
 	for _, app := range desired.Apps {
 		// Under the app's lock, so an in-flight create finishes first and this
 		// pass then sees the account it made rather than racing it.
@@ -53,6 +78,14 @@ func (m *Machine) applyDesired(desired *api.DesiredState) {
 			slog.Info("Provisioned an app that was missing on this node", "app", app.Name)
 			unlock = func() {}
 			rebuilt = true
+		}
+		// A rebuilt account already used the current home; an existing one may
+		// carry a home stranded by a raw-view path move, so repoint it before
+		// writing keys (else sshd reads authorized_keys from a path that is gone).
+		if !rebuilt {
+			if _, err := m.healAppHome(app.Name, app.ProvisionSpec.ID, homes[app.Name]); err != nil {
+				slog.Warn("Cannot heal a stale app home", "app", app.Name, "error", err)
+			}
 		}
 		// Keys and limits are control's to assert; re-writing them every pass
 		// is how a change that happened while this node was away lands.

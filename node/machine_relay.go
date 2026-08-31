@@ -1,12 +1,16 @@
 package node
 
 import (
+	"crypto/ed25519"
+	"crypto/rand"
+	"encoding/pem"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"golang.org/x/crypto/ssh"
 	"heckel.io/hostit/node/api"
 	"heckel.io/hostit/system/relaypaths"
 )
@@ -25,8 +29,42 @@ var (
 	relayKnownHostsPath = relaypaths.KnownHosts
 	relayKeysPath       = relaypaths.Keys
 	relayStubsPath      = relaypaths.Stubs
+	relayKeyPath        = relaypaths.Key
 	relayPubKeyPath     = relaypaths.PubKey
 )
+
+// EnsureRelayKey generates this frontend's relay keypair (private + public) if
+// it is not already on disk, so the deploy no longer has to run ssh-keygen. The
+// private key is the credential hostit-relay uses to reach app nodes; the public
+// key is what the node reports to control. Called at node startup only when the
+// node is configured as the SSH relay frontend.
+func (m *Machine) EnsureRelayKey() error {
+	if _, err := os.Stat(relayKeyPath); err == nil {
+		return nil // already generated on a previous start
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		return err
+	}
+	block, err := ssh.MarshalPrivateKey(priv, "hostit-relay")
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(relayKeyPath), 0755); err != nil {
+		return err
+	}
+	if err := writeFileAtomic(relayKeyPath, string(pem.EncodeToMemory(block)), 0600); err != nil {
+		return err
+	}
+	sshPub, err := ssh.NewPublicKey(pub)
+	if err != nil {
+		return err
+	}
+	line := strings.TrimSpace(string(ssh.MarshalAuthorizedKey(sshPub))) + " hostit-relay\n"
+	return writeFileAtomic(relayPubKeyPath, line, 0644)
+}
 
 // isRelayFrontend reports whether this node is the relay frontend: the deploy put
 // a relay key here. Only a frontend reconciles stubs, reports its relay pubkey,

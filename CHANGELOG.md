@@ -7,6 +7,40 @@ changed rather than what an operator had to do about it; from v0.15.0 on, each
 release is written down as it is cut. Anything that changes a config file, a
 default, or on-disk state is called out as **Breaking** or **Upgrade note**.
 
+## v0.34.0 (2026-08-31)
+
+The components run unprivileged out of the box, the SSH relay sets itself up with
+no ssh-keygen, and a long-standing bug that broke `ssh` to older apps is fixed.
+
+- **Components run unprivileged from the shipped units.** hostit-control and
+  hostit-proxy now bake `User=`/`Group=` and a `StateDirectory` into their units
+  (they own `/var/lib/hostit/<role>`), and hostit-node gets
+  `StateDirectory=hostit/node` for its own data dir. A bare package install runs
+  each daemon as its own user; the deploy no longer needs a drop-in to drop
+  privileges.
+- **The SSH relay generates its own key.** The relay frontend (the node colocated
+  with control) now creates its keypair at `/var/lib/hostit/node/relay_key` on
+  startup and reports the public half to control -- no `ssh-keygen` in the deploy,
+  no config flag. Its known_hosts and per-app key files moved under
+  `/var/lib/hostit/node/` too.
+- **Fix: `ssh <app>@...` to apps created before the run-dir move.** When the raw
+  apps view moved under `/run/hostit/node/`, existing app accounts kept a stale
+  `/etc/passwd` home, so sshd read their `authorized_keys` from a path that no
+  longer existed and every login (direct and through the relay) failed with
+  `Permission denied (publickey)`. The node now repoints a stale home on reconcile.
+- **Internal: `hostit-relay` lives only under `/usr/lib/hostit/bin/`** (like
+  `hostit-shell` and `hostit-enter`); the old `/usr/bin/hostit-relay` copy is gone.
+- **Removed the `ssh-host-key-file` node option** -- it was never set away from
+  the standard `/etc/ssh/ssh_host_ed25519_key.pub`.
+
+**Upgrade note.** A manual (non-ansible) install that ran the daemons as root
+should let the new units take over: control and proxy now run as their
+`hostit-<role>` users, so their `/etc/hostit/<role>/*.yml` config must be readable
+by that user and their data dir must be the unit's StateDirectory
+(`/var/lib/hostit/control`, `/var/lib/hostit/proxy`). The bundled ansible role
+handles this. An existing SSH-relay deploy can drop the old `/etc/hostit/relay_key`
+(the node regenerates one under `/var/lib/hostit/node/`).
+
 ## v0.33.0 (2026-08-31)
 
 Provisioning moves out of the runtime: the packages set up their own users and

@@ -10,7 +10,10 @@
 node-id: local
 control-url: "unix:/run/hostit/control/cluster.sock"
 
-# Where apps live, and the socket the in-container CLI reaches this node on.
+# The node's own data dir (its registry mirror and app-subvolume pool), and
+# where app homes live. data-dir is the node's StateDirectory, kept separate
+# from control's so each component owns its own tree.
+data-dir: /var/lib/hostit/node
 apps-dir: {{ hostit_apps_dir }}
 {% if hostit_ssh_host %}
 

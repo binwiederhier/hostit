@@ -1,0 +1,59 @@
+---
+
+# The app homes must be on btrfs: snapshots, rollback, fork and hard disk quotas
+# are core, and the node's preflight refuses to start otherwise. We use a
+# loopback btrfs image on the root filesystem, so no extra block device is
+# needed. This creates the pool on a fresh host; once the image exists it is a
+# no-op and never touches existing data.
+
+- name: Install btrfs-progs
+  ansible.builtin.apt:
+    name: btrfs-progs
+    state: present
+
+# Sized at 75% of the root filesystem's free space, then formatted. `creates`
+# makes this a one-time step -- the mount unit owns the pool from here on.
+- name: Create and format the app-homes btrfs image
+  ansible.builtin.shell: |
+    set -euo pipefail
+    dir=$(dirname "{{ hostit_apps_img }}"); mkdir -p "$dir"
+    free_kb=$(df -Pk "$dir" | awk 'NR==2{print $4}')
+    fallocate -l "$(( free_kb * 75 / 100 / 1024 ))M" "{{ hostit_apps_img }}"
+    mkfs.btrfs -q "{{ hostit_apps_img }}"
+  args:
+    creates: "{{ hostit_apps_img }}"
+    executable: /bin/bash
+
+- name: Install the app-homes mount unit
+  ansible.builtin.template:
+    src: var-lib-hostit-apps.mount.j2
+    dest: "/etc/systemd/system/{{ hostit_apps_mount_unit }}"
+    mode: "0644"
+
+# Make hostit-node wait for the mount on boot; without this it can start before
+# the btrfs is up and fail preflight.
+- name: Create the hostit-node drop-in directory
+  ansible.builtin.file:
+    path: /etc/systemd/system/hostit-node.service.d
+    state: directory
+    mode: "0755"
+
+- name: Require the app-homes mount before hostit-node
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/hostit-node.service.d/apps-mount.conf
+    mode: "0644"
+    content: |
+      [Unit]
+      RequiresMountsFor={{ hostit_apps_dir }}
+
+- name: Mount the app homes
+  ansible.builtin.systemd:
+    name: "{{ hostit_apps_mount_unit }}"
+    enabled: true
+    state: started
+    daemon_reload: true
+
+# Idempotent: enabling quota on an already-quota-enabled filesystem is a no-op.
+- name: Enable btrfs quota on the app homes
+  ansible.builtin.command: "btrfs quota enable {{ hostit_apps_dir }}"
+  changed_when: false

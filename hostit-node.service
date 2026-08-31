@@ -14,5 +14,11 @@ RestartSec=2
 CPUWeight=10000
 IOWeight=1000
 
+# The node runs as root but still owns a data dir: StateDirectory creates + owns
+# /var/lib/hostit/node (its registry mirror and app-subvolume pool), separate
+# from control's tree, regardless of where apps-dir points. NOT RuntimeDirectory:
+# that would wipe /run/hostit, which is bind-mounted into every app container.
+StateDirectory=hostit/node
+
 [Install]
 WantedBy=multi-user.target

@@ -86,6 +86,7 @@ func (nopUser) LookupIDs(string) (int, int, error)            { return 1001, 100
 func (nopUser) Create(string, string, int) error              { return nil }
 func (nopUser) CreateStub(string, string) error               { return nil }
 func (nopUser) Rename(string, string) error                   { return nil }
+func (nopUser) SetHome(string, string) error                  { return nil }
 func (nopUser) KillProcesses(string) error                    { return nil }
 func (nopUser) Delete(string) error                           { return nil }
 func (nopUser) WriteSkeleton(string, map[string]string) error { return nil }
