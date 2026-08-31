@@ -57,7 +57,6 @@ admin-token: <a long random string>
 admin-emails: you@example.com    # your account becomes an admin on first login
 tls: off                         # no ACME, no certificates, plain HTTP
 listen-api: 127.0.0.1:2900       # the API on a plain port, no hostname routing
-breakglass: true                 # sign in without Google, see below
 ```
 
 `listen-api` matters for development specifically. The main listener routes by
@@ -66,9 +65,10 @@ header -- so `127.0.0.1:2586` matches nothing and answers "nothing deployed
 here". `listen-api` serves the API directly with no hostname involved, which is
 what tooling and the web dev server should talk to.
 
-**Never set `breakglass: true` on anything reachable from the internet.** It is
-gated behind the admin token, which already carries full admin rights, but there
-is no reason to expose the endpoint on a real instance.
+Breakglass (sign in with the admin token, no Google -- see below) is always
+available; there is no flag. Its only gate is the admin token, which already
+carries full admin rights, so the endpoint is no more sensitive than that token
+-- keep the token secret, especially on an internet-facing instance.
 
 ### DNS
 
@@ -105,7 +105,7 @@ for iterating on the CLI but not for running the daemons.
 ## Signing in without Google
 
 A development instance has no Google OAuth credentials, so ordinary login is not
-available. With `breakglass: true` and the admin token, mint a session directly:
+available, but the admin token mints one directly (breakglass, always on):
 
 ```sh
 curl -c cookies.txt -X POST \

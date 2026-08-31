@@ -17,8 +17,8 @@ and **throwaway apps** so a real tenant's data is never touched.
 
 - **Sign in without Google:** breakglass. `POST /auth/breakglass?email=<demo>`
   with the admin token as `Authorization: Bearer <token>` mints a normal session
-  cookie (the account must already exist; the config flag `breakglass: true` must
-  be set). Use a dedicated demo email (e.g. a non-tenant test account).
+  cookie (the account must already exist; breakglass is always on, gated only by
+  the admin token). Use a dedicated demo email (e.g. a non-tenant test account).
 - **Backend access:** SSH to the node as root for the inspection commands below,
   and `hostit-control` (the on-box admin CLI) for registry state.
 - **Admin token:** `grep '^admin-token:' /etc/hostit/control/control.yml`.

@@ -127,7 +127,7 @@ Login backend (`control/server_handler_auth.go`, `control/auth.go`,
   (`exchangeGoogleCodeLive` -> token + userinfo), requires a verified email,
   calls `user.Manager.Login` (creates or finds the account), and issues a signed
   session cookie.
-- `handleBreakglass` (`POST /auth/breakglass`): gated on `config.Breakglass`;
+- `handleBreakglass` (`POST /auth/breakglass`): gated on the admin token;
   requires the admin token; signs in an existing account by `?email=`, and will
   create one only for a configured admin email (the way a first Google login
   would). It grants nothing beyond what the admin token already has.
@@ -153,7 +153,7 @@ embedded SPA (`control/web.go:webHandler`) for any non-`/api` path.
   authenticated-only, not active-only), which is how the SPA shows the "waiting
   for approval" and "denied" screens.
 - Breakglass is the documented way to drive the UI in e2e tests without Google
-  OAuth; it is off unless the `breakglass` config flag is set.
+  OAuth; always available, gated by the admin token.
 - Sessions cannot be revoked before their 30-day expiry (stateless by design); a
   deleted/denied user is still stopped because API calls re-check status per
   request via the token/user lookup.

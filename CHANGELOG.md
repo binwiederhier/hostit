@@ -7,6 +7,39 @@ changed rather than what an operator had to do about it; from v0.15.0 on, each
 release is written down as it is cut. Anything that changes a config file, a
 default, or on-disk state is called out as **Breaking** or **Upgrade note**.
 
+## v0.33.0 (2026-08-31)
+
+Provisioning moves out of the runtime: the packages set up their own users and
+runtime dirs, and cluster certificates come from your own CA instead of one
+hostit generates. The result is a much smaller, more declarative deploy.
+
+- **The packages provision their users and `/run` dirs.** Each deb now ships a
+  `sysusers.d` file (its `hostit-<role>` user) and a `tmpfiles.d` file
+  (`/run/hostit/<role>`), applied in the postinst. A bare `dpkg -i` produces a
+  runnable install; the deploy tooling no longer creates the users or run dirs.
+- **Cluster certificates are external.** hostit no longer runs a CA or mints
+  member certs. `hostit-control node add` / `proxy add` are gone. You issue each
+  member a cert from your own cluster CA (an openssl recipe is in the example
+  configs and the docs); possession of a CA-signed cert (CN = member id, OU =
+  role) IS membership, so a remote node/proxy self-registers when it first dials
+  in. A single-box install needs no certs at all -- colocated members reach
+  control over the `/run/hostit` unix socket (kernel peer-cred gate).
+- **Config unified.** The node's `node-cert-file` / `node-key-file` and the
+  proxy's `proxy-cert-file` / `proxy-key-file` become `cluster-cert-file` /
+  `cluster-key-file` on all three components (`cluster-ca-cert-file` unchanged).
+- **Breakglass is always on.** The `breakglass` config flag is removed. The
+  admin-token-gated login without Google is always available (it was only ever
+  as strong as that token); keep the admin token secret.
+
+**Breaking / Upgrade note.** Config field renames: set `cluster-cert-file` /
+`cluster-key-file` (was `node-cert-file` / `proxy-cert-file`) on any REMOTE node
+or proxy, and give control its own `cluster-cert-file` when it has a
+`listen-cluster` listener. A single-box install needs none of this (socket).
+Because hostit no longer has a CA, an EXISTING multi-machine cluster must be
+re-issued certs from an external CA before upgrading its remote members (the old
+hostit-minted certs still chain to the retired internal CA). Remove any
+`breakglass:` line from control.yml (a leftover is ignored, not an error).
+
 ## v0.32.1 (2026-08-31)
 
 A security follow-up to v0.32.0: app containers can no longer reach the cloud

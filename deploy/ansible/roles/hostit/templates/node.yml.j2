@@ -6,7 +6,7 @@
 # never dials it, so this host needs no inbound port for the cluster.
 #
 # "local" is the node that shares control's host. Its credentials are the pair
-# control mints under its data dir, so nothing is enrolled by hand.
+# it reaches control over the /run/hostit socket, nothing is enrolled by hand.
 node-id: local
 control-url: "unix:/run/hostit/control/cluster.sock"
 

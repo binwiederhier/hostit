@@ -48,9 +48,6 @@ admin-emails:
 {% endfor %}
 {% endif %}
 
-# Let the admin token mint a browser session for an admin email without Google
-# (recovery + end-to-end UI testing). Grants nothing the admin token does not.
-breakglass: {{ hostit_breakglass | default(false) | lower }}
 {% if hostit_anthropic_api_key %}
 
 # Built-in assistant on the metered Anthropic API.

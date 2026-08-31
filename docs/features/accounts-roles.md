@@ -111,8 +111,8 @@ hang off the same `Manager`. Only token hashes are stored (`user/service.go:hash
 session cookie or a `Bearer` token; `requireActive` gates on `StatusActive`,
 `requireAdmin` additionally on `RoleAdmin`. A pending user can still reach
 `/api/account` (authenticated-only) to see why they are waiting. The admin token
-grants `globalAdmin`. When `config.Config.Breakglass` is set, an admin email can
-be signed in with the admin token without Google (`handleBreakglass`), for
+grants `globalAdmin`. The admin token also signs an admin email in without
+Google (`handleBreakglass`, always available -- no flag), for
 e2e/recovery.
 
 **Admin HTTP surface** (`control/server_handler_admin.go`, all behind

@@ -1560,8 +1560,8 @@ const DeploymentPage = () => (
     <h3>One host</h3>
     <p>
       The default. Control does the machine work in-process, the proxy sits in
-      front of it, and nothing is enrolled: control mints the proxy's
-      credentials itself. Two files, and neither is long.
+      front of it, and nothing is enrolled: the proxy reaches control over the
+      /run/hostit socket. Two files, and neither is long.
     </p>
     <Snippet
       text={`# /etc/hostit/control/control.yml
@@ -1597,28 +1597,44 @@ control-url: http://127.0.0.1:2910`}
 base-domain: apps.example.com
 admin-token: CHANGE-ME
 listen-http: 127.0.0.1:2910
-listen-cluster: 10.0.0.1:2930   # members on OTHER machines dial in here`}
+listen-cluster: 10.0.0.1:2930   # members on OTHER machines dial in here (mTLS)
+cluster-cert-file: /etc/hostit/control/cluster.crt   # control's own cert (CN=control)
+cluster-key-file: /etc/hostit/control/cluster.key
+cluster-ca-cert-file: /etc/hostit/control/cluster-ca.crt`}
     />
     <p>
-      Enroll each node from the control host. There is no join protocol and no
-      token:
+      hostit runs no CA. Issue each member a cert from your own cluster CA (any
+      tooling; openssl below) -- possession of a CA-signed cert <em>is</em>
+      membership, so there is no join command and no token. Do it once for the
+      CA, once for control (CN=control), and once per node/proxy:
     </p>
     <Snippet
-      text={`hostit-control node add --address 10.0.0.2 worker-1
-hostit-control node add --address 10.0.0.3 worker-2`}
+      text={`# The cluster CA (do this once; keep cluster-ca.key secret):
+openssl ecparam -name prime256v1 -genkey -noout -out cluster-ca.key
+openssl req -x509 -new -key cluster-ca.key -days 3650 -out cluster-ca.crt \\
+  -subj "/CN=hostit-control-ca" -addext "basicConstraints=critical,CA:TRUE" \\
+  -addext "keyUsage=critical,keyCertSign"
+
+# A member cert -- CN is its id, OU is its role (control, node or proxy):
+openssl ecparam -name prime256v1 -genkey -noout -out worker-1.key
+openssl req -new -key worker-1.key -out worker-1.csr -subj "/CN=worker-1/OU=node" \\
+  -addext "subjectAltName=DNS:worker-1" \\
+  -addext "extendedKeyUsage=serverAuth,clientAuth" \\
+  -addext "keyUsage=critical,digitalSignature"
+openssl x509 -req -in worker-1.csr -CA cluster-ca.crt -CAkey cluster-ca.key \\
+  -days 1825 -out worker-1.crt -copy_extensions copy`}
     />
     <p>
-      Each prints three PEM blocks -- the node's certificate, its key, and the
-      cluster CA. Save them on that node (mode 0600, owned by root) and name
-      them in its config:
+      Save each member's three files on that host (mode 0600, owned by root) and
+      name them in its config:
     </p>
     <Snippet
       text={`# /etc/hostit/node/node.yml  (host 2: 10.0.0.2)
 node-id: worker-1
 control-url: 10.0.0.1:2930
-node-cert-file: /etc/hostit/node/node.pem
-node-key-file: /etc/hostit/node/node.key
-cluster-ca-cert-file: /etc/hostit/node/cluster-ca.pem
+cluster-cert-file: /etc/hostit/node/cluster.crt
+cluster-key-file: /etc/hostit/node/cluster.key
+cluster-ca-cert-file: /etc/hostit/node/cluster-ca.crt
 
 # A remote node publishes app ports on a real interface: the proxy is on
 # another machine and cannot reach loopback here.
@@ -1641,16 +1657,17 @@ apps-allowed-addresses:
       Confirm with <span className="mono">hostit-control node list</span> and{" "}
       <span className="mono">hostit-control proxy list</span>: a member that has
       connected shows a recent <em>last seen</em>.{" "}
-      <span className="mono">node remove</span> and{" "}
-      <span className="mono">proxy remove</span> revoke a member -- the registry
-      row, not the certificate, is what membership hangs on.
+      Membership is the certificate: a node self-registers when it first dials in.{" "}
+      <span className="mono">node remove</span> drops its row, but a host still
+      holding a valid cert re-registers on reconnect -- to retire one for good,
+      decommission the host or rotate the CA.
     </p>
 
     <h3>A proxy of its own</h3>
     <p>
-      A proxy enrolls exactly like a node (
-      <span className="mono">hostit-control proxy add edge-1</span>), and names
-      the credentials it printed plus <span className="mono">proxy-id</span> and{" "}
+      A proxy enrolls exactly like a node -- issue it a cert with{" "}
+      <span className="mono">OU=proxy</span> -- and names its three cluster files
+      plus <span className="mono">proxy-id</span> and{" "}
       <span className="mono">cluster-url</span>. Worth knowing before you spread
       these across a network you do not control: control's{" "}
       <span className="mono">listen-http</span> and the proxy-to-app hop are
