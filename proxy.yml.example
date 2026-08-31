@@ -7,22 +7,22 @@
 # the dashboard/API upstream and the unknown-host fallback.
 control-url: http://127.0.0.1:2910
 
-# This proxy's cluster identity. "local" is the colocated proxy, whose
-# certificate control mints for itself; a proxy on its own machine gets its
-# name and credentials from `hostit-control proxy add <name>`.
+# This proxy's cluster identity. "local" is the colocated proxy, which dials
+# control over the unix socket (no certs). A REMOTE proxy sets its own id (the
+# CN of its cert).
 # proxy-id: local
 
-# Control's cluster listener (its listen-cluster), where this proxy dials in for
-# its configuration. Defaults to control-url's host on port 2930, which is
-# right when the proxy shares control's machine.
-# cluster-url: 127.0.0.1:2930
+# Where this proxy dials control for its configuration. The colocated proxy
+# defaults to the unix socket. A REMOTE proxy dials control's mTLS listener:
+# cluster-url: 10.0.0.1:2930
 
-# The cluster credentials. The defaults are the pair control mints for the
-# colocated proxy under its data dir; a remote proxy points these at the PEM
-# blocks `hostit-control proxy add` printed.
-# proxy-cert-file: /var/lib/hostit/control/ipc/proxy-local.pem
-# proxy-key-file: /var/lib/hostit/control/ipc/proxy-local.key
-# cluster-ca-cert-file: /var/lib/hostit/control/ipc/ca.pem
+# Cluster credentials -- REMOTE proxy only (the colocated proxy uses the socket
+# and needs none). Membership IS a CA-signed cert with CN = this proxy-id and
+# OU = "proxy". Issue it from your cluster CA (see node.yml.example for the
+# openssl recipe) and point at the three files:
+# cluster-cert-file: /etc/hostit/proxy/proxy.crt
+# cluster-key-file: /etc/hostit/proxy/proxy.key
+# cluster-ca-cert-file: /etc/hostit/proxy/cluster-ca.crt
 
 # Public listeners (defaults shown)
 # listen-https: ":443"

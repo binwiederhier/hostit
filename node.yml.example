@@ -5,27 +5,38 @@
 # it to over the node RPC. It therefore holds none of control's settings: no
 # admin token, no base domain, no OAuth, no TLS.
 #
-# On a host that also runs hostit-control, the two share nothing but the data
-# directory (the node reads its mTLS credentials from data-dir/ipc, which
-# control mints on first start) -- so a colocated node needs only node-id,
-# control-url and the paths below.
+# A COLOCATED node (same host as control) needs only node-id and control-url:
+# it reaches control over the unix socket, where the kernel peer-cred gate is
+# the identity, so it needs no certificates at all.
 
-# This node's identity: the CN of its certificate and its name in control's
-# node registry. "local" is the colocated node; a remote node uses the name it
-# was registered under (hostit-control node add <name>).
+# This node's identity: its name in control's registry, and -- for a remote
+# node -- the CN of its certificate. "local" is the colocated node.
 node-id: local
 
-# Where control accepts node dial-ins, as host:port. The node DIALS control
-# and never listens itself, so this is named like the proxy's control-url.
-control-url: "127.0.0.1:2930"
+# Where the node dials control. Colocated: the unix socket (no certs).
+control-url: "unix:/run/hostit/control/cluster.sock"
+# A REMOTE node instead dials control's mTLS listener as host:port:
+# control-url: "10.0.0.1:2930"
 
-# Cluster credentials for a REMOTE node, minted by `hostit-control node add`:
-# possession of a CA-signed certificate plus its registry row IS membership,
-# there is no enrollment protocol. Leave unset when colocated: the node then
-# reads the credentials control minted under data-dir/ipc.
-#node-cert-file: /etc/hostit/node/node.pem
-#node-key-file: /etc/hostit/node/node.key
-#cluster-ca-cert-file: /etc/hostit/node/cluster-ca.pem
+# Cluster credentials -- REMOTE nodes only (a colocated node leaves these unset
+# and uses the socket above). Membership IS possession of a CA-signed cert with
+# CN = this node-id and OU = "node"; there is no enrollment command. Issue it
+# from your cluster CA (openssl recipe below) and point at the three files:
+#cluster-cert-file: /etc/hostit/node/node.crt
+#cluster-key-file: /etc/hostit/node/node.key
+#cluster-ca-cert-file: /etc/hostit/node/cluster-ca.crt
+#
+# Generate the CA once and a cert per member (control, each node, each proxy).
+# ECDSA P-256; CN = member id, OU = its role (control | node | proxy):
+#   openssl ecparam -name prime256v1 -genkey -noout -out cluster-ca.key
+#   openssl req -x509 -new -key cluster-ca.key -days 3650 -out cluster-ca.crt \
+#     -subj "/CN=hostit-control-ca" -addext "basicConstraints=critical,CA:TRUE" \
+#     -addext "keyUsage=critical,keyCertSign"
+#   openssl ecparam -name prime256v1 -genkey -noout -out node.key
+#   openssl req -new -key node.key -out node.csr -subj "/CN=<node-id>/OU=node"
+#   openssl x509 -req -in node.csr -CA cluster-ca.crt -CAkey cluster-ca.key \
+#     -days 1825 -out node.crt -extfile <(printf \
+#     "subjectAltName=DNS:<node-id>\nextendedKeyUsage=serverAuth,clientAuth\nkeyUsage=critical,digitalSignature")
 
 # Node-local storage: data-dir holds the registry mirror control pushes (and,
 # when colocated, the credentials above); apps-dir is the btrfs pool the app

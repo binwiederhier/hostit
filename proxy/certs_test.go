@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
+	"heckel.io/hostit/cluster/clustertest"
 	"sync/atomic"
 	"testing"
 
@@ -38,7 +39,7 @@ func (f *fakeCertSink) CertFor(sni string) (*api.CertMaterial, error) {
 // load as a working key pair.
 func newFakeCertSink(t *testing.T, sni string) *fakeCertSink {
 	t.Helper()
-	ca, err := cluster.NewCA()
+	ca, err := clustertest.NewCA()
 	require.NoError(t, err)
 	cert, err := ca.Issue(sni, cluster.RoleNode)
 	require.NoError(t, err)

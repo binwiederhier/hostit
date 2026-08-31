@@ -57,11 +57,6 @@
       [engine.runtimes]
       crun = ["{{ hostit_crun_path }}", "/usr/bin/crun"]
 
-# The pre-split package check below reads the package list.
-- name: Gather installed packages
-  ansible.builtin.package_facts:
-    manager: auto
-
 - name: Fail early if required variables are unset
   ansible.builtin.assert:
     that:
@@ -104,31 +99,10 @@
   register: hostit_deb_copy
   when: hostit_deb_dir | length > 0
 
-# The three packages Conflict/Replace the pre-split "hostit" package, so an
-# upgrade from before the split removes it here. Its config and data stay.
-# Removing the package does NOT stop a running daemon: on an upgrade the old
-# hostit.service kept running and kept :443, so the new proxy could not bind and
-# the host served nothing until it was stopped by hand. Stop it first, then
-# remove it.
-- name: Stop the pre-split hostit service
-  ansible.builtin.systemd:
-    name: hostit
-    state: stopped
-    enabled: false
-  failed_when: false
-  when: "'hostit' in ansible_facts.packages"
-
-- name: Remove the pre-split hostit package
-  ansible.builtin.command: dpkg --remove --force-depends hostit
-  register: hostit_remove_monolith
-  changed_when: hostit_remove_monolith.rc == 0
-  failed_when: false
-  when: "'hostit' in ansible_facts.packages"
-
 # dpkg -i (not the apt module): same-version rebuilds are common while iterating,
 # and apt would treat them as already installed. --force-confold keeps the
 # managed configs instead of prompting on upgrade. All three in one call, since
-# they replace a common package and dpkg wants them configured together.
+# they share files and dpkg wants them configured together.
 - name: Install the hostit packages
   ansible.builtin.command: >-
     dpkg -i --force-confold
@@ -215,10 +189,9 @@
 # can be minutes from serving, and it is control that mints the colocated
 # members' credentials. Starting a member before then puts a proxy on :443 with
 # nothing to serve. Wait for the thing that actually matters.
-- name: Wait for control to accept cluster dial-ins
+- name: Wait for control's member socket
   ansible.builtin.wait_for:
-    host: 127.0.0.1
-    port: 2930
+    path: /run/hostit/control/cluster.sock
     timeout: 300
 
 - name: Enable and start hostit-node
@@ -227,11 +200,6 @@
     enabled: true
     state: started
     daemon_reload: true
-
-- name: Wait for the colocated proxy's credentials
-  ansible.builtin.wait_for:
-    path: /var/lib/hostit/ipc/proxy-local.pem
-    timeout: 120
 
 - name: Enable and start hostit-proxy
   ansible.builtin.systemd:

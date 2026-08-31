@@ -15,9 +15,10 @@ letsencrypt-email: {{ hostit_letsencrypt_email }}
 listen-http: {{ hostit_control_http }}
 
 # Where members on OTHER machines dial in (mTLS). The node and proxy sharing
-# this host use the socket at /run/hostit/cluster.sock and need no certificate,
-# so a single-box install can leave this out.
-listen-cluster: {{ hostit_control_cluster }}
+# This example runs everything on one host: control, node and proxy talk over
+# the /run/hostit unix sockets (kernel peer-cred gate), so no cluster TLS certs
+# and no listen-cluster. To add a node/proxy on ANOTHER machine, set
+# listen-cluster here and issue each member a cert (see node.yml.example).
 {% if hostit_aws_access_key_id %}
 
 # One wildcard certificate for *.{{ hostit_domain }} via Route 53 (DNS-01),

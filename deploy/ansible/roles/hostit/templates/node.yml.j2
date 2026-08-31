@@ -8,7 +8,7 @@
 # "local" is the node that shares control's host. Its credentials are the pair
 # control mints under its data dir, so nothing is enrolled by hand.
 node-id: local
-control-url: {{ hostit_control_cluster }}
+control-url: "unix:/run/hostit/control/cluster.sock"
 
 # Where apps live, and the socket the in-container CLI reaches this node on.
 apps-dir: {{ hostit_apps_dir }}

@@ -4,6 +4,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"heckel.io/hostit/cluster/clustertest"
 	"path/filepath"
 	"testing"
 	"time"
@@ -145,7 +146,7 @@ func TestCertForServesPEMThroughTheCombinedLookup(t *testing.T) {
 	_, err := s.CertFor("blog.apps.example.com")
 	assert.ErrorIs(t, err, errTLSNotManaged)
 
-	ca, err := cluster.NewCA()
+	ca, err := clustertest.NewCA()
 	require.NoError(t, err)
 	cert, err := ca.Issue("blog.apps.example.com", cluster.RoleNode)
 	require.NoError(t, err)

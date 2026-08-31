@@ -52,8 +52,8 @@ type FileConfig struct {
 	ClusterURL string `yaml:"cluster-url"`
 	// The cluster credentials, minted by `hostit-control proxy add`. On a
 	// colocated proxy they are the pair control keeps under its data dir.
-	CertFile      string `yaml:"proxy-cert-file"`
-	KeyFile       string `yaml:"proxy-key-file"`
+	CertFile      string `yaml:"cluster-cert-file"`
+	KeyFile       string `yaml:"cluster-key-file"`
 	CACertFile    string `yaml:"cluster-ca-cert-file"`
 	ListenHTTPS   string `yaml:"listen-https"`   // default :443
 	ListenHTTP    string `yaml:"listen-http"`    // default :80

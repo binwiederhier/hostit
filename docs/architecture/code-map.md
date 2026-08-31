@@ -11,7 +11,7 @@ all of these; which commands it offers depends on where it runs (see
 | `control` | the control plane: TLS-terminating proxy, REST API + web app, OAuth, sessions, the peercred unix socket, terminal WebSocket, assistant SSE -- plus the `Manager` that orchestrates app lifecycles (creation/deletion, placement, ports, ownership, retention) |
 | `node` | the machine half: the `Machine` that owns this host's containers, unix users, subvolumes, port rules, files and state (implementing `nodeapi.NodeAgent`) and the node daemon's serve loop |
 | `nodeapi` | the control<->node wire contract: the `NodeAgent` verbs, `ControlSink` callbacks, specs, sentinel errors, and the app-name rule |
-| `nodelink` | the node half of the wire: the verb router a node serves, the remote agent control holds, and the credential files under `data-dir/ipc` |
+| `nodelink` | the node half of the wire: the verb router a node serves, the remote agent control holds, and loading the externally-issued cluster cert files |
 | `cluster` | how members reach control at all: the CA that mints an identity (CN = id, OU = role), the mTLS credentials, the upgrade handshake and the yamux duplex. Knows nothing about nodes or proxies, which is what lets `hostit-proxy` speak the protocol without linking the registry |
 | `proxyapi` | the control<->proxy wire contract: `ApplyRoutes`, the routing table, and the `CertFor` callback |
 | `proxylink` | the proxy half of the wire: the router a proxy serves and the remote proxy control holds |

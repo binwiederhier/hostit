@@ -8,12 +8,8 @@ import (
 
 	"github.com/urfave/cli/v2"
 
-	"heckel.io/hostit/cluster"
 	"heckel.io/hostit/cmd/util"
 	"heckel.io/hostit/control/config"
-	"heckel.io/hostit/node/api"
-	"heckel.io/hostit/node/link"
-	"heckel.io/hostit/store"
 )
 
 // cmdProxy is the hostit-control proxy registry: add (mint the proxy's mTLS
@@ -28,12 +24,6 @@ var (
 		},
 		Subcommands: []*cli.Command{
 			{
-				Name:      "add",
-				Usage:     "Register a new proxy and mint its mTLS certificate",
-				ArgsUsage: "<name>",
-				Action:    execProxyAdd,
-			},
-			{
 				Name:   "list",
 				Usage:  "List registered proxies",
 				Action: execProxyList,
@@ -47,53 +37,6 @@ var (
 		},
 	}
 )
-
-func execProxyAdd(c *cli.Context) error {
-	if c.NArg() != 1 {
-		return errors.New("usage: hostit-control proxy add <name>")
-	}
-	name := c.Args().First()
-	if name == store.ProxyLocal {
-		return fmt.Errorf("%q is the colocated proxy; its certificate is minted automatically", name)
-	}
-	if !api.ValidName(name) {
-		return fmt.Errorf("invalid proxy name %q", name)
-	}
-	conf, s, err := nodeStore(c)
-	if err != nil {
-		return err
-	}
-	defer s.Close()
-	// Same cluster CA as a node's: one trust domain for the whole cluster, with
-	// the role in the certificate deciding what the holder may register as.
-	// A member on another machine dials the mTLS listener, so enrolling one
-	// without that listener configured produces instructions that cannot work:
-	// the printed control-url would carry no port at all.
-	if conf.ListenCluster == "" {
-		return fmt.Errorf("control accepts no remote members: set listen-cluster (e.g. 10.0.0.1:2930) and restart hostit-control first")
-	}
-	ca, err := link.LoadCA(conf.DataDir)
-	if err != nil {
-		return fmt.Errorf("cannot load the cluster CA (has hostit-control started once?): %w", err)
-	}
-	cert, err := ca.Issue(name, cluster.RoleProxy)
-	if err != nil {
-		return err
-	}
-	certPEM, keyPEM, err := link.EncodeCert(cert)
-	if err != nil {
-		return err
-	}
-	if err := s.EnsureProxy(name); err != nil {
-		return err
-	}
-	fmt.Printf("Proxy %q registered. On the proxy machine, save the three PEM blocks below\n", name)
-	fmt.Printf("(e.g. under /etc/hostit/proxy/) and point the proxy config at them:\n\n")
-	fmt.Printf("  proxy-id: %s\n  control-url: <this-host>:%s\n", name, portOf(conf.ListenCluster))
-	fmt.Printf("  proxy-cert-file: /etc/hostit/proxy/proxy.pem\n  proxy-key-file: /etc/hostit/proxy/proxy.key\n  cluster-ca-cert-file: /etc/hostit/proxy/cluster-ca.pem\n\n")
-	fmt.Printf("# proxy.pem\n%s\n# proxy.key\n%s\n# cluster-ca.pem\n%s\n", certPEM, keyPEM, ca.CertPEM())
-	return nil
-}
 
 func execProxyList(c *cli.Context) error {
 	_, s, err := nodeStore(c)

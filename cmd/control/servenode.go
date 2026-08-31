@@ -36,8 +36,10 @@ const (
 // one's poll loop, and every (re)connect runs the rejoin handshake.
 func nodeRole(manager *control.Manager, registry *control.NodeRegistry, srv *control.Server, done <-chan struct{}, mu *sync.Mutex, supersede map[string]chan struct{}) *cluster.Role {
 	return nodelink.Role(func(nodeID string) bool {
-		_, err := manager.Store().Node(nodeID)
-		return err == nil
+		// Membership IS the transport-proven identity: over mTLS a CA-signed
+		// cert (OU=node), over the unix socket the kernel peer-cred gate. The
+		// row self-registers on connect (below), so no pre-enrollment is needed.
+		return true
 	}, func(nodeID string) http.Handler {
 		// The node's reverse channel: usage, poweroffs and snapshot records it
 		// originates land in the registry through the callbacks, and the app
@@ -49,6 +51,9 @@ func nodeRole(manager *control.Manager, registry *control.NodeRegistry, srv *con
 		return mux
 	}, func(nodeID string, remote control.NodeAgent) {
 		slog.Info("Node connected", "node", nodeID)
+		if err := manager.Store().EnsureNode(nodeID, ""); err != nil {
+			slog.Warn("Cannot register a connected node", "node", nodeID, "error", err)
+		}
 		_ = manager.Store().SetNodeSeen(nodeID, time.Now())
 		mu.Lock()
 		if prev := supersede[nodeID]; prev != nil {
@@ -82,10 +87,6 @@ func nodeRole(manager *control.Manager, registry *control.NodeRegistry, srv *con
 // node), a per-node poll loop feeds the state cache, and the rejoin handshake
 // pushes the node's registry mirror and re-asserts desired state.
 func listenForMembers(conf *config.Config, manager *control.Manager, srv *control.Server, done <-chan struct{}) error {
-	tlsConf, err := nodelink.ListenerCreds(conf.ClusterCertFile, conf.ClusterKeyFile, conf.ClusterCACertFile, conf.DataDir)
-	if err != nil {
-		return err
-	}
 	// Each node's registration supersedes its previous connection's poll loop:
 	// without this, a stale loop against a dead session raced the live one.
 	var mu sync.Mutex
@@ -109,16 +110,10 @@ func listenForMembers(conf *config.Config, manager *control.Manager, srv *contro
 	// proxy that just started is never serving an empty table for longer than
 	// its connect takes.
 	roles[cluster.RoleProxy] = proxylink.Role(func(proxyID string) bool {
-		// The colocated proxy is implicitly a member, like the colocated node:
-		// its certificate is one control minted for itself, in a root-only
-		// directory on this host. Its row appears when it first connects rather
-		// than being asserted at startup, so a host that runs no proxy does not
-		// list a phantom one that will only ever look stale.
-		if proxyID == store.ProxyLocal {
-			return true
-		}
-		_, err := manager.Store().Proxy(proxyID)
-		return err == nil
+		// Same as the node: a CA-signed cert (OU=proxy) over mTLS, or the
+		// peer-cred gate over the socket for the colocated proxy. The row
+		// self-registers on connect below.
+		return true
 	}, srv, func(proxyID string, agent api.ProxyAgent) {
 		slog.Info("Proxy connected", "proxy", proxyID)
 		if err := manager.Store().EnsureProxy(proxyID); err != nil {
@@ -154,6 +149,10 @@ func listenForMembers(conf *config.Config, manager *control.Manager, srv *contro
 	// when the operator names one.
 	if conf.ListenCluster == "" {
 		return nil
+	}
+	tlsConf, err := nodelink.ListenerCreds(conf.ClusterCertFile, conf.ClusterKeyFile, conf.ClusterCACertFile)
+	if err != nil {
+		return err
 	}
 	httpSrv := &http.Server{
 		Addr:      conf.ListenCluster,

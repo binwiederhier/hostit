@@ -13,6 +13,15 @@ admin-token: CHANGE-ME
 # the cluster CA). Leave it out on a single box: the node and proxy sharing this
 # host use the socket below, which needs no certificate at all.
 # listen-cluster: 10.0.0.1:2930
+#
+# When listen-cluster is set (you have members on OTHER machines), control needs
+# its OWN cluster identity: a CA-signed cert with CN = "control", plus the CA
+# every member cert chains to. hostit does not generate these -- issue them from
+# your cluster CA (openssl recipe in node.yml.example) and point at the files.
+# A single-box install has no remote listener and needs none of this.
+# cluster-cert-file: /etc/hostit/control/control.crt
+# cluster-key-file: /etc/hostit/control/control.key
+# cluster-ca-cert-file: /etc/hostit/control/cluster-ca.crt
 
 # TLS: "letsencrypt" (default, on-demand per-subdomain certs) or "off" (plain
 # HTTP on listen-http; for development or behind another TLS-terminating proxy).
@@ -121,7 +130,6 @@ admin-token: CHANGE-ME
 
 # Let the admin token mint a session cookie for an admin email without Google
 # (for end-to-end testing and recovery). Off by default.
-# breakglass: false
 
 # Secret for signing session cookies. Generated and persisted under data-dir if
 # left empty; set it only to share sessions across a rebuild.

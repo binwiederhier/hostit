@@ -9,7 +9,7 @@
 # and reaches control over the member socket, where the kernel identifies the
 # caller -- no certificate, no CA, nothing to wait for. A proxy on its own
 # machine instead needs proxy-id, cluster-url and the three credential files
-# that `hostit-control proxy add` prints.
+# issued from your cluster CA (see node.yml.example for the openssl recipe).
 control-url: http://{{ hostit_control_http }}
 {% if hostit_proxy_listen_metrics %}
 # Prometheus metrics on a separate interface (unauthenticated -- keep it internal).

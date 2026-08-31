@@ -464,7 +464,7 @@ on every call; the node keeps nothing between calls.
   home. A separate channel means tenants *physically cannot address it*, instead
   of being policy-fenced on a shared one.
 - **Auth: per-node mTLS certificate** (CN = node id), minted by
-  `hostit-control node add` and configured as plain files on the node
+  issued from your cluster CA (openssl) and configured as plain files on the node
   (`node-cert-file` / `node-key-file` / `cluster-ca-cert-file`). Shipped as
   mTLS-only; there is no bearer-token fallback and no join protocol.
 - **Why not SO_PEERCRED?** On one box the kernel vouches for the calling uid over

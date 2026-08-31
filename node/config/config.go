@@ -37,10 +37,12 @@ type Config struct {
 	ControlURL string `yaml:"control-url"`
 
 	// Cluster credentials: this node's certificate and the CA both sides
-	// trust, minted by `hostit-control node add`. Empty on a colocated node,
-	// which reads what control minted under DataDir/ipc.
-	NodeCertFile      string `yaml:"node-cert-file"`
-	NodeKeyFile       string `yaml:"node-key-file"`
+	// trust. Required on a REMOTE node (its control-url is a host:port dialing
+	// control's mTLS listener); the CA-signed cert IS this node's membership.
+	// Empty and unused on a colocated node, which reaches control over the unix
+	// socket (control-url: unix:/run/hostit/control/cluster.sock).
+	ClusterCertFile   string `yaml:"cluster-cert-file"`
+	ClusterKeyFile    string `yaml:"cluster-key-file"`
 	ClusterCACertFile string `yaml:"cluster-ca-cert-file"`
 
 	// AppsBindAddress is where this node publishes app ports. Empty means
@@ -133,13 +135,13 @@ func (c *Config) Validate() error {
 	// All-or-none: a half-configured triple would otherwise surface later as an
 	// opaque TLS failure at dial time.
 	set := 0
-	for _, f := range []string{c.NodeCertFile, c.NodeKeyFile, c.ClusterCACertFile} {
+	for _, f := range []string{c.ClusterCertFile, c.ClusterKeyFile, c.ClusterCACertFile} {
 		if f != "" {
 			set++
 		}
 	}
 	if set != 0 && set != 3 {
-		return errors.New("node-cert-file, node-key-file and cluster-ca-cert-file must be set together")
+		return errors.New("cluster-cert-file, cluster-key-file and cluster-ca-cert-file must be set together")
 	}
 	// Publishing off loopback without naming who may connect would put every
 	// app's port on whatever networks this node is attached to.

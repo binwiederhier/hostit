@@ -107,8 +107,9 @@ sudo cp /etc/hostit/node/node.yml.example       /etc/hostit/node/node.yml
 sudo cp /etc/hostit/proxy/proxy.yml.example     /etc/hostit/proxy/proxy.yml
 sudo $EDITOR /etc/hostit/control/control.yml     # set base-domain + admin-token
 
-# node.yml and proxy.yml work as-is on a single colocated host (control mints
-# their mTLS credentials on first start). Start control first, then node, proxy:
+# node.yml and proxy.yml work as-is on a single colocated host: the node and
+# proxy reach control over the /run/hostit socket, so no certs are needed.
+# Start control first, then node, proxy:
 sudo systemctl enable --now hostit-control hostit-node hostit-proxy
 ```
 

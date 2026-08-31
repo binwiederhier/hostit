@@ -11,7 +11,7 @@ offers depends on where it runs, `cmd/agent/`). There is no separate
 scheduler, no message bus, no sidecar. All four colocate on one host -- the
 diagram below shows that single-droplet shape; a remote node is the same node
 binary dialing control over mTLS (per-node certificates as plain config
-files, minted by `hostit-control node add`).
+files, issued from your cluster CA -- openssl, see the config examples).
 
 ```mermaid
 flowchart TB

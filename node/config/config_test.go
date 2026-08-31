@@ -18,8 +18,8 @@ func TestLoadConfigReadsTheNodesOwnKeys(t *testing.T) {
 	require.NoError(t, os.WriteFile(path, []byte(`
 node-id: worker-2
 control-url: 10.0.0.1:2930
-node-cert-file: /etc/hostit/node/node.pem
-node-key-file: /etc/hostit/node/node.key
+cluster-cert-file: /etc/hostit/node/node.pem
+cluster-key-file: /etc/hostit/node/node.key
 cluster-ca-cert-file: /etc/hostit/node/cluster-ca.pem
 apps-dir: /srv/apps
 `), 0o600))
@@ -44,7 +44,7 @@ func TestLoadConfigDefaultsForAColocatedNode(t *testing.T) {
 	conf, err := LoadConfig(path)
 	require.NoError(t, err)
 	assert.Equal(t, "local", conf.NodeID)
-	assert.Empty(t, conf.NodeCertFile)
+	assert.Empty(t, conf.ClusterCertFile)
 	require.NoError(t, conf.Validate())
 }
 
@@ -64,8 +64,8 @@ func TestValidateRequiresSomewhereToDialAndAWholeCertTriple(t *testing.T) {
 	require.ErrorContains(t, conf.Validate(), "control-url")
 
 	conf.ControlURL = "127.0.0.1:2930"
-	conf.NodeCertFile = "/etc/hostit/node/node.pem" // key and CA missing
-	require.ErrorContains(t, conf.Validate(), "node-key-file")
+	conf.ClusterCertFile = "/etc/hostit/node/node.pem" // key and CA missing
+	require.ErrorContains(t, conf.Validate(), "cluster-key-file")
 }
 
 // The allowlist is named for what it guards -- the app ports -- not for who

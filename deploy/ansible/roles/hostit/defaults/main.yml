@@ -22,7 +22,6 @@ hostit_control_http: "127.0.0.1:2910"
 
 # Where members (the node, the proxy) dial control. Loopback on a single host;
 # a routable address once nodes live on other machines.
-hostit_control_cluster: "127.0.0.1:2930"
 
 # REQUIRED. Apps are served at <app>.<hostit_domain>. Needs wildcard DNS: both
 # *.apps.example.com AND apps.example.com must point at this host.

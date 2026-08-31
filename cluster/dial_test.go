@@ -1,6 +1,7 @@
 package cluster
 
 import (
+	"heckel.io/hostit/cluster/clustertest"
 	"net"
 	"net/http"
 	"path/filepath"
@@ -15,7 +16,7 @@ import (
 // transport rather than claimed at connect time. A proxy credential can
 // therefore never register as a node, whatever it says about itself.
 func TestACertificateCarriesItsRole(t *testing.T) {
-	ca, err := NewCA()
+	ca, err := clustertest.NewCA()
 	require.NoError(t, err)
 
 	proxyCert, err := ca.Issue("edge-1", RoleProxy)
@@ -31,7 +32,7 @@ func TestACertificateCarriesItsRole(t *testing.T) {
 // Node certificates minted before roles existed are still in the field and
 // carry no OU at all. They are nodes, which is what they were issued as.
 func TestACertificateWithoutARoleIsANode(t *testing.T) {
-	ca, err := NewCA()
+	ca, err := clustertest.NewCA()
 	require.NoError(t, err)
 	cert, err := ca.Issue("worker-2", "")
 	require.NoError(t, err)

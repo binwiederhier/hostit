@@ -358,7 +358,7 @@ execs them -- one help text, and it knows what is installed.
 ```
 hostit-control apps list          # the command lives here
 hostit control apps list          # ... and this is the same thing
-hostit-control node add worker-1
+# enroll a node by issuing it a CA-signed cert (openssl); no add command
 hostit-control status
 hostit node ... / hostit proxy ...   # only what is installed here
 ```
@@ -390,8 +390,8 @@ hostit node ... / hostit proxy ...   # only what is installed here
 
 **`/usr/bin/hostit-control`**<br>
 <code>serve</code><br>
-<code>node add|list|remove</code><br>
-<code>proxy add|list|remove</code><br>
+<code>node list|remove</code><br>
+<code>proxy list|remove</code><br>
 <code>status</code>
 
 <div class="mt-4"></div>

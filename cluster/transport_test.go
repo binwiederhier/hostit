@@ -3,6 +3,7 @@ package cluster
 import (
 	"crypto/tls"
 	"fmt"
+	"heckel.io/hostit/cluster/clustertest"
 	"io"
 	"net"
 	"net/http"
@@ -18,7 +19,7 @@ import (
 // and node->control reports).
 func TestDuplexHTTPBothWays(t *testing.T) {
 	t.Parallel()
-	ca, err := NewCA()
+	ca, err := clustertest.NewCA()
 	require.NoError(t, err)
 	controlCert, err := ca.Issue("control", RoleNode)
 	require.NoError(t, err)
@@ -102,7 +103,7 @@ func TestDuplexHTTPBothWays(t *testing.T) {
 // session -- the privileged surface is unreachable without enrollment.
 func TestMTLSRejectsUnknownClients(t *testing.T) {
 	t.Parallel()
-	ca, err := NewCA()
+	ca, err := clustertest.NewCA()
 	require.NoError(t, err)
 	controlCert, err := ca.Issue("control", RoleNode)
 	require.NoError(t, err)
@@ -123,7 +124,7 @@ func TestMTLSRejectsUnknownClients(t *testing.T) {
 	}()
 
 	// No client cert at all: the handshake (or first use) must fail.
-	otherCA, err := NewCA()
+	otherCA, err := clustertest.NewCA()
 	require.NoError(t, err)
 	impostor, err := otherCA.Issue("node-x", RoleNode)
 	require.NoError(t, err)

@@ -3,7 +3,6 @@ package cluster
 import (
 	"crypto/tls"
 	"crypto/x509"
-	"encoding/pem"
 	"fmt"
 	"os"
 )
@@ -52,18 +51,4 @@ func LoadPool(caPath string) (*x509.CertPool, error) {
 		return nil, fmt.Errorf("no CA certificate in %s", caPath)
 	}
 	return pool, nil
-}
-
-// EncodeCert renders a tls.Certificate as PEM chain + PKCS8 key.
-func EncodeCert(cert tls.Certificate) (certPEM, keyPEM string, err error) {
-	var chain, key []byte
-	for _, der := range cert.Certificate {
-		chain = append(chain, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})...)
-	}
-	keyDER, err := x509.MarshalPKCS8PrivateKey(cert.PrivateKey)
-	if err != nil {
-		return "", "", err
-	}
-	key = pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyDER})
-	return string(chain), string(key), nil
 }
