@@ -232,6 +232,18 @@ func (s *Server) Run() error {
 		return ignoreServerClosed(socketServer.Serve(socketListener))
 	})
 
+	// Optional loopback admin-API listener (listen-api): the API with no hostname
+	// routing, for local development (the web dev server proxies to it) and for
+	// scripts/e2e that curl the API directly.
+	if s.config.ListenAPI != "" {
+		apiServer := &http.Server{Addr: s.config.ListenAPI, Handler: s.api, ReadHeaderTimeout: readHeaderTimeout}
+		s.servers = append(s.servers, apiServer)
+		g.Go(func() error {
+			slog.Info("Listening for admin API", "addr", s.config.ListenAPI)
+			return ignoreServerClosed(apiServer.ListenAndServe())
+		})
+	}
+
 	// hostit-proxy terminates TLS and forwards here, always: it is a component
 	// of every deployment, so control serves plain HTTP on a local address and
 	// never binds :443. It still MANAGES the certificates -- certmagic lives

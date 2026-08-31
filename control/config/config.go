@@ -112,6 +112,7 @@ type Config struct {
 	// ListenHTTP is where hostit-proxy forwards; a local address, since the
 	// proxy owns :443 in every deployment and control never binds it.
 	ListenHTTP       string  `yaml:"listen-http"`       // HTTP listener (ACME challenges + redirect, or plain proxy if TLS off)
+	ListenAPI        string  `yaml:"listen-api"`        // Optional extra plain-HTTP admin API listener (loopback), e.g. 127.0.0.1:2900 -- for local dev + scripts
 	SocketFile       string  `yaml:"socket-file"`       // The app socket (served by hostit-node; control only names it)
 	DataDir          string  `yaml:"data-dir"`          // SQLite registry + ACME certs
 	ListenMetrics    string  `yaml:"listen-metrics"`    // optional Prometheus /metrics listener, e.g. "10.0.0.1:9110" (empty = off)
