@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 )
 
@@ -15,6 +16,29 @@ import (
 type Rule struct {
 	Port int
 	UID  int
+}
+
+// internalDropCIDRs are the destinations an app container must not reach: the
+// cloud metadata endpoint (169.254.169.254), all RFC1918 private space, and
+// CGNAT -- so an app cannot read droplet metadata or dial another app's
+// published port / the host / the VPC. Public egress is unaffected. Matches the
+// preview screenshot container's egress set. NOTE: a self-hosted install whose
+// DNS resolver sits on a private IP must allow it explicitly (DO/loopback
+// 127.0.0.53 resolvers are unaffected).
+const internalDropCIDRs = "169.254.0.0/16, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 100.64.0.0/10"
+
+// appUIDs is the deduplicated, comma-joined set of app uids in the rules, for an
+// nftables uid set. Empty when there are no apps.
+func appUIDs(rules []Rule) string {
+	seen := map[int]bool{}
+	var uids []string
+	for _, r := range rules {
+		if !seen[r.UID] {
+			seen[r.UID] = true
+			uids = append(uids, strconv.Itoa(r.UID))
+		}
+	}
+	return strings.Join(uids, ", ")
 }
 
 // Interface is the subset of firewall operations the machine half depends on; the
@@ -89,6 +113,14 @@ func renderRuleset(table string, rules []Rule, bindAddr string, allowFrom []stri
 		fmt.Fprintf(&b, "add rule inet %s output ip daddr 127.0.0.0/8 tcp dport %d meta skuid != %s counter drop\n", table, rule.Port, allowed)
 		fmt.Fprintf(&b, "add rule inet %s output ip6 daddr ::1 tcp dport %d meta skuid != %s counter drop\n", table, rule.Port, allowed)
 	}
+	// App containers must not reach the metadata endpoint or internal networks;
+	// their slirp4netns egress is sourced by the app's own uid, so drop that uid's
+	// traffic to the internal ranges (public egress is unaffected). Applies on a
+	// single-box install too, where the loopback rules above do not cover this.
+	if uids := appUIDs(rules); uids != "" {
+		fmt.Fprintf(&b, "add rule inet %s output meta skuid { %s } ip daddr { %s } counter drop\n", table, uids, internalDropCIDRs)
+	}
+
 	if bindAddr == "" {
 		return b.String() // loopback only: the output rules are the whole story
 	}

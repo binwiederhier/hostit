@@ -78,3 +78,26 @@ func TestRenderRulesetAllowsTheLocalProxyUID(t *testing.T) {
 		t.Errorf("the loopback rule must allow the local proxy uid (1002) too, got:\n%s", out)
 	}
 }
+
+// App containers must not reach the cloud metadata endpoint or internal networks
+// (another app's published port, the host, the VPC): drop the app uids' egress to
+// the internal ranges. Their slirp4netns egress is sourced by the app's own uid.
+func TestRenderRulesetBlocksAppEgressToInternal(t *testing.T) {
+	out := renderRuleset("hostit", []Rule{{Port: 10000, UID: 200000}, {Port: 10001, UID: 265536}}, "", nil, 0)
+	// The drop rule lists the app uids and the internal CIDRs, including metadata.
+	if !strings.Contains(out, "meta skuid { 200000, 265536 } ip daddr { 169.254.0.0/16, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 100.64.0.0/10 } counter drop") {
+		t.Errorf("app egress to the internal ranges must be dropped, got:\n%s", out)
+	}
+	// It applies even on a loopback-only (single-box) node.
+	if !strings.Contains(out, "169.254.0.0/16") {
+		t.Errorf("metadata endpoint must be blocked on a single-box node too")
+	}
+}
+
+// With no apps there is no uid set, so no egress-drop rule is emitted.
+func TestRenderRulesetNoEgressDropWithoutApps(t *testing.T) {
+	out := renderRuleset("hostit", nil, "", nil, 0)
+	if strings.Contains(out, "169.254.0.0/16") {
+		t.Errorf("no app uids -> no egress drop rule, got:\n%s", out)
+	}
+}
