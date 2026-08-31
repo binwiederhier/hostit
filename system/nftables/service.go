@@ -27,6 +27,11 @@ type Rule struct {
 // 127.0.0.53 resolvers are unaffected).
 const internalDropCIDRs = "169.254.0.0/16, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 100.64.0.0/10"
 
+// internalDropCIDRs6 is the IPv6 twin: unique-local (fc00::/7, which covers AWS
+// IMDS-over-IPv6 at fd00:ec2::254) and link-local (fe80::/10). Inert where a node
+// has no IPv6, so it costs nothing there and protects IPv6-enabled installs.
+const internalDropCIDRs6 = "fc00::/7, fe80::/10"
+
 // appUIDs is the deduplicated, comma-joined set of app uids in the rules, for an
 // nftables uid set. Empty when there are no apps.
 func appUIDs(rules []Rule) string {
@@ -39,6 +44,20 @@ func appUIDs(rules []Rule) string {
 		}
 	}
 	return strings.Join(uids, ", ")
+}
+
+// splitCIDRFamilies partitions an allow-list into its IPv4 and IPv6 entries so
+// each can go in the matching nftables set (ip daddr vs ip6 daddr). A ":" marks
+// an IPv6 literal; everything else is treated as IPv4.
+func splitCIDRFamilies(cidrs []string) (v4, v6 []string) {
+	for _, c := range cidrs {
+		if strings.Contains(c, ":") {
+			v6 = append(v6, c)
+		} else {
+			v4 = append(v4, c)
+		}
+	}
+	return v4, v6
 }
 
 // Interface is the subset of firewall operations the machine half depends on; the
@@ -124,11 +143,17 @@ func renderRuleset(table string, rules []Rule, bindAddr string, allowFrom []stri
 	if uids := appUIDs(rules); uids != "" {
 		// The operator's outbound allow-list punches holes for whitelisted internal
 		// destinations (corporate services, a private resolver). Whitelist NARROWLY:
-		// whitelisting a whole node network re-exposes apps to each other.
-		if len(allowCIDRs) > 0 {
-			fmt.Fprintf(&b, "add rule inet %s output meta skuid { %s } ip daddr { %s } counter accept\n", table, uids, strings.Join(allowCIDRs, ", "))
+		// whitelisting a whole node network re-exposes apps to each other. Accept
+		// comes before drop, and each family goes in its own set.
+		allow4, allow6 := splitCIDRFamilies(allowCIDRs)
+		if len(allow4) > 0 {
+			fmt.Fprintf(&b, "add rule inet %s output meta skuid { %s } ip daddr { %s } counter accept\n", table, uids, strings.Join(allow4, ", "))
+		}
+		if len(allow6) > 0 {
+			fmt.Fprintf(&b, "add rule inet %s output meta skuid { %s } ip6 daddr { %s } counter accept\n", table, uids, strings.Join(allow6, ", "))
 		}
 		fmt.Fprintf(&b, "add rule inet %s output meta skuid { %s } ip daddr { %s } counter drop\n", table, uids, internalDropCIDRs)
+		fmt.Fprintf(&b, "add rule inet %s output meta skuid { %s } ip6 daddr { %s } counter drop\n", table, uids, internalDropCIDRs6)
 	}
 
 	if bindAddr == "" {

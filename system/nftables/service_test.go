@@ -88,9 +88,28 @@ func TestRenderRulesetBlocksAppEgressToInternal(t *testing.T) {
 	if !strings.Contains(out, "meta skuid { 200000, 265536 } ip daddr { 169.254.0.0/16, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 100.64.0.0/10 } counter drop") {
 		t.Errorf("app egress to the internal ranges must be dropped, got:\n%s", out)
 	}
+	// The IPv6 twin drops ULA (incl. AWS IMDS-over-IPv6) and link-local.
+	if !strings.Contains(out, "meta skuid { 200000, 265536 } ip6 daddr { fc00::/7, fe80::/10 } counter drop") {
+		t.Errorf("app egress to internal IPv6 ranges must be dropped, got:\n%s", out)
+	}
 	// It applies even on a loopback-only (single-box) node.
 	if !strings.Contains(out, "169.254.0.0/16") {
 		t.Errorf("metadata endpoint must be blocked on a single-box node too")
+	}
+}
+
+// A mixed v4/v6 allow-list splits by family: each accepted in its own set,
+// before the family's drop, and the v6 drop is still emitted.
+func TestRenderRulesetSplitsTheAllowListByFamily(t *testing.T) {
+	out := renderRuleset("hostit", []Rule{{Port: 10000, UID: 200000}}, "", nil, 0, []string{"10.20.0.0/24", "fd12:3456::/48"})
+	a4 := strings.Index(out, "meta skuid { 200000 } ip daddr { 10.20.0.0/24 } counter accept")
+	a6 := strings.Index(out, "meta skuid { 200000 } ip6 daddr { fd12:3456::/48 } counter accept")
+	d6 := strings.Index(out, "ip6 daddr { fc00::/7, fe80::/10 } counter drop")
+	if a4 < 0 || a6 < 0 || d6 < 0 {
+		t.Fatalf("expected v4 accept, v6 accept, and v6 drop, got:\n%s", out)
+	}
+	if a6 > d6 {
+		t.Errorf("the v6 allow-list accept must come BEFORE the v6 drop, got accept@%d drop@%d", a6, d6)
 	}
 }
 
