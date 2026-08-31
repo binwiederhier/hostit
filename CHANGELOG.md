@@ -7,6 +7,39 @@ changed rather than what an operator had to do about it; from v0.15.0 on, each
 release is written down as it is cut. Anything that changes a config file, a
 default, or on-disk state is called out as **Breaking** or **Upgrade note**.
 
+## v0.32.0 (2026-08-31)
+
+The role-partition release: every service runs as its own user and owns a
+role-specific directory tree, and no cross-service dependency goes through a
+shared file any more.
+
+- **Each service runs as its own user.** hostit-control and hostit-proxy stop
+  sharing one account: control runs as `hostit-control`, the internet-facing
+  proxy as `hostit-proxy`, each owning only its own state -- so a compromised
+  proxy can no longer read control's registry, cluster CA, connection tokens or
+  session key. The node stays root. The users are fixed by name; the cluster
+  peer gate and the node firewall resolve `hostit-proxy` by name, so the
+  `local-proxy-uid` knob is gone.
+- **Role-partitioned directories.** Each service's state, sockets and config
+  live under its own subdir: `/var/lib/hostit/{control,node,proxy}`,
+  `/run/hostit/{control,node,proxy}`, `/etc/hostit/{control,node,proxy}`.
+  Nothing shared sits in the bare parent.
+- **SSH relay over the cluster link.** The relay frontend no longer shares
+  routes/keys files with control; control pushes them over the link and the node
+  writes them locally, so control and the frontend can be on different hosts.
+- **Better dashboard previews.** The screenshot settle now polls for a stable,
+  non-blank frame instead of shooting once after a fixed delay, so a slow SPA or
+  a canvas game no longer comes out blank or half-rendered.
+
+**Breaking / Upgrade note.** The node's app pool, `node.db` and workspace move
+from the bare `/var/lib/hostit` into `/var/lib/hostit/node` (the btrfs pool now
+mounts at `/var/lib/hostit/node/apps`). The upgrade migrates this in place --
+unmounting the pool, moving the loopback image, repointing every app-user home,
+and recreating each container at the new path -- which is a brief FULL app
+outage while it runs. The proxy's data dir moves to `/var/lib/hostit/proxy`, and
+the cluster member socket is now `0666` (its auth is the kernel-attested
+peer-cred gate, not the file mode). Idempotent and safe to re-run.
+
 ## v0.31.3 (2026-08-30)
 
 - **New-app dialog: tidier connection and visibility choosers on mobile.** The
