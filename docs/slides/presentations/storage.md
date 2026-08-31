@@ -310,7 +310,7 @@ path `apps/<id>/home/app` IS the container's `/home/app`:
 ```console
 $ btrfs subvolume snapshot apps/.bases/1a3027527a55 apps/<id>              # instant CoW
 $ podman create --uidmap 0:1196608:65536 --network slirp4netns ... \
-    --rootfs /var/lib/hostit/apps/<id>:idmap hostit agent                 # same isolation
+    --rootfs /var/lib/hostit/node/apps/<id>:idmap hostit agent                 # same isolation
 ```
 
 <div class="mt-4 text-sm opacity-60">

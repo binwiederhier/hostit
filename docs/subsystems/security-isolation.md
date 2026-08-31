@@ -47,7 +47,7 @@ flowchart TB
 ## App vs app: the contiguous uid block
 
 Every app owns a **65536-wide contiguous uid/gid block**, one per app, spaced so
-blocks never overlap (`control/manager.go:uidFor`):
+blocks never overlap (`node/machine.go:uidFor`):
 
 ```
 uidFor(port) = uidBlockStart + (port - PortMin) * uidBlockSize

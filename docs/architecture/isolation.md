@@ -84,9 +84,9 @@ per-app netns already isolate the container. The comments in
 Even on host loopback, one app must not connect to another app's published port. The
 firewall package installs an nftables `output`-hook rule per app port: a connect to
 `127.0.0.0/8` (and `::1`) on that port is dropped unless the calling socket's uid is
-`0` (the proxy) or the app's own base uid (`firewall/service.go:renderRuleset`). The
+`0` (the proxy) or the app's own base uid (`system/nftables/service.go:renderRuleset`). The
 ruleset is rebuilt from the registry (the source of truth) whenever apps change
-(`control/manager.go:ReconcilePortRules`), applied atomically by replacing the whole
+(`node/machine.go:ReconcilePortRules`), applied atomically by replacing the whole
 `inet hostit` table.
 
 ### `os.OpenRoot` file containment

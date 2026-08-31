@@ -200,7 +200,7 @@ partway (`snapshot/service.go:Rollback`):
    no quota to restore either: the cap lives on the app's budget qgroup, and the
    staged copy joined it at stage time (qgroup membership survives the rename).
 
-The per-app lifecycle lock (`control/manager.go:lockApp`, `appLocks`) serializes
+The per-app lifecycle lock (`control/manager.go:LockApp`, `appLocks`) serializes
 deploy/snapshot/rollback/delete, so these subvolume operations never interleave on
 one app.
 

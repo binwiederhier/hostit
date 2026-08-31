@@ -143,15 +143,15 @@ The app's entire filesystem is ONE btrfs snapshot of the base OS tree.
 Metadata-only, instant, and **root-owned** -- ownership is never baked in.
 
 ```sh
-btrfs subvolume snapshot /var/lib/hostit/apps/.bases/1a3027527a55 \
-                         /var/lib/hostit/apps/d94773c9b2c3
+btrfs subvolume snapshot /var/lib/hostit/node/apps/.bases/1a3027527a55 \
+                         /var/lib/hostit/node/apps/d94773c9b2c3
 mkdir -p .../d94773c9b2c3/home/app        # 0755, the app's files dir
 ```
 
 <v-click>
 
 ```sh
-$ btrfs subvolume show /var/lib/hostit/apps/d94773c9b2c3
+$ btrfs subvolume show /var/lib/hostit/node/apps/d94773c9b2c3
 d94773c9b2c3
         Name:                   d94773c9b2c3
         UUID:                   de035bbc-0c44-ea49-93cd-25ac26a27390
@@ -294,15 +294,15 @@ One qgroup per app, keyed on the uid, capped on **exclusive** bytes -- what the
 app itself pins. Extents shared with the base are charged to nobody.
 
 ```sh
-btrfs qgroup create 1/1262144 /var/lib/hostit/apps
-btrfs qgroup assign 0/2115 1/1262144 /var/lib/hostit/apps   # 0/<rootid> = the subvolume
-btrfs qgroup limit -e 2048M 1/1262144 /var/lib/hostit/apps
+btrfs qgroup create 1/1262144 /var/lib/hostit/node/apps
+btrfs qgroup assign 0/2115 1/1262144 /var/lib/hostit/node/apps   # 0/<rootid> = the subvolume
+btrfs qgroup limit -e 2048M 1/1262144 /var/lib/hostit/node/apps
 ```
 
 <v-click>
 
 ```sh
-$ btrfs qgroup show -e /var/lib/hostit/apps | grep 1/1262144
+$ btrfs qgroup show -e /var/lib/hostit/node/apps | grep 1/1262144
 qgroupid      referenced    exclusive    max exclusive
 1/1262144     781.89MiB     436.00KiB    2.00GiB
 ```
@@ -343,7 +343,7 @@ are derived from the registry, never edited incrementally.
 </div>
 
 ```
-code: firewall/service.go, control/manager.go ReconcilePortRules()
+code: system/nftables/service.go, node/machine.go ReconcilePortRules()
 ```
 
 ---
@@ -365,7 +365,7 @@ podman create --name hostit-app-d94773c9b2c3 --hostname blog
   --volume /usr/bin/hostit:/usr/bin/hostit:ro
   --volume /run/hostit:/run/hostit:ro    # the daemon's unix socket
   --label hostit.config=b20b87e31ca0510e # config hash: recreate only on change
-  --rootfs /var/lib/hostit/apps/d94773c9b2c3:idmap
+  --rootfs /var/lib/hostit/node/apps/d94773c9b2c3:idmap
   /usr/bin/hostit agent                  # the agent is PID 1
 ```
 
@@ -383,7 +383,7 @@ container's uid mapping. disk root <-> container root, one rule, no chown.
 
 ```sh
 $ findmnt | grep apps/d94773c9b2c3
-/var/lib/hostit/apps/d94773c9b2c3   /dev/loop0[/d94773c9b2c3]   btrfs   rw,idmapped,...
+/var/lib/hostit/node/apps/d94773c9b2c3   /dev/loop0[/d94773c9b2c3]   btrfs   rw,idmapped,...
 ```
 
 <v-clicks>
@@ -482,7 +482,7 @@ code: hostit-app@.service, agent/, app/deploy.go apply()
 | unix user | `unixuser/service.go` |
 | keys + skeleton | `ssh/service.go`, `app/skeleton.go`, `homefs/service.go` |
 | disk budget | `app/budget.go`, `btrfs/service.go` |
-| firewall | `firewall/service.go` |
+| firewall | `system/nftables/service.go` |
 | container argv | `workspace/spec.go CreateArgs()` |
 | start + unit | `app/deploy.go apply()`, `hostit-app@.service` |
 

@@ -125,7 +125,7 @@ sequenceDiagram
   user, removes any leftover home dir, and finally `store.RemoveApp` (which cascades
   keys, snapshots, domains, events, usage, tokens, assistant session). The server
   also drops the app's assistant session (`handleAppsDelete`).
-- **Per-app lock** (`control/manager.go:lockApp`): a per-app mutex serializes deploy,
+- **Per-app lock** (`control/manager.go:LockApp`): a per-app mutex serializes deploy,
   snapshot, rollback and delete so operations on one app's home never interleave.
 
 ## Other notes

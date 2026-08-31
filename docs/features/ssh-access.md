@@ -140,7 +140,7 @@ Key management (the daemon side):
 
 - `ssh/service.go:Service.WriteAuthorizedKeys` writes through the chained files
   root the caller hands it
-  (`control/manager.go:writeKeysIn` opens it via `homefs.Service.OpenRoot`); it
+  (`node/machine.go:writeKeysIn` opens it via `homefs.Service.OpenRoot`); it
   refuses if `.ssh` is not a real directory (`ssh/service.go:ErrNotDirectory`).
   The results stay root-owned and world-readable (0755 `.ssh`, 0644
   `authorized_keys`): the host's `sshd` reads them as the app user (StrictModes
