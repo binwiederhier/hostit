@@ -99,14 +99,12 @@ func (s *Server) handleGoogleCallback(w http.ResponseWriter, r *http.Request) {
 // admin token alone -- no Google round-trip. It exists for e2e testing (viewing
 // the app as any real user) and recovery, and grants nothing new: the admin token
 // already carries full admin rights over the REST API. It is off unless the
-// "breakglass" config flag is set. It will only sign in an account that already
+// It will only sign in an account that already
 // exists; a configured admin email is additionally allowed to be created on the
 // spot, exactly as a first Google login would.
 func (s *Server) handleBreakglass(w http.ResponseWriter, r *http.Request) {
-	if !s.config.Breakglass {
-		writeError(w, http.StatusNotFound, errors.New("breakglass login is not enabled"))
-		return
-	}
+	// Always available; the admin token is the gate (see below). It only signs in
+	// an account that already exists, so it cannot conjure access to a new email.
 	c, err := s.authenticate(r)
 	if err != nil || !c.globalAdmin {
 		writeError(w, http.StatusForbidden, errors.New("breakglass login requires the admin token"))

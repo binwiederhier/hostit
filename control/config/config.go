@@ -163,7 +163,6 @@ type Config struct {
 	MCPServers  map[string]MCPServer `yaml:"mcp-servers"`
 	SessionKey  string               `yaml:"session-key"`  // Secret for signing session cookies; generated if empty
 	AdminEmails []string             `yaml:"admin-emails"` // These emails become active admins on first login
-	Breakglass  bool                 `yaml:"breakglass"`   // Allow the admin token to mint a session for an admin email (no Google); for e2e/recovery
 	// ListenCluster is where members on OTHER machines dial in: mTLS, with
 	// per-member certificates from the cluster CA. Empty on a single-box
 	// install, which admits no remote members at all.

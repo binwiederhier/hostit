@@ -415,12 +415,8 @@ func TestBreakglassLogin(t *testing.T) {
 	s := newTestServer(t)
 	s.config.AdminEmails = []string{"phil@example.com"}
 
-	// Off by default: invisible even with the admin token.
-	rr := request(t, s.API(), "POST", "/auth/breakglass?email=phil@example.com", "", testToken)
-	assert.Equal(t, http.StatusNotFound, rr.Code)
-
-	s.config.Breakglass = true
-	// No/wrong token is refused, so enabling it does not open a hole.
+	// Always available (no config flag), but the admin token is the gate: no/wrong
+	// token is refused, so it is never an open hole.
 	assert.Equal(t, http.StatusForbidden, request(t, s.API(), "POST", "/auth/breakglass?email=phil@example.com", "", "").Code)
 	assert.Equal(t, http.StatusForbidden, request(t, s.API(), "POST", "/auth/breakglass?email=phil@example.com", "", "wrong").Code)
 	// An unknown, non-admin email is refused: breakglass will not conjure users.
@@ -431,7 +427,7 @@ func TestBreakglassLogin(t *testing.T) {
 	assert.Equal(t, http.StatusOK, request(t, s.API(), "POST", "/auth/breakglass?email=member@example.com", "", testToken).Code)
 
 	// Admin token + admin email mints a working session cookie (created on the spot).
-	rr = request(t, s.API(), "POST", "/auth/breakglass?email=phil@example.com", "", testToken)
+	rr := request(t, s.API(), "POST", "/auth/breakglass?email=phil@example.com", "", testToken)
 	require.Equal(t, http.StatusOK, rr.Code)
 	cookies := rr.Result().Cookies()
 	require.NotEmpty(t, cookies, "a session cookie must be set")
