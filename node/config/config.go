@@ -64,12 +64,14 @@ type Config struct {
 	// never does. Ignored on a loopback node; required on a remote one, or its
 	// apps would be reachable from anything that can route to it.
 	AppsAllowedAddresses []string `yaml:"apps-allowed-addresses"`
-	// AppsEgressAllowCIDRs is the operator's OUTBOUND allow-list: internal CIDRs
-	// an app container MAY reach despite the default egress drop (the cloud
-	// metadata endpoint and all private space are blocked otherwise). Set it to a
-	// corporate internal service or a private DNS resolver apps need. Whitelist
-	// NARROWLY: a whole node network re-exposes apps to each other.
-	AppsEgressAllowCIDRs []string `yaml:"apps-egress-allow-cidrs"`
+	// OutboundAllowPrivateCIDRs is the node-side twin of control's flag of the
+	// same name: internal CIDRs an app container MAY reach despite the default
+	// egress block (the cloud metadata endpoint and all private space are dropped
+	// otherwise -- an app must not read node metadata or dial another app's
+	// backend). Set it to a corporate internal service or a private DNS resolver
+	// apps need. Whitelist NARROWLY: a whole node network re-exposes apps to each
+	// other. Drive it and control's outbound-allow-private-cidrs from one source.
+	OutboundAllowPrivateCIDRs []string `yaml:"outbound-allow-private-cidrs"`
 
 	// DataDir holds the registry mirror control pushes (and the colocated
 	// credentials); AppsDir is the btrfs pool the app subvolumes live in;

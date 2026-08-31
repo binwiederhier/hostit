@@ -89,7 +89,7 @@ func Serve(configPath, version string) error {
 	if proxyUID < 0 {
 		proxyUID = 0
 	}
-	machine := NewMachine(conf, s, NewSystemServices(run.New(), conf.NodeID, conf.AppsBindAddress, conf.AppsAllowedAddresses, proxyUID, conf.AppsEgressAllowCIDRs))
+	machine := NewMachine(conf, s, NewSystemServices(run.New(), conf.NodeID, conf.AppsBindAddress, conf.AppsAllowedAddresses, proxyUID, conf.OutboundAllowPrivateCIDRs))
 
 	// The node-local startup. Limits are not applied here: control re-asserts
 	// every app's memory and disk limit in its rejoin handshake right after the

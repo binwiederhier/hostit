@@ -63,7 +63,7 @@ type Service struct {
 	// root (the default), which the { 0, ... } set already covers.
 	localProxyUID int
 	// allowCIDRs are internal destinations an app MAY reach despite the egress
-	// drop -- the operator's outbound allow-list (apps-egress-allow-cidrs), e.g. a
+	// drop -- the operator's outbound allow-list (outbound-allow-private-cidrs), e.g. a
 	// corporate internal service or a private DNS resolver.
 	allowCIDRs []string
 }
