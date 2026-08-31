@@ -16,6 +16,7 @@ import (
 	"heckel.io/hostit/proxy/api"
 	proxylink "heckel.io/hostit/proxy/link"
 	"heckel.io/hostit/store"
+	"heckel.io/hostit/system/users"
 )
 
 const (
@@ -135,6 +136,9 @@ func listenForMembers(conf *config.Config, manager *control.Manager, srv *contro
 	// machine need no certificate, no CA and nothing minted in advance -- the
 	// socket's existence is the only precondition, and the kernel says who is
 	// calling. A single-box install needs no listen-cluster at all.
+	// The colocated proxy runs as hostit-proxy, not control's user, so admit its
+	// uid on the member socket; absent (remote or root proxy) registers nothing.
+	cluster.TrustPeerUID(users.UID(users.Proxy))
 	ln, err := cluster.ListenSocket(cluster.SocketPath(cluster.DefaultSocketFile))
 	if err != nil {
 		return fmt.Errorf("cluster socket: %w", err)

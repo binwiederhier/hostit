@@ -19,6 +19,7 @@ import (
 	"heckel.io/hostit/store"
 	"heckel.io/hostit/system/preflight"
 	"heckel.io/hostit/system/run"
+	"heckel.io/hostit/system/users"
 	"heckel.io/hostit/workspace"
 )
 
@@ -81,7 +82,14 @@ func Serve(configPath, version string) error {
 	}
 	defer s.Close()
 	Version = version
-	machine := NewMachine(conf, s, NewSystemServices(run.New(), conf.NodeID, conf.AppsBindAddress, conf.AppsAllowedAddresses, conf.LocalProxyUID))
+	// The colocated proxy runs as hostit-proxy; the per-app loopback firewall
+	// admits its uid alongside root and the app. Absent (remote or root proxy)
+	// resolves to 0, which the firewall reads as "no local proxy uid".
+	proxyUID := users.UID(users.Proxy)
+	if proxyUID < 0 {
+		proxyUID = 0
+	}
+	machine := NewMachine(conf, s, NewSystemServices(run.New(), conf.NodeID, conf.AppsBindAddress, conf.AppsAllowedAddresses, proxyUID))
 
 	// The node-local startup. Limits are not applied here: control re-asserts
 	// every app's memory and disk limit in its rejoin handshake right after the

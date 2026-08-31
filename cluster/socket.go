@@ -109,14 +109,39 @@ func peerUID(c net.Conn) (int, error) {
 	return int(cred.Uid), nil
 }
 
+// extraTrustedUIDs are uids admitted on the member socket beyond control's own
+// and root: the colocated proxy, which now runs as its own user (hostit-proxy)
+// rather than sharing control's uid. Set once at startup, read-only after.
+var extraTrustedUIDs []int
+
+// TrustPeerUID admits a uid on the member socket in addition to control's own
+// and root. Control calls it at startup for the colocated proxy's user, so the
+// proxy -- no longer sharing control's uid -- still passes the peer-cred gate
+// with no certificate. A non-positive uid (no such user on this host) is
+// ignored, so a remote or root proxy registers nothing.
+func TrustPeerUID(uid int) {
+	if uid > 0 {
+		extraTrustedUIDs = append(extraTrustedUIDs, uid)
+	}
+}
+
 // trustedPeerUID says whether a process with this uid may claim an identity on
-// the socket: the user control itself runs as, or root. Not "root only" --
-// control is meant to stop needing root, and a check that assumed otherwise
-// would have to be found and fixed at exactly the wrong moment. Root is
-// admitted because root can read the socket, the database and the credentials
-// regardless; refusing it would be theatre.
+// the socket: the user control itself runs as, root, or a uid control admitted
+// via TrustPeerUID (the colocated proxy's user). Not "root only" -- control does
+// not need root, and a check that assumed otherwise would have to be found and
+// fixed at exactly the wrong moment. Root is admitted because root can read the
+// socket, the database and the credentials regardless; refusing it would be
+// theatre.
 func trustedPeerUID(uid int) bool {
-	return uid == os.Getuid() || uid == 0
+	if uid == os.Getuid() || uid == 0 {
+		return true
+	}
+	for _, u := range extraTrustedUIDs {
+		if uid == u {
+			return true
+		}
+	}
+	return false
 }
 
 // socketPeerUID returns the uid the listener recorded for this request.
