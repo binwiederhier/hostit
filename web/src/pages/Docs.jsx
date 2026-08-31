@@ -1577,7 +1577,7 @@ control-url: http://127.0.0.1:2910`}
       Everything else defaults: the proxy is <span className="mono">local</span>
       , dials <span className="mono">127.0.0.1:2930</span>, and reads the
       credentials control keeps under{" "}
-      <span className="mono">/var/lib/hostit/ipc/</span>. Enable{" "}
+      <span className="mono">/var/lib/hostit/control/ipc/</span>. Enable{" "}
       <span className="mono">hostit-control</span> and{" "}
       <span className="mono">hostit-proxy</span>; leave{" "}
       <span className="mono">hostit-node</span> disabled.
@@ -1589,7 +1589,7 @@ control-url: http://127.0.0.1:2910`}
       Only DNS host 1 needs to be public. On control, naming a reachable{" "}
       <span className="mono">listen-cluster</span> is what lets members on other
       machines join. A node sharing control's host needs none of this -- it
-      dials the socket at <span className="mono">/run/hostit/cluster.sock</span>{" "}
+      dials the socket at <span className="mono">/run/hostit/control/cluster.sock</span>{" "}
       and presents no certificate.
     </p>
     <Snippet
@@ -2369,7 +2369,7 @@ const AdminPage = () => (
       are not a substitute for an off-box backup.
     </p>
     <Snippet
-      text={`sqlite3 /var/lib/hostit/hostit.db ".backup /backup/hostit.db"   # hot registry copy`}
+      text={`sqlite3 /var/lib/hostit/control/hostit.db ".backup /backup/hostit.db"   # hot registry copy`}
     />
     <p className="hint">
       hostit runs as root because it creates Unix users and drives podman,
@@ -2406,7 +2406,7 @@ journalctl -u hostit-node -f                 # on a machine that only runs apps`
     <h3>Map an app name to its id</h3>
     <p>The registry knows both. Query it read-only:</p>
     <Snippet
-      text={`sqlite3 /var/lib/hostit/hostit.db "select id, name, port from apps;"`}
+      text={`sqlite3 /var/lib/hostit/control/hostit.db "select id, name, port from apps;"`}
     />
 
     <h3>The app's container (podman)</h3>
@@ -2436,12 +2436,12 @@ journalctl -u 'hostit-app@<id>.service' -n 100 --no-pager`}
     <p>
       The in-container agent (PID 1) writes a breadcrumb and the app's output
       into the app's files at{" "}
-      <span className="mono">/var/lib/hostit/apps/&lt;id&gt;/home/app/</span>{" "}
+      <span className="mono">/var/lib/hostit/node/apps/&lt;id&gt;/home/app/</span>{" "}
       (the <span className="mono">/home/app</span> inside the app's subvolume):
     </p>
     <Snippet
-      text={`cat  /var/lib/hostit/apps/<id>/home/app/log/state      # running | stopped | crashed | failed | idle
-tail -f /var/lib/hostit/apps/<id>/home/app/log/app.log # the run: command's output`}
+      text={`cat  /var/lib/hostit/node/apps/<id>/home/app/log/state      # running | stopped | crashed | failed | idle
+tail -f /var/lib/hostit/node/apps/<id>/home/app/log/app.log # the run: command's output`}
     />
     <p className="hint">
       A <span className="mono">failed</span> state means the command
@@ -2455,7 +2455,7 @@ tail -f /var/lib/hostit/apps/<id>/home/app/log/app.log # the run: command's outp
     <h3>Storage and snapshots (btrfs)</h3>
     <p>
       Each app is ONE subvolume at{" "}
-      <span className="mono">/var/lib/hostit/apps/&lt;id&gt;</span>: the entire
+      <span className="mono">/var/lib/hostit/node/apps/&lt;id&gt;</span>: the entire
       root filesystem its container runs, snapshotted from the read-only base of
       its image tag under <span className="mono">.bases/&lt;tag&gt;</span>, with
       the app's files at <span className="mono">home/app</span> inside it. It is
@@ -2468,11 +2468,11 @@ tail -f /var/lib/hostit/apps/<id>/home/app/log/app.log # the run: command's outp
       exceeded" inside an app means it hit that budget.
     </p>
     <Snippet
-      text={`btrfs subvolume list /var/lib/hostit/apps          # every app/base/snapshot subvolume
-ls /var/lib/hostit/apps/                           # one subvolume per app, by id (plus .bases, .snapshots)
-ls /var/lib/hostit/apps/<id>/home/app/             # the app's files inside its subvolume
-ls /var/lib/hostit/apps/.bases/                    # read-only base rootfs, one per image tag
-ls /var/lib/hostit/apps/.snapshots/<id>/           # an app's whole-app snapshots, by id
+      text={`btrfs subvolume list /var/lib/hostit/node/apps          # every app/base/snapshot subvolume
+ls /var/lib/hostit/node/apps/                           # one subvolume per app, by id (plus .bases, .snapshots)
+ls /var/lib/hostit/node/apps/<id>/home/app/             # the app's files inside its subvolume
+ls /var/lib/hostit/node/apps/.bases/                    # read-only base rootfs, one per image tag
+ls /var/lib/hostit/node/apps/.snapshots/<id>/           # an app's whole-app snapshots, by id
 btrfs qgroup show -re /var/lib/hostit/apps         # disk budgets: 1/<uid> rows, exclusive bytes vs cap`}
     />
 
@@ -2496,7 +2496,7 @@ btrfs qgroup show -re /var/lib/hostit/apps         # disk budgets: 1/<uid> rows,
     />
     <p className="hint">
       TLS certificates are under{" "}
-      <span className="mono">/var/lib/hostit/certs</span>; the app-side CLI
+      <span className="mono">/var/lib/hostit/control/certs</span>; the app-side CLI
       socket is <span className="mono">/run/hostit/hostit.sock</span>. When in
       doubt, <span className="mono">systemctl restart hostit-control</span> is
       safe: running app containers keep serving, the proxy serves from its

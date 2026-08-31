@@ -195,7 +195,7 @@ sequenceDiagram
     U->>FSD: ssh blog@apps.example.com
     FSD->>FSD: blog stub's authorized_keys (the frontend gate)
     FSD->>SH: exec login shell
-    SH->>SH: route for "blog" in /var/lib/hostit/ssh-routes? -> remote
+    SH->>SH: route for "blog" in /var/lib/hostit/node/ssh-routes? -> remote
     SH->>RY: exec sudo -n hostit-relay [args]
     RY->>NSD: ssh -i relay_key blog@node2  (relay key, host key pinned)
     NSD->>C: hostit-shell -> sudo hostit-enter -> podman exec
@@ -259,7 +259,7 @@ node never listens: it has no inbound port, needs no route from control, and wor
 from behind NAT.
 
 A member sharing control's host dials `cluster-socket`
-(`/run/hostit/cluster.sock`) and presents no credentials at all: the socket is
+(`/run/hostit/control/cluster.sock`) and presents no credentials at all: the socket is
 root-only and the kernel identifies the caller. A member on another machine
 dials `listen-cluster` (an address, conventionally port 2930) with a CA-signed
 certificate. `cluster` owns the connection either way; `nodelink` and

@@ -11,7 +11,7 @@ hostit identifies it by that uid.
 flowchart TB
     subgraph one["One app: blog"]
         user["Unix user 'blog' (base uid 1000000)<br/>shell: /usr/lib/hostit/bin/hostit-shell<br/>group: hostit-apps"]
-        subvol["/var/lib/hostit/apps/&lt;id&gt;<br/>the app's one subvolume, root-owned, idmap-mounted<br/>files at home/app inside (= /home/app in the container)"]
+        subvol["/var/lib/hostit/node/apps/&lt;id&gt;<br/>the app's one subvolume, root-owned, idmap-mounted<br/>files at home/app inside (= /home/app in the container)"]
 
         subgraph container["podman container hostit-app-&lt;id&gt;"]
             direction TB

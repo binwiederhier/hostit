@@ -16,7 +16,7 @@ the pure `retention/` package.
 
 ```mermaid
 flowchart TB
-    subgraph fs["/var/lib/hostit/apps  (btrfs, a loopback image)"]
+    subgraph fs["/var/lib/hostit/node/apps  (btrfs, a loopback image)"]
         subgraph subs["per-app subvolumes (keyed on app id)"]
             a1["apps/&lt;id-A&gt;  (full OS tree,<br/>files at home/app inside)"]
             a2["apps/&lt;id-B&gt;"]

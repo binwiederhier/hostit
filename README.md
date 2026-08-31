@@ -313,8 +313,10 @@ Full write-up (the web-app/tenant same-origin boundary, `/var/lib/hostit`, the t
 model) is in
 [docs/subsystems/security-isolation.md](docs/subsystems/security-isolation.md).
 
-> **Self-hosting disclaimer.** hostit runs as root, terminates TLS, and hands tenants
-> root inside their own container. It is provided as-is, with no warranty (see
+> **Self-hosting disclaimer.** hostit's node component runs as root (to drive
+> podman, btrfs, nftables and Unix users); hostit-control and hostit-proxy run as
+> their own unprivileged users. It terminates TLS and hands tenants root inside
+> their own container. It is provided as-is, with no warranty (see
 > [LICENSE](LICENSE)); operators are responsible for their own hardening. The
 > boundaries above are the model's promises, not a guarantee against every container
 > escape or misconfiguration.

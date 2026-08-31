@@ -78,9 +78,12 @@ deploy/ansible/
   `/etc/ssh/sshd_config.d/` that disables all forwarding for app logins (an app
   session must not become a tunnel into the host). It restarts sshd; existing
   admin sessions are unaffected.
-- **The daemon runs as root** because it creates Unix users and drives podman,
-  systemd, nftables and btrfs. App containers are isolated; the daemon is the
-  trusted control plane, so keep the host itself locked down.
+- **Per-service users.** hostit-node runs as root because it creates Unix users
+  and drives podman, systemd, nftables and btrfs; hostit-control and hostit-proxy
+  run as their own unprivileged `hostit-control` / `hostit-proxy` users (the role
+  creates them), so the internet-facing proxy cannot read control's registry, CA
+  or secrets. Each service owns its own subdir under /var/lib/hostit, /run/hostit
+  and /etc/hostit. App containers are isolated; keep the host itself locked down.
 - **Local build.** To deploy locally built packages instead of a release, set
   `hostit_deb_dir` to the `dist/` directory `make release-snapshot` produced,
   and `hostit_deb_version` to the version they carry.

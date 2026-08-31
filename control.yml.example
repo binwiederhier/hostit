@@ -121,8 +121,8 @@ admin-token: CHANGE-ME
 # socket-file: /run/hostit/hostit.sock
 
 # Directories (defaults shown)
-# data-dir: /var/lib/hostit      # registry DB + certs
-# apps-dir: /var/lib/hostit/apps # app user home directories
+# data-dir: /var/lib/hostit/control  # registry DB + certs (ansible sets this)
+# apps-dir: /var/lib/hostit/control/apps # vestigial for control (the node owns app homes)
 
 # Hostnames (defaults shown)
 # api-host: apps.example.com   # admin API + web app hostname (default: <base-domain>)

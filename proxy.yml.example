@@ -20,9 +20,9 @@ control-url: http://127.0.0.1:2910
 # The cluster credentials. The defaults are the pair control mints for the
 # colocated proxy under its data dir; a remote proxy points these at the PEM
 # blocks `hostit-control proxy add` printed.
-# proxy-cert-file: /var/lib/hostit/ipc/proxy-local.pem
-# proxy-key-file: /var/lib/hostit/ipc/proxy-local.key
-# cluster-ca-cert-file: /var/lib/hostit/ipc/ca.pem
+# proxy-cert-file: /var/lib/hostit/control/ipc/proxy-local.pem
+# proxy-key-file: /var/lib/hostit/control/ipc/proxy-local.key
+# cluster-ca-cert-file: /var/lib/hostit/control/ipc/ca.pem
 
 # Public listeners (defaults shown)
 # listen-https: ":443"

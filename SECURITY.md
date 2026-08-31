@@ -37,6 +37,8 @@ Things especially worth reporting:
   same-origin protection on cookie-authenticated requests).
 - TLS/ACME issuance issues (e.g. obtaining a certificate for a name you do not own).
 
-The daemon is the trusted control plane and legitimately runs as root; a report
-that "the root daemon can do root things" is expected behavior, not a vulnerability.
-Operators are responsible for securing the host itself.
+hostit-node is the machine half and legitimately runs as root (Unix users,
+podman, nftables, btrfs); hostit-control (the trusted control plane) and
+hostit-proxy run as their own unprivileged users. A report that "the root node
+can do root things" is expected behavior, not a vulnerability. Operators are
+responsible for securing the host itself.
