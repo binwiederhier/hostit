@@ -57,7 +57,7 @@ func TestCallbacksFlowOverTheDuplex(t *testing.T) {
 	st := &recordingCallbackStore{power: map[string]bool{}, usage: map[string]int{}, snaps: map[string]int{}, hosts: map[string]string{"blog": "node-b"}}
 	registered := make(chan struct{}, 1)
 	sockPath := filepath.Join(t.TempDir(), "cluster.sock")
-	ln, err := cluster.ListenSocket(sockPath)
+	ln, err := cluster.ListenSocket(sockPath, 0o600)
 	require.NoError(t, err)
 	defer ln.Close()
 	srv := cluster.SocketServer(cluster.ConnectHandler(map[string]*cluster.Role{
@@ -197,7 +197,7 @@ func (a *terminalAgent) Terminal(name string) (api.TerminalSession, error) {
 // exactly where a unit test of either half proves nothing about the pair.
 func TestTerminalBridgesOverTheDuplex(t *testing.T) {
 	sockPath := filepath.Join(t.TempDir(), "cluster.sock")
-	ln, err := cluster.ListenSocket(sockPath)
+	ln, err := cluster.ListenSocket(sockPath, 0o600)
 	require.NoError(t, err)
 	defer ln.Close()
 

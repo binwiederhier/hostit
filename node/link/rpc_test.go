@@ -251,7 +251,7 @@ func TestDialInRegistersARemoteAgent(t *testing.T) {
 	registered := make(chan string, 1)
 	var got api.NodeAgent
 	sockPath := filepath.Join(t.TempDir(), "cluster.sock")
-	ln, err := cluster.ListenSocket(sockPath)
+	ln, err := cluster.ListenSocket(sockPath, 0o600)
 	require.NoError(t, err)
 	defer ln.Close()
 	srv := cluster.SocketServer(cluster.ConnectHandler(map[string]*cluster.Role{

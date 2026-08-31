@@ -45,7 +45,7 @@ func link(t *testing.T, agent api.ProxyAgent, sink api.ControlSink) (api.ProxyAg
 	t.Helper()
 	remote := make(chan api.ProxyAgent, 1)
 	sockPath := filepath.Join(t.TempDir(), "cluster.sock")
-	ln, err := cluster.ListenSocket(sockPath)
+	ln, err := cluster.ListenSocket(sockPath, 0o600)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = ln.Close() })
 	srv := cluster.SocketServer(cluster.ConnectHandler(map[string]*cluster.Role{

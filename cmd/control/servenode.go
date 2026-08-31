@@ -139,7 +139,7 @@ func listenForMembers(conf *config.Config, manager *control.Manager, srv *contro
 	// The colocated proxy runs as hostit-proxy, not control's user, so admit its
 	// uid on the member socket; absent (remote or root proxy) registers nothing.
 	cluster.TrustPeerUID(users.UID(users.Proxy))
-	ln, err := cluster.ListenSocket(cluster.SocketPath(cluster.DefaultSocketFile))
+	ln, err := cluster.ListenSocket(cluster.SocketPath(cluster.DefaultSocketFile), 0o666)
 	if err != nil {
 		return fmt.Errorf("cluster socket: %w", err)
 	}

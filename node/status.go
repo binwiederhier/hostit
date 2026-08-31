@@ -54,7 +54,7 @@ func nodeStatus(conf *Config, st *store.Store, link *link.ControlLink, version s
 // `hostit node status`. cluster.ListenSocket's 0600 is the whole story: only
 // root may ask, and nothing served here mutates anything.
 func ServeStatusSocket(path string, conf *Config, st *store.Store, link *link.ControlLink, version string) (io.Closer, error) {
-	listener, err := cluster.ListenSocket(path)
+	listener, err := cluster.ListenSocket(path, 0o600)
 	if err != nil {
 		return nil, err
 	}

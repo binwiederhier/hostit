@@ -54,7 +54,7 @@ func TestConnectHandlerRoutesByRole(t *testing.T) {
 	// The same-host path: a unix socket, where the kernel says who is calling
 	// and the header only says which name and role that caller claims.
 	path := filepath.Join(t.TempDir(), "cluster.sock")
-	ln, err := ListenSocket(path)
+	ln, err := ListenSocket(path, 0o600)
 	require.NoError(t, err)
 	defer ln.Close()
 	srv := SocketServer(ConnectHandler(map[string]*Role{RoleNode: role(), RoleProxy: role()}))

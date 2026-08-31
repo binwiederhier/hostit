@@ -61,7 +61,7 @@ func (p *Proxy) Routes() *api.Table {
 // cluster.ListenSocket's 0600 is the whole story: only root may ask, and
 // nothing served here mutates anything.
 func ServeStatusSocket(path string, p *Proxy) (io.Closer, error) {
-	listener, err := cluster.ListenSocket(path)
+	listener, err := cluster.ListenSocket(path, 0o600)
 	if err != nil {
 		return nil, err
 	}

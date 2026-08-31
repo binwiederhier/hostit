@@ -43,10 +43,13 @@ func SocketPath(addr string) string {
 	return strings.TrimPrefix(addr, socketScheme)
 }
 
-// ListenSocket creates control's member socket, replacing a stale one from a
-// previous process. Mode 0600: only root connects, which is the whole
-// authentication story on this path.
-func ListenSocket(path string) (net.Listener, error) {
+// ListenSocket creates a unix socket at path with the given mode, replacing a
+// stale one from a previous process. A root-only status socket uses 0600 -- the
+// mode is the whole authentication story there. The cluster member socket uses
+// 0666 because ITS auth is the peer-cred gate (trustedPeerUID), and a colocated
+// proxy running as its own user must be able to open the socket for that gate to
+// run; the kernel-attested uid, not the file mode, is what admits or refuses it.
+func ListenSocket(path string, mode os.FileMode) (net.Listener, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, err
 	}
@@ -57,7 +60,7 @@ func ListenSocket(path string) (net.Listener, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := os.Chmod(path, 0o600); err != nil {
+	if err := os.Chmod(path, mode); err != nil {
 		_ = ln.Close()
 		return nil, err
 	}
