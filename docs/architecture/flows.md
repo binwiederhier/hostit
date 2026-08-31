@@ -205,7 +205,7 @@ sequenceDiagram
 Key points: the control host holds a relay key trusted by every node (a
 compromise reaches every app -- accepted; it already holds the key material);
 the frontend `authorized_keys` is the sole per-user gate on the relay path, so
-control re-writes it on every key change; and `hostit-relay` derives the app from
+the node re-writes it (from the spec control pushes over the link) on every key change; and `hostit-relay` derives the app from
 `SUDO_UID`, never its arguments. The relay is off by default and experimental --
 prefer direct-to-node.
 

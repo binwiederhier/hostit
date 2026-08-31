@@ -80,7 +80,7 @@ SSH spans several packages; the per-flow view is in
 |---|---|
 | advertised SSH host (direct-to-node) | `control/service.go:Server.sshHostFor` reads `store.node.ssh_host`, reported by the node in its heartbeat (`node/machine_state.go`, `store/node.go`) |
 | relay key on remote nodes | `control/sshrelay.go:Manager.appendRelayKey` -- added to a remote app's keys in BOTH the mirror (`control/sync.go:DesiredState`) and the explicit `SetKeys` path, keyed on `a.Host` (the fleet build passes `nodeID=""`) |
-| relay routing files | `control/sshrelay.go` writes `ssh-routes`, `relay_known_hosts`, and per-app keys files on placement/key changes (`refreshSSHRelay`) |
+| relay routing | `control/sshrelay.go` COMPUTES the routes/known_hosts/per-app-keys and PUSHES them to the frontend node over the cluster link (`ApplyRelay`); `node/machine_relay.go` writes the files locally (shared paths in `system/relaypaths`) |
 | frontend stub accounts | `node/machine_relay.go:ReconcileRelayStubs` -- created outside the apps pool so `reconcileUsers` never reaps them; a `.hushlogin` suppresses the host MOTD |
 | the relay hop | `cmd/agent/shell.go:execShell` (route check) -> `cmd/agent/relay.go:execRelay` (the `hostit-relay` privileged helper), packaged as `hostit-relay` + `hostit.sudoers` |
 

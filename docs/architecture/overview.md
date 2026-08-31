@@ -77,7 +77,7 @@ link (`CertFor`).
 | Listener | Address | Serves |
 |---|---|---|
 | Public handler | `ListenHTTP` (a local address, e.g. `127.0.0.1:2910`) | Everything the proxy forwards: the REST/web handler on the web hostname, and ACME HTTP-01 challenges arriving through the proxy's `:80` pass-through. With `tls: off` it is the plain-HTTP surface directly, for development. |
-| Cluster socket | `ListenCluster` (`/run/hostit/control/cluster.sock`) | Members sharing this host: the node and the proxy. Root-only, and the kernel identifies the caller, so no certificate is involved. |
+| Cluster socket | `ListenCluster` (`/run/hostit/control/cluster.sock`) | Members sharing this host: the node and the proxy. Mode 0666, but the kernel-attested peer-cred gate is the real auth: it admits control's own uid, root, and the hostit-proxy user (each runs as its own user now), so no certificate is involved. |
 | Cluster mTLS | `ListenNode` (optional, e.g. `10.0.0.1:2930`) | Members on OTHER machines, authenticated by a CA-signed certificate. Absent on a single-box install. |
 | Admin API | `ListenAPI` (optional, e.g. `127.0.0.1:2900`) | The same REST/web handler over plain HTTP, for local admin use behind the firewall. |
 | Unix socket | `SocketFile` (`/run/hostit/hostit.sock`) | The app-side CLI (`hostit deploy/status/logs`, the login shell's `Self`/`Ensure`, and the sandboxed Claude Max tool calls), authorized by `SO_PEERCRED` (`control/socket.go`). World-connectable on purpose; the uid, not the caller, names the app. |
