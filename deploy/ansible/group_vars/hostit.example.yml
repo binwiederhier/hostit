@@ -22,7 +22,6 @@ hostit_version: "0.24.0"
 
 # btrfs app homes -> snapshots, rollback, fork, hard disk quotas. REQUIRED: hostit
 # refuses to start unless apps-dir is btrfs, and this role sets it up.
-hostit_btrfs: true
 
 # --- Recommended for production ---
 

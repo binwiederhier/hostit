@@ -150,9 +150,8 @@
   notify: restart hostit-proxy
 
 # Optionally move app homes onto a btrfs loopback (snapshots + hard quotas).
-- name: Set up btrfs app homes
+- name: Set up btrfs app homes (mandatory: snapshots/quotas are core)
   ansible.builtin.import_tasks: btrfs.yml
-  when: hostit_btrfs | default(false)
   tags: [btrfs]
 
 # An app login must not become a tunnel into the host: without this, a tenant can

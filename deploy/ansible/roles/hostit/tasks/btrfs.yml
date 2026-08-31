@@ -5,7 +5,7 @@
 # file on the existing root filesystem, so no extra block device is needed. It is a
 # one-off migration: existing homes are moved aside and rsynced into subvolumes.
 #
-# Gated behind hostit_btrfs so it only runs where explicitly enabled.
+# Mandatory: the node refuses to start unless its apps dir is btrfs (preflight).
 
 - name: Install btrfs-progs and rsync
   ansible.builtin.apt:

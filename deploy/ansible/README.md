@@ -70,7 +70,7 @@ deploy/ansible/
 
 ## Notes
 
-- **btrfs is optional.** `hostit_btrfs: true` puts app homes on a btrfs loopback so
+- **App homes are on btrfs** (a loopback image if the disk is not already btrfs) so
   hostit can snapshot them and enforce hard disk quotas; it is a one-off migration.
   Without it apps still run, you just lose snapshots, rollback, fork and hard
   quotas. Recommended for production.
