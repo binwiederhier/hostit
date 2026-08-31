@@ -80,16 +80,17 @@ const (
 	ContainerAPIURL  = "http://" + ContainerAPIAddr
 	// HostAppSocketFile is the same app socket on the HOST: the node serves it
 	// here and the host-side login shell dials it here. It sits in its own subdir
-	// so only that subdir is mounted into containers, keeping apps-raw and the
-	// operator sockets (a level up in the run dir) invisible to tenants. Must
-	// match nodeconf's default socket-file.
-	HostAppSocketFile = "/run/hostit/app/hostit.sock"
+	// under the node's run dir so only that subdir is mounted into containers,
+	// keeping apps-raw (a level up, in /run/hostit/node) invisible to tenants; the
+	// operator sockets live in the other services' own subdirs. Must match
+	// nodeconf's default socket-file.
+	HostAppSocketFile = "/run/hostit/node/app/hostit.sock"
 	// DefaultControlSocketFile is control's OWN unix socket: the operator CLI
 	// (peer uid 0 = admin, no token) and the assistant sandbox, which needs
 	// control's full registry to resolve a remote-node app's uid. Distinct from
 	// the app socket so a worker node can never serve -- or answer for -- the
 	// admin surface.
-	DefaultControlSocketFile = "/run/hostit/control.sock"
+	DefaultControlSocketFile = "/run/hostit/control/control.sock"
 	// DNSProviderRoute53 enables DNS-01 challenges via AWS Route 53, which is
 	// what a wildcard certificate requires (Let's Encrypt does not issue
 	// wildcards over HTTP-01)

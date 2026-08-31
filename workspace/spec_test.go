@@ -28,7 +28,7 @@ func TestContainerCreateArgsWorkspaceMode(t *testing.T) {
 	// The node serves the app socket from a dedicated subdir on the host so only
 	// that subdir -- not the whole run dir (which also holds apps-raw and the
 	// operator sockets) -- gets mounted into the container.
-	args := CreateArgs(conf, a, "/srv/hostit/apps/appid123", "/run/hostit/app/hostit.sock", "/usr/bin/hostit", testVersion, 0, 0, testIDs, "")
+	args := CreateArgs(conf, a, "/srv/hostit/apps/appid123", "/run/hostit/node/app/hostit.sock", "/usr/bin/hostit", testVersion, 0, 0, testIDs, "")
 	cmd := strings.Join(args, " ")
 	// The container is named by the app's stable id, not its name, so a rename never
 	// has to recreate it. The in-container home is a fixed path for the same reason.
@@ -52,7 +52,7 @@ func TestContainerCreateArgsWorkspaceMode(t *testing.T) {
 	// mounted at the container's run dir, so inside the container the socket is at
 	// /run/hostit/hostit.sock as before, but apps-raw and the operator sockets
 	// (siblings of the subdir on the host) are not inside the mount at all.
-	assert.Contains(t, cmd, "--volume /run/hostit/app:/run/hostit:ro")
+	assert.Contains(t, cmd, "--volume /run/hostit/node/app:/run/hostit:ro")
 	assert.NotContains(t, cmd, "--volume /run/hostit:/run/hostit:ro")
 	// The container runs the app's persistent subvolume, not an image: no image
 	// tag anywhere in the argv.

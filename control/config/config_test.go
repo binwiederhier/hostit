@@ -13,7 +13,7 @@ func TestNewConfigDefaults(t *testing.T) {
 	t.Parallel()
 	c := NewConfig()
 	assert.Equal(t, ":80", c.ListenHTTP)
-	assert.Equal(t, "/run/hostit/app/hostit.sock", c.SocketFile) // host path; container sees /run/hostit/hostit.sock via the scoped mount
+	assert.Equal(t, "/run/hostit/node/app/hostit.sock", c.SocketFile) // host path; container sees /run/hostit/hostit.sock via the scoped mount
 	assert.Equal(t, "/var/lib/hostit", c.DataDir)
 	// Under the data directory, not /srv: one place holds hostit's state
 	assert.Equal(t, "/var/lib/hostit/apps", c.AppsDir)

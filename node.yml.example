@@ -29,7 +29,8 @@ control-url: "127.0.0.1:2930"
 
 # Node-local storage: data-dir holds the registry mirror control pushes (and,
 # when colocated, the credentials above); apps-dir is the btrfs pool the app
-# subvolumes live in; socket-file is where the in-container CLI reaches it.
+# subvolumes live in; socket-file is the host path the node serves the app socket
+# on (its own subdir is mounted into containers, where it lands at /run/hostit/hostit.sock).
 data-dir: /var/lib/hostit
 apps-dir: /var/lib/hostit/apps
-socket-file: /run/hostit/hostit.sock
+socket-file: /run/hostit/node/app/hostit.sock

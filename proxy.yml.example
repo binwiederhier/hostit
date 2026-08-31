@@ -30,4 +30,4 @@ control-url: http://127.0.0.1:2910
 
 # Where the routing table and certificate material persist, so a proxy restart
 # during a control outage still serves. Default shown.
-# cache-dir: /var/lib/hostit-proxy
+# data-dir: /var/lib/hostit/proxy

@@ -17,9 +17,9 @@ const (
 	DefaultConfigFile = "/etc/hostit/node/node.yml"
 	// localNodeID is the colocated node: control mints its credentials itself.
 	localNodeID = "local"
-	// DefaultNodeSocketFile is the node's root-only status socket, next to the
-	// app socket and control's socket under /run/hostit.
-	DefaultNodeSocketFile = "/run/hostit/node.sock"
+	// DefaultNodeSocketFile is the node's root-only status socket, in the node's
+	// own run dir alongside the app socket subdir.
+	DefaultNodeSocketFile = "/run/hostit/node/node.sock"
 )
 
 // Config is the node's OWN configuration -- deliberately not the control
@@ -77,9 +77,9 @@ type Config struct {
 	// DataDir holds the registry mirror control pushes (and the colocated
 	// credentials); AppsDir is the btrfs pool the app subvolumes live in;
 	// SocketFile is the HOST path the node serves the app socket on. It lives in
-	// its own subdir (default /run/hostit/app) so ONLY that subdir is mounted
+	// its own subdir (default /run/hostit/node/app) so ONLY that subdir is mounted
 	// into a container -- the container reaches it at /run/hostit/hostit.sock,
-	// while apps-raw and the operator sockets, a level up, stay out of reach.
+	// while apps-raw, a level up in the node's run dir, stays out of reach.
 	DataDir    string `yaml:"data-dir"`
 	AppsDir    string `yaml:"apps-dir"`
 	SocketFile string `yaml:"socket-file"`
@@ -92,7 +92,7 @@ func NewConfig() *Config {
 		NodeID:         localNodeID,
 		DataDir:        "/var/lib/hostit",
 		AppsDir:        "/var/lib/hostit/apps",
-		SocketFile:     "/run/hostit/app/hostit.sock",
+		SocketFile:     "/run/hostit/node/app/hostit.sock",
 		SSHHostKeyFile: "/etc/ssh/ssh_host_ed25519_key.pub",
 		SSHRoutesFile:  "/var/lib/hostit/ssh-routes",
 		RelayKeysDir:   "/var/lib/hostit/relay-keys",

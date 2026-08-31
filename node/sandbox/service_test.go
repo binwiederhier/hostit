@@ -26,11 +26,11 @@ import (
 const testToken = "sk-test-subscription-token"
 
 func testEngine() *Engine {
-	// The node's app socket lives under /run/hostit/app; its dir is mounted at
+	// The node.s app socket lives under /run/hostit/node/app; its dir is mounted at
 	// the container's /run/hostit so the sandbox sees /run/hostit/hostit.sock.
 	return &Engine{
 		hostitBin:  "/usr/local/bin/hostit",
-		socketFile: "/run/hostit/app/hostit.sock",
+		socketFile: "/run/hostit/node/app/hostit.sock",
 		dataDir:    "/var/lib/hostit",
 	}
 }
@@ -192,7 +192,7 @@ func TestSandboxBaseArgsLockdown(t *testing.T) {
 	if !hasFlagValue(args, "--volume", "/usr/local/bin/hostit:"+workspace.ContainerBinFile+":ro") {
 		t.Errorf("expected the hostit binary mounted read-only at %s, got %v", workspace.ContainerBinFile, args)
 	}
-	if !hasFlagValue(args, "--volume", "/run/hostit/app:"+workspace.ContainerRunDir+":ro") {
+	if !hasFlagValue(args, "--volume", "/run/hostit/node/app:"+workspace.ContainerRunDir+":ro") {
 		t.Errorf("expected the node app-socket dir mounted read-only at %s, got %v", workspace.ContainerRunDir, args)
 	}
 }
@@ -249,7 +249,7 @@ func TestSandboxSessionLogKeysOnAppID(t *testing.T) {
 // the cmd split the daemon is hostit-control, which has no "mcp" command, and
 // mounting it silently broke the sandbox's only tool surface.
 func TestNewEngineMountsTheAgentBinary(t *testing.T) {
-	e := NewEngine("/run/hostit/app/hostit.sock", "/var/lib/hostit")
+	e := NewEngine("/run/hostit/node/app/hostit.sock", "/var/lib/hostit")
 	if e.hostitBin != workspace.HostBinFile {
 		t.Fatalf("sandbox mounts %q as the MCP bridge, want the agent binary %q", e.hostitBin, workspace.HostBinFile)
 	}

@@ -26,7 +26,7 @@ const (
 	// socketScheme marks a control address as a path rather than host:port.
 	socketScheme = "unix:"
 	// DefaultSocketFile is where control accepts same-host members.
-	DefaultSocketFile = "/run/hostit/cluster.sock"
+	DefaultSocketFile = "/run/hostit/control/cluster.sock"
 )
 
 // peerUIDKey carries the connecting process's uid from the listener down to the

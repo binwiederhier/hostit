@@ -31,7 +31,7 @@ apps-dir: /srv/apps
 	assert.Equal(t, "/srv/apps", conf.AppsDir)
 	// Unset keys default rather than failing.
 	assert.Equal(t, "/var/lib/hostit", conf.DataDir)
-	assert.Equal(t, "/run/hostit/app/hostit.sock", conf.SocketFile) // host path; scoped-mount subdir
+	assert.Equal(t, "/run/hostit/node/app/hostit.sock", conf.SocketFile) // host path; scoped-mount subdir
 }
 
 // The colocated node names nothing but where to dial: its id defaults to the
