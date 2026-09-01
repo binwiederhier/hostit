@@ -1,10 +1,10 @@
-# Managed by Ansible, do not edit on the host. The node holds no control-plane
-# settings -- it dials control and does what it is told.
+# Managed by Ansible, do not edit on the host. See node.yml.example for all options.
+# The node holds no control-plane settings -- it dials control and does what it is told.
 
 # This node's identity (cert CN and registry name; "local" is the colocated node).
 node-id: {{ hostit_node_id }}
 
-# Where this node dials control: the /run/hostit socket when colocated, else mTLS.
+# Where the node dials control: the /run/hostit socket when colocated, else mTLS.
 control-url: "{{ hostit_node_control_url }}"
 {% if hostit_node_remote %}
 # A remote node's membership IS its CA-signed cert (CN={{ hostit_node_id }}, OU=node).
@@ -21,7 +21,7 @@ apps-allowed-addresses:
 {% endfor %}
 {% endif %}
 {% if hostit_node_ssh_host %}
-# Hostname control advertises for `ssh <app>@...` on this node (else its base domain).
+# Hostname control advertises for `ssh <app>@...` on this node (else base domain).
 ssh-host: "{{ hostit_node_ssh_host }}"
 {% endif %}
 {% if hostit_outbound_allow_private_cidrs %}
@@ -31,7 +31,7 @@ outbound-allow-private-cidrs:
   - {{ cidr }}
 {% endfor %}
 {% endif %}
-# Node-local storage (mirror registry + app-subvolume pool) and the app socket.
+# Node-local storage: registry mirror, btrfs app pool, and the app socket.
 data-dir: /var/lib/hostit/node
 apps-dir: {{ hostit_node_apps_dir }}
 socket-file: /run/hostit/node/app/hostit.sock

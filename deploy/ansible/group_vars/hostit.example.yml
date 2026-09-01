@@ -1,7 +1,8 @@
 ---
-# Copy to group_vars/hostit.yml and edit. Unset keys fall back to
-# roles/hostit/defaults/main.yml. Keep secrets in an Ansible Vault file
-# (ansible-vault create group_vars/hostit_vault.yml; deploy with --ask-vault-pass).
+# Copy to group_vars/hostit.yml and edit -- NON-secret settings only. Unset keys
+# fall back to roles/hostit/defaults/main.yml. Every secret (admin token, client
+# secrets, AWS/API keys, cluster certs) goes in group_vars/hostit_vault.yml instead
+# -- see group_vars/hostit_vault.example.yml for the full list.
 
 # --- Required ---
 
@@ -9,11 +10,8 @@
 # apps.example.com both pointing here).
 hostit_domain: "apps.example.com"
 
-# Admin REST API token (openssl rand -hex 24); keep it in Vault.
-hostit_admin_token: "CHANGE-ME"
-
 # Release to install (https://github.com/binwiederhier/hostit/releases).
-hostit_version: "0.34.0"
+hostit_version: "0.35.0"
 
 # --- Recommended ---
 

@@ -1,25 +1,21 @@
 # Managed by Ansible, do not edit on the host. See control.yml.example for all options.
 
+# base-domain and admin-token are required; everything below has a default.
 base-domain: {{ hostit_domain }}
-# control's own data dir, owned by the unprivileged hostit-control user.
+admin-token: {{ hostit_admin_token }}
+
+# Control's own data dir, owned by the unprivileged hostit-control user.
 data-dir: /var/lib/hostit/control
 {% if hostit_split_proxy %}
 # hostit-proxy terminates TLS in front; control serves plain HTTP for it.
 listen-http: "{{ hostit_control_listen_http }}"
 {% endif %}
-{% if hostit_control_listen_cluster_tls %}
-# Where members on OTHER machines dial in over mTLS (a single-box install omits it).
-listen-cluster: "{{ hostit_control_listen_cluster_tls }}"
-cluster-cert-file: /etc/hostit/control/endpoint.crt
-cluster-key-file: /etc/hostit/control/endpoint.key
-cluster-ca-cert-file: /etc/hostit/control/ca.crt
-{% endif %}
-admin-token: {{ hostit_admin_token }}
 {% if hostit_control_letsencrypt_email %}
+# ACME contact for the on-demand per-subdomain certs.
 letsencrypt-email: {{ hostit_control_letsencrypt_email }}
 {% endif %}
 {% if hostit_control_aws_access_key_id %}
-# One wildcard cert for *.{{ hostit_domain }} via Route 53 (DNS-01).
+# One wildcard *.{{ hostit_domain }} cert via Route 53 (DNS-01).
 dns-provider: route53
 aws-region: {{ hostit_control_aws_region }}
 aws-access-key-id: {{ hostit_control_aws_access_key_id }}
@@ -28,11 +24,23 @@ aws-secret-key: {{ hostit_control_aws_secret_key }}
 aws-hosted-zone-id: {{ hostit_control_aws_hosted_zone_id }}
 {% endif %}
 {% endif %}
-
-# Web login via Google; these emails become admins on first login.
 {% if hostit_control_google_client_id %}
+# Web login via Google; admin-emails become admins on first login.
 google-client-id: {{ hostit_control_google_client_id }}
 google-client-secret: {{ hostit_control_google_client_secret }}
+{% endif %}
+{% if hostit_control_admin_emails %}
+admin-emails:
+{% for email in hostit_control_admin_emails %}
+  - {{ email }}
+{% endfor %}
+{% endif %}
+{% if hostit_control_listen_cluster_tls %}
+# Multi-machine: where members on OTHER hosts dial in over mTLS (single box omits it).
+listen-cluster: "{{ hostit_control_listen_cluster_tls }}"
+cluster-cert-file: /etc/hostit/control/endpoint.crt
+cluster-key-file: /etc/hostit/control/endpoint.key
+cluster-ca-cert-file: /etc/hostit/control/ca.crt
 {% endif %}
 {% if hostit_control_connection_clients %}
 # One OAuth client per connection provider offered.
@@ -43,18 +51,18 @@ connections:
     client-secret: {{ client['client_secret'] }}
 {% endfor %}
 {% endif %}
-{% if hostit_control_session_key %}
-session-key: {{ hostit_control_session_key }}
+{% if hostit_control_anthropic_api_key %}
+# Built-in coding assistant (metered Anthropic API).
+anthropic-api-key: {{ hostit_control_anthropic_api_key }}
 {% endif %}
-admin-emails:
-{% for email in hostit_control_admin_emails %}
-  - {{ email }}
-{% endfor %}
-
+{% if hostit_control_claude_api_token %}
+# Additionally offer Claude.ai (claude setup-token).
+claude-code-oauth-token: {{ hostit_control_claude_api_token }}
+{% endif %}
 # App card previews: live iframe, headless-chrome screenshot, or off.
 app-preview: {{ hostit_control_app_preview | default("live") }}
 {% if hostit_outbound_allow_private_cidrs %}
-# Internal CIDRs hostit may reach on an account's behalf (fetches + previews + apps).
+# Internal CIDRs hostit may reach on a user's behalf (fetches + previews).
 outbound-allow-private-cidrs:
 {% for cidr in hostit_outbound_allow_private_cidrs %}
   - {{ cidr }}
@@ -64,17 +72,12 @@ app-preview-allow-cidrs:
   - {{ cidr }}
 {% endfor %}
 {% endif %}
-{% if hostit_control_anthropic_api_key %}
-# Built-in coding assistant (metered API).
-anthropic-api-key: {{ hostit_control_anthropic_api_key }}
-{% endif %}
-{% if hostit_control_claude_api_token %}
-# Optional Claude Max backend (claude setup-token).
-claude-code-oauth-token: {{ hostit_control_claude_api_token }}
-{% endif %}
 {% if hostit_ssh_relay | default(false) %}
-# Optional single-hostname SSH relay gateway.
+# Single-hostname SSH relay gateway.
 ssh-relay: true
+{% endif %}
+{% if hostit_control_session_key %}
+session-key: {{ hostit_control_session_key }}
 {% endif %}
 {% if hostit_control_listen_metrics_http %}
 # Prometheus /metrics (unauthenticated -- keep it internal).

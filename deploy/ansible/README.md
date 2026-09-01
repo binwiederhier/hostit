@@ -30,7 +30,8 @@ deploy/ansible/
   playbook.yml                       # runs the role against the [hostit] group
   inventory/single-box.example.yml   # copy + edit: control+node+proxy on one host
   inventory/split.example.yml        # copy + edit: control+proxy frontend + remote nodes
-  group_vars/hostit.example.yml      # copy to group_vars/hostit.yml, set secrets (use Vault)
+  group_vars/hostit.example.yml      # copy to group_vars/hostit.yml (non-secret settings)
+  group_vars/hostit_vault.example.yml # copy to group_vars/hostit_vault.yml, encrypt (all secrets)
   roles/hostit/                      # the role (defaults, tasks, handlers, templates)
 ```
 
@@ -41,7 +42,9 @@ variable configures.
 ## Deploy
 
 ```
-cp inventory/single-box.example.yml inventory/hosts.yml   # (or split.example.yml)
-cp group_vars/hostit.example.yml    group_vars/hostit.yml # then edit both
-ansible-playbook -i inventory/hosts.yml playbook.yml
+cp inventory/single-box.example.yml    inventory/hosts.yml         # (or split.example.yml)
+cp group_vars/hostit.example.yml       group_vars/hostit.yml       # non-secret settings
+cp group_vars/hostit_vault.example.yml group_vars/hostit_vault.yml # secrets, then:
+ansible-vault encrypt group_vars/hostit_vault.yml
+ansible-playbook -i inventory/hosts.yml playbook.yml --ask-vault-pass
 ```

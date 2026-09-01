@@ -1,9 +1,12 @@
 # Managed by Ansible, do not edit on the host. See proxy.yml.example for all options.
+# The proxy is the data plane: it terminates TLS and serves apps from a cached
+# table, so apps keep serving while control restarts. It dials control.
 
+# Where control's plain-HTTP listener is (dashboard/API upstream + host fallback).
 control-url: http://{{ hostit_control_listen_http }}
 
-# The proxy is a cluster member: it dials control for its routes and certs. When
-# colocated it uses the /run/hostit socket (no cert); a remote one dials mTLS.
+# This proxy's cluster identity. Colocated dials the /run/hostit socket (no certs);
+# a remote proxy sets its own id and dials control's mTLS listener.
 proxy-id: {{ hostit_proxy_id }}
 cluster-url: {{ hostit_proxy_cluster_url }}
 {% if hostit_proxy_remote %}

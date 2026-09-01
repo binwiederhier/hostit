@@ -11,4 +11,17 @@ all:
           ansible_host: 203.0.113.10
   vars:
     hostit_domain: "apps.example.com"
-    # hostit_admin_token and any control features -> group_vars/hostit.yml (vault)
+
+    # Web login via Google OAuth (redirect https://apps.example.com/auth/callback).
+    # Omit both to run token-only. The client secret belongs in a Vault, not here.
+    # hostit_control_google_client_id: "1234567890-abcdef.apps.googleusercontent.com"
+    # hostit_control_google_client_secret: "GOCSPX-..."   # -> hostit_vault.yml
+    # hostit_control_admin_emails:
+    #   - you@example.com
+
+    # Built-in AI assistant (optional): a metered Anthropic API key and/or a
+    # Claude Pro/Max token (claude setup-token). Both are secrets -> Vault.
+    # hostit_control_anthropic_api_key: "sk-ant-..."
+    # hostit_control_claude_api_token: "..."
+
+    # hostit_admin_token and other secrets -> group_vars/hostit_vault.yml (Vault).

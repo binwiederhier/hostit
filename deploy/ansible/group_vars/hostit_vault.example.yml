@@ -1,0 +1,52 @@
+---
+# ALL secrets for a hostit deploy, in ONE place. Copy to group_vars/hostit_vault.yml
+# and encrypt it, then deploy with the vault password:
+#   ansible-vault encrypt group_vars/hostit_vault.yml
+#   ansible-playbook -i inventory/hosts.yml playbook.yml --ask-vault-pass
+# Non-secret settings (domain, version, listeners, feature toggles) go in
+# group_vars/hostit.yml; only sensitive values belong here.
+
+# --- Required ---
+
+# Admin REST API bearer token (min 16 chars): openssl rand -hex 24
+hostit_admin_token: "CHANGE-ME"
+
+# --- Web login (optional; the client id is public and can live in inventory) ---
+# hostit_control_google_client_secret: "GOCSPX-..."
+
+# --- Wildcard TLS via Route 53 / DNS-01 (optional) ---
+# hostit_control_aws_secret_key: "..."
+
+# --- Built-in AI assistant (optional) ---
+# hostit_control_anthropic_api_key: "sk-ant-..."
+# hostit_control_claude_api_token: "..."          # claude setup-token
+
+# --- Connection provider OAuth clients (optional) ---
+# hostit_control_connection_clients:
+#   slack:  { client_id: "...", client_secret: "..." }
+#   github: { client_id: "...", client_secret: "..." }
+
+# --- Cluster mTLS -- SPLIT installs only (a single box needs none of this) ---
+# The CA cert every member trusts, plus one cert/key per member that dials control
+# over mTLS (control itself + each remote node/proxy). Issue them from your OWN CA;
+# hostit does not mint them (openssl recipe in the shipped node.yml.example). The
+# keys are the inventory hostnames.
+# hostit_cluster_ca_cert: |
+#   -----BEGIN CERTIFICATE-----
+#   ...
+#   -----END CERTIFICATE-----
+# hostit_cluster_certs:
+#   control:
+#     cert: |
+#       -----BEGIN CERTIFICATE-----
+#       ...
+#     key: |
+#       -----BEGIN PRIVATE KEY-----
+#       ...
+#   node1:
+#     cert: |
+#       -----BEGIN CERTIFICATE-----
+#       ...
+#     key: |
+#       -----BEGIN PRIVATE KEY-----
+#       ...

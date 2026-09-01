@@ -43,10 +43,11 @@
     owner: hostit-proxy
     group: hostit-proxy
     mode: 0600
+  no_log: true
   notify: restart hostit-proxy
 
 # Wait for control's socket so the proxy does not take :443 before control can
-# hand it routes and certs (that empty-cache window took prod down 2026-08-17).
+# hand it routes and certs (that empty-cache window would 502 every request).
 - name: Wait for control's member socket
   wait_for:
     path: /run/hostit/control/cluster.sock

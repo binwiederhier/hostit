@@ -1,24 +1,27 @@
 ---
 
 - name: restart hostit-control
-  ansible.builtin.systemd:
+  systemd:
     name: hostit-control
     state: restarted
-    daemon_reload: true
+    daemon_reload: yes
+  when: "'control' in hostit_components"
 
 - name: restart hostit-node
-  ansible.builtin.systemd:
+  systemd:
     name: hostit-node
     state: restarted
-    daemon_reload: true
+    daemon_reload: yes
+  when: "'node' in hostit_components"
 
 - name: restart hostit-proxy
-  ansible.builtin.systemd:
+  systemd:
     name: hostit-proxy
     state: restarted
-    daemon_reload: true
+    daemon_reload: yes
+  when: "'proxy' in hostit_components"
 
 - name: restart ssh
-  ansible.builtin.systemd:
+  systemd:
     name: ssh
     state: restarted

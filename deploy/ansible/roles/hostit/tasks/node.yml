@@ -54,6 +54,7 @@
     owner: root
     group: root
     mode: 0600
+  no_log: true
   notify: restart hostit-node
 
 - name: Require hostit_control_host for a remote node
