@@ -42,9 +42,7 @@
     owner: hostit-control
     group: hostit-control
     mode: 0600
-  notify:
-    - restart hostit-control
-    - restart hostit-node
+  notify: restart hostit-control
 
 # The optional SSH relay gateway lives on the control host (its colocated node is
 # the frontend, and the node self-generates the relay key), so it is just a sudo

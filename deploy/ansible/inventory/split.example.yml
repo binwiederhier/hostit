@@ -21,7 +21,6 @@ all:
           hostit_node_ssh_host: "node1.ssh.apps.example.com"   # for ssh <app>@ on this node
   vars:
     hostit_domain: "apps.example.com"
-    hostit_split_proxy: true
     hostit_split_node: true
     hostit_control_host: ctrl              # the inventory host running control
     hostit_control_node: "10.0.0.1:2930"  # control's mTLS address that members dial

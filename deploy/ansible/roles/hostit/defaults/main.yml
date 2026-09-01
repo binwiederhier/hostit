@@ -36,7 +36,7 @@ hostit_components: [control, node, proxy]
 
 # Run hostit-proxy as a separate TLS data plane in front of control (control then
 # serves plain HTTP for it). Run the machine half as its own hostit-node daemon.
-hostit_split_proxy: false
+hostit_split_proxy: "{{ 'proxy' in hostit_components }}"
 hostit_split_node: false
 
 # Optional single-hostname SSH relay so `ssh <app>@<domain>` reaches any node.
