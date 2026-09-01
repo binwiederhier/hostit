@@ -146,8 +146,9 @@ func TestCreateAppAllowsRecreateOfManagedAccount(t *testing.T) {
 func TestCreateAppAllowsRecreateOfColocatedNodeUser(t *testing.T) {
 	t.Parallel()
 	m, _ := newTestManager(t)
+	// An app user's home is the runtime raw-view path, under /run/hostit.
 	m.lookupOSUser = func(name string) (string, bool) {
-		return "/var/lib/hostit/node/apps/id-x/home/app", true
+		return "/run/hostit/node/apps-raw/3c1117dca28d/home/app", true
 	}
 	_, err := m.CreateApp("blog", &CreateOptions{RequestKeys: []string{testPublicKey}})
 	require.NoError(t, err)

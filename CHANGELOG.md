@@ -7,6 +7,14 @@ changed rather than what an operator had to do about it; from v0.15.0 on, each
 release is written down as it is cut. Anything that changes a config file, a
 default, or on-disk state is called out as **Breaking** or **Upgrade note**.
 
+## v0.36.4 (2026-09-01)
+
+Complete the v0.36.3 fix: app users are homed under the runtime tree
+(/run/hostit/.../apps-raw/...), which v0.36.3 did not count as hostit-managed, so
+an immediate same-name recreate on a colocated-node host still 400'd. The
+name-collision check now recognizes both the /run/hostit and /var/lib/hostit
+trees.
+
 ## v0.36.3 (2026-09-01)
 
 Fix a false positive in the v0.36.0 app-name collision check: on a host with a

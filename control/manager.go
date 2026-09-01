@@ -533,20 +533,23 @@ func osuserLookup(name string) (string, bool) {
 	return u.HomeDir, true
 }
 
-// hostitStateRoot is where every hostit-managed account is homed: app users
-// under a node's apps pool, relay stubs, a component's own user. A real
-// system/human account (postgres, a login user) lives elsewhere.
-const hostitStateRoot = "/var/lib/hostit"
+// hostitManagedRoots are where every hostit-managed account is homed: app users
+// under the runtime raw-view tree (/run/hostit/.../apps-raw/...), relay stubs and
+// component users under the state tree (/var/lib/hostit). A real system/human
+// account (postgres, a login user) lives elsewhere (/home, /root, /var/lib/<svc>).
+var hostitManagedRoots = []string{"/run/hostit", "/var/lib/hostit"}
 
 // managedHome reports whether a home dir belongs to a hostit-managed account.
 // Those are transient -- a just-deleted app re-creating its name must still work
 // while the old user tears down -- so a collision with one must NOT block a
 // create. The apps pool may be a DIFFERENT host/path than control's own (a
-// colocated node homes its app users under the node's tree), so the whole hostit
-// state root counts, plus a control-side apps dir set outside it.
+// colocated node homes its app users under the node's runtime tree), so both
+// hostit roots count, plus a control-side apps dir set outside them.
 func (m *Manager) managedHome(home string) bool {
 	home = filepath.Clean(home)
-	for _, prefix := range []string{hostitStateRoot, m.config.AppsDir} {
+	// Fresh slice so we never append to (and alias) the package-level roots.
+	roots := append(append([]string{}, hostitManagedRoots...), m.config.AppsDir)
+	for _, prefix := range roots {
 		if prefix == "" {
 			continue
 		}

@@ -11,7 +11,7 @@
 hostit_domain: "apps.example.com"
 
 # Release to install (https://github.com/binwiederhier/hostit/releases).
-hostit_version: "0.36.3"
+hostit_version: "0.36.4"
 
 # --- Recommended ---
 
