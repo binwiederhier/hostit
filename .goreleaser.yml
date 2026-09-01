@@ -104,15 +104,15 @@ nfpms:
     recommends:
       - passt
     contents:
-      - src: node.yml.example
+      - src: pkg/files/etc/hostit/node/node.yml.example
         dst: /etc/hostit/node/node.yml.example
-      - src: hostit-node.service
+      - src: pkg/files/lib/systemd/system/hostit-node.service
         dst: /lib/systemd/system/hostit-node.service
-      - src: scripts/sysusers/hostit-node.conf
+      - src: pkg/files/usr/lib/sysusers.d/hostit-node.conf
         dst: /usr/lib/sysusers.d/hostit-node.conf
-      - src: scripts/tmpfiles/hostit-node.conf
+      - src: pkg/files/usr/lib/tmpfiles.d/hostit-node.conf
         dst: /usr/lib/tmpfiles.d/hostit-node.conf
-      - src: hostit-app@.service
+      - src: pkg/files/lib/systemd/system/hostit-app@.service
         dst: /lib/systemd/system/hostit-app@.service
       # The container binary, deliberately OFF $PATH: it is bind-mounted into
       # every container as /usr/bin/hostit, and nothing an operator types lives
@@ -127,36 +127,36 @@ nfpms:
       # an operator does not type. Existing app users were moved to this path by
       # the node's usermod sweep in an earlier release; the old /usr/bin copies
       # (and the sweep) are gone now that every passwd entry names the new path.
-      - src: hostit-shell
+      - src: pkg/files/usr/lib/hostit/bin/hostit-shell
         dst: /usr/lib/hostit/bin/hostit-shell
         file_info:
           mode: 0755
-      - src: hostit-enter
+      - src: pkg/files/usr/lib/hostit/bin/hostit-enter
         dst: /usr/lib/hostit/bin/hostit-enter
         file_info:
           mode: 0755
-      - src: hostit-relay
+      - src: pkg/files/usr/lib/hostit/bin/hostit-relay
         dst: /usr/lib/hostit/bin/hostit-relay
         file_info:
           mode: 0755
-      - src: hostit.sudoers
+      - src: pkg/files/etc/sudoers.d/hostit
         dst: /etc/sudoers.d/hostit
         type: "config|noreplace"
         file_info:
           mode: 0440
       # Tab completion for the front door and this package's daemon CLI; the
       # scripts ask the binary itself, so they never go stale.
-      - src: scripts/completion/hostit.bash
+      - src: pkg/files/usr/share/bash-completion/completions/hostit
         dst: /usr/share/bash-completion/completions/hostit
-      - src: scripts/completion/_hostit
+      - src: pkg/files/usr/share/zsh/vendor-completions/_hostit
         dst: /usr/share/zsh/vendor-completions/_hostit
-      - src: scripts/completion/hostit-node.bash
+      - src: pkg/files/usr/share/bash-completion/completions/hostit-node
         dst: /usr/share/bash-completion/completions/hostit-node
-      - src: scripts/completion/_hostit-node
+      - src: pkg/files/usr/share/zsh/vendor-completions/_hostit-node
         dst: /usr/share/zsh/vendor-completions/_hostit-node
     scripts:
-      postinstall: "scripts/postinst-node.sh"
-      postremove: "scripts/postrm-node.sh"
+      postinstall: "pkg/scripts/postinst-node.sh"
+      postremove: "pkg/scripts/postrm-node.sh"
 
   # The control plane: the registry, web app and API. No machine tooling.
   - id: hostit_control_pkg
@@ -172,21 +172,21 @@ nfpms:
     formats: [deb, rpm]
     bindir: /usr/bin
     contents:
-      - src: control.yml.example
+      - src: pkg/files/etc/hostit/control/control.yml.example
         dst: /etc/hostit/control/control.yml.example
-      - src: hostit-control.service
+      - src: pkg/files/lib/systemd/system/hostit-control.service
         dst: /lib/systemd/system/hostit-control.service
-      - src: scripts/sysusers/hostit-control.conf
+      - src: pkg/files/usr/lib/sysusers.d/hostit-control.conf
         dst: /usr/lib/sysusers.d/hostit-control.conf
-      - src: scripts/tmpfiles/hostit-control.conf
+      - src: pkg/files/usr/lib/tmpfiles.d/hostit-control.conf
         dst: /usr/lib/tmpfiles.d/hostit-control.conf
-      - src: scripts/completion/hostit-control.bash
+      - src: pkg/files/usr/share/bash-completion/completions/hostit-control
         dst: /usr/share/bash-completion/completions/hostit-control
-      - src: scripts/completion/_hostit-control
+      - src: pkg/files/usr/share/zsh/vendor-completions/_hostit-control
         dst: /usr/share/zsh/vendor-completions/_hostit-control
     scripts:
-      postinstall: "scripts/postinst-control.sh"
-      postremove: "scripts/postrm-control.sh"
+      postinstall: "pkg/scripts/postinst-control.sh"
+      postremove: "pkg/scripts/postrm-control.sh"
 
   # The data plane: TLS termination and routing from a cached table.
   - id: hostit_proxy_pkg
@@ -202,21 +202,21 @@ nfpms:
     formats: [deb, rpm]
     bindir: /usr/bin
     contents:
-      - src: proxy.yml.example
+      - src: pkg/files/etc/hostit/proxy/proxy.yml.example
         dst: /etc/hostit/proxy/proxy.yml.example
-      - src: hostit-proxy.service
+      - src: pkg/files/lib/systemd/system/hostit-proxy.service
         dst: /lib/systemd/system/hostit-proxy.service
-      - src: scripts/sysusers/hostit-proxy.conf
+      - src: pkg/files/usr/lib/sysusers.d/hostit-proxy.conf
         dst: /usr/lib/sysusers.d/hostit-proxy.conf
-      - src: scripts/tmpfiles/hostit-proxy.conf
+      - src: pkg/files/usr/lib/tmpfiles.d/hostit-proxy.conf
         dst: /usr/lib/tmpfiles.d/hostit-proxy.conf
-      - src: scripts/completion/hostit-proxy.bash
+      - src: pkg/files/usr/share/bash-completion/completions/hostit-proxy
         dst: /usr/share/bash-completion/completions/hostit-proxy
-      - src: scripts/completion/_hostit-proxy
+      - src: pkg/files/usr/share/zsh/vendor-completions/_hostit-proxy
         dst: /usr/share/zsh/vendor-completions/_hostit-proxy
     scripts:
-      postinstall: "scripts/postinst-proxy.sh"
-      postremove: "scripts/postrm-proxy.sh"
+      postinstall: "pkg/scripts/postinst-proxy.sh"
+      postremove: "pkg/scripts/postrm-proxy.sh"
 
 archives:
   - id: hostit_linux
@@ -232,9 +232,9 @@ archives:
     wrap_in_directory: true
     files:
       - README.md
-      - control.yml.example
-      - node.yml.example
-      - proxy.yml.example
+      - pkg/files/etc/hostit/control/control.yml.example
+      - pkg/files/etc/hostit/node/node.yml.example
+      - pkg/files/etc/hostit/proxy/proxy.yml.example
 checksum:
   name_template: 'checksums.txt'
 snapshot:

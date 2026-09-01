@@ -32,7 +32,7 @@ Package **dependencies** are the host tools the daemon shells out to: `podman`,
 `uidmap` (per-app user-namespace uid mappings), `slirp4netns` (per-app netns),
 `nftables`, `dbus-user-session`, `openssh-server`, with `passt` recommended.
 
-The **postinstall** script (`scripts/postinst.sh`) does only what is safe on every
+The **postinstall** script (`pkg/scripts/postinst-<role>.sh`) does only what is safe on every
 install/upgrade: registers `/usr/lib/hostit/bin/hostit-shell` in `/etc/shells` (so sshd
 accepts it as a login shell), creates the `hostit-apps` system group (the sudoers
 grant is scoped to it), validates the sudoers file with `visudo -cf` and removes

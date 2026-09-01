@@ -43,9 +43,9 @@ units.
 Copy the examples and edit them:
 
 ```sh
-install -Dm600 control.yml.example /etc/hostit/control/control.yml
-install -Dm600 node.yml.example    /etc/hostit/node/node.yml
-install -Dm600 proxy.yml.example   /etc/hostit/proxy/proxy.yml
+install -Dm600 pkg/files/etc/hostit/control/control.yml.example /etc/hostit/control/control.yml
+install -Dm600 pkg/files/etc/hostit/node/node.yml.example /etc/hostit/node/node.yml
+install -Dm600 pkg/files/etc/hostit/proxy/proxy.yml.example /etc/hostit/proxy/proxy.yml
 ```
 
 For a single-machine development instance, the settings that matter in
