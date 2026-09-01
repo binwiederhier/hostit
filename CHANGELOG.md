@@ -7,6 +7,27 @@ changed rather than what an operator had to do about it; from v0.15.0 on, each
 release is written down as it is cut. Anything that changes a config file, a
 default, or on-disk state is called out as **Breaking** or **Upgrade note**.
 
+## v0.36.0 (2026-09-01)
+
+The SSH relay works on a control-only frontend, control refuses app names that
+collide with real accounts, and a phantom "local" node no longer appears on a
+nodeless host.
+
+- **The SSH relay frontend moved from the node to hostit-control.** A single
+  `ssh <app>@<domain>` reaching any node no longer requires a node on the
+  frontend: a `[control, proxy]` host now relays on its own, through sudo-gated
+  helpers the control package ships (no podman or container runtime). The node's
+  relay-frontend code is gone. **Upgrade note:** relay state moved from
+  `/var/lib/hostit/node/` to `/var/lib/hostit/relay/`; the frontend regenerates
+  its relay key there on first start.
+- **App names are checked against real accounts on the control host.** Creating
+  an app whose name matches a system/service/human account on the control host
+  is refused (the node already checks its own host), and the reserved-name list
+  gained hostit's own accounts and common database/web/system service names.
+- **No more phantom `local` node.** Control stopped pre-seeding a `local` node
+  that never connected; a nodeless `[control, proxy]` host listed one in
+  `node list` and the UI. Existing phantom rows are pruned on upgrade.
+
 ## v0.35.0 (2026-09-01)
 
 Documentation, example-config, and deployment-tooling cleanup. No runtime
