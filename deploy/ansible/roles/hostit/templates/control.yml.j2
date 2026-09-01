@@ -1,66 +1,59 @@
-# Managed by Ansible (hostit role) -- do not edit on the host.
-# All options: see control.yml.example in the hostit source.
+# Managed by Ansible, do not edit on the host. See control.yml.example for all options.
 
 base-domain: {{ hostit_domain }}
-# control's data dir, owned by the unprivileged hostit-control user.
+# control's own data dir, owned by the unprivileged hostit-control user.
 data-dir: /var/lib/hostit/control
-admin-token: {{ hostit_admin_token }}
-tls: letsencrypt
-{% if hostit_letsencrypt_email %}
-letsencrypt-email: {{ hostit_letsencrypt_email }}
+{% if hostit_split_proxy %}
+# hostit-proxy terminates TLS in front; control serves plain HTTP for it.
+listen-http: "{{ hostit_control_listen_http }}"
 {% endif %}
-
-# hostit-proxy terminates TLS in front; control serves plain HTTP for it. This
-# example is single-box (control/node/proxy talk over the /run/hostit sockets, no
-# certs); to add a member on another machine, set listen-cluster and issue certs.
-listen-http: {{ hostit_control_http }}
-{% if hostit_aws_access_key_id %}
-
+{% if hostit_control_listen_cluster_tls %}
+# Where members on OTHER machines dial in over mTLS (a single-box install omits it).
+listen-cluster: "{{ hostit_control_listen_cluster_tls }}"
+cluster-cert-file: /etc/hostit/control/endpoint.crt
+cluster-key-file: /etc/hostit/control/endpoint.key
+cluster-ca-cert-file: /etc/hostit/control/ca.crt
+{% endif %}
+admin-token: {{ hostit_admin_token }}
+{% if hostit_control_letsencrypt_email %}
+letsencrypt-email: {{ hostit_control_letsencrypt_email }}
+{% endif %}
+{% if hostit_control_aws_access_key_id %}
 # One wildcard cert for *.{{ hostit_domain }} via Route 53 (DNS-01).
 dns-provider: route53
-aws-region: {{ hostit_aws_region }}
-aws-access-key-id: {{ hostit_aws_access_key_id }}
-aws-secret-key: {{ hostit_aws_secret_key }}
-{% if hostit_aws_hosted_zone_id %}
-aws-hosted-zone-id: {{ hostit_aws_hosted_zone_id }}
+aws-region: {{ hostit_control_aws_region }}
+aws-access-key-id: {{ hostit_control_aws_access_key_id }}
+aws-secret-key: {{ hostit_control_aws_secret_key }}
+{% if hostit_control_aws_hosted_zone_id %}
+aws-hosted-zone-id: {{ hostit_control_aws_hosted_zone_id }}
 {% endif %}
 {% endif %}
-{% if hostit_google_client_id %}
 
-# Web dashboard via Google OAuth; empty runs token-only.
-google-client-id: {{ hostit_google_client_id }}
-google-client-secret: {{ hostit_google_client_secret }}
+# Web login via Google; these emails become admins on first login.
+{% if hostit_control_google_client_id %}
+google-client-id: {{ hostit_control_google_client_id }}
+google-client-secret: {{ hostit_control_google_client_secret }}
 {% endif %}
-{% if hostit_session_key %}
-session-key: {{ hostit_session_key }}
-{% endif %}
-{% if hostit_admin_emails %}
-# These emails become admins on their first login.
-admin-emails:
-{% for email in hostit_admin_emails %}
-  - {{ email }}
+{% if hostit_control_connection_clients %}
+# One OAuth client per connection provider offered.
+connections:
+{% for provider, client in hostit_control_connection_clients.items() %}
+  {{ provider }}:
+    client-id: {{ client['client_id'] }}
+    client-secret: {{ client['client_secret'] }}
 {% endfor %}
 {% endif %}
-{% if hostit_anthropic_api_key %}
+{% if hostit_control_session_key %}
+session-key: {{ hostit_control_session_key }}
+{% endif %}
+admin-emails:
+{% for email in hostit_control_admin_emails %}
+  - {{ email }}
+{% endfor %}
 
-# Built-in assistant on the metered Anthropic API.
-anthropic-api-key: {{ hostit_anthropic_api_key }}
-{% endif %}
-{% if hostit_claude_code_oauth_token %}
-
-# Optional Claude subscription backend (claude setup-token), run as claude -p.
-claude-code-oauth-token: {{ hostit_claude_code_oauth_token }}
-{% endif %}
-{% if hostit_ssh_relay | default(false) %}
-
-# Optional single-hostname SSH relay gateway (see docs/features/ssh-access.md).
-ssh-relay: true
-{% endif %}
-{% if hostit_control_listen_metrics %}
-# Prometheus /metrics (unauthenticated -- keep it internal).
-listen-metrics: "{{ hostit_control_listen_metrics }}"
-{% endif %}
-{% if hostit_outbound_allow_private_cidrs | default([]) %}
+# App card previews: live iframe, headless-chrome screenshot, or off.
+app-preview: {{ hostit_control_app_preview | default("live") }}
+{% if hostit_outbound_allow_private_cidrs %}
 # Internal CIDRs hostit may reach on an account's behalf (fetches + previews + apps).
 outbound-allow-private-cidrs:
 {% for cidr in hostit_outbound_allow_private_cidrs %}
@@ -70,4 +63,20 @@ app-preview-allow-cidrs:
 {% for cidr in hostit_outbound_allow_private_cidrs %}
   - {{ cidr }}
 {% endfor %}
+{% endif %}
+{% if hostit_control_anthropic_api_key %}
+# Built-in coding assistant (metered API).
+anthropic-api-key: {{ hostit_control_anthropic_api_key }}
+{% endif %}
+{% if hostit_control_claude_api_token %}
+# Optional Claude Max backend (claude setup-token).
+claude-code-oauth-token: {{ hostit_control_claude_api_token }}
+{% endif %}
+{% if hostit_ssh_relay | default(false) %}
+# Optional single-hostname SSH relay gateway.
+ssh-relay: true
+{% endif %}
+{% if hostit_control_listen_metrics_http %}
+# Prometheus /metrics (unauthenticated -- keep it internal).
+listen-metrics: "{{ hostit_control_listen_metrics_http }}"
 {% endif %}

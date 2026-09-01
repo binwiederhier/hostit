@@ -1,0 +1,27 @@
+---
+# Split hostit: a control+proxy frontend, plus one or more remote app nodes that
+# dial control over mTLS. Control opens a cluster listener; each remote node
+# presents a CA-signed cert issued from YOUR OWN CA (openssl recipe in
+# node.yml.example), provided via hostit_cluster_ca_cert + hostit_cluster_certs
+# in a vault. The node-id keys in hostit_cluster_certs are the inventory hostnames.
+#   ansible-playbook -i inventory/split.example.yml playbook.yml
+all:
+  children:
+    hostit:
+      hosts:
+        ctrl:                                  # control + proxy (the frontend)
+          ansible_host: 203.0.113.10
+          hostit_components: [control, proxy]
+          hostit_control_listen_cluster_tls: "10.0.0.1:2930"   # where nodes dial in
+        node1:                                 # a remote app node
+          ansible_host: 203.0.113.20
+          hostit_components: [node]
+          hostit_node_apps_bind_address: "10.0.0.20"           # its private address
+          hostit_node_apps_allowed_addresses: ["10.0.0.1"]     # the proxies that may reach it
+          hostit_node_ssh_host: "node1.ssh.apps.example.com"   # for ssh <app>@ on this node
+  vars:
+    hostit_domain: "apps.example.com"
+    hostit_split_proxy: true
+    hostit_split_node: true
+    hostit_control_host: ctrl              # the inventory host running control
+    hostit_control_node: "10.0.0.1:2930"  # control's mTLS address that members dial

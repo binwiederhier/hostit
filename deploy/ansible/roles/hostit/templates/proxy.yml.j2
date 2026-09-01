@@ -1,11 +1,18 @@
-# Managed by Ansible (hostit role) -- do not edit on the host.
-# All options: see proxy.yml.example in the hostit source.
+# Managed by Ansible, do not edit on the host. See proxy.yml.example for all options.
 
-# hostit-proxy terminates TLS on :443 and serves apps from the table control
-# pushes it. Single-box: it reaches control over the /run/hostit socket (no cert);
-# a proxy on its own machine needs proxy-id, cluster-url and certs.
-control-url: http://{{ hostit_control_http }}
-{% if hostit_proxy_listen_metrics %}
+control-url: http://{{ hostit_control_listen_http }}
+
+# The proxy is a cluster member: it dials control for its routes and certs. When
+# colocated it uses the /run/hostit socket (no cert); a remote one dials mTLS.
+proxy-id: {{ hostit_proxy_id }}
+cluster-url: {{ hostit_proxy_cluster_url }}
+{% if hostit_proxy_remote %}
+# A remote proxy's CA-signed cert (CN={{ hostit_proxy_id }}, OU=proxy).
+cluster-cert-file: {{ hostit_proxy_cert_file }}
+cluster-key-file: {{ hostit_proxy_key_file }}
+cluster-ca-cert-file: {{ hostit_proxy_ca_file }}
+{% endif %}
+{% if hostit_proxy_listen_metrics_http %}
 # Prometheus /metrics (unauthenticated -- keep it internal).
-listen-metrics: "{{ hostit_proxy_listen_metrics }}"
+listen-metrics: "{{ hostit_proxy_listen_metrics_http }}"
 {% endif %}

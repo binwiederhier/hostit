@@ -1,37 +1,61 @@
 ---
 
-# The public data plane: terminates TLS on :443 and serves each app from the
-# routing table control pushes it, so apps keep serving while control and the
-# node restart. Runs as the unprivileged hostit-proxy user (baked into the unit)
-# and dials the colocated control over the /run/hostit socket.
+# The public data plane: terminates TLS and serves apps from a cached routing
+# table, so apps keep serving while control and node restart. Runs as the
+# unprivileged hostit-proxy user (baked into the unit); the deb creates the dir.
 
-# dpkg -i (not apt) so same-version rebuilds reinstall; --force-confold keeps the
-# managed config. The proxy deb has no deps; its postinst makes the user that
-# owns the config below.
 - name: Install the hostit-proxy package
-  ansible.builtin.command: "dpkg -i --force-confold /tmp/hostit-proxy_{{ hostit_deb_release }}_linux_{{ hostit_arch }}.deb"
+  command: "dpkg -i --force-confold /tmp/hostit-proxy.deb"
   when: hostit_debs_changed | default(false)
   notify: restart hostit-proxy
 
+# A remote proxy authenticates with a CA-signed cert from secrets; a colocated
+# one uses the /run/hostit socket and needs none.
+- name: Require hostit_control_host for a remote proxy
+  assert:
+    that: hostit_control_host | length > 0
+    fail_msg: >-
+      A remote proxy needs hostit_control_host set to the inventory host running
+      hostit-control (where it dials in over mTLS).
+  when: hostit_proxy_remote
+
+- name: Install this proxy's cluster cert, key and the cluster CA
+  copy:
+    content: "{{ item.content }}"
+    dest: "{{ item.dest }}"
+    owner: hostit-proxy
+    group: hostit-proxy
+    mode: "0600"
+  loop:
+    - { content: "{{ hostit_cluster_certs[hostit_proxy_id].cert }}", dest: "{{ hostit_proxy_cert_file }}" }
+    - { content: "{{ hostit_cluster_certs[hostit_proxy_id].key }}", dest: "{{ hostit_proxy_key_file }}" }
+    - { content: "{{ hostit_cluster_ca_cert }}", dest: "{{ hostit_proxy_ca_file }}" }
+  loop_control:
+    label: "{{ item.dest }}"
+  when: hostit_proxy_remote
+  no_log: true
+  notify: restart hostit-proxy
+
 - name: Install /etc/hostit/proxy/proxy.yml
-  ansible.builtin.template:
+  template:
     src: proxy.yml.j2
     dest: /etc/hostit/proxy/proxy.yml
     owner: hostit-proxy
     group: hostit-proxy
-    mode: "0600"
+    mode: 0600
   notify: restart hostit-proxy
 
 # Wait for control's socket so the proxy does not take :443 before control can
-# hand it routes and certs (an empty-cache window would serve nothing).
+# hand it routes and certs (that empty-cache window took prod down 2026-08-17).
 - name: Wait for control's member socket
-  ansible.builtin.wait_for:
+  wait_for:
     path: /run/hostit/control/cluster.sock
     timeout: 300
+  when: not hostit_proxy_remote
 
 - name: Enable and start hostit-proxy
-  ansible.builtin.systemd:
+  systemd:
     name: hostit-proxy
-    enabled: true
+    enabled: yes
     state: started
-    daemon_reload: true
+    daemon_reload: yes

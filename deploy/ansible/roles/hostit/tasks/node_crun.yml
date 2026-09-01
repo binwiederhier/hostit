@@ -1,20 +1,20 @@
 ---
 
 # hostit runs each app on an idmapped --rootfs, which needs crun >= 1.29 (newer
-# than most distros ship); its preflight refuses to start otherwise. Install the
+# than Ubuntu 24.04 ships); its preflight refuses to start otherwise. Install the
 # static release binary and point podman at it, keeping the distro crun as fallback.
 
-- name: Install static crun {{ hostit_crun_version }} (idmapped rootfs support)
-  ansible.builtin.get_url:
-    url: "https://github.com/containers/crun/releases/download/{{ hostit_crun_version }}/crun-{{ hostit_crun_version }}-linux-amd64"
-    dest: "{{ hostit_crun_path }}"
-    checksum: "sha256:{{ hostit_crun_sha256 }}"
+- name: Install static crun {{ hostit_node_crun_version }} (idmapped rootfs support)
+  get_url:
+    url: "https://github.com/containers/crun/releases/download/{{ hostit_node_crun_version }}/crun-{{ hostit_node_crun_version }}-linux-amd64"
+    dest: "{{ hostit_node_crun_path }}"
+    checksum: "sha256:{{ hostit_node_crun_sha256 }}"
     mode: "0755"
     owner: root
     group: root
 
 - name: Create containers.conf.d
-  ansible.builtin.file:
+  file:
     path: /etc/containers/containers.conf.d
     state: directory
     owner: root
@@ -22,7 +22,7 @@
     mode: "0755"
 
 - name: Point podman at the static crun
-  ansible.builtin.copy:
+  copy:
     dest: /etc/containers/containers.conf.d/50-hostit-crun.conf
     owner: root
     group: root
@@ -32,4 +32,4 @@
       [engine]
       runtime = "crun"
       [engine.runtimes]
-      crun = ["{{ hostit_crun_path }}", "/usr/bin/crun"]
+      crun = ["{{ hostit_node_crun_path }}", "/usr/bin/crun"]

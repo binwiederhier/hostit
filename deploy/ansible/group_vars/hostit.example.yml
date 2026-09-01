@@ -19,24 +19,24 @@ hostit_version: "0.34.0"
 
 # Web dashboard via Google OAuth (redirect https://apps.example.com/auth/callback);
 # omit both to run token-only.
-# hostit_google_client_id: "..."
-# hostit_google_client_secret: "..."      # -> Vault
-# hostit_admin_emails:
+# hostit_control_google_client_id: "..."
+# hostit_control_google_client_secret: "..."      # -> Vault
+# hostit_control_admin_emails:
 #   - you@example.com
 
 # --- Optional ---
 
 # Wildcard TLS via Route 53 (DNS-01) so new apps serve TLS instantly.
-# hostit_aws_access_key_id: "..."
-# hostit_aws_secret_key: "..."            # -> Vault
-# hostit_aws_hosted_zone_id: "..."
+# hostit_control_aws_access_key_id: "..."
+# hostit_control_aws_secret_key: "..."            # -> Vault
+# hostit_control_aws_hosted_zone_id: "..."
 
 # Built-in AI assistant: a metered API key and/or a Claude Pro/Max token.
-# hostit_anthropic_api_key: "sk-ant-..."  # -> Vault
-# hostit_claude_code_oauth_token: "..."   # -> Vault (claude setup-token)
+# hostit_control_anthropic_api_key: "sk-ant-..."  # -> Vault
+# hostit_control_claude_api_token: "..."   # -> Vault (claude setup-token)
 
 # Multi-node SSH: each remote node advertises its own SSH hostname (host_vars).
-# hostit_ssh_host: "node2.ssh.apps.example.com"
+# hostit_node_ssh_host: "node2.ssh.apps.example.com"
 # Optional single-hostname relay so `ssh <app>@apps.example.com` reaches any node.
 # hostit_ssh_relay: true
 

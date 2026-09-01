@@ -1,26 +1,35 @@
 ---
 
-# hostit -- self-hosted mini-app platform, all three components on ONE machine
-# talking over the /run/hostit sockets: control (registry/web/API), node (app
-# containers, as root) and proxy (TLS on :443). Orchestration only; control first
-# (node and proxy dial its socket), proxy last (it waits for control). To split
-# across machines see group_vars/hostit.example.yml.
+# hostit -- self-hosted mini-app platform. hostit_components decides which of
+# control/node/proxy run here, so one role fits every topology. Orchestration
+# only: the debs provide the users, /run dirs and unprivileged units.
 
-- name: Fail early if required variables are unset
-  ansible.builtin.assert:
-    that:
-      - hostit_domain | length > 0
-      - hostit_admin_token | length > 0
-    fail_msg: "Set hostit_domain and hostit_admin_token (see group_vars/hostit.example.yml)."
-
-- name: Install the component packages
-  ansible.builtin.import_tasks: packages.yml
+- name: Stage the hostit component packages
+  import_tasks: packages.yml
+  tags: [hostit]
 
 - name: Configure and run the control plane
-  ansible.builtin.import_tasks: control.yml
+  import_tasks: control.yml
+  when: "'control' in hostit_components"
+  tags: [hostit]
 
 - name: Configure and run the node (app containers + host prep)
-  ansible.builtin.import_tasks: node.yml
+  import_tasks: node.yml
+  when: "'node' in hostit_components"
+  tags: [hostit, btrfs]
 
 - name: Configure and run the proxy
-  ansible.builtin.import_tasks: proxy.yml
+  import_tasks: proxy.yml
+  when: "'proxy' in hostit_components"
+  tags: [hostit]
+
+# A component dropped from hostit_components must stop, not serve stale config.
+- name: Stop the components this host does not run
+  systemd:
+    name: "hostit-{{ item }}"
+    enabled: no
+    state: stopped
+  loop: [control, node, proxy]
+  when: item not in hostit_components
+  failed_when: false
+  tags: [hostit]

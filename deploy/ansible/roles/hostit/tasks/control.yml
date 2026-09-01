@@ -1,41 +1,57 @@
 ---
 
-# The control plane: registry, web app and REST API. On this single-box install
-# it orchestrates the colocated node and proxy over the /run/hostit socket. Runs
-# as the unprivileged hostit-control user (baked into the unit, which owns
-# /var/lib/hostit/control); the deb creates /etc/hostit/control.
+# The control plane: registry, web app and REST API. Runs as the unprivileged
+# hostit-control user (baked into the unit); the deb creates /etc/hostit/control.
 
 # sqlite3 is only for the off-box hot-backup of control's hostit.db.
 - name: Install sqlite3 (off-box hot-backup of hostit.db)
-  ansible.builtin.apt:
+  apt:
     name: sqlite3
     state: present
     update_cache: true
     cache_valid_time: 3600
 
-# dpkg -i (not apt) so same-version rebuilds reinstall; --force-confold keeps the
-# managed config. The control deb has no deps; its postinst makes the user that
-# owns the config below.
 - name: Install the hostit-control package
-  ansible.builtin.command: "dpkg -i --force-confold /tmp/hostit-control_{{ hostit_deb_release }}_linux_{{ hostit_arch }}.deb"
+  command: "dpkg -i --force-confold /tmp/hostit-control.deb"
   when: hostit_debs_changed | default(false)
   notify: restart hostit-control
 
+# control's mTLS identity for members on OTHER machines, from secrets (hostit
+# does not mint them). A single-box install has no remote listener and skips it.
+- name: Install control's endpoint cert, key and CA (only with a remote listener)
+  copy:
+    content: "{{ item.content }}"
+    dest: "/etc/hostit/control/{{ item.dest }}"
+    owner: hostit-control
+    group: hostit-control
+    mode: "0600"
+  loop:
+    - { content: "{{ hostit_cluster_certs.control.cert }}", dest: "endpoint.crt" }
+    - { content: "{{ hostit_cluster_certs.control.key }}", dest: "endpoint.key" }
+    - { content: "{{ hostit_cluster_ca_cert }}", dest: "ca.crt" }
+  loop_control:
+    label: "{{ item.dest }}"
+  when: (hostit_control_listen_cluster_tls | default('')) | length > 0
+  no_log: true
+  notify: restart hostit-control
+
 - name: Install /etc/hostit/control/control.yml
-  ansible.builtin.template:
+  template:
     src: control.yml.j2
     dest: /etc/hostit/control/control.yml
     owner: hostit-control
     group: hostit-control
-    mode: "0600"
-  notify: restart hostit-control
+    mode: 0600
+  notify:
+    - restart hostit-control
+    - restart hostit-node
 
 # The optional SSH relay gateway lives on the control host (its colocated node is
 # the frontend, and the node self-generates the relay key), so it is just a sudo
 # grant. Its own drop-in, not the packaged sudoers, whose config|noreplace would
 # skip it on upgrade.
 - name: Grant hostit-apps sudo to the relay helper
-  ansible.builtin.copy:
+  copy:
     dest: /etc/sudoers.d/hostit-relay
     owner: root
     group: root
@@ -49,10 +65,9 @@
     validate: "visudo -cf %s"
   when: hostit_ssh_relay | default(false)
 
-# Control starts first: it holds the registry and opens the socket node/proxy dial.
 - name: Enable and start hostit-control
-  ansible.builtin.systemd:
+  systemd:
     name: hostit-control
-    enabled: true
+    enabled: yes
     state: started
-    daemon_reload: true
+    daemon_reload: yes

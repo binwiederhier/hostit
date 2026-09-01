@@ -1,14 +1,13 @@
 ---
 
 # The machine half: app containers, their unix users, btrfs subvolumes and port
-# rules -- always root, dialing the colocated control over the /run/hostit socket.
-# Everything a node needs (and nothing a control- or proxy-only host would) lives
-# here: the container runtime, crun, the app-homes btrfs and the sshd hardening.
+# rules -- always root. A remote node authenticates with a CA-signed cert from
+# secrets; a colocated one reaches control over the /run/hostit socket.
 
 # The container runtime: podman (as root), uidmap for id-mapped filesystems,
-# passt/slirp4netns for per-app netns, nftables for the port rules.
+# passt/slirp4netns for per-app netns, nftables for the port rules. Node-only.
 - name: Install podman and container dependencies
-  ansible.builtin.apt:
+  apt:
     name:
       - podman
       - uidmap
@@ -21,46 +20,79 @@
     update_cache: true
     cache_valid_time: 3600
 
-# dpkg -i (not apt) so same-version rebuilds reinstall; --force-confold keeps the
-# managed config. After the runtime, which the node deb depends on; its postinst
-# makes the hostit-node user + login shell.
+# dpkg -i (not apt) so same-version rebuilds reinstall. After the runtime, which
+# the node deb depends on; its postinst makes the hostit-node user + login shell.
 - name: Install the hostit-node package
-  ansible.builtin.command: "dpkg -i --force-confold /tmp/hostit-node_{{ hostit_deb_release }}_linux_{{ hostit_arch }}.deb"
+  command: "dpkg -i --force-confold /tmp/hostit-node.deb"
   when: hostit_debs_changed | default(false)
   notify: restart hostit-node
 
 # Static crun for idmapped --rootfs (the distro crun is too old for hostit).
 - name: Set up crun for idmapped rootfs
-  ansible.builtin.import_tasks: node_crun.yml
+  import_tasks: node_crun.yml
 
 # App homes must be btrfs (snapshots/quotas are core); node preflight enforces it.
-- name: Set up the app-homes btrfs
-  ansible.builtin.import_tasks: node_btrfs.yml
+- name: Put the app homes on btrfs
+  import_tasks: node_btrfs.yml
   tags: [btrfs]
 
 # Stop an app login from tunnelling into the host (metadata, host-local services).
 - name: Harden sshd for app users
-  ansible.builtin.template:
+  template:
     src: sshd-hostit-apps.conf.j2
     dest: /etc/ssh/sshd_config.d/10-hostit-apps.conf
     owner: root
     group: root
-    mode: "0644"
+    mode: 0644
     validate: "sshd -t -f %s"
   notify: restart ssh
 
 - name: Install /etc/hostit/node/node.yml
-  ansible.builtin.template:
+  template:
     src: node.yml.j2
     dest: /etc/hostit/node/node.yml
     owner: root
     group: root
-    mode: "0600"
+    mode: 0600
   notify: restart hostit-node
 
+- name: Require hostit_control_host for a remote node
+  assert:
+    that: hostit_control_host | length > 0
+    fail_msg: >-
+      A remote node needs hostit_control_host set to the inventory host running
+      hostit-control (where it dials in over mTLS).
+  when: hostit_node_remote
+
+# A remote node's membership IS its CA-signed cert, from secrets -- no enrollment.
+- name: Install this node's cluster cert, key and the cluster CA
+  copy:
+    content: "{{ item.content }}"
+    dest: "{{ item.dest }}"
+    owner: root
+    group: root
+    mode: "0600"
+  loop:
+    - { content: "{{ hostit_cluster_certs[hostit_node_id].cert }}", dest: "{{ hostit_node_cert_file }}" }
+    - { content: "{{ hostit_cluster_certs[hostit_node_id].key }}", dest: "{{ hostit_node_key_file }}" }
+    - { content: "{{ hostit_cluster_ca_cert }}", dest: "{{ hostit_node_ca_file }}" }
+  loop_control:
+    label: "{{ item.dest }}"
+  when: hostit_node_remote
+  no_log: true
+  notify: restart hostit-node
+
+# Drop cert files left under an earlier name (node.pem/node.key, then cluster.*).
+- name: Remove old-name node cert files (now endpoint.crt/endpoint.key/ca.crt)
+  file:
+    path: "/etc/hostit/node/{{ item }}"
+    state: absent
+  loop: [node.pem, node.key, cluster-ca.pem, cluster.crt, cluster.key, cluster-ca.crt]
+  when: hostit_node_remote
+
 - name: Enable and start hostit-node
-  ansible.builtin.systemd:
+  systemd:
     name: hostit-node
-    enabled: true
+    enabled: yes
     state: started
-    daemon_reload: true
+    daemon_reload: yes

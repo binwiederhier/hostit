@@ -1,26 +1,41 @@
-# Managed by Ansible (hostit role) -- do not edit on the host.
-# All options: see node.yml.example in the hostit source.
+# Managed by Ansible, do not edit on the host. The node holds no control-plane
+# settings -- it dials control and does what it is told.
 
-# The node owns this machine's app work; it dials the colocated control over the
-# /run/hostit socket ("local" = the node sharing control's host).
-node-id: local
-control-url: "unix:/run/hostit/control/cluster.sock"
+# This node's identity (cert CN and registry name; "local" is the colocated node).
+node-id: {{ hostit_node_id }}
 
-# The node's own data dir (registry mirror + subvolume pool) and app homes.
-data-dir: /var/lib/hostit/node
-apps-dir: {{ hostit_apps_dir }}
-{% if hostit_ssh_host %}
-# Hostname for `ssh <app>@...` on this node (else control's base domain).
-ssh-host: "{{ hostit_ssh_host }}"
+# Where this node dials control: the /run/hostit socket when colocated, else mTLS.
+control-url: "{{ hostit_node_control_url }}"
+{% if hostit_node_remote %}
+# A remote node's membership IS its CA-signed cert (CN={{ hostit_node_id }}, OU=node).
+cluster-cert-file: {{ hostit_node_cert_file }}
+cluster-key-file: {{ hostit_node_key_file }}
+cluster-ca-cert-file: {{ hostit_node_ca_file }}
 {% endif %}
-{% if hostit_node_listen_metrics %}
-# Prometheus /metrics (unauthenticated -- keep it internal).
-listen-metrics: "{{ hostit_node_listen_metrics }}"
+{% if hostit_node_apps_bind_address %}
+# Where a remote node publishes app ports, and who may reach them (the proxies).
+apps-bind-address: "{{ hostit_node_apps_bind_address }}"
+apps-allowed-addresses:
+{% for addr in hostit_node_apps_allowed_addresses %}
+  - "{{ addr }}"
+{% endfor %}
 {% endif %}
-{% if hostit_outbound_allow_private_cidrs | default([]) %}
+{% if hostit_node_ssh_host %}
+# Hostname control advertises for `ssh <app>@...` on this node (else its base domain).
+ssh-host: "{{ hostit_node_ssh_host }}"
+{% endif %}
+{% if hostit_outbound_allow_private_cidrs %}
 # Internal CIDRs an app container may reach despite the default egress block.
 outbound-allow-private-cidrs:
 {% for cidr in hostit_outbound_allow_private_cidrs %}
   - {{ cidr }}
 {% endfor %}
+{% endif %}
+# Node-local storage (mirror registry + app-subvolume pool) and the app socket.
+data-dir: /var/lib/hostit/node
+apps-dir: {{ hostit_node_apps_dir }}
+socket-file: /run/hostit/node/app/hostit.sock
+{% if hostit_node_listen_metrics_http %}
+# Prometheus /metrics (unauthenticated -- keep it internal).
+listen-metrics: "{{ hostit_node_listen_metrics_http }}"
 {% endif %}

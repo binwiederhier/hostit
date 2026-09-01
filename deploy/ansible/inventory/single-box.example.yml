@@ -1,0 +1,14 @@
+---
+# Single-box hostit: control + node + proxy on ONE host, talking over the
+# /run/hostit sockets. No cluster certs needed. Copy, set your host and a few
+# group_vars (see group_vars/hostit.example.yml), then:
+#   ansible-playbook -i inventory/single-box.example.yml playbook.yml
+all:
+  children:
+    hostit:
+      hosts:
+        my-hostit-box:
+          ansible_host: 203.0.113.10
+  vars:
+    hostit_domain: "apps.example.com"
+    # hostit_admin_token and any control features -> group_vars/hostit.yml (vault)

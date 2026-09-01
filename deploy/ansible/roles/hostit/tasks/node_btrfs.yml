@@ -5,51 +5,51 @@
 # once the image exists this is a no-op and never touches existing data.
 
 - name: Install btrfs-progs
-  ansible.builtin.apt:
+  apt:
     name: btrfs-progs
     state: present
 
 # 75% of the root fs's free space, then format. `creates` makes it one-time.
 - name: Create and format the app-homes btrfs image
-  ansible.builtin.shell: |
+  shell: |
     set -euo pipefail
-    dir=$(dirname "{{ hostit_apps_img }}"); mkdir -p "$dir"
+    dir=$(dirname "{{ hostit_node_apps_img }}"); mkdir -p "$dir"
     free_kb=$(df -Pk "$dir" | awk 'NR==2{print $4}')
-    fallocate -l "$(( free_kb * 75 / 100 / 1024 ))M" "{{ hostit_apps_img }}"
-    mkfs.btrfs -q "{{ hostit_apps_img }}"
+    fallocate -l "$(( free_kb * 75 / 100 / 1024 ))M" "{{ hostit_node_apps_img }}"
+    mkfs.btrfs -q "{{ hostit_node_apps_img }}"
   args:
-    creates: "{{ hostit_apps_img }}"
+    creates: "{{ hostit_node_apps_img }}"
     executable: /bin/bash
 
 - name: Install the app-homes mount unit
-  ansible.builtin.template:
+  template:
     src: var-lib-hostit-apps.mount.j2
-    dest: "/etc/systemd/system/{{ hostit_apps_mount_unit }}"
+    dest: "/etc/systemd/system/{{ hostit_node_apps_mount_unit }}"
     mode: "0644"
 
 # Make hostit-node wait for the mount on boot, or it starts before btrfs is up.
 - name: Create the hostit-node drop-in directory
-  ansible.builtin.file:
+  file:
     path: /etc/systemd/system/hostit-node.service.d
     state: directory
     mode: "0755"
 
 - name: Require the app-homes mount before hostit-node
-  ansible.builtin.copy:
+  copy:
     dest: /etc/systemd/system/hostit-node.service.d/apps-mount.conf
     mode: "0644"
     content: |
       [Unit]
-      RequiresMountsFor={{ hostit_apps_dir }}
+      RequiresMountsFor={{ hostit_node_apps_dir }}
 
 - name: Mount the app homes
-  ansible.builtin.systemd:
-    name: "{{ hostit_apps_mount_unit }}"
+  systemd:
+    name: "{{ hostit_node_apps_mount_unit }}"
     enabled: true
     state: started
     daemon_reload: true
 
 # Idempotent: re-enabling quota is a no-op.
 - name: Enable btrfs quota on the app homes
-  ansible.builtin.command: "btrfs quota enable {{ hostit_apps_dir }}"
+  command: "btrfs quota enable {{ hostit_node_apps_dir }}"
   changed_when: false
