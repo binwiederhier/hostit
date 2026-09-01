@@ -1396,7 +1396,7 @@ apps.example.com.    A  <ip-of-this-host>   ; SSH and the bare domain`}
     <p>
       Snapshots, rollback, fork and hard disk quotas need{" "}
       <span className="mono">apps-dir</span> (default{" "}
-      <span className="mono">/var/lib/hostit/apps</span>) on a btrfs filesystem,
+      <span className="mono">/var/lib/hostit/node/apps</span>) on a btrfs filesystem,
       and hostit refuses to start without it. Put it on a btrfs mount before
       starting; a loopback file works for a small host, and the example Ansible
       role does this for you.
@@ -1497,20 +1497,15 @@ const ConfigPage = () => (
             </td>
           </tr>
           <tr>
-            <td className="mono">data-dir / apps-dir</td>
+            <td className="mono">data-dir</td>
             <td>
-              Registry DB + certs, and app home directories. Default{" "}
-              <span className="mono">/var/lib/hostit</span> and{" "}
-              <span className="mono">/var/lib/hostit/apps</span> (btrfs).
+              Registry DB and certificates. Default{" "}
+              <span className="mono">/var/lib/hostit/control</span>.
             </td>
           </tr>
           <tr>
             <td className="mono">listen-http / -https</td>
             <td>Listener addresses.</td>
-          </tr>
-          <tr>
-            <td className="mono">port-min / port-max</td>
-            <td>Loopback port range hostit assigns apps.</td>
           </tr>
           <tr>
             <td className="mono">anthropic-api-key</td>
@@ -1673,6 +1668,73 @@ apps-allowed-addresses:
       <span className="mono">listen-http</span> and the proxy-to-app hop are
       both plain HTTP. mTLS covers the cluster connection -- the configuration
       and certificate traffic -- not app traffic.
+    </p>
+  </>
+);
+
+const AnsibleDeploymentPage = () => (
+  <>
+    <h2>Ansible deployment</h2>
+    <p>
+      The source repo ships a small, self-contained example role under{" "}
+      <span className="mono">deploy/ansible/</span> that installs the component
+      packages, writes each component's config, hardens sshd for app logins,
+      puts the app homes on btrfs and starts the services. One role covers every
+      topology: what a host runs is <span className="mono">hostit_components</span>{" "}
+      in the inventory, so a single box and a split cluster are the same play
+      with a different inventory. Upgrading is re-running it with a newer{" "}
+      <span className="mono">hostit_version</span>. It is meant to be copied and
+      adapted, not consumed as a published Galaxy role.
+    </p>
+
+    <h3>Pick an inventory</h3>
+    <p>
+      Two examples ship beside the role. <span className="mono">single-box.example.yml</span>{" "}
+      runs control, node and proxy on one host (members reach control over the{" "}
+      <span className="mono">/run/hostit</span> socket, no cluster certs).{" "}
+      <span className="mono">split.example.yml</span> is a control+proxy frontend
+      plus one or more remote <span className="mono">[node]</span> hosts that dial
+      control over mTLS. Adding a machine later is an inventory change, not a
+      different architecture.
+    </p>
+
+    <h3>Copy, encrypt, deploy</h3>
+    <p>
+      Copy an inventory and the two group_vars files, put your secrets in the
+      vault file and encrypt it, then run the play. Non-secret settings (domain,
+      version, listeners, feature toggles) live in{" "}
+      <span className="mono">group_vars/hostit.yml</span>; every secret (admin
+      token, OAuth client secrets, AWS/API keys, cluster certs) lives in{" "}
+      <span className="mono">group_vars/hostit_vault.yml</span>.
+    </p>
+    <Snippet
+      text={`cp inventory/single-box.example.yml    inventory/hosts.yml         # (or split.example.yml)
+cp group_vars/hostit.example.yml       group_vars/hostit.yml       # non-secret settings
+cp group_vars/hostit_vault.example.yml group_vars/hostit_vault.yml # secrets, then:
+ansible-vault encrypt group_vars/hostit_vault.yml
+ansible-playbook -i inventory/hosts.yml playbook.yml --ask-vault-pass`}
+    />
+
+    <h3>Variables</h3>
+    <p>
+      Every variable is listed in{" "}
+      <span className="mono">roles/hostit/defaults/main.yml</span>, grouped Common
+      then Control, Node, Proxy and Cluster. The prefix tells you which component
+      a variable configures: <span className="mono">hostit_control_*</span> for
+      the control plane (Google login, admin emails, wildcard TLS, the assistant
+      keys), <span className="mono">hostit_node_*</span> for the machine half
+      (the btrfs apps dir, the SSH host, a remote node's bind and allowed
+      addresses) and <span className="mono">hostit_proxy_*</span> for the TLS
+      data plane. A split install also supplies the cluster CA and per-member
+      certs as secrets under <span className="mono">hostit_cluster_ca_cert</span>{" "}
+      and <span className="mono">hostit_cluster_certs</span> (hostit mints no
+      certs; the openssl recipe is in the example files).
+    </p>
+    <p className="hint">
+      This is an example to copy and adapt, not a role to depend on. Read the
+      defaults before changing anything, and do not invent variables -- the
+      grouped list in <span className="mono">defaults/main.yml</span> is the
+      complete set the role understands.
     </p>
   </>
 );
@@ -2490,7 +2552,7 @@ ls /var/lib/hostit/node/apps/                           # one subvolume per app,
 ls /var/lib/hostit/node/apps/<id>/home/app/             # the app's files inside its subvolume
 ls /var/lib/hostit/node/apps/.bases/                    # read-only base rootfs, one per image tag
 ls /var/lib/hostit/node/apps/.snapshots/<id>/           # an app's whole-app snapshots, by id
-btrfs qgroup show -re /var/lib/hostit/apps         # disk budgets: 1/<uid> rows, exclusive bytes vs cap`}
+btrfs qgroup show -re /var/lib/hostit/node/apps    # disk budgets: 1/<uid> rows, exclusive bytes vs cap`}
     />
 
     <h3>Port rules (nftables)</h3>
@@ -2562,6 +2624,7 @@ const renderers = {
     install: InstallPage,
     config: ConfigPage,
     deployment: DeploymentPage,
+    ansible: AnsibleDeploymentPage,
     connections: ConnectionsSetupPage,
     google: GooglePage,
     github: GithubPage,

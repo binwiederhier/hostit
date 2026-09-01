@@ -153,10 +153,12 @@ Match all
 ### Ansible (recommended for real deployments)
 
 A small, self-contained example role lives in
-[`deploy/ansible/`](deploy/ansible/): copy the inventory and vars, set
-`hostit_domain` and `hostit_admin_token`, and run it. It installs the packages,
-writes the configs, hardens sshd, sets up the btrfs loopback (`hostit_btrfs: true`)
-and enables the services. Keep secrets in an Ansible Vault.
+[`deploy/ansible/`](deploy/ansible/). It is topology-agnostic: one role deploys a
+single box or a split cluster, driven by `hostit_components` per host. Copy an
+example inventory (`single-box.example.yml` or `split.example.yml`), put non-secret
+settings in `group_vars/hostit.yml` and every secret in an ansible-vault-encrypted
+`group_vars/hostit_vault.yml`, then run it. It installs the packages, writes the
+configs, hardens sshd, provisions the btrfs app pool and enables the services.
 
 ## Quickstart
 
@@ -197,7 +199,7 @@ which app you are from the uid asking. See
 ## Configuration essentials
 
 All server config is `control.yml` (see the annotated
-[`control.yml.example`](control.yml.example)). Only `base-domain` and `admin-token`
+[`control.yml.example`](pkg/files/etc/hostit/control/control.yml.example)). Only `base-domain` and `admin-token`
 are required. Without Google credentials the web login returns 501 and the REST API
 plus CLI keep working with the admin token.
 

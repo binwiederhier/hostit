@@ -56,6 +56,7 @@ export const DOCS_GUIDES = [
       { id: "install", title: "Installation" },
       { id: "config", title: "Configuration" },
       { id: "deployment", title: "Deployment shapes" },
+      { id: "ansible", title: "Ansible deployment" },
       {
         id: "connections",
         title: "Connections setup",
