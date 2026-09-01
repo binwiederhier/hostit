@@ -311,7 +311,6 @@ func (m *Machine) Heartbeat() *api.Heartbeat {
 		Address:      m.config.AppsBindAddress,
 		SSHHost:      m.config.SSHHost,
 		SSHHostKey:   m.sshHostKey(),
-		RelayPubKey:  m.relayPubKey(), // empty unless this node is the relay frontend
 		// The apps pool is the filesystem that matters here: it filling up is
 		// what breaks this node.
 		Stats: stats.Measure(m.config.AppsDir),

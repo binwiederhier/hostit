@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"os/user"
 	"syscall"
 
 	"github.com/urfave/cli/v2"
@@ -40,17 +39,6 @@ var (
 )
 
 func execShell(c *cli.Context) error {
-	// Relay gateway: if this app is routed to another node, hand the session to
-	// the privileged relay helper (which holds the relay key) rather than the
-	// local container path. The routes file is world-readable; the key is not.
-	if u, err := user.Current(); err == nil && relayBackend(relayRoutesFile, u.Username) != "" {
-		sudo, err := exec.LookPath("sudo")
-		if err != nil {
-			return fmt.Errorf("sudo not found: %w", err)
-		}
-		args := append([]string{"sudo", "-n", relayHelperFile}, c.Args().Slice()...)
-		return syscall.Exec(sudo, args, os.Environ())
-	}
 
 	// The login shell runs on the HOST as the app user, so it dials the socket at
 	// its host path -- the container-side /run/hostit/hostit.sock does not exist

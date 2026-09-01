@@ -1,20 +1,52 @@
 package control
 
 import (
+	"bytes"
+	"encoding/json"
+	"fmt"
 	"log/slog"
+	"os/exec"
 	"sort"
 	"strings"
 
-	"heckel.io/hostit/node/api"
 	"heckel.io/hostit/store"
+	"heckel.io/hostit/system/relay"
 )
 
+// The SSH relay frontend is hostit-control. Control computes the routing table,
+// known_hosts and each remote app's authorized_keys, then applies them locally
+// through the root relay-sync helper (which also owns the relay keypair and the
+// stub accounts). No node is involved: a [control, proxy] host relays without
+// running any container machinery.
+
+// relaySyncHelper is the sudo-gated wrapper control drives to reconcile the
+// frontend as root. It reads a relay.Spec on stdin and prints the relay pubkey.
+const relaySyncHelper = "/usr/lib/hostit/bin/hostit-relay-sync"
+
+// sudoRelaySync is the production relayApply: it hands the spec to the root
+// helper over sudo and returns the relay public key the helper reports.
+func sudoRelaySync(spec *relay.Spec) (string, error) {
+	data, err := json.Marshal(spec)
+	if err != nil {
+		return "", err
+	}
+	cmd := exec.Command("sudo", "-n", relaySyncHelper)
+	cmd.Stdin = bytes.NewReader(data)
+	var out, errb bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = &errb
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("relay-sync failed: %w: %s", err, strings.TrimSpace(errb.String()))
+	}
+	return strings.TrimSpace(out.String()), nil
+}
+
 // sshRelayFiles computes the ssh-routes and relay_known_hosts contents for the
-// relay gateway from the current apps and nodes. Pure, so it is unit-tested
-// without disk. Only a REMOTE app (hosted off the control node) gets a route:
-// a colocated app's node IS the frontend, so it needs no relay. Each remote
-// node that hosts a routed app and has reported both its SSH host and host key
-// gets one known_hosts line.
+// frontend from the current apps and nodes. Pure, so it is unit-tested without
+// disk. Only a REMOTE app (hosted off the control host) gets a route: a
+// colocated app's node IS reachable at apps.<domain>, so it needs no relay stub.
+// Each remote node that hosts a routed app and reports both its SSH host and host
+// key gets one known_hosts line.
 func sshRelayFiles(apps []*store.App, nodeByID map[string]*store.Node) (routes, knownHosts string) {
 	var routeLines []string
 	usedNodes := make(map[string]bool)
@@ -52,12 +84,10 @@ func joinLines(lines []string) string {
 	return strings.Join(lines, "\n") + "\n"
 }
 
-// buildRelaySpec computes what control pushes to a relay-frontend node: the
-// routing table, known_hosts, and each routed (remote) app's authorized_keys
-// (the real users -- the relay key is added on the node hop, not here). The
-// frontend's own mirror is filtered to its apps, so it cannot compute this
-// itself; control does and pushes it over the link.
-func (m *Manager) buildRelaySpec() (*api.RelaySpec, error) {
+// buildRelaySpec computes what control applies to the frontend: the routing
+// table, known_hosts, and each routed (remote) app's authorized_keys (the real
+// users; the relay key is added on the node hop, not here).
+func (m *Manager) buildRelaySpec() (*relay.Spec, error) {
 	apps, err := m.store.Apps()
 	if err != nil {
 		return nil, err
@@ -86,94 +116,70 @@ func (m *Manager) buildRelaySpec() (*api.RelaySpec, error) {
 			appKeys[a.Name] = ""
 		}
 	}
-	return &api.RelaySpec{Routes: routes, KnownHosts: knownHosts, AppKeys: appKeys}, nil
+	return &relay.Spec{Routes: routes, KnownHosts: knownHosts, AppKeys: appKeys}, nil
 }
 
-// refreshSSHRelay recomputes the relay spec and pushes it to every connected
-// frontend node, best-effort: a failure logs but never fails the placement
-// operation that triggered it. A no-op unless the relay is enabled.
+// refreshSSHRelay recomputes the relay spec and applies it locally through the
+// root helper, best-effort: a failure logs but never fails the placement
+// operation that triggered it. A no-op unless the relay is enabled. The helper
+// also ensures the relay key on first run, so the key exists before the first
+// remote app needs it in its authorized_keys.
 func (m *Manager) refreshSSHRelay() {
 	if !m.config.SSHRelayEnabled {
 		return
-	}
-	ids := m.relayFrontendIDs()
-	if len(ids) == 0 {
-		return // no frontend has connected yet; it gets the spec on connect
 	}
 	spec, err := m.buildRelaySpec()
 	if err != nil {
 		slog.Warn("Cannot build SSH relay spec", "error", err)
 		return
 	}
-	for _, id := range ids {
+	pub, err := m.relayApply(spec)
+	if err != nil {
+		slog.Warn("Cannot apply SSH relay spec", "error", err)
+		return
+	}
+	m.setRelayLine(pub)
+}
+
+// setRelayLine records the frontend's relay pubkey as an authorized_keys line.
+// When it first appears (or changes), remote apps that synced without it are
+// re-keyed so the frontend can ssh in as them.
+func (m *Manager) setRelayLine(pubKey string) {
+	pubKey = strings.TrimSpace(pubKey)
+	line := ""
+	if pubKey != "" {
+		line = "restrict,pty " + pubKey
+	}
+	m.relayLineMu.Lock()
+	changed := line != m.relayLine
+	m.relayLine = line
+	m.relayLineMu.Unlock()
+	if changed && line != "" {
+		m.rekeyRemoteApps()
+	}
+}
+
+// rekeyRemoteApps re-pushes desired state to every connected node so a remote
+// app whose keys were synced before the relay key was known gets it added.
+// Called only when the relay line first appears or changes -- rare.
+func (m *Manager) rekeyRemoteApps() {
+	if m.registry == nil {
+		return
+	}
+	for _, id := range m.registry.IDs() {
 		agent := m.registry.Agent(id)
 		if agent == nil {
 			continue
 		}
-		if err := agent.ApplyRelay(spec); err != nil {
-			slog.Warn("Cannot push SSH relay spec", "node", id, "error", err)
-		}
-	}
-}
-
-// recordRelayFrontend notes that a node is a relay frontend and caches the
-// authorized_keys line for its relay key, added to remote apps' keys so the
-// frontend can ssh in as the app user. Reporting the key replaces control
-// reading it off a shared filesystem. Returns whether the line changed, so the
-// caller can re-reconcile remote nodes that synced before the key was known.
-func (m *Manager) recordRelayFrontend(nodeID, pubKey string) bool {
-	m.relayLineMu.Lock()
-	defer m.relayLineMu.Unlock()
-	if m.relayFrontends == nil {
-		m.relayFrontends = make(map[string]bool)
-	}
-	m.relayFrontends[nodeID] = true
-	line := "restrict,pty " + strings.TrimSpace(pubKey)
-	changed := line != m.relayLine
-	m.relayLine = line
-	return changed
-}
-
-// resyncRelayKeyToNodes re-pushes desired state to every connected non-frontend
-// node, so a remote app whose keys were synced before the frontend reported its
-// relay key gets the key added. Called only when the relay line first appears or
-// changes -- rare -- not on every refresh.
-func (m *Manager) resyncRelayKeyToNodes() {
-	nodes, err := m.store.Nodes()
-	if err != nil {
-		return
-	}
-	m.relayLineMu.Lock()
-	frontends := m.relayFrontends
-	m.relayLineMu.Unlock()
-	for _, n := range nodes {
-		if frontends[n.Name] {
-			continue // a frontend's own apps are colocated; they get no relay key
-		}
-		agent := m.registry.Agent(n.Name)
-		if agent == nil {
-			continue
-		}
-		if desired, err := m.DesiredState(n.Name); err == nil {
+		if desired, err := m.DesiredState(id); err == nil {
 			agent.Reconcile(desired)
 		}
 	}
 }
 
-// relayFrontendIDs returns the node ids that have reported being relay frontends.
-func (m *Manager) relayFrontendIDs() []string {
-	m.relayLineMu.Lock()
-	defer m.relayLineMu.Unlock()
-	ids := make([]string, 0, len(m.relayFrontends))
-	for id := range m.relayFrontends {
-		ids = append(ids, id)
-	}
-	return ids
-}
-
 // relayKeyLine is the authorized_keys line for the relay key, added to REMOTE
 // apps' authorized_keys so the frontend can ssh in as the app user. Empty when
-// the relay is off, or until a frontend node has reported its relay public key.
+// the relay is off, or until the first refresh has generated the key.
 func (m *Manager) relayKeyLine() string {
 	if !m.config.SSHRelayEnabled {
 		return ""

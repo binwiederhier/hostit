@@ -35,7 +35,9 @@ hostit_version: "0.35.0"
 
 # Multi-node SSH: each remote node advertises its own SSH hostname (host_vars).
 # hostit_node_ssh_host: "node2.ssh.apps.example.com"
-# Optional single-hostname relay so `ssh <app>@apps.example.com` reaches any node.
+# Optional single-hostname relay so `ssh <app>@apps.example.com` reaches any app
+# on any node. The control host is the frontend (via sudo-gated helpers in the
+# control package), so it needs no node of its own -- a [control, proxy] box relays.
 # hostit_ssh_relay: true
 
 # Internal CIDRs apps/fetches may reach past the default block (metadata + private

@@ -10,6 +10,8 @@ if [ "$1" = "configure" ] || [ "$1" -ge 1 ] 2>/dev/null; then
   # sysusers first: tmpfiles below chowns the dir to the user it creates.
   if command -v systemd-sysusers >/dev/null 2>&1; then
     systemd-sysusers /usr/lib/sysusers.d/hostit-control.conf || true
+    # The SSH-relay stub group; the relay reconcile puts stub accounts in it.
+    systemd-sysusers /usr/lib/sysusers.d/hostit-relay.conf || true
   fi
   if command -v systemd-tmpfiles >/dev/null 2>&1; then
     systemd-tmpfiles --create /usr/lib/tmpfiles.d/hostit-control.conf || true

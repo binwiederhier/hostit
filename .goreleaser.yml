@@ -137,10 +137,6 @@ nfpms:
         dst: /usr/lib/hostit/bin/hostit-enter
         file_info:
           mode: 0755
-      - src: pkg/files/usr/lib/hostit/bin/hostit-relay
-        dst: /usr/lib/hostit/bin/hostit-relay
-        file_info:
-          mode: 0755
       - src: pkg/files/etc/sudoers.d/hostit
         dst: /etc/sudoers.d/hostit
         type: "config|noreplace"
@@ -184,6 +180,29 @@ nfpms:
         dst: /usr/lib/sysusers.d/hostit-control.conf
       - src: pkg/files/usr/lib/tmpfiles.d/hostit-control.conf
         dst: /usr/lib/tmpfiles.d/hostit-control.conf
+      # SSH-relay frontend (control-owned): the reconcile helper, the forwarder and
+      # the stub login shell, plus the stub group and the two narrow sudo grants.
+      # Inert unless ssh-relay is on; a [control, proxy] host then relays with no
+      # node package and no container runtime.
+      - src: pkg/files/usr/lib/hostit/bin/hostit-relay-sync
+        dst: /usr/lib/hostit/bin/hostit-relay-sync
+        file_info:
+          mode: 0755
+      - src: pkg/files/usr/lib/hostit/bin/hostit-relay
+        dst: /usr/lib/hostit/bin/hostit-relay
+        file_info:
+          mode: 0755
+      - src: pkg/files/usr/lib/hostit/bin/hostit-relay-shell
+        dst: /usr/lib/hostit/bin/hostit-relay-shell
+        file_info:
+          mode: 0755
+      - src: pkg/files/usr/lib/sysusers.d/hostit-relay.conf
+        dst: /usr/lib/sysusers.d/hostit-relay.conf
+      - src: pkg/files/etc/sudoers.d/hostit-relay
+        dst: /etc/sudoers.d/hostit-relay
+        type: "config|noreplace"
+        file_info:
+          mode: 0440
       - src: pkg/files/usr/share/bash-completion/completions/hostit-control
         dst: /usr/share/bash-completion/completions/hostit-control
       - src: pkg/files/usr/share/zsh/vendor-completions/_hostit-control

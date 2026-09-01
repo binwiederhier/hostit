@@ -91,14 +91,8 @@ func (m *Manager) RecordNodeStatus(nodeID string, hb *api.Heartbeat) error {
 			slog.Warn("Cannot record a node's machine stats", "node", nodeID, "error", err)
 		}
 	}
-	// A frontend reporting its relay pubkey is what makes control push it relay
-	// state; record it before the refresh so the first push has a target.
-	if hb.RelayPubKey != "" {
-		if m.recordRelayFrontend(nodeID, hb.RelayPubKey) {
-			m.resyncRelayKeyToNodes() // key first known -> remote apps that synced without it get it now
-		}
-	}
-	// A node's ssh host/key or the fleet's apps may have changed -> push the relay.
+	// A node's ssh host/key or the fleet's apps may have changed -> the frontend
+	// (control itself) re-reconciles its routes, keys and stubs.
 	m.refreshSSHRelay()
 	return m.store.SetNodeSeen(nodeID, time.Now())
 }
@@ -311,12 +305,6 @@ func (ra *routingAgent) Screenshot(spec *api.ScreenshotSpec) ([]byte, error) {
 		return nil, err
 	}
 	return agent.Screenshot(spec)
-}
-
-// ApplyRelay is not routed by app: control pushes the relay spec straight to a
-// frontend node's agent (refreshSSHRelay), never through the routing agent.
-func (ra *routingAgent) ApplyRelay(*api.RelaySpec) error {
-	return fmt.Errorf("ApplyRelay is pushed to a frontend node, not routed")
 }
 
 func (ra *routingAgent) RunAssistantTurn(ctx context.Context, spec *api.AssistantTurnSpec, onEvent func(*api.AssistantEvent)) error {

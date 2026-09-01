@@ -100,13 +100,6 @@ type NodeAgent interface {
 	// AnswerAssistant runs a one-shot, tool-less answer on the subscription and
 	// returns the answer text and usage (the app-facing assistant-ask path).
 	AnswerAssistant(ctx context.Context, spec *AssistantAnswerSpec) (string, *AssistantUsage, error)
-	// ApplyRelay hands the SSH-relay frontend its routing table, known_hosts and
-	// per-app authorized_keys. The node writes them to the local paths its own
-	// relay helper and stub reconcile read, and reconciles the frontend stubs --
-	// so the relay handshake rides the cluster link instead of a shared
-	// filesystem, and works when control and the frontend are on different hosts.
-	// A no-op on a node that is not a relay frontend.
-	ApplyRelay(spec *RelaySpec) error
 	// Terminal opens an interactive shell in the app's container, as a byte
 	// stream with out-of-band resize. It replaces the old TerminalCommand,
 	// which returned a command for the CALLER to exec -- correct only when the
@@ -330,17 +323,6 @@ type AssistantUsage struct {
 // policy control decides. The node runs the sandboxed chrome container and the
 // per-shot firewall (machine work); control keeps the scheduling, the rate
 // limiting, the storage and the serving.
-// RelaySpec is what control hands a relay-frontend node: the already-rendered
-// routing table and known_hosts the hostit-relay helper reads, plus each routed
-// (remote) app's authorized_keys the frontend stub serves. Control computes it
-// from the registry (which the frontend's own filtered mirror lacks) and pushes
-// it; the node writes the artifacts locally and reconciles its stubs.
-type RelaySpec struct {
-	Routes     string            `json:"routes"`      // ssh-routes file content (app<TAB>host lines)
-	KnownHosts string            `json:"known_hosts"` // relay_known_hosts content
-	AppKeys    map[string]string `json:"app_keys"`    // app -> authorized_keys content
-}
-
 type ScreenshotSpec struct {
 	Name       string   `json:"name"`                  // App name, for routing and logs
 	URL        string   `json:"url"`                   // Public URL the shot browses
@@ -409,9 +391,4 @@ type Heartbeat struct {
 	// SSHHostKey is this node's sshd public host key (one authorized-keys-format
 	// line), reported so control can write the relay gateway's known_hosts.
 	SSHHostKey string `json:"ssh_host_key"`
-	// RelayPubKey is this node's relay public key, reported ONLY by a relay
-	// frontend (one that has /etc/hostit/relay_key.pub). Control adds it to every
-	// remote app's authorized_keys so the frontend can ssh in as the app user;
-	// reporting it replaces control reading the key off a shared filesystem.
-	RelayPubKey string `json:"relay_pub_key,omitempty"`
 }

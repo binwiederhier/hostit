@@ -25,6 +25,11 @@ all:
     hostit_control_host: ctrl              # the inventory host running control
     hostit_control_node: "10.0.0.1:2930"  # control's mTLS address that members dial
 
+    # Single-hostname SSH relay: `ssh <app>@apps.example.com` reaches any node's
+    # app through the ctrl frontend. No node runs on ctrl; the control package
+    # ships the relay helpers.
+    # hostit_ssh_relay: true
+
     # Web login via Google OAuth (redirect https://apps.example.com/auth/callback).
     # Omit both to run token-only. The client secret belongs in a Vault, not here.
     # hostit_control_google_client_id: "1234567890-abcdef.apps.googleusercontent.com"

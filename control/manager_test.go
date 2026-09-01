@@ -80,7 +80,8 @@ func TestCreateAppWithoutAnyKeys(t *testing.T) {
 func TestCreateAppInvalidName(t *testing.T) {
 	t.Parallel()
 	m, _ := newTestManager(t)
-	for _, name := range []string{"", "Foo", "-x", "x-", "a_b", "a.b", "root", "hostit", "api", strings.Repeat("x", 33)} {
+	for _, name := range []string{"", "Foo", "-x", "x-", "a_b", "a.b", "root", "hostit", "api",
+		"www-data", "mariadb", "node", "control", "hostit-control", "grafana", "nginx", strings.Repeat("x", 33)} {
 		_, err := m.CreateApp(name, &CreateOptions{RequestKeys: []string{testPublicKey}})
 		require.Error(t, err, "name %q should be rejected", name)
 	}
@@ -105,6 +106,38 @@ func TestCreateAppExistingUnixUser(t *testing.T) {
 	ops.existingUsers = []string{"phil"}
 	err := m.testMachine().Provision(&ProvisionSpec{Name: "phil", ID: "id-phil", Port: 10000})
 	require.ErrorIs(t, err, ErrAppExists)
+}
+
+// Control refuses a name that collides with a real account on ITS OWN host (a
+// system/service/human user), so relay stubs and single-box app users cannot
+// shadow or be shadowed by one. This is control's half of "node AND control do
+// not already have the user"; the node checks its own passwd separately.
+func TestCreateAppRejectsControlHostAccount(t *testing.T) {
+	t.Parallel()
+	m, _ := newTestManager(t)
+	// "deploy" is not in the static reserved list, so only the passwd check can
+	// catch it -- exactly the path under test.
+	m.lookupOSUser = func(name string) (string, bool) {
+		if name == "deploy" {
+			return "/home/deploy", true // a real human/service account, not hostit-managed
+		}
+		return "", false
+	}
+	_, err := m.CreateApp("deploy", &CreateOptions{RequestKeys: []string{testPublicKey}})
+	require.ErrorIs(t, err, ErrInvalid)
+}
+
+// A just-deleted app's unix user lingers under the apps pool while it tears
+// down; control must treat that home as managed and NOT block re-creating the
+// name (the node waits the teardown out).
+func TestCreateAppAllowsRecreateOfManagedAccount(t *testing.T) {
+	t.Parallel()
+	m, _ := newTestManager(t)
+	m.lookupOSUser = func(name string) (string, bool) {
+		return filepath.Join(m.config.AppsDir, "id-x", "home", "app"), true
+	}
+	_, err := m.CreateApp("blog", &CreateOptions{RequestKeys: []string{testPublicKey}})
+	require.NoError(t, err)
 }
 
 func TestCreateAppInvalidSSHKey(t *testing.T) {

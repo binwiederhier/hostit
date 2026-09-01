@@ -1,0 +1,5 @@
+#!/bin/sh
+# Login shell for SSH-relay stub accounts on the control frontend. It hands the
+# session to the privileged forwarder via sudo; the forwarder derives the app
+# from SUDO_UID (this stub's uid), so a tenant can only ever relay as their app.
+exec sudo -n /usr/lib/hostit/bin/hostit-relay "$@"

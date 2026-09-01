@@ -4,7 +4,9 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
 	"heckel.io/hostit/store"
+	"heckel.io/hostit/system/relay"
 )
 
 func TestSSHRelayFiles(t *testing.T) {
@@ -29,8 +31,8 @@ func TestSSHRelayFiles(t *testing.T) {
 		kh, "one known_hosts line per distinct remote node that has a host key")
 }
 
-// buildRelaySpec is what control pushes to a frontend node over the link: the
-// routes, known_hosts and each remote app's authorized_keys.
+// buildRelaySpec is what control applies to the frontend (itself): the routes,
+// known_hosts and each remote app's authorized_keys.
 func TestBuildRelaySpec(t *testing.T) {
 	s := newTestServer(t)
 	s.config.SSHRelayEnabled = true
@@ -54,11 +56,47 @@ func TestBuildRelaySpec(t *testing.T) {
 	require.False(t, ok, "colocated app is not relayed")
 }
 
+// refreshSSHRelay applies the spec through the (injected) root helper and adopts
+// the relay public key it reports as the line remote apps trust.
+func TestRefreshSSHRelayAppliesLocally(t *testing.T) {
+	s := newTestServer(t)
+	s.config.SSHRelayEnabled = true
+	var gotSpec *relay.Spec
+	s.apps.relayApply = func(spec *relay.Spec) (string, error) {
+		gotSpec = spec
+		return "ssh-ed25519 AAAARELAY hostit-relay", nil
+	}
+	st := s.apps.Store()
+	require.NoError(t, st.EnsureNode("node2", "10.0.0.2"))
+	require.NoError(t, st.SetNodeSSHHost("node2", "node2.ssh.example.com"))
+	require.NoError(t, st.SetNodeHostKey("node2", "ssh-ed25519 AAA node2"))
+	require.NoError(t, st.AddApp(&store.App{Name: "shop", Port: 14001, Host: "node2"}))
+	require.NoError(t, st.SetAppKeys("shop", []string{"ssh-ed25519 AAAA shopper"}))
+
+	s.apps.refreshSSHRelay()
+
+	require.NotNil(t, gotSpec, "the frontend reconcile ran")
+	require.Equal(t, "shop\tnode2.ssh.example.com\n", gotSpec.Routes)
+	require.Contains(t, gotSpec.AppKeys["shop"], "shopper")
+	require.Equal(t, "restrict,pty ssh-ed25519 AAAARELAY hostit-relay", s.apps.relayKeyLine(),
+		"the reported pubkey becomes the remote apps' relay line")
+}
+
+// The relay is a no-op when disabled: the root helper is never invoked.
+func TestRefreshSSHRelayNoOpWhenDisabled(t *testing.T) {
+	s := newTestServer(t)
+	s.config.SSHRelayEnabled = false
+	called := false
+	s.apps.relayApply = func(spec *relay.Spec) (string, error) { called = true; return "", nil }
+	s.apps.refreshSSHRelay()
+	require.False(t, called, "a disabled relay must not run the root helper")
+}
+
 func TestDesiredStateInjectsRelayKeyForRemoteNodesOnly(t *testing.T) {
 	s := newTestServer(t)
 	pub := "ssh-ed25519 AAAARELAYPUBKEY hostit-relay"
 	s.config.SSHRelayEnabled = true
-	s.apps.recordRelayFrontend("local", pub) // frontend reported its relay key
+	s.apps.setRelayLine(pub) // the frontend reconcile reported its relay key
 
 	st := s.apps.Store()
 	require.NoError(t, st.AddApp(&store.App{Name: "shop", Port: 13001, Host: "node2"}))
@@ -82,14 +120,14 @@ func TestDesiredStateInjectsRelayKeyForRemoteNodesOnly(t *testing.T) {
 	require.NotContains(t, local.Apps[0].SSHKeys, relayLine, "colocated node does not get the relay key")
 }
 
-// relayKeyLine is empty until a frontend reports its pubkey, and gated by the
-// relay being enabled (a stale line must not leak when the relay is off).
+// relayKeyLine is empty until the frontend reconcile reports a pubkey, and gated
+// by the relay being enabled (a stale line must not leak when the relay is off).
 func TestRelayKeyLine(t *testing.T) {
 	s := newTestServer(t)
 	s.config.SSHRelayEnabled = true
-	require.Equal(t, "", s.apps.relayKeyLine(), "no frontend has reported yet -> empty")
+	require.Equal(t, "", s.apps.relayKeyLine(), "no key reported yet -> empty")
 
-	s.apps.recordRelayFrontend("local", "ssh-ed25519 AAAAKEY hostit-relay")
+	s.apps.setRelayLine("ssh-ed25519 AAAAKEY hostit-relay")
 	require.Equal(t, `restrict,pty ssh-ed25519 AAAAKEY hostit-relay`,
 		s.apps.relayKeyLine(), "reported key is used")
 
@@ -103,7 +141,7 @@ func TestRelayKeyLine(t *testing.T) {
 func TestAppendRelayKey(t *testing.T) {
 	s := newTestServer(t)
 	s.config.SSHRelayEnabled = true
-	s.apps.recordRelayFrontend("local", "ssh-ed25519 AAAAK hostit-relay")
+	s.apps.setRelayLine("ssh-ed25519 AAAAK hostit-relay")
 
 	user := []string{"ssh-ed25519 AAAAUSER u"}
 	line := "restrict,pty ssh-ed25519 AAAAK hostit-relay"
@@ -114,14 +152,4 @@ func TestAppendRelayKey(t *testing.T) {
 
 	s.config.SSHRelayEnabled = false
 	require.Equal(t, user, s.apps.appendRelayKey("node2", user), "off -> never")
-}
-
-// recordRelayFrontend returns whether the relay line changed -- the signal that
-// gates the one-time resync of remote nodes' keys. A regression here would drop
-// the resync (or run it every heartbeat).
-func TestRecordRelayFrontendChanged(t *testing.T) {
-	s := newTestServer(t)
-	require.True(t, s.apps.recordRelayFrontend("local", "ssh-ed25519 AAAA k"), "first report is a change")
-	require.False(t, s.apps.recordRelayFrontend("local", "ssh-ed25519 AAAA k"), "same key is not a change")
-	require.True(t, s.apps.recordRelayFrontend("local", "ssh-ed25519 BBBB k2"), "a new key is a change")
 }

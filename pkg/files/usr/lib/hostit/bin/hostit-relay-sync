@@ -1,0 +1,7 @@
+#!/bin/sh
+# Privileged relay reconcile, run by hostit-control via the sudoers grant. It
+# reads a relay spec (JSON) on stdin and creates/updates/removes the stub
+# accounts and their authorized_keys, ensures the relay key, and prints the
+# relay public key. A one-shot helper, not a daemon: the only root surface is
+# this single command.
+exec /usr/bin/hostit-control relay-sync "$@"

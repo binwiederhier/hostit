@@ -3,7 +3,6 @@ package main
 import (
 	"bufio"
 	"fmt"
-	"heckel.io/hostit/system/relaypaths"
 	"os"
 	"os/exec"
 	"os/user"
@@ -11,21 +10,15 @@ import (
 	"syscall"
 
 	"github.com/urfave/cli/v2"
+
+	"heckel.io/hostit/system/relaypaths"
 )
 
-const (
-	// relayRoutesFile maps a routed (remote) app to its node's SSH host. Written
-	// by the node (from control's pushed spec), world-readable, read to decide local vs
-	// relay. relayKeyFile is the credential and stays root-only.
-	relayRoutesFile     = relaypaths.Routes
-	relayHelperFile     = "/usr/lib/hostit/bin/hostit-relay"
-	relayKeyFile        = relaypaths.Key
-	relayKnownHostsFile = relaypaths.KnownHosts
-)
-
-// cmdRelay is the privileged inner hop of the relay gateway. It is reached only
-// as root via "sudo -n hostit-relay" from a routed app's login shell or sftp
-// dispatcher; sshd passes the client's invocation straight through.
+// cmdRelay is the privileged inner hop of the SSH relay on the control frontend.
+// It is reached only as root via "sudo -n hostit-relay" from a relay stub's
+// login shell; sshd passes the client's invocation straight through. The app is
+// taken from SUDO_UID (the stub the client authenticated as), never an argument,
+// so a tenant cannot relay as a different app.
 var cmdRelay = &cli.Command{
 	Name:            "relay",
 	Hidden:          true,
@@ -34,14 +27,12 @@ var cmdRelay = &cli.Command{
 }
 
 func execRelay(c *cli.Context) error {
-	// The app is derived from SUDO_UID (the login user), never from an argument,
-	// so a tenant cannot ask to relay as a different app.
 	app := appFromSudoUID()
 	if app == "" {
-		fmt.Fprintln(os.Stderr, "hostit: relay must be run via sudo from an app login")
+		fmt.Fprintln(os.Stderr, "hostit: relay must be run via sudo from a relay stub login")
 		return cli.Exit("", 1)
 	}
-	backend := relayBackend(relayRoutesFile, app)
+	backend := relayBackend(relaypaths.Routes, app)
 	if backend == "" {
 		fmt.Fprintf(os.Stderr, "hostit: no relay route for app %q\n", app)
 		return cli.Exit("", 1)
@@ -59,12 +50,12 @@ func execRelay(c *cli.Context) error {
 // as the remote command; an sftp subsystem ("-s sftp") is requested as one.
 func relaySSHArgs(backend, app string, invocation []string) []string {
 	base := []string{
-		"-i", relayKeyFile,
+		"-i", relaypaths.Key,
 		"-o", "IdentitiesOnly=yes",
 		"-o", "IdentityAgent=none",
 		"-o", "BatchMode=yes",
 		"-o", "StrictHostKeyChecking=yes",
-		"-o", "UserKnownHostsFile=" + relayKnownHostsFile,
+		"-o", "UserKnownHostsFile=" + relaypaths.KnownHosts,
 		"-o", "LogLevel=ERROR",
 	}
 	target := app + "@" + backend

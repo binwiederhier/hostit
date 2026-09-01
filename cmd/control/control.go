@@ -14,7 +14,7 @@ func newControlApp(version string) *cli.App {
 		// version, so an empty one would make the stale-agent check match
 		// forever and agents would stop being restarted on upgrades.
 		Version:              version,
-		Commands:             []*cli.Command{cmdServe, cmdStatus, cmdApp, cmdNode, cmdProxy, cmdConnections},
+		Commands:             []*cli.Command{cmdServe, cmdStatus, cmdApp, cmdNode, cmdProxy, cmdConnections, cmdRelay, cmdRelaySync},
 		EnableBashCompletion: true,
 	}
 }

@@ -1,0 +1,15 @@
+# Managed by ansible (hostit role) -- do not edit on the host.
+# SSH-relay stub accounts exist only to forward `ssh <app>@<domain>` to the app's
+# node; strip the forwarding that would let a tenant tunnel through the frontend
+# host (metadata service, host-local services, another node's ports).
+Match Group hostit-relay
+    AllowTcpForwarding no
+    AllowStreamLocalForwarding no
+    AllowAgentForwarding no
+    X11Forwarding no
+    PermitTunnel no
+    GatewayPorts no
+    PermitUserRC no
+
+# Included at the TOP of sshd_config, so reset the Match before the globals below.
+Match all

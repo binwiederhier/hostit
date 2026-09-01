@@ -1,0 +1,12 @@
+# Installed as /etc/sudoers.d/hostit-relay (mode 0440).
+#
+# The SSH-relay frontend needs root for exactly two things, each one root-owned
+# helper:
+#  - hostit-control drives the reconcile (create/remove stub accounts + keys).
+#  - a relay stub reaches the forwarder, which holds the root-only relay key and
+#    ignores its arguments when choosing a target (the app is SUDO_UID), so a
+#    stub can only ever relay as its own app.
+Defaults!/usr/lib/hostit/bin/hostit-relay !requiretty
+Defaults!/usr/lib/hostit/bin/hostit-relay-sync !requiretty
+hostit-control ALL=(root) NOPASSWD: /usr/lib/hostit/bin/hostit-relay-sync
+%hostit-relay  ALL=(root) NOPASSWD: /usr/lib/hostit/bin/hostit-relay

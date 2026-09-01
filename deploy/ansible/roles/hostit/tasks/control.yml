@@ -45,23 +45,20 @@
   no_log: true
   notify: restart hostit-control
 
-# The optional SSH relay gateway lives on the control host (its colocated node is
-# the frontend, and the node self-generates the relay key), so it is just a sudo
-# grant. Its own drop-in, not the packaged sudoers, whose config|noreplace would
-# skip it on upgrade.
-- name: Grant hostit-apps sudo to the relay helper
-  copy:
-    dest: /etc/sudoers.d/hostit-relay
+# The SSH relay frontend IS hostit-control: it reconciles the stub accounts and
+# forwards, all via sudo-gated helpers the control deb ships (the hostit-relay
+# group, its sudoers, the wrappers). Ansible only has to strip forwarding from
+# the stub logins so a tenant cannot tunnel through the frontend host. Works on a
+# [control, proxy] host with no node at all.
+- name: Harden sshd for SSH-relay stub logins
+  template:
+    src: sshd-hostit-relay.conf.j2
+    dest: /etc/ssh/sshd_config.d/11-hostit-relay.conf
     owner: root
     group: root
-    mode: "0440"
-    content: |
-      # Managed by ansible (hostit relay) -- do not edit on the host.
-      # Like hostit-enter, hostit-relay derives the app from SUDO_UID and ignores
-      # its arguments, so a member can only relay as their own app.
-      Defaults!/usr/lib/hostit/bin/hostit-relay !requiretty
-      %{{ hostit_apps_group }} ALL=(root) NOPASSWD: /usr/lib/hostit/bin/hostit-relay
-    validate: "visudo -cf %s"
+    mode: 0644
+    validate: "sshd -t -f %s"
+  notify: restart ssh
   when: hostit_ssh_relay | default(false)
 
 - name: Enable and start hostit-control

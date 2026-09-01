@@ -4,8 +4,11 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	osuser "os/user"
+	"path/filepath"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -14,6 +17,8 @@ import (
 	"heckel.io/hostit/node"
 	"heckel.io/hostit/node/api"
 	"heckel.io/hostit/store"
+	"heckel.io/hostit/system/relay"
+	"heckel.io/hostit/system/relaypaths"
 	"heckel.io/hostit/system/ssh"
 	"heckel.io/hostit/workspace"
 )
@@ -25,12 +30,27 @@ var (
 	// and are re-exported in nodeagent.go.
 	ErrNoPortsAvailable = errors.New("no free ports in configured range")
 
-	// reservedNames are blocked in addition to existing Unix users; mostly hostnames
-	// with special meaning and common system accounts that may not exist yet
+	// reservedNames are blocked in addition to existing Unix users (which the
+	// control and node passwd checks catch at create time): hostnames with
+	// special meaning, hostit's own accounts, and common system/service accounts
+	// that may not exist on this host yet but must never be an app.
 	reservedNames = []string{
-		"hostit", "api", "www", "mail", "smtp", "imap", "ftp", "ssh", "git", "admin",
-		"root", "daemon", "bin", "sys", "sync", "proxy", "backup", "nobody", "sshd",
-		"postgres", "mysql", "redis", "ubuntu", "debian",
+		// Hostnames / hostit itself
+		"hostit", "hostit-control", "hostit-node", "hostit-proxy", "hostit-apps",
+		"api", "www", "www-data", "mail", "smtp", "imap", "ftp", "ssh", "git",
+		"control", "node", "proxy",
+		// Privileged / system accounts
+		"admin", "administrator", "root", "daemon", "bin", "sys", "sync", "adm",
+		"operator", "backup", "nobody", "sshd", "systemd", "dbus", "messagebus",
+		"lp", "news", "uucp", "games", "man", "postfix", "dovecot", "ntp", "chrony",
+		// Databases / caches / brokers
+		"postgres", "mysql", "mariadb", "redis", "mongodb", "mongo", "mongod",
+		"memcached", "rabbitmq", "elasticsearch", "influxdb", "cassandra",
+		// Web / app servers and common infra
+		"nginx", "apache", "apache2", "httpd", "tomcat", "docker", "podman",
+		"grafana", "prometheus", "jenkins", "gitlab",
+		// Distro default login accounts
+		"ubuntu", "debian",
 	}
 )
 
@@ -111,6 +131,12 @@ type Manager struct {
 	store  *store.Store
 	config *config.Config
 
+	// lookupOSUser reports an existing account's home dir on the CONTROL host (ok
+	// false if none). Injected so tests supply their own passwd view; used to
+	// refuse an app name that collides with a real account here (the node checks
+	// its own host separately).
+	lookupOSUser func(name string) (home string, ok bool)
+
 	pmu sync.Mutex // Protects nextPort, reservedPorts (the control side's own lock)
 	// mirrorSeq orders mirror pushes so a node can drop a stale one; see
 	// SyncState.Seq. Per control process, which is why a node resets its view
@@ -123,13 +149,16 @@ type Manager struct {
 	// Protects the registry read and mirrorSeq stamp so push order matches read order.
 	mirrorMu sync.Mutex
 
-	// relayLine is the authorized_keys line for the SSH relay key (added to remote
-	// apps' keys), set from the frontend node's reported pubkey; relayFrontends is
-	// the set of node ids that reported being relay frontends. relayLineMu guards
-	// both.
-	relayLine      string
-	relayFrontends map[string]bool
-	relayLineMu    sync.Mutex
+	// relayLine is the authorized_keys line for the SSH relay key, added to remote
+	// apps' keys so the control frontend can ssh in as the app. It is set from the
+	// public key the relay-sync helper reports; relayLineMu guards it.
+	relayLine   string
+	relayLineMu sync.Mutex
+
+	// relayApply drives the root relay reconcile (routes, known_hosts, per-app
+	// keys, stub accounts) and returns the frontend's relay public key. Injected
+	// so tests do not shell out to sudo.
+	relayApply func(spec *relay.Spec) (pubKey string, err error)
 }
 
 // NewManager creates a Manager from its config, store and the node-local services
@@ -144,6 +173,8 @@ func NewManager(conf *config.Config, s *store.Store) *Manager {
 		ctlStates:     make(map[string]State),
 		store:         s,
 		config:        conf,
+		lookupOSUser:  osuserLookup,
+		relayApply:    sudoRelaySync,
 	}
 	// Machine work always goes to a node, from the first line of the process:
 	// with none connected the routing agent answers "node is not connected",
@@ -494,6 +525,33 @@ func validateKeys(keys []string) error {
 	return nil
 }
 
+// osuserLookup is the real passwd lookup behind Manager.lookupOSUser.
+func osuserLookup(name string) (string, bool) {
+	u, err := osuser.Lookup(name)
+	if err != nil {
+		return "", false
+	}
+	return u.HomeDir, true
+}
+
+// managedHome reports whether a home dir belongs to a hostit-managed account (an
+// app user under the apps pool, or a relay stub). Those are transient -- a
+// just-deleted app re-creating its name must still work while the old user tears
+// down -- so a collision with one must NOT block a create.
+func (m *Manager) managedHome(home string) bool {
+	home = filepath.Clean(home)
+	for _, prefix := range []string{m.config.AppsDir, relaypaths.Stubs} {
+		if prefix == "" {
+			continue
+		}
+		p := filepath.Clean(prefix)
+		if home == p || strings.HasPrefix(home, p+string(filepath.Separator)) {
+			return true
+		}
+	}
+	return false
+}
+
 func (m *Manager) validateName(name string) error {
 	if !api.ValidName(name) {
 		return fmt.Errorf("%w: invalid app name %q, must match %s", ErrInvalid, name, api.AppNamePattern)
@@ -506,10 +564,16 @@ func (m *Manager) validateName(name string) error {
 	} else if !errors.Is(err, store.ErrAppNotFound) {
 		return err
 	}
-	// The registry is the whole answer here. Whether a just-deleted app's unix
-	// user is still going away is node-local, and the node waits for its own
-	// teardown before provisioning a name again (node.Machine.awaitTeardown) --
-	// control cannot see another machine's passwd file, and should not try.
+	// A name matching a real account on THIS (control) host is refused: the relay
+	// stubs live here, and on a single box the app users do too, so a collision
+	// with a system/service/human account would let one shadow the other. The
+	// node checks its OWN passwd file at provision time -- together that is "node
+	// AND control do not already have the user". hostit's own managed accounts
+	// (app users under the apps pool, relay stubs) are transient and excluded, so
+	// re-creating a just-deleted name still works while its old user tears down.
+	if home, ok := m.lookupOSUser(name); ok && !m.managedHome(home) {
+		return fmt.Errorf("%w: app name %q collides with an existing account on the control host", ErrInvalid, name)
+	}
 	return nil
 }
 

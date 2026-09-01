@@ -92,15 +92,8 @@ type fakeAgentFull struct {
 	api.NodeAgent
 	calls   []string
 	written map[string][]byte
-	readErr error          // when set, ReadFile fails with this
-	shotErr error          // when set, Screenshot fails with this
-	relay   *api.RelaySpec // captured by ApplyRelay
-}
-
-func (f *fakeAgentFull) ApplyRelay(spec *api.RelaySpec) error {
-	f.relay = spec
-	f.calls = append(f.calls, "applyrelay")
-	return nil
+	readErr error // when set, ReadFile fails with this
+	shotErr error // when set, Screenshot fails with this
 }
 
 func (f *fakeAgentFull) Screenshot(spec *api.ScreenshotSpec) ([]byte, error) {
@@ -307,23 +300,4 @@ func TestSetCPULimitRoundTrips(t *testing.T) {
 	remote := startRPC(t, agent)
 	remote.SetCPULimit("blog", 1500)
 	assert.Contains(t, agent.calls, "setcpulimit:blog:1500")
-}
-
-// TestRPCApplyRelayRoundTrips confirms the relay spec (a nested map) survives the
-// cluster link intact -- this is how control now hands the frontend its routes.
-func TestRPCApplyRelayRoundTrips(t *testing.T) {
-	t.Parallel()
-	agent := &fakeAgentFull{written: map[string][]byte{}}
-	remote := startRPC(t, agent)
-	spec := &api.RelaySpec{
-		Routes:     "shop\tnode2.ssh\n",
-		KnownHosts: "node2.ssh ssh-ed25519 HOSTKEY\n",
-		AppKeys:    map[string]string{"shop": "ssh-ed25519 AAAA shopper\n"},
-	}
-	require.NoError(t, remote.ApplyRelay(spec))
-	require.Contains(t, agent.calls, "applyrelay")
-	require.NotNil(t, agent.relay)
-	require.Equal(t, spec.Routes, agent.relay.Routes)
-	require.Equal(t, spec.KnownHosts, agent.relay.KnownHosts)
-	require.Equal(t, spec.AppKeys, agent.relay.AppKeys)
 }

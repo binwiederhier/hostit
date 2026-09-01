@@ -136,19 +136,7 @@ func Serve(configPath, version string) error {
 			slog.Info("Restarted apps to pick up the new version", "apps", restarted, "version", version)
 		}
 	}()
-	// The relay frontend is always the colocated node -- the one sharing control's
-	// host, where the base domain (and so `ssh <app>@<domain>`) resolves; a remote
-	// node can never be it. So the colocated node generates its own relay keypair
-	// on first start (no ssh-keygen in the deploy, no config knob), and that key's
-	// presence is what marks it the frontend. Harmless when the relay is disabled:
-	// control only hands the key out when ssh-relay is on.
-	if cluster.IsSocketAddr(conf.ControlURL) {
-		if err := machine.EnsureRelayKey(); err != nil {
-			return fmt.Errorf("cannot generate the relay key: %w", err)
-		}
-	}
 	go machine.DiskUsageLoop(done)
-	go machine.RelayStubLoop(done) // relay-gateway frontend stubs (no-op unless configured)
 	machine.SeedStates()
 	go machine.StateLoop(done)
 	go machine.QgroupSweepLoop(6*time.Hour, done)
