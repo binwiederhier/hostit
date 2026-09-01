@@ -1,10 +1,8 @@
 ---
 
-# hostit runs each app container on an idmapped --rootfs (the app's root-owned
-# btrfs subvolume mapped through the container's uid map), which needs a newer
-# crun than most distributions ship. hostit's preflight refuses to start on an
-# old one (podman >= 4.3, crun >= 1.29), resolving crun through podman info --
-# so this containers.conf drop-in is exactly what it validates.
+# hostit runs each app on an idmapped --rootfs, which needs crun >= 1.29 (newer
+# than most distros ship); its preflight refuses to start otherwise. Install the
+# static release binary and point podman at it, keeping the distro crun as fallback.
 
 - name: Install static crun {{ hostit_crun_version }} (idmapped rootfs support)
   ansible.builtin.get_url:
@@ -30,8 +28,7 @@
     group: root
     mode: "0644"
     content: |
-      # Managed by ansible (hostit role). hostit needs crun >= 1.29 for
-      # idmapped --rootfs mounts; the distro crun stays as a fallback.
+      # Managed by ansible (hostit role).
       [engine]
       runtime = "crun"
       [engine.runtimes]

@@ -1,17 +1,11 @@
 # Managed by Ansible (hostit role) -- do not edit on the host.
-# All options and their defaults: see proxy.yml.example in the hostit source.
+# All options: see proxy.yml.example in the hostit source.
 
-# hostit-proxy is the data plane: it terminates TLS on :443 and forwards each
-# request to its app. It is a cluster member -- it dials control, is handed the
-# routing table over that connection, and asks for certificates through it.
-#
-# Sharing a host with control, everything else defaults: the proxy is "local"
-# and reaches control over the member socket, where the kernel identifies the
-# caller -- no certificate, no CA, nothing to wait for. A proxy on its own
-# machine instead needs proxy-id, cluster-url and the three credential files
-# issued from your cluster CA (see node.yml.example for the openssl recipe).
+# hostit-proxy terminates TLS on :443 and serves apps from the table control
+# pushes it. Single-box: it reaches control over the /run/hostit socket (no cert);
+# a proxy on its own machine needs proxy-id, cluster-url and certs.
 control-url: http://{{ hostit_control_http }}
 {% if hostit_proxy_listen_metrics %}
-# Prometheus metrics on a separate interface (unauthenticated -- keep it internal).
+# Prometheus /metrics (unauthenticated -- keep it internal).
 listen-metrics: "{{ hostit_proxy_listen_metrics }}"
 {% endif %}

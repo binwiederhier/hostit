@@ -1,32 +1,24 @@
 ---
-# Copy to group_vars/hostit.yml and edit. Everything not set here falls back to
-# roles/hostit/defaults/main.yml.
-#
-# SECRETS (admin-token, OAuth secret, AI keys) should live in an Ansible Vault
-# file rather than in plain text here, e.g.:
-#   ansible-vault create group_vars/hostit_vault.yml
-#   ansible-playbook -i inventory.ini playbook.yml --ask-vault-pass
+# Copy to group_vars/hostit.yml and edit. Unset keys fall back to
+# roles/hostit/defaults/main.yml. Keep secrets in an Ansible Vault file
+# (ansible-vault create group_vars/hostit_vault.yml; deploy with --ask-vault-pass).
 
 # --- Required ---
 
-# Apps are served at <app>.<hostit_domain>. Requires wildcard DNS: both
-#   *.apps.example.com  A  <host-ip>
-#   apps.example.com    A  <host-ip>
+# Served at <app>.<hostit_domain>; needs wildcard DNS (*.apps.example.com and
+# apps.example.com both pointing here).
 hostit_domain: "apps.example.com"
 
-# Admin REST API token. Generate: openssl rand -hex 24  (keep it in Vault)
+# Admin REST API token (openssl rand -hex 24); keep it in Vault.
 hostit_admin_token: "CHANGE-ME"
 
-# Which release to install (https://github.com/binwiederhier/hostit/releases).
-hostit_version: "0.33.0"
+# Release to install (https://github.com/binwiederhier/hostit/releases).
+hostit_version: "0.34.0"
 
-# btrfs app homes -> snapshots, rollback, fork, hard disk quotas. REQUIRED: hostit
-# refuses to start unless apps-dir is btrfs, and this role sets it up.
+# --- Recommended ---
 
-# --- Recommended for production ---
-
-# Web dashboard via Google OAuth. Omit both to run token-only (REST API + CLI).
-# Redirect URI: https://apps.example.com/auth/callback
+# Web dashboard via Google OAuth (redirect https://apps.example.com/auth/callback);
+# omit both to run token-only.
 # hostit_google_client_id: "..."
 # hostit_google_client_secret: "..."      # -> Vault
 # hostit_admin_emails:
@@ -39,23 +31,16 @@ hostit_version: "0.33.0"
 # hostit_aws_secret_key: "..."            # -> Vault
 # hostit_aws_hosted_zone_id: "..."
 
-# Built-in AI assistant. Metered API:
+# Built-in AI assistant: a metered API key and/or a Claude Pro/Max token.
 # hostit_anthropic_api_key: "sk-ant-..."  # -> Vault
-# ...and/or additionally offer Claude.ai (a Claude Pro/Max subscription token):
 # hostit_claude_code_oauth_token: "..."   # -> Vault (claude setup-token)
 
-# Multi-node SSH (only for deployments with remote nodes; a single host needs
-# none of this). Each remote node advertises its own reachable SSH hostname:
-# hostit_ssh_host: "node2.ssh.apps.example.com"   # set PER NODE (host_vars)
-#
-# Optional single-hostname SSH relay so `ssh <app>@apps.example.com` reaches an
-# app on any node (EXPERIMENTAL; see docs/features/ssh-access.md):
+# Multi-node SSH: each remote node advertises its own SSH hostname (host_vars).
+# hostit_ssh_host: "node2.ssh.apps.example.com"
+# Optional single-hostname relay so `ssh <app>@apps.example.com` reaches any node.
 # hostit_ssh_relay: true
 
-# One outbound allow-list for everything hostit reaches on an account's behalf:
-# the app-container firewall, the preview container, and control's own fetches.
-# By default apps and fetches cannot reach the cloud metadata endpoint or any
-# private network. List internal CIDRs your apps/services legitimately need
-# (a private API, a private-IP DNS resolver). Whitelist NARROWLY.
+# Internal CIDRs apps/fetches may reach past the default block (metadata + private
+# space). Whitelist NARROWLY.
 # hostit_outbound_allow_private_cidrs:
 #   - 10.20.0.0/24

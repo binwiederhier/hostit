@@ -1,11 +1,8 @@
 # Managed by Ansible (hostit role) -- do not edit on the host.
-# All options and their defaults: see control.yml.example in the hostit source.
+# All options: see control.yml.example in the hostit source.
 
 base-domain: {{ hostit_domain }}
-
-# Control's own data dir (registry, per-app certs, cluster CA). The unprivileged
-# hostit-control user owns it via the unit's StateDirectory; leaving it unset
-# would default to /var/lib/hostit, which control cannot write to as non-root.
+# control's data dir, owned by the unprivileged hostit-control user.
 data-dir: /var/lib/hostit/control
 admin-token: {{ hostit_admin_token }}
 tls: letsencrypt
@@ -13,21 +10,13 @@ tls: letsencrypt
 letsencrypt-email: {{ hostit_letsencrypt_email }}
 {% endif %}
 
-# hostit-proxy terminates TLS in front and forwards here over loopback. That is
-# the only shape: control never binds :443, and needs no setting to say so. It
-# still MANAGES the certificates, and hands them to the proxy over the cluster
-# link.
+# hostit-proxy terminates TLS in front; control serves plain HTTP for it. This
+# example is single-box (control/node/proxy talk over the /run/hostit sockets, no
+# certs); to add a member on another machine, set listen-cluster and issue certs.
 listen-http: {{ hostit_control_http }}
-
-# Where members on OTHER machines dial in (mTLS). The node and proxy sharing
-# This example runs everything on one host: control, node and proxy talk over
-# the /run/hostit unix sockets (kernel peer-cred gate), so no cluster TLS certs
-# and no listen-cluster. To add a node/proxy on ANOTHER machine, set
-# listen-cluster here and issue each member a cert (see node.yml.example).
 {% if hostit_aws_access_key_id %}
 
-# One wildcard certificate for *.{{ hostit_domain }} via Route 53 (DNS-01),
-# instead of a certificate per app issued on first request.
+# One wildcard cert for *.{{ hostit_domain }} via Route 53 (DNS-01).
 dns-provider: route53
 aws-region: {{ hostit_aws_region }}
 aws-access-key-id: {{ hostit_aws_access_key_id }}
@@ -38,7 +27,7 @@ aws-hosted-zone-id: {{ hostit_aws_hosted_zone_id }}
 {% endif %}
 {% if hostit_google_client_id %}
 
-# Web dashboard (Google OAuth). Empty runs token-only with no web login.
+# Web dashboard via Google OAuth; empty runs token-only.
 google-client-id: {{ hostit_google_client_id }}
 google-client-secret: {{ hostit_google_client_secret }}
 {% endif %}
@@ -46,13 +35,12 @@ google-client-secret: {{ hostit_google_client_secret }}
 session-key: {{ hostit_session_key }}
 {% endif %}
 {% if hostit_admin_emails %}
-# These emails become active admins on their first login.
+# These emails become admins on their first login.
 admin-emails:
 {% for email in hostit_admin_emails %}
   - {{ email }}
 {% endfor %}
 {% endif %}
-
 {% if hostit_anthropic_api_key %}
 
 # Built-in assistant on the metered Anthropic API.
@@ -60,27 +48,20 @@ anthropic-api-key: {{ hostit_anthropic_api_key }}
 {% endif %}
 {% if hostit_claude_code_oauth_token %}
 
-# The operator's Claude subscription (Pro/Max): its models are offered alongside
-# the API's, run as `claude -p` in a sandbox container. Its presence is the whole
-# switch.
+# Optional Claude subscription backend (claude setup-token), run as claude -p.
 claude-code-oauth-token: {{ hostit_claude_code_oauth_token }}
 {% endif %}
 {% if hostit_ssh_relay | default(false) %}
 
 # Optional single-hostname SSH relay gateway (see docs/features/ssh-access.md).
-# Control writes the routes/known_hosts/per-app keys the system sshd uses and
-# adds the relay key to remote apps' authorized_keys. EXPERIMENTAL; off by default.
 ssh-relay: true
 {% endif %}
 {% if hostit_control_listen_metrics %}
-# Prometheus metrics on a separate interface (unauthenticated -- keep it internal).
+# Prometheus /metrics (unauthenticated -- keep it internal).
 listen-metrics: "{{ hostit_control_listen_metrics }}"
 {% endif %}
-
 {% if hostit_outbound_allow_private_cidrs | default([]) %}
-# The one outbound allow-list, applied everywhere hostit reaches out on an
-# account's behalf: control's own user-supplied fetches (MCP/OAuth issuers), the
-# preview container, and each node's app-container firewall (node.yml, same key).
+# Internal CIDRs hostit may reach on an account's behalf (fetches + previews + apps).
 outbound-allow-private-cidrs:
 {% for cidr in hostit_outbound_allow_private_cidrs %}
   - {{ cidr }}

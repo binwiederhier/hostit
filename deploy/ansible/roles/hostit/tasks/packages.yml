@@ -1,14 +1,10 @@
 ---
 
-# What every hostit host needs regardless of role: its component .deb packages,
-# staged to /tmp. The dpkg install itself lives in each component's task file,
-# because the node package depends on the container runtime that only node.yml
-# installs (control and proxy have none). hostit ships one .deb per component,
-# all cut from one release so their versions match; this single-box role stages
-# all three (control, node, proxy) and each component installs its own below.
+# Stage the component .debs to /tmp; the install lives in each component file
+# (the node deb needs the container runtime installed first). A fresh box pulls
+# from the public GitHub release; hostit_deb_dir installs local builds.
 
-# One name for each package's file, used by the download, the copy and the
-# per-component install, so they can never disagree about what they are handling.
+# One filename per package, shared by the download, copy and per-component install.
 - name: Name the package files
   ansible.builtin.set_fact:
     hostit_deb_release: "{{ hostit_deb_dir | length > 0 and hostit_deb_version or 'v' + hostit_version }}"
@@ -36,9 +32,7 @@
   register: hostit_deb_copy
   when: hostit_deb_dir | length > 0
 
-# Whether any component .deb changed this run. They are cut and versioned
-# together, so a release bump restages them all at once; each component gates its
-# own dpkg install on this and reinstalls only when the .deb actually changed.
+# The .debs are versioned together; each component reinstalls only when they change.
 - name: Note whether the staged packages changed
   ansible.builtin.set_fact:
     hostit_debs_changed: "{{ (hostit_deb_remote is changed) or (hostit_deb_copy is changed) }}"

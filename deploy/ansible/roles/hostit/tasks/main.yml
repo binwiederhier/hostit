@@ -1,15 +1,10 @@
 ---
 
-# hostit -- self-hosted mini-app platform. This role installs all three
-# components on ONE machine and runs them as three processes that talk over the
-# /run/hostit unix sockets: control (the registry, web app and API), node (the
-# app containers and host machinery, as root) and proxy (TLS on :443).
-#
-# main.yml is orchestration only: fail fast on missing config, install the
-# component packages, then hand off to each component's own task file. control
-# comes first because node and proxy dial the socket it opens; proxy last because
-# it waits for control before taking :443. To split these across machines instead
-# of one box, see the multi-node notes in group_vars/hostit.example.yml.
+# hostit -- self-hosted mini-app platform, all three components on ONE machine
+# talking over the /run/hostit sockets: control (registry/web/API), node (app
+# containers, as root) and proxy (TLS on :443). Orchestration only; control first
+# (node and proxy dial its socket), proxy last (it waits for control). To split
+# across machines see group_vars/hostit.example.yml.
 
 - name: Fail early if required variables are unset
   ansible.builtin.assert:

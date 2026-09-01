@@ -1,18 +1,15 @@
 ---
 
-# The app homes must be on btrfs: snapshots, rollback, fork and hard disk quotas
-# are core, and the node's preflight refuses to start otherwise. We use a
-# loopback btrfs image on the root filesystem, so no extra block device is
-# needed. This creates the pool on a fresh host; once the image exists it is a
-# no-op and never touches existing data.
+# Put the app homes on a btrfs loopback image (snapshots, rollback, fork and hard
+# quotas are core; node preflight enforces it). Creates the pool on a fresh host;
+# once the image exists this is a no-op and never touches existing data.
 
 - name: Install btrfs-progs
   ansible.builtin.apt:
     name: btrfs-progs
     state: present
 
-# Sized at 75% of the root filesystem's free space, then formatted. `creates`
-# makes this a one-time step -- the mount unit owns the pool from here on.
+# 75% of the root fs's free space, then format. `creates` makes it one-time.
 - name: Create and format the app-homes btrfs image
   ansible.builtin.shell: |
     set -euo pipefail
@@ -30,8 +27,7 @@
     dest: "/etc/systemd/system/{{ hostit_apps_mount_unit }}"
     mode: "0644"
 
-# Make hostit-node wait for the mount on boot; without this it can start before
-# the btrfs is up and fail preflight.
+# Make hostit-node wait for the mount on boot, or it starts before btrfs is up.
 - name: Create the hostit-node drop-in directory
   ansible.builtin.file:
     path: /etc/systemd/system/hostit-node.service.d
@@ -53,7 +49,7 @@
     state: started
     daemon_reload: true
 
-# Idempotent: enabling quota on an already-quota-enabled filesystem is a no-op.
+# Idempotent: re-enabling quota is a no-op.
 - name: Enable btrfs quota on the app homes
   ansible.builtin.command: "btrfs quota enable {{ hostit_apps_dir }}"
   changed_when: false

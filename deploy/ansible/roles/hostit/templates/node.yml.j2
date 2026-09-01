@@ -1,35 +1,24 @@
 # Managed by Ansible (hostit role) -- do not edit on the host.
-# All options and their defaults: see node.yml.example in the hostit source.
+# All options: see node.yml.example in the hostit source.
 
-# hostit-node owns this machine's app work: containers, unix users, btrfs
-# subvolumes and port rules. It dials control and does what it is told; control
-# never dials it, so this host needs no inbound port for the cluster.
-#
-# "local" is the node that shares control's host. Its credentials are the pair
-# it reaches control over the /run/hostit socket, nothing is enrolled by hand.
+# The node owns this machine's app work; it dials the colocated control over the
+# /run/hostit socket ("local" = the node sharing control's host).
 node-id: local
 control-url: "unix:/run/hostit/control/cluster.sock"
 
-# The node's own data dir (its registry mirror and app-subvolume pool), and
-# where app homes live. data-dir is the node's StateDirectory, kept separate
-# from control's so each component owns its own tree.
+# The node's own data dir (registry mirror + subvolume pool) and app homes.
 data-dir: /var/lib/hostit/node
 apps-dir: {{ hostit_apps_dir }}
 {% if hostit_ssh_host %}
-
-# The hostname clients use to SSH to apps on THIS node (multi-node). Reported to
-# control, which advertises it in an app's ssh command. Unset -> control's base
-# domain (right for the single/colocated host).
+# Hostname for `ssh <app>@...` on this node (else control's base domain).
 ssh-host: "{{ hostit_ssh_host }}"
 {% endif %}
 {% if hostit_node_listen_metrics %}
-# Prometheus metrics on a separate interface (unauthenticated -- keep it internal).
+# Prometheus /metrics (unauthenticated -- keep it internal).
 listen-metrics: "{{ hostit_node_listen_metrics }}"
 {% endif %}
-
 {% if hostit_outbound_allow_private_cidrs | default([]) %}
-# Internal CIDRs an app container may reach despite the default egress block
-# (metadata + all private space). Same list as control's; see node.yml.example.
+# Internal CIDRs an app container may reach despite the default egress block.
 outbound-allow-private-cidrs:
 {% for cidr in hostit_outbound_allow_private_cidrs %}
   - {{ cidr }}
