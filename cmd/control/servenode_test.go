@@ -15,6 +15,58 @@ import (
 	"heckel.io/hostit/system/stats"
 )
 
+// Control must not invent a "local" node: on a nodeless [control, proxy] host
+// none exists, so the registry stays empty until a colocated node dials in and
+// self-registers. (Regression: control used to pre-seed "local" at startup,
+// which showed a phantom node in `node list` and the UI on split frontends.)
+func TestNoPhantomLocalNodeUntilOneConnects(t *testing.T) {
+	t.Parallel()
+	s, err := store.NewStore(filepath.Join(t.TempDir(), "hostit.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = s.Close() })
+
+	// Nothing connected yet: no nodes, no phantom "local".
+	nodes, err := s.Nodes()
+	require.NoError(t, err)
+	require.Empty(t, nodes, "a control host with no node connected must list no nodes")
+
+	// A colocated node dialing in self-registers as "local", with a real LastSeen.
+	require.NoError(t, registerConnectedNode(s, store.HostLocal))
+	nodes, err = s.Nodes()
+	require.NoError(t, err)
+	require.Len(t, nodes, 1)
+	assert.Equal(t, store.HostLocal, nodes[0].Name)
+	assert.False(t, nodes[0].LastSeen.IsZero(), "a connected node has a LastSeen")
+}
+
+// A legacy phantom "local" (pre-seeded, never connected) is pruned at startup.
+func TestPruneUnseenLocalNodeRemovesPhantom(t *testing.T) {
+	t.Parallel()
+	s, err := store.NewStore(filepath.Join(t.TempDir(), "hostit.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = s.Close() })
+	require.NoError(t, s.EnsureNode(store.HostLocal, "127.0.0.1")) // pre-seeded, never seen
+
+	pruneUnseenLocalNode(s)
+	nodes, err := s.Nodes()
+	require.NoError(t, err)
+	require.Empty(t, nodes, "an unseen phantom local node is pruned")
+}
+
+// A "local" that has actually connected (LastSeen set) is kept.
+func TestPruneUnseenLocalNodeKeepsConnectedLocal(t *testing.T) {
+	t.Parallel()
+	s, err := store.NewStore(filepath.Join(t.TempDir(), "hostit.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = s.Close() })
+	require.NoError(t, registerConnectedNode(s, store.HostLocal)) // connected -> LastSeen set
+
+	pruneUnseenLocalNode(s)
+	nodes, err := s.Nodes()
+	require.NoError(t, err)
+	require.Len(t, nodes, 1, "a colocated node that has connected is kept")
+}
+
 func TestScopeStatesDropsAppsNotAskedAbout(t *testing.T) {
 	t.Parallel()
 	// A node may only report states for the apps control polled it about (the

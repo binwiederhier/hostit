@@ -111,6 +111,9 @@ func execServe(c *cli.Context) error {
 	// answered handshakes with a self-signed certificate instead, which took
 	// prod down on 2026-08-17. Listening early costs nothing and means a member
 	// can connect and be configured while control settles.
+	// Self-heal a legacy phantom "local" node left in the registry by an older
+	// version that pre-seeded it; a real colocated node re-registers on connect.
+	pruneUnseenLocalNode(manager.Store())
 	if err := listenForMembers(conf, manager, srv, done); err != nil {
 		return err
 	}

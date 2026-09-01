@@ -51,10 +51,9 @@ func nodeRole(manager *control.Manager, registry *control.NodeRegistry, srv *con
 		return mux
 	}, func(nodeID string, remote control.NodeAgent) {
 		slog.Info("Node connected", "node", nodeID)
-		if err := manager.Store().EnsureNode(nodeID, ""); err != nil {
+		if err := registerConnectedNode(manager.Store(), nodeID); err != nil {
 			slog.Warn("Cannot register a connected node", "node", nodeID, "error", err)
 		}
-		_ = manager.Store().SetNodeSeen(nodeID, time.Now())
 		mu.Lock()
 		if prev := supersede[nodeID]; prev != nil {
 			close(prev)
@@ -96,12 +95,9 @@ func listenForMembers(conf *config.Config, manager *control.Manager, srv *contro
 	// which. A node is authorized by its registry row on top of that cert: the
 	// transport already proved the identity, the row is the membership switch
 	// `hostit-control node add` flips on and `node remove` off.
-	// The node sharing control's host is implicitly a member, like the proxy:
-	// its credentials are ones control minted for itself, in a root-only
-	// directory here. Any other node needs its registry row.
-	if err := manager.Store().EnsureNode(store.HostLocal, "127.0.0.1"); err != nil {
-		return err
-	}
+	// A colocated node is NOT pre-seeded here: it self-registers when it dials in
+	// (registerConnectedNode). Seeding "local" unconditionally showed a phantom
+	// node on a [control, proxy] host that runs no node at all.
 	roles := map[string]*cluster.Role{}
 	roles[cluster.RoleNode] = nodeRole(manager, manager.NodeRegistry(), srv, done, &mu, supersede)
 	// Proxies dial the same listener; their certificate says they are proxies,
@@ -166,6 +162,34 @@ func listenForMembers(conf *config.Config, manager *control.Manager, srv *contro
 		}
 	}()
 	return nil
+}
+
+// registerConnectedNode records a node that just dialed in and stamps its
+// liveness. The colocated node needs no pre-enrollment, so this is the ONLY
+// place a node enters the registry from a connection -- a control host with
+// nothing connected therefore lists no nodes (no phantom "local").
+func registerConnectedNode(s *store.Store, nodeID string) error {
+	if err := s.EnsureNode(nodeID, ""); err != nil {
+		return err
+	}
+	return s.SetNodeSeen(nodeID, time.Now())
+}
+
+// pruneUnseenLocalNode removes a legacy phantom "local" row at startup. Earlier
+// versions pre-seeded one on every control start, so a nodeless [control, proxy]
+// host kept a never-seen "local" in `node list`. A real colocated node re-adds
+// itself on connect (registerConnectedNode) with a fresh LastSeen, so pruning an
+// UNSEEN "local" is safe and self-heals the old rows on upgrade.
+func pruneUnseenLocalNode(s *store.Store) {
+	n, err := s.Node(store.HostLocal)
+	if err != nil || !n.LastSeen.IsZero() {
+		return
+	}
+	if err := s.RemoveNode(store.HostLocal); err != nil {
+		slog.Warn("Cannot prune the phantom local node", "error", err)
+		return
+	}
+	slog.Info("Pruned a legacy phantom local node from the registry")
 }
 
 // nodeApps lists the apps hosted by one node.
