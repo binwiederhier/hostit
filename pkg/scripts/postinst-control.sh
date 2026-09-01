@@ -23,5 +23,6 @@ if [ "$1" = "configure" ] || [ "$1" -ge 1 ] 2>/dev/null; then
   if [ ! -f /etc/hostit/control/control.yml ]; then
     echo "hostit: create /etc/hostit/control/control.yml (see the example beside it)," >&2
     echo "hostit: then run: systemctl enable --now hostit-control" >&2
+    echo "hostit: the config holds secrets -- chown hostit-control:hostit-control and chmod 600 it" >&2
   fi
 fi

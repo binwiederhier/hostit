@@ -106,6 +106,8 @@ nfpms:
     contents:
       - src: pkg/files/etc/hostit/node/node.yml.example
         dst: /etc/hostit/node/node.yml.example
+        file_info:
+          mode: 0640
       - src: pkg/files/lib/systemd/system/hostit-node.service
         dst: /lib/systemd/system/hostit-node.service
       - src: pkg/files/usr/lib/sysusers.d/hostit-node.conf
@@ -174,6 +176,8 @@ nfpms:
     contents:
       - src: pkg/files/etc/hostit/control/control.yml.example
         dst: /etc/hostit/control/control.yml.example
+        file_info:
+          mode: 0640
       - src: pkg/files/lib/systemd/system/hostit-control.service
         dst: /lib/systemd/system/hostit-control.service
       - src: pkg/files/usr/lib/sysusers.d/hostit-control.conf
@@ -204,6 +208,8 @@ nfpms:
     contents:
       - src: pkg/files/etc/hostit/proxy/proxy.yml.example
         dst: /etc/hostit/proxy/proxy.yml.example
+        file_info:
+          mode: 0640
       - src: pkg/files/lib/systemd/system/hostit-proxy.service
         dst: /lib/systemd/system/hostit-proxy.service
       - src: pkg/files/usr/lib/sysusers.d/hostit-proxy.conf

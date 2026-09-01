@@ -1,33 +1,37 @@
-# hostit-proxy configuration. The proxy is the data plane: it terminates TLS
-# with certificate material managed by hostit-control and routes requests
-# straight to apps from a locally cached table, so apps keep serving while
-# control restarts. It dials control; control never dials it.
+# hostit-proxy configuration -- copy to /etc/hostit/proxy/proxy.yml and edit.
+# The proxy is the data plane: it terminates TLS with certificate material managed
+# by hostit-control and routes each request to an app from a locally cached table,
+# so apps keep serving while control restarts. It dials control; control never
+# dials it.
 
-# Where hostit-control's local HTTP listener is (its listen-http when running
-# the dashboard/API upstream and the unknown-host fallback.
+# Where control's plain-HTTP listener is (its listen-http): the dashboard/API
+# upstream and the unknown-host fallback.
 control-url: http://127.0.0.1:2910
 
 # This proxy's cluster identity. "local" is the colocated proxy, which dials
-# control over the unix socket (no certs). A REMOTE proxy sets its own id (the
-# CN of its cert).
+# control over the unix socket (no certs). A REMOTE proxy sets its own id (its
+# cert CN).
 # proxy-id: local
 
-# Where this proxy dials control for its configuration. The colocated proxy
-# defaults to the unix socket. A REMOTE proxy dials control's mTLS listener:
+# Where this proxy dials control. The colocated proxy defaults to the unix socket;
+# a REMOTE proxy dials control's mTLS listener as host:port.
 # cluster-url: 10.0.0.1:2930
 
-# Cluster credentials -- REMOTE proxy only (the colocated proxy uses the socket
-# and needs none). Membership IS a CA-signed cert with CN = this proxy-id and
-# OU = "proxy". Issue it from your cluster CA (see node.yml.example for the
-# openssl recipe) and point at the three files:
+# Cluster credentials -- REMOTE proxy only (the colocated proxy uses the socket and
+# needs none). Membership IS a CA-signed cert with CN = this proxy-id and OU =
+# "proxy". Issue it from your cluster CA (openssl recipe in node.yml.example) and
+# point at the three files:
 # cluster-cert-file: /etc/hostit/proxy/proxy.crt
 # cluster-key-file: /etc/hostit/proxy/proxy.key
 # cluster-ca-cert-file: /etc/hostit/proxy/cluster-ca.crt
 
-# Public listeners (defaults shown)
+# Public listeners (defaults shown).
 # listen-https: ":443"
 # listen-http: ":80"
 
-# Where the routing table and certificate material persist, so a proxy restart
-# during a control outage still serves. Default shown.
+# Prometheus /metrics (unauthenticated -- keep it internal).
+# listen-metrics: ":9100"
+
+# Where the routing table and cert material persist, so a proxy restart during a
+# control outage still serves. Default shown.
 # data-dir: /var/lib/hostit/proxy

@@ -1,32 +1,25 @@
 # hostit-node configuration -- copy to /etc/hostit/node/node.yml and edit.
-#
-# The node is the machine half: it runs this host's app containers, their unix
-# users, btrfs subvolumes and port rules, and it does ONLY what control tells
-# it to over the node RPC. It therefore holds none of control's settings: no
-# admin token, no base domain, no OAuth, no TLS.
-#
-# A COLOCATED node (same host as control) needs only node-id and control-url:
-# it reaches control over the unix socket, where the kernel peer-cred gate is
-# the identity, so it needs no certificates at all.
+# The node is the machine half: it runs this host's app containers, users, btrfs
+# subvolumes and port rules, and only what control tells it to over the node RPC.
+# It holds none of control's settings (no admin token, base domain, OAuth, TLS).
 
-# This node's identity: its name in control's registry, and -- for a remote
-# node -- the CN of its certificate. "local" is the colocated node.
+# This node's identity: its name in control's registry and, for a remote node, the
+# CN of its cert. "local" is the colocated node (same host as control).
 node-id: local
 
-# Where the node dials control. Colocated: the unix socket (no certs).
+# Where the node dials control. Colocated: the unix socket (no certs). A REMOTE
+# node instead dials control's mTLS listener as host:port, e.g. 10.0.0.1:2930.
 control-url: "unix:/run/hostit/control/cluster.sock"
-# A REMOTE node instead dials control's mTLS listener as host:port:
-# control-url: "10.0.0.1:2930"
 
-# Cluster credentials -- REMOTE nodes only (a colocated node leaves these unset
-# and uses the socket above). Membership IS possession of a CA-signed cert with
-# CN = this node-id and OU = "node"; there is no enrollment command. Issue it
-# from your cluster CA (openssl recipe below) and point at the three files:
-#cluster-cert-file: /etc/hostit/node/node.crt
-#cluster-key-file: /etc/hostit/node/node.key
-#cluster-ca-cert-file: /etc/hostit/node/cluster-ca.crt
+# Cluster credentials -- REMOTE nodes only (a colocated node leaves these unset and
+# uses the socket above). Membership IS a CA-signed cert with CN = this node-id and
+# OU = "node"; there is no enrollment command. Issue it from your cluster CA
+# (openssl recipe below) and point at the three files:
+# cluster-cert-file: /etc/hostit/node/node.crt
+# cluster-key-file: /etc/hostit/node/node.key
+# cluster-ca-cert-file: /etc/hostit/node/cluster-ca.crt
 #
-# Generate the CA once and a cert per member (control, each node, each proxy).
+# Generate the CA once, then a cert per member (control, each node, each proxy).
 # ECDSA P-256; CN = member id, OU = its role (control | node | proxy):
 #   openssl ecparam -name prime256v1 -genkey -noout -out cluster-ca.key
 #   openssl req -x509 -new -key cluster-ca.key -days 3650 -out cluster-ca.crt \
@@ -37,22 +30,34 @@ control-url: "unix:/run/hostit/control/cluster.sock"
 #   openssl x509 -req -in node.csr -CA cluster-ca.crt -CAkey cluster-ca.key \
 #     -days 1825 -out node.crt -extfile <(printf \
 #     "subjectAltName=DNS:<node-id>\nextendedKeyUsage=serverAuth,clientAuth\nkeyUsage=critical,digitalSignature")
+#
+# Protect the keys: chmod 600 *.key. NEVER deploy or commit cluster-ca.key --
+# it stays on your workstation; only per-member certs/keys go to the hosts.
 
-# Node-local storage: data-dir holds the registry mirror control pushes (and,
-# when colocated, the credentials above); apps-dir is the btrfs pool the app
-# subvolumes live in; socket-file is the host path the node serves the app socket
-# on (its own subdir is mounted into containers, where it lands at /run/hostit/hostit.sock).
-data-dir: /var/lib/hostit/node
-apps-dir: /var/lib/hostit/node/apps
-socket-file: /run/hostit/node/app/hostit.sock
+# REMOTE node only: where it publishes app ports, and who may reach them (the
+# proxy addresses). apps-allowed-addresses is required once apps-bind-address is set.
+# apps-bind-address: 10.0.0.2:0
+# apps-allowed-addresses:
+#   - 10.0.0.1
 
-# App-container egress allow-list. By default an app container cannot reach the
-# cloud metadata endpoint or any private network (link-local, RFC1918, CGNAT,
-# and their IPv6 equivalents) -- so it cannot read node credentials or dial
-# another app's backend. List the internal CIDRs your apps legitimately need
-# (a private API, a private-IP DNS resolver); accepts are applied before the
-# drop, both IPv4 and IPv6. Whitelist NARROWLY -- a whole node network re-exposes
-# apps to each other. Loopback-stub (127.0.0.53) or public DNS needs nothing here.
-# Set this to the SAME list as control's outbound-allow-private-cidrs.
+# Hostname control advertises for `ssh <app>@...` on this node (else base domain).
+# A remote node must set its own reachable address, or its apps' SSH lands on control.
+# ssh-host: node1.example.com
+
+# App-container egress allow-list. By default a container cannot reach the cloud
+# metadata endpoint or any private network (link-local, RFC1918, CGNAT, and their
+# IPv6 equivalents) -- so it cannot read node credentials or another app's backend.
+# List the internal CIDRs your apps legitimately need; whitelist NARROWLY. Set this
+# to the SAME list as control's outbound-allow-private-cidrs.
 # outbound-allow-private-cidrs:
 #   - 10.20.0.0/24
+
+# Prometheus /metrics (unauthenticated -- keep it internal).
+# listen-metrics: ":9100"
+
+# Node-local storage (defaults shown; ansible sets these). data-dir holds the
+# registry mirror control pushes; apps-dir is the btrfs pool the app subvolumes
+# live in; socket-file is the app socket mounted into each container.
+# data-dir: /var/lib/hostit/node
+# apps-dir: /var/lib/hostit/node/apps
+# socket-file: /run/hostit/node/app/hostit.sock

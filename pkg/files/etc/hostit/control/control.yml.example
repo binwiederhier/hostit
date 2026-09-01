@@ -1,64 +1,55 @@
 # hostit control-plane config -- copy to /etc/hostit/control/control.yml and edit.
-# Only base-domain and admin-token are required; everything else has sane defaults.
+# Only base-domain and admin-token are required; everything else has a default.
+# This file holds secrets: after copying, run
+#   chown hostit-control:hostit-control control.yml && chmod 600 control.yml
 
-# Apps are served at <app>.<base-domain>. Requires a wildcard DNS record:
-#   *.apps.example.com. A <ip-of-this-host>
-#   apps.example.com.   A <ip-of-this-host>   (for SSH and the bare domain)
+# Apps are served at <app>.<base-domain>. Needs a wildcard DNS record:
+#   *.apps.example.com  A  <ip-of-this-host>
+#   apps.example.com    A  <ip-of-this-host>   (bare domain, for SSH)
 base-domain: apps.example.com
 
-# Bearer token for the admin REST API. Generate with: openssl rand -hex 24
+# Bearer token for the admin REST API (min 16 chars). Generate: openssl rand -hex 24
 admin-token: CHANGE-ME
 
-# Where members on OTHER machines dial in (mTLS, per-member certificates from
-# the cluster CA). Leave it out on a single box: the node and proxy sharing this
-# host use the socket below, which needs no certificate at all.
-# listen-cluster: 10.0.0.1:2930
-#
-# When listen-cluster is set (you have members on OTHER machines), control needs
-# its OWN cluster identity: a CA-signed cert with CN = "control", plus the CA
-# every member cert chains to. hostit does not generate these -- issue them from
-# your cluster CA (openssl recipe in node.yml.example) and point at the files.
-# A single-box install has no remote listener and needs none of this.
-# cluster-cert-file: /etc/hostit/control/control.crt
-# cluster-key-file: /etc/hostit/control/control.key
-# cluster-ca-cert-file: /etc/hostit/control/cluster-ca.crt
-
-# TLS: "letsencrypt" (default, on-demand per-subdomain certs) or "off" (plain
-# HTTP on listen-http; for development or behind another TLS-terminating proxy).
+# TLS for app subdomains: "letsencrypt" (default, an on-demand cert per subdomain
+# on first request) or "off" (plain HTTP, for dev or behind another TLS proxy).
 # tls: letsencrypt
 # letsencrypt-email: you@example.com
 
-# Wildcard TLS via DNS-01, instead of on-demand per-subdomain certs. With a DNS
-# provider configured hostit obtains ONE *.<base-domain> certificate, so a brand
-# new app serves TLS immediately. Only "route53" is supported. The AWS values are
-# optional and fall back to the usual AWS env vars / instance credentials.
+# Wildcard TLS via DNS-01 instead: one *.<base-domain> cert, so a brand-new app
+# serves HTTPS immediately. Only "route53" is supported; the AWS values fall back
+# to the usual env vars / instance credentials when omitted.
 # dns-provider: route53
 # aws-region: us-east-1
 # aws-access-key-id: ...
 # aws-secret-key: ...
 # aws-hosted-zone-id: ...
 
-# Web login (Google OAuth). Leave empty to run token-only with no web app. Create
-# credentials at https://console.cloud.google.com/apis/credentials with the
-# redirect URI https://<base-domain>/auth/callback.
+# Web login via Google OAuth (leave unset to run token-only, no web app). Create
+# credentials at https://console.cloud.google.com/apis/credentials with redirect
+# URI https://<base-domain>/auth/callback.
 # google-client-id: ...
 # google-client-secret: ...
 
-# Connections: the accounts your users can attach and grant to their apps. Each
-# provider needs an OAuth client YOU register with that provider -- there is no
-# shared hostit client, because getting one reviewed is your own relationship
-# with them. A provider with no client here is simply not offered.
-#
-# Google Calendar and Gmail fall back to google-client-id above when not listed:
-# it is the same Google Cloud client, and scopes are asked for per authorization.
-# Every provider's redirect URI is https://hostit.<base-domain>/auth/callback.
-#
-# Pasted credentials (an IMAP mailbox, an API key) need nothing here and are
-# always offered.
-#
-# Note on Gmail: read-only mail is a RESTRICTED scope. A personal instance is
-# exempt, but offering it to strangers means Google's CASA Tier 2 assessment,
-# renewed every 12 months. See docs/features/connections.md.
+# Emails made admins on their first Google login (others must be approved).
+# admin-emails:
+#   - you@example.com
+
+# Multi-machine only: where members on OTHER hosts dial in over mTLS. Leave unset
+# on a single box (the colocated node/proxy use the /run/hostit socket, no certs).
+# When set, control needs its own cert (CN=control) plus the CA every member cert
+# chains to -- issue them from your cluster CA (openssl recipe in node.yml.example);
+# hostit does not mint them.
+# listen-cluster: 10.0.0.1:2930
+# cluster-cert-file: /etc/hostit/control/control.crt
+# cluster-key-file: /etc/hostit/control/control.key
+# cluster-ca-cert-file: /etc/hostit/control/cluster-ca.crt
+
+# Connections: accounts users attach and grant to their apps. Each provider needs
+# an OAuth client YOU register with it (there is no shared hostit client); a
+# provider with no entry is not offered. Calendar/Gmail reuse google-client-id
+# above when omitted. Pasted credentials (IMAP, API keys) need nothing here.
+# Gmail's read scope needs Google CASA review -- see docs/features/connections.md.
 # connections:
 #   slack:
 #     client-id: ...          # api.slack.com/apps -> OAuth & Permissions
@@ -72,81 +63,40 @@ admin-token: CHANGE-ME
 #   jira:
 #     client-id: ...          # developer.atlassian.com -> OAuth 2.0 (3LO)
 #     client-secret: ...
-#   gmail:                    # only to use a DIFFERENT client than the login one
-#     client-id: ...
-#     client-secret: ...
 
-# Emails that become active admins on their first Google login (skip approval).
-# admin-emails:
-#   - you@example.com
-
-# Built-in AI assistant (optional). The in-browser chat that can build and change
-# an app. Leave everything unset to disable it (the chat UI hides itself).
-#
-# Metered Anthropic API (pay per token, uses your API credit):
+# Built-in AI assistant: the in-browser chat that builds and changes apps. Unset
+# = disabled. anthropic-api-key meters against your API credit;
+# claude-code-oauth-token additionally offers your Claude Pro/Max plan, run per
+# turn as a sandboxed `claude -p` (get the token with: claude setup-token).
 # anthropic-api-key: sk-ant-...
-#
-# Additionally offer Claude.ai (your Claude Pro/Max subscription) as a model in the
-# chat, run per turn as `claude -p` in a locked-down podman sandbox (tools restricted
-# to this app's own REST surface). Setting the token is all it takes; there is no
-# backend switch. Get the token with: claude setup-token
 # claude-code-oauth-token: ...
-#
-# Optional: the model menu shown in the chat (id + human label).
 
-# How the dashboard's app cards are previewed: "live" embeds each running app
-# in a scaled-down iframe (default), "screenshot" shows a headless-chrome
-# screenshot instead, "off" drops the card preview. The workspace's
-# assistant/files preview panes are always live, regardless of this setting.
-#
-# In screenshot mode each running app is re-shot every 6 hours, plus ~1 minute
-# after the assistant last changes it (max 5/hour per app), plus on demand from
-# the card's refresh button. Shots run one at a time in a sandboxed podman
-# container (image pulled on first use).
+# How dashboard app cards preview: "live" scaled-down iframe (default),
+# "screenshot" (headless chrome, re-shot every 6h and ~1min after edits), or
+# "off". In screenshot mode "app-preview-isolation: strict" (default) confines the
+# shot container to the target app + public internet; "off" applies no filter.
 # app-preview: live
-#
-# In screenshot mode the shot container's network is confined: "strict" (the
-# default) lets it reach only the target app's resolved IP and the public
-# internet, blocking the host, the LAN/VPC and the cloud metadata endpoint;
-# "off" applies no filter (only safe on a fully trusted network). This works
-# whether the app resolves to a public or a private IP.
 # app-preview-isolation: strict
-#
-# Extra destination CIDRs the shot container may additionally reach in strict
-# mode, e.g. an internal asset/CDN host your apps load from.
 # app-preview-allow-cidrs:
 #   - 10.20.0.0/24
 
-# Outbound allow-list for URLs hostit fetches on a user's behalf (MCP servers,
-# a custom provider's OAuth issuer): by default a fetch that resolves into
-# private/loopback/link-local space is blocked -- that block is what stands
-# between an ordinary account and the cloud metadata service. List only the
-# internal ranges your own services live on. This is the one outbound allow-list:
-# set the node's outbound-allow-private-cidrs (app-container firewall) and, if you
-# use it, app-preview-allow-cidrs to the SAME value. A public address is always
-# allowed. Never 0.0.0.0/0, and never 169.254.169.254/32 without thinking hard.
+# Outbound allow-list for URLs hostit fetches on a user's behalf (MCP servers, a
+# provider's OAuth issuer). By default anything resolving into private/loopback/
+# link-local space is blocked -- that block is what keeps an account off the cloud
+# metadata service. List only the internal ranges your services live on; a public
+# address is always allowed. Set the node's outbound-allow-private-cidrs (and, if
+# used, app-preview-allow-cidrs) to the SAME value. Never 0.0.0.0/0.
 # outbound-allow-private-cidrs:
 #   - 192.168.1.0/24
 
-# Let the admin token mint a session cookie for an admin email without Google
-# (for end-to-end testing and recovery). Off by default.
+# Single-hostname SSH relay: `ssh <app>@<base-domain>` reaches any node's app.
+# ssh-relay: true
 
-# Secret for signing session cookies. Generated and persisted under data-dir if
-# left empty; set it only to share sessions across a rebuild.
-# session-key: ...
-
-# Listeners (defaults shown)
-# listen-http: ":80"
-# socket-file: /run/hostit/hostit.sock
-
-# Directories (defaults shown)
-# data-dir: /var/lib/hostit/control  # registry DB + certs (ansible sets this)
-# apps-dir: /var/lib/hostit/control/apps # vestigial for control (the node owns app homes)
-
-# Hostnames (defaults shown)
-# api-host: apps.example.com   # admin API + web app hostname (default: <base-domain>)
-# ssh-host: apps.example.com   # SSH hostname reported to clients (default: <base-domain>)
-
-# Per-app loopback port range (defaults shown)
-# port-min: 10000
-# port-max: 19999
+# Advanced (defaults shown; ansible manages data-dir and listen-http). data-dir
+# must match the systemd unit's StateDirectory (hostit/control).
+# data-dir: /var/lib/hostit/control    # registry DB + certs
+# listen-http: ":80"                   # plain HTTP (proxy upstream)
+# listen-metrics: ":9100"              # Prometheus /metrics (unauthenticated; internal only)
+# api-host: <base-domain>              # admin API + web app hostname
+# ssh-host: <base-domain>              # SSH hostname reported to clients
+# session-key: <generated if unset>   # cookie signing key

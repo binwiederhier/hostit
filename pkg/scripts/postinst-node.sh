@@ -46,5 +46,6 @@ if [ "$1" = "configure" ] || [ "$1" -ge 1 ] 2>/dev/null; then
   if [ ! -f /etc/hostit/node/node.yml ]; then
     echo "hostit: create /etc/hostit/node/node.yml (see the example beside it)," >&2
     echo "hostit: then run: systemctl enable --now hostit-node" >&2
+    echo "hostit: the config holds secrets -- chown root:root and chmod 600 it" >&2
   fi
 fi
