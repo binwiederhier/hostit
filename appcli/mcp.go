@@ -3,6 +3,7 @@ package appcli
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -111,7 +112,7 @@ func (s *mcpServer) serve(in io.Reader) error {
 	r := bufio.NewReaderSize(in, 64*1024)
 	for {
 		line, err := readLine(r)
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			return nil // the client (claude) closed the stream: the turn is over
 		} else if err != nil {
 			return err
@@ -250,7 +251,7 @@ func readLine(r *bufio.Reader) ([]byte, error) {
 			continue
 		}
 		if err != nil {
-			if len(buf) > 0 && err == io.EOF {
+			if len(buf) > 0 && errors.Is(err, io.EOF) {
 				return trimNewline(buf), nil // a final line without a trailing newline
 			}
 			return nil, err

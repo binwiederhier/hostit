@@ -169,10 +169,6 @@ func createUserArgs(username, home string, uid int, shell, group string) []strin
 		"--uid", id, "--gid", id, "--groups", group, "--comment", "hostit app", username}
 }
 
-// Rename changes a user's login name; uid, home and files are untouched, so this
-// is cheap and safe to do while the app keeps running. It also renames the user's
-// primary group to match, so a later delete (which removes the group by the user's
-// name) does not leave an orphan gid behind that would block reusing the freed port.
 // SetHome repoints an app user's home (usermod --home, no --move-home: the files
 // live at a bind mount, not the literal path, so nothing is moved). Cheap and
 // safe while the app runs; used to heal a home stranded by a raw-view path move.
@@ -180,6 +176,10 @@ func (s *Service) SetHome(username, home string) error {
 	return run("usermod", "--home", home, username)
 }
 
+// Rename changes a user's login name; uid, home and files are untouched, so this
+// is cheap and safe to do while the app keeps running. It also renames the user's
+// primary group to match, so a later delete (which removes the group by the user's
+// name) does not leave an orphan gid behind that would block reusing the freed port.
 func (s *Service) Rename(oldName, newName string) error {
 	if err := run("usermod", "--login", newName, oldName); err != nil {
 		return err

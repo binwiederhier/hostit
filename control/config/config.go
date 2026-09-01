@@ -1,4 +1,4 @@
-// Package controlconf is hostit-control's configuration and its YAML loading.
+// Package config is hostit-control's configuration and its YAML loading.
 // It is the control plane's own file, the way nodeconf is a node's and app is
 // the tenant's -- three configs, each named for whose it is, so no call site
 // has to work out which one a bare "config" meant.
@@ -333,8 +333,6 @@ func LoadConfig(filename string) (*Config, error) {
 	}
 	return c, nil
 }
-
-// Validate checks that the config is complete enough to run the server
 
 // Validate checks a CONTROL config: the web app, certificates and registry
 // settings the control plane cannot run without.

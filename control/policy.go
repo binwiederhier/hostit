@@ -3,9 +3,9 @@ package control
 import (
 	"log/slog"
 
+	"heckel.io/hostit/control/user"
 	"heckel.io/hostit/node"
 	"heckel.io/hostit/store"
-	"heckel.io/hostit/user"
 )
 
 // serverPolicy answers the per-app questions that need the user tables: the

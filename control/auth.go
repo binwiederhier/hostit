@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"heckel.io/hostit/control/config"
+	"heckel.io/hostit/control/user"
 	"heckel.io/hostit/store"
-	"heckel.io/hostit/user"
 )
 
 const (

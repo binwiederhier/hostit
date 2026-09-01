@@ -126,15 +126,6 @@ func desiredIDs(desired *api.DesiredState) map[string]bool {
 	return ids
 }
 
-// ReconcileOrphans removes the host state of apps that no longer exist -- their
-// systemd units, containers, subvolumes, budget qgroups and unix accounts --
-// and returns the names it cleaned up. Every removal needs two sightings (see
-// confirmOrphan).
-//
-// The registry is the source of truth, as it is for port rules. A unit left
-// behind by a deleted app is not inert: hostit-app@.service is Restart=always,
-// so systemd retries it forever against a container that is gone, and its
-// enable symlink starts it again after a reboot.
 // confirmOrphan reports whether a resource has now been seen orphaned TWICE
 // running, recording the sighting either way. Nothing destructive happens on a
 // first sighting: a create provisions the account, subvolume, container and
@@ -165,6 +156,15 @@ func (m *Machine) endOrphanPass() {
 	m.orphanMu.Unlock()
 }
 
+// ReconcileOrphans removes the host state of apps that no longer exist -- their
+// systemd units, containers, subvolumes, budget qgroups and unix accounts --
+// and returns the names it cleaned up. Every removal needs two sightings (see
+// confirmOrphan).
+//
+// The registry is the source of truth, as it is for port rules. A unit left
+// behind by a deleted app is not inert: hostit-app@.service is Restart=always,
+// so systemd retries it forever against a container that is gone, and its
+// enable symlink starts it again after a reboot.
 func (m *Machine) ReconcileOrphans() []string {
 	return m.reconcileOrphans(nil)
 }

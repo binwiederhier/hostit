@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"heckel.io/hostit/connections"
+	"heckel.io/hostit/control/connections"
 	"heckel.io/hostit/store"
 )
 

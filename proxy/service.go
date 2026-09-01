@@ -93,7 +93,6 @@ func New(conf *Config) *Proxy {
 			r.Out.URL.Scheme = controlURL.Scheme
 			r.Out.URL.Host = controlURL.Host
 			r.Out.Host = r.In.Host // control routes by the ORIGINAL host
-			r.Out.Header.Set("X-Forwarded-Proto", "https")
 			r.SetXForwarded()
 			r.Out.Header.Set("X-Forwarded-Proto", "https")
 		},

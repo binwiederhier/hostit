@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 
 	"heckel.io/hostit/control/config"
-	"heckel.io/hostit/preview"
+	"heckel.io/hostit/control/preview"
 	"heckel.io/hostit/store"
 )
 

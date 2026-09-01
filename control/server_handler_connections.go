@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"heckel.io/hostit/connections"
-	"heckel.io/hostit/mcp"
+	"heckel.io/hostit/control/connections"
+	"heckel.io/hostit/control/mcp"
 	"heckel.io/hostit/store"
 )
 

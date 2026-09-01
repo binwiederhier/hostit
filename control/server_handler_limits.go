@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"net/http"
 
+	"heckel.io/hostit/control/user"
 	"heckel.io/hostit/store"
-	"heckel.io/hostit/user"
 )
 
 const (

@@ -1,4 +1,4 @@
-// Package nodeconf is the hostit-node configuration, kept apart from the node
+// Package config is the hostit-node configuration, kept apart from the node
 // itself so a reader (the CLI resolving the daemon's socket) does not link the
 // machine stack -- btrfs, podman, unixuser, nftables -- just to parse a file.
 package config

@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"time"
 
+	"heckel.io/hostit/control/user"
 	"heckel.io/hostit/store"
-	"heckel.io/hostit/user"
 )
 
 // apiCreateAppRequest is the body of POST /api/apps

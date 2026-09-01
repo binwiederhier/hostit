@@ -6,9 +6,9 @@ import (
 	"net/http"
 	"strings"
 
+	"heckel.io/hostit/control/user"
 	"heckel.io/hostit/node"
 	"heckel.io/hostit/store"
-	"heckel.io/hostit/user"
 )
 
 // handleAccount returns the caller's identity, limits and usage; pending users

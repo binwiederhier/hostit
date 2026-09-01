@@ -11,8 +11,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"heckel.io/hostit/connections"
 	"heckel.io/hostit/control/config"
+	"heckel.io/hostit/control/connections"
 	"heckel.io/hostit/store"
 )
 

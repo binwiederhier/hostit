@@ -31,13 +31,13 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"heckel.io/hostit/assistant"
-	"heckel.io/hostit/connections"
 	"heckel.io/hostit/control/config"
+	"heckel.io/hostit/control/connections"
+	"heckel.io/hostit/control/preview"
+	"heckel.io/hostit/control/user"
 	"heckel.io/hostit/metrics"
 	"heckel.io/hostit/node"
-	"heckel.io/hostit/preview"
 	"heckel.io/hostit/store"
-	"heckel.io/hostit/user"
 )
 
 const (

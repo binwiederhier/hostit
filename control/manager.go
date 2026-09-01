@@ -119,7 +119,8 @@ type Manager struct {
 	mirrorSeq atomic.Int64
 	// policy resolves per-app keys and limits when building desired state; the
 	// server sets it (those answers need the user tables). See AppPolicy.
-	policy   AppPolicy
+	policy AppPolicy
+	// Protects the registry read and mirrorSeq stamp so push order matches read order.
 	mirrorMu sync.Mutex
 
 	// relayLine is the authorized_keys line for the SSH relay key (added to remote

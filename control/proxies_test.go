@@ -14,11 +14,11 @@ import (
 
 	"heckel.io/hostit/cluster"
 	"heckel.io/hostit/control/config"
+	"heckel.io/hostit/control/user"
 	"heckel.io/hostit/node"
 	"heckel.io/hostit/proxy/api"
 	"heckel.io/hostit/proxy/grant"
 	"heckel.io/hostit/store"
-	"heckel.io/hostit/user"
 )
 
 // recordingProxy stands in for a connected hostit-proxy.

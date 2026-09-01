@@ -11,9 +11,9 @@ import (
 	"sync"
 	"time"
 
-	"heckel.io/hostit/connections"
+	"heckel.io/hostit/control/connections"
+	"heckel.io/hostit/control/mcp"
 	"heckel.io/hostit/http/outbound"
-	"heckel.io/hostit/mcp"
 	"heckel.io/hostit/store"
 )
 

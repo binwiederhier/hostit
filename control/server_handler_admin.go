@@ -13,8 +13,8 @@ import (
 	"time"
 
 	"heckel.io/hostit/assistant"
+	"heckel.io/hostit/control/user"
 	"heckel.io/hostit/store"
-	"heckel.io/hostit/user"
 )
 
 func (s *Server) handleUsersList(w http.ResponseWriter, _ *http.Request, _ *caller) {

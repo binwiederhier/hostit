@@ -33,6 +33,12 @@ var (
 	relayPubKeyPath     = relaypaths.PubKey
 )
 
+const (
+	// relayStubInterval keeps the frontend stub accounts close to the routes/keys
+	// control pushes; short so a revoked key stops working within seconds.
+	relayStubInterval = 3 * time.Second
+)
+
 // EnsureRelayKey generates this frontend's relay keypair (private + public) if
 // it is not already on disk, so the deploy no longer has to run ssh-keygen. The
 // private key is the credential hostit-relay uses to reach app nodes; the public
@@ -232,10 +238,6 @@ func readRoutedApps(path string) map[string]bool {
 	}
 	return routed
 }
-
-// relayStubInterval keeps the frontend stub accounts close to the routes/keys
-// control pushes; short so a revoked key stops working within seconds.
-const relayStubInterval = 3 * time.Second
 
 // RelayStubLoop reconciles the frontend relay stubs until done closes. A no-op
 // (cheap stat) on a node that is not a relay frontend.

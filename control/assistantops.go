@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"heckel.io/hostit/assistant"
-	"heckel.io/hostit/connections"
+	"heckel.io/hostit/control/connections"
 	"heckel.io/hostit/store"
 )
 
