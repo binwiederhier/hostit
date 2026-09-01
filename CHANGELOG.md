@@ -7,6 +7,30 @@ changed rather than what an operator had to do about it; from v0.15.0 on, each
 release is written down as it is cut. Anything that changes a config file, a
 default, or on-disk state is called out as **Breaking** or **Upgrade note**.
 
+## v0.35.0 (2026-09-01)
+
+Documentation, example-config, and deployment-tooling cleanup. No runtime
+behavior change: an operator upgrading from v0.34.0 runs the same daemon, with
+clearer shipped examples and a new Ansible deployment guide.
+
+- **Shipped example configs rewritten.** `control.yml.example`, `node.yml.example`
+  and `proxy.yml.example` are reorganized mandatory-first (base-domain and
+  admin-token at the top), trimmed, and corrected: the non-existent
+  `port-min`/`port-max` "options" (they are hardcoded constants) and control's
+  vestigial `apps-dir` are gone, and `socket-file` shows its real default. The
+  examples now ship mode `0640` with a note to chown/chmod the copied config,
+  since it holds secrets.
+- **Ansible example role.** One topology-agnostic role now deploys a single box or
+  a split cluster (driven by `hostit_components`), with two example inventories and
+  a split of non-secret `group_vars/hostit.yml` from an ansible-vault-encrypted
+  `group_vars/hostit_vault.yml`. The config-template tasks set `no_log` so secrets
+  no longer print under `ansible-playbook --diff`.
+- **New docs.** The in-app Administration guide gains an "Ansible deployment" page;
+  the README's Ansible section and several stale config references were corrected.
+- **Internal.** The control-only `preview`, `connections`, `mcp` and `user`
+  packages moved under `control/`; assorted doc-comment and style fixes. No
+  functional change.
+
 ## v0.34.0 (2026-08-31)
 
 The components run unprivileged out of the box, the SSH relay sets itself up with
