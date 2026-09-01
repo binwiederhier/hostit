@@ -25,4 +25,8 @@ const (
 	// PubKey is the frontend's relay public key, added to remote apps'
 	// authorized_keys so the frontend can ssh in as the app.
 	PubKey = Dir + "/relay_key.pub"
+	// LegacyStubs is where a pre-v0.36.0 node-hosted frontend homed its stub
+	// accounts. The control reconcile removes any still there so it can re-create
+	// them under Stubs with the right home, shell and group.
+	LegacyStubs = "/var/lib/hostit/node/relay-stubs"
 )

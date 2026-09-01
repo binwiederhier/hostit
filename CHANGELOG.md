@@ -19,7 +19,8 @@ nodeless host.
   helpers the control package ships (no podman or container runtime). The node's
   relay-frontend code is gone. **Upgrade note:** relay state moved from
   `/var/lib/hostit/node/` to `/var/lib/hostit/relay/`; the frontend regenerates
-  its relay key there on first start.
+  its relay key there on first start and re-creates any stub accounts a previous
+  release left under the old path.
 - **App names are checked against real accounts on the control host.** Creating
   an app whose name matches a system/service/human account on the control host
   is refused (the node already checks its own host), and the reserved-name list

@@ -61,17 +61,23 @@ type Paths struct {
 	Stubs      string
 	Key        string
 	PubKey     string
+	// LegacyStubs is a previous release's stubs dir (before the relay frontend
+	// moved from the node to control). Accounts still homed there are removed at
+	// reconcile so control re-creates them under Stubs with the right home, shell
+	// and group. Empty disables the migration.
+	LegacyStubs string
 }
 
 // DefaultPaths returns the on-disk relay locations used in production.
 func DefaultPaths() Paths {
 	return Paths{
-		Routes:     relaypaths.Routes,
-		KnownHosts: relaypaths.KnownHosts,
-		Keys:       relaypaths.Keys,
-		Stubs:      relaypaths.Stubs,
-		Key:        relaypaths.Key,
-		PubKey:     relaypaths.PubKey,
+		Routes:      relaypaths.Routes,
+		KnownHosts:  relaypaths.KnownHosts,
+		Keys:        relaypaths.Keys,
+		Stubs:       relaypaths.Stubs,
+		Key:         relaypaths.Key,
+		PubKey:      relaypaths.PubKey,
+		LegacyStubs: relaypaths.LegacyStubs,
 	}
 }
 
@@ -185,6 +191,11 @@ func (s *Syncer) writeKeys(appKeys map[string]string) error {
 func (s *Syncer) reconcileStubs() {
 	routed := readRoutedApps(s.paths.Routes)
 
+	// Migration: a previous release homed stubs elsewhere (and in a different
+	// group), when the frontend was the node. Remove those so the loop below
+	// re-creates them under the current home, shell and group.
+	s.removeStubsUnder(s.paths.LegacyStubs)
+
 	// Ensure a stub + current keys for each routed app.
 	for app := range routed {
 		if !api.ValidName(app) {
@@ -213,6 +224,31 @@ func (s *Syncer) reconcileStubs() {
 			continue
 		}
 		_ = os.RemoveAll(filepath.Join(s.paths.Stubs, a.Name))
+	}
+}
+
+// removeStubsUnder deletes every account homed under dir, best-effort. Used to
+// migrate stubs a previous release created in a different location; a no-op once
+// none remain (and when dir is empty).
+func (s *Syncer) removeStubsUnder(dir string) {
+	if dir == "" {
+		return
+	}
+	accounts, err := s.users.List()
+	if err != nil {
+		return
+	}
+	prefix := filepath.Clean(dir) + string(filepath.Separator)
+	for _, a := range accounts {
+		if !strings.HasPrefix(filepath.Clean(a.Home)+string(filepath.Separator), prefix) {
+			continue
+		}
+		_ = s.users.KillProcesses(a.Name)
+		if err := s.users.Delete(a.Name); err != nil {
+			slog.Warn("Cannot remove a legacy relay stub", "app", a.Name, "error", err)
+			continue
+		}
+		_ = os.RemoveAll(filepath.Join(dir, a.Name))
 	}
 }
 

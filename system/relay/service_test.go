@@ -96,6 +96,28 @@ func TestApplyNeverTouchesNonStubAccounts(t *testing.T) {
 	assert.Empty(t, users.deleted, "a non-stub account is off-limits to the reconcile")
 }
 
+// On upgrade, a stub a previous release homed under the old node-side path is
+// removed so control can re-create it under the new home/shell/group.
+func TestApplyMigratesLegacyStubs(t *testing.T) {
+	t.Parallel()
+	users := newFakeUsers()
+	p := tempPaths(t)
+	legacy := t.TempDir()
+	p.LegacyStubs = legacy
+	// A routed app whose stub still lives under the legacy path.
+	users.exists["blog"] = true
+	users.accounts = append(users.accounts, Account{Name: "blog", Home: filepath.Join(legacy, "blog")})
+	s := New(users, p)
+
+	require.NoError(t, s.Apply(&Spec{
+		Routes:  "blog\tnode1\n",
+		AppKeys: map[string]string{"blog": "ssh-ed25519 AAAA user\n"},
+	}))
+	assert.Contains(t, users.deleted, "blog", "the legacy-homed stub is removed")
+	// It is then re-created under the current stubs path.
+	assert.Contains(t, users.created, "blog", "and re-created under the new path")
+}
+
 func TestApplyIgnoresInvalidRoutedName(t *testing.T) {
 	t.Parallel()
 	users := newFakeUsers()
