@@ -160,8 +160,10 @@ nfpms:
   - id: hostit_control_pkg
     package_name: hostit-control
     # Supersedes the single package the platform shipped as before the split.
+    # Also takes /usr/lib/hostit/bin/hostit-relay from pre-0.36.0 hostit-node
+    # (the relay frontend moved to control), so an upgrade does not dpkg-conflict.
     conflicts: [hostit]
-    replaces: [hostit]
+    replaces: ["hostit", "hostit-node (<< 0.36.0)"]
     ids: [hostit_control_linux_amd64, hostit_control_linux_arm64]
     homepage: https://github.com/binwiederhier/hostit
     maintainer: Philipp C. Heckel <phil@heckel.io>

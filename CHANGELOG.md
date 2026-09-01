@@ -7,6 +7,12 @@ changed rather than what an operator had to do about it; from v0.15.0 on, each
 release is written down as it is cut. Anything that changes a config file, a
 default, or on-disk state is called out as **Breaking** or **Upgrade note**.
 
+## v0.36.1 (2026-09-01)
+
+Packaging fix for the v0.36.0 relay move: the control package now declares it
+takes `/usr/lib/hostit/bin/hostit-relay` from a pre-0.36.0 `hostit-node`, so
+upgrading a split install no longer fails with a dpkg file-overwrite conflict.
+
 ## v0.36.0 (2026-09-01)
 
 The SSH relay works on a control-only frontend, control refuses app names that

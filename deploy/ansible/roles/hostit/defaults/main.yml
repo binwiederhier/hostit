@@ -6,7 +6,7 @@
 
 # Which hostit release to install (from the public GitHub releases). Every host
 # stages its own component .debs from this version.
-hostit_version: "0.36.0"
+hostit_version: "0.36.1"
 
 # Apps are served at <app>.<hostit_domain>; needs wildcard DNS for the domain
 # and the domain itself pointing at the control host.
