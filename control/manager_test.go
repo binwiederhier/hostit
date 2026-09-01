@@ -140,6 +140,19 @@ func TestCreateAppAllowsRecreateOfManagedAccount(t *testing.T) {
 	require.NoError(t, err)
 }
 
+// On a colocated node the app user is homed under the NODE's apps pool, which is
+// NOT control's config.AppsDir. A just-deleted app tearing down there must not be
+// mistaken for a foreign account, or an immediate same-name recreate 400s.
+func TestCreateAppAllowsRecreateOfColocatedNodeUser(t *testing.T) {
+	t.Parallel()
+	m, _ := newTestManager(t)
+	m.lookupOSUser = func(name string) (string, bool) {
+		return "/var/lib/hostit/node/apps/id-x/home/app", true
+	}
+	_, err := m.CreateApp("blog", &CreateOptions{RequestKeys: []string{testPublicKey}})
+	require.NoError(t, err)
+}
+
 func TestCreateAppInvalidSSHKey(t *testing.T) {
 	t.Parallel()
 	m, _ := newTestManager(t)

@@ -7,6 +7,14 @@ changed rather than what an operator had to do about it; from v0.15.0 on, each
 release is written down as it is cut. Anything that changes a config file, a
 default, or on-disk state is called out as **Breaking** or **Upgrade note**.
 
+## v0.36.3 (2026-09-01)
+
+Fix a false positive in the v0.36.0 app-name collision check: on a host with a
+colocated node, an app user is homed under the node's apps pool, not control's
+own, so a just-deleted app tearing down there was mistaken for a foreign account
+and an immediate same-name recreate failed with a 400. The check now treats any
+account under the hostit state tree as hostit's own.
+
 ## v0.36.2 (2026-09-01)
 
 More v0.36.0 relay-move upgrade fixes, found upgrading a relay-enabled split:

@@ -18,7 +18,6 @@ import (
 	"heckel.io/hostit/node/api"
 	"heckel.io/hostit/store"
 	"heckel.io/hostit/system/relay"
-	"heckel.io/hostit/system/relaypaths"
 	"heckel.io/hostit/system/ssh"
 	"heckel.io/hostit/workspace"
 )
@@ -534,13 +533,20 @@ func osuserLookup(name string) (string, bool) {
 	return u.HomeDir, true
 }
 
-// managedHome reports whether a home dir belongs to a hostit-managed account (an
-// app user under the apps pool, or a relay stub). Those are transient -- a
-// just-deleted app re-creating its name must still work while the old user tears
-// down -- so a collision with one must NOT block a create.
+// hostitStateRoot is where every hostit-managed account is homed: app users
+// under a node's apps pool, relay stubs, a component's own user. A real
+// system/human account (postgres, a login user) lives elsewhere.
+const hostitStateRoot = "/var/lib/hostit"
+
+// managedHome reports whether a home dir belongs to a hostit-managed account.
+// Those are transient -- a just-deleted app re-creating its name must still work
+// while the old user tears down -- so a collision with one must NOT block a
+// create. The apps pool may be a DIFFERENT host/path than control's own (a
+// colocated node homes its app users under the node's tree), so the whole hostit
+// state root counts, plus a control-side apps dir set outside it.
 func (m *Manager) managedHome(home string) bool {
 	home = filepath.Clean(home)
-	for _, prefix := range []string{m.config.AppsDir, relaypaths.Stubs} {
+	for _, prefix := range []string{hostitStateRoot, m.config.AppsDir} {
 		if prefix == "" {
 			continue
 		}
