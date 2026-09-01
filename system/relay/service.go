@@ -30,6 +30,9 @@ import (
 // here is a root operation, which is why the frontend runs behind a sudo helper.
 type StubOps interface {
 	Exists(username string) bool
+	// Home reports an account's home directory (ok false if it does not exist).
+	// Used to confirm a stub is really homed where a migration expects it.
+	Home(username string) (home string, ok bool)
 	CreateStub(username, home string) error
 	Delete(username string) error
 	KillProcesses(username string) error
@@ -227,28 +230,34 @@ func (s *Syncer) reconcileStubs() {
 	}
 }
 
-// removeStubsUnder deletes every account homed under dir, best-effort. Used to
-// migrate stubs a previous release created in a different location; a no-op once
-// none remain (and when dir is empty).
+// removeStubsUnder removes every stub account a previous release homed under dir
+// (each subdirectory is one stub's home). Directory-driven, NOT group-driven: the
+// old node frontend put its stubs in a different group, so List() (scoped to the
+// current group) would miss them. A no-op when dir is absent.
 func (s *Syncer) removeStubsUnder(dir string) {
 	if dir == "" {
 		return
 	}
-	accounts, err := s.users.List()
+	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return
 	}
 	prefix := filepath.Clean(dir) + string(filepath.Separator)
-	for _, a := range accounts {
-		if !strings.HasPrefix(filepath.Clean(a.Home)+string(filepath.Separator), prefix) {
-			continue
+	for _, e := range entries {
+		name := e.Name()
+		if !api.ValidName(name) {
+			continue // never delete a user from an unexpected name
 		}
-		_ = s.users.KillProcesses(a.Name)
-		if err := s.users.Delete(a.Name); err != nil {
-			slog.Warn("Cannot remove a legacy relay stub", "app", a.Name, "error", err)
-			continue
+		// Only delete a real account that is actually homed here, so a same-named
+		// account that exists for another reason is left alone.
+		if home, ok := s.users.Home(name); ok && strings.HasPrefix(filepath.Clean(home)+string(filepath.Separator), prefix) {
+			_ = s.users.KillProcesses(name)
+			if err := s.users.Delete(name); err != nil {
+				slog.Warn("Cannot remove a legacy relay stub", "app", name, "error", err)
+				continue
+			}
 		}
-		_ = os.RemoveAll(filepath.Join(dir, a.Name))
+		_ = os.RemoveAll(filepath.Join(dir, name))
 	}
 }
 

@@ -7,6 +7,17 @@ changed rather than what an operator had to do about it; from v0.15.0 on, each
 release is written down as it is cut. Anything that changes a config file, a
 default, or on-disk state is called out as **Breaking** or **Upgrade note**.
 
+## v0.36.2 (2026-09-01)
+
+More v0.36.0 relay-move upgrade fixes, found upgrading a relay-enabled split:
+
+- The control package ships its relay sudoers as a plain file (not a
+  config-noreplace conffile), so it overwrites a stale grant an earlier
+  ansible-managed install left at the same path. Without it the frontend could
+  not run the relay reconcile ("sudo: a password is required").
+- The stub-account migration is directory-driven, so it finds and removes the
+  old node frontend's stubs even though they lived in a different group.
+
 ## v0.36.1 (2026-09-01)
 
 Packaging fix for the v0.36.0 relay move: the control package now declares it

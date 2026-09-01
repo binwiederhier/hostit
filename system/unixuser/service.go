@@ -79,6 +79,15 @@ func (s *Service) Exists(username string) bool {
 	return err == nil
 }
 
+// Home reports a user's home directory, ok false if the account does not exist.
+func (s *Service) Home(username string) (string, bool) {
+	u, err := user.Lookup(username)
+	if err != nil {
+		return "", false
+	}
+	return u.HomeDir, true
+}
+
 // LookupUID returns a user's uid.
 func (s *Service) LookupUID(username string) (int, error) {
 	uid, _, err := lookupIDs(username)

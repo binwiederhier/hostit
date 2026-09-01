@@ -200,9 +200,12 @@ nfpms:
           mode: 0755
       - src: pkg/files/usr/lib/sysusers.d/hostit-relay.conf
         dst: /usr/lib/sysusers.d/hostit-relay.conf
+      # NOT a config|noreplace conffile: earlier relay-enabled installs had an
+      # ansible-managed file at this path with the old (wrong) grants, and
+      # noreplace would keep it. A plain file is overwritten on upgrade, so the
+      # grants are always the current ones.
       - src: pkg/files/etc/sudoers.d/hostit-relay
         dst: /etc/sudoers.d/hostit-relay
-        type: "config|noreplace"
         file_info:
           mode: 0440
       - src: pkg/files/usr/share/bash-completion/completions/hostit-control

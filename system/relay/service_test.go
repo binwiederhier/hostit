@@ -22,6 +22,17 @@ type fakeUsers struct {
 func newFakeUsers() *fakeUsers { return &fakeUsers{exists: map[string]bool{}} }
 
 func (f *fakeUsers) Exists(name string) bool { return f.exists[name] }
+func (f *fakeUsers) Home(name string) (string, bool) {
+	if !f.exists[name] {
+		return "", false
+	}
+	for _, a := range f.accounts {
+		if a.Name == name {
+			return a.Home, true
+		}
+	}
+	return "", false
+}
 func (f *fakeUsers) CreateStub(name, home string) error {
 	f.created = append(f.created, name)
 	f.exists[name] = true
@@ -104,7 +115,10 @@ func TestApplyMigratesLegacyStubs(t *testing.T) {
 	p := tempPaths(t)
 	legacy := t.TempDir()
 	p.LegacyStubs = legacy
-	// A routed app whose stub still lives under the legacy path.
+	// A routed app whose stub still lives under the legacy path (dir + account),
+	// in a DIFFERENT group than the reconcile lists -- so only a directory-driven
+	// sweep finds it.
+	require.NoError(t, os.MkdirAll(filepath.Join(legacy, "blog"), 0755))
 	users.exists["blog"] = true
 	users.accounts = append(users.accounts, Account{Name: "blog", Home: filepath.Join(legacy, "blog")})
 	s := New(users, p)
