@@ -43,12 +43,15 @@ cluster-key-file: /etc/hostit/control/endpoint.key
 cluster-ca-cert-file: /etc/hostit/control/ca.crt
 {% endif %}
 {% if hostit_control_connection_clients %}
-# One OAuth client per connection provider offered.
+# Per provider: the OAuth client, plus any provider definition or scope-options
+# (rendered verbatim; underscores in keys become dashes, e.g. scope_options ->
+# scope-options). See control.yml.example for the fields.
 connections:
 {% for provider, client in hostit_control_connection_clients.items() %}
   {{ provider }}:
-    client-id: {{ client['client_id'] }}
-    client-secret: {{ client['client_secret'] }}
+{% for key, value in client.items() %}
+    {{ key | replace('_', '-') }}: {{ value | to_json }}
+{% endfor %}
 {% endfor %}
 {% endif %}
 {% if hostit_control_anthropic_api_key %}

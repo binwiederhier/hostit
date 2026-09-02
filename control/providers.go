@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"heckel.io/hostit/control/config"
 	"heckel.io/hostit/control/connections"
 	"heckel.io/hostit/store"
 )
@@ -69,16 +70,25 @@ func (m *connectionManager) providerFromRow(row *store.Provider) (connections.Pr
 	if row.AuthParams != "" {
 		_ = json.Unmarshal([]byte(row.AuthParams), &params)
 	}
+	var scopeOpts []config.OAuthScopeOption
+	if row.ScopeOptions != "" {
+		_ = json.Unmarshal([]byte(row.ScopeOptions), &scopeOpts)
+	}
 	p, err := connections.CustomProvider(row.Name, connections.CustomSpec{
-		Label:          row.Label,
-		Scopes:         splitScopes(row.Scopes),
-		Issuer:         row.Issuer,
-		AuthURL:        row.AuthURL,
-		TokenURL:       row.TokenURL,
-		AuthParams:     params,
-		LongLivedToken: row.LongLived,
-		Help:           row.Help,
-		NameHint:       row.NameHint,
+		Label:            row.Label,
+		Scopes:           splitScopes(row.Scopes),
+		ScopeOptions:     toScopeOptions(scopeOpts),
+		Issuer:           row.Issuer,
+		AuthURL:          row.AuthURL,
+		TokenURL:         row.TokenURL,
+		AuthParams:       params,
+		LongLivedToken:   row.LongLived,
+		UserToken:        row.UserToken,
+		Help:             row.Help,
+		NameHint:         row.NameHint,
+		ShortDescription: row.ShortDescription,
+		LongDescription:  row.LongDescription,
+		DisallowMultiple: !row.AllowMultiple,
 	})
 	if err != nil {
 		return connections.Provider{}, err

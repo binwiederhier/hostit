@@ -213,3 +213,51 @@ func consentCode(t *testing.T, p providerWithAuthURL, clientID string) string {
 type providerWithAuthURL interface {
 	AuthCodeURL(clientID, redirectURL, state string) string
 }
+
+// A custom provider defined through the admin API carries the SAME options a
+// config-defined one does: permission checkboxes, a user token, descriptions and
+// the duplicate-app policy. This is the parity a stored provider lacked -- the
+// provider table had no columns for any of it.
+func TestAdminProviderCarriesScopeOptionsAndTheRest(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	admin := newActiveTestUser(t, s, "admin@example.com")
+	admin.Role = store.RoleAdmin
+	require.NoError(t, s.users.Update(admin))
+	adminToken, _, err := s.users.CreateToken(admin.ID, "laptop")
+	require.NoError(t, err)
+
+	body := `{
+		"name":"acme-sso","label":"Acme SSO","scope":"instance",
+		"client_id":"c","client_secret":"s",
+		"auth_url":"https://a.example/x","token_url":"https://a.example/t",
+		"user_token":true,
+		"short_description":"acme-short","long_description":"acme-long-api",
+		"allow_multiple":false,
+		"scope_options":[
+			{"key":"read","label":"Read","scopes":["a:read","b:read"],"default":true},
+			{"key":"write","label":"Write","scopes":["a:write"]}
+		]
+	}`
+	rr := request(t, s.API(), "POST", "/api/providers", body, adminToken)
+	require.Equal(t, http.StatusCreated, rr.Code, rr.Body.String())
+
+	// The resolved provider carries every option, scopes included.
+	p, ok := s.connections.providerFor(admin.ID, "acme-sso")
+	require.True(t, ok)
+	assert.True(t, p.UserToken)
+	assert.Equal(t, "acme-short", p.ShortDescription)
+	assert.Equal(t, "acme-long-api", p.LongDescription)
+	assert.False(t, p.AllowsMultiple(), "allow-multiple false survives the DB round trip")
+	require.Len(t, p.ScopeOptions, 2)
+	assert.Equal(t, "read", p.ScopeOptions[0].Key)
+	assert.Equal(t, []string{"a:read", "b:read"}, p.ScopeOptions[0].Scopes, "scopes survive the DB round trip")
+	assert.True(t, p.ScopeOptions[0].Default)
+
+	// And it reads back through the definitions API for the edit form to prefill.
+	list := request(t, s.API(), "GET", "/api/providers", "", adminToken)
+	require.Equal(t, http.StatusOK, list.Code)
+	assert.Contains(t, list.Body.String(), "acme-short")
+	assert.Contains(t, list.Body.String(), `"allow_multiple":false`)
+	assert.Contains(t, list.Body.String(), `"a:read"`, "the edit form gets the scopes back")
+}

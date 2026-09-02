@@ -7,10 +7,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"heckel.io/hostit/control/connections"
 	"heckel.io/hostit/store"
 )
 
@@ -315,4 +317,156 @@ func TestAFinishedConsentLandsOnTheConnectionsPage(t *testing.T) {
 
 	require.Equal(t, http.StatusFound, rr.Code, rr.Body.String())
 	assert.Equal(t, "/connections", rr.Header().Get("Location"))
+}
+
+// The add dialog shows a one-line description of what a connection is; the long
+// form (API docs for an app's assistant) is NOT offered to the dashboard.
+func TestOfferedProvidersCarryTheShortDescriptionOnly(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	s.config.ConnectionClients = map[string]config.OAuthClient{"acme-desc": {
+		ClientID: "id", ClientSecret: "sec", Label: "Acme",
+		AuthURL: "https://a.example/x", TokenURL: "https://a.example/t",
+		ShortDescription: "acme-short-line", LongDescription: "acme-long-api-docs",
+	}}
+	require.NoError(t, s.connections.loadCustomProviders(s.config))
+	u := newActiveTestUser(t, s, "owner@example.com")
+	token, _, err := s.users.CreateToken(u.ID, "laptop")
+	require.NoError(t, err)
+
+	rr := request(t, s.API(), "GET", "/api/connections", "", token)
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+	assert.Contains(t, rr.Body.String(), "acme-short-line", "the add dialog gets the short description")
+	assert.NotContains(t, rr.Body.String(), "acme-long-api-docs", "the long API description is not offered to the dashboard")
+}
+
+// A granted app discovers both descriptions from its own connections endpoint:
+// the short line and the long API docs its assistant reads.
+func TestContainerConnectionsCarryBothDescriptions(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	connections.Register(connections.Provider{
+		Name: "described-key", Label: "Described", Kind: connections.KindStatic,
+		SecretField:      "secret",
+		Fields:           []connections.Field{{Name: "secret", Label: "Secret", Secret: true}},
+		ShortDescription: "described-short-line",
+		LongDescription:  "described-long-api-docs",
+	})
+	u := newActiveTestUser(t, s, "owner@example.com")
+	require.NoError(t, s.apps.Store().AddApp(&store.App{ID: "a1", Name: "dash", Port: 10000, Host: store.HostLocal, OwnerID: u.ID, UID: 1234}))
+	s.usernameForUID = func(uid int) (string, error) { return "dash", nil }
+	conn := mustConnect(t, s, u.ID, "mykey", "described-key", map[string]string{"secret": "x"})
+	require.NoError(t, s.apps.Store().GrantConnection("a1", conn.ID))
+
+	rr := socketRequest(t, s, "GET", "/api/container/connections")
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+	assert.Contains(t, rr.Body.String(), "described-short-line")
+	assert.Contains(t, rr.Body.String(), "described-long-api-docs")
+}
+
+// allow-multiple false refuses a SECOND connection on the same OAuth app (the
+// two would share one grant); the default allows it.
+func TestDisallowMultipleRefusesASecondConnection(t *testing.T) {
+	t.Parallel()
+	no, yes := false, true
+	run := func(allow *bool, wantSecond int) {
+		s := newTestServer(t)
+		s.config.ConnectionClients = map[string]config.OAuthClient{"acme": {
+			ClientID: "acme-id", ClientSecret: "sec", Label: "Acme",
+			AuthURL: "https://a.example/x", TokenURL: "https://a.example/t",
+			AllowMultiple: allow,
+		}}
+		require.NoError(t, s.connections.loadCustomProviders(s.config))
+		u := newActiveTestUser(t, s, fmt.Sprintf("owner-%p@example.com", allow))
+		token, _, err := s.users.CreateToken(u.ID, "laptop")
+		require.NoError(t, err)
+		require.NoError(t, s.apps.Store().AddConnection(&store.Connection{
+			ID: store.NewConnectionID(), UserID: u.ID, Slug: "acme-one", Label: "One",
+			Provider: "acme", Kind: store.ConnectionOAuth, CreatedAt: time.Now(),
+		}))
+		rr := request(t, s.API(), "POST", "/api/connections", `{"provider":"acme","slug":"acme-two"}`, token)
+		assert.Equal(t, wantSecond, rr.Code, rr.Body.String())
+	}
+	run(&no, http.StatusConflict)
+	run(&yes, http.StatusOK)
+	run(nil, http.StatusOK) // unset == allow
+}
+
+// A provider that disallows multiple is dropped from the offered list once the
+// owner has a connection on its app -- a second would only alias the first, so
+// there is nothing to pick.
+func TestDisallowMultipleProviderIsNotOfferedOnceConnected(t *testing.T) {
+	t.Parallel()
+	no := false
+	s := newTestServer(t)
+	s.config.ConnectionClients = map[string]config.OAuthClient{"acme": {
+		ClientID: "acme-id", ClientSecret: "sec", Label: "Acme",
+		AuthURL: "https://a.example/x", TokenURL: "https://a.example/t",
+		AllowMultiple: &no,
+	}}
+	require.NoError(t, s.connections.loadCustomProviders(s.config))
+	u := newActiveTestUser(t, s, "owner@example.com")
+	token, _, err := s.users.CreateToken(u.ID, "laptop")
+	require.NoError(t, err)
+
+	offered := func() bool {
+		rr := request(t, s.API(), "GET", "/api/connections", "", token)
+		require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+		var out apiConnectionsResponse
+		require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &out))
+		for _, p := range out.Providers {
+			if p.Name == "acme" {
+				return true
+			}
+		}
+		return false
+	}
+	assert.True(t, offered(), "offered before any connection exists")
+
+	require.NoError(t, s.apps.Store().AddConnection(&store.Connection{
+		ID: store.NewConnectionID(), UserID: u.ID, Slug: "acme-one", Label: "One",
+		Provider: "acme", Kind: store.ConnectionOAuth, CreatedAt: time.Now(),
+	}))
+	assert.False(t, offered(), "not offered once its app is connected")
+}
+
+// A connection carries its OWN scope-options, so the edit dialog can render the
+// permission checkboxes even for a provider that dropped out of the offered list
+// (allow-multiple off, already connected). Regression: filtering that list left
+// the edit dialog with no provider to read scope-options from.
+func TestConnectionViewCarriesScopeOptionsWhenProviderDisallowsMultiple(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	no := false
+	s.config.ConnectionClients = map[string]config.OAuthClient{"acme": {
+		ClientID: "acme-id", ClientSecret: "sec", Label: "Acme",
+		AuthURL: "https://a.example/x", TokenURL: "https://a.example/t",
+		AllowMultiple: &no,
+		ScopeOptions: []config.OAuthScopeOption{
+			{Key: "read", Label: "Read", Scopes: []string{"a:read"}, Default: true},
+			{Key: "write", Label: "Write", Scopes: []string{"a:write"}},
+		},
+	}}
+	require.NoError(t, s.connections.loadCustomProviders(s.config))
+	u := newActiveTestUser(t, s, "owner@example.com")
+	token, _, err := s.users.CreateToken(u.ID, "laptop")
+	require.NoError(t, err)
+	require.NoError(t, s.apps.Store().AddConnection(&store.Connection{
+		ID: store.NewConnectionID(), UserID: u.ID, Slug: "my-acme", Label: "Mine",
+		Provider: "acme", Kind: store.ConnectionOAuth, Scopes: "a:read", CreatedAt: time.Now(),
+	}))
+
+	rr := request(t, s.API(), "GET", "/api/connections", "", token)
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+	var out apiConnectionsResponse
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &out))
+	// The provider is NOT offered (allow-multiple off + already connected)...
+	for _, p := range out.Providers {
+		assert.NotEqual(t, "acme", p.Name, "a disallow-multiple provider drops out of the offered list once connected")
+	}
+	// ...but the connection still carries its scope-options for the edit dialog.
+	require.Len(t, out.Connections, 1)
+	require.Len(t, out.Connections[0].ScopeOptions, 2, "the edit dialog gets the checkboxes from the connection")
+	assert.Equal(t, "read", out.Connections[0].ScopeOptions[0].Key)
+	assert.Equal(t, []string{"read"}, out.Connections[0].ScopeKeys, "and which ones are ticked")
 }

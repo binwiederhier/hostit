@@ -45,24 +45,67 @@ admin-token: CHANGE-ME
 # cluster-key-file: /etc/hostit/control/control.key
 # cluster-ca-cert-file: /etc/hostit/control/cluster-ca.crt
 
-# Connections: accounts users attach and grant to their apps. Each provider needs
-# an OAuth client YOU register with it (there is no shared hostit client); a
-# provider with no entry is not offered. Calendar/Gmail reuse google-client-id
-# above when omitted. Pasted credentials (IMAP, API keys) need nothing here.
-# Gmail's read scope needs Google CASA review -- see docs/features/connections.md.
+# ===========================================================================
+# Connections: accounts, credentials and tool servers users attach and grant to
+# their apps. THREE kinds, configured three ways:
+#
+#   OAuth accounts     -> connections:  (below). Needs an OAuth client YOU register.
+#   MCP tool servers   -> mcp-servers:  (below). Just a URL you give a name.
+#   Pasted credentials (API keys, IMAP, database URLs, SSH keys) -> NO config.
+#       They are built in; a user pastes one on the Connections page. There is
+#       nothing to preconfigure, and no custom credential TYPE -- a custom
+#       provider is always OAuth.
+# ===========================================================================
+
+# --- OAuth accounts. A provider with no client here is not offered. Calendar and
+# Gmail reuse google-client-id above when omitted. Gmail's read scope needs
+# Google CASA review -- see docs/features/connections.md.
+#
+# MINIMAL -- a built-in provider, just its client:
 # connections:
-#   slack:
-#     client-id: ...          # api.slack.com/apps -> OAuth & Permissions
-#     client-secret: ...
-#   discord:
-#     client-id: ...          # discord.com/developers/applications
-#     client-secret: ...
 #   github:
-#     client-id: ...          # github.com/settings/developers -> OAuth Apps
+#     client-id: ...            # github.com/settings/developers -> OAuth Apps
 #     client-secret: ...
-#   jira:
-#     client-id: ...          # developer.atlassian.com -> OAuth 2.0 (3LO)
+#
+# FULL -- a custom OAuth provider (a service hostit does not ship), every option:
+# connections:
+#   acme-sso:
+#     label: Acme SSO                    # REQUIRED for a custom provider (names it in the menu)
+#     client-id: ...
 #     client-secret: ...
+#     auth-url: https://sso.acme.example/authorize   # authorize + token endpoints,
+#     token-url: https://sso.acme.example/token      #   OR set issuer: to discover both
+#     issuer: https://sso.acme.example   # alternative to auth-url + token-url
+#     revoke-url: https://sso.acme.example/revoke    # optional: hostit kills a token
+#                                        #   here when a connection is removed/replaced
+#     revoke-auth: bearer                # "bearer" (token as Bearer, Slack) or default (client creds)
+#     auth-params: { access_type: offline }   # extra consent-URL params the provider needs
+#     long-lived-token: false            # true if its token never expires (no refresh token)
+#     user-token: false                  # true for a Slack-style token that acts AS the person
+#     name-hint: Acme                    # what the add dialog pre-fills the name with
+#     help: Register an app at sso.acme.example.   # one line: where to get the credential
+#     short-description: Read your Acme projects.  # what the connection IS (add dialog)
+#     long-description: >-               # documents the API for a granted app's assistant
+#       REST API at https://api.acme.example, Bearer <token>. GET /projects lists projects.
+#     allow-multiple: true               # false hides it once its app is connected (Slack-style
+#                                        #   shared token: a 2nd connection would only alias the 1st)
+#     scope-options:                     # permission checkboxes; on a BUILT-IN these REPLACE the defaults
+#       - { key: projects, label: Read projects, scopes: [projects:read], default: true }
+#       - { key: write,    label: Write,         scopes: [projects:write] }
+
+# --- MCP tool servers offered to everyone by name (a user can still paste any URL).
+#
+# MINIMAL:
+# mcp-servers:
+#   deepwiki:
+#     url: https://mcp.deepwiki.com/mcp
+#
+# FULL:
+# mcp-servers:
+#   linear:
+#     label: Linear                      # what a user picks from the menu (defaults to the key)
+#     url: https://mcp.linear.app/mcp
+#     help: Issues and projects from your Linear workspace.
 
 # Built-in AI assistant: the in-browser chat that builds and changes apps. Unset
 # = disabled. anthropic-api-key meters against your API credit;

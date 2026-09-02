@@ -51,6 +51,8 @@ type Node struct {
 	// reported by the node over the authenticated cluster tunnel. Used to write
 	// the relay gateway's known_hosts so the frontend->node hop is verified.
 	HostKey string `json:"host_key,omitempty"`
+	// Version is the build the node reported on its last heartbeat.
+	Version string `json:"version,omitempty"`
 }
 
 // Role is a user's permission level

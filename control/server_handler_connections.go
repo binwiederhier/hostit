@@ -49,6 +49,15 @@ type apiConnectionResponse struct {
 	GrantedAppNames []string `json:"granted_app_names"`
 	// Status is the connection's health: "ok" or "needs_reconnect".
 	Status string `json:"status"`
+	// ScopeKeys are the provider's permission-option keys this connection was
+	// granted (derived from its stored scopes), so the edit dialog can show which
+	// boxes were ticked and a reconnect can resend them.
+	ScopeKeys []string `json:"scope_keys,omitempty"`
+	// ScopeOptions are the provider's permission checkboxes, carried on the
+	// connection so the edit dialog can render them WITHOUT the provider still
+	// being in the offered list -- a provider that disallows a second connection
+	// drops out of that list once connected, but its own connection stays editable.
+	ScopeOptions []connections.ScopeOption `json:"scope_options,omitempty"`
 	// URL and Tools are set for an MCP connection only. They come out of the
 	// meta column, which for MCP holds a JSON document rather than the "k=v"
 	// context a pasted credential carries -- so it is unpacked here instead of
@@ -64,6 +73,9 @@ type apiProviderResponse struct {
 	Label string `json:"label"`
 	Kind  string `json:"kind"`
 	Help  string `json:"help,omitempty"`
+	// ShortDescription is one line on what the connection is, shown in the add
+	// dialog. The long form is only handed to a granted app, not offered here.
+	ShortDescription string `json:"short_description,omitempty"`
 	// NameHint is what the add dialog suggests calling it, which varies by
 	// provider and is not something the form can guess.
 	NameHint string              `json:"name_hint,omitempty"`
@@ -150,15 +162,19 @@ func (s *Server) lookupProviderFor(userID, name string) (connections.Provider, b
 
 func (s *Server) connectionView(c *store.Connection) *apiConnectionResponse {
 	label := c.Provider
+	var scopeKeys []string
+	var scopeOptions []connections.ScopeOption
 	if p, ok := s.lookupProvider(c.Provider); ok {
 		label = p.Label
+		scopeKeys = p.SelectedScopeKeys(strings.Fields(c.Scopes))
+		scopeOptions = p.ScopeOptions
 	}
 	n, _ := s.apps.Store().CountGrants(c.ID)
 	names, _ := s.apps.Store().GrantedAppNames(c.ID)
 	out := &apiConnectionResponse{
 		Slug: c.Slug, Label: c.Label, Provider: c.Provider, ProviderLabel: label,
 		Kind: c.Kind, Meta: c.Meta, CreatedAt: c.CreatedAt, GrantedApps: n,
-		GrantedAppNames: names, Status: c.Status,
+		GrantedAppNames: names, Status: c.Status, ScopeKeys: scopeKeys, ScopeOptions: scopeOptions,
 	}
 	if c.Kind == store.ConnectionMCP {
 		out.Meta = "" // it is a JSON document, not something to show as-is
@@ -227,8 +243,15 @@ func (s *Server) offeredProviders(kind, userID string) []apiProviderResponse {
 		if kind != "" && p.Kind != kind {
 			continue
 		}
+		// A provider that disallows a second connection on the same app is not
+		// offered once the owner has one there: a second would only alias the
+		// first, so there is nothing to pick. (The add handler still refuses it,
+		// for a direct API call.)
+		if !p.AllowsMultiple() && s.connections.sharesOAuthApp(userID, p) {
+			continue
+		}
 		out = append(out, apiProviderResponse{Name: p.Name, Label: p.Label, Kind: p.Kind,
-			Help: p.Help, NameHint: p.NameHint, Fields: p.Fields, ScopeOptions: p.ScopeOptions,
+			Help: p.Help, ShortDescription: p.ShortDescription, NameHint: p.NameHint, Fields: p.Fields, ScopeOptions: p.ScopeOptions,
 			Custom: p.Custom, Personal: p.Personal})
 	}
 	return out
@@ -278,6 +301,13 @@ func (s *Server) handleConnectionAdd(w http.ResponseWriter, r *http.Request, c *
 	}
 	if len(existing) >= maxConnectionsPerUser {
 		writeError(w, http.StatusForbidden, fmt.Errorf("you already have %d connections", len(existing)))
+		return
+	}
+	// A provider that disallows multiple refuses a second connection on the same
+	// OAuth app: they would share one grant, so the second is not an independent
+	// connection. Register a separate OAuth app for genuinely separate scopes.
+	if !p.AllowsMultiple() && s.connections.sharesOAuthApp(c.userID(), p) {
+		writeError(w, http.StatusConflict, errors.New("you already have a connection using this OAuth app -- it issues one credential per app, so a second would share the same token and permissions. For different permissions, add a separate OAuth app"))
 		return
 	}
 	label := strings.TrimSpace(req.Label)
@@ -440,12 +470,55 @@ func (s *Server) handleConnectionReconnect(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusBadRequest, errors.New("this connection is not an OAuth account"))
 		return
 	}
-	url, err := s.startConsent(w, r, conn.UserID, p, conn.Slug, conn.Label, strings.Fields(conn.Scopes))
+	// The edit dialog may resend permission keys to CHANGE what is granted; with
+	// none sent, keep exactly what the connection already has.
+	scopes := strings.Fields(conn.Scopes)
+	if len(p.ScopeOptions) > 0 {
+		var req struct {
+			ScopeKeys []string `json:"scope_keys"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err == nil && req.ScopeKeys != nil {
+			resolved, err := p.ResolveScopes(req.ScopeKeys)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, err)
+				return
+			}
+			scopes = resolved
+		}
+	}
+	// Changing the grant: revoke the current token BEFORE sending the owner to
+	// re-consent. A provider that unions past scopes (Slack) would otherwise hand
+	// back a token as broad as before; revoking first deauthorizes the app, so the
+	// fresh consent grants exactly the new set -- the same reason remove+re-add
+	// narrows. Same-set reconnects (a plain "fix needs-reconnect") skip it, so a
+	// working token is not thrown away when nothing is changing.
+	if !sameScopes(scopes, strings.Fields(conn.Scopes)) {
+		s.connections.revokeConnectionToken(r.Context(), conn)
+	}
+	url, err := s.startConsent(w, r, conn.UserID, p, conn.Slug, conn.Label, scopes)
 	if err != nil {
 		writeConnectionError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, &apiConnectStartedResponse{RedirectURL: url})
+}
+
+// sameScopes reports set equality of two scope lists, ignoring order -- so a
+// reconnect that leaves the grant unchanged is told apart from one that edits it.
+func sameScopes(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	seen := make(map[string]bool, len(a))
+	for _, s := range a {
+		seen[s] = true
+	}
+	for _, s := range b {
+		if !seen[s] {
+			return false
+		}
+	}
+	return true
 }
 
 // handleConnectionDelete forgets a connection and every grant naming it.
@@ -455,6 +528,10 @@ func (s *Server) handleConnectionDelete(w http.ResponseWriter, r *http.Request, 
 		writeConnectionError(w, err)
 		return
 	}
+	// Kill the token at the provider before dropping the row -- a removed
+	// connection's credential should not stay valid out there. Best-effort, and
+	// done first while the credential is still readable.
+	s.connections.revokeConnectionToken(r.Context(), conn)
 	if err := s.apps.Store().DeleteConnection(conn.ID); err != nil {
 		writeConnectionError(w, err)
 		return
@@ -638,7 +715,7 @@ func (s *Server) connectionFromState(w http.ResponseWriter, r *http.Request, sta
 	// An existing slug means this is a re-consent: keep the connection and its
 	// grants, swap the credential underneath.
 	if existing, err := s.apps.Store().ConnectionBySlug(user.ID, slug); err == nil {
-		if err := s.connections.reconnect(r.Context(), existing, p, code, redirectURL); err != nil {
+		if err := s.connections.reconnect(r.Context(), existing, p, code, redirectURL, scopes); err != nil {
 			writeError(w, http.StatusBadGateway, err)
 			return true
 		}
@@ -701,6 +778,10 @@ type apiSelfConnectionResponse struct {
 	ProviderLabel string `json:"provider_label"`
 	Kind          string `json:"kind"`
 	Meta          string `json:"meta,omitempty"`
+	// ShortDescription says what the connection is; LongDescription documents its
+	// API so the app's assistant can call the service without being told.
+	ShortDescription string `json:"short_description,omitempty"`
+	LongDescription  string `json:"long_description,omitempty"`
 	// Status is the connection's health: "ok" or "needs_reconnect". A needs-
 	// reconnect connection still lists, but its token call will fail until the
 	// owner re-authorizes.
@@ -718,8 +799,10 @@ func (s *Server) handleSelfConnectionsList(w http.ResponseWriter, r *http.Reques
 	out := make([]*apiSelfConnectionResponse, 0, len(granted))
 	for _, c := range granted {
 		label := c.Provider
+		var short, long string
 		if p, ok := s.lookupProvider(c.Provider); ok {
 			label = p.Label
+			short, long = p.ShortDescription, p.LongDescription
 		}
 		meta := c.Meta
 		if c.Kind == store.ConnectionOAuth {
@@ -727,7 +810,8 @@ func (s *Server) handleSelfConnectionsList(w http.ResponseWriter, r *http.Reques
 		}
 		out = append(out, &apiSelfConnectionResponse{
 			Slug: c.Slug, Label: c.Label, Provider: c.Provider,
-			ProviderLabel: label, Kind: c.Kind, Meta: meta, Status: c.Status,
+			ProviderLabel: label, Kind: c.Kind, Meta: meta,
+			ShortDescription: short, LongDescription: long, Status: c.Status,
 		})
 	}
 	writeJSON(w, http.StatusOK, out)

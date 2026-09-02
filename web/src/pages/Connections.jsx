@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { filterProviders, filterTools, slugify, splitByKind, suggestSlug, defaultScopeKeys } from "../connections";
+import { filterProviders, filterTools, slugify, splitByKind, suggestSlug, defaultScopeKeys, filterSlugInput, sameScopeKeys, connectionLabel } from "../connections";
 import { api } from "../api";
 import { useDropdown } from "../hooks";
 import { ConfirmDialog, DocsLink, ErrorBanner, Skeleton, Snippet } from "../components";
@@ -68,17 +68,32 @@ const Connections = () => {
     }
   };
 
-  const edit = async (c, nextSlug, nextLabel, values) => {
+  const edit = async (c, nextSlug, nextLabel, values, scopeKeys) => {
     setError("");
     setBusy(true);
     try {
-      const body = { slug: nextSlug, label: nextLabel };
-      // Only sent when something was actually typed: an empty form means
-      // "leave the credential alone", not "replace it with nothing".
-      if (values && Object.values(values).some((v) => (v || "").trim() !== "")) {
-        body.values = values;
+      // The name, reference or credential only go up when one of them changed;
+      // a pure permission change leaves the PUT out entirely.
+      const metaChanged = nextSlug !== c.slug || nextLabel !== (c.label || "") || values != null;
+      let targetSlug = c.slug;
+      if (metaChanged) {
+        const body = { slug: nextSlug, label: nextLabel };
+        // Only sent when something was actually typed: an empty form means
+        // "leave the credential alone", not "replace it with nothing".
+        if (values && Object.values(values).some((v) => (v || "").trim() !== "")) {
+          body.values = values;
+        }
+        await api.put(`/api/connections/${encodeURIComponent(c.slug)}`, body);
+        targetSlug = nextSlug;
       }
-      await api.put(`/api/connections/${encodeURIComponent(c.slug)}`, body);
+      // Changing the granted scopes re-authorizes with the provider, so it
+      // leaves the page the same way Add does. The PUT above runs first so the
+      // reconnect targets the new slug when the reference was also changed.
+      if (scopeKeys != null) {
+        const res = await api.post(`/api/connections/${encodeURIComponent(targetSlug)}/reconnect`, { scope_keys: scopeKeys });
+        window.location.href = res.redirect_url;
+        return;
+      }
       setRenaming(null);
       await load();
     } catch (err) {
@@ -324,6 +339,19 @@ const ProviderDialog = ({ existing, redirectURI, onClose, onSaved }) => {
     issuer: existing?.issuer || "",
     scopes: (existing?.scopes || []).join(" "),
   });
+  const [shortDescription, setShortDescription] = useState(existing?.short_description || "");
+  const [longDescription, setLongDescription] = useState(existing?.long_description || "");
+  const [userToken, setUserToken] = useState(Boolean(existing?.user_token));
+  const [allowMultiple, setAllowMultiple] = useState(existing?.allow_multiple !== false);
+  const [scopeOptions, setScopeOptions] = useState(() =>
+    (existing?.scope_options || []).map((o) => ({
+      key: o.key || "", label: o.label || "", help: o.help || "",
+      scopes: (o.scopes || []).join(" "), default: Boolean(o.default),
+    })),
+  );
+  const setOption = (i, k, v) => setScopeOptions((os) => os.map((o, j) => (j === i ? { ...o, [k]: v } : o)));
+  const addOption = () => setScopeOptions((os) => [...os, { key: "", label: "", help: "", scopes: "", default: false }]);
+  const removeOption = (i) => setScopeOptions((os) => os.filter((_, j) => j !== i));
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
@@ -347,6 +375,16 @@ const ProviderDialog = ({ existing, redirectURI, onClose, onSaved }) => {
       token_url: form.token_url.trim(),
       issuer: form.issuer.trim(),
       scopes: form.scopes.split(/\s+/).filter(Boolean),
+      user_token: userToken,
+      short_description: shortDescription.trim(),
+      long_description: longDescription.trim(),
+      allow_multiple: allowMultiple,
+      scope_options: scopeOptions
+        .map((o) => ({
+          key: o.key.trim(), label: o.label.trim(), help: o.help.trim(),
+          scopes: o.scopes.split(/\s+/).filter(Boolean), default: o.default,
+        }))
+        .filter((o) => o.key && o.scopes.length > 0),
     };
     try {
       if (existing) {
@@ -362,25 +400,17 @@ const ProviderDialog = ({ existing, redirectURI, onClose, onSaved }) => {
   };
 
   return (
-    <Modal wide onClose={onClose} title={existing ? `Edit ${existing.label}` : "Add your own service"}>
+    <Modal wider onClose={onClose} title={existing ? `Edit ${existing.label}` : "Add your own service"}>
       <form onSubmit={submit}>
         <ErrorBanner message={error} onDismiss={() => setError("")} />
         <p className="hint">
-          For a service you sign in to. Register an OAuth app with them first, giving it this
+          For an OAuth service users sign in to. Register an app with it first, giving it this
           callback URL:
         </p>
         <Snippet text={redirectURI} />
-        <p className="hint">
-          An <b>MCP server</b> is not this: you add one straight from the MCP servers card by
-          pasting its URL, with nothing to register.
-        </p>
-        {/* Paired across two columns: these are six short fields, and one
-            column of them made a dialog taller than most windows. Each pair is
-            two halves of one idea -- what it is called, what the client is,
-            where it lives -- so they read across rather than down. */}
         <div className="conn-grid">
           <label className="conn-field">
-            <span>Name</span>
+            <span>Name <RequiredStar /></span>
             <input type="text" value={label} onChange={(e) => setLabel(e.target.value)}
               placeholder="Acme" aria-label="Service name" autoFocus disabled={busy} />
           </label>
@@ -391,40 +421,83 @@ const ProviderDialog = ({ existing, redirectURI, onClose, onSaved }) => {
               aria-label="Reference" disabled={busy || Boolean(existing)} />
           </label>
           <label className="conn-field">
-            <span>Client ID</span>
+            <span>Client ID <RequiredStar /></span>
             <input type="text" className="mono" value={form.client_id} onChange={set("client_id")}
               aria-label="Client ID" disabled={busy} />
           </label>
           <label className="conn-field">
-            <span>Client secret{existing ? " (leave blank to keep)" : ""}</span>
+            <span>Client secret {existing ? <span className="conn-field-note">(leave blank to keep)</span> : <RequiredStar />}</span>
             <input type="password" value={form.client_secret} onChange={set("client_secret")}
               aria-label="Client secret" disabled={busy} />
           </label>
           <label className="conn-field">
-            <span>Scopes</span>
-            <input type="text" className="mono" value={form.scopes} onChange={set("scopes")}
-              placeholder="read write" aria-label="Scopes" disabled={busy} />
-          </label>
-          <label className="conn-field">
-            <span>Issuer (optional)</span>
-            <input type="text" className="mono" value={form.issuer} onChange={set("issuer")}
-              placeholder="https://acme.example.com" aria-label="Issuer" disabled={busy} />
-          </label>
-          <label className="conn-field">
-            <span>Authorize URL</span>
+            <span>Authorize URL <RequiredStar /></span>
             <input type="text" className="mono" value={form.auth_url} onChange={set("auth_url")}
               placeholder="https://acme.example.com/oauth/authorize" aria-label="Authorize URL" disabled={busy} />
           </label>
           <label className="conn-field">
-            <span>Token URL</span>
+            <span>Token URL <RequiredStar /></span>
             <input type="text" className="mono" value={form.token_url} onChange={set("token_url")}
               placeholder="https://acme.example.com/oauth/token" aria-label="Token URL" disabled={busy} />
           </label>
+          <label className="conn-field conn-field-wide">
+            <span>Issuer <span className="conn-field-note">(optional &mdash; discovers the two URLs above for you)</span></span>
+            <input type="text" className="mono" value={form.issuer} onChange={set("issuer")}
+              placeholder="https://acme.example.com" aria-label="Issuer" disabled={busy} />
+          </label>
         </div>
-        <p className="hint">
-          Give an <b>issuer</b> and hostit finds the authorize and token URLs itself. Otherwise fill
-          both in from the service&rsquo;s documentation.
-        </p>
+
+        <details className="conn-advanced">
+          <summary>Advanced (optional)</summary>
+          <label className="conn-field">
+            <span>Scopes <span className="conn-field-note">(space-separated baseline)</span></span>
+            <input type="text" className="mono" value={form.scopes} onChange={set("scopes")}
+              placeholder="read write" aria-label="Scopes" disabled={busy} />
+          </label>
+          <label className="conn-field">
+            <span>Short description <span className="conn-field-note">(shown in the add dialog)</span></span>
+            <input type="text" value={shortDescription} onChange={(e) => setShortDescription(e.target.value)}
+              placeholder="What this connection is" aria-label="Short description" disabled={busy} />
+          </label>
+          <label className="conn-field">
+            <span>Long description <span className="conn-field-note">(documents the API for a granted app&rsquo;s assistant)</span></span>
+            <textarea rows={3} className="conn-textarea" value={longDescription} onChange={(e) => setLongDescription(e.target.value)}
+              placeholder="Base URL, auth header, key endpoints" aria-label="Long description" disabled={busy} />
+          </label>
+          <label className="conn-check">
+            <input type="checkbox" checked={userToken} onChange={(e) => setUserToken(e.target.checked)} disabled={busy} />
+            <span>User token (Slack) &mdash; the token acts as the person, not a bot</span>
+          </label>
+          <label className="conn-check">
+            <input type="checkbox" checked={allowMultiple} onChange={(e) => setAllowMultiple(e.target.checked)} disabled={busy} />
+            <span>Allow more than one connection to this app</span>
+          </label>
+
+        <fieldset className="conn-scopes-editor">
+          <legend>Permission checkboxes</legend>
+          <p className="hint">
+            Each becomes a checkbox in the add dialog: a labelled bundle of scopes the user grants or withholds.
+            Leave empty to request the scopes above exactly.
+          </p>
+          {scopeOptions.map((o, i) => (
+            <div key={i} className="conn-option-row">
+              <input type="text" className="mono" value={o.key} onChange={(e) => setOption(i, "key", e.target.value)}
+                placeholder="key" aria-label="Option key" disabled={busy} />
+              <input type="text" value={o.label} onChange={(e) => setOption(i, "label", e.target.value)}
+                placeholder="Label" aria-label="Option label" disabled={busy} />
+              <input type="text" className="mono" value={o.scopes} onChange={(e) => setOption(i, "scopes", e.target.value)}
+                placeholder="scope:a scope:b" aria-label="Option scopes" disabled={busy} />
+              <label className="conn-option-default" title="Ticked by default">
+                <input type="checkbox" checked={o.default} onChange={(e) => setOption(i, "default", e.target.checked)} disabled={busy} />
+                <span>default</span>
+              </label>
+              <button type="button" className="btn btn-small" onClick={() => removeOption(i)} disabled={busy} aria-label="Remove option">Remove</button>
+            </div>
+          ))}
+          <button type="button" className="btn btn-small" onClick={addOption} disabled={busy}>Add permission</button>
+        </fieldset>
+        </details>
+
         <div className="btn-row">
           <button type="button" className="btn" onClick={onClose} disabled={busy}>Cancel</button>
           <button type="submit" className="btn btn-primary" disabled={busy || !valid}>
@@ -664,15 +737,35 @@ const PresetMenu = ({ label, presets, provider, onPick }) => {
             </button>
           ))}
           <div className="conn-menu-divider" role="separator" />
-          <button type="button" role="menuitem" className="conn-menu-other" onClick={() => choose(null)}>
-            Any other server
-            <span className="conn-menu-sub">paste a URL</span>
+          <button type="button" role="menuitem" className="conn-menu-item conn-menu-add" onClick={() => choose(null)}>
+            <PlusIcon /> Add other server
           </button>
         </div>
       )}
     </div>
   );
 };
+
+// PlusIcon matches the "New app" button's plus, for the "Add your own service" row.
+const PlusIcon = () => (
+  <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" aria-hidden="true">
+    <path d="M8 3.5v9M3.5 8h9" />
+  </svg>
+);
+
+// RequiredStar marks a mandatory field.
+const RequiredStar = () => (
+  <span className="req" title="Required" aria-label="required">*</span>
+);
+
+// WarnIcon is a small triangle-with-bang, inline in a field label.
+const WarnIcon = () => (
+  <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ verticalAlign: "-1px" }}>
+    <path d="M8 2.2 14.5 13.3H1.5L8 2.2Z" />
+    <path d="M8 6.4v3" />
+    <path d="M8 11.4h.01" />
+  </svg>
+);
 
 const DotsIcon = () => (
   <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
@@ -743,9 +836,8 @@ const AddMenu = ({ label, providers, onPick, disabledText, onAddOwn }) => {
           {other && (
             <>
               <div className="conn-menu-divider" role="separator" />
-              <button type="button" role="menuitem" className="conn-menu-item conn-menu-other" onClick={() => choose(other)}>
-                Add other credential
-                <span className="conn-menu-sub">anything with an API key</span>
+              <button type="button" role="menuitem" className="conn-menu-item conn-menu-add" onClick={() => choose(other)}>
+                <PlusIcon /> Add other credential
               </button>
             </>
           )}
@@ -755,15 +847,14 @@ const AddMenu = ({ label, providers, onPick, disabledText, onAddOwn }) => {
               <button
                 type="button"
                 role="menuitem"
-                className="conn-menu-item conn-menu-other"
+                className="conn-menu-item conn-menu-add"
                 onClick={() => {
                   setOpen(false);
                   setQuery("");
                   onAddOwn();
                 }}
               >
-                Add your own service
-                <span className="conn-menu-sub">register an OAuth app and paste the client</span>
+                <PlusIcon /> Add your own service
               </button>
             </>
           )}
@@ -794,12 +885,14 @@ const AddConnectionDialog = ({ provider, existing, onClose, onAdded }) => {
   const oauth = provider.kind === "oauth";
   const mcp = provider.kind === "mcp";
 
+  // Naming is optional: an empty field uses the placeholder the user saw.
+  const effectiveLabel = connectionLabel(label, provider);
   // Until the reference is edited by hand it follows the name; once touched it
   // stays put, because renaming a connection must not silently move what apps
   // ask for.
-  const reference = slugEdited ? slug : slugify(label) || suggestSlug(provider, existing);
+  const reference = slugEdited ? slug : slugify(effectiveLabel) || suggestSlug(provider, existing);
   const missing = (provider.fields || []).some((f) => !f.optional && !(values[f.name] || "").trim());
-  const valid = label.trim().length > 0 && reference.length >= 3 && !missing;
+  const valid = reference.length >= 3 && !missing;
 
   const submit = async (e) => {
     e.preventDefault();
@@ -807,7 +900,7 @@ const AddConnectionDialog = ({ provider, existing, onClose, onAdded }) => {
     setBusy(true);
     setError("");
     try {
-      const body = { provider: provider.name, slug: reference, label: label.trim(), values };
+      const body = { provider: provider.name, slug: reference, label: effectiveLabel, values };
       if (scopeOptions.length > 0) {
         body.scope_keys = scopeKeys;
       }
@@ -827,6 +920,7 @@ const AddConnectionDialog = ({ provider, existing, onClose, onAdded }) => {
     <Modal onClose={onClose} title={`${oauth ? "Connect" : "Add"} ${provider.label}`} help={provider.help}>
       <form onSubmit={submit}>
         <ErrorBanner message={error} onDismiss={() => setError("")} />
+        {provider.short_description && <p className="hint">{provider.short_description}</p>}
         <label className="conn-field">
           <span>Name</span>
           <input
@@ -847,22 +941,14 @@ const AddConnectionDialog = ({ provider, existing, onClose, onAdded }) => {
             value={reference}
             onChange={(e) => {
               setSlugEdited(true);
-              setSlug(e.target.value);
+              setSlug(filterSlugInput(e.target.value));
             }}
             placeholder="work-calendar"
             aria-label="Reference"
+            maxLength={32}
             disabled={busy}
           />
         </label>
-        <p className="hint">
-          What an app asks for:{" "}
-          <span className="mono">
-            {mcp
-              ? `/api/container/mcp/${reference || "issues"}/call`
-              : `/api/container/connections/${reference || "work-calendar"}/token`}
-          </span>
-          . Renaming it later breaks any app already using the old one.
-        </p>
         {scopeOptions.length > 0 && (
           <fieldset className="conn-scopes">
             <legend>What should this connection be able to read?</legend>
@@ -937,35 +1023,69 @@ const EditConnectionDialog = ({ conn, provider, busy, onClose, onSave }) => {
   const [slug, setSlug] = useState(conn.slug);
   const [values, setValues] = useState({});
   const editableFields = conn.kind === "static" ? provider?.fields || [] : [];
+  // The connection carries its own scope-options, so a provider that has dropped
+  // out of the offered list (allow-multiple off, already connected) is still
+  // editable; fall back to the provider def for older responses.
+  const scopeOptions = conn.scope_options || provider?.scope_options || [];
+  const originalScopeKeys = conn.scope_keys || [];
+  const [scopeKeys, setScopeKeys] = useState(() => conn.scope_keys || []);
+  const toggleScope = (key, on) => setScopeKeys((keys) => (on ? [...keys, key] : keys.filter((k) => k !== key)));
+  const scopesChanged = !sameScopeKeys(scopeKeys, originalScopeKeys);
   const touched = Object.values(values).some((v) => (v || "").trim() !== "");
   // A partly-filled credential would replace the whole thing with half of it,
   // so every required field has to be present once any of them is.
   const incomplete =
     touched && editableFields.some((f) => !f.optional && !(values[f.name] || "").trim());
   const changed =
-    slug.trim().toLowerCase() !== conn.slug || label.trim() !== (conn.label || "") || touched;
+    slug.trim().toLowerCase() !== conn.slug || label.trim() !== (conn.label || "") || touched || scopesChanged;
 
   return (
     <Modal onClose={onClose} title={`Edit ${conn.label || conn.slug}`}>
       <form
         onSubmit={(e) => {
           e.preventDefault();
-          onSave(conn, slug.trim().toLowerCase(), label.trim(), touched ? values : null);
+          // Scopes go up only when they changed: a null tells the parent to keep
+          // the current grant and skip the reconnect entirely.
+          onSave(conn, slug.trim().toLowerCase(), label.trim(), touched ? values : null, scopesChanged ? scopeKeys : null);
         }}
       >
         <label className="conn-field">
           <span>Name</span>
           <input type="text" value={label} onChange={(e) => setLabel(e.target.value)} aria-label="Name" autoFocus disabled={busy} />
         </label>
-        <p className="hint">What you see here. Changing it affects nothing else.</p>
         <label className="conn-field">
-          <span>Reference</span>
-          <input type="text" className="mono" value={slug} onChange={(e) => setSlug(e.target.value)} aria-label="Reference" disabled={busy} />
+          <span>
+            Reference
+            {slug !== conn.slug && (
+              <span className="field-warn" title="Apps ask for this connection by its reference">
+                {" "}<WarnIcon /> Changing this may break apps
+              </span>
+            )}
+          </span>
+          <input type="text" className="mono" value={slug} onChange={(e) => setSlug(filterSlugInput(e.target.value))} aria-label="Reference" maxLength={32} disabled={busy} />
         </label>
-        <p className="hint">
-          What apps ask for. Changing it breaks any app already using{" "}
-          <span className="mono">{conn.slug}</span> until that app is updated too.
-        </p>
+        {scopeOptions.length > 0 && (
+          <>
+            <fieldset className="conn-scopes">
+              <legend>What should this connection be able to read?</legend>
+              {scopeOptions.map((o) => (
+                <label key={o.key} className="conn-scope">
+                  <input
+                    type="checkbox"
+                    checked={scopeKeys.includes(o.key)}
+                    onChange={(e) => toggleScope(o.key, e.target.checked)}
+                    disabled={busy}
+                  />
+                  <span className="conn-scope-text">
+                    <span className="conn-scope-label">{o.label}</span>
+                    {o.help && <span className="conn-scope-help">{o.help}</span>}
+                  </span>
+                </label>
+              ))}
+            </fieldset>
+            <p className="hint">Changing permissions reconnects this account with the provider.</p>
+          </>
+        )}
         {editableFields.length > 0 && (
           <>
             <div className="conn-editdiv" />
@@ -1020,9 +1140,9 @@ const EditConnectionDialog = ({ conn, provider, busy, onClose, onSave }) => {
 };
 
 // The shared modal chrome, so the two dialogs differ only in their fields.
-const Modal = ({ title, help, wide, onClose, children }) => (
+const Modal = ({ title, help, wide, wider, onClose, children }) => (
   <div className="modal-backdrop" role="dialog" aria-modal="true" onMouseDown={onClose}>
-    <div className={"card modal modal-sheet" + (wide ? " modal-tools" : "")} onMouseDown={(e) => e.stopPropagation()}>
+    <div className={"card modal modal-sheet" + (wider ? " modal-wider" : wide ? " modal-tools" : "")} onMouseDown={(e) => e.stopPropagation()}>
       <button type="button" className="modal-x" onClick={onClose} title="Close" aria-label="Close">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
           <path d="M6 6l12 12M18 6 6 18" />

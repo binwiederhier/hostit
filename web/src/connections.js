@@ -62,6 +62,38 @@ export function slugify(name) {
     .replace(/-+$/g, "");
 }
 
+// filterSlugInput cleans the reference field as a person types, so an invalid
+// character never lands in the box in the first place. Unlike slugify it does
+// NOT collapse or trim dashes: doing that mid-word fights someone still typing
+// "work-calendar". It only lowercases letters, drops anything that is not a
+// letter, digit or dash, and caps the length the API allows.
+// connectionLabel is the name to store: what the user typed, or the placeholder
+// they saw (name_hint, then the provider label) when they left it blank. Picking
+// a name is optional -- the hint is a fine default.
+export function connectionLabel(typed, provider) {
+  return (typed || "").trim() || provider.name_hint || provider.label || "";
+}
+
+export function filterSlugInput(value) {
+  return (value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9-]/g, "")
+    .slice(0, 32);
+}
+
+// sameScopeKeys compares two read-scope selections as sets, so the edit dialog
+// only reconnects when the granted permissions actually differ -- order and
+// duplicates do not matter.
+export function sameScopeKeys(a, b) {
+  const sa = new Set(a || []);
+  const sb = new Set(b || []);
+  if (sa.size !== sb.size) return false;
+  for (const key of sa) {
+    if (!sb.has(key)) return false;
+  }
+  return true;
+}
+
 // filterProviders narrows the add menu as someone types. It matches the name as
 // well as the label, because a person who knows "postgres" should not have to
 // guess that it is displayed as "PostgreSQL".

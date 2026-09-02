@@ -191,3 +191,49 @@ func (p Provider) postToken(ctx context.Context, client *http.Client, form url.V
 	}
 	return res, nil
 }
+
+// Revoke tells the provider to invalidate a token hostit is discarding (a
+// removed connection, or the old token after a reconnect issued a new one). It
+// is best-effort hygiene: killing a credential that would otherwise stay valid.
+// A provider with no RevokeURL has nothing to revoke and returns nil.
+func (p Provider) Revoke(ctx context.Context, client *http.Client, clientID, clientSecret, token string) error {
+	if p.RevokeURL == "" || token == "" {
+		return nil
+	}
+	form := url.Values{"token": {token}, "token_type_hint": {"access_token"}}
+	// Slack authenticates auth.revoke with the token itself (a Bearer header);
+	// RFC 7009 servers (Discord) authenticate the CLIENT and take the token in
+	// the body.
+	if p.RevokeAuth != "bearer" {
+		form.Set("client_id", clientID)
+		form.Set("client_secret", clientSecret)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.RevokeURL, strings.NewReader(form.Encode()))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Accept", "application/json")
+	if p.RevokeAuth == "bearer" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	res, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+	body, _ := io.ReadAll(io.LimitReader(res.Body, 1<<16))
+	if res.StatusCode >= 400 {
+		return fmt.Errorf("%s revoke returned %s", p.Label, res.Status)
+	}
+	// Slack answers 200 with {"ok":false,"error":...} on a bad token; a plain RFC
+	// 7009 server answers 200 with an empty body. Read ok only when it is there.
+	var out struct {
+		OK    *bool  `json:"ok"`
+		Error string `json:"error"`
+	}
+	if len(body) > 0 && json.Unmarshal(body, &out) == nil && out.OK != nil && !*out.OK {
+		return fmt.Errorf("%s revoke refused: %s", p.Label, out.Error)
+	}
+	return nil
+}

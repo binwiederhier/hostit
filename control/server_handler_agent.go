@@ -407,7 +407,7 @@ func (s *Server) agentGuide(appName, description, ownerID string) *apiAgentInfoR
 		ContainerAPI: apiAgentAPISection{
 			Description: "Called by the APP ITSELF, from INSIDE its container, at " + config.ContainerAPIURL + " -- a plain loopback URL, ordinary HTTP client, no token (the app is identified by where the call comes from). This is how the RUNNING app reaches its granted accounts, MCP tools and the built-in model. You do not call this yourself; you build code into the app that does. Not reachable from outside the container.",
 			Endpoints: []apiAgentEndpoint{
-				{Method: "GET", Path: "/api/container/connections", What: "The accounts and credentials this app was granted, each by the slug its owner named it"},
+				{Method: "GET", Path: "/api/container/connections", What: "The accounts and credentials this app was granted, each by the slug its owner named it. Each carries a \"long_description\" documenting its underlying API (endpoints, auth, quirks) -- read it before calling the service"},
 				{Method: "GET", Path: "/api/container/connections/{slug}/token", What: `A usable, short-lived credential for one of them -> {"access_token":"...","expires_at":"..."}. hostit refreshes it, so fetch per request and never cache, print, or write it to a file`},
 				{Method: "POST", Path: "/api/container/assistant", What: `Ask a model, with no API key of the app's own: {"prompt":"...","system":"...","max_tokens":500} -> {"text":...}. Send "messages":[...] instead of "prompt" to carry a conversation. This is how you build an app that itself thinks`},
 				{Method: "GET", Path: "/api/container/assistant/models", What: "The model ids this server offers -- read them rather than guessing"},

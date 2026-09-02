@@ -71,6 +71,17 @@ type Provider struct {
 	// AuthURL/TokenURL are the OAuth endpoints (OAuth only).
 	AuthURL  string
 	TokenURL string
+	// RevokeURL is the provider's token-revocation endpoint (OAuth only). hostit
+	// calls it to kill a token it is THROWING AWAY -- when a connection is
+	// removed, or replaced by a reconnect that issued a genuinely new token -- so
+	// a discarded credential does not stay valid at the provider. Empty means
+	// there is nothing to revoke. (This is hygiene, not scope-narrowing: a
+	// provider that unions past grants, like Slack, still needs its app removed at
+	// the provider to actually reduce access.) RevokeAuth picks how the request
+	// authenticates: "bearer" sends the token itself as a Bearer header (Slack
+	// auth.revoke); anything else sends the client id/secret with the token.
+	RevokeURL  string
+	RevokeAuth string
 	// Issuer is set only on a custom provider whose operator gave one instead
 	// of the two endpoints; they are then discovered from its metadata.
 	Issuer string
@@ -110,6 +121,22 @@ type Provider struct {
 	ProbeBody string
 	// Help is one line shown in the UI: where to get the credential.
 	Help string
+	// DisallowMultiple refuses a SECOND connection backed by the same OAuth app
+	// (same client-id) for one owner. Off by default (multiple allowed), since a
+	// second connection usually means a different account -- a second Google
+	// calendar. Set it where a second connection would only ALIAS the first:
+	// Slack issues one token per app+user, so two connections on one app are the
+	// same credential. Such a provider is simply not offered once its app is
+	// connected. Set from config as allow-multiple: false.
+	DisallowMultiple bool
+	// ShortDescription is one line describing what this connection IS, shown in
+	// the add dialog next to the provider. Where Help says where to get the
+	// credential, this says what the connection does.
+	ShortDescription string
+	// LongDescription documents the underlying API for the app's assistant: it
+	// is handed to the container so an agent building on the connection knows how
+	// to call the service (endpoints, quirks) without being told out of band.
+	LongDescription string
 	// NameHint is what the add dialog suggests calling this connection. It is
 	// provider knowledge rather than form knowledge: the form asking every
 	// credential to be called "OpenAI key" is how Home Assistant ended up
@@ -173,6 +200,40 @@ func (p Provider) DefaultScopeKeys() []string {
 		}
 	}
 	return keys
+}
+
+// SelectedScopeKeys reports which ScopeOptions a granted scope set covers: an
+// option is "on" when every scope it grants is present. The raw scopes are what
+// a connection stores, so this derives the ticked keys for an existing
+// connection -- the edit dialog shows them, and a reconnect resends them.
+func (p Provider) SelectedScopeKeys(granted []string) []string {
+	have := make(map[string]bool, len(granted))
+	for _, s := range granted {
+		have[s] = true
+	}
+	var keys []string
+	for _, o := range p.ScopeOptions {
+		if len(o.Scopes) == 0 {
+			continue
+		}
+		all := true
+		for _, s := range o.Scopes {
+			if !have[s] {
+				all = false
+				break
+			}
+		}
+		if all {
+			keys = append(keys, o.Key)
+		}
+	}
+	return keys
+}
+
+// AllowsMultiple reports whether a second connection on this provider's OAuth
+// app is permitted for one owner. True by default; DisallowMultiple turns it off.
+func (p Provider) AllowsMultiple() bool {
+	return !p.DisallowMultiple
 }
 
 // Field is one input a static provider needs.

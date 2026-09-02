@@ -33,15 +33,17 @@ const (
 
 const (
 	providerCols = `id, owner_id, name, label, kind, scopes, issuer, auth_url, token_url,
-		client_id, client_secret, auth_params, long_lived, help, name_hint, url, created_at`
+		client_id, client_secret, auth_params, long_lived, help, name_hint, url, created_at,
+		scope_options, user_token, short_description, long_description, allow_multiple`
 	insertProviderQuery = `
 		INSERT INTO provider (` + providerCols + `)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
 	updateProviderQuery = `
 		UPDATE provider SET label = ?, scopes = ?, issuer = ?, auth_url = ?, token_url = ?,
 			client_id = ?, client_secret = ?, auth_params = ?, long_lived = ?,
-			help = ?, name_hint = ?, url = ? WHERE id = ?
+			help = ?, name_hint = ?, url = ?, scope_options = ?, user_token = ?,
+			short_description = ?, long_description = ?, allow_multiple = ? WHERE id = ?
 	`
 	// Ordered so an INSTANCE definition (owner_id = '') is found before a
 	// personal one of the same name: the operator's is what everybody else on
@@ -90,8 +92,16 @@ type Provider struct {
 	// MCP
 	URL string
 
-	Help      string
-	NameHint  string
+	Help     string
+	NameHint string
+
+	// Parity with config-defined providers (all optional).
+	ScopeOptions     string // JSON array of connections.ScopeOption
+	UserToken        bool
+	ShortDescription string
+	LongDescription  string
+	AllowMultiple    bool
+
 	CreatedAt time.Time
 }
 
@@ -109,7 +119,8 @@ func (s *Store) AddProvider(p *Provider) error {
 	}
 	_, err := s.db.Exec(insertProviderQuery, p.ID, p.OwnerID, p.Name, p.Label, p.Kind, p.Scopes,
 		p.Issuer, p.AuthURL, p.TokenURL, p.ClientID, p.ClientSecret, p.AuthParams,
-		boolToInt(p.LongLived), p.Help, p.NameHint, p.URL, p.CreatedAt.Unix())
+		boolToInt(p.LongLived), p.Help, p.NameHint, p.URL, p.CreatedAt.Unix(),
+		p.ScopeOptions, boolToInt(p.UserToken), p.ShortDescription, p.LongDescription, boolToInt(p.AllowMultiple))
 	if err != nil && strings.Contains(err.Error(), "UNIQUE") {
 		return ErrProviderExists
 	}
@@ -120,7 +131,8 @@ func (s *Store) AddProvider(p *Provider) error {
 // identify it.
 func (s *Store) UpdateProvider(p *Provider) error {
 	res, err := s.db.Exec(updateProviderQuery, p.Label, p.Scopes, p.Issuer, p.AuthURL, p.TokenURL,
-		p.ClientID, p.ClientSecret, p.AuthParams, boolToInt(p.LongLived), p.Help, p.NameHint, p.URL, p.ID)
+		p.ClientID, p.ClientSecret, p.AuthParams, boolToInt(p.LongLived), p.Help, p.NameHint, p.URL,
+		p.ScopeOptions, boolToInt(p.UserToken), p.ShortDescription, p.LongDescription, boolToInt(p.AllowMultiple), p.ID)
 	if err != nil {
 		return err
 	}
@@ -186,13 +198,16 @@ func scanOneProvider(row scanner) (*Provider, error) {
 
 func scanProvider(row scanner) (*Provider, error) {
 	var p Provider
-	var longLived, createdAt int64
+	var longLived, userToken, allowMultiple, createdAt int64
 	if err := row.Scan(&p.ID, &p.OwnerID, &p.Name, &p.Label, &p.Kind, &p.Scopes,
 		&p.Issuer, &p.AuthURL, &p.TokenURL, &p.ClientID, &p.ClientSecret, &p.AuthParams,
-		&longLived, &p.Help, &p.NameHint, &p.URL, &createdAt); err != nil {
+		&longLived, &p.Help, &p.NameHint, &p.URL, &createdAt,
+		&p.ScopeOptions, &userToken, &p.ShortDescription, &p.LongDescription, &allowMultiple); err != nil {
 		return nil, err
 	}
 	p.LongLived = longLived != 0
+	p.UserToken = userToken != 0
+	p.AllowMultiple = allowMultiple != 0
 	p.CreatedAt = time.Unix(createdAt, 0)
 	return &p, nil
 }

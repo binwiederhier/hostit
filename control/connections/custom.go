@@ -25,17 +25,27 @@ var customNameRegex = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])$`
 type CustomSpec struct {
 	Label  string
 	Scopes []string
+	// ScopeOptions are the permission checkboxes this provider offers (each a
+	// labelled bundle of scopes). Empty means no picker -- the grant is Scopes
+	// exactly. On a built-in these REPLACE hostit's defaults.
+	ScopeOptions []ScopeOption
 	// Issuer stands in for the two endpoints: hostit reads the service's own
 	// authorization-server metadata to find them, the same walk it does for an
 	// MCP server. Resolving needs the network, so it happens on first use
 	// rather than here.
-	Issuer         string
-	AuthURL        string
-	TokenURL       string
-	AuthParams     map[string]string
-	LongLivedToken bool
-	Help           string
-	NameHint       string
+	Issuer           string
+	AuthURL          string
+	TokenURL         string
+	RevokeURL        string
+	RevokeAuth       string
+	AuthParams       map[string]string
+	LongLivedToken   bool
+	UserToken        bool
+	Help             string
+	NameHint         string
+	ShortDescription string
+	LongDescription  string
+	DisallowMultiple bool
 }
 
 // CustomProvider builds a provider from an operator's entry, refusing a
@@ -68,18 +78,25 @@ func CustomProvider(name string, spec CustomSpec) (Provider, error) {
 		}
 	}
 	return Provider{
-		Name:           name,
-		Label:          strings.TrimSpace(spec.Label),
-		Kind:           KindOAuth,
-		Scopes:         spec.Scopes,
-		Issuer:         spec.Issuer,
-		AuthURL:        spec.AuthURL,
-		TokenURL:       spec.TokenURL,
-		AuthParams:     spec.AuthParams,
-		LongLivedToken: spec.LongLivedToken,
-		Help:           spec.Help,
-		NameHint:       spec.NameHint,
-		Custom:         true,
+		Name:             name,
+		Label:            strings.TrimSpace(spec.Label),
+		Kind:             KindOAuth,
+		Scopes:           spec.Scopes,
+		ScopeOptions:     spec.ScopeOptions,
+		Issuer:           spec.Issuer,
+		AuthURL:          spec.AuthURL,
+		TokenURL:         spec.TokenURL,
+		RevokeURL:        spec.RevokeURL,
+		RevokeAuth:       spec.RevokeAuth,
+		AuthParams:       spec.AuthParams,
+		LongLivedToken:   spec.LongLivedToken,
+		UserToken:        spec.UserToken,
+		Help:             spec.Help,
+		NameHint:         spec.NameHint,
+		ShortDescription: spec.ShortDescription,
+		LongDescription:  spec.LongDescription,
+		DisallowMultiple: spec.DisallowMultiple,
+		Custom:           true,
 	}, nil
 }
 

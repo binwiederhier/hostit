@@ -91,6 +91,11 @@ func (m *Manager) RecordNodeStatus(nodeID string, hb *api.Heartbeat) error {
 			slog.Warn("Cannot record a node's machine stats", "node", nodeID, "error", err)
 		}
 	}
+	if hb.Version != "" {
+		if err := m.store.SetNodeVersion(nodeID, hb.Version); err != nil {
+			slog.Warn("Cannot record a node's version", "node", nodeID, "error", err)
+		}
+	}
 	// A node's ssh host/key or the fleet's apps may have changed -> the frontend
 	// (control itself) re-reconciles its routes, keys and stubs.
 	m.refreshSSHRelay()

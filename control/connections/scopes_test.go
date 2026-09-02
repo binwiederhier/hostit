@@ -73,6 +73,23 @@ func TestDefaultScopeKeys(t *testing.T) {
 	assert.Equal(t, []string{"public", "private", "search"}, userScopeProvider("").DefaultScopeKeys())
 }
 
+// SelectedScopeKeys derives, from an existing connection's stored scopes, which
+// option boxes were ticked -- so the edit dialog can show them.
+func TestSelectedScopeKeys(t *testing.T) {
+	t.Parallel()
+	p := userScopeProvider("")
+	// Granted public + baseline only -> just "public".
+	assert.Equal(t, []string{"public"},
+		p.SelectedScopeKeys([]string{"users:read", "channels:read", "channels:history"}))
+	// All three options' scopes present -> all three keys.
+	assert.ElementsMatch(t, []string{"public", "private", "search"},
+		p.SelectedScopeKeys([]string{"users:read", "channels:read", "channels:history", "groups:read", "groups:history", "search:read"}))
+	// A partial option (only channels:read, missing channels:history) is NOT on.
+	assert.Empty(t, p.SelectedScopeKeys([]string{"users:read", "channels:read"}))
+	// Baseline only -> nothing ticked.
+	assert.Empty(t, p.SelectedScopeKeys([]string{"users:read"}))
+}
+
 // A user token comes back under authed_user.access_token, NOT the top-level
 // access_token (which is the unused bot token); Exchange must store the former.
 func TestExchangeReadsUserToken(t *testing.T) {

@@ -47,6 +47,8 @@ type fakeAuthServer struct {
 	// token and refuses any older one.
 	rotateRefresh bool
 	live          string
+	// revoked records the tokens presented to /revoke.
+	revoked []string
 }
 
 func newFakeAuthServer(t *testing.T) *fakeAuthServer {
@@ -141,9 +143,24 @@ func newFakeAuthServer(t *testing.T) *fakeAuthServer {
 		}
 	})
 
+	mux.HandleFunc("/revoke", func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		f.mu.Lock()
+		f.revoked = append(f.revoked, r.Form.Get("token"))
+		f.mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
+	})
+
 	f.Server = httptest.NewServer(mux)
 	t.Cleanup(f.Close)
 	return f
+}
+
+func (f *fakeAuthServer) revokedTokens() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.revoked...)
 }
 
 func (f *fakeAuthServer) lastAuthorize() url.Values {

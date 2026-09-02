@@ -6,7 +6,7 @@ import (
 )
 
 const (
-	nodeCols               = `name, address, joined_at, last_seen, stats, ssh_host, host_key`
+	nodeCols               = `name, address, joined_at, last_seen, stats, ssh_host, host_key, version`
 	insertNodeQuery        = `INSERT INTO node (name, address, token_hash, token_expires_at, joined_at) VALUES (?, ?, ?, ?, 0)`
 	remintNodeQuery        = `UPDATE node SET address = ?, token_hash = ?, token_expires_at = ? WHERE name = ? AND joined_at = 0`
 	ensureNodeQuery        = `INSERT INTO node (name, address, token_hash, token_expires_at, joined_at) VALUES (?, ?, '', 0, ?) ON CONFLICT (name) DO UPDATE SET address = excluded.address`
@@ -17,6 +17,7 @@ const (
 	updateNodeStatsQuery   = `UPDATE node SET stats = ? WHERE name = ?`
 	updateNodeSSHHostQuery = `UPDATE node SET ssh_host = ? WHERE name = ?`
 	updateNodeHostKeyQuery = `UPDATE node SET host_key = ? WHERE name = ?`
+	updateNodeVersionQuery = `UPDATE node SET version = ? WHERE name = ?`
 	deleteNodeQuery        = `DELETE FROM node WHERE name = ?`
 )
 
@@ -71,6 +72,12 @@ func (s *Store) SetNodeStats(name string, stats string) error {
 	return err
 }
 
+// SetNodeVersion records the build a node reported on its last heartbeat.
+func (s *Store) SetNodeVersion(name, version string) error {
+	_, err := s.db.Exec(updateNodeVersionQuery, version, name)
+	return err
+}
+
 // SetNodeSSHHost records the hostname a node reports for SSH access to its apps.
 func (s *Store) SetNodeSSHHost(name, host string) error {
 	_, err := s.db.Exec(updateNodeSSHHostQuery, host, name)
@@ -97,7 +104,7 @@ type rowScanner interface {
 func scanNode(row rowScanner) (*Node, error) {
 	var joinedAt, lastSeen int64
 	n := &Node{}
-	if err := row.Scan(&n.Name, &n.Address, &joinedAt, &lastSeen, &n.Stats, &n.SSHHost, &n.HostKey); err != nil {
+	if err := row.Scan(&n.Name, &n.Address, &joinedAt, &lastSeen, &n.Stats, &n.SSHHost, &n.HostKey, &n.Version); err != nil {
 		return nil, ErrNodeNotFound
 	}
 	if joinedAt > 0 {

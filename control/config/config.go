@@ -254,15 +254,49 @@ type OAuthClient struct {
 	// just holding a client for one hostit already knows.
 	Label  string   `yaml:"label"`
 	Scopes []string `yaml:"scopes"`
+	// ScopeOptions are the permission checkboxes offered at connect time. On a
+	// built-in provider they REPLACE hostit's defaults (so an operator can offer
+	// write scopes, or trim the set); on a custom provider they define the
+	// picker. Empty leaves the defaults (built-in) or no picker (custom).
+	ScopeOptions []OAuthScopeOption `yaml:"scope-options"`
 	// Issuer stands in for AuthURL and TokenURL: hostit reads the service's own
 	// authorization-server metadata to find them.
 	Issuer         string            `yaml:"issuer"`
 	AuthURL        string            `yaml:"auth-url"`
 	TokenURL       string            `yaml:"token-url"`
+	RevokeURL      string            `yaml:"revoke-url"`
+	RevokeAuth     string            `yaml:"revoke-auth"`
 	AuthParams     map[string]string `yaml:"auth-params"`
 	LongLivedToken bool              `yaml:"long-lived-token"`
-	Help           string            `yaml:"help"`
-	NameHint       string            `yaml:"name-hint"`
+	// UserToken asks for a token that acts AS the person (Slack's user_scope),
+	// not a bot; scopes go in user_scope. Set it for a Slack-style personal
+	// connection defined as a custom provider.
+	UserToken bool   `yaml:"user-token"`
+	Help      string `yaml:"help"`
+	NameHint  string `yaml:"name-hint"`
+	// ShortDescription shows in the add dialog (what the connection is);
+	// LongDescription is handed to a granted app's assistant to document the API.
+	ShortDescription string `yaml:"short-description"`
+	LongDescription  string `yaml:"long-description"`
+	// AllowMultiple governs a second connection on the same OAuth app for one
+	// owner: true (the default when unset) allows it, false hides the provider
+	// once its app is connected. A pointer so "unset" stays the default rather
+	// than false. See connections.Provider.DisallowMultiple.
+	AllowMultiple *bool `yaml:"allow-multiple"`
+}
+
+// OAuthScopeOption is one operator-defined permission checkbox: a labelled
+// bundle of scopes a user grants or withholds at connect time.
+// OAuthScopeOption is one permission checkbox. The json tags let the same shape
+// serialize for the admin-page API and for a stored provider's scope_options
+// column -- connections.ScopeOption hides its Scopes from JSON (the dashboard
+// client sends keys, never scopes), so it cannot be used for either.
+type OAuthScopeOption struct {
+	Key     string   `yaml:"key" json:"key"`
+	Label   string   `yaml:"label" json:"label"`
+	Help    string   `yaml:"help" json:"help,omitempty"`
+	Scopes  []string `yaml:"scopes" json:"scopes"`
+	Default bool     `yaml:"default" json:"default,omitempty"`
 }
 
 // MCPServer is one named MCP server the operator offers.

@@ -447,10 +447,16 @@ p {
 
 .nav-brand {
   text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 8px;
+  margin-left: -8px; /* absorb the padding so the wordmark stays left-aligned */
+  border-radius: 6px;
 }
 
 .nav-brand:hover {
   text-decoration: none;
+  background: var(--surface-2); /* same hover as the nav menu items */
 }
 
 /* On phones, an app page shows its back+name here instead of the logo (below). */
@@ -1660,6 +1666,19 @@ th:last-child {
   background: var(--warn-bg);
   color: var(--text);
   border: 1px solid var(--warn-border);
+}
+
+/* Cluster role chips: the control-plane roles (control, proxy) read as one
+   accent family, set apart from the neutral node chips. Control is filled,
+   proxy outlined, so the two are still distinguishable. */
+.badge-role-control {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+.badge-role-proxy {
+  background: transparent;
+  color: var(--accent-strong);
+  box-shadow: inset 0 0 0 1px var(--accent);
 }
 
 /* The public/private choice, in the create dialog and in Settings. Both options
@@ -7092,4 +7111,117 @@ input[type="number"]::-webkit-inner-spin-button {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Add-connection warnings: a second connection on the same OAuth app shares one
+   grant. Warn (amber) explains it; deny (red) blocks it. */
+.conn-warn {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--warn-border);
+  background: var(--warn-bg);
+  border-radius: 6px;
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
+/* Admin custom-provider form: permission-checkbox editor + extras. */
+.conn-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 10px 0;
+  font-size: 0.9rem;
+}
+.conn-check input {
+  margin-top: 2px;
+}
+.conn-scopes-editor {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin: 12px 0;
+}
+.conn-scopes-editor legend {
+  padding: 0 6px;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+.conn-option-row {
+  display: grid;
+  grid-template-columns: 0.7fr 1fr 1.3fr auto auto;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.conn-option-default {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+.btn-small {
+  padding: 4px 10px;
+  font-size: 0.85rem;
+}
+@media (max-width: 640px) {
+  .conn-option-row {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+/* Inline warning inside a field label (e.g. changing a reference may break apps). */
+.field-warn {
+  color: var(--warn-border);
+  font-weight: 500;
+}
+
+/* Custom-provider form: required stars, muted field notes, an Advanced section,
+   a wider modal, and a full-width grid cell. */
+.modal-wider {
+  max-width: 720px;
+}
+.req {
+  color: var(--danger);
+  font-weight: 700;
+  margin-left: 1px;
+}
+.conn-field-note {
+  color: var(--muted);
+  font-weight: 400;
+  font-size: 0.85em;
+}
+.conn-field-wide {
+  grid-column: 1 / -1;
+}
+.conn-advanced {
+  margin: 14px 0 4px;
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+.conn-advanced > summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.92rem;
+  color: var(--muted);
+  list-style: revert;
+  margin-bottom: 10px;
+}
+.conn-advanced > summary:hover {
+  color: var(--text);
+}
+.conn-advanced[open] > summary {
+  margin-bottom: 12px;
+}
+/* "Add your own service" reads as an action row with a leading plus, like New app. */
+.conn-menu-add {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 500;
+  color: var(--accent-strong);
+}
+.conn-menu-add svg {
+  flex: none;
 }

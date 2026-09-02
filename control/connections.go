@@ -150,7 +150,7 @@ func (m *connectionManager) offered() []connections.Provider {
 	out := make([]connections.Provider, 0)
 	for _, p := range append(connections.All(), m.customProviders()...) {
 		if m.available(p) {
-			out = append(out, p)
+			out = append(out, m.applyScopeOverride(p))
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
@@ -185,7 +185,7 @@ func (m *connectionManager) saveOAuth(ctx context.Context, userID, slug, label s
 
 // reconnect replaces the credential on an existing connection, which is what a
 // re-consent is: same slug, same grants, fresh secret. Apps keep working.
-func (m *connectionManager) reconnect(ctx context.Context, c *store.Connection, p connections.Provider, code, redirectURL string) error {
+func (m *connectionManager) reconnect(ctx context.Context, c *store.Connection, p connections.Provider, code, redirectURL, scopes string) error {
 	id, secret := m.clientForUser(c.UserID, p.Name)
 	credential, refreshable, err := p.Exchange(ctx, m.client, id, secret, redirectURL, code)
 	if err != nil {
@@ -197,14 +197,20 @@ func (m *connectionManager) reconnect(ctx context.Context, c *store.Connection, 
 	}
 	m.expireCachedFor(c.ID)
 	_ = m.store.SetConnectionStatus(c.ID, store.ConnectionStatusOK) // a fresh consent clears needs-reconnect
-	// A re-consent keeps the same grants (not the provider baseline, which would
-	// wipe the options the owner chose), but the token kind can change if the
-	// operator toggled their app's expiry setting, so refresh the meta marker.
+	// Store the scopes THIS consent granted: on a plain refresh the handler
+	// re-sends the stored scopes (unchanged), and on an edit it sends the new
+	// set the owner just picked -- so the record follows what they chose. An
+	// empty value (a lost round-trip cookie) falls back to the old grant rather
+	// than wiping it. The token kind can also change if the operator toggled
+	// their app's expiry, so refresh the meta marker.
 	meta := c.Meta
 	if p.HybridToken {
 		meta = oauthTokenMeta(p, refreshable)
 	}
-	return m.store.UpdateConnectionSecret(c.ID, sealed, c.Scopes, meta)
+	if scopes == "" {
+		scopes = c.Scopes
+	}
+	return m.store.UpdateConnectionSecret(c.ID, sealed, scopes, meta)
 }
 
 // saveStatic stores a pasted credential. Only the field the provider names as
@@ -686,15 +692,22 @@ func (m *connectionManager) loadCustomProviders(conf *config.Config) error {
 			continue // just a client for a provider hostit already ships
 		}
 		p, err := connections.CustomProvider(name, connections.CustomSpec{
-			Label:          client.Label,
-			Scopes:         client.Scopes,
-			Issuer:         client.Issuer,
-			AuthURL:        client.AuthURL,
-			TokenURL:       client.TokenURL,
-			AuthParams:     client.AuthParams,
-			LongLivedToken: client.LongLivedToken,
-			Help:           client.Help,
-			NameHint:       client.NameHint,
+			Label:            client.Label,
+			Scopes:           client.Scopes,
+			ScopeOptions:     toScopeOptions(client.ScopeOptions),
+			Issuer:           client.Issuer,
+			AuthURL:          client.AuthURL,
+			TokenURL:         client.TokenURL,
+			RevokeURL:        client.RevokeURL,
+			RevokeAuth:       client.RevokeAuth,
+			AuthParams:       client.AuthParams,
+			LongLivedToken:   client.LongLivedToken,
+			UserToken:        client.UserToken,
+			Help:             client.Help,
+			NameHint:         client.NameHint,
+			ShortDescription: client.ShortDescription,
+			LongDescription:  client.LongDescription,
+			DisallowMultiple: client.AllowMultiple != nil && !*client.AllowMultiple,
 		})
 		if err != nil {
 			return fmt.Errorf("connections: %w", err)
@@ -717,7 +730,142 @@ func (m *connectionManager) lookup(name string) (connections.Provider, bool) {
 	if ok {
 		return m.resolved(p), true
 	}
-	return connections.Lookup(name)
+	p, ok = connections.Lookup(name)
+	if !ok {
+		return p, false
+	}
+	return m.applyScopeOverride(p), true
+}
+
+// applyScopeOverride replaces a BUILT-IN provider's permission checkboxes with
+// the operator's control.yml scope-options, if any are set -- so an operator can
+// offer write scopes or trim the default set without a code change. A custom
+// provider carries its own and is left alone. BOTH the offered list (what the UI
+// renders) and lookup (connect/reconnect) go through here, so they cannot
+// disagree about what a provider offers.
+func (m *connectionManager) applyScopeOverride(p connections.Provider) connections.Provider {
+	if p.Custom {
+		return p
+	}
+	client, has := m.conf.ConnectionClients[p.Name]
+	if !has {
+		return p
+	}
+	if len(client.ScopeOptions) > 0 {
+		p.ScopeOptions = toScopeOptions(client.ScopeOptions)
+	}
+	// An operator can flip a built-in's allow-multiple without a code change.
+	if client.AllowMultiple != nil {
+		p.DisallowMultiple = !*client.AllowMultiple
+	}
+	return p
+}
+
+// sharesOAuthApp reports whether the owner already has an OAuth connection
+// backed by the SAME app (client-id) as p. Two connections on one app share a
+// single grant at the provider, so this is what the multiple-connections policy
+// keys on. It spans provider names on purpose: slack-public and slack-private
+// pointing at one Slack app are the same grant even though the names differ.
+func (m *connectionManager) sharesOAuthApp(userID string, p connections.Provider) bool {
+	if p.Kind != connections.KindOAuth {
+		return false
+	}
+	id, _ := m.clientForUser(userID, p.Name)
+	if id == "" {
+		return false
+	}
+	existing, err := m.store.Connections(userID)
+	if err != nil {
+		return false
+	}
+	for _, c := range existing {
+		if c.Kind != store.ConnectionOAuth {
+			continue
+		}
+		if other, _ := m.clientForUser(userID, c.Provider); other != "" && other == id {
+			return true
+		}
+	}
+	return false
+}
+
+// anotherConnectionSharesApp is sharesOAuthApp for the revoke path: whether a
+// connection OTHER than exceptID shares p's app. On a provider that issues one
+// token per app+user (Slack), those connections share the very token about to be
+// revoked, so revoking would break them -- the revoke is skipped when true.
+func (m *connectionManager) anotherConnectionSharesApp(userID, exceptID string, p connections.Provider) bool {
+	if p.Kind != connections.KindOAuth {
+		return false
+	}
+	id, _ := m.clientForUser(userID, p.Name)
+	if id == "" {
+		return false
+	}
+	existing, err := m.store.Connections(userID)
+	if err != nil {
+		return false
+	}
+	for _, c := range existing {
+		if c.ID == exceptID || c.Kind != store.ConnectionOAuth {
+			continue
+		}
+		if other, _ := m.clientForUser(userID, c.Provider); other != "" && other == id {
+			return true
+		}
+	}
+	return false
+}
+
+// revokeDiscardedToken kills a token hostit is throwing away (a removed
+// connection, or the old token a reconnect replaced) at the provider, so a
+// discarded credential does not stay valid. Best-effort: a failure is logged and
+// swallowed. Skipped when the provider has no revoke endpoint, or when another
+// connection shares the same app -- on Slack that would be the same token, so
+// revoking it would break the sibling.
+func (m *connectionManager) revokeDiscardedToken(ctx context.Context, conn *store.Connection, p connections.Provider, token string) {
+	if p.RevokeURL == "" || token == "" {
+		return
+	}
+	if m.anotherConnectionSharesApp(conn.UserID, conn.ID, p) {
+		slog.Info("Not revoking token; another connection shares this app", "slug", conn.Slug, "provider", p.Name)
+		return
+	}
+	id, secret := m.clientForUser(conn.UserID, p.Name)
+	if err := p.Revoke(ctx, m.client, id, secret, token); err != nil {
+		slog.Warn("Best-effort token revoke failed", "slug", conn.Slug, "provider", p.Name, "error", err)
+		return
+	}
+	slog.Info("Revoked discarded token at provider", "slug", conn.Slug, "provider", p.Name)
+}
+
+// revokeConnectionToken resolves a connection's provider, opens its stored
+// token, and best-effort revokes it -- used when the connection is removed.
+func (m *connectionManager) revokeConnectionToken(ctx context.Context, conn *store.Connection) {
+	if conn.Kind != store.ConnectionOAuth {
+		return
+	}
+	p, ok := m.providerFor(conn.UserID, conn.Provider)
+	if !ok || p.RevokeURL == "" {
+		return
+	}
+	token, err := m.open(conn)
+	if err != nil {
+		return
+	}
+	m.revokeDiscardedToken(ctx, conn, p, token)
+}
+
+// toScopeOptions bridges the operator's config scope-options into the
+// connections layer's type (config must not import connections).
+func toScopeOptions(specs []config.OAuthScopeOption) []connections.ScopeOption {
+	if len(specs) == 0 {
+		return nil
+	}
+	out := make([]connections.ScopeOption, len(specs))
+	for i, s := range specs {
+		out[i] = connections.ScopeOption{Key: s.Key, Label: s.Label, Help: s.Help, Scopes: s.Scopes, Default: s.Default}
+	}
+	return out
 }
 
 // resolved fills in the endpoints of a provider whose operator gave an issuer

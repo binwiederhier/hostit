@@ -1018,8 +1018,13 @@ const MemberRow = ({ member, kind }) => {
       : kind === "proxy"
         ? `${member.routes || 0} routes`
         : "registry";
-  const detail =
-    kind === "node" ? member.address : shortVersion(member.version);
+  const detail = shortVersion(member.version);
+  const roleClass =
+    kind === "control"
+      ? " badge-role-control"
+      : kind === "proxy"
+        ? " badge-role-proxy"
+        : "";
   return (
     <tr>
       <td>
@@ -1031,8 +1036,9 @@ const MemberRow = ({ member, kind }) => {
         {detail && <div className="cell-muted mono member-detail">{detail}</div>}
       </td>
       <td>
-        <span className="badge">{kind}</span>
+        <span className={`badge${roleClass}`}>{kind}</span>
       </td>
+      <td className="cell-muted mono">{member.address || "--"}</td>
       <td className="cell-muted">{carrying}</td>
       <td>
         {stats.memory_total_mb ? (
@@ -1078,6 +1084,7 @@ const MemberTable = ({ members }) => (
         <tr>
           <th>Member</th>
           <th>Role</th>
+          <th>Address</th>
           <th>Carrying</th>
           <th>RAM</th>
           <th>Disk</th>
@@ -1117,9 +1124,10 @@ const Cluster = ({ status, error }) => {
       </div>
       <MemberTable
         members={[
+          // Control-plane roles first (control + proxy), then the app nodes.
           ...(status.control ? [{ ...status.control, kind: "control" }] : []),
-          ...(status.nodes || []).map((n) => ({ ...n, kind: "node" })),
           ...(status.proxies || []).map((p) => ({ ...p, kind: "proxy" })),
+          ...(status.nodes || []).map((n) => ({ ...n, kind: "node" })),
         ]}
       />
       <div className="cluster-stats">

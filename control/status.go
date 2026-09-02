@@ -2,6 +2,7 @@ package control
 
 import (
 	"encoding/json"
+	"net"
 	"sort"
 	"time"
 
@@ -41,9 +42,10 @@ type Status struct {
 	Snapshot time.Time       `json:"as_of"`
 }
 
-// MemberStatus is one node or proxy. Address is empty for a proxy (control
-// never dials one); Version and Routes are empty for a node, which reports
-// neither.
+// MemberStatus is one node or proxy. Address is this host's own IP for the
+// colocated local node/proxy and empty for a remote proxy (control never dials
+// one); Routes is empty for a node (only a proxy routes). Both a node and a
+// proxy report their build version.
 type MemberStatus struct {
 	Name     string    `json:"name"`
 	Address  string    `json:"address,omitempty"`
@@ -123,6 +125,9 @@ func ClusterStatus(s *store.Store, dataDir string, now time.Time) (*Status, erro
 		totals.Snapshots += len(snaps)
 	}
 
+	// The address of THIS box, shared by every colocated member (control itself,
+	// and the local node/proxy that never register one of their own).
+	local := localIP()
 	status := &Status{
 		Apps:     totals,
 		People:   &PeopleTotals{Total: len(users)},
@@ -130,12 +135,13 @@ func ClusterStatus(s *store.Store, dataDir string, now time.Time) (*Status, erro
 		// Measured here and now: control does not heartbeat itself, and both
 		// callers (the API inside control, the CLI on control's host) are
 		// looking at the same machine.
-		Control: &MemberStatus{Name: "control", Version: node.Version, LastSeen: now, Stats: stats.Measure(dataDir)},
+		Control: &MemberStatus{Name: "control", Address: local, Version: node.Version, LastSeen: now, Stats: stats.Measure(dataDir)},
 	}
 	for _, n := range nodes {
 		status.Nodes = append(status.Nodes, &MemberStatus{
 			Name:     n.Name,
-			Address:  n.Address,
+			Address:  nodeStatusAddress(n, local),
+			Version:  n.Version,
 			Apps:     perNode[n.Name],
 			LastSeen: n.LastSeen,
 			Stale:    stale(n.LastSeen, now),
@@ -145,6 +151,7 @@ func ClusterStatus(s *store.Store, dataDir string, now time.Time) (*Status, erro
 	for _, p := range proxies {
 		status.Proxies = append(status.Proxies, &MemberStatus{
 			Name:     p.Name,
+			Address:  proxyStatusAddress(p.Name, local),
 			Version:  p.Version,
 			Routes:   p.Routes,
 			LastSeen: p.LastSeen,
@@ -163,6 +170,43 @@ func ClusterStatus(s *store.Store, dataDir string, now time.Time) (*Status, erro
 	sort.Slice(status.Nodes, func(i, j int) bool { return status.Nodes[i].Name < status.Nodes[j].Name })
 	sort.Slice(status.Proxies, func(i, j int) bool { return status.Proxies[i].Name < status.Proxies[j].Name })
 	return status, nil
+}
+
+// localIP is the address other machines would reach this host at: the source IP
+// the kernel picks for the default route. Colocated members (control itself, and
+// the local node/proxy) never register an address of their own, so the status
+// shows this rather than a bare loopback. The UDP "dial" opens no connection --
+// it only runs the route lookup -- so nothing leaves the box; loopback is the
+// fallback when there is no default route (an isolated host).
+func localIP() string {
+	conn, err := net.Dial("udp", "8.8.8.8:80")
+	if err != nil {
+		return "127.0.0.1"
+	}
+	defer conn.Close()
+	if addr, ok := conn.LocalAddr().(*net.UDPAddr); ok && addr.IP != nil {
+		return addr.IP.String()
+	}
+	return "127.0.0.1"
+}
+
+// nodeStatusAddress is the address a caller would dial the node at. The local
+// node shares control's host and never registers one of its own, so it takes
+// control's address -- the same convention nodeAddress uses for routing.
+func nodeStatusAddress(n *store.Node, local string) string {
+	if n.Address == "" && n.Name == store.HostLocal {
+		return local
+	}
+	return n.Address
+}
+
+// proxyStatusAddress is the local proxy's address (it shares control's host);
+// control never dials a remote proxy, so those have none to show.
+func proxyStatusAddress(name, local string) string {
+	if name == store.ProxyLocal {
+		return local
+	}
+	return ""
 }
 
 // stale reports whether a member's last heartbeat is old enough to matter. A

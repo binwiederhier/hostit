@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"heckel.io/hostit/control/config"
 	"heckel.io/hostit/control/connections"
 	"heckel.io/hostit/http/outbound"
 	"heckel.io/hostit/store"
@@ -38,6 +39,13 @@ type apiProviderDefResponse struct {
 	URL        string            `json:"url,omitempty"`
 	Help       string            `json:"help,omitempty"`
 	NameHint   string            `json:"name_hint,omitempty"`
+	// Parity with config-defined providers, so the admin form can offer the same
+	// options and pre-fill them when editing.
+	ScopeOptions     []config.OAuthScopeOption `json:"scope_options,omitempty"`
+	UserToken        bool                      `json:"user_token,omitempty"`
+	ShortDescription string                    `json:"short_description,omitempty"`
+	LongDescription  string                    `json:"long_description,omitempty"`
+	AllowMultiple    bool                      `json:"allow_multiple"`
 	// Editable is false for hostit's own catalog and for control.yml entries:
 	// both exist outside the database and cannot be changed through the API.
 	Editable  bool      `json:"editable"`
@@ -72,6 +80,12 @@ type apiProviderRequest struct {
 	URL          string            `json:"url,omitempty"`
 	Help         string            `json:"help,omitempty"`
 	NameHint     string            `json:"name_hint,omitempty"`
+
+	ScopeOptions     []config.OAuthScopeOption `json:"scope_options,omitempty"`
+	UserToken        bool                      `json:"user_token,omitempty"`
+	ShortDescription string                    `json:"short_description,omitempty"`
+	LongDescription  string                    `json:"long_description,omitempty"`
+	AllowMultiple    *bool                     `json:"allow_multiple,omitempty"`
 }
 
 // handleProvidersList returns every definition this caller can see, at every
@@ -117,12 +131,19 @@ func providerRowView(row *store.Provider, c *caller, redirect string) *apiProvid
 	if row.AuthParams != "" {
 		_ = json.Unmarshal([]byte(row.AuthParams), &params)
 	}
+	var scopeOpts []config.OAuthScopeOption
+	if row.ScopeOptions != "" {
+		_ = json.Unmarshal([]byte(row.ScopeOptions), &scopeOpts)
+	}
 	return &apiProviderDefResponse{
 		Name: row.Name, Label: row.Label, Kind: row.Kind, Scope: scope,
 		Scopes: splitScopes(row.Scopes), Issuer: row.Issuer,
 		AuthURL: row.AuthURL, TokenURL: row.TokenURL, ClientID: row.ClientID,
 		HasSecret: row.ClientSecret != "", AuthParams: params, LongLived: row.LongLived,
 		URL: row.URL, Help: row.Help, NameHint: row.NameHint,
+		ScopeOptions: scopeOpts, UserToken: row.UserToken,
+		ShortDescription: row.ShortDescription, LongDescription: row.LongDescription,
+		AllowMultiple: row.AllowMultiple,
 		// An instance definition is the admin's to change; a personal one is
 		// its owner's. Nobody edits somebody else's.
 		Editable:    (row.OwnerID == "" && c.isAdmin()) || row.OwnerID == c.userID(),
@@ -242,9 +263,11 @@ func (s *Server) providerRowFrom(name, ownerID string, req apiProviderRequest) (
 		// Validated by the same code a control.yml entry goes through, so the
 		// rules cannot drift between the two ways of defining one.
 		if _, err := connections.CustomProvider(name, connections.CustomSpec{
-			Label: row.Label, Scopes: req.Scopes, Issuer: req.Issuer,
-			AuthURL: req.AuthURL, TokenURL: req.TokenURL,
-			AuthParams: req.AuthParams, LongLivedToken: req.LongLived,
+			Label: row.Label, Scopes: req.Scopes, ScopeOptions: toScopeOptions(req.ScopeOptions),
+			Issuer: req.Issuer, AuthURL: req.AuthURL, TokenURL: req.TokenURL,
+			AuthParams: req.AuthParams, LongLivedToken: req.LongLived, UserToken: req.UserToken,
+			ShortDescription: req.ShortDescription, LongDescription: req.LongDescription,
+			DisallowMultiple: req.AllowMultiple != nil && !*req.AllowMultiple,
 		}); err != nil {
 			return nil, err
 		}
@@ -275,6 +298,16 @@ func (s *Server) providerRowFrom(name, ownerID string, req apiProviderRequest) (
 			}
 			row.AuthParams = string(b)
 		}
+		if len(req.ScopeOptions) > 0 {
+			b, err := json.Marshal(req.ScopeOptions)
+			if err != nil {
+				return nil, err
+			}
+			row.ScopeOptions = string(b)
+		}
+		row.UserToken = req.UserToken
+		row.ShortDescription, row.LongDescription = req.ShortDescription, req.LongDescription
+		row.AllowMultiple = req.AllowMultiple == nil || *req.AllowMultiple
 	default:
 		return nil, errors.New(`a provider is "oauth" or "mcp"`)
 	}

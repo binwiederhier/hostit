@@ -30,6 +30,7 @@ func init() {
 		Scopes:     []string{"https://www.googleapis.com/auth/calendar.readonly", "https://www.googleapis.com/auth/userinfo.email"},
 		AuthURL:    "https://accounts.google.com/o/oauth2/v2/auth",
 		TokenURL:   "https://oauth2.googleapis.com/token",
+		RevokeURL:  "https://oauth2.googleapis.com/revoke",
 		AuthParams: google,
 		NameHint:   "Work calendar",
 		Help:       "Read-only access to one Google account's calendars. Connect it twice to cross-reference two of them.",
@@ -41,6 +42,7 @@ func init() {
 		Scopes:     []string{"https://www.googleapis.com/auth/gmail.readonly", "https://www.googleapis.com/auth/userinfo.email"},
 		AuthURL:    "https://accounts.google.com/o/oauth2/v2/auth",
 		TokenURL:   "https://oauth2.googleapis.com/token",
+		RevokeURL:  "https://oauth2.googleapis.com/revoke",
 		AuthParams: google,
 		NameHint:   "Work mail",
 		Help:       "Read-only access to one Gmail mailbox. A restricted scope: an instance offering this publicly needs Google's CASA review.",
@@ -51,15 +53,23 @@ func init() {
 	// symmetric with "slack-user"; a store migration rewrites connections made
 	// under the old bare "slack" id, and operators rename the config key to match.
 	Register(Provider{
-		Name:           "slack-bot",
-		Label:          "Slack (bot)",
-		Kind:           KindOAuth,
-		Scopes:         []string{"channels:read", "channels:history", "chat:write", "users:read"},
-		AuthURL:        "https://slack.com/oauth/v2/authorize",
-		TokenURL:       "https://slack.com/api/oauth.v2.access",
-		LongLivedToken: true,
-		NameHint:       "Team Slack",
-		Help:           "A shared bot in one Slack workspace: it reads and posts in the channels it is invited to. To read the channels you are already in as yourself, use Slack (personal).",
+		Name:             "slack-bot",
+		Label:            "Slack (bot)",
+		Kind:             KindOAuth,
+		Scopes:           []string{"channels:read", "channels:history", "chat:write", "users:read"},
+		AuthURL:          "https://slack.com/oauth/v2/authorize",
+		TokenURL:         "https://slack.com/api/oauth.v2.access",
+		RevokeURL:        "https://slack.com/api/auth.revoke",
+		RevokeAuth:       "bearer",
+		LongLivedToken:   true,
+		DisallowMultiple: true, // one Slack app = one bot token per workspace
+		NameHint:         "Team Slack",
+		Help:             "A shared bot in one Slack workspace: it reads and posts in the channels it is invited to. To read the channels you are already in as yourself, use Slack (personal).",
+		ShortDescription: "A shared bot that reads and posts in the channels it's invited to.",
+		LongDescription: "Slack Web API, base https://slack.com/api. Authenticate with the bot token (xoxb) as a Bearer header. " +
+			"The bot only sees channels it has been invited to. Common methods: conversations.list, conversations.history, " +
+			"chat.postMessage, users.info. Responses are JSON with {\"ok\": bool}; on ok=false read \"error\". Rate-limited per " +
+			"method (HTTP 429 with Retry-After).",
 	})
 
 	// -- Slack (personal). A USER token (xoxp-, via user_scope), so it acts as
@@ -75,25 +85,46 @@ func init() {
 		LongLivedToken: true,
 		Scopes:         []string{"users:read"},
 		ScopeOptions: []ScopeOption{
-			{Key: "public", Label: "Public channels", Help: "the public channels you are in", Scopes: []string{"channels:read", "channels:history"}, Default: true},
-			{Key: "private", Label: "Private channels", Help: "private channels you are a member of", Scopes: []string{"groups:read", "groups:history"}, Default: true},
-			{Key: "search", Label: "Search across channels", Help: "search your messages across every channel you can see", Scopes: []string{"search:read"}, Default: true},
+			{Key: "public", Label: "Public channels", Help: "read the public channels you are in", Scopes: []string{"channels:read", "channels:history"}, Default: true},
+			{Key: "private", Label: "Private channels", Help: "read private channels you are a member of", Scopes: []string{"groups:read", "groups:history"}},
+			{Key: "dms", Label: "Direct messages", Help: "read your direct messages", Scopes: []string{"im:read", "im:history"}},
+			{Key: "group-dms", Label: "Group direct messages", Help: "read your group DMs", Scopes: []string{"mpim:read", "mpim:history"}},
+			{Key: "search", Label: "Search", Help: "search your messages across every channel you can see", Scopes: []string{"search:read"}},
+			{Key: "post", Label: "Post messages", Help: "post and reply in threads as you", Scopes: []string{"chat:write"}},
+			{Key: "react", Label: "Add reactions", Help: "add and remove emoji reactions", Scopes: []string{"reactions:write"}},
+			{Key: "read-reactions", Label: "Read reactions", Help: "see who reacted to a message", Scopes: []string{"reactions:read"}},
+			{Key: "files", Label: "Files", Help: "read and upload files", Scopes: []string{"files:read", "files:write"}},
 		},
-		AuthURL:  "https://slack.com/oauth/v2/authorize",
-		TokenURL: "https://slack.com/api/oauth.v2.access",
-		NameHint: "My Slack",
-		Help:     "Reads the Slack channels you are already in and searches across them, as you -- no bot to invite. To post as a shared bot, use Slack (bot) instead.",
+		AuthURL:          "https://slack.com/oauth/v2/authorize",
+		TokenURL:         "https://slack.com/api/oauth.v2.access",
+		RevokeURL:        "https://slack.com/api/auth.revoke",
+		RevokeAuth:       "bearer",
+		DisallowMultiple: true, // one Slack app = one grant per user; a 2nd connection only aliases it
+		NameHint:         "My Slack",
+		Help:             "Reads the Slack channels you are already in and searches across them, as you -- no bot to invite. To post as a shared bot, use Slack (bot) instead.",
+		ShortDescription: "Read the Slack channels you're in and search them, as yourself.",
+		LongDescription: "Slack Web API, base https://slack.com/api. Authenticate with the token as a Bearer header " +
+			"(Authorization: Bearer <token>) or as the `token` form field; it is a user token (xoxp) that acts as the " +
+			"connecting person. Common methods: conversations.list, conversations.history, conversations.replies, " +
+			"search.messages (needs the search scope), users.info. Every response is JSON with {\"ok\": bool}; on ok=false " +
+			"read the \"error\" field. Methods are rate-limited (HTTP 429 with Retry-After).",
 	})
 
 	// -- Discord. Rotates its refresh token on every use, which is exactly why
 	// Provider.Refresh reports the new one and the caller stores it.
 	Register(Provider{
-		Name:     "discord",
-		Label:    "Discord",
-		Kind:     KindOAuth,
-		Scopes:   []string{"identify", "guilds"},
-		AuthURL:  "https://discord.com/oauth2/authorize",
-		TokenURL: "https://discord.com/api/oauth2/token",
+		Name:      "discord",
+		Label:     "Discord",
+		Kind:      KindOAuth,
+		Scopes:    []string{"identify"}, // baseline: who you are, so a name resolves
+		AuthURL:   "https://discord.com/oauth2/authorize",
+		TokenURL:  "https://discord.com/api/oauth2/token",
+		RevokeURL: "https://discord.com/api/oauth2/token/revoke", // client-authenticated (RFC 7009)
+		ScopeOptions: []ScopeOption{
+			{Key: "guilds", Label: "Your servers", Help: "which Discord servers you are a member of", Scopes: []string{"guilds"}, Default: true},
+			{Key: "email", Label: "Email address", Help: "the email on your Discord account", Scopes: []string{"email"}},
+			{Key: "connections", Label: "Linked accounts", Help: "the accounts you have linked to Discord", Scopes: []string{"connections"}},
+		},
 		NameHint: "My Discord",
 		Help:     "Your Discord profile and which servers you are in. Reading a server's channels or messages needs a bot token, not this -- see Discord bot.",
 	})

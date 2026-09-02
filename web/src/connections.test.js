@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { suggestSlug, splitByKind, menuProviders, slugify, filterProviders, filterTools, defaultScopeKeys } from "./connections";
+import { suggestSlug, splitByKind, menuProviders, slugify, filterProviders, filterTools, defaultScopeKeys, filterSlugInput, sameScopeKeys, connectionLabel } from "./connections";
 
 describe("suggestSlug", () => {
   it("suggests the provider's own name when nothing uses it", () => {
@@ -204,5 +204,62 @@ describe("defaultScopeKeys", () => {
   it("is empty for a provider with no options", () => {
     expect(defaultScopeKeys({ name: "slack" })).toEqual([]);
     expect(defaultScopeKeys(null)).toEqual([]);
+  });
+});
+
+// The reference field filters what it accepts as you type, so an invalid
+// character never lands in the box. Unlike slugify it must NOT collapse or trim
+// dashes -- doing that mid-word fights the person typing "work-".
+describe("filterSlugInput", () => {
+  it("lowercases letters and drops anything that is not a-z, 0-9 or dash", () => {
+    expect(filterSlugInput("Work Calendar")).toBe("workcalendar");
+    expect(filterSlugInput("phil's_key!")).toBe("philskey");
+    expect(filterSlugInput("UPPER")).toBe("upper");
+  });
+
+  it("keeps dashes as typed without collapsing or trimming them", () => {
+    expect(filterSlugInput("-work-")).toBe("-work-");
+    expect(filterSlugInput("a--b")).toBe("a--b");
+  });
+
+  it("caps the length at 32", () => {
+    expect(filterSlugInput("a".repeat(60))).toHaveLength(32);
+  });
+
+  it("copes with an empty value", () => {
+    expect(filterSlugInput("")).toBe("");
+    expect(filterSlugInput(undefined)).toBe("");
+  });
+});
+
+// Changing the read scopes on an existing connection reconnects it, so the edit
+// dialog must know whether the selection actually differs. Order and duplicates
+// do not matter -- it is a set.
+describe("sameScopeKeys", () => {
+  it("is true regardless of order", () => {
+    expect(sameScopeKeys(["public", "search"], ["search", "public"])).toBe(true);
+  });
+
+  it("is false when the sets differ", () => {
+    expect(sameScopeKeys(["public"], ["public", "search"])).toBe(false);
+    expect(sameScopeKeys(["public", "dms"], ["public", "search"])).toBe(false);
+  });
+
+  it("treats two empty selections as the same", () => {
+    expect(sameScopeKeys([], [])).toBe(true);
+    expect(sameScopeKeys(null, undefined)).toBe(true);
+  });
+});
+
+describe("connectionLabel", () => {
+  it("keeps what the user typed", () => {
+    expect(connectionLabel("Work Slack", { name_hint: "My Slack", label: "Slack" })).toBe("Work Slack");
+  });
+  it("falls back to the placeholder (name_hint) when left blank", () => {
+    expect(connectionLabel("", { name_hint: "My Slack", label: "Slack" })).toBe("My Slack");
+    expect(connectionLabel("   ", { name_hint: "My Slack", label: "Slack" })).toBe("My Slack");
+  });
+  it("falls back to the provider label when there is no name_hint", () => {
+    expect(connectionLabel("", { label: "Slack" })).toBe("Slack");
   });
 });

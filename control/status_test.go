@@ -111,3 +111,49 @@ func TestClusterStatusStillFlagsATrulyUnplacedApp(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 1, status.Apps.Unplaced)
 }
+
+// A colocated member has no registered address of its own, so the status shows
+// this host's IP; a remote node keeps the address it registered.
+func TestStatusAddressHelpersUseTheLocalIPForColocatedMembers(t *testing.T) {
+	t.Parallel()
+	const ip = "192.168.7.20"
+	assert.Equal(t, ip, nodeStatusAddress(&store.Node{Name: store.HostLocal, Address: ""}, ip), "the local node takes this host's IP")
+	assert.Equal(t, "10.0.0.2", nodeStatusAddress(&store.Node{Name: "worker-1", Address: "10.0.0.2"}, ip), "a remote node keeps its registered address")
+	assert.Equal(t, ip, proxyStatusAddress(store.ProxyLocal, ip), "the local proxy takes this host's IP")
+	assert.Empty(t, proxyStatusAddress("edge-1", ip), "a remote proxy has no address to show")
+}
+
+// Control and the colocated local node/proxy all report the one machine they
+// share; a remote node keeps its own address. The exact IP depends on the host,
+// so this pins the relationship rather than a literal.
+func TestClusterStatusReportsThisHostForColocatedMembers(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	st := s.apps.Store()
+	now := time.Now()
+	require.NoError(t, st.EnsureNode(store.HostLocal, "")) // colocated: no address of its own
+	require.NoError(t, st.SetNodeSeen(store.HostLocal, now))
+	require.NoError(t, st.EnsureNode("worker-1", "10.0.0.2"))
+	require.NoError(t, st.EnsureProxy(store.ProxyLocal))
+
+	status, err := ClusterStatus(st, t.TempDir(), now)
+	require.NoError(t, err)
+
+	host := status.Control.Address
+	require.NotEmpty(t, host, "control reports the address of its own box")
+	require.Len(t, status.Proxies, 1)
+	assert.Equal(t, host, status.Proxies[0].Address, "the local proxy shares control's box")
+	var localNode, remoteNode *MemberStatus
+	for _, n := range status.Nodes {
+		switch n.Name {
+		case store.HostLocal:
+			localNode = n
+		case "worker-1":
+			remoteNode = n
+		}
+	}
+	require.NotNil(t, localNode)
+	require.NotNil(t, remoteNode)
+	assert.Equal(t, host, localNode.Address, "the local node shares control's box")
+	assert.Equal(t, "10.0.0.2", remoteNode.Address, "a remote node keeps its registered address")
+}

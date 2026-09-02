@@ -468,6 +468,22 @@ var (
 		// that has no account yet; it becomes a real app_viewer grant when they
 		// first sign in (260827).
 		`CREATE TABLE pending_viewer (app_id TEXT NOT NULL, email TEXT NOT NULL, created_at INTEGER NOT NULL, PRIMARY KEY (app_id, email));`,
+		// A node reports its build version on each heartbeat, like a proxy already
+		// does; persist it so the cluster view can show it per row (260902).
+		`ALTER TABLE node ADD COLUMN version TEXT NOT NULL DEFAULT '';`,
+		// Custom (admin-page) providers reach parity with config-defined ones:
+		// permission checkboxes, a user token, descriptions, and the allow-multiple
+		// flag, none of which a stored provider could carry before (260902).
+		`ALTER TABLE provider ADD COLUMN scope_options TEXT NOT NULL DEFAULT '';
+		 ALTER TABLE provider ADD COLUMN user_token INTEGER NOT NULL DEFAULT 0;
+		 ALTER TABLE provider ADD COLUMN short_description TEXT NOT NULL DEFAULT '';
+		 ALTER TABLE provider ADD COLUMN long_description TEXT NOT NULL DEFAULT '';
+		 ALTER TABLE provider ADD COLUMN allow_multiple INTEGER NOT NULL DEFAULT 1;`,
+		// Heal: a stage database ran the slot above with an earlier "multiple_
+		// connections TEXT" column instead of allow_multiple, so add it where it is
+		// missing. Idempotent -- the duplicate-column error is tolerated where the
+		// slot above already created it (260902).
+		`ALTER TABLE provider ADD COLUMN allow_multiple INTEGER NOT NULL DEFAULT 1;`,
 	}
 )
 
