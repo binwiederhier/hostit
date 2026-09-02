@@ -7,6 +7,40 @@ changed rather than what an operator had to do about it; from v0.15.0 on, each
 release is written down as it is cut. Anything that changes a config file, a
 default, or on-disk state is called out as **Breaking** or **Upgrade note**.
 
+## v0.37.0 (2026-09-02)
+
+Connections gain permission checkboxes, editable and genuinely narrowable
+permissions, token revocation, and richer provider configuration.
+
+- **Permission checkboxes.** A provider can offer scope checkboxes in the add
+  dialog. Slack (personal) now offers nine (public/private channels, DMs, group
+  DMs, search, post, reactions, read-reactions, files), only public ticked by
+  default. Define checkboxes on any provider with `scope-options`; on a built-in
+  they replace hostit's defaults.
+- **Edit and narrow.** A connection's permissions can be edited after the fact;
+  saving reconnects. Reducing scopes now genuinely narrows the token: hostit
+  revokes the old token before re-consent, so a provider that unions past grants
+  (Slack) is deauthorized first and the fresh consent grants only what is kept.
+- **Revocation.** Removing a connection, or editing its scopes, revokes the old
+  token at the provider (Slack, Discord, Google) so a discarded credential does
+  not stay valid. Best-effort, and skipped when another connection shares the app.
+- **allow-multiple.** A provider can forbid a second connection on the same OAuth
+  app for one owner (the Slack default, where two connections share one token).
+  Configure with `allow-multiple: true|false`.
+- **Descriptions.** `short-description` shows in the add dialog; `long-description`
+  is handed to a granted app's assistant to document the underlying API.
+- **Admin provider form** now supports scope-options, user-token, descriptions and
+  allow-multiple, matching what control.yml can define.
+- **Admin cluster view**: control and proxy on top, role-colored chips, an IP
+  column, and each member's build version; nodes now report their version.
+
+**Upgrade note:** to offer the new Slack (personal) checkboxes, add the matching
+User Token Scopes to your Slack app (im:read, im:history, mpim:read, mpim:history,
+chat:write, reactions:write, reactions:read, files:read, files:write) -- ticking a
+box whose scope the app does not declare fails consent. Existing connections keep
+what they had. A storage migration runs before serving on the first start after
+the upgrade (a brief outage).
+
 ## v0.36.4 (2026-09-01)
 
 Complete the v0.36.3 fix: app users are homed under the runtime tree
