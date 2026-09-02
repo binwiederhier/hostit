@@ -96,15 +96,37 @@ connections:
     label: Acme                  # marks this as a provider, not just a client
     client-id: ...
     client-secret: ...
-    scopes: [read, write]
+    scopes: [read, write]        # the baseline, always granted
     auth-url: https://acme.example.com/oauth/authorize
     token-url: https://acme.example.com/oauth/token
     # or, instead of the two URLs:
     # issuer: https://acme.example.com
+    # revoke-url: https://acme.example.com/oauth/revoke   # RFC 7009 form-POST
+    # revoke-auth: bearer        # "bearer" (Slack) or default (client creds)
+    # long-lived-token: false    # true if its token never expires
+    # user-token: false          # true for a Slack-style act-as-the-person token
+    # allow-multiple: true       # false = one connection per app (Slack-shaped)
+    # short-description: Read your Acme projects.
+    # long-description: >-       # handed to a granted app's assistant
+    #   REST API at https://api.acme.example, Bearer <token>. GET /projects ...
+    # scope-options:             # permission checkboxes; on a BUILT-IN these REPLACE the defaults
+    #   - { key: projects, label: Read projects, scopes: [projects:read], default: true }
+    #   - { key: write,    label: Write,         scopes: [projects:write] }
 ```
 
 `label` is the marker because it is the one field a custom entry cannot do
-without and the one a client-only entry has no reason to set.
+without and the one a client-only entry has no reason to set. The full field list
+lives in `control.yml.example`; each maps one-to-one to a `Provider` field
+(`RevokeURL`, `UserToken`, `DisallowMultiple` = `allow-multiple: false`,
+`ShortDescription`, `LongDescription`, `ScopeOptions`).
+
+**The admin-page (DB) tier reaches the same parity.** A custom provider defined
+through the API and stored in the `provider` table now carries `scope_options`,
+`user_token`, `short_description`, `long_description` and `allow_multiple` columns
+(see `store/provider.go`), and is validated through the SAME `CustomProvider` code
+a `control.yml` entry goes through -- so the two ways of defining a provider
+cannot drift. `server_handler_providers.go` reads and writes those fields, and the
+client secret is still never returned (`HasSecret` stands in for it).
 
 Custom providers are held on the connectionManager (`m.custom`), NOT registered
 into the connections package's global catalog. Registering into a global at
@@ -262,16 +284,143 @@ a refresh token, Atlassian needs `audience=api.atlassian.com` and
 
 **User tokens are a second Slack-shaped quirk, and also a field.** The `slack-bot`
 provider is a bot token; `slack-user` acts as the person who connected it. For a
-user-token provider the authorize URL sends its scopes in `user_scope` rather
-than `scope`, and the token hostit keeps is `authed_user.access_token` from the
-`oauth.v2.access` response, NOT the top-level `access_token` (which is the bot
-token, empty for a user-only app). Like the bot token it does not expire and has
-no refresh token, so it too is a `Provider.LongLivedToken` and is stored as-is.
-Its read grant is chosen by the owner at connect time: the dialog sends back
-option KEYS (public channels, private channels, search), which the server maps to
-scopes against the provider's own allowlist and refuses an unknown key, so a
-crafted request cannot over-grant. `users:read` is always granted so ids resolve
-to names, and there are deliberately no direct-message scopes.
+user-token provider (`Provider.UserToken`) the authorize URL sends its scopes in
+`user_scope` rather than `scope`, and the token hostit keeps is
+`authed_user.access_token` from the `oauth.v2.access` response, NOT the top-level
+`access_token` (which is the bot token, empty for a user-only app). Like the bot
+token it does not expire and has no refresh token, so it too is a
+`Provider.LongLivedToken` and is stored as-is. Its read grant is the owner's to
+narrow at connect time through the permission checkboxes below -- `users:read` is
+the baseline, always granted so ids resolve to names. See "Scopes and permission
+options" and "The Slack model, in full".
+
+## Scopes and permission options
+
+An OAuth provider can ask for a fixed set of scopes, or offer the owner
+CHECKBOXES to pick from. The mechanism is `Provider.ScopeOptions`: each option
+(`ScopeOption`) is a labelled bundle -- `Key`, `Label`, `Help`, the `Scopes` it
+grants, and whether it is `Default`-checked. The add dialog renders the boxes;
+what it sends back is the list of KEYS, never raw scopes. The raw scopes never
+cross from the client, so a crafted request cannot smuggle in a scope the
+provider never offered.
+
+`Provider.Scopes` is then the BASELINE, always granted, and `ResolveScopes(keys)`
+returns baseline + every selected option's scopes, deduplicated and in order. An
+unknown key is an error rather than a silent drop. The reverse,
+`SelectedScopeKeys(granted)`, derives which boxes an existing connection's stored
+scopes cover (an option is "on" when every scope it grants is present) -- that is
+how the edit dialog knows what to pre-tick and a reconnect what to resend.
+
+Built-in **Slack personal** (`slack-user`) is the case this exists for. It offers
+NINE options -- public channels, private channels, DMs, group DMs, search, post,
+react, read-reactions, files -- with only public channels checked by default.
+`users:read` is the baseline (always granted, so ids resolve to names). Discord
+offers three (your servers, email, linked accounts), servers by default.
+
+An operator can override a built-in's checkboxes from config: `scope-options`
+under a built-in provider REPLACES its defaults (to offer write scopes, or trim
+the set), and on a custom provider they DEFINE the picker. `applyScopeOverride`
+does the substitution, and BOTH the offered list and the connect/reconnect lookup
+go through it, so the UI and the server cannot disagree about what a provider
+offers.
+
+## Editable permissions, and how narrowing actually works
+
+The edit dialog shows a connection's permission checkboxes, rendered from the
+connection's OWN `scope_options` -- carried on the connection response so the
+dialog works even when the provider has dropped out of the offered list (see
+allow-multiple below). Saving a changed set RECONNECTS: it re-consents in place,
+same slug and grants, and records the scopes THIS consent granted.
+
+Changing the scopes triggers **revoke-before-reconsent**. Before sending the
+owner to consent, hostit revokes the current token, which DEAUTHORIZES the app at
+the provider; the fresh consent then grants exactly the new set. This is what
+makes NARROWING work on Slack, which otherwise UNIONS every scope an app+user was
+ever granted -- re-consenting for a smaller set against a still-authorized app
+hands back a token as broad as before. Revoking first is the same thing
+remove+re-add does, without losing the slug or the grants. Empirically confirmed:
+without the revoke, re-consent unions; with revoke-before, it narrows.
+
+A same-set reconnect -- a plain "fix needs-reconnect" that changes nothing --
+SKIPS the revoke (`sameScopes` compares the sets ignoring order), so a working
+token is not thrown away when nothing is changing.
+
+## Revoking a discarded token
+
+`Provider.RevokeURL` is pure data, like everything else. hostit calls it to kill
+a token it is THROWING AWAY, so a discarded credential does not stay valid at the
+provider. Two moments discard a token:
+
+- **On connection delete** (`handleConnectionDelete`) -- done first, while the
+  credential is still readable, before the row goes.
+- **On reconnect when the scopes CHANGE** (`handleConnectionReconnect`) -- the
+  revoke-before-reconsent above.
+
+`RevokeAuth` picks how the request authenticates: `"bearer"` sends the token
+itself as a Bearer header (Slack's `auth.revoke`); anything else sends the client
+id/secret with the token in the body (RFC 7009, which Discord wants). Wired for
+`slack-user`, `slack-bot`, `discord`, `google-calendar` and `gmail`.
+
+It is **best-effort hygiene**: a failure is logged and swallowed, never surfaced
+to the owner. And it is **guarded by `anotherConnectionSharesApp`** -- hostit
+never revokes a token a sibling connection on the same OAuth app shares. Slack
+issues one token per app+user, so two connections on one app hold the very same
+credential; revoking it for one would break the other.
+
+**Known gaps.** A pasted (static) credential cannot be revoked -- hostit did not
+mint it and has no endpoint. And **GitHub is not wired**: its revoke API is
+`DELETE /applications/{client_id}/token` with basic auth and a JSON body, a
+different shape from the generic form-POST `Revoke` here, so a discarded GitHub
+token is left for the owner to revoke rather than half-supported.
+
+## One connection, or several: allow-multiple
+
+By default an owner may attach the SAME provider more than once -- a work calendar
+and a personal one are two Google connections on one client. Some providers must
+not: `Provider.DisallowMultiple` (config `allow-multiple: false`) refuses a SECOND
+connection backed by the same OAuth app (same client-id) for one owner.
+
+Both Slack built-ins set it. Slack issues ONE token per app+user, so two
+connections on one Slack app are the SAME credential -- an alias -- and letting
+the owner pick different scopes for each would be an illusion (the second
+re-consent unions into the first's grant). A disallow-multiple provider is dropped
+from the offered list once its app is connected (`sharesOAuthApp`), and a direct
+API call to add a second gets a 409. For genuinely independent scopes on Slack you
+need SEPARATE Slack apps -- separate client-ids, which are separate grants.
+
+## Descriptions: short for people, long for the app
+
+Two description fields, at two audiences:
+
+- **`ShortDescription`** (config `short-description`) is one line in the add
+  dialog and the offered list, saying what the connection IS -- distinct from
+  `Help`, which says where to get the credential.
+- **`LongDescription`** (config `long-description`) documents the underlying API
+  and is handed to the CONTAINER's connections endpoint, so a granted app's
+  assistant can learn how to call the service -- base URL, auth header, common
+  methods, quirks -- without being told out of band. The Slack rows carry a
+  worked example.
+
+## The Slack model, in full
+
+Slack is the provider whose shape drove most of the above, so it is worth stating
+plainly. A Slack app issues:
+
+- ONE **user** token per (app, user) -- `xoxp-`, requested via `user_scope`.
+  `slack-user`.
+- ONE **bot** token per (app, workspace) -- `xoxb-`. `slack-bot`.
+
+Re-consenting UNIONS the scopes previously authorized for that app+user: you
+cannot shrink a grant by asking for less. `auth.revoke` both kills the token AND
+(empirically) deauthorizes the app for that user -- which is why
+revoke-before-reconsent narrows, and why remove+re-add narrows. Those two facts
+together are why the Slack built-ins disallow multiple (one credential per app)
+and why hostit revokes before a scope change.
+
+`user-token` (config `user-token`, `Provider.UserToken`) is Slack-specific: the
+scopes go in `user_scope`, and the kept token comes back under
+`authed_user.access_token` rather than the top-level `access_token` (the bot
+token, empty for a user-only app).
 
 ## Flows
 

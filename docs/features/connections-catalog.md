@@ -46,10 +46,14 @@ flow.
 
 **`slack-bot` and `slack-user` are the same split.** `slack-bot` is a shared bot
 (`xoxb-`) that reads and posts only in channels it has been invited to;
-`slack-user` (`xoxp-`) acts as the person who connected it, reading the public
-and private channels they are already in and searching across them, with no bot
-to invite. The owner picks what the personal one may read (public channels,
-private channels, search) at connect time.
+`slack-user` (`xoxp-`) acts as the person who connected it, reading the channels
+they are already in and searching across them, with no bot to invite. The owner
+picks what the personal one may do from nine permission checkboxes at connect
+time -- public channels, private channels, DMs, group DMs, search, post, react,
+read-reactions, files -- only public channels ticked by default. Because Slack
+issues one token per app+user and UNIONS scopes on re-consent, the two Slack
+built-ins disallow a second connection on one app, and hostit revokes before a
+scope change so narrowing actually takes; see connections.md.
 
 **Gmail without OAuth:** the `imap` provider reaches the same mailbox at
 `imap.gmail.com:993` using a Google **app password** (needs 2-Step Verification

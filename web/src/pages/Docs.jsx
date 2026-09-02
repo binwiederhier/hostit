@@ -752,6 +752,21 @@ const AccountsPage = () => (
       in the administration guide, or ask your administrator.
     </p>
 
+    <h3>Choosing what it can access</h3>
+    <p>
+      Some services let you pick <b>permissions</b> when you connect: Slack (personal), for example,
+      shows checkboxes for public channels, private channels, DMs, search, posting, reactions and
+      files. Tick only what the app needs -- what you leave out is not in the token hostit hands out.
+    </p>
+    <p>
+      You can change them later: <b>Edit</b> on the connection&rsquo;s menu shows the same
+      checkboxes, and saving re-approves it with the new set. This genuinely <b>narrows</b> access,
+      not just widens it: when you remove a permission, hostit revokes the old token first so the
+      provider re-grants exactly what you kept. (Some providers, Slack among them, hand out one
+      credential per app -- so you cannot hold two connections to the same app with different
+      permissions. Connect a separate app for that.)
+    </p>
+
     <h3>Reconnecting</h3>
     <p>
       If a provider expires or revokes its permission, apps start failing and the fix is{" "}
@@ -1952,25 +1967,29 @@ const SlackPage = () => (
     <p>
       Acts <b>as the person</b> who connected it, using a Slack <b>user</b> token
       (<span className="mono">xoxp-</span>). It reads the channels they are already in and can search
-      across them, so there is no bot to invite. What it may read is chosen by the owner at connect
-      time -- the <b>Add account</b> dialog offers <b>Public channels</b>, <b>Private channels</b>{" "}
-      and <b>Search across channels</b>, all on by default, plus a baseline lookup of users so ids
-      resolve to names. There are deliberately no direct-message scopes.
+      across them, so there is no bot to invite. What it may do is chosen by the owner at connect
+      time -- the <b>Add account</b> dialog offers checkboxes for <b>Public channels</b>,{" "}
+      <b>Private channels</b>, <b>Direct messages</b>, <b>Group DMs</b>, <b>Search</b>,{" "}
+      <b>Post messages</b>, <b>Add reactions</b>, <b>Read reactions</b> and <b>Files</b>. Only public
+      channels is ticked by default; the rest are opt-in. A baseline lookup of users is always
+      granted so ids resolve to names. The owner can change the set later by editing the connection,
+      which narrows access, not just widens it.
     </p>
     <ol className="docs-steps">
       <li><span className="mono">api.slack.com/apps</span> &rarr; the same app as the bot, or a new one <b>From scratch</b>.</li>
       <li><b>OAuth &amp; Permissions</b> &rarr; <b>Redirect URLs</b> &rarr; add each URL above (same as the bot) &rarr; <b>Save URLs</b>.</li>
       <li>
         Same page, <b>Scopes</b> &rarr; <b>User Token Scopes</b> (not Bot Token Scopes) &rarr; add
-        the six below.
+        the ones below for the checkboxes you want to offer.
       </li>
       <li><b>Basic Information</b> &rarr; <b>App Credentials</b> &rarr; copy the <b>Client ID</b> and <b>Client Secret</b>.</li>
     </ol>
     <h3>User Token Scopes to add</h3>
-    <Snippet text={`search:read\nchannels:read\nchannels:history\ngroups:read\ngroups:history\nusers:read`} />
+    <Snippet text={`users:read\nchannels:read\nchannels:history\ngroups:read\ngroups:history\nim:read\nim:history\nmpim:read\nmpim:history\nsearch:read\nchat:write\nreactions:write\nreactions:read\nfiles:read\nfiles:write`} />
     <p>
       These cover every checkbox the dialog can offer. hostit requests only the ones the owner
-      actually ticked, so declaring all six here does not force all of them on a given connection.
+      actually ticked, so declaring all of them here does not force them on any one connection --
+      it just makes each checkbox available. Declare a subset to hide the checkboxes you do not want.
     </p>
     <ProviderConfig
       name="slack-user"
@@ -2243,6 +2262,68 @@ const CustomProviderPage = () => (
         </tr>
       </tbody>
     </table>
+
+    <h3>Permission checkboxes and the rest</h3>
+    <p>
+      A provider can offer <b>permission checkboxes</b> in the add dialog -- each a labelled bundle
+      of scopes the user grants or withholds -- plus a few options that shape how it behaves:
+    </p>
+    <Snippet
+      text={`connections:\n  acme:\n    label: Acme\n    client-id: YOUR_CLIENT_ID\n    client-secret: YOUR_SECRET\n    auth-url: https://acme.example.com/oauth/authorize\n    token-url: https://acme.example.com/oauth/token\n    scope-options:                 # checkboxes; the client sends back KEYS, not scopes\n      - { key: read,  label: Read projects, scopes: [projects:read], default: true }\n      - { key: write, label: Write,          scopes: [projects:write] }\n    allow-multiple: false          # hide it once a user has one (a shared-token app)\n    revoke-url: https://acme.example.com/oauth/revoke\n    revoke-auth: bearer            # "bearer" (token as Bearer) or default (client creds)\n    short-description: Read your Acme projects.         # shown in the add dialog\n    long-description: >-           # handed to a granted app's assistant to document the API\n      REST API at https://api.acme.example, Bearer <token>. GET /projects lists projects.\n    user-token: false              # Slack-only: the token acts as the person (user_scope)`}
+    />
+    <table className="docs-table">
+      <thead><tr><th>Field</th><th>What it does</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><span className="mono">scope-options</span></td>
+          <td>
+            Permission checkboxes: each a key, a label, and the scopes it grants. The dialog sends
+            back the ticked keys; hostit resolves them to scopes against this list. On a{" "}
+            <b>built-in</b> provider they REPLACE hostit&rsquo;s defaults, so you can offer write
+            scopes or trim the set.
+          </td>
+        </tr>
+        <tr>
+          <td><span className="mono">allow-multiple</span></td>
+          <td>
+            Whether one owner may connect this app more than once. Default <b>true</b> (a second
+            connection usually means a second account, like a second calendar). Set{" "}
+            <b>false</b> where one app issues one shared token per user (Slack): a second connection
+            would only alias the first, so it is hidden once one exists. Independent scopes then
+            need a <i>separate</i> OAuth app.
+          </td>
+        </tr>
+        <tr>
+          <td><span className="mono">revoke-url</span> / <span className="mono">revoke-auth</span></td>
+          <td>
+            hostit revokes a token it is discarding -- when a connection is removed, and when its
+            scopes are edited (revoked <i>before</i> the re-consent, so a provider that unions past
+            grants is deauthorized first and the fresh consent narrows). Slack, Discord and Google
+            are wired out of the box. <span className="mono">revoke-auth: bearer</span> sends the
+            token as a Bearer header (Slack); the default sends the client id/secret.
+          </td>
+        </tr>
+        <tr>
+          <td><span className="mono">short-description</span> / <span className="mono">long-description</span></td>
+          <td>
+            <span className="mono">short</span> shows in the add dialog (what the connection is);
+            <span className="mono">long</span> is handed to a granted app&rsquo;s assistant to
+            document the underlying API (base URL, auth, endpoints).
+          </td>
+        </tr>
+        <tr>
+          <td><span className="mono">user-token: true</span></td>
+          <td>
+            Slack-specific: request a token that acts as the person (Slack&rsquo;s{" "}
+            <span className="mono">user_scope</span>), not a bot.
+          </td>
+        </tr>
+      </tbody>
+    </table>
+    <p className="hint">
+      Editing a connection&rsquo;s checkboxes reconnects it; when the scopes change hostit revokes
+      the old token first, so <b>narrowing</b> takes effect, not only widening.
+    </p>
 
     <h3>Or add it from the Admin page</h3>
     <p>
