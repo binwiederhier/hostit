@@ -3,6 +3,7 @@ package control
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -10,6 +11,21 @@ import (
 
 	"heckel.io/hostit/store"
 )
+
+// The suggested-stack guidance must not send an agent down the Go-build path in
+// a small container without warning: `go build` itself is memory-hungry and is
+// OOM-killed in a 128-512 MB app (the runtime binary is tiny; the COMPILER is
+// not). It must point at the memory knobs and an interpreted fallback.
+func TestSuggestedStackWarnsAboutLowMemoryGoBuilds(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	stack := s.agentGuide("blog", "", "").SuggestedStack
+	assert.Contains(t, stack, "go build", "still describes the Go build step")
+	assert.Contains(t, strings.ToLower(stack), "memory", "warns about the compiler's memory use")
+	assert.Contains(t, stack, "GOMEMLIMIT", "gives the compiler's memory knob")
+	assert.Contains(t, stack, "GOFLAGS=-p=1", "gives the build-parallelism knob")
+	assert.Contains(t, stack, "Python", "offers an interpreted, no-build fallback")
+}
 
 func TestAccountProfileUpdate(t *testing.T) {
 	t.Parallel()

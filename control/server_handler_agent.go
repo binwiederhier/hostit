@@ -365,16 +365,23 @@ func (s *Server) agentGuide(appName, description, ownerID string) *apiAgentInfoR
 		Runtimes: workspace.Runtimes + ". Install anything else inside the container with apt-get; " +
 			"installed packages persist across restarts and redeploys (the container's filesystem is the app's " +
 			"own durable disk) and count against the app's disk budget. A new app starts as a stub serving a placeholder page.",
-		SuggestedStack: "A single Go binary that embeds its frontend (go:embed) is the easiest thing to run here: " +
-			"one file, no runtime to install, instant start. Use run: ./" + app.BinDir + "/myapp listening on 0.0.0.0:$PORT. " +
+		SuggestedStack: "A single Go binary that embeds its frontend (go:embed) is the easiest thing to RUN here: " +
+			"one file, no runtime to install, instant start, tiny memory. Use run: ./" + app.BinDir + "/myapp listening on 0.0.0.0:$PORT. " +
 			"Python, Node.js (with npm) and PHP work out of the box, a plain HTML site needs only mode: static, and anything else installs with apt-get.\n\n" +
+			"MEMORY: the Go RUNTIME is tiny, but the Go COMPILER is not -- `go build` on a non-trivial app needs several hundred MB and " +
+			"is OOM-killed (\"signal: killed\") when this app has little RAM. Check this app's memory first (Limits.memory_mb in this " +
+			"response). hostit already tunes the compiler for you when memory is low (it sets GOFLAGS=-p=1, GOGC and GOMEMLIMIT on the " +
+			"prepare step), so a plain `go build` usually just fits now. If it still gets killed at 128-512 MB, do ONE of:\n" +
+			"  1. Tune it harder yourself in the prepare step: prepare: cd " + app.SrcDir + " && GOFLAGS=-p=1 GOMEMLIMIT=400MiB GOGC=20 go build -o ../" + app.BinDir + "/myapp .\n" +
+			"     (-p=1 compiles one package at a time, GOMEMLIMIT + a low GOGC make the compiler collect harder and stay under the cap; set GOMEMLIMIT a little under this app's memory_mb.)\n" +
+			"  2. Use an interpreted stack -- Python, Node.js or PHP -- which needs no build step at all, so container RAM is never the bottleneck.\n" +
+			"  3. Upload a prebuilt binary to " + app.BinDir + "/ (build it elsewhere with CGO_ENABLED=0 GOOS=linux GOARCH=amd64); the light runtime " +
+			"runs fine, but then only the binary is here and the next session has nothing to edit.\n" +
+			"With ample RAM, none of this matters -- just `go build`.\n\n" +
 			"Prefer keeping the source here: upload it to " + app.SrcDir + "/ and build it in the container with a " +
-			"\"prepare:\" step in hostit.yml, e.g. prepare: cd " + app.SrcDir + " && go build -o ../" + app.BinDir + "/myapp . " +
-			"Prepare runs before the app starts, on every deploy; if it fails the app is not started and the error is in the logs. " +
+			"\"prepare:\" step in hostit.yml. Prepare runs before the app starts, on every deploy; if it fails the app is not started and the error is in the logs. " +
 			"That way the build happens on the machine that runs it (no cross-compiling, no toolchain needed on your side), " +
-			"and the next session can still change the app. Uploading a prebuilt binary to " + app.BinDir + "/ also works and is " +
-			"faster -- build it with CGO_ENABLED=0 GOOS=linux GOARCH=amd64 -- but then only the binary is here, and whoever " +
-			"comes next has nothing to edit.",
+			"and the next session can still change the app.",
 		Auth:    "Send the token as: Authorization: Bearer <token>",
 		Preview: platformdoc.PreviewNote(),
 		AppsAPI: apiAgentAPISection{

@@ -310,6 +310,14 @@ func (a *Agent) prepare(conf *app.Config) error {
 	cmd := exec.Command("/bin/sh", "-lc", conf.Prepare)
 	cmd.Dir = a.home
 	cmd.Env = os.Environ()
+	// In a small container, `go build` OOM-kills itself: the Go compiler is a
+	// memory hog even though the binary it makes is tiny. Tune it to fit -- for
+	// the build only, so the running app is untouched. A no-op with ample memory
+	// or a non-Go build.
+	if tuning := goBuildTuning(containerMemLimitBytes(), cmd.Env); len(tuning) > 0 {
+		cmd.Env = append(cmd.Env, tuning...)
+		slog.Info("Low-memory container: tuning the Go compiler for the build", "env", tuning)
+	}
 	// Timestamp the app log; leave the podman-logs stream (os.Stdout) raw.
 	ts := newTimestampWriter(out)
 	cmd.Stdout = io.MultiWriter(os.Stdout, ts)
