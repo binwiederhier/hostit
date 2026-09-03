@@ -49,7 +49,9 @@ func Duplex(conn net.Conn, dialer bool, handler http.Handler) (*http.Client, *ya
 // per-request deadline a hung verb blocks its caller forever. Generous on
 // purpose: it must clear the slowest legitimate one-shot RPC (a large tar
 // upload or file read on a loaded box), so it is a hang backstop, not a SLA.
-// A var, not a const, so tests can shorten it.
+// A var, not a const, so tests can shorten it. Long-lived STREAMING verbs (the
+// assistant turn) must NOT ride this client: they build their own timeout-free
+// client bounded by the caller's context instead -- see link.NewRemoteAgent.
 var (
 	rpcTimeout = 5 * time.Minute
 )

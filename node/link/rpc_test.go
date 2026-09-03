@@ -8,6 +8,7 @@ import (
 	"io"
 	"io/fs"
 	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -86,14 +87,56 @@ func startRPC(t *testing.T, agent api.NodeAgent) api.NodeAgent {
 	return NewRemoteAgent(client, nil)
 }
 
+// startRPCShortTimeout wires the same fake-agent -> RPC -> duplex shape as
+// startRPC, but hands the remote a client whose per-RPC Timeout is short and a
+// dialer for the streaming path -- so a test can prove a long assistant turn
+// outlives that timeout rather than being cut by it.
+func startRPCShortTimeout(t *testing.T, agent api.NodeAgent, timeout time.Duration) api.NodeAgent {
+	t.Helper()
+	nodeConn, controlConn := net.Pipe()
+	_, _, err := cluster.Duplex(nodeConn, true, RPCHandler(agent))
+	require.NoError(t, err)
+	// Control side: reuse the duplex session but wrap it in a short-timeout
+	// client, matching cluster.DuplexClient's transport (a stream per request).
+	_, sess, err := cluster.Duplex(controlConn, false, nil)
+	require.NoError(t, err)
+	dial := func() (net.Conn, error) { return sess.OpenStream() }
+	client := &http.Client{
+		Timeout: timeout,
+		Transport: &http.Transport{
+			DialContext:       func(context.Context, string, string) (net.Conn, error) { return dial() },
+			DisableKeepAlives: true,
+		},
+	}
+	return NewRemoteAgent(client, dial)
+}
+
+// TestRPCAssistantTurnOutlivesTheRPCClientTimeout guards the fix for a turn
+// that streamed longer than the per-RPC client Timeout being guillotined
+// mid-stream (control cut the request, the node's r.Context() cancelled, and
+// the sandbox `claude -p` aborted). The streaming path must be bounded by the
+// caller's context, not that short backstop.
+func TestRPCAssistantTurnOutlivesTheRPCClientTimeout(t *testing.T) {
+	t.Parallel()
+	agent := &fakeAgentFull{written: map[string][]byte{}, turnDelay: 400 * time.Millisecond}
+	remote := startRPCShortTimeout(t, agent, 100*time.Millisecond)
+	var types []string
+	err := remote.RunAssistantTurn(context.Background(), &api.AssistantTurnSpec{Name: "blog", Prompt: "hi"}, func(ev *api.AssistantEvent) {
+		types = append(types, ev.Type)
+	})
+	require.NoError(t, err, "a turn slower than the per-RPC timeout must not be cut")
+	assert.Contains(t, types, "result", "the terminal result arrives after the client timeout would have fired")
+}
+
 // fakeAgentFull adds the file verbs with real signatures (the embedded
 // interface trick above cannot express io.Reader cleanly).
 type fakeAgentFull struct {
 	api.NodeAgent
-	calls   []string
-	written map[string][]byte
-	readErr error // when set, ReadFile fails with this
-	shotErr error // when set, Screenshot fails with this
+	calls     []string
+	written   map[string][]byte
+	readErr   error         // when set, ReadFile fails with this
+	turnDelay time.Duration // when set, pause mid-turn to model a long streaming turn
+	shotErr   error         // when set, Screenshot fails with this
 }
 
 func (f *fakeAgentFull) Screenshot(spec *api.ScreenshotSpec) ([]byte, error) {
@@ -104,11 +147,20 @@ func (f *fakeAgentFull) Screenshot(spec *api.ScreenshotSpec) ([]byte, error) {
 	return []byte("\x89PNG\r\n\x1a\nfake"), nil
 }
 
-func (f *fakeAgentFull) RunAssistantTurn(_ context.Context, spec *api.AssistantTurnSpec, onEvent func(*api.AssistantEvent)) error {
+func (f *fakeAgentFull) RunAssistantTurn(ctx context.Context, spec *api.AssistantTurnSpec, onEvent func(*api.AssistantEvent)) error {
 	f.calls = append(f.calls, "assistant-turn:"+spec.Name)
 	// A turn's shape: some text, a tool call and its result, then a terminal
 	// result carrying usage -- exactly the sequence control maps to SSE events.
 	onEvent(&api.AssistantEvent{Type: "text", Text: "hello " + spec.Prompt})
+	// A real turn can run for many minutes between events; turnDelay models that
+	// gap so a test can prove the RPC client does not cut a slow stream short.
+	if f.turnDelay > 0 {
+		select {
+		case <-time.After(f.turnDelay):
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
 	onEvent(&api.AssistantEvent{Type: "tool_use", Tool: "write_file", Input: `{"path":"x"}`})
 	onEvent(&api.AssistantEvent{Type: "tool_result", Output: "ok"})
 	onEvent(&api.AssistantEvent{Type: "result", Result: "done", Usage: &api.AssistantUsage{InputTokens: 10, OutputTokens: 5}})

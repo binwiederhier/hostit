@@ -27,6 +27,13 @@ import (
 // routing is the underlying session.
 type remoteAgent struct {
 	c *http.Client
+	// stream carries the long-lived assistant turn, whose events trickle back
+	// over many minutes. It has NO client-level Timeout, so a slow turn is
+	// bounded only by the caller's context (the assistant's 15-min run timeout),
+	// not by c's short per-RPC rpcTimeout -- which would otherwise cut the stream
+	// mid-turn, cancel the node's request context, and kill the sandbox. Built
+	// over the same duplex session as c via dial; falls back to c with no dialer.
+	stream *http.Client
 	// dial opens a raw stream on the same session; nil in tests that only
 	// exercise the JSON verbs. The terminal rides these: a pty is a byte
 	// stream, and forcing it through request/response would mean polling.
@@ -36,9 +43,18 @@ type remoteAgent struct {
 var _ api.NodeAgent = (*remoteAgent)(nil)
 
 // NewRemoteAgent wraps a duplex client into a NodeAgent. dial opens raw
-// streams on the same connection, for the terminal.
+// streams on the same connection, for the terminal and the assistant turn.
 func NewRemoteAgent(c *http.Client, dial func() (net.Conn, error)) api.NodeAgent {
-	return &remoteAgent{c: c, dial: dial}
+	stream := c
+	if dial != nil {
+		stream = &http.Client{
+			Transport: &http.Transport{
+				DialContext:       func(context.Context, string, string) (net.Conn, error) { return dial() },
+				DisableKeepAlives: true,
+			},
+		}
+	}
+	return &remoteAgent{c: c, stream: stream, dial: dial}
 }
 
 // call posts one JSON verb and decodes the envelope (including sentinel errors).
@@ -143,7 +159,7 @@ func (a *remoteAgent) RunAssistantTurn(ctx context.Context, spec *api.AssistantT
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := a.c.Do(req)
+	resp, err := a.stream.Do(req)
 	if err != nil {
 		return fmt.Errorf("node rpc assistant-turn: %w", err)
 	}
