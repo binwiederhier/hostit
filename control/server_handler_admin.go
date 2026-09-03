@@ -264,13 +264,18 @@ func (s *Server) handleSettingsGet(w http.ResponseWriter, _ *http.Request, _ *ca
 		writeAppError(w, err)
 		return
 	}
+	// The override is the raw DB setting (empty when none); the default is the
+	// control.yml value. The UI shows the override in the box and the default as
+	// its placeholder, and resets by clearing the override.
+	override, _ := s.apps.Store().Setting(store.SettingInfoPrompt)
 	writeJSON(w, http.StatusOK, &apiSettingsResponse{
 		DefaultAppLimit:     defaults.AppLimit,
 		DefaultMemoryMB:     defaults.MemoryMB,
 		DefaultDiskMB:       defaults.DiskMB,
 		DefaultMemoryPoolMB: defaults.MemoryPoolMB,
 		DefaultDiskPoolMB:   defaults.DiskPoolMB,
-		InfoPrompt:          s.infoPrompt(),
+		InfoPrompt:          override,
+		InfoPromptDefault:   s.config.InfoPrompt,
 	})
 }
 

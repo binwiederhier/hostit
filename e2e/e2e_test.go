@@ -623,6 +623,20 @@ func (e *env) deleteApp(name string) {
 	}
 }
 
+// purgeBestEffort removes an app for good regardless of its state (soft-delete
+// it if still live, then purge), swallowing every error -- for test cleanup.
+func (e *env) purgeBestEffort(name string) {
+	e.deleteApp(name)
+	req, err := http.NewRequest("POST", e.host+"/api/apps/"+name+"/purge", nil)
+	if err != nil {
+		return
+	}
+	req.Header.Set("Authorization", "Bearer "+e.token)
+	if resp, err := http.DefaultClient.Do(req); err == nil {
+		_ = resp.Body.Close()
+	}
+}
+
 func (e *env) get(path, token string, out any) {
 	e.t.Helper()
 	e.doJSON("GET", path, token, nil, out, http.StatusOK)

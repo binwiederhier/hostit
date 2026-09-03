@@ -110,6 +110,11 @@ type App struct {
 	// is not powered_off, which an owner flips freely -- an archived app has to
 	// be brought back before it can run at all.
 	Archived bool `json:"archived"`
+	// SoftDeletedAt is when the owner deleted the app. A soft-deleted app is gone
+	// from the owner's view -- like an archived app, but hidden entirely -- and a
+	// background sweep hard-deletes it once soft-delete-duration has passed. Zero
+	// means the app is live.
+	SoftDeletedAt time.Time `json:"soft_deleted_at,omitempty"`
 	// Private restricts who may reach the app over HTTP: its owner, its
 	// collaborators and admins, rather than anyone with the URL. Public is the
 	// default, which is what every app predating this flag already was.

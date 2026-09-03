@@ -64,6 +64,53 @@ func TestInstancePromptReachesInfo(t *testing.T) {
 	}, 10*time.Second, 500*time.Millisecond, "the prompt field is gone once cleared")
 }
 
+// Deleting an app shelves it for the grace period rather than removing it at
+// once: it 404s on the owner path but stays in the admin all-apps list stamped
+// with a soft-delete time, an admin can restore it, and "Delete now" (purge)
+// removes it for good before the grace runs out. This walks the whole path
+// against a real server, which the handler unit tests cannot.
+func TestSoftDeleteLifecycle(t *testing.T) {
+	e := newEnv(t)
+	name := uniqueName("e2e-softdel")
+	e.createApp(name)
+	t.Cleanup(func() { e.purgeBestEffort(name) })
+
+	adminApp := func() map[string]any {
+		var apps []map[string]any
+		e.get("/api/apps?all=true", e.token, &apps)
+		for _, a := range apps {
+			if a["name"] == name {
+				return a
+			}
+		}
+		return nil
+	}
+
+	// Soft-delete: gone from the owner path (404), but present for admins with a
+	// non-zero soft-delete time.
+	e.deleteApp(name)
+	e.doJSON("GET", "/api/apps/"+name, e.token, nil, nil, http.StatusNotFound)
+	shelved := adminApp()
+	require.NotNil(t, shelved, "a soft-deleted app is still listed for admins")
+	ts, _ := shelved["soft_deleted_at"].(float64)
+	require.Greater(t, ts, float64(0), "stamped with the time it was deleted")
+
+	// Restore returns it to the normal, owner-visible view.
+	e.post("/api/apps/"+name+"/restore", e.token, nil)
+	var restored map[string]any
+	e.get("/api/apps/"+name, e.token, &restored)
+	require.Equal(t, name, restored["name"], "restored to the live view")
+
+	// Purge cannot touch a live app...
+	e.doJSON("POST", "/api/apps/"+name+"/purge", e.token, nil, nil, http.StatusBadRequest)
+
+	// ...but "Delete now" on a re-deleted one removes it immediately, for good.
+	e.deleteApp(name)
+	e.post("/api/apps/"+name+"/purge", e.token, nil)
+	e.doJSON("GET", "/api/apps/"+name, e.token, nil, nil, http.StatusNotFound)
+	require.Nil(t, adminApp(), "purged, no longer in the admin list either")
+}
+
 // Control's own journal is readable from the admin logs endpoint, and each node's
 // too. Admin-only. journalctl must be present (it is on the systemd hosts hostit
 // ships to); a host without it returns 500, which we surface rather than assert.

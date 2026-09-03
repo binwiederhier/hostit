@@ -571,12 +571,63 @@ const WorkingIndicator = ({ tokens }) => {
 // Plain-English asks the box can take, cycled through as a typing hint.
 const ASSISTANT_EXAMPLES = [
   "Make a tic-tac-toe game",
-  "Make a personal home page from my email and calendar",
+  "Make a homepage from my email and calendar",
   "Build a URL shortener with a click counter",
   "Add a leaderboard to my game",
   "Make a Markdown notes app with search",
   "Turn my CSV into a sortable table",
 ];
+
+// Vendor marks for the "use your own agent" hint, each in the current text
+// colour. Claude reuses the burst from BackendMark; OpenAI is its blossom knot;
+// Cursor is its isometric cube.
+const ClaudeMark = () => (
+  <svg viewBox="0 0 24 24" aria-hidden="true">
+    <path
+      d="m4.714 15.956 4.718-2.648.079-.23-.08-.128h-.23l-.79-.048-2.695-.073-2.337-.097-2.265-.122-.57-.121-.535-.704.055-.353.48-.321.685.06 1.518.104 2.277.157 1.651.098 2.447.255h.389l.054-.158-.133-.097-.103-.098-2.356-1.596-2.55-1.688-1.336-.972-.722-.491L2 6.223l-.158-1.008.656-.722.88.06.224.061.893.686 1.906 1.476 2.49 1.833.364.304.146-.104.018-.072-.164-.274-1.354-2.446-1.445-2.49-.644-1.032-.17-.619a3 3 0 0 1-.103-.729L6.287.133 6.7 0l.995.134.42.364.619 1.415L9.735 4.14l1.555 3.03.455.898.243.832.09.255h.159V9.01l.127-1.706.237-2.095.23-2.695.08-.76.376-.91.747-.492.583.28.48.685-.067.444-.286 1.851-.558 2.903-.365 1.942h.213l.243-.242.983-1.306 1.652-2.064.728-.82.85-.904.547-.431h1.032l.759 1.129-.34 1.166-1.063 1.347-.88 1.142-1.263 1.7-.79 1.36.074.11.188-.02 2.853-.606 1.542-.28 1.84-.315.832.388.09.395-.327.807-1.967.486-2.307.462-3.436.813-.043.03.049.061 1.548.146.662.036h1.62l3.018.225.79.522.473.638-.08.485-1.213.62-1.64-.389-3.825-.91-1.31-.329h-.183v.11l1.093 1.068 2.003 1.81 2.508 2.33.127.578-.321.455-.34-.049-2.204-1.657-.85-.747-1.925-1.62h-.127v.17l.443.649 2.343 3.521.122 1.08-.17.353-.607.213-.668-.122-1.372-1.924-1.415-2.168-1.141-1.943-.14.08-.674 7.254-.316.37-.728.28-.607-.461-.322-.747.322-1.476.388-1.924.316-1.53.285-1.9.17-.632-.012-.042-.14.018-1.432 1.967-2.18 2.945-1.724 1.845-.413.164-.716-.37.066-.662.401-.589 2.386-3.036 1.439-1.882.929-1.086-.006-.158h-.055L4.138 18.56l-1.13.146-.485-.456.06-.746.231-.243 1.907-1.312Z"
+      fill="#d97757"
+    />
+  </svg>
+);
+const OpenAIMark = () => (
+  <svg viewBox="0 0 24 24" aria-hidden="true">
+    <path
+      d="M22.282 9.821a5.985 5.985 0 0 0-.516-4.91 6.046 6.046 0 0 0-6.51-2.9A6.065 6.065 0 0 0 4.981 4.18a5.985 5.985 0 0 0-3.998 2.9 6.046 6.046 0 0 0 .743 7.097 5.98 5.98 0 0 0 .51 4.911 6.051 6.051 0 0 0 6.515 2.9A5.985 5.985 0 0 0 13.26 24a6.056 6.056 0 0 0 5.772-4.206 5.99 5.99 0 0 0 3.998-2.9 6.056 6.056 0 0 0-.747-7.073zm-9.022 12.608a4.476 4.476 0 0 1-2.876-1.04l.141-.081 4.779-2.758a.795.795 0 0 0 .392-.681v-6.737l2.02 1.168a.071.071 0 0 1 .038.052v5.583a4.504 4.504 0 0 1-4.494 4.494zm-9.66-4.126a4.47 4.47 0 0 1-.535-3.014l.142.085 4.783 2.759a.771.771 0 0 0 .78 0l5.843-3.369v2.332a.08.08 0 0 1-.033.062L9.74 19.95a4.499 4.499 0 0 1-6.14-1.647zM2.34 7.896a4.485 4.485 0 0 1 2.366-1.973v5.702a.766.766 0 0 0 .388.676l5.814 3.355-2.02 1.168a.076.076 0 0 1-.071 0l-4.83-2.787A4.504 4.504 0 0 1 2.34 7.872zm16.597 3.855-5.833-3.387L15.12 7.2a.076.076 0 0 1 .071 0l4.83 2.791a4.494 4.494 0 0 1-.676 8.105v-5.678a.79.79 0 0 0-.407-.681zm2.01-3.023-.142-.085-4.774-2.782a.776.776 0 0 0-.785 0L9.409 9.23V6.897a.066.066 0 0 1 .028-.061l4.83-2.787a4.499 4.499 0 0 1 6.68 4.66zM8.307 12.863l-2.02-1.164a.08.08 0 0 1-.038-.057V6.074a4.499 4.499 0 0 1 7.376-3.453l-.142.08L8.704 5.46a.795.795 0 0 0-.393.681zm1.098-2.366 2.602-1.5 2.607 1.5v3l-2.598 1.5-2.607-1.5z"
+      fill="currentColor"
+    />
+  </svg>
+);
+const CursorMark = () => (
+  <svg viewBox="0 0 24 24" aria-hidden="true">
+    <path d="M12 2.5 20.66 7.5v9L12 21.5 3.34 16.5v-9z" fill="currentColor" fillOpacity="0.35" />
+    <path d="M12 2.5 20.66 7.5 12 12.5 3.34 7.5z" fill="currentColor" fillOpacity="0.9" />
+    <path d="M12 12.5 20.66 7.5v9L12 21.5z" fill="currentColor" fillOpacity="0.6" />
+  </svg>
+);
+
+// The three agent marks, cycled by RotatingAgentLogo.
+const OWN_AGENT_MARKS = [
+  { name: "Claude", mark: <ClaudeMark /> },
+  { name: "ChatGPT", mark: <OpenAIMark /> },
+  { name: "Cursor", mark: <CursorMark /> },
+];
+
+// RotatingAgentLogo fades one vendor mark to the next on a slow loop, a hint
+// that "your own agent" is any of them. Keyed on the index so each swap replays
+// the fade-in (see .asst-agentlogo).
+const RotatingAgentLogo = () => {
+  const [idx, setIdx] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setIdx((i) => (i + 1) % OWN_AGENT_MARKS.length), 3200);
+    return () => clearInterval(t);
+  }, []);
+  const cur = OWN_AGENT_MARKS[idx];
+  return (
+    <span className="asst-agentlogo" key={idx} title={cur.name} aria-label={cur.name} role="img">
+      {cur.mark}
+    </span>
+  );
+};
 
 // Types an example out, holds it, backspaces it, and moves to the next -- a hint
 // that the box takes plain-English asks. A single self-scheduling timer drives a
@@ -585,37 +636,43 @@ const ASSISTANT_EXAMPLES = [
 // "reduce animations" setting while Chrome does not, so gating froze the hint in
 // Firefox only. It is a tiny typing hint, kept consistent across browsers.
 const TypingExamples = () => {
-  const [text, setText] = useState("");
-  const st = useRef({ idx: 0, phase: "typing", len: 0 });
+  // Start on the first example, fully typed and in its hold: opening the page
+  // should read "Try: Make a tic-tac-toe game", never a blank "Try:" that then
+  // types out. The loop deletes it and carries on from there.
+  const holdMs = 3000;
+  const first = ASSISTANT_EXAMPLES[0];
+  const [text, setText] = useState(first);
+  const st = useRef({ idx: 0, phase: "holding", len: first.length });
   useEffect(() => {
     let timer;
     const tick = () => {
       const s = st.current;
       const cur = ASSISTANT_EXAMPLES[s.idx];
-      let delay = 55;
+      let delay = 105;
       if (s.phase === "typing") {
         s.len += 1;
         setText(cur.slice(0, s.len));
         if (s.len >= cur.length) {
           s.phase = "holding";
-          delay = 1500;
+          delay = holdMs;
         }
       } else if (s.phase === "holding") {
         s.phase = "deleting";
-        delay = 60;
+        delay = 100;
       } else {
         s.len -= 1;
         setText(cur.slice(0, Math.max(0, s.len)));
-        delay = 30;
+        delay = 50;
         if (s.len <= 0) {
           s.phase = "typing";
           s.idx = (s.idx + 1) % ASSISTANT_EXAMPLES.length;
-          delay = 400;
+          delay = 700;
         }
       }
       timer = setTimeout(tick, delay);
     };
-    timer = setTimeout(tick, 300);
+    // Hold the first example on screen before the loop starts deleting it.
+    timer = setTimeout(tick, holdMs);
     return () => clearTimeout(timer);
   }, []);
   return <span className="asst-typing">{text}</span>;
@@ -626,6 +683,7 @@ const AppAssistant = ({
   onClose,
   embedded = false,
   onPreviewRefresh,
+  onUseOwnAgent,
 }) => {
   const [items, setItems] = useState([]);
   const [input, setInput] = useState("");
@@ -1008,6 +1066,14 @@ const AppAssistant = ({
               <p className="asst-empty-try">
                 Try: &ldquo;<TypingExamples />&rdquo;
               </p>
+              {onUseOwnAgent && (
+                <p className="asst-empty-or">
+                  Or: <RotatingAgentLogo />{" "}
+                  <button type="button" className="asst-linkbtn" onClick={onUseOwnAgent}>
+                    Use your own AI agent
+                  </button>
+                </p>
+              )}
             </div>
           </div>
         )}

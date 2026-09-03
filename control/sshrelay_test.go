@@ -21,7 +21,7 @@ func TestSSHRelayFiles(t *testing.T) {
 		"node2": {Name: "node2", SSHHost: "node2.ssh.example.com", HostKey: "ssh-ed25519 AAA node2"},
 		"node3": {Name: "node3", SSHHost: "node3.ssh.example.com", HostKey: ""}, // routed but no kh line
 	}
-	routes, kh := sshRelayFiles(apps, nodes)
+	routes, kh, _ := sshRelayFiles(apps, nodes)
 
 	require.Equal(t,
 		"api\tnode3.ssh.example.com\nshop\tnode2.ssh.example.com\nwiki\tnode2.ssh.example.com\n",
@@ -29,6 +29,25 @@ func TestSSHRelayFiles(t *testing.T) {
 	require.Equal(t,
 		"node2.ssh.example.com ssh-ed25519 AAA node2\n",
 		kh, "one known_hosts line per distinct remote node that has a host key")
+}
+
+// A remote app whose node is unknown or reports no ssh-host is dropped from the
+// relay, but it must be REPORTED (so control can warn) rather than dropped in
+// silence -- otherwise its advertised ssh command fails with no diagnostic.
+func TestSSHRelayFilesReportsSkippedApps(t *testing.T) {
+	apps := []*store.App{
+		{Name: "blog", Host: store.HostLocal}, // colocated -> not routed, not skipped
+		{Name: "shop", Host: "node2"},         // routed
+		{Name: "orphan", Host: "ghost"},       // node unknown -> skipped
+		{Name: "pending", Host: "node4"},      // node known but no ssh-host yet -> skipped
+	}
+	nodes := map[string]*store.Node{
+		"node2": {Name: "node2", SSHHost: "node2.ssh.example.com", HostKey: "ssh-ed25519 AAA node2"},
+		"node4": {Name: "node4", SSHHost: ""},
+	}
+	_, _, skipped := sshRelayFiles(apps, nodes)
+	require.Equal(t, []string{"orphan", "pending"}, skipped,
+		"remote apps with no reachable node are reported, colocated and routed ones are not")
 }
 
 // buildRelaySpec is what control applies to the frontend (itself): the routes,
@@ -45,7 +64,7 @@ func TestBuildRelaySpec(t *testing.T) {
 	require.NoError(t, st.SetAppKeys("shop", []string{"ssh-ed25519 AAAA shopper-key"}))
 	require.NoError(t, st.AddApp(&store.App{Name: "blog", Port: 12002, Host: store.HostLocal}))
 
-	spec, err := s.apps.buildRelaySpec()
+	spec, _, err := s.apps.buildRelaySpec()
 	require.NoError(t, err)
 	require.Equal(t, "shop\tnode2.ssh.example.com\n", spec.Routes)
 	require.Equal(t, "node2.ssh.example.com ssh-ed25519 AAA node2\n", spec.KnownHosts)

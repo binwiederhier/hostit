@@ -92,6 +92,43 @@ func TestSettingsGetAndUpdate(t *testing.T) {
 	assert.Equal(t, 512, reread.DefaultMemoryMB)
 }
 
+// The admin settings expose the instance-prompt override and the control.yml
+// default separately, so the UI can show the default and offer a reset. GET
+// returns the raw override (empty when none); PATCH "" clears it back to the
+// default.
+func TestSettingsInfoPromptOverrideAndDefault(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	s.config.InfoPrompt = "control.yml default note"
+
+	get := func() apiSettingsResponse {
+		rr := request(t, s.API(), "GET", "/api/settings", "", testToken)
+		require.Equal(t, http.StatusOK, rr.Code)
+		var out apiSettingsResponse
+		require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &out))
+		return out
+	}
+
+	// No override yet: info_prompt is empty, the default is exposed on its own.
+	got := get()
+	assert.Equal(t, "", got.InfoPrompt, "no override yet")
+	assert.Equal(t, "control.yml default note", got.InfoPromptDefault, "control.yml default exposed for the reset button")
+
+	// Setting an override reflects it; the default is untouched.
+	rr := request(t, s.API(), "PATCH", "/api/settings", `{"info_prompt":"house override"}`, testToken)
+	require.Equal(t, http.StatusOK, rr.Code)
+	got = get()
+	assert.Equal(t, "house override", got.InfoPrompt)
+	assert.Equal(t, "control.yml default note", got.InfoPromptDefault)
+
+	// Reset to default: clearing the override empties info_prompt again.
+	rr = request(t, s.API(), "PATCH", "/api/settings", `{"info_prompt":""}`, testToken)
+	require.Equal(t, http.StatusOK, rr.Code)
+	got = get()
+	assert.Equal(t, "", got.InfoPrompt, "reset clears the override")
+	assert.Equal(t, "control.yml default note", got.InfoPromptDefault)
+}
+
 func TestSettingsUpdateRejectsGarbage(t *testing.T) {
 	t.Parallel()
 	s := newTestServer(t)

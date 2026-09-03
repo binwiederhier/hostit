@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { api, isNetworkError } from "../api";
 import { useReconnect } from "../hooks";
-import { ErrorBanner, Loading, Skeleton, VisibilityMark, VisibilityIcon, Wordmark, pairMB, UsagePair, usageLevel, visibilityOf } from "../components";
+import { ErrorBanner, Loading, Skeleton, VisibilityMark, VisibilityIcon, WarnIcon, Wordmark, pairMB, UsagePair, usageLevel, visibilityOf } from "../components";
 import { previewSrc, previewShotSrc, previewScale, DESKTOP_WIDTH, DESKTOP_HEIGHT } from "../preview";
 import { filterAppName, isValidAppName } from "../appname";
 import { slugsToGrant } from "../newappgrant";
@@ -10,7 +10,7 @@ import { slugsToGrant } from "../newappgrant";
 
 // The name form, shared by the empty state and the "New app" button. Both need
 // a name before anything can happen, so the CTA is the submit button itself.
-const CreateForm = ({ name, setName, onSubmit, creating, atLimit, big = false, inputRef }) => {
+const CreateForm = ({ name, setName, nameError, onSubmit, creating, atLimit, big = false, inputRef }) => {
   const valid = isValidAppName(name);
   return (
     <>
@@ -33,6 +33,11 @@ const CreateForm = ({ name, setName, onSubmit, creating, atLimit, big = false, i
           {creating ? "Creating..." : "Create app"}
         </button>
       </form>
+      {nameError && (
+        <p className="field-warn" role="alert">
+          <WarnIcon /> {nameError}
+        </p>
+      )}
       {atLimit && <p className="hint">You have reached your app limit. Delete an app to create a new one.</p>}
     </>
   );
@@ -213,7 +218,7 @@ const NewAppVisibility = ({ visibility, setVisibility, viewerEmails, setViewerEm
   );
 };
 
-const NewAppDialog = ({ name, setName, onSubmit, creating, atLimit, onCancel, visibility, setVisibility, viewerEmails, setViewerEmails, knownViewers, connections, grantMode, setGrantMode, grantSelected, setGrantSelected }) => {
+const NewAppDialog = ({ name, setName, nameError, onSubmit, creating, atLimit, onCancel, visibility, setVisibility, viewerEmails, setViewerEmails, knownViewers, connections, grantMode, setGrantMode, grantSelected, setGrantSelected }) => {
   const toggleGrant = (slug) =>
     setGrantSelected(grantSelected.includes(slug) ? grantSelected.filter((s) => s !== slug) : [...grantSelected, slug]);
   const connName = (c) => c.label || c.name || c.slug;
@@ -265,7 +270,14 @@ const NewAppDialog = ({ name, setName, onSubmit, creating, atLimit, onCancel, vi
             <p className="newapp-sub">It gets its own container, subdomain and HTTPS certificate.</p>
           </div>
         </div>
-        <label className="newapp-label">App name</label>
+        <label className="newapp-label">
+          App name
+          {nameError && (
+            <span className="field-warn" title="Pick a different name">
+              <WarnIcon /> {nameError}
+            </span>
+          )}
+        </label>
         <div className="newapp-input">
           <span className="newapp-dollar mono">$</span>
           {/* Filtered as it is typed rather than validated on submit: an
@@ -711,6 +723,9 @@ const Dashboard = ({ account, refreshAccount }) => {
   const [apps, setApps] = useState(null);
   const [error, setError] = useState("");
   const [name, setName] = useState("");
+  // A name-conflict error (HTTP 409) belongs on the field, not the page banner:
+  // it is about THIS input, and the create dialog sits over the banner anyway.
+  const [nameError, setNameError] = useState("");
   const [creating, setCreating] = useState(false);
   const [adding, setAdding] = useState(false);
   // Private by default: landing on public by accident publishes something, and
@@ -767,6 +782,12 @@ const Dashboard = ({ account, refreshAccount }) => {
 
   const atLimit = account.usage.apps >= account.limits.app_limit;
   const nameValid = isValidAppName(name);
+  // Typing clears a stale conflict warning, so it never lingers over a name the
+  // owner has already changed.
+  const changeName = useCallback((next) => {
+    setName(next);
+    setNameError("");
+  }, []);
 
   const load = useCallback(async () => {
     if (!navigator.onLine) return; // offline: don't hammer, wait for reconnect
@@ -847,7 +868,13 @@ const Dashboard = ({ account, refreshAccount }) => {
       refreshAccount();
       navigate(`/app/${res.name}`);
     } catch (err) {
-      setError(err.message);
+      // A taken name (409 -- the app or its reserved unix user exists) is shown
+      // on the field itself; anything else is a page-level failure.
+      if (err.status === 409) {
+        setNameError("App name is in use or reserved");
+      } else {
+        setError(err.message);
+      }
     } finally {
       setCreating(false);
     }
@@ -856,11 +883,12 @@ const Dashboard = ({ account, refreshAccount }) => {
   const cancelAdding = () => {
     setAdding(false);
     setName("");
+    setNameError("");
     setVisibility("private");
     setViewerEmails([]);
   };
 
-  const formProps = { name, setName, onSubmit: create, creating, atLimit, inputRef };
+  const formProps = { name, setName: changeName, onSubmit: create, creating, atLimit, inputRef, nameError };
   const empty = apps !== null && apps.length === 0;
   const archivedCount = (apps || []).filter((a) => a.archived).length;
   const shown = showArchived ? apps || [] : (apps || []).filter((a) => !a.archived);
@@ -942,7 +970,7 @@ const Dashboard = ({ account, refreshAccount }) => {
         </>
       )}
       {adding && (
-        <NewAppDialog name={name} setName={setName} onSubmit={create} creating={creating} atLimit={atLimit} onCancel={cancelAdding} visibility={visibility} setVisibility={setVisibility} viewerEmails={viewerEmails} setViewerEmails={setViewerEmails} knownViewers={knownViewers} connections={connections} grantMode={grantMode} setGrantMode={setGrantMode} grantSelected={grantSelected} setGrantSelected={setGrantSelected} />
+        <NewAppDialog name={name} setName={changeName} nameError={nameError} onSubmit={create} creating={creating} atLimit={atLimit} onCancel={cancelAdding} visibility={visibility} setVisibility={setVisibility} viewerEmails={viewerEmails} setViewerEmails={setViewerEmails} knownViewers={knownViewers} connections={connections} grantMode={grantMode} setGrantMode={setGrantMode} grantSelected={grantSelected} setGrantSelected={setGrantSelected} />
       )}
       {toast && (
         <div className="snackbar" role="status" aria-live="polite">

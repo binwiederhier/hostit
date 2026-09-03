@@ -57,6 +57,8 @@ export default function AppEditor({ name, url, running, diskMB, diskLimitMB, onD
   const preRef = useRef(null);
   const modalInputRef = useRef(null);
   const uploadAbort = useRef(null); // AbortController for the in-flight upload
+  const uploadInputRef = useRef(null); // hidden <input type=file> for the Upload button (mobile has no drag-drop)
+  const uploadDirRef = useRef(""); // which folder the picked files land in
   const restoredRef = useRef(false); // guards persistence until last-session tabs are restored
 
   const loadDir = useCallback(
@@ -249,6 +251,13 @@ export default function AppEditor({ name, url, running, diskMB, diskLimitMB, onD
   };
 
   // --- uploads (OS files, with progress + quota check) and moves (tree files) ---
+  // Open the OS file picker aimed at a folder -- the drag-drop-free way in, which
+  // is the only way on a phone.
+  const pickUpload = (dir) => {
+    uploadDirRef.current = dir;
+    uploadInputRef.current?.click();
+  };
+
   const uploadTo = async (targetDir, fileList) => {
     const files = Array.from(fileList || []);
     if (!files.length) return;
@@ -485,6 +494,13 @@ export default function AppEditor({ name, url, running, diskMB, diskLimitMB, onD
               <path d="M18 14v6M15 17h6" />
             </svg>
           </button>
+          <button type="button" className="ed-row-act" title="Upload files" aria-label={"Upload files to " + nm} onClick={(e) => { e.stopPropagation(); pickUpload(path); }}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M12 15V4" />
+              <path d="M7 9l5-5 5 5" />
+              <path d="M5 20h14" />
+            </svg>
+          </button>
         </>
       )}
       <button type="button" className="ed-row-act" title="Rename" aria-label={"Rename " + nm} onClick={(e) => { e.stopPropagation(); setDialog({ type: "rename", path, isDir, value: nm }); }}>
@@ -587,10 +603,28 @@ export default function AppEditor({ name, url, running, diskMB, diskLimitMB, onD
                   <path d="M18 14v6M15 17h6" />
                 </svg>
               </button>
+              <button type="button" className="ed-refresh" title="Upload files" aria-label="Upload files" onClick={() => pickUpload("")}>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M12 15V4" />
+                  <path d="M7 9l5-5 5 5" />
+                  <path d="M5 20h14" />
+                </svg>
+              </button>
               <button type="button" className="ed-refresh" title="Refresh" aria-label="Refresh tree" onClick={refreshTree}>
                 {"↻"}
               </button>
             </div>
+            <input
+              ref={uploadInputRef}
+              type="file"
+              multiple
+              style={{ display: "none" }}
+              onChange={(e) => {
+                const files = e.target.files;
+                e.target.value = ""; // let the same file be picked again next time
+                uploadTo(uploadDirRef.current, files);
+              }}
+            />
             <div
               className={"ed-tree-body" + (dragTarget === "" ? " dropinto" : "")}
               onDragOver={onTreeDragOver}

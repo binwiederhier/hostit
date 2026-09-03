@@ -257,14 +257,16 @@ func (s *Server) handleAppsDelete(w http.ResponseWriter, r *http.Request, c *cal
 		writeAppError(w, err)
 		return
 	}
-	if err := s.apps.DeleteApp(a.Name); err != nil {
+	// Soft-delete: the app leaves the owner's view now and is reaped after the
+	// grace period. Reaping runs asynchronously (and immediately when the grace
+	// is zero), so the response never waits on teardown. The assistant session is
+	// kept during the grace and dropped at reap, so a restore can bring it back.
+	if err := s.apps.SoftDeleteApp(a.Name); err != nil {
 		writeAppError(w, err)
 		return
 	}
-	if s.assistant != nil {
-		s.assistant.DropSession(a.Name) // forget the app's live session + transcript
-	}
-	slog.Info("App deleted", "app", a.Name, "by", c.userID())
+	s.apps.TrackedGo(s.ReapSoftDeleted)
+	slog.Info("App soft-deleted", "app", a.Name, "by", c.userID())
 	writeJSON(w, http.StatusOK, &apiMessageResponse{Message: "app deleted"})
 }
 
@@ -305,29 +307,44 @@ func (s *Server) handleAppsSetKeys(w http.ResponseWriter, r *http.Request, c *ca
 // personal view, with the caller's own app count printed next to it, so another
 // user's app appearing there is a bug rather than a privilege.
 func (s *Server) listedApps(c *caller, all bool) ([]*store.App, error) {
-	if !all {
-		if c.user == nil {
-			return s.apps.Apps() // The global admin token owns nothing, so "own" means all
+	// The admin "all apps" view includes soft-deleted apps, so a delete can be
+	// caught and undone before the grace runs out; every other view hides them.
+	if all {
+		if !c.isAdmin() {
+			return nil, ErrForbidden
 		}
-		// A viewer owns nothing: their list is exactly the apps shared with them.
-		if c.user.Role == store.RoleViewer {
-			return s.apps.Store().AppsByViewer(c.user.ID)
-		}
-		owned, err := s.apps.Store().AppsByOwner(c.user.ID)
-		if err != nil {
-			return nil, err
-		}
-		shared, err := s.apps.Store().AppsByCollaborator(c.user.ID)
-		if err != nil {
-			return nil, err
-		}
-		// Owned first, then collaborated; both are name-sorted already.
-		return append(owned, shared...), nil
+		return s.apps.Apps()
 	}
-	if !c.isAdmin() {
-		return nil, ErrForbidden
+	if c.user == nil {
+		return s.apps.Apps() // The global admin token owns nothing, so "own" means all
 	}
-	return s.apps.Apps()
+	// A viewer owns nothing: their list is exactly the apps shared with them.
+	if c.user.Role == store.RoleViewer {
+		apps, err := s.apps.Store().AppsByViewer(c.user.ID)
+		return liveApps(apps), err
+	}
+	owned, err := s.apps.Store().AppsByOwner(c.user.ID)
+	if err != nil {
+		return nil, err
+	}
+	shared, err := s.apps.Store().AppsByCollaborator(c.user.ID)
+	if err != nil {
+		return nil, err
+	}
+	// Owned first, then collaborated; both are name-sorted already.
+	return liveApps(append(owned, shared...)), nil
+}
+
+// liveApps drops soft-deleted apps: they are gone from every non-admin view the
+// moment their owner deletes them, even though the row lingers until the reaper.
+func liveApps(apps []*store.App) []*store.App {
+	out := apps[:0]
+	for _, a := range apps {
+		if a.SoftDeletedAt.IsZero() {
+			out = append(out, a)
+		}
+	}
+	return out
 }
 
 // ownedApp fetches an app the caller may act on: their own, one they hold a
@@ -337,6 +354,13 @@ func (s *Server) ownedApp(c *caller, name string) (*store.App, error) {
 	a, err := s.apps.App(name)
 	if err != nil {
 		return nil, err
+	}
+	// A soft-deleted app is gone through the owner-facing surface -- the owner
+	// (and an admin acting through it) gets a plain 404 the moment it is deleted,
+	// as if it were really gone. Admins reach a soft-deleted app only through the
+	// admin list and the restore endpoint, neither of which comes through here.
+	if !a.SoftDeletedAt.IsZero() {
+		return nil, store.ErrAppNotFound
 	}
 	if !c.isAdmin() && a.OwnerID != c.userID() && !s.apps.Store().IsAppCollaborator(a.ID, c.userID()) {
 		return nil, store.ErrAppNotFound // Don't leak the existence of other people's apps

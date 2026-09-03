@@ -60,7 +60,7 @@ const (
 	// The apps a person can OPEN as a viewer -- the "shared with you" list for a
 	// viewer-only account. Mirrors selectAppsByCollaboratorQuery.
 	selectAppsByViewerQuery = `
-		SELECT a.id, a.name, a.port, a.host, a.owner_id, a.disk_mb, a.created_at, a.image_tag, a.powered_off, a.uid, a.archived, a.private, a.memory_limit_mb, a.disk_limit_mb, a.cpu_milli, a.tabs
+		SELECT a.id, a.name, a.port, a.host, a.owner_id, a.disk_mb, a.created_at, a.image_tag, a.powered_off, a.uid, a.archived, a.private, a.memory_limit_mb, a.disk_limit_mb, a.cpu_milli, a.tabs, a.soft_deleted_at
 		FROM app_viewer v JOIN app a ON a.id = v.app_id
 		WHERE v.user_id = ? ORDER BY a.name
 	`

@@ -3,7 +3,15 @@ import { docsHref } from "./docs";
 
 // Copies text to the clipboard with a "Copied!" confirmation; falls back to
 // a hidden textarea + execCommand for non-secure contexts.
-export const CopyButton = ({ text, small = true, disabled = false, children }) => {
+// A clipboard glyph for icon-only copy buttons.
+export const CopyIcon = () => (
+  <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <rect x="9" y="9" width="11" height="11" rx="2" />
+    <path d="M5 15V5a2 2 0 0 1 2-2h8" />
+  </svg>
+);
+
+export const CopyButton = ({ text, small = true, disabled = false, title, onCopied, children }) => {
   const [copied, setCopied] = useState(false);
   const timer = useRef(null);
   useEffect(() => () => clearTimeout(timer.current), []);
@@ -23,12 +31,18 @@ export const CopyButton = ({ text, small = true, disabled = false, children }) =
         document.body.removeChild(el);
       }
     }
+    // With an onCopied handler the caller shows its own feedback (a toast), so
+    // the label stays put -- no "Copied!" swap that shifts an icon button.
+    if (onCopied) {
+      onCopied();
+      return;
+    }
     setCopied(true);
     clearTimeout(timer.current);
     timer.current = setTimeout(() => setCopied(false), 1500);
   };
   return (
-    <button type="button" className={`btn${small ? " btn-small" : ""}`} onClick={copy} disabled={disabled}>
+    <button type="button" className={`btn${small ? " btn-small" : ""}`} onClick={copy} disabled={disabled} title={title} aria-label={title}>
       {copied ? "Copied!" : children || "Copy"}
     </button>
   );
@@ -134,6 +148,16 @@ export const ErrorBanner = ({ message, onDismiss }) => {
     </div>
   );
 };
+
+// A small warning triangle for inline field notes ("<icon> message" next to a
+// label), sized to sit on a line of text.
+export const WarnIcon = () => (
+  <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ verticalAlign: "-1px" }}>
+    <path d="M8 2.2 14.5 13.3H1.5L8 2.2Z" />
+    <path d="M8 6.4v3" />
+    <path d="M8 11.4h.01" />
+  </svg>
+);
 
 // The brand mark: monospace wordmark with a blinking block cursor
 export const Wordmark = ({ big = false }) => (

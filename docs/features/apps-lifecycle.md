@@ -79,6 +79,15 @@ sequenceDiagram
 - **Delete.** Actions menu, behind a type-the-name confirmation
   (`AppDetail.jsx:DeleteAppDialog` -> `DELETE /api/apps/{name}`), or
   `hostit apps remove <name>` (also confirms), or `DELETE /api/apps/{name}`.
+  Delete is a *soft* delete: the app is powered off, stops routing and SSH at
+  once, and disappears from the owner's view (their list hides it and
+  `GET /api/apps/{name}` returns 404), but it survives for a grace period before a
+  background reaper tears it down for real. See "Soft delete" below.
+- **Restore / Delete now (admin).** A soft-deleted app stays listed for admins in
+  "All apps" with a *pending deletion* badge. An admin can **Restore** it
+  (`POST /api/apps/{name}/restore` -- it comes back powered off and the owner sees
+  it again) or **Delete now** (`POST /api/apps/{name}/purge` -- hard-delete
+  immediately, skipping the rest of the grace).
 
 ## Technical details
 
@@ -118,15 +127,56 @@ sequenceDiagram
   app. Nothing durable moves; the container keeps its `--hostname` until the next
   deploy recreates it. The server then calls `reloadDomains` so a custom domain
   follows the app to its new name.
-- **Delete** (`control/manager.go:DeleteApp`): serialized by the per-app lock, it
+- **Delete** is two-phase (see "Soft delete" below). The user-facing
+  `DELETE /api/apps/{name}` calls `control/softdelete.go:Manager.SoftDeleteApp`,
+  which powers the app off (`node.Down`), stamps `App.SoftDeletedAt`
+  (`store.SetAppSoftDeleted`), and returns -- the app then vanishes from the owner
+  and its quota allocation is released at once. The actual teardown is the same
+  `control/manager.go:DeleteApp` as before: serialized by the per-app lock, it
   disables the unit, resets its failed state, force-removes the container, deletes
   the app's btrfs subvolumes (the app subvolume + its snapshots), destroys its
   budget qgroup, deletes the Unix
   user, removes any leftover home dir, and finally `store.RemoveApp` (which cascades
-  keys, snapshots, domains, events, usage, tokens, assistant session). The server
-  also drops the app's assistant session (`handleAppsDelete`).
+  keys, snapshots, domains, events, usage, tokens, assistant session). This runs
+  from the background reaper (`Server.ReapSoftDeleted`) once the grace period
+  elapses.
 - **Per-app lock** (`control/manager.go:LockApp`): a per-app mutex serializes deploy,
   snapshot, rollback and delete so operations on one app's home never interleave.
+
+## Soft delete
+
+Deleting an app defers the destructive teardown. `SoftDeleteApp` powers the app
+off, stops routing and SSH immediately, and stamps `soft_deleted_at` (store
+migration #48 adds the column; `softDeletedUnix` is the sentinel for "not
+deleted"). From that moment the owner cannot see the app: `liveApps()`
+(`control/server_handler_apps.go`) hides it from their list, and the `ownedApp`
+guard 404s it, so the owner-facing surface behaves as if it were gone. Admins
+still see it in "All apps" with a *pending deletion* badge.
+
+The allocation is freed at soft-delete time, not at teardown: a soft-deleted app
+is skipped by `control/server_handler_limits.go:poolReserved`,
+`store/app.go:AppCountByOwner` (`WHERE soft_deleted_at = 0`), and the account
+usage in `control/server_handler_account.go`, so the owner can create a
+replacement right away.
+
+A background reaper hard-deletes for real once the grace period elapses.
+`Server.SoftDeleteReapLoop` (started from `cmd/control/serve.go`) ticks every 5
+minutes (`softDeleteReapInterval`) and `Server.ReapSoftDeleted` runs the full
+`Manager.DeleteApp` teardown on any app past its grace. The grace period is the
+`soft-delete-duration` control.yml option, resolved by
+`config.SoftDeleteGrace()`: a Go duration (`"168h"`) or a day count (`"7d"`),
+default 7 days. `"0"` removes promptly but STILL asynchronously -- the reaper is
+kicked off right after the delete, so even a zero-grace delete never blocks the
+request.
+
+Admins can short-circuit the grace either way, both admin-only:
+
+- `POST /api/apps/{name}/restore` (`handleAppsRestore` ->
+  `Manager.RestoreSoftDeleted`): clears the stamp; the app returns powered off
+  (like leaving the archive) and the owner sees it again.
+- `POST /api/apps/{name}/purge` (`handleAppsPurge`): runs the teardown
+  immediately, skipping the rest of the grace. It refuses an app that is not
+  pending deletion.
 
 ## Other notes
 

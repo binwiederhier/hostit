@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -213,4 +214,31 @@ func TestGoogleConnectionsFallBackToTheLoginClient(t *testing.T) {
 	blank := NewConfig()
 	id, _ = blank.ConnectionClient("google-calendar")
 	assert.Empty(t, id)
+}
+
+func TestSoftDeleteGrace(t *testing.T) {
+	cases := []struct {
+		in   string
+		want time.Duration
+	}{
+		{"", 7 * 24 * time.Hour},        // unset -> default 7 days
+		{"7d", 7 * 24 * time.Hour},      // day count
+		{"168h", 7 * 24 * time.Hour},    // Go duration
+		{"0", 0},                        // disabled (immediate, still async)
+		{"0d", 0},                       // also disabled
+		{"48h", 48 * time.Hour},         // shorter grace
+		{"garbage", 7 * 24 * time.Hour}, // unparseable falls back to the default
+	}
+	for _, tc := range cases {
+		c := &Config{SoftDeleteDuration: tc.in}
+		assert.Equal(t, tc.want, c.SoftDeleteGrace(), "in=%q", tc.in)
+	}
+}
+
+func TestValidateRejectsBadSoftDeleteDuration(t *testing.T) {
+	c := NewConfig()
+	c.BaseDomain = "apps.example.com"
+	c.AdminToken = "0123456789abcdef0123"
+	c.SoftDeleteDuration = "next week"
+	require.ErrorContains(t, c.Validate(), "soft-delete-duration")
 }

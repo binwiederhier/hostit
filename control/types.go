@@ -128,6 +128,10 @@ type apiAppResponse struct {
 	// Archived is the app shelved: powered off, refusing to run, and taking no
 	// new snapshots until it is brought back
 	Archived bool `json:"archived"`
+	// SoftDeletedAt is set (unix seconds) when the app is soft-deleted: gone from
+	// the owner's view, awaiting reap. Only ever seen in the admin list, where it
+	// drives the "deleting on <date>" note and the restore action.
+	SoftDeletedAt int64 `json:"soft_deleted_at,omitempty"`
 	// Private restricts the app's URL to its owner, its collaborators and
 	// admins, rather than anyone who knows it.
 	Private bool `json:"private"`
@@ -352,10 +356,13 @@ type apiSettingsResponse struct {
 	// The default POOLS a user gets; 0 = derive app_limit x per-app default.
 	DefaultMemoryPoolMB int `json:"default_memory_pool_mb"`
 	DefaultDiskPoolMB   int `json:"default_disk_pool_mb"`
-	// InfoPrompt is the instance-wide prompt added to every /info response and
-	// the assistant system prompt. Empty here means the control.yml default (if
-	// any) is in effect; the field always reflects the effective value.
-	InfoPrompt string `json:"info_prompt"`
+	// InfoPrompt is the admin's stored instance-prompt OVERRIDE (the raw DB
+	// setting), empty when none is set. InfoPromptDefault is the control.yml
+	// default that applies when the override is empty -- surfaced separately so
+	// the admin UI can show it as a placeholder and offer "reset to default"
+	// (which clears the override back to this).
+	InfoPrompt        string `json:"info_prompt"`
+	InfoPromptDefault string `json:"info_prompt_default"`
 }
 
 // apiUpdateSettingsRequest is the body of PATCH /api/settings

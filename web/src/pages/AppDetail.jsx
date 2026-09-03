@@ -7,7 +7,7 @@ import { limitInputs, limitsPatchBody } from "../limits";
 import { visibilityChanges } from "../visibility";
 import { retryChunk } from "../chunkreload";
 import { useDropdown, useReconnect } from "../hooks";
-import { CopyButton, DocsLink, ErrorBanner, Loading, Snippet, StatusDot, VisibilityBadge, VisibilityChoice, pairMB, usageLevel, UsagePair, cores, visibilityOf } from "../components";
+import { CopyButton, CopyIcon, DocsLink, ErrorBanner, Loading, Snippet, StatusDot, VisibilityBadge, VisibilityChoice, pairMB, usageLevel, UsagePair, cores, visibilityOf } from "../components";
 import { resolveTabs, normalizeTabs, tabsFromCsv, tabsToCsv, TOGGLEABLE_TABS, TAB_LABELS } from "../tabs";
 import { useSetAppHeader } from "../appHeader";
 
@@ -531,34 +531,50 @@ const NotFound = ({ name }) => (
 // "Bring your own Claude": just the ready-to-paste prompt (which already carries
 // the app's URL and token). The token's own copy/regenerate controls live in the
 // Actions menu now.
-const PromptDialog = ({ prompt, infoUrl, token, onClose }) => {
+const PromptDialog = ({ prompt, infoUrl, token, onClose, showToast }) => {
+  const copied = () => showToast && showToast("Copied to clipboard");
   // Two audiences, one dialog: paste a kick-off prompt into a chat agent, or
   // grab the app's details as individual copyable fields for your own agent's
   // context. Both panes stay mounted (stacked via CSS grid) so the modal doesn't
   // resize on tab switch.
   const [tab, setTab] = useState("agent");
   useEscape(onClose);
-  const pane = (key, hint, text, copyLabel) => (
-    <div className={"modal-tabpane" + (tab === key ? " on" : "")} role="tabpanel" aria-hidden={tab !== key}>
-      <p className="hint">{hint}</p>
-      <div className="term prompt-block">
-        <pre>{token ? text.split(token).join("*".repeat(8)) : text}</pre>
-        <div className="term-copy">
-          <CopyButton text={text} small={false}>
-            {copyLabel}
-          </CopyButton>
+  // The prompt shows the token masked as "********", but the real token is what
+  // gets copied -- both from the Copy button (copies the whole prompt) and from
+  // a manual highlight: onCopy swaps the mask back for the token in whatever the
+  // person selected, so a hand-copied prompt never carries a useless "********".
+  const mask = "*".repeat(8);
+  const pane = (key, hint, text, copyLabel) => {
+    const shown = token ? text.split(token).join(mask) : text;
+    const onCopy = (e) => {
+      if (!token) return;
+      const sel = window.getSelection().toString();
+      if (!sel.includes(mask)) return;
+      e.preventDefault();
+      e.clipboardData.setData("text/plain", sel.split(mask).join(token));
+    };
+    return (
+      <div className={"modal-tabpane" + (tab === key ? " on" : "")} role="tabpanel" aria-hidden={tab !== key}>
+        <p className="hint">{hint}</p>
+        <div className="term prompt-block">
+          <pre onCopy={onCopy}>{shown}</pre>
+          <div className="term-copy">
+            <CopyButton text={text} small={false} title={copyLabel} onCopied={copied}>
+              <CopyIcon />
+            </CopyButton>
+          </div>
         </div>
       </div>
-    </div>
-  );
+    );
+  };
   // One labelled, copyable field. The token is masked on screen but copies whole.
   const field = (label, value, secret) => (
     <div className="byoa-field">
       <span className="byoa-field-label">{label}</span>
       <div className="byoa-field-row">
         <span className="byoa-field-value mono">{secret ? "•".repeat(24) : value}</span>
-        <CopyButton text={value} small>
-          Copy
+        <CopyButton text={value} small title="Copy" onCopied={copied}>
+          <CopyIcon />
         </CopyButton>
       </div>
     </div>
@@ -3092,7 +3108,7 @@ const AppDetail = ({ account, refreshAccount }) => {
           >
           <div className="ws-chat">
             <Suspense fallback={<div className="ws-chat-loading">Loading assistant...</div>}>
-              <AppAssistant name={app.name} embedded onPreviewRefresh={reloadPreview} />
+              <AppAssistant name={app.name} embedded onPreviewRefresh={reloadPreview} onUseOwnAgent={() => setShowPrompt(true)} />
             </Suspense>
           </div>
 
@@ -3146,7 +3162,7 @@ const AppDetail = ({ account, refreshAccount }) => {
       </div>
 
       {showSsh && <SshDialog app={app} hasKeys={hasKeys} onClose={() => setShowSsh(false)} />}
-      {showPrompt && <PromptDialog prompt={prompt} infoUrl={infoUrl} token={token || tokenPlaceholder} onClose={() => setShowPrompt(false)} />}
+      {showPrompt && <PromptDialog prompt={prompt} infoUrl={infoUrl} token={token || tokenPlaceholder} onClose={() => setShowPrompt(false)} showToast={showToast} />}
       {showNewSnapshot && (
         <NewSnapshotDialog
           name={app.name}

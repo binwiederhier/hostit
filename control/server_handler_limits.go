@@ -174,6 +174,9 @@ func (s *Server) poolReserved(ownerID, excludeApp string) (memoryMB, diskMB int,
 		if a.Name == excludeApp {
 			continue
 		}
+		if !a.SoftDeletedAt.IsZero() {
+			continue // pending deletion, hidden from the owner: it holds no quota
+		}
 		mem, disk, _ := user.EffectiveAppLimits(limits, a)
 		memoryMB += mem
 		diskMB += disk

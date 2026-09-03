@@ -50,11 +50,18 @@ type Config struct {
 	// sets its own private address: the proxy dials apps over the network, and
 	// a loopback-published port is unreachable from another machine.
 	AppsBindAddress string `yaml:"apps-bind-address"`
-	// SSHHost is the hostname clients use to SSH to apps on THIS node. Reported
-	// to control, which advertises it in an app's SSH command. Empty leaves
-	// control advertising its base domain -- right for a colocated node, but a
-	// remote node must set its own reachable address or its apps' SSH lands on
-	// control, where the app user does not exist.
+	// SSHHost is this node's reachable SSH address. Its role depends on whether
+	// control runs the SSH relay:
+	//   - relay OFF: control advertises this host directly in an app's SSH
+	//     command, so it must be an address the USER can reach. Empty leaves
+	//     control advertising its base domain -- right for a colocated node, but
+	//     a remote node must set this or its apps' SSH lands on control, where
+	//     the app user does not exist.
+	//   - relay ON: control advertises only its own base domain to users and
+	//     routes here behind the scenes, so this is a purely INTERNAL routing
+	//     target that control (not the user) must reach -- a private address is
+	//     fine, and it is never shown to anyone. A remote node must still set it,
+	//     or the relay has no route and the app's advertised SSH command fails.
 	SSHHost string `yaml:"ssh-host"`
 	// ListenMetrics is an optional Prometheus /metrics listener (empty = off).
 	ListenMetrics string `yaml:"listen-metrics"`

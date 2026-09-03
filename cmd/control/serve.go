@@ -192,6 +192,9 @@ func execServe(c *cli.Context) error {
 	// Retry pending/error custom domains so they verify once DNS is set up
 	go srv.DomainRetryLoop(time.Minute, done)
 
+	// Reap apps whose soft-delete grace has run out
+	go srv.SoftDeleteReapLoop(done)
+
 	// Shut down gracefully on SIGINT/SIGTERM
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)

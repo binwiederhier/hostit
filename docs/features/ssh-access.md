@@ -127,6 +127,17 @@ root-only) on startup and reports the public half to control -- no ssh-keygen in
 the deploy. No extra port and no SSH daemon of hostit's own -- it rides the system
 `sshd`.
 
+With the relay on, the command advertised for **every** app is the control base
+domain (`ssh <app>@<base-domain>`); the relay routes to the right node behind the
+scenes. A node's own reported `ssh-host` is therefore NEVER shown to users under
+the relay -- it is a purely internal routing address, so it can be a private
+address that is never publicly exposed. A remote node must still set `ssh-host`
+for the relay to reach it, though; if it does not, its apps are excluded from the
+relay entirely (no route, `known_hosts` or `authorized_keys` entry), and control
+logs a `slog.Warn` naming the excluded apps
+(`control/sshrelay.go`: `sshRelayFiles` returns the skipped app names,
+`refreshSSHRelay` logs them).
+
 Trade-offs, deliberately accepted: the control host terminates the outer SSH and
 holds a key that reaches every node, so a control-host compromise reaches every
 app (it already holds the key material); the frontend authenticates the user and
@@ -206,9 +217,12 @@ sshd forwarding hardening:
 ## Other notes
 
 - The SSH host reported to clients is resolved per app by
-  `control/service.go:Server.sshHostFor(app.Host)`: the hosting node's own
+  `control/service.go:Server.sshHostFor(app.Host)`. When the relay is on
+  (`SSHRelayEnabled`) it always returns the control base domain, hiding the node
+  host. With the relay off (the default) it returns the hosting node's own
   reported `ssh_host` (see Multi-node SSH above), falling back to
-  `controlconf/config.go:Config.SSHHostname` (`ssh-host`, then the base domain).
+  `controlconf/config.go:Config.SSHHostname` (`ssh-host`, then the base domain --
+  the right answer for a colocated node with no host of its own).
   It is what the app page and the agent `/info` response print as the ready-made
   `ssh <app>@<host>` command (`control/server_handler_agent.go`, `apiSSHInfo`).
 - hostit never generates a key pair; an app with no keys is API-only until a key

@@ -163,6 +163,9 @@ func (s *Server) accountResponse(c *caller) (*apiAccountResponse, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Soft-deleted apps are hidden from the owner and hold no quota, so they must
+	// not inflate the usage shown back to them either.
+	apps = liveApps(apps)
 	diskMB := 0
 	for _, a := range apps {
 		diskMB += a.DiskMB

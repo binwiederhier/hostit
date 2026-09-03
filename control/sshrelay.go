@@ -47,7 +47,7 @@ func sudoRelaySync(spec *relay.Spec) (string, error) {
 // colocated app's node IS reachable at apps.<domain>, so it needs no relay stub.
 // Each remote node that hosts a routed app and reports both its SSH host and host
 // key gets one known_hosts line.
-func sshRelayFiles(apps []*store.App, nodeByID map[string]*store.Node) (routes, knownHosts string) {
+func sshRelayFiles(apps []*store.App, nodeByID map[string]*store.Node) (routes, knownHosts string, skipped []string) {
 	var routeLines []string
 	usedNodes := make(map[string]bool)
 	for _, a := range apps {
@@ -56,12 +56,19 @@ func sshRelayFiles(apps []*store.App, nodeByID map[string]*store.Node) (routes, 
 		}
 		n := nodeByID[a.Host]
 		if n == nil || n.SSHHost == "" {
-			continue // node unknown or not yet reporting a reachable host
+			// A remote app whose node is unknown or reports no ssh-host gets no
+			// route, known_hosts line or authorized_keys -- yet sshHostFor still
+			// advertises a plausible ssh command for it (it falls back to the base
+			// domain). Report it so the caller can warn, rather than dropping it in
+			// silence and leaving the user with a command that fails at connect.
+			skipped = append(skipped, a.Name)
+			continue
 		}
 		routeLines = append(routeLines, a.Name+"\t"+n.SSHHost)
 		usedNodes[a.Host] = true
 	}
 	sort.Strings(routeLines)
+	sort.Strings(skipped)
 
 	var khLines []string
 	for id := range usedNodes {
@@ -73,7 +80,7 @@ func sshRelayFiles(apps []*store.App, nodeByID map[string]*store.Node) (routes, 
 	}
 	sort.Strings(khLines)
 
-	return joinLines(routeLines), joinLines(khLines)
+	return joinLines(routeLines), joinLines(khLines), skipped
 }
 
 // joinLines joins lines with newlines and a trailing newline, or "" if empty.
@@ -87,20 +94,20 @@ func joinLines(lines []string) string {
 // buildRelaySpec computes what control applies to the frontend: the routing
 // table, known_hosts, and each routed (remote) app's authorized_keys (the real
 // users; the relay key is added on the node hop, not here).
-func (m *Manager) buildRelaySpec() (*relay.Spec, error) {
+func (m *Manager) buildRelaySpec() (*relay.Spec, []string, error) {
 	apps, err := m.store.Apps()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	nodes, err := m.store.Nodes()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	byID := make(map[string]*store.Node, len(nodes))
 	for _, n := range nodes {
 		byID[n.Name] = n
 	}
-	routes, knownHosts := sshRelayFiles(apps, byID)
+	routes, knownHosts, skipped := sshRelayFiles(apps, byID)
 	appKeys := make(map[string]string)
 	for _, a := range apps {
 		if a.Host == "" || a.Host == store.HostLocal {
@@ -116,7 +123,7 @@ func (m *Manager) buildRelaySpec() (*relay.Spec, error) {
 			appKeys[a.Name] = ""
 		}
 	}
-	return &relay.Spec{Routes: routes, KnownHosts: knownHosts, AppKeys: appKeys}, nil
+	return &relay.Spec{Routes: routes, KnownHosts: knownHosts, AppKeys: appKeys}, skipped, nil
 }
 
 // refreshSSHRelay recomputes the relay spec and applies it locally through the
@@ -128,10 +135,18 @@ func (m *Manager) refreshSSHRelay() {
 	if !m.config.SSHRelayEnabled {
 		return
 	}
-	spec, err := m.buildRelaySpec()
+	spec, skipped, err := m.buildRelaySpec()
 	if err != nil {
 		slog.Warn("Cannot build SSH relay spec", "error", err)
 		return
+	}
+	if len(skipped) > 0 {
+		// These apps are advertised a working-looking ssh command (sshHostFor
+		// falls back to the base domain) but have no relay route, so connecting
+		// fails with a generic publickey error. The cause -- their node never
+		// reported ssh-host -- is invisible without this line.
+		slog.Warn("SSH relay excludes apps whose node reports no ssh-host; their advertised ssh command will fail until the node sets ssh-host",
+			"apps", skipped)
 	}
 	pub, err := m.relayApply(spec)
 	if err != nil {

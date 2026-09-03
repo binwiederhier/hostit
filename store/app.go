@@ -10,27 +10,28 @@ import (
 const (
 	insertAppQuery = `INSERT INTO app (id, name, port, host, owner_id, created_at, image_tag, uid, private) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	selectAppQuery = `
-		SELECT id, name, port, host, owner_id, disk_mb, created_at, image_tag, powered_off, uid, archived, private, memory_limit_mb, disk_limit_mb, cpu_milli, tabs
+		SELECT id, name, port, host, owner_id, disk_mb, created_at, image_tag, powered_off, uid, archived, private, memory_limit_mb, disk_limit_mb, cpu_milli, tabs, soft_deleted_at
 		FROM app WHERE name = ?
 	`
 	selectAppByUIDQuery = `
-		SELECT id, name, port, host, owner_id, disk_mb, created_at, image_tag, powered_off, uid, archived, private, memory_limit_mb, disk_limit_mb, cpu_milli, tabs
+		SELECT id, name, port, host, owner_id, disk_mb, created_at, image_tag, powered_off, uid, archived, private, memory_limit_mb, disk_limit_mb, cpu_milli, tabs, soft_deleted_at
 		FROM app WHERE uid = ?
 	`
 	selectAppsQuery = `
-		SELECT id, name, port, host, owner_id, disk_mb, created_at, image_tag, powered_off, uid, archived, private, memory_limit_mb, disk_limit_mb, cpu_milli, tabs
+		SELECT id, name, port, host, owner_id, disk_mb, created_at, image_tag, powered_off, uid, archived, private, memory_limit_mb, disk_limit_mb, cpu_milli, tabs, soft_deleted_at
 		FROM app ORDER BY name
 	`
 	selectAppsByOwnerQuery = `
-		SELECT id, name, port, host, owner_id, disk_mb, created_at, image_tag, powered_off, uid, archived, private, memory_limit_mb, disk_limit_mb, cpu_milli, tabs
+		SELECT id, name, port, host, owner_id, disk_mb, created_at, image_tag, powered_off, uid, archived, private, memory_limit_mb, disk_limit_mb, cpu_milli, tabs, soft_deleted_at
 		FROM app WHERE owner_id = ? ORDER BY name
 	`
 	selectAppHostQuery         = `SELECT host FROM app WHERE name = ?`
-	selectAppCountByOwnerQuery = `SELECT COUNT(*) FROM app WHERE owner_id = ?`
+	selectAppCountByOwnerQuery = `SELECT COUNT(*) FROM app WHERE owner_id = ? AND soft_deleted_at = 0`
 	selectPortsQuery           = `SELECT port FROM app ORDER BY port`
 	updateAppUsageQuery        = `UPDATE app SET disk_mb = ? WHERE name = ?`
 	updateAppPoweredOffQuery   = `UPDATE app SET powered_off = ? WHERE name = ?`
 	updateAppArchivedQuery     = `UPDATE app SET archived = ? WHERE name = ?`
+	updateAppSoftDeletedQuery  = `UPDATE app SET soft_deleted_at = ? WHERE name = ?`
 	updateAppPrivateQuery      = `UPDATE app SET private = ? WHERE name = ?`
 	updateAppTabsQuery         = `UPDATE app SET tabs = ? WHERE name = ?`
 	updateAppUIDQuery          = `UPDATE app SET uid = ? WHERE name = ?`
@@ -73,8 +74,8 @@ func (s *Store) AddApp(app *App) error {
 // local passwd file only knows the apps that live on this host.
 func (s *Store) AppByUID(uid int) (*App, error) {
 	app := &App{}
-	var createdAt int64
-	err := s.db.QueryRow(selectAppByUIDQuery, uid).Scan(&app.ID, &app.Name, &app.Port, &app.Host, &app.OwnerID, &app.DiskMB, &createdAt, &app.ImageTag, &app.PoweredOff, &app.UID, &app.Archived, &app.Private, &app.MemoryLimitMB, &app.DiskLimitMB, &app.CPUMilli, &app.Tabs)
+	var createdAt, softDeletedAt int64
+	err := s.db.QueryRow(selectAppByUIDQuery, uid).Scan(&app.ID, &app.Name, &app.Port, &app.Host, &app.OwnerID, &app.DiskMB, &createdAt, &app.ImageTag, &app.PoweredOff, &app.UID, &app.Archived, &app.Private, &app.MemoryLimitMB, &app.DiskLimitMB, &app.CPUMilli, &app.Tabs, &softDeletedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrAppNotFound
 	}
@@ -82,6 +83,9 @@ func (s *Store) AppByUID(uid int) (*App, error) {
 		return nil, err
 	}
 	app.CreatedAt = time.Unix(createdAt, 0)
+	if softDeletedAt != 0 {
+		app.SoftDeletedAt = time.Unix(softDeletedAt, 0)
+	}
 	return app, nil
 }
 
@@ -104,6 +108,21 @@ func (s *Store) SetAppOwner(name, ownerID string) error {
 func (s *Store) SetAppArchived(name string, archived bool) error {
 	_, err := s.db.Exec(updateAppArchivedQuery, archived, name)
 	return err
+}
+
+// SetAppSoftDeleted stamps (or clears, with the zero time) when an app was
+// soft-deleted. A non-zero stamp hides it from its owner and schedules its real
+// deletion; the zero time restores it.
+func (s *Store) SetAppSoftDeleted(name string, at time.Time) error {
+	var v int64
+	if !at.IsZero() {
+		v = at.Unix()
+	}
+	res, err := s.db.Exec(updateAppSoftDeletedQuery, v, name)
+	if err != nil {
+		return err
+	}
+	return checkAffected(res, ErrAppNotFound)
 }
 
 // SetAppPrivate records (or clears) an app's private visibility.
@@ -176,14 +195,17 @@ func (s *Store) ImageTagsInUse() (map[string]bool, error) {
 // App returns the app with the given name, or ErrAppNotFound
 func (s *Store) App(name string) (*App, error) {
 	var app App
-	var createdAt int64
-	err := s.db.QueryRow(selectAppQuery, name).Scan(&app.ID, &app.Name, &app.Port, &app.Host, &app.OwnerID, &app.DiskMB, &createdAt, &app.ImageTag, &app.PoweredOff, &app.UID, &app.Archived, &app.Private, &app.MemoryLimitMB, &app.DiskLimitMB, &app.CPUMilli, &app.Tabs)
+	var createdAt, softDeletedAt int64
+	err := s.db.QueryRow(selectAppQuery, name).Scan(&app.ID, &app.Name, &app.Port, &app.Host, &app.OwnerID, &app.DiskMB, &createdAt, &app.ImageTag, &app.PoweredOff, &app.UID, &app.Archived, &app.Private, &app.MemoryLimitMB, &app.DiskLimitMB, &app.CPUMilli, &app.Tabs, &softDeletedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrAppNotFound
 	} else if err != nil {
 		return nil, err
 	}
 	app.CreatedAt = time.Unix(createdAt, 0)
+	if softDeletedAt != 0 {
+		app.SoftDeletedAt = time.Unix(softDeletedAt, 0)
+	}
 	return &app, nil
 }
 
@@ -309,11 +331,14 @@ func (s *Store) queryApps(query string, args ...any) ([]*App, error) {
 	apps := make([]*App, 0)
 	for rows.Next() {
 		var app App
-		var createdAt int64
-		if err := rows.Scan(&app.ID, &app.Name, &app.Port, &app.Host, &app.OwnerID, &app.DiskMB, &createdAt, &app.ImageTag, &app.PoweredOff, &app.UID, &app.Archived, &app.Private, &app.MemoryLimitMB, &app.DiskLimitMB, &app.CPUMilli, &app.Tabs); err != nil {
+		var createdAt, softDeletedAt int64
+		if err := rows.Scan(&app.ID, &app.Name, &app.Port, &app.Host, &app.OwnerID, &app.DiskMB, &createdAt, &app.ImageTag, &app.PoweredOff, &app.UID, &app.Archived, &app.Private, &app.MemoryLimitMB, &app.DiskLimitMB, &app.CPUMilli, &app.Tabs, &softDeletedAt); err != nil {
 			return nil, err
 		}
 		app.CreatedAt = time.Unix(createdAt, 0)
+		if softDeletedAt != 0 {
+			app.SoftDeletedAt = time.Unix(softDeletedAt, 0)
+		}
 		apps = append(apps, &app)
 	}
 	return apps, rows.Err()

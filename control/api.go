@@ -129,6 +129,8 @@ func (s *Server) newAPIHandler() http.Handler {
 	route(mux, "POST", "/domains", s.requireAdmin(s.handleDomainsAdd))
 	route(mux, "DELETE", "/domains/{domain}", s.requireAdmin(s.handleDomainsDelete))
 	route(mux, "GET", "/cluster", s.requireAdmin(s.handleClusterStatus))
+	route(mux, "POST", "/apps/{name}/restore", s.requireAdmin(s.handleAppsRestore))
+	route(mux, "POST", "/apps/{name}/purge", s.requireAdmin(s.handleAppsPurge))
 	route(mux, "GET", "/admin/logs/control", s.requireAdmin(s.handleControlLogs))
 	route(mux, "GET", "/admin/logs/node/{node}", s.requireAdmin(s.handleNodeLogs))
 	route(mux, "GET", "/settings", s.requireAdmin(s.handleSettingsGet))

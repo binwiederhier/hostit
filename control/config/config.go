@@ -9,7 +9,9 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"strconv"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 	"heckel.io/hostit/http/outbound"
@@ -184,6 +186,13 @@ type Config struct {
 	AppPreviewIsolation  AppPreviewIsolationMode `yaml:"app-preview-isolation"`   // "strict" (default) or "off"; how the shot container's network is confined
 	AppPreviewAllowCIDRs []string                `yaml:"app-preview-allow-cidrs"` // Extra destination CIDRs the shot container may reach in strict mode
 
+	// SoftDeleteDuration is the grace period between an owner deleting an app and
+	// the app actually being removed. During it the app is hidden from the owner
+	// but still listed for admins, so an accidental delete can be recovered. A
+	// Go duration ("168h") or a day count ("7d"); empty means 7 days; "0" disables
+	// the grace (the delete still runs asynchronously). See SoftDeleteGrace.
+	SoftDeleteDuration string `yaml:"soft-delete-duration"`
+
 	// Built-in coding assistant (the in-browser agent). An empty API key disables it.
 	AnthropicAPIKey string `yaml:"anthropic-api-key"` // Anthropic API key for the built-in assistant; empty disables it
 
@@ -234,6 +243,34 @@ func NewConfig() *Config {
 		AppPreview:          AppPreviewLive,
 		AppPreviewIsolation: AppPreviewIsolationStrict,
 	}
+}
+
+// defaultSoftDeleteGrace is used when soft-delete-duration is unset.
+const defaultSoftDeleteGrace = 7 * 24 * time.Hour
+
+// SoftDeleteGrace is how long a deleted app is kept before it is really removed.
+// Empty config means the default (7 days); "0" means no grace (delete at once,
+// still asynchronously); otherwise a Go duration or an "Nd" day count.
+func (c *Config) SoftDeleteGrace() time.Duration {
+	v := strings.TrimSpace(c.SoftDeleteDuration)
+	if v == "" {
+		return defaultSoftDeleteGrace
+	}
+	if d, ok := parseGrace(v); ok {
+		return d
+	}
+	return defaultSoftDeleteGrace
+}
+
+// parseGrace accepts a Go duration ("168h") or an "Nd" day count ("7d").
+func parseGrace(v string) (time.Duration, bool) {
+	if n, err := strconv.Atoi(strings.TrimSuffix(v, "d")); err == nil && strings.HasSuffix(v, "d") {
+		return time.Duration(n) * 24 * time.Hour, true
+	}
+	if d, err := time.ParseDuration(v); err == nil {
+		return d, true
+	}
+	return 0, false
 }
 
 // WebEnabled reports whether Google login (and thus the web app) is configured
@@ -388,6 +425,11 @@ func (c *Config) Validate() error {
 	}
 	if c.AppPreview != AppPreviewLive && c.AppPreview != AppPreviewScreenshot && c.AppPreview != AppPreviewOff {
 		return fmt.Errorf("invalid app-preview mode %q, must be %q, %q or %q", c.AppPreview, AppPreviewLive, AppPreviewScreenshot, AppPreviewOff)
+	}
+	if v := strings.TrimSpace(c.SoftDeleteDuration); v != "" {
+		if _, ok := parseGrace(v); !ok {
+			return fmt.Errorf("invalid soft-delete-duration %q: use a duration like 168h, a day count like 7d, or 0", c.SoftDeleteDuration)
+		}
 	}
 	if c.AppPreviewIsolation != AppPreviewIsolationStrict && c.AppPreviewIsolation != AppPreviewIsolationOff {
 		return fmt.Errorf("invalid app-preview-isolation %q, must be %q or %q", c.AppPreviewIsolation, AppPreviewIsolationStrict, AppPreviewIsolationOff)

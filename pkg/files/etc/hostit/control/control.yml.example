@@ -114,6 +114,14 @@ admin-token: CHANGE-ME
 # anthropic-api-key: sk-ant-...
 # claude-code-oauth-token: ...
 
+# Instance-wide instructions appended to every app's assistant prompt and every
+# /info response: house rules, what this instance is for, deployment notes. This
+# is the DEFAULT only -- an admin can override it live on the web admin page,
+# where "Reset to default" clears that override back to this value.
+# info-prompt: >-
+#   This is the acme.co internal instance. Prefer Postgres over SQLite for
+#   anything shared, and keep persistent data under data/.
+
 # How dashboard app cards preview: "live" scaled-down iframe (default),
 # "screenshot" (headless chrome, re-shot every 6h and ~1min after edits), or
 # "off". In screenshot mode "app-preview-isolation: strict" (default) confines the
@@ -122,6 +130,12 @@ admin-token: CHANGE-ME
 # app-preview-isolation: strict
 # app-preview-allow-cidrs:
 #   - 10.20.0.0/24
+
+# Grace period between a user deleting an app and the app actually being removed.
+# During it the app is hidden from its owner but still listed for admins, who can
+# restore it -- a safety net for an accidental delete. A Go duration ("168h") or a
+# day count ("7d"); default 7 days. "0" removes at once (still asynchronously).
+# soft-delete-duration: 7d
 
 # Outbound allow-list for URLs hostit fetches on a user's behalf (MCP servers, a
 # provider's OAuth issuer). By default anything resolving into private/loopback/

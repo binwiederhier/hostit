@@ -434,6 +434,14 @@ const SSHPage = () => (
 scp ./index.html <app>@${baseDomain}:public/
 rsync -av ./site/ <app>@${baseDomain}:public/`}
     />
+    <p className="hint">
+      One host answers for every app: <span className="mono">{baseDomain}</span>
+      , the same address whether the app runs on this machine or another node in
+      the cluster. When an admin has turned the single-hostname relay off,
+      apps on a separate node are reached at that node's own SSH host instead;
+      the app page always shows the exact command to use, so you never have to
+      work out which node an app is on.
+    </p>
     <p>
       The session lands <em>inside</em> the app's container, where you are root
       and can <span className="mono">apt-get install</span> whatever you need.
@@ -488,6 +496,24 @@ const SnapshotsPage = () => (
       an archived app is still there to bring back later.{" "}
       <strong>Unarchive</strong> returns it to an ordinary powered-off app, which
       you then power on when you want it. Both are in the app's Actions menu.
+    </p>
+    <h3>Deleting</h3>
+    <p>
+      <strong>Delete</strong> is not instant, so an accidental one is not the
+      end of the app. A deleted app is shelved for a grace period -- seven days
+      by default -- during which it is powered off and hidden from you: gone
+      from your dashboard and your API, but not yet erased. Its resources are
+      freed the moment you delete, though (both the app slot and its memory and
+      disk go back to your pool), so you can build its replacement right away
+      without waiting the grace period out.
+    </p>
+    <p>
+      An admin can still see a shelved app -- badged <em>pending deletion</em>{" "}
+      in the admin app list -- and can <strong>restore</strong> it, which brings
+      it back powered off, exactly as leaving the archive does. Once the grace
+      period passes, a background sweep removes it for good: container, files,
+      snapshots and all. That last step is irreversible, so recover an app you
+      deleted by mistake before its time is up.
     </p>
     <h3>Rollback</h3>
     <p>
@@ -1523,6 +1549,32 @@ const ConfigPage = () => (
             <td>Listener addresses.</td>
           </tr>
           <tr>
+            <td className="mono">ssh-relay</td>
+            <td>
+              <span className="mono">true</span> makes one hostname answer for
+              every app's SSH: users run{" "}
+              <span className="mono">ssh &lt;app&gt;@&lt;base-domain&gt;</span>{" "}
+              and the relay forwards to whichever node hosts the app, so a
+              node's own <span className="mono">ssh-host</span> is internal only
+              and never shown (it may be a private address). With the relay off,
+              an app on a remote node advertises that node's{" "}
+              <span className="mono">ssh-host</span> directly.
+            </td>
+          </tr>
+          <tr>
+            <td className="mono">soft-delete-duration</td>
+            <td>
+              How long a deleted app is kept, powered off and hidden from its
+              owner, before a background sweep erases it for good -- a grace
+              period against accidental deletes. A Go duration (
+              <span className="mono">168h</span>) or a day count (
+              <span className="mono">7d</span>); default 7 days.{" "}
+              <span className="mono">0</span> deletes promptly (still in the
+              background). During the window an admin can restore the app or
+              "Delete now" from the admin app list.
+            </td>
+          </tr>
+          <tr>
             <td className="mono">anthropic-api-key</td>
             <td>
               Enables the built-in assistant on the metered Anthropic API. See
@@ -1662,6 +1714,17 @@ apps-allowed-addresses:
       on 2930, since they dial out); host 1 accepts{" "}
       <span className="mono">2930</span> from the nodes, plus 80 and 443 from
       the world.
+    </p>
+    <p>
+      SSH into apps on a remote node needs one more thing. Give each such node
+      an <span className="mono">ssh-host</span> so hostit knows where its apps
+      answer SSH. With <span className="mono">ssh-relay: true</span> on control,
+      that address is used internally only -- every app advertises{" "}
+      <span className="mono">ssh &lt;app&gt;@&lt;base-domain&gt;</span> and the
+      relay forwards to the right node -- so a node's{" "}
+      <span className="mono">ssh-host</span> can be a private address. With the
+      relay off, the node's <span className="mono">ssh-host</span> is what users
+      connect to directly, and a colocated node falls back to the base domain.
     </p>
     <p>
       Confirm with <span className="mono">hostit-control node list</span> and{" "}

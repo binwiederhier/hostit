@@ -281,42 +281,65 @@ const MakeAdminDialog = ({ user, onCancel, onConfirm }) => (
 
 // Same shape as the dashboard row, plus the owner: for an admin /api/apps
 // returns every user's apps, in server order (already sorted by name).
-const AppRow = ({ app }) => (
-  <tr>
-    <td>
-      <StatusDot
-        running={app.running}
-        appRunning={app.app_running}
-        appState={app.app_state}
-        archived={app.archived}
-      />
-      <Link className="mono app-link" to={`/app/${app.name}`}>
-        {app.name}
-      </Link>
-    </td>
-    <td className="cell-muted">{app.owner_email || "--"}</td>
-    <td><UsagePair kind="ram" used={app.memory_mb} total={app.memory_limit_mb} /></td>
-    <td><UsagePair kind="disk" used={app.disk_mb} total={app.disk_limit_mb} /></td>
-    <td className="mono cell-muted">{app.host || "--"}</td>
-    <td className="cell-actions">
-      <div className="btn-row btn-row-end">
-        <Link className="btn btn-small" to={`/app/${app.name}`}>
-          Manage
-        </Link>
-        <a
-          className="btn btn-small btn-primary"
-          href={app.url}
-          target="_blank"
-          rel="noreferrer"
-        >
-          Open app
-        </a>
-      </div>
-    </td>
-  </tr>
-);
+const AppRow = ({ app, onRestore, onPurge }) => {
+  const softDeleted = app.soft_deleted_at > 0;
+  return (
+    <tr className={softDeleted ? "row-deleting" : undefined}>
+      <td>
+        <StatusDot
+          running={app.running}
+          appRunning={app.app_running}
+          appState={app.app_state}
+          archived={app.archived}
+        />
+        {softDeleted ? (
+          <span className="mono">{app.name}</span>
+        ) : (
+          <Link className="mono app-link" to={`/app/${app.name}`}>
+            {app.name}
+          </Link>
+        )}
+        {softDeleted && (
+          <span
+            className="badge badge-deleting"
+            title={`Deleted ${new Date(app.soft_deleted_at * 1000).toLocaleString()}; removed after the grace period unless restored`}
+          >
+            pending deletion
+          </span>
+        )}
+      </td>
+      <td className="cell-muted">{app.owner_email || "--"}</td>
+      <td><UsagePair kind="ram" used={app.memory_mb} total={app.memory_limit_mb} /></td>
+      <td><UsagePair kind="disk" used={app.disk_mb} total={app.disk_limit_mb} /></td>
+      <td className="mono cell-muted">{app.host || "--"}</td>
+      <td className="cell-actions">
+        <div className="btn-row btn-row-end">
+          {softDeleted ? (
+            <>
+              <button type="button" className="btn btn-small btn-primary" onClick={() => onRestore(app)}>
+                Restore
+              </button>
+              <button type="button" className="btn btn-small btn-danger" onClick={() => onPurge(app)}>
+                Delete now
+              </button>
+            </>
+          ) : (
+            <>
+              <Link className="btn btn-small" to={`/app/${app.name}`}>
+                Manage
+              </Link>
+              <a className="btn btn-small btn-primary" href={app.url} target="_blank" rel="noreferrer">
+                Open app
+              </a>
+            </>
+          )}
+        </div>
+      </td>
+    </tr>
+  );
+};
 
-const AllApps = ({ apps, error }) => (
+const AllApps = ({ apps, error, onRestore, onPurge }) => (
   <div className="card">
     <div className="card-header">
       <h2>All apps</h2>
@@ -345,7 +368,7 @@ const AllApps = ({ apps, error }) => (
           </thead>
           <tbody>
             {apps.map((app) => (
-              <AppRow key={app.name} app={app} />
+              <AppRow key={app.name} app={app} onRestore={onRestore} onPurge={onPurge} />
             ))}
           </tbody>
         </table>
@@ -1193,6 +1216,33 @@ const AdminInner = () => {
     }
   }, []);
 
+  const restoreApp = useCallback(async (app) => {
+    setError("");
+    try {
+      await api.post(`/api/apps/${encodeURIComponent(app.name)}/restore`, {});
+      await load();
+    } catch (err) {
+      setError(err.message);
+    }
+  }, [load]);
+
+  const [purging, setPurging] = useState(null);
+  const [purgeBusy, setPurgeBusy] = useState(false);
+  const confirmPurge = useCallback(async () => {
+    if (!purging) return;
+    setPurgeBusy(true);
+    setError("");
+    try {
+      await api.post(`/api/apps/${encodeURIComponent(purging.name)}/purge`, {});
+      setPurging(null);
+      await load();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setPurgeBusy(false);
+    }
+  }, [purging, load]);
+
   useEffect(() => {
     load();
   }, [load]);
@@ -1271,7 +1321,22 @@ const AdminInner = () => {
       </div>
       <AllowedDomains setError={setError} />
       <InstanceProviders setError={setError} />
-      <AllApps apps={apps} error={error} />
+      <AllApps apps={apps} error={error} onRestore={restoreApp} onPurge={setPurging} />
+      {purging && (
+        <ConfirmDialog
+          title="Delete app now?"
+          body={
+            <>
+              Permanently delete <strong>{purging.name}</strong> right now, skipping the rest of its grace period.
+              This removes the app and all its data for good and cannot be undone.
+            </>
+          }
+          confirmLabel="Delete now"
+          busy={purgeBusy}
+          onConfirm={confirmPurge}
+          onClose={() => setPurging(null)}
+        />
+      )}
       {settings !== null && (
         <Defaults settings={settings} onSaved={load} setError={setError} />
       )}
@@ -1293,12 +1358,14 @@ const InstancePrompt = ({ settings, onSaved, setError }) => {
   useEffect(() => {
     setText(settings.info_prompt || "");
   }, [settings]);
-  const save = async (e) => {
-    e.preventDefault();
+  const defaultText = settings.info_prompt_default || "";
+  const isOverridden = (settings.info_prompt || "") !== "";
+  const patch = async (value) => {
     setBusy(true);
     setError("");
     try {
-      await api.patch("/api/settings", { info_prompt: text });
+      await api.patch("/api/settings", { info_prompt: value });
+      setText(value);
       setSaved(true);
       setTimeout(() => setSaved(false), 1500);
       if (onSaved) onSaved();
@@ -1308,13 +1375,33 @@ const InstancePrompt = ({ settings, onSaved, setError }) => {
       setBusy(false);
     }
   };
+  const save = (e) => {
+    e.preventDefault();
+    patch(text);
+  };
   return (
     <div className="card">
-      <h2>Assistant &amp; info instructions</h2>
+      <div className="card-header">
+        <h2>Assistant &amp; info instructions</h2>
+        <button
+          type="button"
+          className="btn btn-small"
+          onClick={() => patch("")}
+          disabled={busy || !isOverridden}
+          title={
+            defaultText
+              ? "Clear this override and fall back to the control.yml default"
+              : "Clear this override (no control.yml default is set)"
+          }
+        >
+          Reset to default
+        </button>
+      </div>
       <p className="hint">
         Added to every app&rsquo;s assistant prompt and every <span className="mono">/info</span> response, for
         instance-specific context (house rules, what this instance is for, deployment notes). Editable
-        live; a <span className="mono">control.yml</span> default fills in when this is empty.
+        live; leave it empty to use the <span className="mono">control.yml</span> default
+        {defaultText ? " (shown below as the placeholder)" : " (none is set)"}.
       </p>
       <form onSubmit={save}>
         <textarea
@@ -1322,7 +1409,10 @@ const InstancePrompt = ({ settings, onSaved, setError }) => {
           rows={5}
           value={text}
           onChange={(e) => setText(e.target.value)}
-          placeholder="e.g. This is the acme.co internal instance. Prefer Postgres over SQLite for anything shared."
+          placeholder={
+            defaultText ||
+            "e.g. This is the acme.co internal instance. Prefer Postgres over SQLite for anything shared."
+          }
         />
         <div className="btn-row" style={{ justifyContent: "flex-start" }}>
           <button type="submit" className="btn btn-primary" disabled={busy}>
@@ -1364,12 +1454,19 @@ const AdminLogs = ({ cluster, setError }) => {
   useEffect(() => {
     fetchLogs(source);
   }, [source, fetchLogs]);
+  // Show the newest entries first-thing (journals are read tail-forward), and
+  // scroll the box, not the page, when new text lands.
+  const logRef = useRef(null);
+  useEffect(() => {
+    const el = logRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [text]);
   return (
     <div className="card">
       <div className="conn-head">
         <h2>Logs</h2>
         <button type="button" className="btn btn-small" onClick={() => fetchLogs(source)} disabled={busy}>
-          Refresh
+          {busy ? "Refreshing..." : "Refresh"}
         </button>
       </div>
       <p className="hint">hostit&rsquo;s own machine logs (the systemd journal), not an app&rsquo;s output.</p>
@@ -1392,7 +1489,9 @@ const AdminLogs = ({ cluster, setError }) => {
           </button>
         ))}
       </div>
-      <pre className="admin-log">{busy ? "Loading..." : text}</pre>
+      {/* Keep the current text visible while refreshing: blanking it to
+          "Loading..." collapses this box and yanks the page scroll to the top. */}
+      <pre ref={logRef} className="admin-log">{text || (busy ? "Loading..." : "")}</pre>
     </div>
   );
 };

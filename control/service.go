@@ -520,9 +520,17 @@ func (s *Server) appResponseFor(c *caller, a *store.App, customDomain string) *a
 	return resp
 }
 
-// sshHostFor returns the SSH hostname to advertise for an app on the given node:
-// the node's own reported host, falling back to control's base domain.
+// sshHostFor returns the SSH hostname to advertise for an app on the given node.
+// With the relay on, every app is reached through the single gateway (the
+// control base domain): the relay routes to the node behind the scenes, so the
+// node's own ssh-host stays an internal routing detail and is never shown to the
+// user -- which lets it be a private address that is never publicly exposed.
+// With the relay off, an app is advertised on its node's own reported host,
+// falling back to the base domain (colocated node, or one not yet reporting).
 func (s *Server) sshHostFor(nodeID string) string {
+	if s.config.SSHRelayEnabled {
+		return s.config.SSHHostname()
+	}
 	if nodeID != "" {
 		if n, err := s.apps.Store().Node(nodeID); err == nil && n.SSHHost != "" {
 			return n.SSHHost
@@ -554,6 +562,7 @@ func (s *Server) appResponse(a *store.App, customDomain string) *apiAppResponse 
 		Description:    s.apps.Description(a.Name),
 		Snapshot:       s.snapshotConfigFor(a.Name),
 		Archived:       a.Archived,
+		SoftDeletedAt:  softDeletedUnix(a),
 		Private:        a.Private,
 		Tabs:           a.Tabs,
 		CreatedAt:      a.CreatedAt,

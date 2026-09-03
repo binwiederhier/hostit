@@ -7,6 +7,52 @@ changed rather than what an operator had to do about it; from v0.15.0 on, each
 release is written down as it is cut. Anything that changes a config file, a
 default, or on-disk state is called out as **Breaking** or **Upgrade note**.
 
+## v0.38.0 (2026-09-03)
+
+Deferred app deletion (a delete you can take back), plus assistant reliability,
+SSH-relay and low-memory-build improvements.
+
+- **Deferred deletion (soft delete).** Deleting an app now shelves it for a grace
+  period instead of removing it at once: it powers off and disappears from the
+  owner's view, but an admin still sees it ("pending deletion") and can restore
+  it or "Delete now" to purge it early. A background sweep removes it for good
+  once the grace elapses. The app's resources (its slot, memory and disk pool)
+  are freed the moment it is deleted, so a replacement can be built right away.
+  Configure the grace with `soft-delete-duration` (a Go duration like "168h" or a
+  day count like "7d"; default 7 days; "0" removes promptly, still asynchronously).
+- **Assistant turns no longer cut off at five minutes.** A long turn was being
+  aborted at ~5 minutes by the per-RPC client timeout on the control-node link;
+  the streaming turn now runs on its own timeout-free path, bounded by the 15-minute
+  turn limit instead.
+- **The SSH relay hides the node's host.** With `ssh-relay: true`, every app's SSH
+  command is `ssh <app>@<base-domain>` and the relay routes to the node behind the
+  scenes, so a node's `ssh-host` is now internal-only and may be a private address
+  never shown to users. A remote node that reports no `ssh-host` has its apps
+  excluded from the relay, now with a warning log naming them.
+- **Low-memory Go builds.** `go build` in a small container (128-512 MB) could be
+  OOM-killed. hostit now tunes the compiler on the prepare step when memory is low
+  (`GOFLAGS=-p=1`, `GOMEMLIMIT`, a low `GOGC`), and the `/info` guidance explains
+  the tradeoff and the interpreted-stack / prebuilt-binary alternatives.
+- **Instance assistant prompt default.** control.yml `info-prompt` provides the
+  default for the instance-wide assistant/info prompt; the admin page adds a
+  "Reset to default" button that clears the live override back to it.
+- **control.yml MCP servers show in the admin page.** Named MCP servers defined in
+  control.yml now appear (read-only) in the admin providers list, the same way the
+  built-in OAuth catalog does, rather than only the ones added through the UI.
+- **Upload button.** The files editor gains an upload button (toolbar and per
+  folder), so files can be added from mobile, where drag-and-drop is awkward.
+- **Assistant and "use your own agent" polish.** The kick-off prompt shows the
+  token masked but copies the real one (by button or by hand); copy actions show a
+  toast instead of relabeling; the assistant's empty state gains a "use your own
+  agent" hint and opens on a worked example.
+
+**Upgrade note:** a storage migration runs before serving on the first start after
+the upgrade (a brief outage), adding the soft-delete column. Deletion behavior
+changes: an app deleted through the UI, API or CLI is now removed after the
+`soft-delete-duration` grace (default 7 days) rather than immediately, and an admin
+can restore it in the meantime. Set `soft-delete-duration: "0"` to keep
+near-immediate removal.
+
 ## v0.37.0 (2026-09-02)
 
 Connections gain permission checkboxes, editable and genuinely narrowable

@@ -484,6 +484,9 @@ var (
 		// missing. Idempotent -- the duplicate-column error is tolerated where the
 		// slot above already created it (260902).
 		`ALTER TABLE provider ADD COLUMN allow_multiple INTEGER NOT NULL DEFAULT 1;`,
+		// Soft-delete: an owner-deleted app is hidden and reaped after a grace
+		// period (soft-delete-duration) rather than removed at once (260903).
+		`ALTER TABLE app ADD COLUMN soft_deleted_at INTEGER NOT NULL DEFAULT 0;`,
 	}
 )
 
