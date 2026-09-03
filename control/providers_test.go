@@ -193,6 +193,37 @@ func TestNamedMCPServersComeFromConfigAndFromAdmins(t *testing.T) {
 	assert.True(t, labels["My server"], "and the user's own")
 }
 
+// A control.yml MCP server is listed on the admin providers page too (read-only,
+// like the OAuth catalog), not just offered to users on the connections page.
+func TestConfigMCPServersListedOnAdminProviders(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	s.config.MCPServers = map[string]config.MCPServer{
+		"deepwiki": {Label: "DeepWiki", URL: "https://mcp.deepwiki.com/mcp", Help: "Ask about a repo"},
+	}
+	admin := newActiveTestUser(t, s, "admin@example.com")
+	admin.Role = store.RoleAdmin
+	require.NoError(t, s.users.Update(admin))
+	adminToken, _, err := s.users.CreateToken(admin.ID, "laptop")
+	require.NoError(t, err)
+
+	rr := request(t, s.API(), "GET", "/api/providers", "", adminToken)
+	require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+	var out apiProvidersResponse
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &out))
+	var found *apiProviderDefResponse
+	for _, p := range out.Providers {
+		if p.Name == "deepwiki" {
+			found = p
+		}
+	}
+	require.NotNil(t, found, "a control.yml MCP server appears on the admin providers list")
+	assert.Equal(t, store.ProviderMCP, found.Kind)
+	assert.Equal(t, "instance", found.Scope)
+	assert.Equal(t, "https://mcp.deepwiki.com/mcp", found.URL)
+	assert.False(t, found.Editable, "a control.yml entry is read-only in the UI")
+}
+
 // consentCode walks a fake provider's consent and returns the code, without
 // following the redirect to a callback hostname that does not exist.
 func consentCode(t *testing.T, p providerWithAuthURL, clientID string) string {

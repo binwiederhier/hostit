@@ -110,6 +110,21 @@ func (s *Server) handleProvidersList(w http.ResponseWriter, r *http.Request, c *
 			RedirectURI: redirect,
 		})
 	}
+	// Config-defined MCP servers (control.yml mcp-servers): shown read-only, the
+	// same as the OAuth catalog above. Without this an admin cannot see what the
+	// file already offers -- only DB-added servers showed up before.
+	configMCP := map[string]bool{}
+	for name, srv := range s.config.MCPServers {
+		label := srv.Label
+		if label == "" {
+			label = name
+		}
+		configMCP[name] = true
+		out.Providers = append(out.Providers, &apiProviderDefResponse{
+			Name: name, Label: label, Kind: store.ProviderMCP, Scope: "instance",
+			URL: srv.URL, Help: srv.Help, Editable: false, RedirectURI: redirect,
+		})
+	}
 	// Tier 2 and 3 from the database.
 	rows, err := s.apps.Store().ProvidersFor(c.userID())
 	if err != nil {
@@ -117,6 +132,9 @@ func (s *Server) handleProvidersList(w http.ResponseWriter, r *http.Request, c *
 		return
 	}
 	for _, row := range rows {
+		if row.Kind == store.ProviderMCP && configMCP[row.Name] {
+			continue // a control.yml server of the same name already shadows it
+		}
 		out.Providers = append(out.Providers, providerRowView(row, c, redirect))
 	}
 	writeJSON(w, http.StatusOK, out)
