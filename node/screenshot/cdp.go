@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"image/png"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -153,6 +154,16 @@ func capture(ctx context.Context, debugBase, pageURL string, settle time.Duratio
 	if _, err := c.call(ctx, "Page.enable", nil); err != nil {
 		return nil, err
 	}
+	// Ask chrome to report its own rendering milestones. This is the signal that
+	// pixel-diffing can only approximate: firstContentfulPaint means content is
+	// actually on screen, and networkIdle means the page stopped fetching. A
+	// browser that tells us it is done beats guessing from two matching frames.
+	// Best-effort -- an older chrome without it just falls through to the poll.
+	_, _ = c.call(ctx, "Page.setLifecycleEventsEnabled", map[string]any{"enabled": true})
+	// Make the page the foreground target. A target chrome treats as hidden gets
+	// a backgrounded renderer, which commits no frames -- the shot then waits out
+	// its whole budget on a page that never paints. Best-effort, like the above.
+	_, _ = c.call(ctx, "Page.bringToFront", nil)
 	// For a private app, seed the app-bound grant cookie before navigating, so
 	// the very first request carries it and the proxy serves the app.
 	if cookie != nil {
@@ -170,11 +181,43 @@ func capture(ctx context.Context, debugBase, pageURL string, settle time.Duratio
 	if err != nil {
 		return nil, err
 	}
-	// Wait for load, but never longer than the settle window: a page that never
-	// fires it is still worth capturing.
-	if err := c.waitFor(ctx, navID, "Page.loadEventFired", settle); err != nil && ctx.Err() != nil {
+	// Ask the browser when it is ready, rather than inferring it from pixels.
+	// waitReady returns as soon as chrome reports content painted AND the network
+	// quiet, so an animating page (which never yields two identical frames) is
+	// done in seconds instead of burning the whole budget.
+	// Waiting for a paint signal is capped well short of the settle budget: a
+	// page that paints at all does so in the first seconds, and the fallback poll
+	// then gets its own full budget. Worst case is paintSignalWait + settle +
+	// settleGrace, comfortably inside the shot's own timeout.
+	loadStart := time.Now()
+	signalBudget := paintSignalWait
+	if signalBudget > settle {
+		signalBudget = settle
+	}
+	painted, idle := c.waitReady(ctx, navID, signalBudget)
+	loadWait := time.Since(loadStart)
+	if ctx.Err() != nil {
 		return nil, ctx.Err() // the whole shot was cancelled, not just the wait
 	}
+	// Content painted is the authority: chrome says the page put something on
+	// screen, so give it the flat grace to finish (a late font, a lazy image, a
+	// chart drawing after its data lands) and store what is there. No pixel
+	// diffing and no blank check -- a pale page that really did paint is a real
+	// page, and refusing it would leave it with no preview at all.
+	if painted {
+		final, err := c.captureOnce(ctx)
+		if err != nil {
+			return nil, err
+		}
+		final = c.afterGrace(ctx, final)
+		slog.Debug("Preview shot ready", "url", pageURL, "load_wait", loadWait.Round(time.Millisecond),
+			"network_idle", idle, "outcome", "painted")
+		return final, nil
+	}
+	// No paint signal: fall back to watching the pixels, below. That covers a
+	// chrome too old for lifecycle events and a page that never reports one.
+	slog.Info("Preview shot got no paint signal; falling back to frame polling",
+		"url", pageURL, "waited", loadWait.Round(time.Millisecond), "network_idle", idle)
 
 	// The settle: poll for a STABLE frame instead of shooting once after a fixed
 	// delay. Capture every settlePoll and return the first frame identical to the
@@ -185,8 +228,10 @@ func capture(ctx context.Context, debugBase, pageURL string, settle time.Duratio
 	// settles (an animating game) yields its latest frame when the budget runs
 	// out. The poll never waits past the budget, so a short settle still returns
 	// a single quick shot.
-	deadline := time.Now().Add(settle)
+	settleStart := time.Now()
+	deadline := settleStart.Add(settle)
 	var prev, cur []byte
+	polls := 0
 	for {
 		wait := settlePoll
 		if remaining := time.Until(deadline); remaining < wait {
@@ -203,14 +248,102 @@ func capture(ctx context.Context, debugBase, pageURL string, settle time.Duratio
 		if err != nil {
 			return nil, err
 		}
+		polls++
 		if prev != nil && bytes.Equal(prev, cur) && !isMostlyBlank(cur) {
-			return cur, nil // two identical, non-blank frames: the page is painted and still
+			// Two identical, non-blank frames: the page LOOKS settled. It is not
+			// always finished, though -- a page can hold still between stages (a
+			// font swapping in, a lazy image, a chart drawing after its data
+			// lands), which the poll reads as "done" and photographs half-rendered.
+			// So give it a flat grace and take the LAST frame: cheap insurance on
+			// a preview that is only taken every few hours.
+			final := c.afterGrace(ctx, cur)
+			slog.Debug("Preview shot settled", "url", pageURL, "load_wait", loadWait.Round(time.Millisecond),
+				"settle", time.Since(settleStart).Round(time.Millisecond), "polls", polls, "outcome", "settled")
+			return final, nil
 		}
 		if !time.Now().Before(deadline) {
-			return cur, nil // budget spent; the latest frame is the best we have
+			// Budget spent. A frame that is STILL blank is not a preview -- handing
+			// it back stores a white card over a good one, so fail and let the
+			// caller keep what it had. A painted-but-still-changing page (an
+			// animating game) is fine: its latest frame is a real picture.
+			blank := isMostlyBlank(cur)
+			slog.Info("Preview shot did not settle within its budget", "url", pageURL,
+				"load_wait", loadWait.Round(time.Millisecond), "settle", time.Since(settleStart).Round(time.Millisecond),
+				"polls", polls, "blank", blank)
+			if blank {
+				return nil, fmt.Errorf("page was still blank after %s; not storing an empty preview", settle)
+			}
+			return cur, nil
 		}
 		prev = cur
 	}
+}
+
+// waitReady watches chrome's own lifecycle events and reports what the page
+// achieved: painted is firstContentfulPaint (content is on screen), idle is
+// networkIdle/networkAlmostIdle (it stopped fetching). It returns as soon as
+// both are in, or when limit runs out with whatever it has -- a page holding a
+// websocket open never reaches networkIdle, and that must not cost it its shot.
+//
+// This is the signal the frame-polling settle could only guess at, and it is why
+// an animating page no longer waits out the whole budget: a canvas that never
+// yields two identical frames still fires these events in the first second.
+func (c *cdpConn) waitReady(ctx context.Context, cmdID int, limit time.Duration) (painted, idle bool) {
+	deadline := time.After(limit)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-deadline:
+			return
+		case msg, ok := <-c.msgs:
+			if !ok {
+				return
+			}
+			if msg.ID == cmdID && msg.Error != nil {
+				return
+			}
+			// The load event alone does not prove anything was painted, but a page
+			// with no lifecycle events at all (an old chrome) still fires it, and
+			// treating it as "loaded, not painted" is what sends us to the poll.
+			if msg.Method != "Page.lifecycleEvent" {
+				continue
+			}
+			var p struct {
+				Name string `json:"name"`
+			}
+			if json.Unmarshal(msg.Params, &p) != nil {
+				continue
+			}
+			switch p.Name {
+			case "firstContentfulPaint", "firstMeaningfulPaint":
+				painted = true
+			case "networkIdle", "networkAlmostIdle":
+				idle = true
+			}
+			if painted && idle {
+				return
+			}
+		}
+	}
+}
+
+// afterGrace waits a flat settleGrace and re-captures, returning the newer frame
+// when it is usable. It is the guard against a page that merely PAUSED -- held
+// still long enough to look settled, then painted the rest (a late font, a lazy
+// image, a chart that draws once its data lands). Best-effort by design: any
+// failure, or a frame that came back blank, keeps the frame we already had.
+func (c *cdpConn) afterGrace(ctx context.Context, settled []byte) []byte {
+	select {
+	case <-ctx.Done():
+		return settled
+	case <-time.After(settleGrace):
+	}
+	later, err := c.captureOnce(ctx)
+	if err != nil || isMostlyBlank(later) {
+		return settled
+	}
+	return later
 }
 
 // captureOnce takes one screenshot and returns the decoded PNG bytes.
@@ -250,20 +383,29 @@ func isMostlyBlank(pngBytes []byte) bool {
 	if b.Dx() == 0 || b.Dy() == 0 {
 		return true
 	}
-	// Sample a grid rather than every pixel -- enough to tell a blank frame from
-	// one with any content, at a fraction of the work.
-	const step = 8
-	var sampled, white int
+	// Sample a DENSE grid: text is thin strokes, and a coarse grid slips between
+	// them -- a real page of prose then reads as empty. Every other pixel keeps
+	// the work small while making sure anything painted is actually seen.
+	const step = 2
+	var sampled, ink int
 	for y := b.Min.Y; y < b.Max.Y; y += step {
 		for x := b.Min.X; x < b.Max.X; x += step {
 			r, g, bl, _ := img.At(x, y).RGBA() // 16-bit per channel
 			sampled++
-			if r >= 0xf800 && g >= 0xf800 && bl >= 0xf800 { // ~>= 248/255
-				white++
+			if r < 0xf800 || g < 0xf800 || bl < 0xf800 { // anything not ~white
+				ink++
 			}
 		}
 	}
-	return sampled > 0 && white*1000/sampled >= 995 // >= 99.5% near-white
+	if sampled == 0 {
+		return true
+	}
+	// Blank means NOTHING was painted, not "mostly white". A sparse page -- a
+	// heading and two lines on white, which most small apps are -- covers a
+	// fraction of a percent, and calling that blank fails its shot and costs it
+	// its preview. Only a frame with essentially no ink at all (<= 0.02%, i.e. a
+	// handful of antialiasing pixels) counts as empty.
+	return ink*10000/sampled <= 2
 }
 
 // send writes one command and returns its id, without waiting for the reply.

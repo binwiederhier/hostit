@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"heckel.io/hostit/proxy/api"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -176,8 +177,24 @@ func (s *Server) PreviewCookie(appName string) (*http.Cookie, error) {
 // Screenshot renders one app preview on the app's node and returns the PNG
 // bytes; the preview scheduler calls it. Routing to the right node is the node
 // agent's job (it resolves the app in the spec to its machine).
+// Screenshot renders one app preview on the app's node, timing the whole round
+// trip. The duration and outcome are the metrics an operator needs when previews
+// go missing: a shot that never paints fails (rather than storing a white card),
+// so "failed" is the signal, and the histogram says whether the settle budget is
+// what is running out.
 func (s *Server) Screenshot(spec *ScreenshotSpec) ([]byte, error) {
-	return s.node.Screenshot(spec)
+	start := time.Now()
+	png, err := s.node.Screenshot(spec)
+	elapsed := time.Since(start)
+	screenshotDuration.Observe(elapsed.Seconds())
+	if err != nil {
+		screenshotsTotal.WithLabelValues("failed").Inc()
+		slog.Debug("Preview shot failed", "app", spec.Name, "took", elapsed.Round(time.Millisecond), "error", err)
+		return nil, err
+	}
+	screenshotsTotal.WithLabelValues("ok").Inc()
+	slog.Debug("Preview shot done", "app", spec.Name, "took", elapsed.Round(time.Millisecond), "bytes", len(png))
+	return png, nil
 }
 
 func (s *Server) handleAppGranted(w http.ResponseWriter, r *http.Request, a *store.App) {

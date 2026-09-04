@@ -29,6 +29,19 @@ var (
 		Name: "hostit_control_deploys_total",
 		Help: "App deploys requested through the control plane.",
 	})
+	// Preview shots: how long one takes end to end, and how they end. A shot that
+	// never paints now fails rather than storing a white card, so the "failed"
+	// count is what to watch when previews go missing -- and the histogram says
+	// whether the settle budget is the thing running out.
+	screenshotDuration = promauto.NewHistogram(prometheus.HistogramOpts{
+		Name:    "hostit_control_screenshot_duration_seconds",
+		Help:    "Wall-clock time for one app preview screenshot, from request to stored PNG.",
+		Buckets: []float64{1, 2.5, 5, 10, 20, 30, 45, 60, 90, 120},
+	})
+	screenshotsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "hostit_control_screenshots_total",
+		Help: "App preview screenshots by outcome (ok, failed).",
+	}, []string{"outcome"})
 )
 
 // instrumentHTTP records request count and latency labelled by the matched

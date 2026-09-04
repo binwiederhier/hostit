@@ -55,7 +55,20 @@ const (
 	// A fixed delay could not do this; it shot whatever was on screen at one
 	// instant, so a still-painting page came out blank or half-rendered. Only a
 	// page that never settles (an animating game) waits the whole ceiling.
-	settleDelay = 20 * time.Second
+	settleDelay = 45 * time.Second
+	// settleGrace is a flat wait AFTER the settle looks done, before the frame
+	// that is actually stored. Two identical frames only prove the page held
+	// still for one poll, and a page that pauses mid-render (a late font, a lazy
+	// image, a chart drawing after its data arrives) reads as settled and is
+	// photographed half-rendered. The grace costs a few seconds on a preview
+	// taken every few hours, and it is what makes the stored shot the finished
+	// page rather than a stage of it.
+	settleGrace = 5 * time.Second
+	// paintSignalWait caps how long a shot waits for chrome to report content
+	// painted before giving up on signals and watching pixels instead. A page
+	// that paints at all does so in the first seconds; the rest of the settle
+	// budget is left to the fallback poll.
+	paintSignalWait = 20 * time.Second
 	// settlePoll is how often the settle re-captures to check the frame stopped
 	// changing; the shot returns as soon as two consecutive frames match, so a
 	// static page is quick and settleDelay is only the ceiling for a busy one.
@@ -200,6 +213,12 @@ func (e *Engine) Shoot(spec *api.ScreenshotSpec) ([]byte, error) {
 		// Without this the capture can happen mid-paint, which is the other way
 		// a card comes out white even though the page had rendered.
 		"--run-all-compositor-stages-before-draw",
+		// Headless chrome still backgrounds a window it believes is hidden or
+		// occluded, and a backgrounded renderer never commits a frame: no paint
+		// event and a blank capture, however long the shot waits. There is no
+		// user here and exactly one page, so switch all of that off.
+		"--disable-renderer-backgrounding", "--disable-backgrounding-occluded-windows",
+		"--disable-features=CalculateNativeWinOcclusion",
 		"--remote-debugging-address=0.0.0.0", "--remote-debugging-port="+debugPort,
 		"about:blank")
 	if _, err := e.runner.RunTimeout(screenshotTimeout, args...); err != nil {
@@ -217,7 +236,23 @@ func (e *Engine) Shoot(spec *api.ScreenshotSpec) ([]byte, error) {
 		// App-bound auth so the proxy serves the app, not the sign-in page.
 		cookie = &http.Cookie{Name: spec.CookieName, Value: spec.CookieValue, Secure: spec.CookieSecure}
 	}
-	return e.capture(ctx, fmt.Sprintf("http://127.0.0.1:%d", port), spec.URL, settleDelay, cookie)
+	debugBase := fmt.Sprintf("http://127.0.0.1:%d", port)
+	png, err := e.capture(ctx, debugBase, spec.URL, settleDelay, cookie)
+	if err == nil {
+		return png, nil
+	}
+	// One retry, on the same browser. A page that paints nothing at all is
+	// usually a transient renderer that never committed a frame rather than a
+	// page with nothing to show -- across a full sweep the same app fails once
+	// and succeeds on the next attempt. Retrying here (rather than waiting hours
+	// for the next sweep) is what turns an occasional miss into a card that is
+	// simply there.
+	slog.Info("Preview shot produced nothing; retrying once", "app", spec.Name, "error", err)
+	png, retryErr := e.capture(ctx, debugBase, spec.URL, settleDelay, cookie)
+	if retryErr != nil {
+		return nil, retryErr
+	}
+	return png, nil
 }
 
 // appIsServing checks the app answers before chrome is started for it. Any
