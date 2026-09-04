@@ -31,9 +31,6 @@ const (
 	dataDirMode = 0o711
 	// reconcileInterval paces the desired-state sweep across all nodes.
 	reconcileInterval = 5 * time.Minute
-	// appsDirMode is the directory holding the app subvolumes; app users traverse
-	// it to reach their own files dir (home/app) inside their subvolume
-	appsDirMode = 0o755
 )
 
 var (

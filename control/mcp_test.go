@@ -267,9 +267,10 @@ func TestTheClientMetadataDocumentIsServedPublicly(t *testing.T) {
 // happens AFTER connecting.
 func mustConnectMCP(t *testing.T, s *Server, userID, slug, serverURL string) *store.Connection {
 	t.Helper()
-	conn, redirect, err := s.connections.addMCP(t.Context(), userID, slug, slug, serverURL)
+	// A server that wants no authorization connects outright; one that does comes
+	// back as errMCPNeedsConsent, which this helper is deliberately not for.
+	conn, err := s.connections.addMCP(t.Context(), userID, slug, slug, serverURL)
 	require.NoError(t, err)
-	require.Empty(t, redirect, "this helper is for servers that want no authorization")
 	return conn
 }
 

@@ -212,7 +212,7 @@ func TestConnectionsCanBeListedByKind(t *testing.T) {
 	require.NoError(t, err)
 	f := newFakeMCP(t, false)
 	mustConnect(t, s, u.ID, "a-key", "generic", map[string]string{"secret": "x"})
-	_, _, err = s.connections.addMCP(t.Context(), u.ID, "issues", "Issues", f.URL+"/mcp")
+	_, err = s.connections.addMCP(t.Context(), u.ID, "issues", "Issues", f.URL+"/mcp")
 	require.NoError(t, err)
 
 	all := listConnections(t, s, token, "")

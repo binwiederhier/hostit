@@ -22,11 +22,11 @@ import (
 // sees the right app.
 func apiProxyHandler(socketPath string) http.Handler {
 	return &httputil.ReverseProxy{
-		Director: func(req *http.Request) {
+		Rewrite: func(pr *httputil.ProxyRequest) {
 			// The host is meaningless over a unix socket, but net/http requires
 			// a scheme and host to route the request; the dialer ignores both.
-			req.URL.Scheme = "http"
-			req.URL.Host = "hostit.sock"
+			pr.Out.URL.Scheme = "http"
+			pr.Out.URL.Host = "hostit.sock"
 		},
 		Transport: &http.Transport{
 			DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {

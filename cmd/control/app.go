@@ -411,7 +411,7 @@ func resolveTransport(host, token, socketFile string, socketExists bool) (transp
 		return transportRemote, nil
 	}
 	if !socketExists {
-		return 0, fmt.Errorf("hostit daemon socket not found at %s; is the daemon running? For a remote daemon, pass --host and --token.", socketFile)
+		return 0, fmt.Errorf("hostit daemon socket not found at %s; is the daemon running? for a remote daemon, pass --host and --token", socketFile)
 	}
 	return transportSocket, nil
 }

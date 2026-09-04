@@ -1,8 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { docsHref } from "./docs";
 
-// Copies text to the clipboard with a "Copied!" confirmation; falls back to
-// a hidden textarea + execCommand for non-secure contexts.
 // A clipboard glyph for icon-only copy buttons.
 export const CopyIcon = () => (
   <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -11,6 +9,8 @@ export const CopyIcon = () => (
   </svg>
 );
 
+// Copies text to the clipboard with a "Copied!" confirmation; falls back to
+// a hidden textarea + execCommand for non-secure contexts.
 export const CopyButton = ({ text, small = true, disabled = false, title, onCopied, children }) => {
   const [copied, setCopied] = useState(false);
   const timer = useRef(null);
@@ -77,11 +77,6 @@ export const StatusDot = ({ running, appRunning, appState, pending, archived }) 
   return <span className={`status-dot ${cls}`} title={title} />;
 };
 
-// "12 of 512 MB", or just "12 MB" when the app has no limit for that resource.
-export const formatUsage = (used, limit) => (limit ? `${used} of ${limit} MB` : `${used} MB`);
-
-// UsagePair is the compact icon + "used/total" reading the dashboard's usage
-// strip established ("5.1/20 GB"); one shared unit per pair, GB from 1 GB up.
 // usageLevel maps used/total to the shared severity ladder ("" / warn / crit);
 // 75 and 90 percent, the same knees the app page's inline stats use.
 export const usageLevel = (used, total) => {
@@ -102,6 +97,8 @@ export const pairMB = (u, t) => {
   return t ? `${u}/${t} MB` : `${u} MB`;
 };
 
+// UsagePair is the compact icon + "used/total" reading the dashboard's usage
+// strip established ("5.1/20 GB"); one shared unit per pair, GB from 1 GB up.
 export const UsagePair = ({ kind, used, total }) => {
   const pair = pairMB;
   const level = usageLevel(used, total);

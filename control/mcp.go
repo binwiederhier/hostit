@@ -155,23 +155,23 @@ func (b *mcpBroker) take(nonce string) (mcpPending, bool) {
 
 // addMCP attaches an MCP server. It returns either a stored connection (the
 // server wanted no authorization) or a URL to send the owner to; never both.
-func (m *connectionManager) addMCP(ctx context.Context, userID, slug, label, serverURL string) (*store.Connection, string, error) {
+func (m *connectionManager) addMCP(ctx context.Context, userID, slug, label, serverURL string) (*store.Connection, error) {
 	serverURL = strings.TrimSpace(serverURL)
 	if err := outbound.CheckURL(serverURL); err != nil {
-		return nil, "", fmt.Errorf("%w: %v", connections.ErrInvalidCredential, err)
+		return nil, fmt.Errorf("%w: %v", connections.ErrInvalidCredential, err)
 	}
 	disco, err := mcp.Discover(ctx, m.client, serverURL)
 	if err != nil {
-		return nil, "", fmt.Errorf("cannot reach that MCP server: %w", err)
+		return nil, fmt.Errorf("cannot reach that MCP server: %w", err)
 	}
 	if disco.NeedsAuth && !disco.CanAuthorize {
 		// Worth naming rather than half-attempting: the owner can do nothing
 		// about it here, and a generic failure would send them looking for a
 		// mistake they did not make.
-		return nil, "", fmt.Errorf("%w: that server requires authorization but does not say how (no OAuth metadata)", connections.ErrInvalidCredential)
+		return nil, fmt.Errorf("%w: that server requires authorization but does not say how (no OAuth metadata)", connections.ErrInvalidCredential)
 	}
 	if disco.NeedsAuth {
-		return nil, "", errMCPNeedsConsent{discovery: disco}
+		return nil, errMCPNeedsConsent{discovery: disco}
 	}
 	conn := &store.Connection{
 		ID: store.NewConnectionID(), UserID: userID, Slug: slug, Label: label,
@@ -181,7 +181,7 @@ func (m *connectionManager) addMCP(ctx context.Context, userID, slug, label, ser
 	// An empty secret still gets sealed, so every row in the table is the same
 	// shape and nothing downstream has to special-case "this one is plaintext".
 	if conn.Secret, err = connections.Seal(m.key, "", connections.Binding(conn.UserID, conn.ID)); err != nil {
-		return nil, "", err
+		return nil, err
 	}
 	meta := mcpMeta{URL: serverURL, Discovery: fromDiscovery(disco)}
 	if tools, err := mcp.NewClient(m.client, serverURL, "").ListTools(ctx); err == nil {
@@ -190,9 +190,9 @@ func (m *connectionManager) addMCP(ctx context.Context, userID, slug, label, ser
 		slog.Warn("Connected an MCP server that would not list its tools", "url", serverURL, "error", err)
 	}
 	if conn.Meta, err = encodeMCPMeta(meta); err != nil {
-		return nil, "", err
+		return nil, err
 	}
-	return conn, "", m.store.AddConnection(conn)
+	return conn, m.store.AddConnection(conn)
 }
 
 // errMCPNeedsConsent carries the discovery result out of addMCP so the handler

@@ -7,6 +7,59 @@ changed rather than what an operator had to do about it; from v0.15.0 on, each
 release is written down as it is cut. Anything that changes a config file, a
 default, or on-disk state is called out as **Breaking** or **Upgrade note**.
 
+## v0.39.1 (2026-09-04)
+
+Security fixes from a review of the whole codebase, plus the dead code and stale
+API documentation it turned up along the way. **Upgrading is recommended for any
+instance where people share apps or hand them over.**
+
+- **A transferred app no longer carries its previous owner's credentials.** A
+  connection grant is one owner lending one app their account, but it survived the
+  app changing hands -- and while the token endpoint and the app socket both
+  re-checked the owner, the ASSISTANT did not. Handing an app to somebody else
+  (or an admin deleting a user with `?apps=transfer`) therefore let its new owner
+  act as the previous one through the assistant, and showed that person's
+  connections to every collaborator. Grants are now scoped to the app's current
+  owner in the query itself, so no caller can miss it, and both transfer paths
+  delete the grant rows.
+- **Credentials are redacted before the assistant streams them, not only before
+  storing them.** On the Claude Max backend a token in a tool result went out
+  over the live stream untouched and was only scrubbed on its way into the
+  transcript -- so a collaborator or admin watching the turn saw what the stored
+  history deliberately hides.
+- **The screenshot sandbox no longer shares uid space with apps.** Its user
+  namespace mapped a range described as "otherwise unused" that in fact sat
+  inside the app uid space, colliding with the blocks of ports 10030-10061. An
+  app is root in its own namespace and can become any host uid in its block, so
+  those tenants shared a host uid with the browser that renders other tenants'
+  pages. The range is now derived from the top of the app space and a test walks
+  every port to keep it there.
+- **A legacy app row can no longer match another app's rows.** On an instance
+  upgraded from before app ids were backfilled, `''` is a real stored id, and the
+  queries that resolve an app by name collapsed to matching every such row --
+  which for SSH keys means one tenant's key in another tenant's
+  `authorized_keys`. Every one of those queries now refuses the empty id.
+  (Instances that ran the backfill were never affected.)
+- **An app cannot exceed its memory cap through swap.** Only `--memory` was set,
+  and podman then allows swap up to twice it, so the cap quietly meant double on
+  any swap-enabled host. Swap is now pinned equal to the cap, as the screenshot
+  container already did.
+- **Front doors no longer forward a client's forwarding headers.** `X-Real-IP`,
+  `Forwarded`, `X-Forwarded-Prefix` and friends were passed through untouched
+  (only `X-Forwarded-For` was replaced), so a visitor could tell an app any client
+  address it liked and defeat that app's own rate limits, allowlists and audit
+  logs. All three proxy paths now drop them before setting the real ones.
+- Removed dead code and a vestigial return value, replaced a deprecated
+  `ReverseProxy.Director`, and fixed the API reference: it documented a
+  `DELETE .../assistant/transcript` endpoint that does not exist, and was missing
+  the gallery, restore, purge and admin-log endpoints.
+
+**Upgrade note:** no migration and no configuration change. Remaining findings
+that need design decisions rather than fixes -- cluster member identity, member
+revocation, the assistant sandbox's tool blocklist, and untrusted-content framing
+for tool output -- are written up in `TODO.md`; none are reachable by an
+anonymous visitor, and the two most serious need host-level access already.
+
 ## v0.39.0 (2026-09-04)
 
 A public app gallery, a Google Drive connection, an instance default for the

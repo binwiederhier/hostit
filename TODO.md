@@ -12,6 +12,95 @@ decision that unblocks two other items is worth making before either is built.
 
 ## Now (next few sessions)
 
+### Security review 2026-09-04: what is still open
+
+A five-slice review (auth/authz, connections+secrets, isolation+node,
+proxy+cluster+store, assistant+web) ran on 2026-09-04. What it found and FIXED is
+in the v0.39.1 changelog; what follows is what it found and did NOT fix, worst
+first. Exploitability is stated from the tenant's side, because that is the
+threat this platform actually carries: **none of the items below are reachable by
+an anonymous visitor, and the two HIGHs need host-level access already.**
+
+- **Cluster member identity is self-reported (HIGH, host-level).** On the
+  same-host member socket, a uid-allowlisted peer sends `X-Hostit-Node` and
+  `X-Hostit-Role` verbatim (`cluster/dial.go:peerFrom`), and the allowlist
+  includes the *proxy* user (`cmd/control/servenode.go:TrustPeerUID`). Anything
+  running as `hostit-proxy` -- the internet-facing TLS terminator, so the first
+  thing an RCE in the data plane yields -- can register as the node and is handed
+  `AppRelayHandler`, i.e. the `/v1` app surface for every app that node hosts,
+  including `GET /v1/connections/{slug}/token`. Two independent reviewers found
+  this. NOT tenant-reachable (a tenant is confined to their container's uid), but
+  it turns one compromise into all of them. Fix shape: bind the claimable id and
+  role to the uid that registered, so the proxy uid can only ever be its own
+  proxy. This is the "F5 role-header" item, with a bigger blast radius than the
+  note suggested.
+- **`node remove` / `proxy remove` are not revocation (HIGH, holds a cert).**
+  Connect-time authorize is `return true` for both roles AND the connect handler
+  re-creates the row it was meant to have lost (`EnsureNode`/`EnsureProxy`), so a
+  removed member that redials silently re-admits itself. Removal also only drops
+  the in-memory agent; the session stays open, so a removed proxy keeps calling
+  `/v1/cert` and receiving certificate chains **and private keys** indefinitely.
+  There is no CRL, so re-minting the cluster CA is currently the only real
+  revocation. The comments at `store/node.go:211` and `store/proxy.go:307` assert
+  a control that does not exist and should be corrected with the fix.
+- **The sandbox tool blocklist may be incomplete (HIGH, tenant-reachable if so).**
+  `node/sandbox/service.go:disallowedBuiltins` claims to be "the COMPLETE set" of
+  Claude Code built-ins for the pinned version, and the operator's Claude Max
+  token is only out of reach if that is true. Checked against 2.1.259 (33 patches
+  newer than the pinned 2.1.226) about twenty names are missing, some of them in
+  that build's auto-approved set. Unconfirmed for 2.1.226 -- but the guard test
+  compares the constant to a hardcoded copy of itself, so it is structurally
+  incapable of catching a missing tool. Re-derive against the pinned version with
+  the documented `jq '.tools'` procedure, then stop depending on a blocklist:
+  assert the init event's advertised tool list at runtime and abort the turn if
+  anything outside `mcp__hostit__*` appears.
+- **Tool output is not framed as untrusted (HIGH, tenant/visitor-reachable).**
+  `read_logs` returns text any internet visitor can put in an app's log, MCP
+  results return third-party data, and both arrive as bare `tool_result` blocks
+  with no provenance marker and nothing in the system prompt saying tool output
+  is data rather than instruction. The model holds `write_file`, `run_command`
+  (with outbound internet) and the app's granted connections, and the system
+  prompt helpfully documents the exact curl that fetches a connection token.
+  Confined to one app and its grants -- but that is a large radius for "debug my
+  500". Cheapest first step: an explicit untrusted-content envelope around
+  `read_logs` and MCP results, plus a paragraph in the system prompt.
+- **`RotateKey` does not re-seal provider client secrets (MEDIUM, operator).**
+  It walks `AllConnections()` only; `provider.client_secret` is sealed with the
+  same key and is left behind. After a rotation every DB-defined OAuth provider
+  silently stops refreshing and drops out of the menu, *and* the leaked key the
+  rotation was for still decrypts them. Rotation must cover both tables.
+- **Deleting a user orphans their connections (MEDIUM, retention).**
+  `RemoveUser` cascades tokens, keys, collaborator and viewer rows but not
+  `connection` / `provider` / `pending_viewer`, and `refreshDue` walks
+  `AllConnections()` with no owner filter -- so a deleted person's Google or Slack
+  refresh token is re-exchanged every ten minutes forever. The credential is no
+  longer *reachable* (grants are owner-scoped since v0.39.1), so this is
+  retention and upstream-liveness, not theft.
+- **A stale routing table can outlive its revocations (MEDIUM, operator).** The
+  proxy discards any table whose `Seq` is lower than the one it cached, and Seq
+  comes from the control database. Restore control from a backup and every
+  subsequent push is dropped while the proxy keeps serving the old table --
+  including its private-app access sets, so removals never reach the data plane.
+  Consider a control-instance epoch, or accepting a differing table after N
+  ignored pushes.
+- **Smaller, all tenant-reachable, none of them crossing a tenant boundary:**
+  custom-domain squatting (a tenant can claim a domain they do not own and block
+  the rightful one -- denial only, activation still needs ACME);
+  `POST /auth/logout` is registered outside `authenticated()` so it skips the
+  same-origin check (nuisance CSRF, clears a session); a collaborator can mint an
+  app-scoped token for an app they do not own (no escalation found -- the two
+  tokens have identical reach -- but it contradicts the invariant stated at
+  `server_handler_apps.go:215`); assistant markdown is rendered with DOMPurify's
+  defaults, which keep `style` and form controls, so model output can paint a
+  convincing overlay inside the dashboard origin (CSP blocks the exfil paths, so
+  it is phishing-shaped).
+- **Two that are only safe by accident, worth hardening before they bite:** the
+  app-socket relay forwards tenant-controlled paths verbatim and is saved from
+  `../` traversal into control's `/callback/` handlers only because a POST body
+  cannot be rewound for the 307 (`node/appsocket.go:relay`); and grants are bound
+  to an app NAME rather than its id, while a rename frees the name immediately
+  and grants live 12h (`proxy/grant.go`).
+
 ### Connections: shipped -- remaining follow-ups
 
 Shipped to prod (connections + MCP servers), twenty-three providers. Live OAuth

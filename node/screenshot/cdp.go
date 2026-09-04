@@ -453,28 +453,3 @@ func (c *cdpConn) call(ctx context.Context, method string, params map[string]any
 		}
 	}
 }
-
-// waitFor waits for the named event, giving up after limit -- the caller
-// decides whether that is fatal. A failure reply to cmdID ends the wait early,
-// since a refused navigation will never load.
-func (c *cdpConn) waitFor(ctx context.Context, cmdID int, event string, limit time.Duration) error {
-	deadline := time.After(limit)
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-deadline:
-			return fmt.Errorf("%s did not arrive", event)
-		case msg, ok := <-c.msgs:
-			if !ok {
-				return fmt.Errorf("connection closed: %w", c.readErr)
-			}
-			if msg.ID == cmdID && msg.Error != nil {
-				return fmt.Errorf("navigate: %s", msg.Error.Message)
-			}
-			if msg.Method == event {
-				return nil
-			}
-		}
-	}
-}

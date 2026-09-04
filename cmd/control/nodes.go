@@ -90,13 +90,3 @@ func nodeStore(c *cli.Context) (*config.Config, *store.Store, error) {
 	}
 	return conf, s, nil
 }
-
-// portOf extracts the port half of a listen address for display.
-func portOf(addr string) string {
-	for i := len(addr) - 1; i >= 0; i-- {
-		if addr[i] == ':' {
-			return addr[i+1:]
-		}
-	}
-	return addr
-}

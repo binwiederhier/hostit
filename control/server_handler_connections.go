@@ -315,12 +315,12 @@ func (s *Server) handleConnectionAdd(w http.ResponseWriter, r *http.Request, c *
 		label = p.Label
 	}
 	if p.Kind == connections.KindMCP {
-		conn, redirect, err := s.connections.addMCP(r.Context(), c.userID(), slug, label, req.Values["url"])
+		conn, err := s.connections.addMCP(r.Context(), c.userID(), slug, label, req.Values["url"])
 		var consent errMCPNeedsConsent
 		if errors.As(err, &consent) {
 			// The server wants authorization: send the owner to consent rather
 			// than storing a connection that cannot do anything yet.
-			redirect, err = s.startMCPConsent(w, r, c.userID(), slug, label, strings.TrimSpace(req.Values["url"]), consent.discovery)
+			redirect, err := s.startMCPConsent(w, r, c.userID(), slug, label, strings.TrimSpace(req.Values["url"]), consent.discovery)
 			if err != nil {
 				writeConnectionError(w, err)
 				return

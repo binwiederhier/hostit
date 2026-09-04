@@ -1320,6 +1320,8 @@ const ApiPage = () => (
           <Endpoint method="POST" path="/api/apps/{name}/unarchive" what="Bring it back" />
           <Endpoint method="DELETE" path="/api/account/tokens/{id}" what="Revoke one of your API tokens" />
           <Endpoint method="DELETE" path="/api/account/keys/{id}" what="Remove one of your SSH keys" />
+          <Endpoint method="GET" path="/api/explore" what="The public app gallery: the listed apps, or enabled:false when the instance has it off. Any signed-in account" />
+          <Endpoint method="GET" path="/api/explore/{name}/preview.png" what="A listed app's screenshot, readable by any signed-in account (the per-app one above is owner-only)" />
           <Endpoint method="GET" path="/api/health" what="Liveness, unauthenticated" />
         </tbody>
       </table>
@@ -1332,7 +1334,6 @@ const ApiPage = () => (
         <tbody>
           <Endpoint method="GET" path="/api/apps/{name}/assistant" what="The conversation so far, plus token usage and cost" />
           <Endpoint method="POST" path="/api/apps/{name}/assistant" what={`Send a message: {"text":"...","model":"..."}. The reply arrives on the stream below`} />
-          <Endpoint method="DELETE" path="/api/apps/{name}/assistant/transcript" what="Clear the conversation" />
           <Endpoint method="GET" path="/api/apps/{name}/assistant/stream" what="Server-sent events: tokens, tool calls and results as they happen" />
           <Endpoint method="POST" path="/api/apps/{name}/assistant/stop" what="Interrupt the turn in progress" />
           <Endpoint method="POST" path="/api/apps/{name}/assistant/upload" what="Attach an image to the next message (multipart)" />
@@ -1358,6 +1359,10 @@ const ApiPage = () => (
           <Endpoint method="GET" path="/api/cluster" what="The nodes, their health, and what each is running" />
           <Endpoint method="GET|PATCH" path="/api/settings" what="Instance defaults: per-app memory and disk, app limits, the assistant's budget" />
           <Endpoint method="POST" path="/api/connections/rotate-key" what="Re-seal every stored credential under a fresh key. Runs in the live process; the previous key is kept as connections.key.previous until you delete it" />
+          <Endpoint method="POST" path="/api/apps/{name}/restore" what="Bring back an app whose owner deleted it, while it is still inside the grace period. It returns powered off" />
+          <Endpoint method="POST" path="/api/apps/{name}/purge" what="Delete a pending-deletion app now, skipping the rest of its grace. Refuses an app that is not pending deletion" />
+          <Endpoint method="GET" path="/api/admin/logs/control" what="Control's own systemd journal" />
+          <Endpoint method="GET" path="/api/admin/logs/node/{node}" what="One node's systemd journal" />
         </tbody>
       </table>
 

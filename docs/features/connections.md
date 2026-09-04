@@ -484,6 +484,18 @@ sequenceDiagram
 - Credentials sealed before binding existed still open, via
   `OpenLegacyTolerant`, and are re-sealed bound the first time they are used --
   so an existing instance converges without re-authorising every account.
+- **A grant does not survive the app changing hands.** A grant is one OWNER
+  lending one app their credential, so it cannot follow the app to somebody else.
+  `AppConnections` is scoped in SQL to the app's CURRENT owner
+  (`store/connection.go:selectAppConnectionsQuery`), which makes every caller
+  safe by construction rather than each having to remember; `SetAppOwner` and
+  `TransferApps` also delete the grant rows, so the table never carries grants
+  that mean nothing. Both halves matter: the token endpoint and the app socket
+  already re-resolved through `ConnectionBySlug(a.OwnerID, slug)`, but the
+  ASSISTANT read the grant list directly, so before this an app handed to
+  somebody else let its new owner act as the old one -- and listed their
+  connections to every collaborator. `TestAppConnectionsAreScopedToTheAppsCurrentOwner`
+  and `TestTransfersDropConnectionGrants` pin it.
 - **The key** is 32 random bytes, base64 in `connections.key` (0600) beside the
   database, root-owned like the database itself. `hostit control connections
   rotate-key` re-seals every stored credential under a fresh key -- run it if the

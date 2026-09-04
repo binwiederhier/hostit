@@ -28,18 +28,6 @@ import (
 // higher tier already uses. So an operator can always rely on what a name
 // means, and a user can never quietly redefine "github" for their own apps.
 
-// tierProvider is a provider plus where it came from, which the UI shows and
-// the delete path checks.
-type tierProvider struct {
-	provider connections.Provider
-	// ownerID is empty for a built-in or an operator's; otherwise the user
-	// whose definition it is.
-	ownerID string
-	// id is the row id, empty for a built-in or a control.yml entry -- neither
-	// of which can be edited through the API.
-	id string
-}
-
 // providerFor resolves a name for one user, across every tier.
 func (m *connectionManager) providerFor(userID, name string) (connections.Provider, bool) {
 	if p, ok := m.lookup(name); ok {
