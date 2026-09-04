@@ -52,15 +52,22 @@ const (
 	updateConnectionSecretOnlyQuery = `UPDATE connection SET secret = ? WHERE id = ?`
 	setConnectionStatusQuery        = `UPDATE connection SET status = ? WHERE id = ?`
 
-	insertGrantQuery          = `INSERT OR IGNORE INTO app_connection (app_id, connection_id, created_at) VALUES (?, ?, ?)`
-	deleteGrantQuery          = `DELETE FROM app_connection WHERE app_id = ? AND connection_id = ?`
-	deleteGrantsByConnection  = `DELETE FROM app_connection WHERE connection_id = ?`
-	deleteGrantsByAppIDQuery  = `DELETE FROM app_connection WHERE app_id = ?`
-	countGrantsQuery          = `SELECT COUNT(*) FROM app_connection WHERE connection_id = ?`
-	grantedAppNamesQuery      = `SELECT a.name FROM app_connection g JOIN app a ON a.id = g.app_id WHERE g.connection_id = ? ORDER BY a.name`
+	insertGrantQuery         = `INSERT OR IGNORE INTO app_connection (app_id, connection_id, created_at) VALUES (?, ?, ?)`
+	deleteGrantQuery         = `DELETE FROM app_connection WHERE app_id = ? AND connection_id = ?`
+	deleteGrantsByConnection = `DELETE FROM app_connection WHERE connection_id = ?`
+	deleteGrantsByAppIDQuery = `DELETE FROM app_connection WHERE app_id = ?`
+	countGrantsQuery         = `SELECT COUNT(*) FROM app_connection WHERE connection_id = ?`
+	grantedAppNamesQuery     = `SELECT a.name FROM app_connection g JOIN app a ON a.id = g.app_id WHERE g.connection_id = ? ORDER BY a.name`
+	// Scoped to the app's CURRENT owner, not just to the grant. A grant is one
+	// owner lending one app their credential, so it must not survive the app
+	// changing hands -- the new owner would otherwise act as the old one, and
+	// their connections would be listed to everyone who can see the app. Doing it
+	// here rather than in each caller means a stale grant can never resolve,
+	// whichever path asks.
 	selectAppConnectionsQuery = `
 		SELECT ` + connectionCols + ` FROM connection
 		WHERE id IN (SELECT connection_id FROM app_connection WHERE app_id = ?)
+		  AND user_id = (SELECT owner_id FROM app WHERE id = ?)
 		ORDER BY provider, slug
 	`
 )
@@ -160,7 +167,7 @@ func (s *Store) UpdateConnectionSecretOnly(id, secret string) error {
 
 // AppConnections lists the connections an app has been granted.
 func (s *Store) AppConnections(appID string) ([]*Connection, error) {
-	return s.queryConnections(selectAppConnectionsQuery, appID)
+	return s.queryConnections(selectAppConnectionsQuery, appID, appID)
 }
 
 // UpdateConnectionSecret replaces the stored credential, which is what a

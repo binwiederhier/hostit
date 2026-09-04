@@ -12,8 +12,8 @@ const (
 	// UI follow a rename; domains are keyed on app_id.
 	domainName              = `COALESCE((SELECT name FROM app a WHERE a.id = app_domain.app_id), app_domain.app_name)`
 	domainCols              = `domain, ` + domainName + `, status, last_error, created_at, active_at`
-	insertDomainQuery       = `INSERT INTO app_domain (domain, app_name, app_id, status, last_error, created_at) VALUES (?, ?, COALESCE((SELECT id FROM app WHERE name = ?), ''), ?, '', ?)`
-	selectDomainsByAppQuery = `SELECT ` + domainCols + ` FROM app_domain WHERE app_id = (SELECT id FROM app WHERE name = ?) ORDER BY created_at`
+	insertDomainQuery       = `INSERT INTO app_domain (domain, app_name, app_id, status, last_error, created_at) VALUES (?, ?, COALESCE((SELECT id FROM app WHERE name = ? AND id != ''), ''), ?, '', ?)`
+	selectDomainsByAppQuery = `SELECT ` + domainCols + ` FROM app_domain WHERE app_id = (SELECT id FROM app WHERE name = ? AND id != '') ORDER BY created_at`
 	selectDomainQuery       = `SELECT ` + domainCols + ` FROM app_domain WHERE domain = ?`
 	selectAllDomainsQuery   = `SELECT ` + domainCols + ` FROM app_domain`
 	activeDomainsQuery      = `SELECT ` + domainName + `, domain FROM app_domain WHERE status = ? ORDER BY created_at`

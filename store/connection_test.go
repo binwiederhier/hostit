@@ -188,3 +188,54 @@ func TestGrantedAppNames(t *testing.T) {
 	assert.Empty(t, names)
 	assert.NotNil(t, names)
 }
+
+// A connection grant is one OWNER lending one app their credential, so it must
+// not survive the app changing hands: the new owner would otherwise act as the
+// old one. Enforced in the query, so every caller is safe by construction --
+// the assistant reads grants through this same path.
+func TestAppConnectionsAreScopedToTheAppsCurrentOwner(t *testing.T) {
+	t.Parallel()
+	s := newTestStore(t)
+	require.NoError(t, s.AddApp(&App{ID: "a1", Name: "dash", Port: 10000, Host: HostLocal, OwnerID: "u1"}))
+	c := testConn("u1", "work-cal", "google-calendar")
+	require.NoError(t, s.AddConnection(c))
+	require.NoError(t, s.GrantConnection("a1", c.ID))
+
+	granted, err := s.AppConnections("a1")
+	require.NoError(t, err)
+	require.Len(t, granted, 1, "the owner's own connection resolves")
+
+	// Hand the app to somebody else: the previous owner's credential must not
+	// come with it.
+	require.NoError(t, s.SetAppOwner("dash", "u2"))
+	granted, err = s.AppConnections("a1")
+	require.NoError(t, err)
+	assert.Empty(t, granted, "a stale grant from the previous owner does not resolve")
+}
+
+// Both transfer paths drop the app's connection grants: the single-app handover
+// and the bulk move that deleting a user can do. The rows must go, not merely
+// stop resolving, so the table never carries grants that mean nothing.
+func TestTransfersDropConnectionGrants(t *testing.T) {
+	t.Parallel()
+	s := newTestStore(t)
+	require.NoError(t, s.AddApp(&App{ID: "a1", Name: "one", Port: 10000, Host: HostLocal, OwnerID: "u1"}))
+	require.NoError(t, s.AddApp(&App{ID: "a2", Name: "two", Port: 10001, Host: HostLocal, OwnerID: "u1"}))
+	c := testConn("u1", "work-cal", "google-calendar")
+	require.NoError(t, s.AddConnection(c))
+	require.NoError(t, s.GrantConnection("a1", c.ID))
+	require.NoError(t, s.GrantConnection("a2", c.ID))
+
+	// Single-app handover.
+	require.NoError(t, s.SetAppOwner("one", "u2"))
+	names, err := s.GrantedAppNames(c.ID)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"two"}, names, "the handed-over app's grant is gone")
+
+	// Bulk move (what deleting a user with ?apps=transfer does).
+	_, err = s.TransferApps("u1", "u3")
+	require.NoError(t, err)
+	names, err = s.GrantedAppNames(c.ID)
+	require.NoError(t, err)
+	assert.Empty(t, names, "the bulk transfer drops them too")
+}

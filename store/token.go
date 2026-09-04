@@ -12,11 +12,11 @@ const (
 	// have an empty app_id and app_name.
 	tokenName               = `COALESCE((SELECT name FROM app a WHERE a.id = token.app_id), token.app_name)`
 	tokenCols               = `id, user_id, hash, prefix, label, ` + tokenName + `, secret, created_at, last_used`
-	insertTokenQuery        = `INSERT INTO token (id, user_id, hash, prefix, label, app_name, app_id, secret, created_at) VALUES (?, ?, ?, ?, ?, ?, COALESCE((SELECT id FROM app WHERE name = ?), ''), ?, ?)`
+	insertTokenQuery        = `INSERT INTO token (id, user_id, hash, prefix, label, app_name, app_id, secret, created_at) VALUES (?, ?, ?, ?, ?, ?, COALESCE((SELECT id FROM app WHERE name = ? AND id != ''), ''), ?, ?)`
 	selectTokenByHashQuery  = `SELECT ` + tokenCols + ` FROM token WHERE hash = ?`
 	selectTokensByUserQuery = `SELECT ` + tokenCols + ` FROM token WHERE user_id = ? ORDER BY created_at`
 	updateTokenUsedQuery    = `UPDATE token SET last_used = ? WHERE id = ?`
-	selectTokensByAppQuery  = `SELECT ` + tokenCols + ` FROM token WHERE app_id = (SELECT id FROM app WHERE name = ?) ORDER BY created_at`
+	selectTokensByAppQuery  = `SELECT ` + tokenCols + ` FROM token WHERE app_id = (SELECT id FROM app WHERE name = ? AND id != '') ORDER BY created_at`
 	deleteTokenQuery        = `DELETE FROM token WHERE user_id = ? AND id = ?`
 	deleteTokensByAppQuery  = `DELETE FROM token WHERE app_id = ? OR (app_id = '' AND app_name = ?)`
 	deleteTokensByUserQuery = `DELETE FROM token WHERE user_id = ?`

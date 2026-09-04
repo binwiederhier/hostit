@@ -14,9 +14,16 @@ const (
 
 	// app_key rows are keyed on app_id so they survive a rename; the app is still
 	// addressed by name at the boundary, resolved to its id in each statement.
-	insertAppKeyQuery        = `INSERT INTO app_key (app_name, app_id, key) VALUES (?, COALESCE((SELECT id FROM app WHERE name = ?), ''), ?)`
-	selectAppKeysQuery       = `SELECT key FROM app_key WHERE app_id = (SELECT id FROM app WHERE name = ?)`
-	deleteAppKeysByNameQuery = `DELETE FROM app_key WHERE app_id = (SELECT id FROM app WHERE name = ?)`
+	insertAppKeyQuery = `INSERT INTO app_key (app_name, app_id, key) VALUES (?, COALESCE((SELECT id FROM app WHERE name = ? AND id != ''), ''), ?)`
+	// The `id != ''` guard is load-bearing, not defensive noise: '' is a
+	// LEGITIMATE app_id (migration 12: "not an app row, or not yet backfilled"),
+	// so without it a legacy app row makes this collapse to `app_id = ''` and
+	// match every other unbackfilled row -- one tenant's SSH key resolving for
+	// another tenant's app. The one-time backfill has been deleted, so an
+	// instance upgraded from before it keeps such rows forever. Every query in
+	// this package that resolves an app id from a name carries the same guard.
+	selectAppKeysQuery       = `SELECT key FROM app_key WHERE app_id = (SELECT id FROM app WHERE name = ? AND id != '')`
+	deleteAppKeysByNameQuery = `DELETE FROM app_key WHERE app_id = (SELECT id FROM app WHERE name = ? AND id != '')`
 	deleteAppKeysQuery       = `DELETE FROM app_key WHERE app_id = ? OR (app_id = '' AND app_name = ?)`
 
 	keyIDPrefix = "k_"

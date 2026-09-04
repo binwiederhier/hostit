@@ -10,12 +10,12 @@ const (
 	// The transcript is keyed on app_id so it follows a rename. app_name stays as
 	// the row's PK (and is updated on rename) to keep upsert conflict handling and
 	// to stop a reused name from colliding with a stale row.
-	selectAssistantSessionQuery = `SELECT transcript FROM assistant_session WHERE app_id = (SELECT id FROM app WHERE name = ?)`
+	selectAssistantSessionQuery = `SELECT transcript FROM assistant_session WHERE app_id = (SELECT id FROM app WHERE name = ? AND id != '')`
 	upsertAssistantSessionQuery = `
-		INSERT INTO assistant_session (app_name, app_id, transcript, updated_at) VALUES (?, COALESCE((SELECT id FROM app WHERE name = ?), ''), ?, ?)
+		INSERT INTO assistant_session (app_name, app_id, transcript, updated_at) VALUES (?, COALESCE((SELECT id FROM app WHERE name = ? AND id != ''), ''), ?, ?)
 		ON CONFLICT(app_name) DO UPDATE SET transcript = excluded.transcript, updated_at = excluded.updated_at
 	`
-	deleteAssistantSessionByNameQuery = `DELETE FROM assistant_session WHERE app_id = (SELECT id FROM app WHERE name = ?)`
+	deleteAssistantSessionByNameQuery = `DELETE FROM assistant_session WHERE app_id = (SELECT id FROM app WHERE name = ? AND id != '')`
 	deleteAssistantSessionQuery       = `DELETE FROM assistant_session WHERE app_id = ? OR (app_id = '' AND app_name = ?)`
 )
 

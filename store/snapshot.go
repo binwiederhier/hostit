@@ -10,8 +10,8 @@ const (
 	// snapshotName resolves the app's current name from its id, so a renamed app's
 	// snapshots still report the right owner; snapshots are keyed on app_id.
 	snapshotName            = `COALESCE((SELECT name FROM app a WHERE a.id = snapshot.app_id), snapshot.app_name)`
-	insertSnapshotQuery     = `INSERT INTO snapshot (id, app_name, app_id, label, created_at, auto) VALUES (?, ?, COALESCE((SELECT id FROM app WHERE name = ?), ''), ?, ?, ?)`
-	selectSnapshotsQuery    = `SELECT id, ` + snapshotName + `, label, created_at, auto FROM snapshot WHERE app_id = (SELECT id FROM app WHERE name = ?) ORDER BY created_at DESC`
+	insertSnapshotQuery     = `INSERT INTO snapshot (id, app_name, app_id, label, created_at, auto) VALUES (?, ?, COALESCE((SELECT id FROM app WHERE name = ? AND id != ''), ''), ?, ?, ?)`
+	selectSnapshotsQuery    = `SELECT id, ` + snapshotName + `, label, created_at, auto FROM snapshot WHERE app_id = (SELECT id FROM app WHERE name = ? AND id != '') ORDER BY created_at DESC`
 	selectSnapshotQuery     = `SELECT id, ` + snapshotName + `, label, created_at, auto FROM snapshot WHERE id = ?`
 	selectAllSnapshotsQuery = `SELECT id, ` + snapshotName + `, label, created_at, auto FROM snapshot ORDER BY created_at DESC`
 	deleteSnapshotQuery     = `DELETE FROM snapshot WHERE id = ?`

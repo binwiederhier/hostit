@@ -6,11 +6,11 @@ const (
 	// eventName resolves the app's current name from its id, so the activity log
 	// follows a rename; events are keyed on app_id.
 	eventName            = `COALESCE((SELECT name FROM app a WHERE a.id = app_event.app_id), app_event.app_name)`
-	insertEventQuery     = `INSERT INTO app_event (app_name, app_id, created_at, actor, level, action, detail) VALUES (?, COALESCE((SELECT id FROM app WHERE name = ?), ''), ?, ?, ?, ?, ?)`
-	selectEventsQuery    = `SELECT id, ` + eventName + `, created_at, actor, level, action, detail FROM app_event WHERE app_id = (SELECT id FROM app WHERE name = ?) ORDER BY created_at DESC, id DESC LIMIT ?`
+	insertEventQuery     = `INSERT INTO app_event (app_name, app_id, created_at, actor, level, action, detail) VALUES (?, COALESCE((SELECT id FROM app WHERE name = ? AND id != ''), ''), ?, ?, ?, ?, ?)`
+	selectEventsQuery    = `SELECT id, ` + eventName + `, created_at, actor, level, action, detail FROM app_event WHERE app_id = (SELECT id FROM app WHERE name = ? AND id != '') ORDER BY created_at DESC, id DESC LIMIT ?`
 	deleteAppEventsQuery = `DELETE FROM app_event WHERE app_id = ? OR (app_id = '' AND app_name = ?)`
 	// Keep an app's activity log bounded: drop everything but the newest rows.
-	trimAppEventsQuery = `DELETE FROM app_event WHERE app_id = (SELECT id FROM app WHERE name = ?) AND id NOT IN (SELECT id FROM app_event WHERE app_id = (SELECT id FROM app WHERE name = ?) ORDER BY id DESC LIMIT ?)`
+	trimAppEventsQuery = `DELETE FROM app_event WHERE app_id = (SELECT id FROM app WHERE name = ? AND id != '') AND id NOT IN (SELECT id FROM app_event WHERE app_id = (SELECT id FROM app WHERE name = ? AND id != '') ORDER BY id DESC LIMIT ?)`
 )
 
 // maxAppEvents bounds how many activity-log rows an app keeps.

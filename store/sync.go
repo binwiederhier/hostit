@@ -25,7 +25,7 @@ const (
 	// first, so a record the payload also carries is updated in place.
 	replaceMirrorSnapshotQuery = `
 		INSERT OR REPLACE INTO snapshot (id, app_name, app_id, label, created_at, auto)
-		VALUES (?, ?, COALESCE((SELECT id FROM app WHERE name = ?), ''), ?, ?, ?)`
+		VALUES (?, ?, COALESCE((SELECT id FROM app WHERE name = ? AND id != ''), ''), ?, ?, ?)`
 )
 
 // ReplaceNodeMirror swaps the mirror's app rows for the pushed state and merges

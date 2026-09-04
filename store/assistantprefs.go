@@ -10,7 +10,7 @@ const (
 	// inherits the global defaults; a present row overrides them.
 
 	// An app's last-used assistant mode, keyed on app_id so a rename keeps it.
-	selectAppModeQuery = `SELECT mode FROM app_assistant WHERE app_id = (SELECT id FROM app WHERE name = ?)`
+	selectAppModeQuery = `SELECT mode FROM app_assistant WHERE app_id = (SELECT id FROM app WHERE name = ? AND id != '')`
 	upsertAppModeQuery = `
 		INSERT INTO app_assistant (app_id, mode) SELECT id, ? FROM app WHERE name = ?
 		ON CONFLICT(app_id) DO UPDATE SET mode = excluded.mode

@@ -39,11 +39,12 @@ const (
 	deleteAppQuery             = `DELETE FROM app WHERE name = ?`
 	renameAppQuery             = `UPDATE app SET name = ? WHERE name = ?`
 	setAppOwnerQuery           = `UPDATE app SET owner_id = ? WHERE name = ?`
+	deleteGrantsByAppNameQuery = `DELETE FROM app_connection WHERE app_id = (SELECT id FROM app WHERE name = ? AND id != '')`
 	updateAppLimitsQuery       = `UPDATE app SET memory_limit_mb = ?, disk_limit_mb = ?, cpu_milli = ? WHERE name = ?`
 	// After the app is renamed, keep assistant_session's name mirror (its primary
 	// key) truthful, so a later app that reuses the freed name cannot collide with a
 	// stale row. Every other per-app table keys on app_id and needs no update.
-	renameAssistantMirrorQuery = `UPDATE assistant_session SET app_name = ? WHERE app_id = (SELECT id FROM app WHERE name = ?)`
+	renameAssistantMirrorQuery = `UPDATE assistant_session SET app_name = ? WHERE app_id = (SELECT id FROM app WHERE name = ? AND id != '')`
 	// Every tag still in use, so image GC never removes one an app is pinned to.
 	imageTagsInUseQuery = `SELECT DISTINCT image_tag FROM app WHERE image_tag != ''`
 )
@@ -98,9 +99,25 @@ func (s *Store) SetAppUID(name string, uid int) error {
 
 // SetAppOwner moves an app to a new owner; collaborator grants are the
 // caller's concern (the server keeps the old owner on as a collaborator).
+//
+// Connection grants are NOT the caller's concern and are dropped here: a grant
+// is the previous owner lending this app their credential, and it cannot follow
+// the app to somebody else. AppConnections is owner-scoped too, so a row missed
+// here could not resolve anyway -- this keeps the table honest rather than
+// leaving grants that silently mean nothing.
 func (s *Store) SetAppOwner(name, ownerID string) error {
-	_, err := s.db.Exec(setAppOwnerQuery, ownerID, name)
-	return err
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() // No-op once committed
+	if _, err := tx.Exec(deleteGrantsByAppNameQuery, name); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(setAppOwnerQuery, ownerID, name); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // SetAppArchived shelves an app, or brings it back. Archiving is deliberately

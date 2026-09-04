@@ -151,6 +151,13 @@ func (s *Store) TransferApps(fromUserID, toUserID string) ([]string, error) {
 		if _, err := s.db.Exec(updateTokenOwnerByAppQuery, toUserID, a.Name); err != nil {
 			return nil, err
 		}
+		// The connection grants do NOT move with the app: they are the departing
+		// owner lending their own credentials, and the recipient must not inherit
+		// them. (AppConnections is owner-scoped as well, so a row left here could
+		// not resolve -- this stops the table carrying grants that mean nothing.)
+		if _, err := s.db.Exec(deleteGrantsByAppIDQuery, a.ID); err != nil {
+			return nil, err
+		}
 		moved = append(moved, a.Name)
 	}
 	if _, err := s.db.Exec(updateAppOwnerQuery, toUserID, fromUserID); err != nil {
