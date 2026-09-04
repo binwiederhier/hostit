@@ -115,6 +115,10 @@ type App struct {
 	// background sweep hard-deletes it once soft-delete-duration has passed. Zero
 	// means the app is live.
 	SoftDeletedAt time.Time `json:"soft_deleted_at,omitempty"`
+	// Listed marks a PUBLIC app the owner has chosen to show on the instance's
+	// public app gallery ("Explore"). Off by default; only meaningful when the
+	// app is public and the instance has the gallery enabled (app-listing).
+	Listed bool `json:"listed,omitempty"`
 	// Private restricts who may reach the app over HTTP: its owner, its
 	// collaborators and admins, rather than anyone with the URL. Public is the
 	// default, which is what every app predating this flag already was.

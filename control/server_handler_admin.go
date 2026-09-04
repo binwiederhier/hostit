@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -268,14 +269,19 @@ func (s *Server) handleSettingsGet(w http.ResponseWriter, _ *http.Request, _ *ca
 	// control.yml value. The UI shows the override in the box and the default as
 	// its placeholder, and resets by clearing the override.
 	override, _ := s.apps.Store().Setting(store.SettingInfoPrompt)
+	modelOverride, _ := s.apps.Store().Setting(store.SettingDefaultAssistantModel)
 	writeJSON(w, http.StatusOK, &apiSettingsResponse{
-		DefaultAppLimit:     defaults.AppLimit,
-		DefaultMemoryMB:     defaults.MemoryMB,
-		DefaultDiskMB:       defaults.DiskMB,
-		DefaultMemoryPoolMB: defaults.MemoryPoolMB,
-		DefaultDiskPoolMB:   defaults.DiskPoolMB,
-		InfoPrompt:          override,
-		InfoPromptDefault:   s.config.InfoPrompt,
+		DefaultAppLimit:             defaults.AppLimit,
+		DefaultMemoryMB:             defaults.MemoryMB,
+		DefaultDiskMB:               defaults.DiskMB,
+		DefaultMemoryPoolMB:         defaults.MemoryPoolMB,
+		DefaultDiskPoolMB:           defaults.DiskPoolMB,
+		InfoPrompt:                  override,
+		InfoPromptDefault:           s.config.InfoPrompt,
+		DefaultAssistantModel:       modelOverride,
+		DefaultAssistantModelConfig: s.config.DefaultAssistantModel,
+		AssistantModes:              s.assistantOptions(),
+		AppListing:                  s.appListingEnabled(),
 	})
 }
 
@@ -323,6 +329,22 @@ func (s *Server) handleSettingsUpdate(w http.ResponseWriter, r *http.Request, c 
 	// An empty string clears the override back to the control.yml default.
 	if req.InfoPrompt != nil {
 		if err := s.apps.Store().SetSetting(store.SettingInfoPrompt, strings.TrimSpace(*req.InfoPrompt)); err != nil {
+			writeAppError(w, err)
+			return
+		}
+	}
+	// The default assistant mode a fresh app starts on ("" clears the override
+	// back to the control.yml default).
+	if req.DefaultAssistantModel != nil {
+		if err := s.apps.Store().SetSetting(store.SettingDefaultAssistantModel, strings.TrimSpace(*req.DefaultAssistantModel)); err != nil {
+			writeAppError(w, err)
+			return
+		}
+	}
+	// The public-gallery switch, stored as "true"/"false" so it overrides the
+	// control.yml default in either direction.
+	if req.AppListing != nil {
+		if err := s.apps.Store().SetSetting(store.SettingAppListing, strconv.FormatBool(*req.AppListing)); err != nil {
 			writeAppError(w, err)
 			return
 		}

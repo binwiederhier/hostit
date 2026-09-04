@@ -976,12 +976,13 @@ const SnapshotIntervalSelect = ({ value, defaultLabel, onChange }) => {
 // whole dialog commits or does not. The viewer section stays mounted and
 // merely disables itself when the app is public, so the dialog never changes
 // height as you switch between the two.
-const VisibilityDialog = ({ app, isPrivate, viewers, collabs, onSave, onClose }) => {
+const VisibilityDialog = ({ app, isPrivate, viewers, collabs, allowListed, onSave, onClose }) => {
   useEscape(onClose);
-  // The draft is one of the three states, not a private/public boolean:
+  // The draft is one of the visibility states, not a private/public boolean:
   // "restricted" is what the people list is FOR, so picking it is what reveals
-  // the list. It starts on whatever the app is now.
-  const [draft, setDraft] = useState(() => visibilityOf(isPrivate, viewers === null ? app.viewer_count : viewers.length));
+  // the list; "listed" is public plus the Explore gallery. It starts on whatever
+  // the app is now.
+  const [draft, setDraft] = useState(() => visibilityOf(isPrivate, viewers === null ? app.viewer_count : viewers.length, app.listed));
   const [added, setAdded] = useState([]);
   const [dropped, setDropped] = useState([]);
   const [email, setEmail] = useState("");
@@ -996,9 +997,10 @@ const VisibilityDialog = ({ app, isPrivate, viewers, collabs, onSave, onClose })
   // "Private" means private with NOBODY named, so choosing it commits an empty
   // list (which revokes any viewers the app had). "Restricted" commits the
   // edited list; "public" flips the flag and leaves the list untouched.
-  const draftPrivate = draft !== "public";
+  const draftPrivate = draft === "private" || draft === "restricted";
+  const draftListed = draft === "listed";
   const effectivePeople = draft === "private" ? [] : people;
-  const changes = visibilityChanges(viewers, effectivePeople, isPrivate, draftPrivate);
+  const changes = visibilityChanges(viewers, effectivePeople, isPrivate, draftPrivate, !!app.listed, draftListed);
 
   const add = (e) => {
     e.preventDefault();
@@ -1037,8 +1039,9 @@ const VisibilityDialog = ({ app, isPrivate, viewers, collabs, onSave, onClose })
         <p className="hint vis-intro">
           Public is open to anyone with the link. Private asks visitors to sign in and lets through only
           you, your collaborators, and admins. Restricted is private plus the specific people you name.
+          {allowListed ? " Listed is public and also on the instance's Explore gallery." : ""}
         </p>
-        <VisibilityChoice value={draft} onChange={setDraft} disabled={saving} />
+        <VisibilityChoice value={draft} onChange={setDraft} disabled={saving} allowListed={allowListed} />
 
         {/* Always shown -- disabled, not hidden -- when the app is not Restricted,
             so the modal does not jump and it is clear what Restricted adds. */}
@@ -1425,11 +1428,11 @@ const AppSettings = ({ app, isAdmin, account, showToast, onCopyToken, onRegenera
   // message on failure so the dialog can show it in place and stay open with
   // the draft intact -- the most likely failure is naming somebody who has
   // never signed in, and losing the rest of the edit over that would be rude.
-  const saveVisibility = async ({ isPrivate, add, remove }) => {
+  const saveVisibility = async ({ isPrivate, add, remove, listed }) => {
     const path = `/api/apps/${encodeURIComponent(name)}`;
     try {
-      if (isPrivate !== !!app.private) {
-        await api.put(`${path}/visibility`, { private: isPrivate });
+      if (isPrivate !== !!app.private || !!listed !== !!app.listed) {
+        await api.put(`${path}/visibility`, { private: isPrivate, listed: !!listed });
       }
       for (const email of add) {
         await api.post(`${path}/viewers`, { email });
@@ -1482,7 +1485,7 @@ const AppSettings = ({ app, isAdmin, account, showToast, onCopyToken, onRegenera
   }, [load]);
   // Prefer the list this page just loaded, so the badge updates the moment
   // somebody is added, rather than on the next poll of the app itself.
-  const visibility = visibilityOf(!!app.private, viewers === null ? app.viewer_count : viewers.length);
+  const visibility = visibilityOf(!!app.private, viewers === null ? app.viewer_count : viewers.length, !!app.listed);
   const anyPending = domains && domains.some((d) => d.status !== "active");
   useEffect(() => {
     if (!anyPending) return undefined;
@@ -1872,6 +1875,7 @@ const AppSettings = ({ app, isAdmin, account, showToast, onCopyToken, onRegenera
             isPrivate={!!app.private}
             viewers={viewers}
             collabs={collabs}
+            allowListed={!!account.app_listing_enabled}
             onSave={saveVisibility}
             onClose={() => setShowVisibility(false)}
           />,
@@ -2782,10 +2786,10 @@ const AppDetail = ({ account, refreshAccount }) => {
                 onClick={() => setShowVisibility(true)}
                 title="Change who can see this app"
               >
-                <VisibilityBadge state={visibilityOf(!!app.private, app.viewer_count)} />
+                <VisibilityBadge state={visibilityOf(!!app.private, app.viewer_count, !!app.listed)} />
               </button>
             ) : (
-              <VisibilityBadge state={visibilityOf(!!app.private, app.viewer_count)} />
+              <VisibilityBadge state={visibilityOf(!!app.private, app.viewer_count, !!app.listed)} />
             )}
           </div>
 

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"time"
 
+	"heckel.io/hostit/assistant"
 	"heckel.io/hostit/control/user"
 	"heckel.io/hostit/store"
 )
@@ -18,9 +19,33 @@ type apiCreateAppRequest struct {
 	Private bool `json:"private"`
 }
 
-// apiSetVisibilityRequest is the body of PUT /api/apps/{name}/visibility
+// apiSetVisibilityRequest is the body of PUT /api/apps/{name}/visibility. Listed
+// folds the public gallery into the visibility ladder ("Publicly listed"); it is
+// coerced off for a private app or a disabled gallery.
 type apiSetVisibilityRequest struct {
 	Private bool `json:"private"`
+	Listed  bool `json:"listed"`
+}
+
+// apiSetListedRequest is the body of PUT /api/apps/{name}/listed
+type apiSetListedRequest struct {
+	Listed bool `json:"listed"`
+}
+
+// apiExploreResponse is GET /api/explore: the public app gallery.
+type apiExploreResponse struct {
+	Enabled bool             `json:"enabled"` // false when the instance has the gallery off
+	Apps    []*apiExploreApp `json:"apps"`
+}
+
+// apiExploreApp is one public, listed app as shown on the gallery. Deliberately
+// slim: a public visitor-facing card, nothing an app's owner keeps private.
+type apiExploreApp struct {
+	Name        string `json:"name"`
+	URL         string `json:"url"`
+	Description string `json:"description,omitempty"`
+	// HasShot is whether a stored screenshot exists, so the card shows a picture.
+	HasShot bool `json:"has_shot,omitempty"`
 }
 
 // apiCollaboratorResponse is one collaborator row: enough for a settings list.
@@ -138,6 +163,9 @@ type apiAppResponse struct {
 	// ViewerCount is how many people have been given view-only access. With
 	// Private it is what the UI calls "Restricted" -- private, plus somebody.
 	ViewerCount int `json:"viewer_count"`
+	// Listed is whether the owner has put this (public) app on the instance's
+	// public gallery. Only meaningful when the app is public and the gallery is on.
+	Listed bool `json:"listed"`
 	// Tabs is the owner's per-app override of which app-detail tabs show (CSV of
 	// tab keys); "" means each viewer's own profile default applies.
 	Tabs string `json:"tabs"`
@@ -209,6 +237,9 @@ type apiAccountResponse struct {
 	// configured for the instance, so the profile page can hide assistant-only
 	// controls (the user prompt, the Assistant tab toggle) when there is none.
 	AssistantEnabled bool `json:"assistant_enabled"`
+	// AppListingEnabled is whether the public app gallery is on, so the nav shows
+	// the Explore link and the app settings show the "Listed" toggle.
+	AppListingEnabled bool `json:"app_listing_enabled"`
 	// Self-service profile fields (see store.User). TechLevel drives the welcome
 	// modal + presets; AssistantPrompt is appended to the assistant; DefaultTabs
 	// is the per-user default app-detail tab set; Onboarded gates the modal.
@@ -363,6 +394,15 @@ type apiSettingsResponse struct {
 	// (which clears the override back to this).
 	InfoPrompt        string `json:"info_prompt"`
 	InfoPromptDefault string `json:"info_prompt_default"`
+	// DefaultAssistantModel is the admin's stored default-mode OVERRIDE (raw DB
+	// setting, "" = use the control.yml default in DefaultAssistantModelConfig).
+	// AssistantModes lists what the picker can offer this instance.
+	DefaultAssistantModel       string             `json:"default_assistant_model"`
+	DefaultAssistantModelConfig string             `json:"default_assistant_model_config"`
+	AssistantModes              []assistant.Option `json:"assistant_modes"`
+	// AppListing is the effective public-gallery switch (DB override, else the
+	// control.yml default).
+	AppListing bool `json:"app_listing"`
 }
 
 // apiUpdateSettingsRequest is the body of PATCH /api/settings
@@ -375,6 +415,10 @@ type apiUpdateSettingsRequest struct {
 	// InfoPrompt, when non-nil, replaces the stored instance prompt ("" clears it
 	// back to the control.yml default).
 	InfoPrompt *string `json:"info_prompt"`
+	// DefaultAssistantModel, when non-nil, sets the default-mode override ("" =
+	// back to the control.yml default). AppListing toggles the public gallery.
+	DefaultAssistantModel *string `json:"default_assistant_model"`
+	AppListing            *bool   `json:"app_listing"`
 }
 
 // apiAgentEndpoint documents one endpoint in the agent-facing API index

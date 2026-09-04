@@ -564,6 +564,7 @@ func (s *Server) appResponse(a *store.App, customDomain string) *apiAppResponse 
 		Archived:       a.Archived,
 		SoftDeletedAt:  softDeletedUnix(a),
 		Private:        a.Private,
+		Listed:         a.Listed,
 		Tabs:           a.Tabs,
 		CreatedAt:      a.CreatedAt,
 		LimitOverrides: apiLimitOverrides{MemoryMB: a.MemoryLimitMB, DiskMB: a.DiskLimitMB, CPUMilli: a.CPUMilli},

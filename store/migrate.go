@@ -487,6 +487,9 @@ var (
 		// Soft-delete: an owner-deleted app is hidden and reaped after a grace
 		// period (soft-delete-duration) rather than removed at once (260903).
 		`ALTER TABLE app ADD COLUMN soft_deleted_at INTEGER NOT NULL DEFAULT 0;`,
+		// Public app gallery: a public app the owner ticks "Listed" shows on the
+		// instance's Explore page (260903).
+		`ALTER TABLE app ADD COLUMN listed INTEGER NOT NULL DEFAULT 0;`,
 	}
 )
 

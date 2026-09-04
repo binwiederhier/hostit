@@ -148,8 +148,9 @@ func (s *Server) accountResponse(c *caller) (*apiAccountResponse, error) {
 			Status: store.StatusActive,
 			// It has no user row to save a profile against, so mark it onboarded:
 			// the welcome modal (and any profile write) would 400 on it.
-			Onboarded: true,
-			Version:   node.Version,
+			Onboarded:         true,
+			AppListingEnabled: s.appListingEnabled(),
+			Version:           node.Version,
 		}, nil
 	}
 	if c.user == nil {
@@ -189,6 +190,7 @@ func (s *Server) accountResponse(c *caller) (*apiAccountResponse, error) {
 		Status:                   c.user.Status,
 		ConnectionsNeedReconnect: attention,
 		AssistantEnabled:         s.assistant != nil,
+		AppListingEnabled:        s.appListingEnabled(),
 		TechLevel:                c.user.TechLevel,
 		AssistantPrompt:          c.user.AssistantPrompt,
 		DefaultTabs:              c.user.DefaultTabs,

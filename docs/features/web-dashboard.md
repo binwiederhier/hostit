@@ -77,15 +77,7 @@ Frontend (`web/src/`, embedded and served by `control/web.go`):
   (shareable instance docs, `Docs.jsx`) and the popped-out terminal
   `/app/:name/terminal`.
 - `Login` is a card with a "Sign in with Google" link to `/auth/google`.
-- Card previews come from `preview/service.go`: a headless chrome in a
-  locked-down podman sandbox, writing one PNG per app. Two flags there are
-  load-bearing and pinned by a test -- `--virtual-time-budget` (25s, a RENDERING
-  budget: chrome pauses that clock while network fetches are outstanding, so a
-  slow app does not burn it waiting for its first byte) and
-  `--run-all-compositor-stages-before-draw`. Without them cards came out blank
-  white, either because the page had not painted yet or because the capture
-  happened mid-paint. A blank PNG is ~2KB against ~100KB for a real one, which
-  is the quickest way to spot a regression on disk.
+- Card previews are stored PNGs served per app; how they are taken is below.
 - Page width is per route: `App.jsx:roomyPath` gives the dashboard, profile and
   admin views `container-roomy` (1240px), the docs match it through their own
   `.docs-container` (they render their own `<main>`, so the width is repeated
@@ -117,6 +109,56 @@ Frontend (`web/src/`, embedded and served by `control/web.go`):
   (`/api/settings`). Renders "Not authorized" for non-admins.
 - `web/src/api.js` is the fetch wrapper (`ApiError`); the SPA never holds
   privileged logic, it just calls `/api`.
+
+Card previews (`control/preview/service.go`, `node/screenshot/`): control
+schedules the shots (a sweep every 6h, plus a debounced, rate-limited shot after
+assistant activity) and stores one PNG per app id under `previews/`; the node the
+app lives on runs a headless chrome in a locked-down podman container and hands
+back the bytes. What makes the picture reliable is that the shot **asks chrome
+when the page is ready** rather than inferring it from pixels:
+
+- **Lifecycle events are the signal** (`node/screenshot/cdp.go:waitReady`).
+  `Page.setLifecycleEventsEnabled` turns them on; the shot waits for
+  `firstContentfulPaint` (content really is on screen) and
+  `networkIdle`/`networkAlmostIdle`, capped by `paintSignalWait` (20s). A page
+  that paints at all does so in the first seconds, so the cap costs nothing and
+  leaves the fallback its own budget. An animating page -- a canvas, a game --
+  fires these in about a second, where the old pixel-diff settle burned the whole
+  budget waiting for two identical frames it would never get.
+- **A painted page then gets a flat `settleGrace` (5s), and the LATER frame is
+  stored** (`cdp.go:afterGrace`). Two matching frames only prove the page held
+  still for one poll: a late font, a lazy image or a chart that draws once its
+  data lands all read as "settled" and get photographed half-rendered. A few
+  seconds on a shot taken every few hours is cheap insurance.
+- **A painted page is trusted -- no blank check.** Chrome said it painted, so a
+  pale-but-real page keeps its preview instead of being refused into having none.
+- **No paint signal falls back to frame polling**: capture every `settlePoll`
+  (1.5s) and return the first stable non-blank frame, ceiling `settleDelay`
+  (45s). That covers a chrome too old for lifecycle events and a page that never
+  reports one. If the budget runs out and the frame is STILL blank the shot
+  **fails** rather than returning a white card, and control keeps the last good
+  preview.
+- **"Blank" now means nothing was painted** (`cdp.go:isMostlyBlank`): sample every
+  2px and call it blank only at <= 0.02% ink. The previous coarse 8px grid plus a
+  ">= 99.5% white" rule slipped between thin text strokes, so a heading and two
+  lines of prose -- which most small apps are -- read as empty and lost their
+  shot.
+- **Chrome must not background itself.** `--disable-renderer-backgrounding`,
+  `--disable-backgrounding-occluded-windows`,
+  `--disable-features=CalculateNativeWinOcclusion` and a `Page.bringToFront`
+  call, because a backgrounded renderer commits no frames: no paint event and a
+  blank capture however long the shot waits.
+  `--run-all-compositor-stages-before-draw` stays, against capturing mid-paint.
+- **One retry** on a shot that produced nothing (`node/screenshot/service.go:Engine.Shoot`),
+  on the same browser: a renderer that never committed a frame is usually
+  transient, and retrying here beats waiting hours for the next sweep.
+- **Metrics** (`control/metrics.go`, recorded in
+  `control/appaccess.go:Server.Screenshot`): `hostit_control_screenshot_duration_seconds`
+  (histogram) and `hostit_control_screenshots_total{outcome="ok|failed"}`. Since a
+  page that never paints now fails instead of storing a white card, `failed` is
+  the signal that previews are missing, and the histogram says whether the settle
+  budget is what is running out. The node logs each shot's `load_wait`, `settle`,
+  `polls` and `blank`.
 
 Login backend (`control/server_handler_auth.go`, `control/auth.go`,
 `control/session.go`):
@@ -158,6 +200,7 @@ embedded SPA (`control/web.go:webHandler`) for any non-`/api` path.
   deleted/denied user is still stopped because API calls re-check status per
   request via the token/user lookup.
 - Related features: `accounts-roles.md` (roles, approval, invites),
-  `rest-api.md` (everything the SPA calls), `builtin-assistant.md`,
+  `rest-api.md` (everything the SPA calls), `app-gallery.md` (the Explore page
+  and the card images it reuses), `builtin-assistant.md`,
   `browser-workspace.md`, `terminal.md`, `logs.md`, `snapshots-rollback.md`,
   `export-download.md`, `custom-domains.md`, `ssh-access.md`.

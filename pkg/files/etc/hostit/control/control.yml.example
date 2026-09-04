@@ -57,9 +57,10 @@ admin-token: CHANGE-ME
 #       provider is always OAuth.
 # ===========================================================================
 
-# --- OAuth accounts. A provider with no client here is not offered. Calendar and
-# Gmail reuse google-client-id above when omitted. Gmail's read scope needs
-# Google CASA review -- see docs/features/connections.md.
+# --- OAuth accounts. A provider with no client here is not offered. Calendar,
+# Gmail and Drive reuse google-client-id above when omitted. The Gmail and Drive
+# read scopes are restricted -- an instance offering them publicly needs Google's
+# CASA review; see docs/features/connections.md.
 #
 # MINIMAL -- a built-in provider, just its client:
 # connections:
@@ -121,6 +122,17 @@ admin-token: CHANGE-ME
 # info-prompt: >-
 #   This is the acme.co internal instance. Prefer Postgres over SQLite for
 #   anything shared, and keep persistent data under data/.
+
+# The AI model a fresh app's assistant starts on (users can still switch per
+# app). A mode id like "anthropic-sonnet-5" or "claude-opus-5"; empty picks the
+# newest configured model. Overridable live on the admin page; an id no
+# configured backend serves is ignored.
+# default-assistant-model: anthropic-sonnet-5
+
+# Public app gallery ("Explore"): when true, a user can put a PUBLIC app on a
+# gallery every logged-in member can browse (never the anonymous internet). Off
+# by default; overridable live on the admin page.
+# app-listing: false
 
 # How dashboard app cards preview: "live" scaled-down iframe (default),
 # "screenshot" (headless chrome, re-shot every 6h and ~1min after edits), or

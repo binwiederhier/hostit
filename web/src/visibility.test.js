@@ -20,6 +20,13 @@ describe("visibilityOf", () => {
     expect(visibilityOf(true, 1)).toBe("restricted");
     expect(visibilityOf(true, 9)).toBe("restricted");
   });
+
+  it("is listed when public and on the gallery; private still wins", () => {
+    expect(visibilityOf(false, 0, true)).toBe("listed");
+    expect(visibilityOf(false, 3, true)).toBe("listed");
+    expect(visibilityOf(true, 0, true)).toBe("private");
+    expect(visibilityOf(true, 2, true)).toBe("restricted");
+  });
 });
 
 describe("visibilityChanges", () => {
@@ -53,6 +60,9 @@ describe("visibilityChanges", () => {
   it("counts a visibility flip on its own as a change", () => {
     expect(visibilityChanges([], [], false, true).changed).toBe(true);
     expect(visibilityChanges([], [], true, true).changed).toBe(false);
+    // Public -> listed (and back) is a change too, even with no viewer edits.
+    expect(visibilityChanges([], [], false, false, false, true).changed).toBe(true);
+    expect(visibilityChanges([], [], false, false, true, true).changed).toBe(false);
   });
 
   // The dialog can be opened before the viewer list has arrived. Reading that

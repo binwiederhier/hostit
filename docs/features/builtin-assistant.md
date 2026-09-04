@@ -180,11 +180,23 @@ a place turns can run, registered from its own file's `init()`, and `Catalog`
 turns the configured credentials into the options offered -- an operator who
 sets a key gets exactly the models that key can serve and cannot list one it
 cannot. `resolveMode` picks what a turn runs (request -> the app's remembered
-choice -> `assistant.Default`, which is simply the head of the catalog, so the
-menu's own order is the only place a preference lives), persisted per app via `store.Store.SetAppAssistantMode`. A remembered
+choice -> the instance default -> `assistant.Default`, which is simply the head
+of the catalog, so the menu's own order is the last place a preference lives),
+persisted per app via `store.Store.SetAppAssistantMode`. A remembered
 choice naming a credential since removed simply does not resolve, so pulling a
 key downgrades the next turn instead of failing it. Adding a backend is one new
 file, not an edit in the config, the dropdown, a validator and an admin page.
+
+**The instance default** (`control/assistantmodes.go:Server.defaultAssistantModel`)
+is which mode a fresh app's assistant starts on: the admin-set DB value
+(`store.SettingDefaultAssistantModel`, `default_assistant_model`) if present,
+else `default-assistant-model` from control.yml; empty means "the catalog head".
+It is advisory -- an id no configured backend serves is ignored, so removing a
+credential degrades the instance default instead of breaking every new app. The
+admin page renders it as a dropdown from three fields on `GET /api/settings`:
+`default_assistant_model` (the raw override), `default_assistant_model_config`
+(what control.yml says, shown as the fallback) and `assistant_modes` (what this
+instance can actually run).
 
 **Persistence and accounting.** `control/assistantops.go:appTranscripts` stores
 the conversation as one JSON blob (`store/assistant.go`, keyed on app id so it

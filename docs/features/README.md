@@ -14,6 +14,7 @@ One file per user-facing feature. Every file uses the **exact same structure** (
 
 ### Access and data
 - [private-apps.md](private-apps.md) -- public vs private apps, viewers and collaborators
+- [app-gallery.md](app-gallery.md) -- the Explore gallery of publicly listed apps
 - [ssh-access.md](ssh-access.md) -- ssh / scp / sftp / rsync into an app's container
 - [connections.md](connections.md) -- accounts and credentials an owner attaches once and grants per app
 - [connections-catalog.md](connections-catalog.md) -- what is worth connecting, ranked by how much friction each vendor imposes

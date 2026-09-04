@@ -1698,7 +1698,8 @@ th:last-child {
 
 /* Three states do not fit two even columns, and side-by-side they crush the
    detail line; stack them as full-width radio cards instead. */
-.visibility-choice-three {
+.visibility-choice-three,
+.visibility-choice-four {
   grid-template-columns: 1fr;
 }
 
@@ -2610,6 +2611,13 @@ th:last-child {
     padding: 0 6px;
   }
   .asst-modeldd-label {
+    display: none;
+  }
+  /* The vendor mark goes with the label: on a phone the control is just the
+     kebab, so the Claude/Anthropic glyph beside it is one more thing crowding
+     the input row without saying anything the menu does not. It stays on the
+     menu ITEMS, which is where telling the backends apart matters. */
+  .asst-modeldd-btn .asst-modeldd-mark {
     display: none;
   }
   .asst-modeldd-kebab {
@@ -3603,8 +3611,13 @@ body.ws-resizing iframe {
     display: none;
   }
   /* No preview pane at this width, so the assistant view's preview controls
-     (Refresh, Show/Hide preview) have nothing to control. */
-  .ws-viewtabs-right {
+     (Refresh, Show/Hide preview) have nothing to control.
+
+     Two classes deliberately: the base .ws-viewtabs-right rule (display: flex)
+     is defined LATER in this file, so a bare class here would lose to it on
+     source order alone and the controls would stay on screen -- the same trap
+     the resources rule above documents. */
+  .ws-viewtabs .ws-viewtabs-right {
     display: none;
   }
   .ws-resizer {
@@ -7299,4 +7312,120 @@ input[type="number"]::-webkit-inner-spin-button {
 }
 .row-deleting td {
   opacity: 0.75;
+}
+
+/* Public app gallery (Explore) + inline checkbox rows. */
+.explore-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 14px;
+  margin-top: 12px;
+}
+.explore-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 16px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-2);
+  text-decoration: none;
+  color: inherit;
+  transition: border-color 0.15s ease, transform 0.15s ease;
+}
+.explore-card:hover {
+  border-color: var(--accent);
+  transform: translateY(-2px);
+}
+/* The card's stored screenshot: a 16:10 strip above the name, bled to the card
+   edges. Decorative, so it just disappears when there is no shot. */
+.explore-shot {
+  display: block;
+  margin: -16px -16px 10px;
+  aspect-ratio: 16 / 10;
+  overflow: hidden;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+.explore-shot img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: top center;
+  display: block;
+}
+.explore-name {
+  font-weight: 600;
+  color: var(--text);
+}
+.explore-desc {
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.4;
+}
+.explore-host {
+  font-size: 12px;
+  color: var(--accent);
+  margin-top: 2px;
+}
+.check-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+/* Four visibility cards in the new-app dialog (private / restricted / public /
+   listed), when the instance offers the Explore gallery. Mirrors the
+   three-card rules above; later in the file, same specificity, so it wins. */
+.newapp-grant-choice.newapp-grant-four {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+.newapp-grant-choice.newapp-grant-four .vis-title {
+  white-space: nowrap;
+  font-size: 13px;
+}
+.newapp-grant-choice.newapp-grant-four .vis-detail {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+@media (max-width: 560px) {
+  .newapp-grant-choice.newapp-grant-four {
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  .newapp-grant-choice.newapp-grant-four > *:not(:first-child) {
+    border-left: 1px solid var(--border);
+  }
+  .newapp-grant-choice.newapp-grant-four .vis-option {
+    grid-template-columns: 1fr;
+    grid-template-areas: "icon";
+    justify-items: center;
+    width: 100%;
+    padding: 9px 6px;
+  }
+  .newapp-grant-choice.newapp-grant-four .vis-title,
+  .newapp-grant-choice.newapp-grant-four .vis-detail {
+    display: none;
+  }
+}
+
+/* The new-app dialog's VISIBILITY cards explain themselves in a few words
+   ("Public, and on Explore"), which the shared grant-card rules would clip to an
+   ellipsis. Let those wrap instead -- the whole point of the line is to be read
+   -- and let the cards find a common height rather than truncate. Scoped to the
+   visibility chooser, so the connections cards beside it keep their one-liners. */
+.newapp-grant-choice.newapp-vis-choice .vis-detail {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  line-height: 1.3;
+}
+.newapp-grant-choice.newapp-vis-choice .vis-option {
+  align-items: start;
 }

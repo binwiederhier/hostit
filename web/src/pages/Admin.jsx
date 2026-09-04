@@ -1343,6 +1343,12 @@ const AdminInner = () => {
       {settings !== null && (
         <InstancePrompt settings={settings} onSaved={load} setError={setError} />
       )}
+      {settings !== null && (
+        <AssistantDefaults settings={settings} onSaved={load} setError={setError} />
+      )}
+      {settings !== null && (
+        <GalleryGate settings={settings} onSaved={load} setError={setError} />
+      )}
       <AdminLogs cluster={cluster} setError={setError} />
     </>
   );
@@ -1426,6 +1432,81 @@ const InstancePrompt = ({ settings, onSaved, setError }) => {
 
 // hostit's own machine logs (systemd journal): the control process and each
 // node, distinct from an app's output. Read on demand, admin-only.
+// The default assistant model a fresh app starts on: a dropdown of what this
+// instance can run, or the control.yml default. Hidden when no backend is
+// configured (there is nothing to pick).
+const AssistantDefaults = ({ settings, onSaved, setError }) => {
+  const modes = settings.assistant_modes || [];
+  const [busy, setBusy] = useState(false);
+  if (modes.length === 0) return null;
+  const value = settings.default_assistant_model || "";
+  const configDefault = settings.default_assistant_model_config || "";
+  const configMode = modes.find((m) => m.id === configDefault);
+  const configLabel = configMode ? configMode.label : "the newest model";
+  const patch = async (v) => {
+    setBusy(true);
+    setError("");
+    try {
+      await api.patch("/api/settings", { default_assistant_model: v });
+      if (onSaved) onSaved();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="card">
+      <h2>Default AI model</h2>
+      <p className="hint">
+        The model a new app&rsquo;s assistant starts on. Anyone can still switch models per app; this
+        just sets where they begin. Leave it on the <span className="mono">control.yml</span> default to
+        follow that.
+      </p>
+      <select className="settings-input" value={value} onChange={(e) => patch(e.target.value)} disabled={busy}>
+        <option value="">control.yml default ({configLabel})</option>
+        {modes.map((m) => (
+          <option key={m.id} value={m.id}>
+            {m.label}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+};
+
+// The public app gallery switch: when on, a user can list a public app on the
+// Explore page. Off by default; control.yml sets the default, this overrides it.
+const GalleryGate = ({ settings, onSaved, setError }) => {
+  const [busy, setBusy] = useState(false);
+  const enabled = !!settings.app_listing;
+  const toggle = async (e) => {
+    const v = e.target.checked;
+    setBusy(true);
+    setError("");
+    try {
+      await api.patch("/api/settings", { app_listing: v });
+      if (onSaved) onSaved();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="card">
+      <h2>Public app gallery</h2>
+      <p className="hint">
+        When on, a user can put a <strong>public</strong> app on the <strong>Explore</strong> page &mdash; a
+        gallery every logged-in member can browse. Off by default.
+      </p>
+      <label className="check-row">
+        <input type="checkbox" checked={enabled} onChange={toggle} disabled={busy} /> Enable the Explore gallery
+      </label>
+    </div>
+  );
+};
+
 const AdminLogs = ({ cluster, setError }) => {
   const nodes = (cluster && cluster.nodes ? cluster.nodes : []).map((n) => n.name).filter(Boolean);
   const [source, setSource] = useState("control");

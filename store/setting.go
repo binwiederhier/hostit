@@ -16,6 +16,12 @@ const (
 	// SettingInfoPrompt is the admin-set instance-wide prompt added to every
 	// /info response and the assistant system prompt (control/server_handler_admin.go).
 	SettingInfoPrompt = "info_prompt"
+	// SettingDefaultAssistantModel is the admin-set default assistant mode id a
+	// fresh app starts on; overrides config.DefaultAssistantModel (control/assistantmodes.go).
+	SettingDefaultAssistantModel = "default_assistant_model"
+	// SettingAppListing is the admin-set instance switch for the public app
+	// gallery ("true"/"false"); overrides config.AppListing (control/explore.go).
+	SettingAppListing = "app_listing"
 
 	upsertSettingQuery  = `INSERT INTO setting (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value`
 	selectSettingsQuery = `SELECT key, value FROM setting`

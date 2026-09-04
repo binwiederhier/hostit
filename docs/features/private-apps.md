@@ -13,9 +13,14 @@ created and can be changed later under Settings -> Visibility, and it takes
 effect within about a second.
 
 An app with people on the access list reads as **Restricted** rather than
-Private in the interface. That is a label, not a fourth state: the stored flag
-is still `private`. It exists so an owner can tell "only me" from "me and two
-others" without opening anything.
+Private in the interface. That is a label, not a stored state: the flag is still
+`private`. It exists so an owner can tell "only me" from "me and two others"
+without opening anything.
+
+Above public sits **Listed**, the top rung of the same picker: public, and shown
+on the instance's members-only Explore gallery. Unlike Restricted that one is a
+real stored flag (`app.listed`), and it is only offered when the operator has the
+gallery switched on -- see [app-gallery.md](app-gallery.md).
 
 Two per-app grants, and the difference between them is the point:
 
@@ -158,11 +163,19 @@ is still what an unknown hostname gets.
   at least once. The API says which of "never signed up", "waiting for
   approval" and "suspended" applies, because that was the single most common way
   to use this wrong.
-- **No previews.** A private app is never screenshotted: the shot container
-  browses the public URL with no credentials, so it would photograph the refusal
-  page. A bypass would have been a screenshot path around the gate, which is the
-  thing the feature exists to prevent. The card shows a placeholder.
+- **Previews go through the same gate, not around it.** A private app used to be
+  skipped entirely: the shot container browsed the public URL with no
+  credentials, so it would only have photographed the refusal page. It is now
+  shot with an app-bound grant cookie minted for a reserved preview principal
+  (`Server.PreviewCookie`, `api.PreviewPrincipal`), so the proxy serves it the
+  real app -- the grant names that ONE app, is re-checked like any other, and is
+  stripped before the request reaches the app backend. This is deliberately not a
+  bypass: the shot is a caller the gate admits, not a path around it. An instance
+  with no cookie minter configured drops private apps from the queue rather than
+  photographing a refusal page (`preview.Manager.enqueue`).
 - **Grants name the app, and apps can be renamed.** A rename invalidates
   outstanding grants for that app; visitors bounce once and get a fresh one.
+- **Related features:** [app-gallery.md](app-gallery.md) is the fourth rung of
+  this ladder (public plus listed on the Explore gallery).
 - Design record, including what was rejected: `plans/260821-private-apps.md`
   (not in this repo).

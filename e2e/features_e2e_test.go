@@ -111,6 +111,59 @@ func TestSoftDeleteLifecycle(t *testing.T) {
 	require.Nil(t, adminApp(), "purged, no longer in the admin list either")
 }
 
+// The public app gallery against a real server: the instance gate, listing a
+// public app, and the refusals that keep a private app off it. The gate is put
+// back as it was, so running this does not reconfigure the instance.
+func TestAppGalleryEndToEnd(t *testing.T) {
+	e := newEnv(t)
+	var before map[string]any
+	e.get("/api/settings", e.token, &before)
+	wasOn, _ := before["app_listing"].(bool)
+	t.Cleanup(func() {
+		e.doJSON("PATCH", "/api/settings", e.token, map[string]bool{"app_listing": wasOn}, nil, http.StatusOK)
+	})
+	name := uniqueName("e2e-gallery")
+	e.createApp(name)
+	t.Cleanup(func() { e.purgeBestEffort(name) })
+
+	listed := func() bool {
+		var app map[string]any
+		e.get("/api/apps/"+name, e.token, &app)
+		v, _ := app["listed"].(bool)
+		return v
+	}
+	inGallery := func() bool {
+		var resp struct {
+			Enabled bool `json:"enabled"`
+			Apps    []struct {
+				Name string `json:"name"`
+			} `json:"apps"`
+		}
+		e.get("/api/explore", e.token, &resp)
+		for _, a := range resp.Apps {
+			if a.Name == name {
+				return true
+			}
+		}
+		return false
+	}
+
+	// Gate off: listing is refused outright.
+	e.doJSON("PATCH", "/api/settings", e.token, map[string]bool{"app_listing": false}, nil, http.StatusOK)
+	e.doJSON("PUT", "/api/apps/"+name+"/listed", e.token, map[string]bool{"listed": true}, nil, http.StatusForbidden)
+
+	// Gate on: a public app lists, and shows up on the gallery.
+	e.doJSON("PATCH", "/api/settings", e.token, map[string]bool{"app_listing": true}, nil, http.StatusOK)
+	e.doJSON("PUT", "/api/apps/"+name+"/visibility", e.token, map[string]bool{"private": false, "listed": true}, nil, http.StatusOK)
+	assert.True(t, listed(), "a public app lists when the gallery is on")
+	assert.True(t, inGallery(), "and appears on the gallery")
+
+	// Private wins: the app comes off the gallery, however it is asked.
+	e.doJSON("PUT", "/api/apps/"+name+"/visibility", e.token, map[string]bool{"private": true, "listed": true}, nil, http.StatusOK)
+	assert.False(t, listed(), "a private app is never listed")
+	assert.False(t, inGallery(), "and is off the gallery")
+}
+
 // Control's own journal is readable from the admin logs endpoint, and each node's
 // too. Admin-only. journalctl must be present (it is on the systemd hosts hostit
 // ships to); a host without it returns 500, which we surface rather than assert.

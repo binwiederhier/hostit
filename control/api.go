@@ -67,6 +67,8 @@ func (s *Server) newAPIHandler() http.Handler {
 	// Provider definitions, in three tiers (control/providers.go). Personal
 	// ones are any active user's; an instance one needs an admin, which the
 	// handler checks from the request's scope rather than the route.
+	route(mux, "GET", "/explore", s.requireAccount(s.handleExplore))
+	route(mux, "GET", "/explore/{name}/preview.png", s.requireAccount(s.handleExplorePreview))
 	route(mux, "GET", "/providers", s.requireAccount(s.handleProvidersList))
 	route(mux, "POST", "/providers", s.requireAccount(s.handleProviderAdd))
 	route(mux, "PUT", "/providers/{name}", s.requireAccount(s.handleProviderUpdate))
@@ -91,6 +93,7 @@ func (s *Server) newAPIHandler() http.Handler {
 	route(mux, "POST", "/apps/{name}/token", s.requireAccount(s.handleAppsRotateToken))
 	route(mux, "PUT", "/apps/{name}/description", s.requireAccount(s.handleAppsSetDescription))
 	route(mux, "PUT", "/apps/{name}/visibility", s.requireAccount(s.handleAppsSetVisibility))
+	route(mux, "PUT", "/apps/{name}/listed", s.requireAccount(s.handleAppsSetListed))
 	route(mux, "PUT", "/apps/{name}/tabs", s.requireAccount(s.handleAppsSetTabs))
 	route(mux, "GET", "/viewers/known", s.requirePerson(s.handleKnownViewers))
 	route(mux, "GET", "/apps/{name}/viewers", s.requireAccount(s.handleViewersList))

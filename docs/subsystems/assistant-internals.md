@@ -325,13 +325,44 @@ the backend was unwired, silently running the API model and badging replies as
 Sonnet with no explanation. Now the token's presence is the whole switch -- if
 "Claude.ai" is offered, it actually runs the subscription.
 
-Per-user gating and defaults layer on top (`control/assistantmodes.go`): whether a
-user may pick External Claude and which API models they may use come from a
-per-user override or the operator's global defaults, and the default when unset is
-"allowed whenever the subscription is configured" -- because the operator setting
-up the token is the signal that new users should get it. The mode a turn actually
-runs on is resolved against those permissions (`resolveMode`), and remembered
-per-app (`app_assistant`, keyed on `app_id`).
+### Which mode a turn runs on
+
+Everything in `control/assistantmodes.go` is derived: `assistantOptions` is just
+`assistant.Catalog(credentials(config))`, so there is no operator catalog to keep
+in sync and no per-user allowlist -- an instance approves its signups, and that is
+the control.
+
+`resolveMode(requested, appName)` picks the mode for a turn, taking the first of
+these that names something this instance can actually run
+(`assistant.Lookup(creds, id)`):
+
+1. the mode the request asked for,
+2. the app's remembered choice (`store.AppAssistantMode`; table `app_assistant`,
+   keyed on `app_id` so a rename keeps it),
+3. **the instance default** (`Server.defaultAssistantModel`),
+4. `assistant.Default(creds)` -- the head of the catalog.
+
+An empty answer means nothing is configured, which is also when the assistant
+hides itself. Because every step is filtered through `Lookup`, an id whose
+backend is no longer configured simply falls through to the next one: pulling a
+credential downgrades the next turn rather than failing it.
+
+`Server.defaultAssistantModel` is the instance's answer to "which mode does a
+fresh app's assistant start on": the admin-set DB value
+(`store.SettingDefaultAssistantModel`, `default_assistant_model`) if non-empty,
+else `config.Config.DefaultAssistantModel` (`default-assistant-model` in
+control.yml). It is advisory by construction -- it sits at step 3, above the
+catalog head but below what an app has already chosen, and an id no configured
+backend serves is ignored rather than erroring.
+
+The admin page's dropdown is fed by three fields on `GET /api/settings`
+(`control/server_handler_admin.go`): `default_assistant_model` (the raw DB
+override, so an admin can see whether one is set at all),
+`default_assistant_model_config` (what control.yml says, shown as the fallback)
+and `assistant_modes` (`assistantOptions()` -- what this instance can run, so the
+dropdown cannot offer an unrunnable id). `PATCH /api/settings
+{default_assistant_model}` writes the override; an empty string clears it back to
+the config value.
 
 See `plans/260810-hostit-claude-max-backend.md` for the sandbox design and the
 threat model behind the MCP-only restriction.

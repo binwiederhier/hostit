@@ -7,9 +7,15 @@
 // NO removals on purpose -- treating "not loaded yet" as "was empty" turns an
 // open-and-save into revoking everybody, which is exactly the bug this shape
 // prevents.
-export function visibilityChanges(original, people, wasPrivate, isPrivate) {
+export function visibilityChanges(original, people, wasPrivate, isPrivate, wasListed = false, isListed = false) {
   const known = original || [];
   const add = people.filter((p) => !p.id && !known.some((o) => o.email === p.email)).map((p) => p.email);
   const remove = original === null ? [] : known.filter((o) => !people.some((p) => p.email === o.email)).map((o) => o.id);
-  return { isPrivate, add, remove, changed: isPrivate !== wasPrivate || add.length > 0 || remove.length > 0 };
+  return {
+    isPrivate,
+    listed: isListed,
+    add,
+    remove,
+    changed: isPrivate !== wasPrivate || !!isListed !== !!wasListed || add.length > 0 || remove.length > 0,
+  };
 }

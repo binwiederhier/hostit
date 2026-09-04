@@ -7,6 +7,47 @@ changed rather than what an operator had to do about it; from v0.15.0 on, each
 release is written down as it is cut. Anything that changes a config file, a
 default, or on-disk state is called out as **Breaking** or **Upgrade note**.
 
+## v0.39.0 (2026-09-04)
+
+A public app gallery, a Google Drive connection, an instance default for the
+assistant's model, and a substantially more reliable app preview.
+
+- **Public app gallery ("Explore").** A signed-in member can browse the public
+  apps whose owners chose to list them. Listing is the fourth rung of the same
+  visibility ladder -- Private / Restricted / Public / **Listed** -- rather than a
+  separate switch, and it is offered in the new-app dialog too. Only a public app
+  can be listed, and making one private unlists it. The gallery is behind the
+  login (a members' gallery, never the anonymous internet) and OFF by default:
+  enable it with `app-listing`, or live on the admin page. Cards show the app's
+  description and, in screenshot preview mode, its picture.
+- **Google Drive connection.** Read-only (`drive.readonly`), alongside Calendar
+  and Gmail and reusing the same Google login client when no explicit one is set.
+  A separate provider on purpose: granting an app Drive implies neither the
+  calendar nor the mailbox. Enable the Google Drive API in the project, and note
+  the scope is restricted -- offering it publicly needs Google's CASA review.
+- **Default AI model.** `default-assistant-model` sets which model a new app's
+  assistant starts on, with a dropdown on the admin page listing exactly what the
+  instance can run. Anyone can still switch model per app; this only sets where
+  they begin. An id no configured backend serves is ignored.
+- **App previews are much less likely to come out blank or half-rendered.** The
+  shot now asks chrome when the page is ready (its own firstContentfulPaint and
+  network-idle lifecycle events) instead of inferring it from matching frames, so
+  an animating page no longer waits out the whole budget, then waits a flat five
+  seconds so a page that pauses mid-render is stored finished rather than
+  half-drawn. A shot that paints nothing at all now FAILS instead of storing a
+  white card, so the last good preview survives. Fixes along the way: a blank
+  test that mistook a sparse page of text for an empty one, and headless chrome
+  backgrounding its own renderer so it never painted at all.
+- **Preview metrics**: `hostit_control_screenshot_duration_seconds` and
+  `hostit_control_screenshots_total{outcome}`, plus per-shot timings in the node
+  log -- so "how long do previews take, and are they failing" is answerable.
+- **Mobile**: the app view's preview controls no longer appear where there is no
+  preview pane, and the model picker beside the chat box is just its menu button.
+
+**Upgrade note:** a storage migration runs before serving on the first start
+after the upgrade (a brief outage), adding the app-listing column. The gallery
+stays off until an admin turns it on, so nothing becomes visible by upgrading.
+
 ## v0.38.0 (2026-09-03)
 
 Deferred app deletion (a delete you can take back), plus assistant reliability,

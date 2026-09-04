@@ -277,9 +277,11 @@ export const Snippet = ({ text }) => (
 // caller decides what, if anything, to render beneath a picked "restricted".
 // Private FIRST: landing on public by accident publishes something, on private
 // it does not. Restricted sits between the two -- private, plus named people.
-export const VisibilityChoice = ({ value, onChange, disabled }) => (
-  <div className="visibility-choice visibility-choice-three" role="radiogroup" aria-label="Visibility">
-    {["private", "restricted", "public"].map((key) => (
+export const VisibilityChoice = ({ value, onChange, disabled, allowListed = false }) => {
+  const keys = allowListed ? ["private", "restricted", "public", "listed"] : ["private", "restricted", "public"];
+  return (
+  <div className={"visibility-choice " + (allowListed ? "visibility-choice-four" : "visibility-choice-three")} role="radiogroup" aria-label="Visibility">
+    {keys.map((key) => (
       <button
         key={key}
         type="button"
@@ -295,7 +297,8 @@ export const VisibilityChoice = ({ value, onChange, disabled }) => (
       </button>
     ))}
   </div>
-);
+  );
+};
 
 // The three self-selected technical levels, as picture cards, shared by the
 // welcome modal and the profile page. Least-technical first, as the design asks:
@@ -406,8 +409,8 @@ export const TechLevelCards = ({ value, onChange, disabled }) => (
 // chooser and the settings row. "Restricted" is not a fourth setting: it is
 // what private looks like once somebody else has been let in, so the reader
 // can tell "only me" from "me and two others" at a glance.
-export const visibilityOf = (isPrivate, viewerCount = 0) => {
-  if (!isPrivate) return "public";
+export const visibilityOf = (isPrivate, viewerCount = 0, listed = false) => {
+  if (!isPrivate) return listed ? "listed" : "public";
   return viewerCount > 0 ? "restricted" : "private";
 };
 
@@ -415,6 +418,7 @@ const VISIBILITY = {
   public: { label: "Public", detail: "Anyone with the link", hint: "Anyone with the link can open this app" },
   private: { label: "Private", detail: "Only you, collaborators and admins", hint: "Only you, your collaborators and admins can open this app" },
   restricted: { label: "Restricted", detail: "Also specific people you add", hint: "Your collaborators, the people you have given access, and admins" },
+  listed: { label: "Listed", detail: "Public, and on the Explore gallery", hint: "Anyone with the link can open it, and it appears on the instance's Explore gallery" },
 };
 
 const GlobeIcon = () => <path d="M8 1.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13ZM1.5 8h13M8 1.5c1.7 1.8 2.6 4 2.6 6.5S9.7 12.7 8 14.5c-1.7-1.8-2.6-4-2.6-6.5S6.3 3.3 8 1.5Z" />;
@@ -432,9 +436,17 @@ const PeopleIcon = () => (
   </>
 );
 
+// A globe with a small star: public, and on the gallery.
+const ListedIcon = () => (
+  <>
+    <path d="M7 1.6a6.2 6.2 0 1 0 3.5 11.3M2 5.5h9M6.6 1.7C5.2 3.4 4.4 5.5 4.4 8s.8 4.6 2.2 6.3" />
+    <path d="M12.4 8.4l.85 1.72 1.9.28-1.37 1.34.32 1.9-1.7-.9-1.7.9.32-1.9L9.65 10.4l1.9-.28z" />
+  </>
+);
+
 export const VisibilityIcon = ({ state }) => (
   <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    {state === "public" ? <GlobeIcon /> : state === "restricted" ? <PeopleIcon /> : <LockIcon />}
+    {state === "public" ? <GlobeIcon /> : state === "listed" ? <ListedIcon /> : state === "restricted" ? <PeopleIcon /> : <LockIcon />}
   </svg>
 );
 

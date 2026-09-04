@@ -28,6 +28,15 @@ func (s *Server) handleAppsSetVisibility(w http.ResponseWriter, r *http.Request,
 		return
 	}
 	a.Private = req.Private
+	// "Publicly listed" is a rung of the same ladder: a private app is never
+	// listed, and neither is anything when the gallery is off, so coerce rather
+	// than reject -- the picker only offers "listed" when it is valid anyway.
+	listed := req.Listed && !req.Private && s.appListingEnabled()
+	if err := s.apps.Store().SetAppListed(a.Name, listed); err != nil {
+		writeAppError(w, err)
+		return
+	}
+	a.Listed = listed
 	s.logAction(c, a.Name, "visibility", visibilityAction(req.Private))
 	writeJSON(w, http.StatusOK, s.withState([]*apiAppResponse{s.appResponseFor(c, a, s.firstActiveDomain(a.Name))})[0])
 }

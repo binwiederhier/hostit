@@ -210,8 +210,9 @@ const AssistantPage = () => (
       this server can run, grouped by where the turn runs: the operator's Claude
       subscription above the rule, the metered Anthropic API below it. Both can
       offer the same model, so "Sonnet 5" may appear twice -- the Claude or
-      Anthropic mark beside each name says which is which. Each app remembers
-      what it last used.
+      Anthropic mark beside each name says which is which. A new app starts on
+      the model the administrator set as this instance's default; after that,
+      each app remembers what it last used.
     </p>
     <p className="hint">
       The built-in assistant needs the server to be configured with an AI key.
@@ -627,6 +628,29 @@ const VisibilityPage = () => (
       rather than Private. It is the same setting -- just a way to tell &quot;only
       me&quot; from &quot;me and two others&quot; at a glance.
     </p>
+    <h3>Listing it on Explore</h3>
+    <p>
+      Where an instance has the gallery switched on, the chooser has a fourth
+      rung: <strong>Listed</strong>. It means public <em>and</em> on{" "}
+      <strong>Explore</strong>, the page every signed-in member can browse. It
+      is the same ladder one step further out -- Private, Restricted, Public,
+      Listed -- not a separate switch, and you can pick it in the New app dialog
+      as easily as later under Settings -&gt; Visibility.
+    </p>
+    <p>
+      Explore stays behind the login: it is a gallery for the people on this
+      instance, never for the anonymous internet. A card carries the app's name,
+      its one-line <span className="mono">description:</span> from{" "}
+      <span className="mono">hostit.yml</span>, its URL, and its screenshot
+      where the instance previews apps that way -- so a current description is
+      what makes yours worth clicking.
+    </p>
+    <p>
+      Only a public app can be listed, and turning an app private unlists it for
+      you, so nothing sits on Explore that a member cannot open. If you see
+      neither an Explore link nor a Listed option, the gallery is off on this
+      instance; an administrator turns it on.
+    </p>
     <h3>Signing out of one app</h3>
     <p>
       Opening <span className="mono">/hostit/logout</span> on the app&apos;s own
@@ -701,7 +725,7 @@ const ConnectionsPage = () => (
     <ul>
       <li>
         <DocsPageLink guide="user" section="connections" sub="accounts">Accounts</DocsPageLink>{" "}
-        are services you sign in to -- Google Calendar, Gmail, Slack, Discord, GitHub, Jira,
+        are services you sign in to -- Google Calendar, Gmail, Google Drive, Slack, Discord, GitHub, Jira,
         Linear, HubSpot. You approve them at the provider and hostit keeps the permission.
       </li>
       <li>
@@ -815,6 +839,7 @@ const AccountsPage = () => (
       <tbody>
         <tr><td>Google Calendar</td><td>Read and write the calendars on that Google account</td></tr>
         <tr><td>Gmail</td><td>Read that mailbox (read-only)</td></tr>
+        <tr><td>Google Drive</td><td>Read the files and folders on that Google account (read-only)</td></tr>
         <tr><td>Slack (bot)</td><td>Read and post in channels the bot has been invited to, look up users</td></tr>
         <tr><td>Slack (personal)</td><td>Read the public and private channels you are already in, and search across them, as you -- no bot to invite</td></tr>
         <tr><td>Discord</td><td>Your profile and which servers you are in. Reading a server&rsquo;s channels needs a <b>Discord bot</b> credential instead</td></tr>
@@ -1277,6 +1302,7 @@ const ApiPage = () => (
           />
           <Endpoint method="PUT" path="/api/apps/{name}/description" what={`Set the app's one-line description: {"description":"..."}`} />
           <Endpoint method="PUT" path="/api/apps/{name}/visibility" what={`Public or private: {"private":true}`} />
+          <Endpoint method="PUT" path="/api/apps/{name}/listed" what={`Put a PUBLIC app on the Explore gallery, or take it off: {"listed":true}`} />
           <Endpoint method="PATCH" path="/api/apps/{name}/limits" what={`Memory and disk for this app: {"memory_mb":512,"disk_mb":2048}. Bounded by your pool`} />
           <Endpoint method="PUT" path="/api/apps/{name}/snapshot-config" what={`Automatic snapshot interval: {"interval":"3h"}. Written into hostit.yml`} />
           <Endpoint method="PUT" path="/api/apps/{name}/keys" what={`SSH keys allowed into this app's container: {"ssh_keys":["ssh-ed25519 ..."]}`} />
@@ -1587,6 +1613,26 @@ const ConfigPage = () => (
               Additionally offers the models of a Claude Pro/Max subscription,
               run in a sandbox. Its presence is the whole switch; there is no
               backend selector.
+            </td>
+          </tr>
+          <tr>
+            <td className="mono">default-assistant-model</td>
+            <td>
+              The AI model a new app's assistant starts on; users can still
+              switch per app. A mode id like{" "}
+              <span className="mono">anthropic-sonnet-5</span> or{" "}
+              <span className="mono">claude-opus-5</span>; empty picks the newest
+              configured model. Overridable live on the admin page, and an id no
+              configured backend serves is ignored.
+            </td>
+          </tr>
+          <tr>
+            <td className="mono">app-listing</td>
+            <td>
+              <span className="mono">true</span> turns on the public app gallery
+              ("Explore"), where a member can browse the public apps their owners
+              chose to list. Off by default, and behind the login either way --
+              never the anonymous internet. Overridable live on the admin page.
             </td>
           </tr>
         </tbody>
@@ -1937,7 +1983,7 @@ const ConnectionsSetupPage = () => (
         </tr>
         <tr>
           <td><DocsPageLink guide="admin" section="connections" sub="google">Google</DocsPageLink></td>
-          <td>Hard</td><td>Verification; Gmail needs a paid annual security review</td>
+          <td>Hard</td><td>Verification; Gmail and Drive need a paid annual security review</td>
         </tr>
         <tr>
           <td><DocsPageLink guide="admin" section="connections" sub="custom">Your own</DocsPageLink></td>
@@ -2176,7 +2222,7 @@ const HubspotPage = () => (
 
 const GooglePage = () => (
   <>
-    <h2>Google (Calendar and Gmail)</h2>
+    <h2>Google (Calendar, Gmail and Drive)</h2>
     <p>
       The most work of any provider, and the one most worth avoiding. Read this page before
       starting: for a personal instance a <b>credential</b> usually does the same job with none of
@@ -2196,13 +2242,19 @@ const GooglePage = () => (
       than baked into the registration. An explicit entry in{" "}
       <span className="mono">connections:</span> wins if you want a separate one.
     </p>
+    <p>
+      Calendar, Gmail and Drive are three separate providers on that one client, and a user
+      attaches, grants and revokes each on its own. Granting an app the Drive connection implies
+      nothing about the other two, so an app only ever holds a token for the scope its user
+      approved for it.
+    </p>
 
     <h3>Enable the APIs</h3>
     <ol className="docs-steps">
       <li>
         <span className="mono">console.cloud.google.com</span> &rarr; <b>APIs &amp; Services</b>{" "}
-        &rarr; <b>Enable APIs</b> &rarr; enable <b>Google Calendar API</b> and/or <b>Gmail API</b>{" "}
-        in the project.
+        &rarr; <b>Enable APIs</b> &rarr; enable <b>Google Calendar API</b>, <b>Gmail API</b>{" "}
+        and/or <b>Google Drive API</b> in the project.
       </li>
       <li>
         Without this a perfectly valid token still gets{" "}
@@ -2237,17 +2289,19 @@ const GooglePage = () => (
       <tbody>
         <tr><td>Non-sensitive</td><td>email, profile</td><td>Nothing</td></tr>
         <tr><td>Sensitive</td><td><b>Calendar</b></td><td>Verification, but <b>free</b> and no security assessment</td></tr>
-        <tr><td>Restricted</td><td><b>Gmail</b></td><td>Verification <b>and</b> a CASA Tier 2 assessment, roughly $800&ndash;$6,000 per year</td></tr>
+        <tr><td>Restricted</td><td><b>Gmail</b>, <b>Drive</b></td><td>Verification <b>and</b> a CASA Tier 2 assessment, roughly $800&ndash;$6,000 per year</td></tr>
       </tbody>
     </table>
     <p>
-      So Calendar is worth verifying and removes the seven-day expiry for free. Gmail is dominated
-      by the IMAP credential for anything short of a commercial product.
+      So Calendar is worth verifying and removes the seven-day expiry for free. Gmail and Drive
+      both sit in the restricted tier: an instance that offers either one publicly needs the CASA
+      review, and Gmail is dominated by the IMAP credential for anything short of a commercial
+      product.
     </p>
 
     <h3>Scopes hostit requests</h3>
     <Snippet
-      text={`# Google Calendar\nhttps://www.googleapis.com/auth/calendar\n\n# Gmail (read-only)\nhttps://www.googleapis.com/auth/gmail.readonly`}
+      text={`# Google Calendar\nhttps://www.googleapis.com/auth/calendar\n\n# Gmail (read-only)\nhttps://www.googleapis.com/auth/gmail.readonly\n\n# Google Drive (read-only)\nhttps://www.googleapis.com/auth/drive.readonly`}
     />
   </>
 );
@@ -2581,6 +2635,31 @@ const AdminPage = () => (
       assistant -- an instance approves its signups, and that is the control.
       What people spend is bounded per user by the AI budget on this page, and{" "}
       <span className="mono">Usage</span> shows it per owner.
+    </p>
+    <p>
+      <strong>Default AI model</strong> on the same page picks where a new app's
+      assistant starts -- the dropdown lists exactly the models this instance can
+      run, and it overrides{" "}
+      <span className="mono">default-assistant-model</span> in{" "}
+      <span className="mono">control.yml</span> without a restart. It is only a
+      starting point: every user can still switch model per app whenever they
+      like.
+    </p>
+    <h3>The public app gallery</h3>
+    <p>
+      <strong>Explore</strong> lists the public apps whose owners chose to list
+      them, for anyone signed in to this instance to browse. It is off until you
+      turn it on, with <span className="mono">app-listing</span> in{" "}
+      <span className="mono">control.yml</span> or the{" "}
+      <strong>Public app gallery</strong> switch on this page; while it is off,
+      neither the Explore link nor the "Listed" visibility option exists
+      anywhere in the UI.
+    </p>
+    <p>
+      Listing is the owner's choice per app and only ever reaches a public one,
+      so turning the gallery on exposes nothing new to anyone who was not
+      already able to open those apps by URL -- and the page itself is behind
+      the login, never the anonymous internet.
     </p>
     <h3>Backups</h3>
     <p>

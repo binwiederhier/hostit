@@ -128,7 +128,7 @@ const NewAppViewers = ({ known, emails, setEmails, disabled }) => {
 // that needs more than a click, so -- exactly like "Select connections" -- it
 // opens a popover anchored under the card, and the whole people-picking happens
 // in there rather than growing the dialog.
-const NewAppVisibility = ({ visibility, setVisibility, viewerEmails, setViewerEmails, knownViewers, disabled }) => {
+const NewAppVisibility = ({ visibility, setVisibility, viewerEmails, setViewerEmails, knownViewers, disabled, allowListed = false }) => {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState(null); // {top,left,width} for the fixed popover
   const selRef = useRef(null);
@@ -157,11 +157,16 @@ const NewAppVisibility = ({ visibility, setVisibility, viewerEmails, setViewerEm
   const restrictedDetail = viewerEmails.length > 0 ? `${viewerEmails.length} added` : "Pick who";
   // The one-line hint under the segmented control on mobile: it names the chosen
   // option, since the compact segments show only an icon there.
-  const visLabels = { private: "Private", restricted: "Restricted", public: "Public" };
-  const visDetails = { private: "Only you & admins", restricted: restrictedDetail, public: "Anyone with the link" };
+  const visLabels = { private: "Private", restricted: "Restricted", public: "Public", listed: "Listed" };
+  const visDetails = {
+    private: "Only you & admins",
+    restricted: restrictedDetail,
+    public: "Anyone with the link",
+    listed: "Public, and on Explore",
+  };
   return (
     <>
-    <div className="visibility-choice newapp-grant-choice newapp-grant-three" role="radiogroup" aria-label="App visibility">
+    <div className={"visibility-choice newapp-grant-choice newapp-vis-choice " + (allowListed ? "newapp-grant-four" : "newapp-grant-three")} role="radiogroup" aria-label="App visibility">
       <button
         type="button"
         role="radio"
@@ -212,13 +217,27 @@ const NewAppVisibility = ({ visibility, setVisibility, viewerEmails, setViewerEm
         <span className="vis-title">Public</span>
         <span className="vis-detail">Anyone with the link</span>
       </button>
+      {allowListed && (
+        <button
+          type="button"
+          role="radio"
+          aria-checked={visibility === "listed"}
+          className={visibility === "listed" ? "vis-option vis-option-on" : "vis-option"}
+          onClick={() => pick("listed")}
+          disabled={disabled}
+        >
+          <VisibilityIcon state="listed" />
+          <span className="vis-title">Listed</span>
+          <span className="vis-detail">Public, and on Explore</span>
+        </button>
+      )}
     </div>
     <div className="newapp-choice-hint"><b>{visLabels[visibility]}</b> {visDetails[visibility]}</div>
     </>
   );
 };
 
-const NewAppDialog = ({ name, setName, nameError, onSubmit, creating, atLimit, onCancel, visibility, setVisibility, viewerEmails, setViewerEmails, knownViewers, connections, grantMode, setGrantMode, grantSelected, setGrantSelected }) => {
+const NewAppDialog = ({ name, setName, nameError, onSubmit, creating, atLimit, onCancel, visibility, setVisibility, viewerEmails, setViewerEmails, knownViewers, connections, grantMode, setGrantMode, grantSelected, setGrantSelected, allowListed }) => {
   const toggleGrant = (slug) =>
     setGrantSelected(grantSelected.includes(slug) ? grantSelected.filter((s) => s !== slug) : [...grantSelected, slug]);
   const connName = (c) => c.label || c.name || c.slug;
@@ -306,6 +325,7 @@ const NewAppDialog = ({ name, setName, nameError, onSubmit, creating, atLimit, o
             setViewerEmails={setViewerEmails}
             knownViewers={knownViewers}
             disabled={creating}
+            allowListed={allowListed}
           />
         </div>
         {/* Only when there is something to grant. An empty chooser explaining a
@@ -509,7 +529,7 @@ const AppCard = ({ app, onToast }) => {
           {/* Stretched link: covers the whole card so the entire card opens the app. */}
           <span className="appcard-nmrow">
             <Link className="appcard-nm appcard-link" to={`/app/${app.name}`}>{app.name}</Link>
-            <VisibilityMark state={visibilityOf(!!app.private, app.viewer_count)} />
+            <VisibilityMark state={visibilityOf(!!app.private, app.viewer_count, !!app.listed)} />
           </span>
           <a className="appcard-url" href={publicUrl} target="_blank" rel="noreferrer">{publicHost}</a>
         </div>
@@ -633,7 +653,7 @@ const AppRow = ({ app }) => {
         <span className="applist-id">
           <span className="appcard-nmrow">
             <Link className="applist-nm" to={`/app/${app.name}`}>{app.name}</Link>
-            <VisibilityMark state={visibilityOf(!!app.private, app.viewer_count)} />
+            <VisibilityMark state={visibilityOf(!!app.private, app.viewer_count, !!app.listed)} />
           </span>
           <a className="applist-url" href={publicUrl} target="_blank" rel="noreferrer">{publicHost}</a>
         </span>
@@ -837,7 +857,14 @@ const Dashboard = ({ account, refreshAccount }) => {
     setCreating(true);
     setError("");
     try {
-      const res = await api.post("/api/apps", { name, private: visibility !== "public" });
+      const isPublic = visibility === "public" || visibility === "listed";
+      const res = await api.post("/api/apps", { name, private: !isPublic });
+      // Listing is a second call: the app has to exist before it can go on the
+      // gallery. Not fatal -- the app is made either way, and its own visibility
+      // dialog can list it later.
+      if (visibility === "listed") {
+        await api.put(`/api/apps/${encodeURIComponent(name)}/listed`, { listed: true }).catch(() => {});
+      }
       // Granted AFTER the app exists, one call each, and failures are not fatal:
       // the app was created and losing a grant is something the app's own
       // Connections tab can fix, where losing the app would not be.
@@ -970,7 +997,7 @@ const Dashboard = ({ account, refreshAccount }) => {
         </>
       )}
       {adding && (
-        <NewAppDialog name={name} setName={changeName} nameError={nameError} onSubmit={create} creating={creating} atLimit={atLimit} onCancel={cancelAdding} visibility={visibility} setVisibility={setVisibility} viewerEmails={viewerEmails} setViewerEmails={setViewerEmails} knownViewers={knownViewers} connections={connections} grantMode={grantMode} setGrantMode={setGrantMode} grantSelected={grantSelected} setGrantSelected={setGrantSelected} />
+        <NewAppDialog name={name} setName={changeName} nameError={nameError} onSubmit={create} creating={creating} atLimit={atLimit} onCancel={cancelAdding} visibility={visibility} setVisibility={setVisibility} viewerEmails={viewerEmails} setViewerEmails={setViewerEmails} knownViewers={knownViewers} connections={connections} grantMode={grantMode} setGrantMode={setGrantMode} grantSelected={grantSelected} setGrantSelected={setGrantSelected} allowListed={!!account.app_listing_enabled} />
       )}
       {toast && (
         <div className="snackbar" role="status" aria-live="polite">

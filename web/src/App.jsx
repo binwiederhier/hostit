@@ -12,6 +12,7 @@ import AppDetail from "./pages/AppDetail";
 import Profile from "./pages/Profile";
 import WelcomeModal from "./pages/WelcomeModal";
 import Connections from "./pages/Connections";
+import Explore from "./pages/Explore";
 import Admin from "./pages/Admin";
 import Docs from "./pages/Docs";
 
@@ -233,6 +234,7 @@ const Nav = ({ account, appHeader }) => {
       <div className="nav-menu">
         <nav className="nav-links">
           <AppsMenu canCreate={account.role !== "viewer"} />
+          {account.app_listing_enabled && <NavLink to="/explore">Explore</NavLink>}
           <NavLink to="/connections">Connections</NavLink>
           <NavLink to="/profile">Profile</NavLink>
           {account.role === "admin" && <NavLink to="/admin">Admin</NavLink>}
@@ -332,6 +334,11 @@ const ProfileMenu = ({ account }) => {
             <NavLink to="/" end role="menuitem" onClick={close}>
               Apps
             </NavLink>
+            {account.app_listing_enabled && (
+              <NavLink to="/explore" role="menuitem" onClick={close}>
+                Explore
+              </NavLink>
+            )}
             <NavLink to="/connections" role="menuitem" onClick={close}>
               Connections
             </NavLink>
@@ -527,6 +534,8 @@ const App = () => {
             <Route path="/app/:name/:viewSlug" element={<AppDetail account={account} refreshAccount={refreshAccount} />} />
             <Route path="/profile" element={<Profile account={account} refreshAccount={refreshAccount} />} />
             <Route path="/connections" element={<Connections />} />
+
+            <Route path="/explore" element={<Explore />} />
             <Route path="/admin" element={<Admin account={account} />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

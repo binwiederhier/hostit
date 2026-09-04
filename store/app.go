@@ -10,19 +10,19 @@ import (
 const (
 	insertAppQuery = `INSERT INTO app (id, name, port, host, owner_id, created_at, image_tag, uid, private) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	selectAppQuery = `
-		SELECT id, name, port, host, owner_id, disk_mb, created_at, image_tag, powered_off, uid, archived, private, memory_limit_mb, disk_limit_mb, cpu_milli, tabs, soft_deleted_at
+		SELECT id, name, port, host, owner_id, disk_mb, created_at, image_tag, powered_off, uid, archived, private, memory_limit_mb, disk_limit_mb, cpu_milli, tabs, soft_deleted_at, listed
 		FROM app WHERE name = ?
 	`
 	selectAppByUIDQuery = `
-		SELECT id, name, port, host, owner_id, disk_mb, created_at, image_tag, powered_off, uid, archived, private, memory_limit_mb, disk_limit_mb, cpu_milli, tabs, soft_deleted_at
+		SELECT id, name, port, host, owner_id, disk_mb, created_at, image_tag, powered_off, uid, archived, private, memory_limit_mb, disk_limit_mb, cpu_milli, tabs, soft_deleted_at, listed
 		FROM app WHERE uid = ?
 	`
 	selectAppsQuery = `
-		SELECT id, name, port, host, owner_id, disk_mb, created_at, image_tag, powered_off, uid, archived, private, memory_limit_mb, disk_limit_mb, cpu_milli, tabs, soft_deleted_at
+		SELECT id, name, port, host, owner_id, disk_mb, created_at, image_tag, powered_off, uid, archived, private, memory_limit_mb, disk_limit_mb, cpu_milli, tabs, soft_deleted_at, listed
 		FROM app ORDER BY name
 	`
 	selectAppsByOwnerQuery = `
-		SELECT id, name, port, host, owner_id, disk_mb, created_at, image_tag, powered_off, uid, archived, private, memory_limit_mb, disk_limit_mb, cpu_milli, tabs, soft_deleted_at
+		SELECT id, name, port, host, owner_id, disk_mb, created_at, image_tag, powered_off, uid, archived, private, memory_limit_mb, disk_limit_mb, cpu_milli, tabs, soft_deleted_at, listed
 		FROM app WHERE owner_id = ? ORDER BY name
 	`
 	selectAppHostQuery         = `SELECT host FROM app WHERE name = ?`
@@ -32,6 +32,7 @@ const (
 	updateAppPoweredOffQuery   = `UPDATE app SET powered_off = ? WHERE name = ?`
 	updateAppArchivedQuery     = `UPDATE app SET archived = ? WHERE name = ?`
 	updateAppSoftDeletedQuery  = `UPDATE app SET soft_deleted_at = ? WHERE name = ?`
+	updateAppListedQuery       = `UPDATE app SET listed = ? WHERE name = ?`
 	updateAppPrivateQuery      = `UPDATE app SET private = ? WHERE name = ?`
 	updateAppTabsQuery         = `UPDATE app SET tabs = ? WHERE name = ?`
 	updateAppUIDQuery          = `UPDATE app SET uid = ? WHERE name = ?`
@@ -74,8 +75,8 @@ func (s *Store) AddApp(app *App) error {
 // local passwd file only knows the apps that live on this host.
 func (s *Store) AppByUID(uid int) (*App, error) {
 	app := &App{}
-	var createdAt, softDeletedAt int64
-	err := s.db.QueryRow(selectAppByUIDQuery, uid).Scan(&app.ID, &app.Name, &app.Port, &app.Host, &app.OwnerID, &app.DiskMB, &createdAt, &app.ImageTag, &app.PoweredOff, &app.UID, &app.Archived, &app.Private, &app.MemoryLimitMB, &app.DiskLimitMB, &app.CPUMilli, &app.Tabs, &softDeletedAt)
+	var createdAt, softDeletedAt, listedInt int64
+	err := s.db.QueryRow(selectAppByUIDQuery, uid).Scan(&app.ID, &app.Name, &app.Port, &app.Host, &app.OwnerID, &app.DiskMB, &createdAt, &app.ImageTag, &app.PoweredOff, &app.UID, &app.Archived, &app.Private, &app.MemoryLimitMB, &app.DiskLimitMB, &app.CPUMilli, &app.Tabs, &softDeletedAt, &listedInt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrAppNotFound
 	}
@@ -83,6 +84,7 @@ func (s *Store) AppByUID(uid int) (*App, error) {
 		return nil, err
 	}
 	app.CreatedAt = time.Unix(createdAt, 0)
+	app.Listed = listedInt != 0
 	if softDeletedAt != 0 {
 		app.SoftDeletedAt = time.Unix(softDeletedAt, 0)
 	}
@@ -141,6 +143,17 @@ func (s *Store) SetAppPrivate(name string, private bool) error {
 	return err
 }
 
+// SetAppListed records whether a PUBLIC app is shown on the instance's public
+// app gallery. The server gates this on the app being public and the gallery
+// being enabled; the store just stores the bit.
+func (s *Store) SetAppListed(name string, listed bool) error {
+	res, err := s.db.Exec(updateAppListedQuery, listed, name)
+	if err != nil {
+		return err
+	}
+	return checkAffected(res, ErrAppNotFound)
+}
+
 // SetAppPoweredOff records (or clears) an app's deliberate poweroff.
 func (s *Store) SetAppPoweredOff(name string, off bool) error {
 	_, err := s.db.Exec(updateAppPoweredOffQuery, off, name)
@@ -195,14 +208,15 @@ func (s *Store) ImageTagsInUse() (map[string]bool, error) {
 // App returns the app with the given name, or ErrAppNotFound
 func (s *Store) App(name string) (*App, error) {
 	var app App
-	var createdAt, softDeletedAt int64
-	err := s.db.QueryRow(selectAppQuery, name).Scan(&app.ID, &app.Name, &app.Port, &app.Host, &app.OwnerID, &app.DiskMB, &createdAt, &app.ImageTag, &app.PoweredOff, &app.UID, &app.Archived, &app.Private, &app.MemoryLimitMB, &app.DiskLimitMB, &app.CPUMilli, &app.Tabs, &softDeletedAt)
+	var createdAt, softDeletedAt, listedInt int64
+	err := s.db.QueryRow(selectAppQuery, name).Scan(&app.ID, &app.Name, &app.Port, &app.Host, &app.OwnerID, &app.DiskMB, &createdAt, &app.ImageTag, &app.PoweredOff, &app.UID, &app.Archived, &app.Private, &app.MemoryLimitMB, &app.DiskLimitMB, &app.CPUMilli, &app.Tabs, &softDeletedAt, &listedInt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrAppNotFound
 	} else if err != nil {
 		return nil, err
 	}
 	app.CreatedAt = time.Unix(createdAt, 0)
+	app.Listed = listedInt != 0
 	if softDeletedAt != 0 {
 		app.SoftDeletedAt = time.Unix(softDeletedAt, 0)
 	}
@@ -331,11 +345,12 @@ func (s *Store) queryApps(query string, args ...any) ([]*App, error) {
 	apps := make([]*App, 0)
 	for rows.Next() {
 		var app App
-		var createdAt, softDeletedAt int64
-		if err := rows.Scan(&app.ID, &app.Name, &app.Port, &app.Host, &app.OwnerID, &app.DiskMB, &createdAt, &app.ImageTag, &app.PoweredOff, &app.UID, &app.Archived, &app.Private, &app.MemoryLimitMB, &app.DiskLimitMB, &app.CPUMilli, &app.Tabs, &softDeletedAt); err != nil {
+		var createdAt, softDeletedAt, listedInt int64
+		if err := rows.Scan(&app.ID, &app.Name, &app.Port, &app.Host, &app.OwnerID, &app.DiskMB, &createdAt, &app.ImageTag, &app.PoweredOff, &app.UID, &app.Archived, &app.Private, &app.MemoryLimitMB, &app.DiskLimitMB, &app.CPUMilli, &app.Tabs, &softDeletedAt, &listedInt); err != nil {
 			return nil, err
 		}
 		app.CreatedAt = time.Unix(createdAt, 0)
+		app.Listed = listedInt != 0
 		if softDeletedAt != 0 {
 			app.SoftDeletedAt = time.Unix(softDeletedAt, 0)
 		}
