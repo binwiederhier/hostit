@@ -12,7 +12,7 @@ import (
 // Every provider the platform offers, and the shape each one is.
 func TestTheCatalog(t *testing.T) {
 	t.Parallel()
-	for _, name := range []string{"google-calendar", "gmail", "slack-bot", "discord", "github", "jira"} {
+	for _, name := range []string{"google-calendar", "gmail", "google-drive", "slack-bot", "discord", "github", "jira"} {
 		p, ok := Lookup(name)
 		require.True(t, ok, "%s is offered", name)
 		assert.Equal(t, KindOAuth, p.Kind, "%s is an OAuth connection", name)
@@ -42,6 +42,19 @@ func TestCalendarAndMailAreSeparateProviders(t *testing.T) {
 	for _, s := range mail.Scopes {
 		assert.NotContains(t, s, "calendar", "the mail provider asks for no calendar scope")
 	}
+	// Drive is its own provider too: connecting a calendar must never hand over
+	// the person's files, and connecting Drive must not reach their mail.
+	drive, ok := Lookup("google-drive")
+	require.True(t, ok, "google-drive is offered")
+	for _, s := range drive.Scopes {
+		assert.NotContains(t, s, "gmail", "the drive provider asks for no mail scope")
+		assert.NotContains(t, s, "calendar", "the drive provider asks for no calendar scope")
+	}
+	for _, s := range append(append([]string{}, cal.Scopes...), mail.Scopes...) {
+		assert.NotContains(t, s, "drive", "neither calendar nor mail asks for drive")
+	}
+	// Read-only, like the other Google connections.
+	assert.Contains(t, strings.Join(drive.Scopes, " "), "drive.readonly", "drive is read-only")
 }
 
 // Not every provider issues a refresh token. Slack's bot token does not expire
@@ -65,7 +78,7 @@ func TestProvidersThatIssueLongLivedTokens(t *testing.T) {
 		assert.NotEmpty(t, p.ProbeURL, "%s: the permanent variant still needs a probe", name)
 	}
 
-	for _, name := range []string{"google-calendar", "gmail", "discord", "jira"} {
+	for _, name := range []string{"google-calendar", "gmail", "google-drive", "discord", "jira"} {
 		p, _ := Lookup(name)
 		assert.False(t, p.LongLivedToken, "%s issues a refresh token", name)
 		assert.False(t, p.HybridToken, "%s is not hybrid", name)

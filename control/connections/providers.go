@@ -48,6 +48,25 @@ func init() {
 		Help:       "Read-only access to one Gmail mailbox. A restricted scope: an instance offering this publicly needs Google's CASA review.",
 	})
 
+	Register(Provider{
+		Name:             "google-drive",
+		Label:            "Google Drive",
+		Kind:             KindOAuth,
+		Scopes:           []string{"https://www.googleapis.com/auth/drive.readonly", "https://www.googleapis.com/auth/userinfo.email"},
+		AuthURL:          "https://accounts.google.com/o/oauth2/v2/auth",
+		TokenURL:         "https://oauth2.googleapis.com/token",
+		RevokeURL:        "https://oauth2.googleapis.com/revoke",
+		AuthParams:       google,
+		NameHint:         "Work Drive",
+		Help:             "Read-only access to one Google account's Drive files. A restricted scope: an instance offering this publicly needs Google's CASA review.",
+		ShortDescription: "Read your Google Drive files and folders.",
+		LongDescription: "Google Drive API v3, base https://www.googleapis.com/drive/v3. Authenticate with the access token as a Bearer header. " +
+			"List files with GET /files (q= filters, e.g. \"name contains 'report'\" or \"mimeType='application/vnd.google-apps.spreadsheet'\"; " +
+			"fields=files(id,name,mimeType,modifiedTime,webViewLink) to choose what comes back). Read a binary file with " +
+			"GET /files/{id}?alt=media; export a Google-native doc with GET /files/{id}/export?mimeType=text/plain (Docs) or text/csv (Sheets). " +
+			"The grant is READ-ONLY, so uploads and edits fail. Responses are JSON; paging is nextPageToken.",
+	})
+
 	// -- Slack (bot). The bot token (xoxb-) does not expire and there is no refresh
 	// token, so hostit stores the access token itself. The id is "slack-bot",
 	// symmetric with "slack-user"; a store migration rewrites connections made

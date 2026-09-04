@@ -143,6 +143,15 @@ type Config struct {
 	// the assistant's system prompt (house rules, deployment specifics). The
 	// admin page's live value (DB setting info_prompt) overrides this default.
 	InfoPrompt string `yaml:"info-prompt"`
+	// DefaultAssistantModel is the mode id a fresh app's assistant starts on
+	// (e.g. "anthropic-sonnet-5"). Empty picks the catalog head. The admin page's
+	// live value (DB setting default_assistant_model) overrides this default; an
+	// id that no configured backend serves is ignored (falls back to the head).
+	DefaultAssistantModel string `yaml:"default-assistant-model"`
+	// AppListing enables the public app gallery ("Explore"): when true, a public
+	// app whose owner ticks "Listed" appears there for any logged-in user. Off by
+	// default; the admin page's live value (DB setting app_listing) overrides it.
+	AppListing bool `yaml:"app-listing"`
 
 	// ConnectionClients are the OAuth clients this instance holds for each
 	// connectable provider, keyed by provider name (slack, discord, github,
@@ -364,7 +373,7 @@ func (c *Config) ConnectionClient(provider string) (clientID, clientSecret strin
 	if client, ok := c.ConnectionClients[provider]; ok && client.ClientID != "" {
 		return client.ClientID, client.ClientSecret
 	}
-	if provider == "google-calendar" || provider == "gmail" {
+	if provider == "google-calendar" || provider == "gmail" || provider == "google-drive" {
 		return c.GoogleClientID, c.GoogleClientSecret
 	}
 	return "", ""

@@ -198,7 +198,7 @@ func TestGoogleConnectionsFallBackToTheLoginClient(t *testing.T) {
 	c := NewConfig()
 	c.GoogleClientID, c.GoogleClientSecret = "login-id", "login-secret"
 
-	for _, p := range []string{"google-calendar", "gmail"} {
+	for _, p := range []string{"google-calendar", "gmail", "google-drive"} {
 		id, secret := c.ConnectionClient(p)
 		assert.Equal(t, "login-id", id, p)
 		assert.Equal(t, "login-secret", secret, p)
