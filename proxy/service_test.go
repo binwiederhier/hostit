@@ -172,3 +172,38 @@ func TestProxyServedResponsesCarryTheBaseSecurityHeaders(t *testing.T) {
 	assert.Equal(t, api.ReferrerPolicy, rr.Header().Get("Referrer-Policy"))
 	assert.Equal(t, api.HSTSValue, rr.Header().Get("Strict-Transport-Security"))
 }
+
+// XFF is not the only header a client can forge: an app that reads X-Real-IP or
+// Forwarded (plenty of frameworks do) would otherwise take the client's word for
+// who it is, straight through hostit's own front door.
+func TestProxyStripsEveryInboundForwardingHeader(t *testing.T) {
+	t.Parallel()
+	var got http.Header
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = r.Header.Clone()
+	}))
+	t.Cleanup(target.Close)
+	p := New(&Config{ProxyID: "edge-1", ControlURL: target.URL, ClusterURL: "c:2930", CacheDir: t.TempDir()})
+	require.NoError(t, p.ApplyRoutes(&api.Table{Seq: 1, Routes: []api.Route{
+		{Host: "blog.example.com", Target: strings.TrimPrefix(target.URL, "http://")},
+	}}))
+
+	// The app route and the control fallback both forward; check both.
+	for _, host := range []string{"blog.example.com", "unknown.example.com"} {
+		req := httptest.NewRequest("GET", "http://"+host+"/", nil)
+		req.Host = host
+		req.RemoteAddr = "203.0.113.9:4711"
+		for _, h := range api.ForwardingHeaders {
+			req.Header.Set(h, "1.2.3.4") // the client's lie, in every shape
+		}
+		req.Header.Set("X-Forwarded-Prefix", "/evil")
+		rr := httptest.NewRecorder()
+		p.ServeHTTP(rr, req)
+
+		assert.Equal(t, "203.0.113.9", got.Get("X-Forwarded-For"), "host %s: the chain starts here", host)
+		assert.Empty(t, got.Get("X-Real-Ip"), "host %s: a forged X-Real-IP does not reach the app", host)
+		assert.Empty(t, got.Get("Forwarded"), "host %s", host)
+		assert.Empty(t, got.Get("X-Forwarded-Prefix"), "host %s", host)
+		assert.Empty(t, got.Get("CF-Connecting-Ip"), "host %s", host)
+	}
+}

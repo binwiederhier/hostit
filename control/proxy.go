@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"heckel.io/hostit/proxy/api"
 	"heckel.io/hostit/store"
 )
 
@@ -68,6 +69,11 @@ func (s *Server) proxyTo(w http.ResponseWriter, r *http.Request, a *store.App) {
 	proxy := &httputil.ReverseProxy{
 		Rewrite: func(pr *httputil.ProxyRequest) {
 			pr.SetURL(target)
+			// As in the proxy: whatever the client claimed about who it is goes,
+			// before SetXForwarded states it truthfully.
+			for _, h := range api.ForwardingHeaders {
+				pr.Out.Header.Del(h)
+			}
 			pr.SetXForwarded()
 			pr.Out.Host = pr.In.Host
 			// The grant cookie is on the app's own hostname, so the browser

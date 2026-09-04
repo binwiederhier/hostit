@@ -57,6 +57,29 @@ const (
 	ReferrerPolicy     = "strict-origin-when-cross-origin"
 )
 
+// ForwardingHeaders are the client-supplied headers a front door DROPS before
+// forwarding, so an app can never be told a false client address. The reverse
+// proxy sets X-Forwarded-For/Host/Proto itself, but every other forwarding
+// header a client invents is passed through untouched -- and plenty of
+// frameworks read X-Real-IP or Forwarded as the client address, which would
+// make a tenant's own rate limits, allowlists and audit logs spoofable through
+// hostit's front door. Listed here for the same reason as the headers above:
+// both gates serve app traffic and must agree.
+var ForwardingHeaders = []string{
+	"Forwarded",
+	"X-Real-Ip",
+	"X-Forwarded-For",
+	"X-Forwarded-Host",
+	"X-Forwarded-Proto",
+	"X-Forwarded-Port",
+	"X-Forwarded-Prefix",
+	"X-Forwarded-Server",
+	"X-Original-Forwarded-For",
+	"X-Client-Ip",
+	"True-Client-Ip",
+	"CF-Connecting-Ip",
+}
+
 // Route maps one hostname to its forwarding target. Control's own hostnames
 // (the dashboard, the API) are not listed: unknown hosts fall through to
 // control anyway, so listing them would only duplicate the fallback.

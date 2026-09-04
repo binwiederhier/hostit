@@ -93,6 +93,11 @@ func New(conf *Config) *Proxy {
 			r.Out.URL.Scheme = controlURL.Scheme
 			r.Out.URL.Host = controlURL.Host
 			r.Out.Host = r.In.Host // control routes by the ORIGINAL host
+			// The fallback forwards to control, which forwards on to an app, so
+			// a forged forwarding header survives two hops unless it goes here.
+			for _, h := range api.ForwardingHeaders {
+				r.Out.Header.Del(h)
+			}
 			r.SetXForwarded()
 			r.Out.Header.Set("X-Forwarded-Proto", "https")
 		},
@@ -179,6 +184,12 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					pr.Out.URL.Scheme = "http"
 					pr.Out.URL.Host = target
 					pr.Out.Host = pr.In.Host
+					// Drop what the CLIENT claimed before saying it ourselves,
+					// or an app reads a forged client address out of a header
+					// hostit forwarded on its behalf.
+					for _, h := range api.ForwardingHeaders {
+						pr.Out.Header.Del(h)
+					}
 					pr.SetXForwarded()
 					pr.Out.Header.Set("X-Forwarded-Proto", "https")
 				},
