@@ -224,6 +224,10 @@ func TestContainerHasProcessAndMemoryLimits(t *testing.T) {
 	// default, but a default is the distribution's opinion, not hostit's.
 	assert.Contains(t, joined, "--pids-limit "+strconv.Itoa(maxProcesses))
 	assert.Contains(t, joined, "--memory 512m")
+	// Swap pinned to the same figure: with only --memory, podman allows swap up
+	// to 2x it, so the app would quietly get its budget twice over on a
+	// swap-enabled host and the cap would not mean what it says.
+	assert.Contains(t, joined, "--memory-swap 512m")
 }
 
 func TestContainerOmitsTheMemoryFlagWhenUnlimited(t *testing.T) {

@@ -16,6 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"heckel.io/hostit/node/api"
+	"heckel.io/hostit/workspace"
 )
 
 // fakeRunner records commands; for an nft ruleset it captures the content, and
@@ -133,8 +134,11 @@ func TestShootRunsInLockedDownContainer(t *testing.T) {
 	// page content is untrusted, so the container is the sandbox.
 	cmd := strings.Join(runner.lastShot(), " ")
 	assert.Contains(t, cmd, "podman run")
-	assert.Contains(t, cmd, "--uidmap=0:3000000:2000000")
-	assert.Contains(t, cmd, "--gidmap=0:3000000:2000000")
+	// Derived, not hardcoded: the range must track workspace.UIDTop, and
+	// TestShotUIDRangeSitsAboveEveryAppBlock is what pins where that has to be.
+	userns := fmt.Sprintf("0:%d:%d", userNSBase, userNSSize)
+	assert.Contains(t, cmd, "--uidmap="+userns)
+	assert.Contains(t, cmd, "--gidmap="+userns)
 	assert.Contains(t, cmd, "--cap-drop=ALL")
 	assert.Contains(t, cmd, "--headless")
 	assert.Contains(t, cmd, "--security-opt=no-new-privileges")
@@ -276,4 +280,23 @@ func TestPublicShotSeedsNoCookie(t *testing.T) {
 	rec.mu.Lock()
 	defer rec.mu.Unlock()
 	assert.Nil(t, rec.cookie, "a public app's shot carries no cookie")
+}
+
+// The shot container's uid range must sit clear of every app's uid block. An
+// app is root inside its own user namespace and can become any host uid in its
+// block, so an overlapping range would give some tenant the same host uid as
+// the browser that renders OTHER tenants' pages -- and, for a private app,
+// holds their app-bound preview grant. The old fixed 3,000,000 base sat inside
+// the app space (the blocks for ports 10030-10061), which is what this pins.
+func TestShotUIDRangeSitsAboveEveryAppBlock(t *testing.T) {
+	t.Parallel()
+	require.Greater(t, userNSBase, workspace.UIDTop,
+		"the shot range starts above the whole app uid space")
+	for port := workspace.PortMin; port <= workspace.PortMax; port++ {
+		base := workspace.UIDFor(port)
+		top := base + workspace.UIDBlockSize - 1
+		require.False(t, top >= userNSBase && base <= userNSBase+userNSSize-1,
+			"app on port %d owns uids %d..%d, which overlaps the shot range %d..%d",
+			port, base, top, userNSBase, userNSBase+userNSSize-1)
+	}
 }

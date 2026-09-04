@@ -76,6 +76,14 @@ const (
 	PortMin = 10000
 	PortMax = 19999
 
+	// UIDTop is the LAST host uid the app space can ever use: the block of the
+	// highest allocatable port. Anything else on the host that needs its own uid
+	// range (the screenshot sandbox) must sit above this, because an app is root
+	// inside its own user namespace and can become any host uid in its block --
+	// a range overlapping the app space would hand some tenant another
+	// container's uid, and with it the kernel's idea of the same user.
+	UIDTop = UIDBlockStart + (PortMax-PortMin)*UIDBlockSize + UIDBlockSize - 1
+
 	// Runtimes is what the workspace image ships, quoted verbatim to
 	// users and agents so nobody has to guess what is available. It is kept lean
 	// on purpose (a big image makes every per-app container slower to create and
@@ -173,7 +181,12 @@ func CreateArgs(conf *app.Config, a *store.App, subvol, socketFile, hostitBin, v
 		args = append(args, "--cpus", fmt.Sprintf("%.2f", float64(cpuMilli)/1000))
 	}
 	if memoryMB > 0 {
-		args = append(args, "--memory", strconv.Itoa(memoryMB)+"m")
+		// Swap pinned EQUAL to the cap, not left to podman: given only --memory,
+		// podman allows swap up to 2x it, so an app quietly gets its budget again
+		// on any swap-enabled host and the limit stops meaning what it says. The
+		// screenshot sandbox already pins them together for the same reason.
+		mem := strconv.Itoa(memoryMB) + "m"
+		args = append(args, "--memory", mem, "--memory-swap", mem)
 	}
 	// A fork bomb in one app must not take the host with it. podman has a
 	// default for this, but a default is the distribution's opinion.

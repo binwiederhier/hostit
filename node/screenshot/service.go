@@ -38,6 +38,7 @@ import (
 
 	"heckel.io/hostit/node/api"
 	"heckel.io/hostit/system/run"
+	"heckel.io/hostit/workspace"
 )
 
 const (
@@ -96,9 +97,16 @@ const (
 	// clears any leftover from a prior one (e.g. a daemon restart mid-shot).
 	containerName = "hostit-screenshot"
 	// userNSBase/userNSSize is the explicit uid/gid mapping for the shot
-	// container's user namespace: a high, otherwise-unused host range, mapped
-	// directly (rootful podman needs no /etc/subuid for explicit maps).
-	userNSBase = 3000000
+	// container's user namespace, mapped directly (rootful podman needs no
+	// /etc/subuid for explicit maps).
+	//
+	// It starts ABOVE the whole app uid space rather than at a "high, unused"
+	// number: an app is root inside its own user namespace and can become any
+	// host uid in its block, so a range that overlapped the app space would give
+	// some tenant the same host uid as the browser that renders OTHER tenants'
+	// pages and carries their app-bound preview grant. Derived from
+	// workspace.UIDTop so it cannot drift if the port range ever moves.
+	userNSBase = workspace.UIDTop + 1
 	userNSSize = 2000000
 	// networkName/previewSubnet is the dedicated podman network the shot runs on
 	// in strict isolation; the subnet is what the egress nft rules match as source

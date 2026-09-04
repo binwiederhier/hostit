@@ -83,6 +83,25 @@ plus `1:subuid:N` would break that correspondence. The `IDs` type
 (`workspace/spec.go:IDs`) carries `{UID, GID, Count}` into the create args. Keep
 the block contiguous.
 
+### Nothing else may sit inside the app uid space
+
+An app is root inside its own user namespace, so it can become **any host uid in
+its block**. Any other container on the host that maps its own uid range must
+therefore start above the whole app space, or a tenant ends up sharing a host uid
+with it -- which is what the kernel checks for ptrace and signals, so the
+separation would then rest on nothing but the two containers happening not to
+share a namespace.
+
+`workspace.UIDTop` is the last uid the app space can ever use (the block of
+`PortMax`), and the screenshot sandbox derives its base from it
+(`node/screenshot/service.go:userNSBase = workspace.UIDTop + 1`). It used to be a
+fixed 3,000,000 described as "a high, otherwise-unused host range", which sat
+*inside* the app space: it collided with the blocks of ports 10030-10061, i.e.
+with whichever tenants held those ports. The browser in that container renders
+other tenants' pages and, for a private app, carries their app-bound preview
+grant. `TestShotUIDRangeSitsAboveEveryAppBlock` walks the whole port range and
+pins the invariant, so a future range cannot quietly land back inside it.
+
 ## App vs host: what an escape lands as
 
 The uidmap already means a container escape lands as the app's unprivileged host
