@@ -53,6 +53,26 @@ func TestResolveModePrefersTheRequestThenTheAppsChoice(t *testing.T) {
 	assert.Equal(t, "anthropic-opus-5", s.resolveMode("", "blog"), "falls back to the default rather than failing the turn")
 }
 
+// The instance can pick which mode a fresh app starts on, via control.yml or the
+// admin override; the override wins, and a mode no backend serves is ignored.
+func TestResolveModeUsesConfiguredDefault(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t)
+	s.config.AnthropicAPIKey, s.config.ClaudeCodeOAuthToken = "k", ""
+
+	// The control.yml default is used for a fresh app, over the catalog head.
+	s.config.DefaultAssistantModel = "anthropic-sonnet-5"
+	assert.Equal(t, "anthropic-sonnet-5", s.resolveMode("", "no-such-app"))
+
+	// The admin DB override wins over control.yml.
+	require.NoError(t, s.apps.Store().SetSetting(store.SettingDefaultAssistantModel, "anthropic-haiku-4-5"))
+	assert.Equal(t, "anthropic-haiku-4-5", s.resolveMode("", "no-such-app"))
+
+	// A default naming a mode no configured backend serves is ignored.
+	require.NoError(t, s.apps.Store().SetSetting(store.SettingDefaultAssistantModel, "claude-opus-5"))
+	assert.Equal(t, "anthropic-opus-5", s.resolveMode("", "no-such-app"), "ignored -> catalog head")
+}
+
 // With the subscription configured it supplies the default, since it is already
 // paid for.
 func TestResolveModeDefaultsToTheSubscription(t *testing.T) {

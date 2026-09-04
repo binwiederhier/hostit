@@ -3,6 +3,7 @@ package control
 import (
 	"heckel.io/hostit/assistant"
 	"heckel.io/hostit/control/config"
+	"heckel.io/hostit/store"
 )
 
 // The assistant's mode surface. Everything here is derived: which options exist
@@ -46,8 +47,23 @@ func (s *Server) resolveMode(requested, appName string) string {
 			return o.ID
 		}
 	}
+	// The instance default (control.yml, admin-overridable) if it names a mode
+	// this instance can actually run; a stale/unconfigured id is ignored.
+	if o, ok := assistant.Lookup(creds, s.defaultAssistantModel()); ok {
+		return o.ID
+	}
 	if o, ok := assistant.Default(creds); ok {
 		return o.ID
 	}
 	return ""
+}
+
+// defaultAssistantModel is the effective instance default mode id: the admin-set
+// DB value if present, else the control.yml default. It is only advisory --
+// resolveMode ignores an id no configured backend serves.
+func (s *Server) defaultAssistantModel() string {
+	if v, err := s.apps.Store().Setting(store.SettingDefaultAssistantModel); err == nil && v != "" {
+		return v
+	}
+	return s.config.DefaultAssistantModel
 }
