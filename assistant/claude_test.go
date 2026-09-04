@@ -361,3 +361,32 @@ func TestClaudeTurnPassesImagesToTheRunner(t *testing.T) {
 	assert.Contains(t, runner.prompt, "uploads/shot.png")
 	assert.Contains(t, runner.prompt, "uploads/notes.txt")
 }
+
+// A credential in a tool result must be redacted BEFORE it is published, not
+// only on its way into storage: the stream reaches the app's collaborators and
+// admins too, so publishing it raw shows them a token the stored transcript
+// deliberately hides. The API loop already redacts before publishing; this
+// backend must match it.
+func TestClaudeBackendRedactsBeforePublishing(t *testing.T) {
+	t.Parallel()
+	const secret = "ya29.a0AfB_byC3xample-secret-access-token-value"
+	runner := &fakeClaudeRunner{
+		events: []Event{
+			{Type: "tool_result", Tool: "run_command", Output: `{"access_token":"` + secret + `"}`},
+		},
+	}
+	store := NewMemoryStore()
+	m := NewManager(&fakeCompleter{}, newFakeOps(), store, Credentials{AnthropicAPIKey: "k", ClaudeCodeOAuthToken: "t"})
+	m.SetClaudeRunner(runner)
+
+	events := runTurn(t, m, "blog", "check the token")
+	for _, ev := range events {
+		assert.NotContains(t, ev.Output, secret, "a live subscriber never sees the credential")
+		assert.NotContains(t, ev.Text, secret)
+	}
+	items, err := m.Transcript("blog")
+	require.NoError(t, err)
+	for _, it := range items {
+		assert.NotContains(t, it.Output, secret, "and the stored transcript keeps hiding it")
+	}
+}

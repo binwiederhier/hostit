@@ -51,6 +51,14 @@ func (m *Manager) runClaudeTurn(ctx context.Context, s *session, app string, his
 	s.publish(Event{Type: evtModel, Text: option.ID})
 	acc := &claudeAccumulator{}
 	usage, err := m.claude.RunTurn(ctx, app, buildClaudePrompt(prior, userText, attachments), systemPrompt(app, m.ops.Archived(app), m.ops.Connections(app), m.extraContext(app)), imageAttachments(attachments), func(ev Event) {
+		// Redacted BEFORE it is published, matching the API loop: the stream
+		// reaches the app's collaborators and admins as well as its owner, so
+		// publishing raw would show them a credential the stored transcript
+		// deliberately hides. acc.add redacts again on the way into storage,
+		// which is idempotent.
+		if ev.Type == evtToolResult {
+			ev.Output = RedactCredentials(ev.Output)
+		}
 		s.publish(ev)
 		acc.add(ev)
 	})
