@@ -27,9 +27,9 @@ Twenty providers ship, and **eleven need no OAuth client at all**:
 
 | Static (paste and go) | OAuth (needs a client in `control.yml`) |
 |---|---|
-| `fastmail` (JMAP: mail + calendar + contacts) | `google-calendar`, `gmail` |
+| `fastmail` (JMAP: mail + calendar + contacts) | `google-calendar`, `gmail`, `google-drive` |
 | `imap`, `smtp` | `slack-bot`, `slack-user`, `discord` |
-| `caldav`, `carddav` | `github`, `jira` |
+| `caldav`, `carddav` | `github`, `github-app`, `jira` |
 | `postgres`, `mysql`, `opensearch` | `hubspot`, `linear` |
 | `s3`, `ntfy`, `home-assistant` | |
 | `ssh-key`, `discord-bot` | |
@@ -178,6 +178,36 @@ than the **read-everything** one, because it grants access to less:
 
 **Design the app around creating things, not reading everything**, and whole
 tiers of cost disappear.
+
+## The other narrowing trick: a different KIND of app
+
+Where a vendor offers two app types, the newer one is usually the fine-grained
+one, and picking it beats any amount of scope-tuning on the old one.
+
+GitHub is the worked example, and hostit ships both:
+
+| | `github` (OAuth App) | `github-app` (GitHub App) |
+| --- | --- | --- |
+| Repositories | all of them, always | only those it is **installed** on |
+| Access | `public_repo` or `repo` (read AND write, everything) | per-resource, read or write, e.g. Contents: Read-only |
+| Chosen by | the person connecting, from checkboxes | the operator, once, on the app registration |
+| Tokens | never expire | 8h + refresh, or never -- registrant's choice |
+
+An OAuth App simply cannot express "read one private repository": GitHub has no
+read-only private scope and no per-repository scope. That is not a hostit
+limitation to work around, it is the ceiling of that app type. The checkboxes on
+`github` are still worth having -- public-only is a genuinely smaller grant than
+`repo`, and it is the default -- but the answer to "just this repo" is the other
+app type.
+
+Because a GitHub App's permissions live on the app rather than in the request,
+**two permission profiles means two apps**. The second one is declared as a
+custom provider in `control.yml` with GitHub's usual endpoints, its own client,
+`hybrid-token: true` and a `probe-url` (a GitHub App issues an expiring token
+with a refresh token, or a permanent one with neither, depending on how it was
+registered -- `HybridToken` settles which at Exchange). This is the same
+conclusion Slack forced for genuinely separate scopes, arrived at from the other
+direction.
 
 ## What to write examples for
 

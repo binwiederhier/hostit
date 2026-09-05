@@ -82,6 +82,14 @@ admin-token: CHANGE-ME
 #     revoke-auth: bearer                # "bearer" (token as Bearer, Slack) or default (client creds)
 #     auth-params: { access_type: offline }   # extra consent-URL params the provider needs
 #     long-lived-token: false            # true if its token never expires (no refresh token)
+#     hybrid-token: false                # true if the SAME app issues either kind depending on how
+#                                        #   it was registered (a GitHub App, or a GitHub OAuth App
+#                                        #   with token expiration on). Needs probe-url; excludes
+#                                        #   long-lived-token. Use this to add a SECOND GitHub App:
+#                                        #   its permissions are fixed on the app, so two permission
+#                                        #   profiles means two apps, and the second is declared here.
+#     probe-url: https://api.acme.example/me   # a cheap authenticated GET that verifies a token
+#                                        #   which cannot be refreshed (required with hybrid-token)
 #     user-token: false                  # true for a Slack-style token that acts AS the person
 #     name-hint: Acme                    # what the add dialog pre-fills the name with
 #     help: Register an app at sso.acme.example.   # one line: where to get the credential

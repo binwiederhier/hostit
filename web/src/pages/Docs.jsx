@@ -843,7 +843,8 @@ const AccountsPage = () => (
         <tr><td>Slack (bot)</td><td>Read and post in channels the bot has been invited to, look up users</td></tr>
         <tr><td>Slack (personal)</td><td>Read the public and private channels you are already in, and search across them, as you -- no bot to invite</td></tr>
         <tr><td>Discord</td><td>Your profile and which servers you are in. Reading a server&rsquo;s channels needs a <b>Discord bot</b> credential instead</td></tr>
-        <tr><td>GitHub</td><td>Your repositories, at the scopes the instance registered</td></tr>
+        <tr><td>GitHub</td><td>Your repositories, at the permissions you tick. Public repositories by default; private repositories are all-or-nothing, because GitHub offers nothing finer</td></tr>
+        <tr><td>GitHub App</td><td>Only the repositories you install it on, at the permissions the app declares &mdash; the way to share one repository rather than all of them</td></tr>
         <tr><td>Jira</td><td>Issues and projects on your Atlassian site</td></tr>
         <tr><td>Linear</td><td>Issues, projects and teams</td></tr>
         <tr><td>HubSpot</td><td>Contacts and deals on the connected portal</td></tr>
@@ -1968,7 +1969,7 @@ const ConnectionsSetupPage = () => (
         </tr>
         <tr>
           <td><DocsPageLink guide="admin" section="connections" sub="github">GitHub</DocsPageLink></td>
-          <td>Minutes</td><td>No review, no scope declaration</td>
+          <td>Minutes</td><td>No review, no scope declaration. A GitHub App on the same page limits an app to particular repositories</td>
         </tr>
         <tr>
           <td><DocsPageLink guide="admin" section="connections" sub="slack">Slack</DocsPageLink></td>
@@ -2007,8 +2008,65 @@ const GithubPage = () => (
   <>
     <h2>GitHub</h2>
     <p>
-      Gives an app access to the user&rsquo;s repositories. No review and no scope declaration:
-      GitHub takes the scopes at authorize time.
+      Two providers, because GitHub has two kinds of app. <b>GitHub</b> is a classic{" "}
+      <b>OAuth App</b>: no review, and the scopes are chosen at authorize time.{" "}
+      <b>GitHub App</b> is the fine-grained one, and the only way to limit an app to{" "}
+      <i>particular repositories</i> &mdash; see below.
+    </p>
+    <p className="hint">
+      Worth knowing before you pick: an OAuth App&rsquo;s repository scopes are coarse.{" "}
+      <span className="mono">public_repo</span> covers public repositories, and{" "}
+      <span className="mono">repo</span> is full read <i>and write</i> on <b>every</b> repository
+      the user has, public and private. GitHub offers nothing in between &mdash; no read-only
+      private scope, and no way to name individual repositories. hostit therefore ticks only
+      public repositories by default and makes the wide one a deliberate choice.
+    </p>
+
+    <h3>Which one to register</h3>
+    <table className="docs-table">
+      <thead>
+        <tr><th /><th>GitHub (OAuth App)</th><th>GitHub App</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><b>Which repositories</b></td>
+          <td>All of them, always. There is no per-repository scope</td>
+          <td><b>Only the ones it is installed on</b>, chosen by whoever installs it and changeable later</td>
+        </tr>
+        <tr>
+          <td><b>How much access</b></td>
+          <td>
+            Coarse scopes: <span className="mono">public_repo</span> (public only) or{" "}
+            <span className="mono">repo</span> (read <i>and write</i>, everything). No read-only
+            private option
+          </td>
+          <td>Per-resource permissions declared on the app, each read or write &mdash; e.g. Contents: Read-only</td>
+        </tr>
+        <tr>
+          <td><b>Who chooses it</b></td>
+          <td>The person connecting, from the checkboxes in the add dialog</td>
+          <td>You, once, when you register the app. There is nothing to tick at connect time</td>
+        </tr>
+        <tr>
+          <td><b>Two different permission sets</b></td>
+          <td>Not possible on one app: GitHub issues one grant per user per app</td>
+          <td>Also not possible on one app &mdash; register a second GitHub App and add it as your own provider</td>
+        </tr>
+        <tr>
+          <td><b>Tokens</b></td>
+          <td>Never expire; nothing to refresh</td>
+          <td>Expire after 8 hours with a refresh token, or never &mdash; your choice when registering. hostit handles both</td>
+        </tr>
+        <tr>
+          <td><b>Setup</b></td>
+          <td>A couple of minutes</td>
+          <td>Longer: you pick every permission, and each account installs it</td>
+        </tr>
+      </tbody>
+    </table>
+    <p>
+      In short: the OAuth App is quicker and fine when an app may see everything the person can.
+      The GitHub App is the only way to say <i>&ldquo;these two repositories, read-only&rdquo;</i>.
     </p>
     <RedirectURIs />
     <h3>Register the app</h3>
@@ -2025,7 +2083,43 @@ const GithubPage = () => (
         <p className="hint">
           GitHub issues a token that does not expire and no refresh token, so hostit stores the
           access token itself. There is nothing to refresh and nothing to reconnect unless the user
-          revokes it.
+          revokes it. One OAuth App issues one grant per user, so hostit offers only one GitHub
+          connection per person: a second would share the first&rsquo;s token and permissions.
+        </p>
+      }
+    />
+
+    <h3>GitHub App: limiting it to particular repositories</h3>
+    <p>
+      Register a <b>GitHub App</b> instead when &ldquo;this app may read those two
+      repositories&rdquo; is what you want. Its permissions are declared on the app (per resource,
+      read or write), and whoever connects it <b>installs</b> it on the repositories it should see.
+      A user token then carries only what the app and the user both have, so there are no scopes to
+      request and nothing to tick in the add dialog.
+    </p>
+    <ol className="docs-steps">
+      <li><span className="mono">github.com/settings/apps</span> &rarr; <b>New GitHub App</b>.</li>
+      <li>
+        Under <b>Permissions</b>, grant the least that works &mdash; e.g. <b>Repository
+        permissions &rarr; Contents: Read-only</b>, which an OAuth App simply cannot express.
+      </li>
+      <li>
+        <b>Callback URL</b>: the same URLs as above. Tick <b>Request user authorization (OAuth)
+        during installation</b>.
+      </li>
+      <li>
+        Leave <b>Expire user authorization tokens</b> on if you like &mdash; hostit handles both:
+        an expiring token is refreshed for you, a non-expiring one is stored as-is.
+      </li>
+      <li>Copy the <b>Client ID</b> and generate a <b>client secret</b>, then install the app on the repositories it should reach.</li>
+    </ol>
+    <ProviderConfig
+      name="github-app"
+      note={
+        <p className="hint">
+          A call outside the installed repositories, or outside the permissions the app declares,
+          answers 403 or 404 &mdash; that means the installation needs widening on GitHub, not a
+          retry.
         </p>
       }
     />
@@ -2382,8 +2476,30 @@ const CustomProviderPage = () => (
             connection that came back with no refresh token.
           </td>
         </tr>
+        <tr>
+          <td>
+            <span className="mono">hybrid-token: true</span> +{" "}
+            <span className="mono">probe-url</span>
+          </td>
+          <td>
+            The same app issues <i>either</i> kind depending on how it was registered, and which one
+            a connection got is settled when it connects. This is what a <b>second GitHub App</b>{" "}
+            needs: a GitHub App&rsquo;s permissions are fixed on the app itself, so two permission
+            profiles means two apps &mdash; hostit ships one, and you declare the other here with
+            GitHub&rsquo;s usual endpoints and its own client. <span className="mono">probe-url</span>{" "}
+            is a cheap authenticated GET (<span className="mono">https://api.github.com/user</span>)
+            used to verify a token that cannot be refreshed; it is required, and{" "}
+            <span className="mono">long-lived-token</span> must not be set as well.
+          </td>
+        </tr>
       </tbody>
     </table>
+    <p className="hint">
+      <span className="mono">hybrid-token</span> and <span className="mono">probe-url</span> are{" "}
+      <span className="mono">control.yml</span> only. A provider added through the admin page can
+      still be either kind &mdash; leave it refreshing, or tick long-lived &mdash; it just cannot be
+      told to decide per connection.
+    </p>
 
     <h3>Permission checkboxes and the rest</h3>
     <p>

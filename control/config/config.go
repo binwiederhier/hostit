@@ -314,6 +314,14 @@ type OAuthClient struct {
 	RevokeAuth     string            `yaml:"revoke-auth"`
 	AuthParams     map[string]string `yaml:"auth-params"`
 	LongLivedToken bool              `yaml:"long-lived-token"`
+	// HybridToken is for an app that issues EITHER an expiring token with a
+	// refresh token or a permanent one with neither, depending on how it was
+	// registered -- a GitHub App, or a GitHub OAuth App with token expiration
+	// enabled. Needs ProbeURL and excludes LongLivedToken.
+	HybridToken bool `yaml:"hybrid-token"`
+	// ProbeURL is a cheap authenticated request that verifies a token which
+	// cannot be refreshed.
+	ProbeURL string `yaml:"probe-url"`
 	// UserToken asks for a token that acts AS the person (Slack's user_scope),
 	// not a bot; scopes go in user_scope. Set it for a Slack-style personal
 	// connection defined as a custom provider.

@@ -702,6 +702,8 @@ func (m *connectionManager) loadCustomProviders(conf *config.Config) error {
 			RevokeAuth:       client.RevokeAuth,
 			AuthParams:       client.AuthParams,
 			LongLivedToken:   client.LongLivedToken,
+			HybridToken:      client.HybridToken,
+			ProbeURL:         client.ProbeURL,
 			UserToken:        client.UserToken,
 			Help:             client.Help,
 			NameHint:         client.NameHint,

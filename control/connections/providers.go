@@ -174,16 +174,70 @@ func init() {
 	// connection got is decided at Exchange. A fine-grained personal access token
 	// via the generic credential is the other route.
 	Register(Provider{
-		Name:        "github",
-		Label:       "GitHub",
-		Kind:        KindOAuth,
-		Scopes:      []string{"repo", "read:user"},
+		Name:  "github",
+		Label: "GitHub",
+		Kind:  KindOAuth,
+		// The baseline identifies the person and reaches no code. Everything that
+		// does is a tick, because GitHub's OAuth App scopes are coarse: "repo" is
+		// full read AND write on EVERY repository, public and private, and GitHub
+		// offers nothing finer -- there is no read-only private scope and no way
+		// to name individual repositories. Public-only is the default because it
+		// is the one genuinely smaller thing on offer; for "this app may read
+		// these two repos", use the GitHub App provider below.
+		Scopes: []string{"read:user"},
+		ScopeOptions: []ScopeOption{
+			{Key: "public", Label: "Public repositories", Help: "read and write your public repositories", Scopes: []string{"public_repo"}, Default: true},
+			{Key: "private", Label: "Private repositories too", Help: "GitHub has no read-only or per-repository option: this grants full read and write on ALL of your repositories", Scopes: []string{"repo"}},
+			{Key: "org", Label: "Organizations", Help: "read the organizations and teams you belong to", Scopes: []string{"read:org"}},
+			{Key: "gists", Label: "Gists", Help: "read and write your gists", Scopes: []string{"gist"}},
+			{Key: "workflow", Label: "Actions workflows", Help: "update GitHub Actions workflow files", Scopes: []string{"workflow"}},
+			{Key: "notifications", Label: "Notifications", Help: "read your notifications", Scopes: []string{"notifications"}},
+		},
 		AuthURL:     "https://github.com/login/oauth/authorize",
 		TokenURL:    "https://github.com/login/oauth/access_token",
 		HybridToken: true,
 		ProbeURL:    "https://api.github.com/user",
-		NameHint:    "GitHub",
-		Help:        "Repositories and your profile, as you.",
+		// One OAuth App issues one grant per user, so a second connection on the
+		// same app would only alias the first -- as with Slack.
+		DisallowMultiple: true,
+		NameHint:         "GitHub",
+		Help:             "Repositories and your profile, as you. Tick only what the app needs -- and see GitHub App if you want it limited to particular repositories.",
+		ShortDescription: "Read your GitHub repositories, as you.",
+		LongDescription: "GitHub REST API, base https://api.github.com. Authenticate with the token as a Bearer header and send " +
+			"Accept: application/vnd.github+json. Common calls: GET /user, GET /user/repos, GET /repos/{owner}/{repo}/contents/{path} " +
+			"(base64 content), GET /repos/{owner}/{repo}/issues, GET /search/code. What the token may touch depends on the scopes the " +
+			"owner ticked: without the private-repositories scope only public repositories are visible. Paging is the Link header; " +
+			"rate limits are in the X-RateLimit-* headers (HTTP 403 with X-RateLimit-Remaining: 0 means wait, not forbidden).",
+	})
+
+	// -- GitHub App. The answer to what OAuth App scopes cannot express: a
+	// GitHub App is INSTALLED on the repositories the owner picks, with
+	// per-resource read/write permissions chosen when the app is registered, so
+	// "read these two repositories" is finally sayable. None of that is asked
+	// for here -- a user access token carries only what the app and the user
+	// both have -- so this provider requests no scopes at all.
+	//
+	// Its user tokens expire only if the app opted into expiring tokens (8h,
+	// with a refresh token); otherwise they do not expire at all. That is
+	// exactly what HybridToken means, so both work without a second code path.
+	Register(Provider{
+		Name:             "github-app",
+		Label:            "GitHub App",
+		Kind:             KindOAuth,
+		AuthURL:          "https://github.com/login/oauth/authorize",
+		TokenURL:         "https://github.com/login/oauth/access_token",
+		HybridToken:      true,
+		ProbeURL:         "https://api.github.com/user",
+		DisallowMultiple: true,
+		NameHint:         "GitHub",
+		Help:             "Only the repositories you install it on, with the permissions the app declares. Register a GitHub App (not an OAuth App), give it the permissions you want, then install it on the repositories it should see.",
+		ShortDescription: "Read the GitHub repositories you install it on.",
+		LongDescription: "GitHub REST API, base https://api.github.com, as a GitHub App user token. Authenticate with the token as a " +
+			"Bearer header and send Accept: application/vnd.github+json. It reaches ONLY the repositories the app is installed on, and " +
+			"only the permissions the app declares -- a call outside either answers 403 or 404, which means the install needs widening, " +
+			"not a retry. GET /user/installations lists the installations, GET /user/installations/{id}/repositories the repositories " +
+			"in one. Otherwise the endpoints are the same as any other token: GET /repos/{owner}/{repo}/contents/{path}, " +
+			"GET /repos/{owner}/{repo}/issues. Paging is the Link header.",
 	})
 
 	// -- Jira / Atlassian 3LO. Needs its audience named, and offline_access is

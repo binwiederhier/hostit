@@ -324,3 +324,63 @@ func fieldPlaceholder(p Provider, name string) string {
 	}
 	return ""
 }
+
+// GitHub's OAuth App scopes are coarse: "repo" is full read/write on EVERY
+// repository, public and private, and GitHub offers nothing finer -- no
+// read-only private access and no per-repository limit. So the checkboxes make
+// the wide grant a deliberate choice rather than the default, and public-only
+// (which is a genuinely smaller thing to hand an app) is what a connection gets
+// unless somebody ticks more.
+func TestGitHubOAuthAppOffersNarrowerScopes(t *testing.T) {
+	t.Parallel()
+	p, ok := Lookup("github")
+	require.True(t, ok)
+	require.NotEmpty(t, p.ScopeOptions, "the coarse grant is opt-in, not the default")
+
+	// The baseline alone identifies the person and reaches no code at all.
+	base, err := p.ResolveScopes(nil)
+	require.NoError(t, err)
+	assert.NotContains(t, base, "repo", "no private-repo access without asking")
+	assert.NotContains(t, base, "public_repo", "and no code access at all")
+
+	// The default ticks are public repositories only.
+	def, err := p.ResolveScopes(p.DefaultScopeKeys())
+	require.NoError(t, err)
+	assert.Contains(t, def, "public_repo")
+	assert.NotContains(t, def, "repo", "full private access is never a default")
+
+	// Asking for private repos is what pulls in the wide scope.
+	all, err := p.ResolveScopes([]string{"private"})
+	require.NoError(t, err)
+	assert.Contains(t, all, "repo")
+
+	// One OAuth App issues one grant per user, so a second connection on it
+	// would only alias the first -- the same reason Slack disallows multiples.
+	assert.False(t, p.AllowsMultiple(), "a second GitHub connection would share the first's token")
+}
+
+// A GitHub APP is the answer to what OAuth App scopes cannot express: it is
+// installed on chosen repositories with per-resource read/write permissions, so
+// the grant is configured on GitHub rather than requested here. It therefore
+// asks for no scopes at all -- "a user access token only has permissions that
+// both the user and the app have".
+func TestGitHubAppAsksForNoScopes(t *testing.T) {
+	t.Parallel()
+	p, ok := Lookup("github-app")
+	require.True(t, ok, "github-app is offered")
+	assert.Equal(t, KindOAuth, p.Kind)
+	assert.Empty(t, p.Scopes, "permissions come from the app's own configuration")
+	assert.Empty(t, p.ScopeOptions, "and there is nothing here to tick")
+	assert.True(t, p.HybridToken, "user tokens expire only if the app opts in, so treat both as possible")
+	assert.False(t, p.AllowsMultiple(), "one app, one grant per user")
+	assert.NotEmpty(t, p.Help)
+}
+
+// A provider with no scopes must not send an empty scope= parameter.
+func TestConsentURLOmitsAnEmptyScope(t *testing.T) {
+	t.Parallel()
+	p, ok := Lookup("github-app")
+	require.True(t, ok)
+	u := p.AuthCodeURL("cid", "https://hostit.example/auth/callback", "state123")
+	assert.NotContains(t, u, "scope=", "no scope parameter at all, rather than an empty one")
+}

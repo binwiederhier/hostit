@@ -31,7 +31,12 @@ func (p Provider) AuthCodeURL(clientID, redirectURL, state string) string {
 	if p.UserToken {
 		scopeParam = "user_scope"
 	}
-	q.Set(scopeParam, strings.Join(p.Scopes, " "))
+	// A provider can legitimately ask for nothing: a GitHub App's permissions are
+	// configured on the app and chosen at install, so it has no scopes to name.
+	// Send no parameter rather than an empty one.
+	if len(p.Scopes) > 0 {
+		q.Set(scopeParam, strings.Join(p.Scopes, " "))
+	}
 	// Whatever THIS provider needs on top. Google wants offline access or it
 	// never issues a refresh token; Atlassian wants its audience named; Slack
 	// and GitHub want none of it.

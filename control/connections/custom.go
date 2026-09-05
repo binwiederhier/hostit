@@ -33,13 +33,23 @@ type CustomSpec struct {
 	// authorization-server metadata to find them, the same walk it does for an
 	// MCP server. Resolving needs the network, so it happens on first use
 	// rather than here.
-	Issuer           string
-	AuthURL          string
-	TokenURL         string
-	RevokeURL        string
-	RevokeAuth       string
-	AuthParams       map[string]string
-	LongLivedToken   bool
+	Issuer         string
+	AuthURL        string
+	TokenURL       string
+	RevokeURL      string
+	RevokeAuth     string
+	AuthParams     map[string]string
+	LongLivedToken bool
+	// HybridToken is for a provider that issues EITHER an expiring token with a
+	// refresh token or a permanent one with neither, depending on how the
+	// operator registered their app -- a GitHub App, or a GitHub OAuth App with
+	// token expiration enabled. Which one a connection got is decided at Exchange
+	// and remembered per connection. Needs ProbeURL (the permanent variant is
+	// verified by probing) and excludes LongLivedToken.
+	HybridToken bool
+	// ProbeURL is a cheap authenticated request used to verify a token that
+	// cannot be refreshed -- the only way to tell a live one from a revoked one.
+	ProbeURL         string
 	UserToken        bool
 	Help             string
 	NameHint         string
@@ -72,6 +82,12 @@ func CustomProvider(name string, spec CustomSpec) (Provider, error) {
 			return Provider{}, fmt.Errorf("%s needs a token-url (or an issuer to discover one from)", name)
 		}
 	}
+	if spec.HybridToken && spec.LongLivedToken {
+		return Provider{}, fmt.Errorf("%s sets both hybrid-token and long-lived-token: pick one, they describe different token models", name)
+	}
+	if spec.HybridToken && spec.ProbeURL == "" {
+		return Provider{}, fmt.Errorf("%s needs a probe-url: a hybrid provider may issue a token that cannot be refreshed, and probing is the only way to verify one", name)
+	}
 	for label, u := range map[string]string{"issuer": spec.Issuer, "auth-url": spec.AuthURL, "token-url": spec.TokenURL} {
 		if u != "" && !strings.HasPrefix(u, "https://") && !strings.HasPrefix(u, "http://") {
 			return Provider{}, fmt.Errorf("%s's %s must be a URL starting with https://", name, label)
@@ -90,6 +106,8 @@ func CustomProvider(name string, spec CustomSpec) (Provider, error) {
 		RevokeAuth:       spec.RevokeAuth,
 		AuthParams:       spec.AuthParams,
 		LongLivedToken:   spec.LongLivedToken,
+		HybridToken:      spec.HybridToken,
+		ProbeURL:         spec.ProbeURL,
 		UserToken:        spec.UserToken,
 		Help:             spec.Help,
 		NameHint:         spec.NameHint,

@@ -94,3 +94,45 @@ func TestACustomProviderCannotShadowABuiltinOrBeUnnamed(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "lowercase")
 }
+
+// A second GitHub App has to be declarable as a custom provider: its permissions
+// are fixed on the app itself, so two permission profiles means two apps, and an
+// operator can only express the second one here. That needs hybrid-token (a
+// GitHub App issues an expiring token with a refresh one, or a permanent token
+// with neither, depending on how it was registered) and the probe-url that the
+// permanent variant is verified with.
+func TestACustomProviderCanBeAGitHubApp(t *testing.T) {
+	p, err := CustomProvider("github-readonly", CustomSpec{
+		Label:       "GitHub (read-only)",
+		AuthURL:     "https://github.com/login/oauth/authorize",
+		TokenURL:    "https://github.com/login/oauth/access_token",
+		HybridToken: true,
+		ProbeURL:    "https://api.github.com/user",
+	})
+	require.NoError(t, err)
+	assert.True(t, p.HybridToken, "which kind of token it got is decided per connection")
+	assert.False(t, p.LongLivedToken)
+	assert.Equal(t, "https://api.github.com/user", p.ProbeURL)
+	// A GitHub App names no scopes, so the consent URL must carry none.
+	assert.NotContains(t, p.AuthCodeURL("c", "https://r", "s"), "scope=")
+}
+
+// The two token models are mutually exclusive, and the hybrid one cannot verify
+// its permanent variant without somewhere to probe -- both are refused at load,
+// where the operator is looking.
+func TestAHalfWrittenTokenModelIsRefused(t *testing.T) {
+	base := func() CustomSpec {
+		return CustomSpec{Label: "Acme", AuthURL: "https://a/x", TokenURL: "https://a/t"}
+	}
+	both := base()
+	both.HybridToken, both.LongLivedToken, both.ProbeURL = true, true, "https://a/me"
+	_, err := CustomProvider("acme", both)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "long-lived-token")
+
+	noProbe := base()
+	noProbe.HybridToken = true
+	_, err = CustomProvider("acme", noProbe)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "probe-url")
+}
